@@ -5,6 +5,7 @@ import { eq, desc, asc, gte, and, or, inArray, sql } from "drizzle-orm";
 import {
   teams,
   organizations,
+  organizationMembers,
   matches,
   matchLineups,
   atBats,
@@ -112,6 +113,16 @@ async function expandCandidateUserIds(
   return Array.from(idSet);
 }
 
+const IGNORED_GENERIC_USER_NAMES = new Set([
+  "メンバー",
+  "LINEユーザー",
+  "ゲスト",
+  "新規メンバー",
+  "保護者",
+  "選手",
+  "name",
+]);
+
 function normalizeMemberName(raw: string): string {
   return raw.replace(/[\s　()（）【】［］\[\]]+/g, "").trim();
 }
@@ -125,13 +136,62 @@ function hasMotherRoleTag(name: string): boolean {
 }
 
 /**
+ * 「小西 父」→「小西」、「風岡（母）」→「風岡」のように末尾の続柄ラベルを除いた苗字ステムを抽出
+ */
+function extractParentSurnameStem(rawName: string): string {
+  return rawName
+    .replace(/[\s　()（）【】［］\[\]]*(?:お父さん|お母さん|保護者|パパ|ママ|父|母|夫|妻)[\s　()（）【】［］\[\]]*$/g, "")
+    .replace(/[\s　()（）【】［］\[\]]+/g, "")
+    .trim();
+}
+
+/**
+ * 「中島 敏文」⇔「敏文中島」、「守 佐藤」⇔「佐藤守」のように姓名順の揺れも吸収した正規化名セットを生成
+ */
+function buildCanonicalPersonNameSet(raw: string | null | undefined): Set<string> {
+  const result = new Set<string>();
+  if (!raw) return result;
+  const trimmed = raw.trim();
+  if (!trimmed || IGNORED_GENERIC_USER_NAMES.has(trimmed)) return result;
+
+  const direct = normalizeMemberName(trimmed);
+  if (direct && !IGNORED_GENERIC_USER_NAMES.has(direct)) {
+    result.add(direct);
+  }
+
+  const tokens = trimmed
+    .replace(/[()（）【】［］\[\]]+/g, " ")
+    .trim()
+    .split(/[\s　]+/)
+    .filter(Boolean);
+  if (tokens.length === 2) {
+    const ab = normalizeMemberName(tokens[0] + tokens[1]);
+    const ba = normalizeMemberName(tokens[1] + tokens[0]);
+    if (ab) result.add(ab);
+    if (ba) result.add(ba);
+  }
+  return result;
+}
+
+/**
  * 🏷️ 大人メンバー（保護者・指導者等）の安全な名前照合ヘルパー
  * 1) 空白・括弧を除去した正規化名の完全一致を最優先（複数ある場合は非 tm_ の正規IDを優先）
  * 2) 部分一致は父/母の逆転を防ぎ、候補が1名に一意特定できる場合のみ採用（同姓の父母誤爆を防止）
+ * 3) 「苗字 父 / 苗字 母」形式の名簿に対し、「苗字＋実名（例：小西敏幸 → 小西 父）」で一意の家族に該当する場合は安全に解決
  */
 function findMatchingAdultMemberByName<
-  T extends { id: string; name: string | null; memberType?: string | null; status?: string | null }
->(members: T[], searchNames: Array<string | null | undefined>): T | null {
+  T extends {
+    id: string;
+    name: string | null;
+    userId?: string | null;
+    memberType?: string | null;
+    status?: string | null;
+  }
+>(
+  members: T[],
+  searchNames: Array<string | null | undefined>,
+  options?: { allowAmbiguousFamilyParent?: boolean }
+): T | null {
   const adultActive = members.filter(
     (m) => m.memberType !== "player" && (m.status === "active" || !m.status) && Boolean(m.name?.trim())
   );
@@ -139,7 +199,7 @@ function findMatchingAdultMemberByName<
 
   const cleanQueries = searchNames
     .map((s) => (s ? s.trim() : ""))
-    .filter((s) => s.length > 0);
+    .filter((s) => s.length > 0 && !IGNORED_GENERIC_USER_NAMES.has(s));
 
   for (const q of cleanQueries) {
     const normQ = normalizeMemberName(q);
@@ -171,7 +231,213 @@ function findMatchingAdultMemberByName<
     }
   }
 
+  // 3) 名簿側が「苗字 父」「苗字 母」形式で、ユーザー名が「小西敏幸」「風岡 太郎」のようなフルネームの場合の家族照合
+  for (const q of cleanQueries) {
+    const normQ = normalizeMemberName(q);
+    if (!normQ || normQ.length < 2) continue;
+    const qIsFather = hasFatherRoleTag(q);
+    const qIsMother = hasMotherRoleTag(q);
+    const qTokens = q.trim().split(/[\s　]+/).filter(Boolean);
+    const qFirstTokenNorm = qTokens.length >= 2 ? normalizeMemberName(qTokens[0]) : "";
+
+    const stemCandidates: Array<{ member: T; stem: string }> = [];
+    for (const m of adultActive) {
+      const rawM = m.name || "";
+      if (!hasFatherRoleTag(rawM) && !hasMotherRoleTag(rawM)) continue;
+      if (qIsFather && hasMotherRoleTag(rawM)) continue;
+      if (qIsMother && hasFatherRoleTag(rawM)) continue;
+
+      const stem = extractParentSurnameStem(rawM);
+      if (!stem) continue;
+
+      const isStemMatch =
+        (stem.length >= 2 && normQ.startsWith(stem)) ||
+        (stem.length === 1 && qFirstTokenNorm === stem);
+
+      if (isStemMatch) {
+        stemCandidates.push({ member: m, stem });
+      }
+    }
+
+    if (stemCandidates.length === 0) continue;
+    const distinctStems = new Set(stemCandidates.map((c) => c.stem));
+    if (distinctStems.size !== 1) continue; // 複数家族にまたがる場合は誤爆防止のためスキップ
+
+    const familyMembers = stemCandidates.map((c) => c.member);
+    if (familyMembers.length === 1) {
+      return familyMembers[0];
+    }
+
+    // 同一家族内で片方の親が既に別アカウント連携済みで、もう片方のみ userId 未設定なら未設定枠を採用
+    const unlinkedMembers = familyMembers.filter((m) => !m.userId);
+    if (unlinkedMembers.length === 1) {
+      return unlinkedMembers[0];
+    }
+
+    // 閲覧・出欠権限解決時は同一家族の代表レコードを返却（家族間で権限共有されるため安全）
+    if (options?.allowAmbiguousFamilyParent) {
+      return (
+        familyMembers.find((m) => !m.id.startsWith("tm_") && hasFatherRoleTag(m.name || "")) ||
+        familyMembers.find((m) => !m.id.startsWith("tm_")) ||
+        familyMembers[0]
+      );
+    }
+  }
+
   return null;
+}
+
+/**
+ * 🔗 チームメンバーに紐づく `user.name`（Web Google/Microsoft登録名など）と LINE表示名を照合し、
+ * 一意に一致した場合は `account` テーブルへ自動連携して該当メンバーを返す（中島父・小西父・松下父・石田父パターン根絶）
+ */
+async function findAndAutoLinkMemberByUserTableName<
+  T extends {
+    id: string;
+    name: string | null;
+    userId: string | null;
+    memberType?: string | null;
+    status?: string | null;
+  }
+>(
+  db: ReturnType<typeof drizzle>,
+  members: T[],
+  searchNames: Array<string | null | undefined>,
+  rawLineUserId?: string | null
+): Promise<T | null> {
+  const queryCanonical = new Set<string>();
+  for (const s of searchNames) {
+    for (const c of buildCanonicalPersonNameSet(s)) {
+      if (c.length >= 2) queryCanonical.add(c);
+    }
+  }
+  if (queryCanonical.size === 0) return null;
+
+  const adultWithUid = members.filter(
+    (m) =>
+      m.memberType !== "player" &&
+      (m.status === "active" || !m.status) &&
+      Boolean(m.userId?.trim())
+  );
+  if (adultWithUid.length === 0) return null;
+
+  const memberUserIds = Array.from(
+    new Set(adultWithUid.map((m) => m.userId!.trim()).filter(Boolean))
+  );
+  if (memberUserIds.length === 0) return null;
+
+  try {
+    const linkedUsers = await db
+      .select({ id: user.id, name: user.name })
+      .from(user)
+      .where(inArray(user.id, memberUserIds))
+      .all();
+
+    const matchedUserIds = new Set<string>();
+    for (const u of linkedUsers) {
+      const uNames = buildCanonicalPersonNameSet(u.name);
+      for (const cn of uNames) {
+        if (queryCanonical.has(cn)) {
+          matchedUserIds.add(u.id);
+          break;
+        }
+      }
+    }
+
+    if (matchedUserIds.size !== 1) return null;
+    const targetUserId = Array.from(matchedUserIds)[0];
+    const matchedMembers = adultWithUid.filter((m) => m.userId === targetUserId);
+    if (matchedMembers.length === 0) return null;
+
+    const chosen =
+      matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
+
+    const cleanLine = rawLineUserId?.trim() || "";
+    if (cleanLine.startsWith("U") && targetUserId !== cleanLine) {
+      await ensureLineAccountLink(db, targetUserId, cleanLine);
+    }
+
+    return chosen;
+  } catch (err) {
+    console.warn("findAndAutoLinkMemberByUserTableName warning:", err);
+    return null;
+  }
+}
+
+/**
+ * 🌐 チーム横断での Web登録済みユーザー ↔ LINE `U...` 自動リンク補完（/my-status, /hub 初期アクセス用）
+ */
+async function autoLinkAndExpandCandidateUserIds(
+  db: ReturnType<typeof drizzle>,
+  rawIds: Array<string | null | undefined>,
+  searchNames: Array<string | null | undefined>
+): Promise<string[]> {
+  const initialExpanded = await expandCandidateUserIds(db, rawIds);
+
+  const queryCanonical = new Set<string>();
+  for (const s of searchNames) {
+    for (const c of buildCanonicalPersonNameSet(s)) {
+      if (c.length >= 2) queryCanonical.add(c);
+    }
+  }
+  if (queryCanonical.size === 0) return initialExpanded;
+
+  // すでにアクティブな team_members に紐づいている場合は追加クエリ不要（爆速維持）
+  if (initialExpanded.length > 0) {
+    try {
+      const existingHit = await db
+        .select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(
+          and(
+            inArray(teamMembers.userId, initialExpanded),
+            or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
+          )
+        )
+        .limit(1)
+        .get();
+      if (existingHit) return initialExpanded;
+    } catch {}
+  }
+
+  try {
+    const activeMemberUsers = await db
+      .select({
+        memberUserId: teamMembers.userId,
+        userName: user.name,
+      })
+      .from(teamMembers)
+      .innerJoin(user, eq(teamMembers.userId, user.id))
+      .where(or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`))
+      .all();
+
+    const matchedPrimaryUids = new Set<string>();
+    for (const row of activeMemberUsers) {
+      if (!row.memberUserId) continue;
+      const uNames = buildCanonicalPersonNameSet(row.userName);
+      for (const cn of uNames) {
+        if (queryCanonical.has(cn)) {
+          matchedPrimaryUids.add(row.memberUserId);
+          break;
+        }
+      }
+    }
+
+    if (matchedPrimaryUids.size === 1) {
+      const matchedPrimaryUid = Array.from(matchedPrimaryUids)[0];
+      const lineUid = rawIds
+        .map((id) => id?.trim() || "")
+        .find((id) => id.startsWith("U") && !IGNORED_MOCK_USER_IDS.has(id));
+      if (lineUid && matchedPrimaryUid !== lineUid) {
+        await ensureLineAccountLink(db, matchedPrimaryUid, lineUid);
+      }
+      return expandCandidateUserIds(db, [...rawIds, matchedPrimaryUid]);
+    }
+  } catch (err) {
+    console.warn("autoLinkAndExpandCandidateUserIds warning:", err);
+  }
+
+  return initialExpanded;
 }
 
 /**
@@ -334,18 +600,25 @@ app.get("/config", (c) => {
 app.get("/my-status", async (c) => {
   const db = drizzle(c.env.DB);
   const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
 
   try {
     let sessionUserId: string | undefined;
+    let sessionUserName: string | undefined;
     try {
       const auth = getAuth(c.env.DB, c.env);
       const session = await auth.api
         .getSession({ headers: c.req.raw.headers as unknown as Headers })
         .catch(() => null);
       sessionUserId = session?.user?.id;
+      sessionUserName = session?.user?.name || undefined;
     } catch {}
 
-    const candidateIds = await expandCandidateUserIds(db, [userId, sessionUserId]);
+    const candidateIds = await autoLinkAndExpandCandidateUserIds(
+      db,
+      [userId, sessionUserId],
+      [userName, sessionUserName]
+    );
     if (candidateIds.length === 0) {
       return c.json({
         success: true,
@@ -537,19 +810,26 @@ app.post("/join", async (c) => {
         .from(teamMembers)
         .where(eq(teamMembers.teamId, targetTeamId))
         .all();
-      const exactActive = allTargetMembers.find(
-        (m) =>
-          m.status === "active" &&
-          m.memberType !== "player" &&
-          Boolean(m.name) &&
-          normalizeMemberName(m.name || "") === normalizeMemberName(cleanJoinName)
+
+      // Web登録済み user.name 照合 または 名簿名・家族苗字照合で既存アクティブメンバーを優先救済
+      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
+        db,
+        allTargetMembers,
+        [cleanJoinName],
+        typeof userId === "string" ? userId : null
       );
-      if (exactActive) {
-        existing = exactActive;
-        if (validUserId && !exactActive.userId) {
-          await db.update(teamMembers).set({ userId: validUserId }).where(eq(teamMembers.id, exactActive.id));
-        } else if (exactActive.userId && userId && typeof userId === "string") {
-          await ensureLineAccountLink(db, exactActive.userId, userId);
+      const matchedByRosterName =
+        matchedByUserTable || findMatchingAdultMemberByName(allTargetMembers, [cleanJoinName]);
+
+      if (matchedByRosterName && (matchedByRosterName.status === "active" || !matchedByRosterName.status)) {
+        existing = matchedByRosterName;
+        if (validUserId && !matchedByRosterName.userId) {
+          await db
+            .update(teamMembers)
+            .set({ userId: validUserId })
+            .where(eq(teamMembers.id, matchedByRosterName.id));
+        } else if (matchedByRosterName.userId && userId && typeof userId === "string") {
+          await ensureLineAccountLink(db, matchedByRosterName.userId, userId);
         }
       } else {
         existing =
@@ -648,9 +928,14 @@ app.get("/hub", async (c) => {
     const [sessionUser, allTeams] = await Promise.all([sessionPromise, allTeamsPromise]);
 
     const authUserId = sessionUser?.id;
+    const authUserName = sessionUser?.name || undefined;
 
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブルで展開）
-    const candidateIdsArray = await expandCandidateUserIds(db, [userId, authUserId]);
+    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブル＆実名照合で展開）
+    const candidateIdsArray = await autoLinkAndExpandCandidateUserIds(
+      db,
+      [userId, authUserId],
+      [userName, authUserName]
+    );
 
     // ユーザーが所属（承認済み）しているチームID一覧を1クエリで取得（userId または 名前一致を統合）
     const userTeamIds = new Set<string>();
@@ -1736,6 +2021,7 @@ app.get("/attendance-matrix", async (c) => {
       db
         .select({
           createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
           memberSortOrder: teams.memberSortOrder,
           attendanceStatusConfig: teams.attendanceStatusConfig,
           memberSubLabels: teams.memberSubLabels,
@@ -1804,6 +2090,24 @@ app.get("/attendance-matrix", async (c) => {
       teamRecord?.createdBy && searchUserIds.includes(teamRecord.createdBy)
     );
 
+    let isOrgAdmin = false;
+    if (!isSysAdmin && !isTeamCreator && teamRecord?.organizationId && searchUserIds.length > 0) {
+      try {
+        const orgRow = await db
+          .select({ role: organizationMembers.role })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.organizationId, teamRecord.organizationId),
+              inArray(organizationMembers.userId, searchUserIds)
+            )
+          )
+          .get();
+        const orgRole = (orgRow?.role || "").toUpperCase();
+        isOrgAdmin = orgRole === "OWNER" || orgRole === "ADMIN";
+      } catch {}
+    }
+
     const activeAllMembers = allTeamMembersRaw.filter(
       (m) => m.status === "active" || !m.status
     );
@@ -1814,6 +2118,19 @@ app.get("/attendance-matrix", async (c) => {
         if (m.userId && searchUserIds.includes(m.userId)) {
           matchedMembers.push(m);
         }
+      }
+    }
+
+    // Web登録済み user.name（例：小西敏幸 / 松下修造 / 石田英紀 / 敏文中島）との自動連携照合
+    if (matchedMembers.length === 0 && (userName || authUserName)) {
+      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
+        db,
+        activeAllMembers,
+        [userName, authUserName],
+        userId
+      );
+      if (matchedByUserTable) {
+        matchedMembers.push(matchedByUserTable);
       }
     }
 
@@ -1829,7 +2146,11 @@ app.get("/attendance-matrix", async (c) => {
     }
 
     if (matchedMembers.length === 0) {
-      const matchedByName = findMatchingAdultMemberByName(activeAllMembers, [userName, authUserName]);
+      const matchedByName = findMatchingAdultMemberByName(
+        activeAllMembers,
+        [userName, authUserName],
+        { allowAmbiguousFamilyParent: true }
+      );
       if (matchedByName) {
         matchedMembers.push(matchedByName);
       }
@@ -1843,10 +2164,11 @@ app.get("/attendance-matrix", async (c) => {
       null;
 
     const myMemberId = currentMember?.id || null;
-    const myMemberIds = Array.from(new Set(matchedMembers.map((m) => m.id)));
+    const primaryMemberIds = Array.from(new Set(matchedMembers.map((m) => m.id)));
     const isITAdmin = Boolean(
       isSysAdmin ||
       isTeamCreator ||
+      isOrgAdmin ||
       matchedMembers.some((m) => {
         const r = (m.role || "").toLowerCase();
         return r === "admin" || r === "system_admin";
@@ -1860,18 +2182,72 @@ app.get("/attendance-matrix", async (c) => {
       })
     );
 
-    const myPlayerIds =
-      myMemberIds.length > 0
-        ? Array.from(
-            new Set(
-              relations
-                .filter((r) => myMemberIds.includes(r.parentId) && Boolean(r.childId))
-                .map((r) => r.childId)
-            )
-          )
-        : [];
+    const allPlayers = allPlayersRaw.filter((p) => p.isActive !== false);
 
-    const allPlayers = allPlayersRaw.filter(p => p.isActive !== false);
+    // 家族単位の出欠編集権限解決（本人 + 子ども選手 + 同じ子どもに紐づく配偶者[父⇔母]）
+    const myPlayerIdsSet = new Set<string>();
+    if (searchUserIds.length > 0) {
+      for (const p of allPlayers) {
+        if (p.userId && searchUserIds.includes(p.userId)) {
+          myPlayerIdsSet.add(p.id);
+        }
+      }
+    }
+    for (const rel of relations) {
+      if (primaryMemberIds.includes(rel.parentId) && rel.childId) {
+        myPlayerIdsSet.add(rel.childId);
+      }
+    }
+
+    // 親子関係テーブル未設定時のセーフティネット（苗字ステム一致の一意な子ども選手を補完）
+    if (myPlayerIdsSet.size === 0 && matchedMembers.length > 0) {
+      for (const m of matchedMembers) {
+        const stem = extractParentSurnameStem(m.name || "");
+        if (!stem) continue;
+        const surnamePlayers = allPlayers.filter((p) => {
+          const pTokens = (p.name || "").trim().split(/[\s　]+/).filter(Boolean);
+          if (pTokens.length >= 2) {
+            return normalizeMemberName(pTokens[0]) === stem;
+          }
+          return stem.length >= 2 && normalizeMemberName(p.name || "").startsWith(stem);
+        });
+        if (surnamePlayers.length > 0) {
+          for (const sp of surnamePlayers) {
+            myPlayerIdsSet.add(sp.id);
+          }
+        }
+      }
+    }
+
+    const familyMemberIdsSet = new Set<string>(primaryMemberIds);
+    if (myPlayerIdsSet.size > 0) {
+      for (const rel of relations) {
+        if (rel.childId && myPlayerIdsSet.has(rel.childId) && rel.parentId) {
+          familyMemberIdsSet.add(rel.parentId);
+        }
+      }
+    }
+    // 同一苗字ステムを持つ配偶者レコード（例：小西 父 ⇔ 小西 母）も同一家族として編集許可
+    for (const m of matchedMembers) {
+      const rawM = m.name || "";
+      if (!hasFatherRoleTag(rawM) && !hasMotherRoleTag(rawM)) continue;
+      const stem = extractParentSurnameStem(rawM);
+      if (!stem) continue;
+      const sameStemParents = activeAllMembers.filter((cand) => {
+        const rawC = cand.name || "";
+        if (cand.memberType === "player") return false;
+        if (!hasFatherRoleTag(rawC) && !hasMotherRoleTag(rawC)) return false;
+        return extractParentSurnameStem(rawC) === stem;
+      });
+      if (sameStemParents.length <= 2) {
+        for (const sp of sameStemParents) {
+          familyMemberIdsSet.add(sp.id);
+        }
+      }
+    }
+
+    const myMemberIds = Array.from(familyMemberIdsSet);
+    const myPlayerIds = Array.from(myPlayerIdsSet);
 
     const formattedPlayers = allPlayers
       .map(p => ({
@@ -2488,7 +2864,17 @@ app.get("/my-family", async (c) => {
         .from(teamMembers)
         .where(eq(teamMembers.teamId, teamId))
         .all();
-      const matched = findMatchingAdultMemberByName(teamMemberList, [userName, authUserName]);
+      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
+        db,
+        teamMemberList,
+        [userName, authUserName],
+        userId
+      );
+      const matched =
+        matchedByUserTable ||
+        findMatchingAdultMemberByName(teamMemberList, [userName, authUserName], {
+          allowAmbiguousFamilyParent: true,
+        });
       if (matched) {
         member = matched;
         matchedFamilyMemberIds.add(matched.id);
@@ -6943,7 +7329,14 @@ async function resolveProfileMember(
           normTargets.includes(normalizeMemberName(m.name || ""))
       );
     } else {
-      foundMember = findMatchingAdultMemberByName(allTeamMembers, searchNames) || undefined;
+      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
+        db,
+        allTeamMembers,
+        searchNames,
+        cleanUid
+      );
+      foundMember =
+        matchedByUserTable || findMatchingAdultMemberByName(allTeamMembers, searchNames) || undefined;
     }
 
     if (foundMember) {

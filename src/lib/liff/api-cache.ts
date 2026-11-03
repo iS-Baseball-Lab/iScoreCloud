@@ -19,7 +19,8 @@ interface RawFetchSnapshot {
   bodyText: string;
 }
 
-const SESSION_CACHE_PREFIX = "iscore_swr_v1:";
+const LEGACY_SESSION_CACHE_PREFIX = "iscore_swr_v1:";
+const SESSION_CACHE_PREFIX = "iscore_swr_v2:";
 const DEFAULT_FRESH_MS = 15_000; // 15秒以内は完全フレッシュ扱い
 const MAX_STALE_MS = 10 * 60_000; // 10分以内は即座に描画しつつ裏で再検証
 
@@ -29,6 +30,59 @@ const inflightRawRequests = new Map<string, Promise<RawFetchSnapshot>>();
 
 let nativeFetchRef: typeof fetch | null = null;
 let isGlobalFastFetchInstalled = false;
+let hasPurgedLegacyCache = false;
+
+function purgeLegacySessionCache(): void {
+  if (hasPurgedLegacyCache || typeof window === "undefined") return;
+  hasPurgedLegacyCache = true;
+  try {
+    const obsoleteKeys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith(LEGACY_SESSION_CACHE_PREFIX)) {
+        obsoleteKeys.push(k);
+      }
+    }
+    for (const k of obsoleteKeys) {
+      sessionStorage.removeItem(k);
+    }
+  } catch {
+    // ignore storage access errors
+  }
+}
+
+function shouldPersistResponseToCache(key: string, data: unknown): boolean {
+  if (!data || typeof data !== "object") return true;
+  const record = data as Record<string, unknown>;
+  if (record.success === false) return false;
+
+  // 認証ユーザー指定ありで権限（memberId / playerIds）が未解決のレスポンスはキャッシュ固定化させない（承認・統合直後の権限ロック防止）
+  const hasIdentityQuery =
+    (key.includes("userId=") && !key.includes("userId=&")) ||
+    (key.includes("userName=") && !key.includes("userName=&"));
+
+  if (hasIdentityQuery && key.startsWith("/api/liff/attendance-matrix")) {
+    const myInfo = record.myInfo as
+      | { memberId?: string | null; memberIds?: string[]; playerIds?: string[]; isITAdmin?: boolean }
+      | undefined;
+    const hasResolvedIdentity = Boolean(
+      myInfo?.memberId ||
+        (Array.isArray(myInfo?.memberIds) && myInfo.memberIds.length > 0) ||
+        (Array.isArray(myInfo?.playerIds) && myInfo.playerIds.length > 0) ||
+        myInfo?.isITAdmin
+    );
+    if (!hasResolvedIdentity) return false;
+  }
+
+  if (hasIdentityQuery && key.startsWith("/api/liff/my-family")) {
+    const hasMember = Boolean(record.memberId);
+    const children = record.children;
+    const hasChildren = Array.isArray(children) && children.length > 0;
+    if (!hasMember && !hasChildren) return false;
+  }
+
+  return true;
+}
 
 function getNativeFetch(): typeof fetch {
   if (nativeFetchRef) return nativeFetchRef;
@@ -96,6 +150,17 @@ function readFromCache<T>(key: string): CacheEntry<T> | null {
 }
 
 function writeToCache<T>(key: string, data: T): void {
+  purgeLegacySessionCache();
+  if (!shouldPersistResponseToCache(key, data)) {
+    memoryCache.delete(key);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
+      } catch {}
+    }
+    return;
+  }
+
   const entry: CacheEntry<T> = { data, updatedAt: Date.now() };
   memoryCache.set(key, entry);
 
@@ -250,6 +315,7 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
  */
 export function installLiffFastFetchCache(): void {
   if (typeof window === "undefined" || isGlobalFastFetchInstalled) return;
+  purgeLegacySessionCache();
   const baseFetch = getNativeFetch();
   isGlobalFastFetchInstalled = true;
 
@@ -287,8 +353,17 @@ export function installLiffFastFetchCache(): void {
       }
     }
 
+    // 明示的バイパスヘッダー（手動更新ボタン等）がある場合はキャッシュを読まず最新取得して上書き
+    let bypassCache = false;
+    if (init?.headers) {
+      try {
+        const hdrs = new Headers(init.headers);
+        bypassCache = hdrs.get("x-iscore-bypass-cache") === "1";
+      } catch {}
+    }
+
     // GET リクエスト：キャッシュヒット時は 0ms で Response を即返却し、古ければ裏で再検証
-    const cached = readFromCache<unknown>(cacheKey);
+    const cached = !bypassCache ? readFromCache<unknown>(cacheKey) : null;
     if (cached) {
       const age = Date.now() - cached.updatedAt;
       if (age > DEFAULT_FRESH_MS) {
@@ -357,18 +432,22 @@ export function prefetchLiffCoreEndpoints(params: {
   const uid = params.userId && params.userId !== "cached-user" ? params.userId : "";
   const uName = encodeURIComponent(params.userName || "");
   const cachedMemberId = localStorage.getItem(`iscore_member_id_${params.teamId}`) || "";
-  const matrixQs = new URLSearchParams({
-    teamId: params.teamId,
-    userId: uid,
-    userName: params.userName || "",
-  });
-  if (cachedMemberId) matrixQs.set("memberId", cachedMemberId);
 
   const urls = [
     `/api/liff/schedule?teamId=${params.teamId}&userId=${uid}&userName=${uName}`,
     `/api/liff/matches?teamId=${params.teamId}`,
-    `/api/liff/attendance-matrix?${matrixQs.toString()}`,
   ];
+
+  // 出欠マトリクスはユーザーID確定後（またはデモ時）のみプリフェッチし、未認証状態の誤キャッシュを防止
+  if (uid || params.teamId === "demo-team") {
+    const matrixQs = new URLSearchParams({
+      teamId: params.teamId,
+      userId: uid,
+      userName: params.userName || "",
+    });
+    if (cachedMemberId) matrixQs.set("memberId", cachedMemberId);
+    urls.push(`/api/liff/attendance-matrix?${matrixQs.toString()}`);
+  }
 
   urls.forEach((url, index) => {
     setTimeout(() => {

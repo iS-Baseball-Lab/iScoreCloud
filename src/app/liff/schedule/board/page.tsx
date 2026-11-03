@@ -6,6 +6,7 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Calendar as CalendarIcon,
   Users,
@@ -436,10 +437,132 @@ export default function AttendanceMatrixBoardPage() {
   } | null>(null);
   const [isSavingDayNote, setIsSavingDayNote] = useState(false);
 
-  // データ取得
-  const loadMatrixData = useCallback(async () => {
-    setIsLoading(true);
-    try {
+  const applyMatrixPayload = useCallback(
+    (data: AttendanceMatrixApiResponse, teamId: string, isInitialApply: boolean) => {
+      if (!data.success) return;
+
+      setEvents(data.events || []);
+      const g = data.groups || {};
+      const mothers = g.mothers || [];
+      const fathers = g.fathers || [];
+      const parents = g.parents || [...mothers, ...fathers];
+      setGroups({
+        players: g.players || [],
+        parents: parents,
+        mothers: mothers,
+        fathers: fathers,
+        staff: g.staff || [],
+      });
+      setMatrix(data.matrix || {});
+      if (data.myInfo) {
+        const resolvedMemberId = data.myInfo.memberId || null;
+        const resolvedMemberIds = Array.isArray(data.myInfo.memberIds)
+          ? data.myInfo.memberIds
+          : resolvedMemberId
+          ? [resolvedMemberId]
+          : [];
+        setMyInfo({
+          memberId: resolvedMemberId,
+          memberIds: resolvedMemberIds,
+          playerIds: data.myInfo.playerIds || [],
+          isITAdmin: !!data.myInfo.isITAdmin,
+          isManager: !!data.myInfo.isManager,
+          name: data.myInfo.name || "",
+        });
+        if (typeof window !== "undefined" && !data.isDemo) {
+          if (resolvedMemberId) {
+            localStorage.setItem(`iscore_member_id_${teamId}`, resolvedMemberId);
+          } else {
+            localStorage.removeItem(`iscore_member_id_${teamId}`);
+          }
+        }
+        if (isInitialApply) {
+          // 🛡️ 初期状態は誤操作防止のため「通常入力（OFF）」
+          setIsManagerOverrideMode(false);
+        }
+      }
+
+      if (isInitialApply) {
+        // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
+        const myId = data.myInfo?.memberId;
+        const myIdsSet = new Set<string>(
+          myId
+            ? [myId]
+            : Array.isArray(data.myInfo?.memberIds)
+            ? data.myInfo.memberIds
+            : []
+        );
+        const myGroupType = data.myInfo?.groupType;
+
+        if (myGroupType === "father") {
+          setSelectedGroupTab("father");
+        } else if (myGroupType === "mother") {
+          setSelectedGroupTab("mother");
+        } else if (myGroupType === "staff") {
+          setSelectedGroupTab("staff");
+        } else if (myIdsSet.size > 0) {
+          if (fathers.some((f: MemberPerson) => myIdsSet.has(f.id))) {
+            setSelectedGroupTab("father");
+          } else if (mothers.some((m: MemberPerson) => myIdsSet.has(m.id))) {
+            setSelectedGroupTab("mother");
+          } else if ((g.staff || []).some((s: MemberPerson) => myIdsSet.has(s.id))) {
+            setSelectedGroupTab("staff");
+          } else if (parents.some((p: MemberPerson) => myIdsSet.has(p.id))) {
+            setSelectedGroupTab("father");
+          } else if ((g.players || []).some((p: MemberPerson) => myIdsSet.has(p.id))) {
+            setSelectedGroupTab("player");
+          }
+        }
+      }
+
+      // 🌟 2. グループ別ステータス設定の復元（LocalStorage ＆ サーバー設定）
+      let effectiveStatusConfig: GroupStatusConfigMap = DEFAULT_GROUP_STATUS_CONFIG;
+      try {
+        const localKey = `iscore_matrix_status_config_${teamId}`;
+        const localSaved = localStorage.getItem(localKey);
+        if (localSaved) {
+          const parsed = JSON.parse(localSaved);
+          effectiveStatusConfig = { ...effectiveStatusConfig, ...parsed };
+        }
+      } catch {}
+
+      if (data.attendanceStatusConfig) {
+        effectiveStatusConfig = { ...effectiveStatusConfig, ...data.attendanceStatusConfig };
+      }
+      setGroupStatusConfig(effectiveStatusConfig);
+
+      // メンバー並び順の復元（LocalStorage ＆ サーバー設定）
+      let effectiveOrder: MemberSortOrderMap = {};
+      try {
+        const localKey = `iscore_matrix_order_${teamId}`;
+        const localSaved = localStorage.getItem(localKey);
+        if (localSaved) effectiveOrder = JSON.parse(localSaved);
+      } catch {}
+
+      if (data.memberSortOrder && Object.keys(data.memberSortOrder).length > 0) {
+        effectiveOrder = { ...effectiveOrder, ...data.memberSortOrder };
+      }
+      setMemberSortOrder(effectiveOrder);
+
+      // 🏷️ メンバーサブラベル（班・役職等）の復元（LocalStorage ＆ サーバー設定）
+      let effectiveSubLabels: Record<string, string> = {};
+      try {
+        const localKey = `iscore_matrix_sublabels_${teamId}`;
+        const localSaved = localStorage.getItem(localKey);
+        if (localSaved) effectiveSubLabels = JSON.parse(localSaved);
+      } catch {}
+
+      if (data.memberSubLabels && Object.keys(data.memberSubLabels).length > 0) {
+        effectiveSubLabels = { ...effectiveSubLabels, ...data.memberSubLabels };
+      }
+      setMemberSubLabels(effectiveSubLabels);
+    },
+    []
+  );
+
+  // データ取得（SWRキャッシュ即時表示 ＋ バックグラウンド最新化で古い権限キャッシュ固定化を完全防止）
+  const loadMatrixData = useCallback(
+    async (forceRefresh = false) => {
       const teamId =
         currentTeam?.id ||
         (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
@@ -464,131 +587,49 @@ export default function AttendanceMatrixBoardPage() {
       if (cachedMemberId) {
         params.set("memberId", cachedMemberId);
       }
+      const endpoint = `/api/liff/attendance-matrix?${params.toString()}`;
 
-      const res = await fetch(`/api/liff/attendance-matrix?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to load matrix");
+      const cached = !forceRefresh ? peekLiffApiCache<AttendanceMatrixApiResponse>(endpoint) : null;
+      const cachedHasIdentity = Boolean(
+        cached?.myInfo?.memberId ||
+          (cached?.myInfo?.memberIds && cached.myInfo.memberIds.length > 0) ||
+          (cached?.myInfo?.playerIds && cached.myInfo.playerIds.length > 0) ||
+          cached?.isDemo
+      );
 
-      const data = (await res.json()) as AttendanceMatrixApiResponse;
-      if (data.success) {
-        setEvents(data.events || []);
-        const g = data.groups || {};
-        const mothers = g.mothers || [];
-        const fathers = g.fathers || [];
-        const parents = g.parents || [...mothers, ...fathers];
-        setGroups({
-          players: g.players || [],
-          parents: parents,
-          mothers: mothers,
-          fathers: fathers,
-          staff: g.staff || [],
-        });
-        setMatrix(data.matrix || {});
-        if (data.myInfo) {
-          const resolvedMemberId = data.myInfo.memberId || null;
-          const resolvedMemberIds = Array.isArray(data.myInfo.memberIds)
-            ? data.myInfo.memberIds
-            : resolvedMemberId
-            ? [resolvedMemberId]
-            : [];
-          setMyInfo({
-            memberId: resolvedMemberId,
-            memberIds: resolvedMemberIds,
-            playerIds: data.myInfo.playerIds || [],
-            isITAdmin: !!data.myInfo.isITAdmin,
-            isManager: !!data.myInfo.isManager,
-            name: data.myInfo.name || "",
-          });
-          if (typeof window !== "undefined" && !data.isDemo && resolvedMemberId) {
-            localStorage.setItem(`iscore_member_id_${teamId}`, resolvedMemberId);
-          }
-          // 🛡️ 初期状態は誤操作防止のため「通常入力（OFF）」
-          setIsManagerOverrideMode(false);
-        }
-
-        // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
-        const myId = data.myInfo?.memberId;
-        const myIdsSet = new Set<string>(
-          Array.isArray(data.myInfo?.memberIds)
-            ? data.myInfo.memberIds
-            : myId
-            ? [myId]
-            : []
-        );
-        const myGroupType = data.myInfo?.groupType;
-
-        if (myGroupType === "father") {
-          setSelectedGroupTab("father");
-        } else if (myGroupType === "mother") {
-          setSelectedGroupTab("mother");
-        } else if (myGroupType === "staff") {
-          setSelectedGroupTab("staff");
-        } else if (myIdsSet.size > 0) {
-          if (fathers.some((f: MemberPerson) => myIdsSet.has(f.id))) {
-            setSelectedGroupTab("father");
-          } else if (mothers.some((m: MemberPerson) => myIdsSet.has(m.id))) {
-            setSelectedGroupTab("mother");
-          } else if ((g.staff || []).some((s: MemberPerson) => myIdsSet.has(s.id))) {
-            setSelectedGroupTab("staff");
-          } else if (parents.some((p: MemberPerson) => myIdsSet.has(p.id))) {
-            setSelectedGroupTab("father");
-          } else if ((g.players || []).some((p: MemberPerson) => myIdsSet.has(p.id))) {
-            setSelectedGroupTab("player");
-          }
-        }
-
-        // 🌟 2. グループ別ステータス設定の復元（LocalStorage ＆ サーバー設定）
-        let effectiveStatusConfig: GroupStatusConfigMap = DEFAULT_GROUP_STATUS_CONFIG;
-        try {
-          const localKey = `iscore_matrix_status_config_${teamId}`;
-          const localSaved = localStorage.getItem(localKey);
-          if (localSaved) {
-            const parsed = JSON.parse(localSaved);
-            effectiveStatusConfig = { ...effectiveStatusConfig, ...parsed };
-          }
-        } catch {}
-
-        if (data.attendanceStatusConfig) {
-          effectiveStatusConfig = { ...effectiveStatusConfig, ...data.attendanceStatusConfig };
-        }
-        setGroupStatusConfig(effectiveStatusConfig);
-
-        // メンバー並び順の復元（LocalStorage ＆ サーバー設定）
-        let effectiveOrder: MemberSortOrderMap = {};
-        try {
-          const localKey = `iscore_matrix_order_${teamId}`;
-          const localSaved = localStorage.getItem(localKey);
-          if (localSaved) effectiveOrder = JSON.parse(localSaved);
-        } catch {}
-
-        if (data.memberSortOrder && Object.keys(data.memberSortOrder).length > 0) {
-          effectiveOrder = { ...effectiveOrder, ...data.memberSortOrder };
-        }
-        setMemberSortOrder(effectiveOrder);
-
-        // 🏷️ メンバーサブラベル（班・役職等）の復元（LocalStorage ＆ サーバー設定）
-        let effectiveSubLabels: Record<string, string> = {};
-        try {
-          const localKey = `iscore_matrix_sublabels_${teamId}`;
-          const localSaved = localStorage.getItem(localKey);
-          if (localSaved) effectiveSubLabels = JSON.parse(localSaved);
-        } catch {}
-
-        if (data.memberSubLabels && Object.keys(data.memberSubLabels).length > 0) {
-          effectiveSubLabels = { ...effectiveSubLabels, ...data.memberSubLabels };
-        }
-        setMemberSubLabels(effectiveSubLabels);
+      if (cached && cachedHasIdentity) {
+        applyMatrixPayload(cached, teamId, true);
+        setSelectedGroupTab((prev) => prev ?? "father");
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
       }
-    } catch (err) {
-      console.error("Matrix load error:", err);
-      toast.error("出欠一覧表データの読み込みに失敗しました");
-    } finally {
-      setSelectedGroupTab(prev => prev ?? "father");
-      setIsLoading(false);
-    }
-  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+
+      try {
+        const shouldForce =
+          forceRefresh || Boolean(cached && !cachedHasIdentity && (effectiveUid || effectiveName));
+        const data = await fetchLiffJsonSWR<AttendanceMatrixApiResponse>(endpoint, {
+          forceRefresh: shouldForce,
+          onRevalidate: (fresh) => {
+            applyMatrixPayload(fresh, teamId, false);
+          },
+        });
+        applyMatrixPayload(data, teamId, !(cached && cachedHasIdentity));
+      } catch (err) {
+        console.error("Matrix load error:", err);
+        if (!cached) {
+          toast.error("出欠一覧表データの読み込みに失敗しました");
+        }
+      } finally {
+        setSelectedGroupTab((prev) => prev ?? "father");
+        setIsLoading(false);
+      }
+    },
+    [applyMatrixPayload, currentTeam?.id, profile?.userId, profile?.displayName]
+  );
 
   useEffect(() => {
-    loadMatrixData();
+    void loadMatrixData(false);
   }, [loadMatrixData]);
 
   const todayStr = useMemo(() => getTodayJST(), []);
@@ -1009,9 +1050,9 @@ export default function AttendanceMatrixBoardPage() {
   // 編集権限チェック
   const canEditPerson = useCallback((personId: string, _groupType: string) => {
     if (isDemo) return true; // デモ時は自由に操作可能
-    // 🌟 IT管理者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
-    if (myInfo.isITAdmin && isManagerOverrideMode) return true;
-    // 通常（OFF時、および一般保護者・選手）は、自分自身または自分の子ども選手のみ編集可能
+    // 🌟 管理者・指導者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
+    if ((myInfo.isITAdmin || myInfo.isManager) && isManagerOverrideMode) return true;
+    // 通常（OFF時、および一般保護者・選手）は、本人・配偶者・子ども選手の家族単位で編集可能
     if (myInfo.memberId && myInfo.memberId === personId) return true;
     if (myInfo.memberIds && myInfo.memberIds.includes(personId)) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
@@ -1036,7 +1077,7 @@ export default function AttendanceMatrixBoardPage() {
         });
         return;
       }
-      toast.info(`${person.name} さんの出欠変更権限がありません（本人または管理者のみ編集可能）`);
+      toast.info(`${person.name} さんの出欠変更権限がありません（本人・ご家族または管理者のみ編集可能）`);
       return;
     }
 
@@ -1474,7 +1515,7 @@ export default function AttendanceMatrixBoardPage() {
                 </button>
               )}
 
-              {myInfo.isITAdmin && (
+              {(myInfo.isITAdmin || myInfo.isManager) && (
                 <button
                   type="button"
                   onClick={() => setIsManagerOverrideMode(prev => !prev)}
@@ -2111,7 +2152,7 @@ export default function AttendanceMatrixBoardPage() {
 
                 {/* 権限注記 */}
                 <p className="text-[10px] text-muted-foreground/80 text-center font-bold">
-                  ※ 出欠の変更はご本人、またはIT管理者のみ可能です
+                  ※ 出欠の変更はご本人・ご家族、または管理者のみ可能です
                 </p>
 
                 {/* 閉じるボタン */}

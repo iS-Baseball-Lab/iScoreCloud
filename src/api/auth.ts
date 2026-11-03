@@ -2,12 +2,36 @@
 import { Hono } from 'hono'
 import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
-import { eq, or } from 'drizzle-orm'
+import { eq, or, inArray } from 'drizzle-orm'
 import { teams, teamMembers, organizations } from '@/db/schema/team'
-import { account } from '@/db/schema/auth'
+import { account, user as authUserTable } from '@/db/schema/auth'
 import type { WorkerEnv, Membership, AuthUser } from '@/types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
+
+function buildCanonicalNames(raw: string | null | undefined): Set<string> {
+  const set = new Set<string>();
+  if (!raw) return set;
+  const trimmed = raw.trim();
+  if (!trimmed) return set;
+  const direct = trimmed.replace(/[\s　()（）【】［］\[\]]+/g, "");
+  if (direct.length >= 2) set.add(direct);
+  const tokens = trimmed.split(/[\s　]+/).filter(Boolean);
+  if (tokens.length === 2) {
+    const ab = (tokens[0] + tokens[1]).replace(/[\s　()（）【】［］\[\]]+/g, "");
+    const ba = (tokens[1] + tokens[0]).replace(/[\s　()（）【】［］\[\]]+/g, "");
+    if (ab.length >= 2) set.add(ab);
+    if (ba.length >= 2) set.add(ba);
+  }
+  return set;
+}
+
+function extractStem(rawName: string): string {
+  return rawName
+    .replace(/[\s　()（）【】［］\[\]]*(?:お父さん|お母さん|保護者|パパ|ママ|父|母|夫|妻)[\s　()（）【】［］\[\]]*$/g, "")
+    .replace(/[\s　()（）【】［］\[\]]+/g, "")
+    .trim();
+}
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -41,13 +65,27 @@ app.get('/me', async (c) => {
       .from(account)
       .where(or(eq(account.userId, user.id), eq(account.accountId, user.id)))
       .all();
+    const extraUserIds: string[] = [];
     for (const acc of linkedAccounts) {
       if (acc.accountId) linkedUserIdsSet.add(acc.accountId);
-      if (acc.userId) linkedUserIdsSet.add(acc.userId);
+      if (acc.userId && !linkedUserIdsSet.has(acc.userId)) {
+        linkedUserIdsSet.add(acc.userId);
+        extraUserIds.push(acc.userId);
+      }
+    }
+    if (extraUserIds.length > 0) {
+      const hopAccounts = await db
+        .select({ accountId: account.accountId })
+        .from(account)
+        .where(inArray(account.userId, extraUserIds))
+        .all();
+      for (const h of hopAccounts) {
+        if (h.accountId) linkedUserIdsSet.add(h.accountId);
+      }
     }
 
-    const candidateUserIds = Array.from(linkedUserIdsSet);
-    const userTeams = await db
+    let candidateUserIds = Array.from(linkedUserIdsSet);
+    let userTeams = await db
       .select({
         teamId: teams.id,
         teamName: teams.name,
@@ -61,6 +99,64 @@ app.get('/me', async (c) => {
       .innerJoin(teams, eq(teamMembers.teamId, teams.id))
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
       .where(or(...candidateUserIds.map((uid) => eq(teamMembers.userId, uid))));
+
+    // 別プロバイダ（例：Google/Microsoftのサブアカウント）でログインした場合の実名・家族名補完
+    if (userTeams.length === 0 && user.name) {
+      const myCanon = buildCanonicalNames(user.name);
+      const normMyName = user.name.replace(/[\s　()（）【】［］\[\]]+/g, "").trim();
+      if (myCanon.size > 0 || normMyName.length >= 2) {
+        const allActiveWithUser = await db
+          .select({
+            memberUserId: teamMembers.userId,
+            memberName: teamMembers.name,
+            linkedUserName: authUserTable.name,
+          })
+          .from(teamMembers)
+          .leftJoin(authUserTable, eq(teamMembers.userId, authUserTable.id))
+          .where(eq(teamMembers.status, "active"))
+          .all();
+
+        const matchedUids = new Set<string>();
+        for (const row of allActiveWithUser) {
+          if (!row.memberUserId) continue;
+          const rowCanon = buildCanonicalNames(row.linkedUserName);
+          let hit = false;
+          for (const cn of rowCanon) {
+            if (myCanon.has(cn)) {
+              hit = true;
+              break;
+            }
+          }
+          if (!hit && row.memberName && normMyName.length >= 2) {
+            const stem = extractStem(row.memberName);
+            if (stem.length >= 2 && normMyName.startsWith(stem)) {
+              hit = true;
+            }
+          }
+          if (hit) matchedUids.add(row.memberUserId);
+        }
+
+        if (matchedUids.size === 1) {
+          const matchedUid = Array.from(matchedUids)[0];
+          linkedUserIdsSet.add(matchedUid);
+          candidateUserIds = Array.from(linkedUserIdsSet);
+          userTeams = await db
+            .select({
+              teamId: teams.id,
+              teamName: teams.name,
+              organizationName: organizations.name,
+              organizationCategory: organizations.category,
+              role: teamMembers.role,
+              status: teamMembers.status,
+              logoImageUrl: organizations.logoImageUrl,
+            })
+            .from(teamMembers)
+            .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+            .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+            .where(or(...candidateUserIds.map((uid) => eq(teamMembers.userId, uid))));
+        }
+      }
+    }
 
     const seenTeamIds = new Set<string>();
     userTeams.forEach((t) => {

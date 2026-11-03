@@ -105,6 +105,7 @@ export default function AttendancePage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupRelations, setGroupRelations] = useState<GroupMemberRelation[]>([]);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myUserName, setMyUserName] = useState<string>("");
   const [myLinkedUserIds, setMyLinkedUserIds] = useState<string[]>([]);
   const [parentChildList, setParentChildList] = useState<Array<{ parentId: string; childId: string }>>([]);
   const [myRole, setMyRole] = useState<string>("");
@@ -275,6 +276,9 @@ export default function AttendancePage() {
         const meJson = await meRes.json() as any;
         if (meJson.success && meJson.data) {
           setMyUserId(meJson.data.id);
+          if (typeof meJson.data.name === "string") {
+            setMyUserName(meJson.data.name);
+          }
           const linked: string[] = Array.isArray(meJson.data.linkedUserIds)
             ? meJson.data.linkedUserIds
             : meJson.data.id
@@ -377,17 +381,63 @@ export default function AttendancePage() {
     const linkedSet = new Set<string>(myLinkedUserIds);
     if (myUserId) linkedSet.add(myUserId);
 
-    const myMemberIdsSet = new Set<string>(
+    const normalizeCompact = (raw?: string | null): string =>
+      (raw || "").replace(/[\s\u3000]+/g, "").trim().toLowerCase();
+
+    const extractParentStem = (raw?: string | null): string | null => {
+      const cleaned = (raw || "").trim();
+      const match = cleaned.match(/^(.+?)(?:[\s\u3000]*[\(（]?(?:父|母|保護者|父・母)[\)）]?)$/);
+      if (!match) return null;
+      const stem = normalizeCompact(match[1]);
+      return stem.length >= 1 ? stem : null;
+    };
+
+    const primaryMemberIdsSet = new Set<string>(
       membersData
         .filter((m) => Boolean(m.userId && linkedSet.has(m.userId)))
         .map((m) => m.id)
     );
 
+    // 名前フォールバック（未連携アカウントでも一意な苗字・氏名から本人行を特定）
+    if (primaryMemberIdsSet.size === 0 && myUserName.trim()) {
+      const compactMyName = normalizeCompact(myUserName);
+      const exactMatches = membersData.filter(
+        (m) => m.memberType !== "player" && normalizeCompact(m.name) === compactMyName
+      );
+      if (exactMatches.length === 1) {
+        primaryMemberIdsSet.add(exactMatches[0].id);
+      } else if (exactMatches.length === 0 && compactMyName.length >= 2) {
+        const stemMatches = membersData.filter((m) => {
+          if (m.memberType === "player") return false;
+          const stem = extractParentStem(m.name);
+          return Boolean(
+            stem &&
+              compactMyName.length > stem.length &&
+              (compactMyName.startsWith(stem) || compactMyName.endsWith(stem))
+          );
+        });
+        const uniqueStems = new Set(stemMatches.map((m) => extractParentStem(m.name)).filter(Boolean));
+        if (uniqueStems.size === 1) {
+          stemMatches.forEach((m) => primaryMemberIdsSet.add(m.id));
+        }
+      }
+    }
+
     const myChildPlayerIdsSet = new Set<string>(
       parentChildList
-        .filter((rel) => myMemberIdsSet.has(rel.parentId))
+        .filter((rel) => primaryMemberIdsSet.has(rel.parentId))
         .map((rel) => rel.childId)
     );
+
+    // 同じ子ども（選手）に紐づく配偶者（父⇔母）も家族として出欠登録・編集を許可
+    const myFamilyMemberIdsSet = new Set<string>(primaryMemberIdsSet);
+    if (myChildPlayerIdsSet.size > 0) {
+      parentChildList.forEach((rel) => {
+        if (myChildPlayerIdsSet.has(rel.childId) && rel.parentId) {
+          myFamilyMemberIdsSet.add(rel.parentId);
+        }
+      });
+    }
 
     const rows: {
       type: "player" | "member";
@@ -424,20 +474,20 @@ export default function AttendancePage() {
       membersData.forEach(m => {
         if (m.memberType === "player") return; // 🌟 選手は除外する
         if (filteredMemberIdsByGroup && !filteredMemberIdsByGroup.memberIds.has(m.id)) return;
-        const isMe = Boolean(m.userId && linkedSet.has(m.userId));
+        const isFamilyMember = Boolean((m.userId && linkedSet.has(m.userId)) || myFamilyMemberIdsSet.has(m.id));
         rows.push({
           type: "member",
           id: m.id,
           name: m.name,
           memberType: m.memberType,
           avatarUrl: m.avatarUrl,
-          canEdit: canManage || isMe
+          canEdit: canManage || isFamilyMember
         });
       });
     }
 
     return rows;
-  }, [selectedFilter, playersData, membersData, filteredMemberIdsByGroup, myUserId, myLinkedUserIds, parentChildList, canManage]);
+  }, [selectedFilter, playersData, membersData, filteredMemberIdsByGroup, myUserId, myUserName, myLinkedUserIds, parentChildList, canManage]);
 
 
 
@@ -1073,7 +1123,13 @@ export default function AttendancePage() {
                               <td key={e.id} className="p-0.5 sm:p-1 border-r border-border/30 text-center">
                                 <div className="flex justify-center">
                                   <button
-                                    onClick={() => row.canEdit && openAttendEditModal(e, row, record || null)}
+                                    onClick={() => {
+                                      if (!row.canEdit) {
+                                        toast.info(`${row.name} さんの出欠変更権限がありません（本人・ご家族または管理者のみ編集可能）`);
+                                        return;
+                                      }
+                                      openAttendEditModal(e, row, record || null);
+                                    }}
                                     className={cn(
                                       "relative h-7 w-7 rounded-lg flex items-center justify-center font-black text-xs shadow-sm transition-transform active:scale-90",
                                       conf.bg,

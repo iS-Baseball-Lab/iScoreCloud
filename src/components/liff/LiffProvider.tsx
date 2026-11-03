@@ -23,6 +23,7 @@ export interface LiffTeamItem {
   logoImageUrl?: string;
   role?: string;
   isDemo?: boolean;
+  isMember?: boolean;
 }
 
 interface HubTeamsPayload {
@@ -339,21 +340,31 @@ export function LiffProvider({
 
   // 本家Web版（Better-Auth）のセッションが存在する場合、プロファイルに自動反映
   useEffect(() => {
-    if (authSession?.user?.name) {
+    if (authSession?.user?.id && authSession?.user?.name) {
       const userProf: LiffUserProfile = {
         userId: authSession.user.id,
         displayName: authSession.user.name,
         pictureUrl: authSession.user.image || undefined,
       };
-      setProfile((prev) => prev || userProf);
-      setIsLoggedIn(true);
-      localStorage.setItem("iscore_user_name", authSession.user.name);
-      localStorage.setItem("iscore_user_id", authSession.user.id);
-      if (authSession.user.image) {
-        localStorage.setItem("iscore_user_avatar", authSession.user.image);
+      if (!isInClient || !localStorage.getItem("iscore_user_id")) {
+        localStorage.setItem("iscore_user_name", authSession.user.name);
+        localStorage.setItem("iscore_user_id", authSession.user.id);
+        if (authSession.user.image) {
+          localStorage.setItem("iscore_user_avatar", authSession.user.image);
+        }
       }
+      setProfile((prev) => {
+        if (!prev || !prev.userId || prev.userId === "cached-user") {
+          return userProf;
+        }
+        if (!isInClient && prev.userId !== userProf.userId) {
+          return userProf;
+        }
+        return prev;
+      });
+      setIsLoggedIn(true);
     }
-  }, [authSession]);
+  }, [authSession, isInClient]);
 
   // ログイン処理ハンドラー (LIFFとBetter-Authソーシャルログインのハイブリッド)
   const handleLogin = useCallback(async () => {
@@ -397,13 +408,13 @@ export function LiffProvider({
           if (instance.isLoggedIn()) {
             const userProfile = await getLiffProfile();
             if (isMounted && userProfile) {
-              setProfile(userProfile);
-              setIsLoggedIn(true);
               localStorage.setItem("iscore_user_name", userProfile.displayName);
               localStorage.setItem("iscore_user_id", userProfile.userId);
               if (userProfile.pictureUrl) {
                 localStorage.setItem("iscore_user_avatar", userProfile.pictureUrl);
               }
+              setProfile(userProfile);
+              setIsLoggedIn(true);
             }
           } else if (inClient) {
             instance.login();
