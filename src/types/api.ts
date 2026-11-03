@@ -5,6 +5,7 @@
 
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "@/db/schema";
+import type { MatchDayOps } from "@/types/match";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Cloudflare Workers / Hono 環境型
@@ -100,6 +101,7 @@ export interface CreateMatchBody {
   innings?: number;
   tournamentName?: string;
   venueId?: string | null;
+  matchDayOps?: MatchDayOps | null;
 }
 
 export interface UpdateMatchBody {
@@ -119,6 +121,7 @@ export interface UpdateMatchBody {
   myInningScores?: Array<number | null>;
   opponentInningScores?: Array<number | null>;
   youtubeUrl?: string | null;
+  matchDayOps?: MatchDayOps | null;
 }
 
 export interface FinishMatchBody {

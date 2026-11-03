@@ -114,6 +114,7 @@ export const matches = sqliteTable("matches", {
   
   // 🌟 AIスコアブック解析の矛盾点（バリデーションメッセージ）を保持するJSON文字列
   scorebookValidations: text("scorebook_validations").default('[]'),
+  matchDayOps: text("match_day_ops").default('{}'),
   
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

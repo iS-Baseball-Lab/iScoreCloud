@@ -34,6 +34,13 @@ import {
   teamGroupMembers,
 } from "@/db/schema";
 import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
+import type {
+  LiffAdultMemberOption,
+  LiffMatchOpsContextResponse,
+  LiffMatchScheduleCarpoolCar,
+  LiffMatchScheduleSyncInfo,
+  LiffMyMatchIdentity,
+} from "@/lib/liff/match-day-ops";
 import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
@@ -3358,6 +3365,390 @@ app.get("/carpool", async (c) => {
   } catch (error: any) {
     console.error("Failed to load liff carpool:", error);
     return c.json({ success: false, carpool: null });
+  }
+});
+
+/**
+ * 🧢 試合詳細ページ用：当日運営スタッフ候補・ログイン保護者本人照合・同日スケジュール/配車サマリー一括取得API
+ * - N+1ゼロ（Promise.all 並列取得 ＋ 配車乗車メンバーの inArray 一括取得）
+ * - 書き込みDDLロックゼロ（Isolateキャッシュ済みスキーマ検証のみ）
+ */
+app.get("/match-ops-context", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+  const matchDate = c.req.query("matchDate") || "";
+  const linkedEventId = c.req.query("linkedEventId") || "";
+  const rawUserId = c.req.query("userId") || "";
+  const rawUserName = c.req.query("userName") || "";
+
+  const extractDateKey = (raw: string): string => {
+    const m = raw.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (!m) return "";
+    return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  };
+
+  const toJstDateKey = (val: Date | number | string | null | undefined): string => {
+    if (!val) return "";
+    const ms = val instanceof Date ? val.getTime() : typeof val === "number" ? val : new Date(val).getTime();
+    if (!Number.isFinite(ms)) return "";
+    const jst = new Date(ms + 9 * 3600 * 1000);
+    return jst.toISOString().slice(0, 10);
+  };
+
+  const toJstTimeText = (val: Date | number | string | null | undefined): string | null => {
+    if (!val) return null;
+    const ms = val instanceof Date ? val.getTime() : typeof val === "number" ? val : new Date(val).getTime();
+    if (!Number.isFinite(ms)) return null;
+    const jst = new Date(ms + 9 * 3600 * 1000);
+    const hh = String(jst.getUTCHours()).padStart(2, "0");
+    const mi = String(jst.getUTCMinutes()).padStart(2, "0");
+    if (hh === "00" && mi === "00") return null;
+    return `${hh}:${mi}`;
+  };
+
+  // デモモード
+  if (!teamId || teamId === "demo-team") {
+    const demoAdultMembers: LiffAdultMemberOption[] = [
+      { id: "demo-m-1", name: "山下 監督", memberType: "staff", role: "coach", isFatherOrStaff: true },
+      { id: "demo-m-2", name: "田中 パパ", memberType: "staff", role: "coach", isFatherOrStaff: true },
+      { id: "demo-m-3", name: "渡辺 パパ", memberType: "staff", role: "coach", isFatherOrStaff: true },
+      { id: "demo-m-4", name: "鈴木 パパ", memberType: "guardian", role: "member", isFatherOrStaff: true },
+      { id: "demo-m-5", name: "小西 父", memberType: "guardian", role: "member", isFatherOrStaff: true },
+      { id: "demo-m-6", name: "中島 父", memberType: "guardian", role: "member", isFatherOrStaff: true },
+      { id: "demo-m-7", name: "高橋 父", memberType: "guardian", role: "member", isFatherOrStaff: true },
+      { id: "demo-m-8", name: "山本 父", memberType: "guardian", role: "member", isFatherOrStaff: true },
+      { id: "demo-m-9", name: "佐藤 ママ", memberType: "guardian", role: "member", isFatherOrStaff: false },
+      { id: "demo-m-10", name: "山田 母", memberType: "guardian", role: "member", isFatherOrStaff: false },
+    ];
+
+    const targetDateKey = extractDateKey(matchDate);
+    const isDemoScheduledMatch = !targetDateKey || targetDateKey === "2026-11-08";
+
+    const demoScheduleSync: LiffMatchScheduleSyncInfo | null = isDemoScheduledMatch
+      ? {
+          eventId: "demo-event-3",
+          title: "秋季大会 2回戦 vs レッドソックス",
+          dutyGroup: "B班（鈴木・佐藤・高橋）",
+          needsLunch: true,
+          needsSnack: true,
+          gatherTime: "07:45",
+          gatherLocation: "桜本小学校 正門前",
+          destination: "多摩川緑地野球場 第1駐車場",
+          cars: [
+            {
+              carNumber: 1,
+              driverName: "鈴木 パパ",
+              carModel: "セレナ (白)",
+              plate: "・12-34",
+              capacity: 6,
+              isCargo: false,
+              passengers: [
+                { name: "鈴木 蓮 (選手)", type: "player" },
+                { name: "高橋 陸 (選手)", type: "player" },
+                { name: "田中 健太 (選手)", type: "player" },
+                { name: "佐藤 ママ (保護者)", type: "adult" },
+              ],
+            },
+            {
+              carNumber: 2,
+              driverName: "田中 パパ",
+              carModel: "アルファード (黒)",
+              plate: "・・88",
+              capacity: 5,
+              isCargo: false,
+              passengers: [
+                { name: "渡辺 陽向 (選手)", type: "player" },
+                { name: "山本 大翔 (選手)", type: "player" },
+                { name: "渡辺 パパ (指導者)", type: "adult" },
+              ],
+            },
+            {
+              carNumber: 3,
+              driverName: "山下 監督",
+              carModel: "ハイエース (道具車)",
+              plate: "・56-78",
+              capacity: 3,
+              isCargo: true,
+              passengers: [
+                { name: "中村 颯 (選手)", type: "player" },
+                { name: "小林 樹 (選手)", type: "player" },
+              ],
+            },
+          ],
+        }
+      : null;
+
+    const demoDisplayName =
+      rawUserName && !IGNORED_GENERIC_USER_NAMES.has(rawUserName.trim())
+        ? rawUserName.trim()
+        : "鈴木 パパ";
+
+    const demoPayload: LiffMatchOpsContextResponse = {
+      success: true,
+      isDemo: true,
+      adultMembers: demoAdultMembers,
+      myIdentity: {
+        memberId: "demo-m-4",
+        memberName: demoDisplayName,
+        displayName: demoDisplayName,
+        childNames: ["鈴木 蓮"],
+      },
+      scheduleSync: demoScheduleSync,
+    };
+    return c.json(demoPayload);
+  }
+
+  try {
+    await ensureEventColumns(c.env.DB);
+    const targetDateKey = extractDateKey(matchDate);
+
+    const [allMembers, familyRows, teamEvents, authSession] = await Promise.all([
+      db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          playerId: players.id,
+          playerName: players.name,
+        })
+        .from(parentChildRelations)
+        .innerJoin(players, eq(parentChildRelations.childId, players.id))
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all()
+        .catch(() => [] as Array<{ parentId: string; playerId: string; playerName: string }>),
+      linkedEventId || targetDateKey
+        ? db
+            .select()
+            .from(events)
+            .where(eq(events.teamId, teamId))
+            .orderBy(desc(events.startAt))
+            .all()
+        : Promise.resolve([]),
+      getAuth(c.env.DB, c.env)
+        .api.getSession({ headers: c.req.raw.headers })
+        .catch(() => null),
+    ]);
+
+    // 1. 大人メンバー一覧（保護者・指導者・スタッフ）を重複排除・ソートして整形
+    const activeAdultsRaw = allMembers.filter(
+      (m) =>
+        m.memberType !== "player" &&
+        (m.status === "active" || !m.status) &&
+        Boolean(m.name && m.name.trim())
+    );
+
+    const dedupByNormName = new Map<string, (typeof activeAdultsRaw)[number]>();
+    for (const m of activeAdultsRaw) {
+      const key = normalizeMemberName(m.name || "");
+      if (!key) continue;
+      const existing = dedupByNormName.get(key);
+      if (!existing) {
+        dedupByNormName.set(key, m);
+      } else {
+        const existingScore = (existing.id.startsWith("tm_") ? 0 : 2) + (existing.userId ? 1 : 0);
+        const nextScore = (m.id.startsWith("tm_") ? 0 : 2) + (m.userId ? 1 : 0);
+        if (nextScore > existingScore) {
+          dedupByNormName.set(key, m);
+        }
+      }
+    }
+
+    const adultMembers: LiffAdultMemberOption[] = Array.from(dedupByNormName.values())
+      .map((m) => {
+        const rawName = (m.name || "").trim();
+        const mType = m.memberType || "guardian";
+        const mRole = m.role || "member";
+        const isFatherOrStaff =
+          mType === "staff" ||
+          mRole === "owner" ||
+          mRole === "admin" ||
+          mRole === "coach" ||
+          hasFatherRoleTag(rawName);
+        return {
+          id: m.id,
+          name: rawName,
+          memberType: mType,
+          role: mRole,
+          isFatherOrStaff,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isFatherOrStaff !== b.isFatherOrStaff) {
+          return a.isFatherOrStaff ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name, "ja");
+      });
+
+    // 2. ログイン中の保護者・指導者アイデンティティ解決
+    const sessionUser = authSession?.user as AuthUser | undefined;
+    const expandedIds = await expandCandidateUserIds(db, [rawUserId, sessionUser?.id]);
+    const candidateIdSet = new Set<string>(expandedIds);
+
+    let matchedMember =
+      activeAdultsRaw.find((m) => Boolean(m.userId && candidateIdSet.has(m.userId))) || null;
+
+    if (!matchedMember) {
+      matchedMember = await findAndAutoLinkMemberByUserTableName(
+        db,
+        activeAdultsRaw,
+        [rawUserName, sessionUser?.name],
+        rawUserId
+      );
+    }
+
+    if (!matchedMember) {
+      matchedMember = findMatchingAdultMemberByName(
+        activeAdultsRaw,
+        [rawUserName, sessionUser?.name],
+        { allowAmbiguousFamilyParent: true }
+      );
+    }
+
+    if (matchedMember?.userId) {
+      candidateIdSet.add(matchedMember.userId);
+    }
+    if (matchedMember?.id) {
+      candidateIdSet.add(matchedMember.id);
+    }
+
+    const childNamesSet = new Set<string>();
+    for (const rel of familyRows) {
+      if (rel.parentId && candidateIdSet.has(rel.parentId) && rel.playerName) {
+        childNamesSet.add(rel.playerName);
+      }
+    }
+
+    const cleanDisplayName =
+      rawUserName && !IGNORED_GENERIC_USER_NAMES.has(rawUserName.trim())
+        ? rawUserName.trim()
+        : sessionUser?.name && !IGNORED_GENERIC_USER_NAMES.has(sessionUser.name.trim())
+          ? sessionUser.name.trim()
+          : null;
+
+    const myIdentity: LiffMyMatchIdentity = {
+      memberId: matchedMember?.id || null,
+      memberName: matchedMember?.name?.trim() || null,
+      displayName: cleanDisplayName,
+      childNames: Array.from(childNamesSet),
+    };
+
+    // 3. 同日のスケジュール・配車データを自動リンク
+    let targetEvent: (typeof teamEvents)[number] | undefined;
+    if (linkedEventId) {
+      targetEvent = teamEvents.find((ev) => ev.id === linkedEventId);
+    }
+    if (!targetEvent && targetDateKey) {
+      const sameDayEvents = teamEvents.filter((ev) => toJstDateKey(ev.startAt) === targetDateKey);
+      targetEvent =
+        sameDayEvents.find((ev) => ev.eventType === "match" || ev.amType === "match") ||
+        sameDayEvents[0];
+    }
+
+    let scheduleSync: LiffMatchScheduleSyncInfo | null = null;
+    if (targetEvent) {
+      const carpoolsList = await db
+        .select({
+          id: eventCarpools.id,
+          driverName: teamMembers.name,
+          capacity: eventCarpools.capacity,
+          carType: eventCarpools.carType,
+          carName: memberCars.name,
+          carColor: memberCars.color,
+          numberPlate: memberCars.numberPlate,
+        })
+        .from(eventCarpools)
+        .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
+        .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
+        .where(eq(eventCarpools.eventId, targetEvent.id))
+        .all();
+
+      const carpoolIds = carpoolsList.map((car) => car.id);
+      const allRiders =
+        carpoolIds.length > 0
+          ? await db
+              .select({
+                carpoolId: eventCarpoolRiders.carpoolId,
+                riderPlayerName: players.name,
+                riderMemberName: teamMembers.name,
+                riderMemberType: teamMembers.memberType,
+              })
+              .from(eventCarpoolRiders)
+              .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
+              .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
+              .where(inArray(eventCarpoolRiders.carpoolId, carpoolIds))
+              .all()
+          : [];
+
+      const ridersByCarpoolId = new Map<string, typeof allRiders>();
+      for (const r of allRiders) {
+        if (!r.carpoolId) continue;
+        const list = ridersByCarpoolId.get(r.carpoolId) || [];
+        list.push(r);
+        ridersByCarpoolId.set(r.carpoolId, list);
+      }
+
+      const cars: LiffMatchScheduleCarpoolCar[] = carpoolsList.map((car, index) => {
+        const riders = ridersByCarpoolId.get(car.id) || [];
+        const passengers = riders.map((r) => {
+          if (r.riderPlayerName) {
+            return { name: `${r.riderPlayerName} (選手)`, type: "player" as const };
+          }
+          return {
+            name: `${r.riderMemberName || "メンバー"} (${
+              r.riderMemberType === "staff" ? "指導者" : "保護者"
+            })`,
+            type: "adult" as const,
+          };
+        });
+
+        return {
+          carNumber: index + 1,
+          driverName: car.driverName || "ドライバー",
+          carModel: car.carName
+            ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}`
+            : "登録車",
+          plate: car.numberPlate || "未登録",
+          capacity: car.capacity || 4,
+          isCargo: car.carType === "cargo",
+          passengers,
+        };
+      });
+
+      const gatherTimeRaw = toJstTimeText(targetEvent.startAt);
+      scheduleSync = {
+        eventId: targetEvent.id,
+        title: targetEvent.title,
+        dutyGroup: targetEvent.dutyGroup || null,
+        needsLunch: toBoolean(targetEvent.needsLunch, false),
+        needsSnack: toBoolean(targetEvent.needsSnack, false),
+        gatherTime: gatherTimeRaw ? `${gatherTimeRaw}頃` : null,
+        gatherLocation: targetEvent.location || null,
+        destination: targetEvent.location || null,
+        cars,
+      };
+    }
+
+    const responsePayload: LiffMatchOpsContextResponse = {
+      success: true,
+      isDemo: false,
+      adultMembers,
+      myIdentity,
+      scheduleSync,
+    };
+    return c.json(responsePayload);
+  } catch (error) {
+    console.error("Failed to load match-ops-context:", error);
+    const fallbackPayload: LiffMatchOpsContextResponse = {
+      success: false,
+      adultMembers: [],
+      myIdentity: {
+        memberId: null,
+        memberName: null,
+        displayName: null,
+        childNames: [],
+      },
+      scheduleSync: null,
+    };
+    return c.json(fallbackPayload, 500);
   }
 });
 

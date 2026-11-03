@@ -155,6 +155,18 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
     venueShortName: "市民第2",
     venueAddress: "神奈川県川崎市川崎区富士見2-1-9",
     venueMapUrl: "https://maps.google.com/?q=川崎市富士見球場",
+    venueParkingInfo: "有料コインパーキング（上限あり）・1チーム5台まで",
+    venueSpikeRule: "ポイントスパイク推奨（金属歯は一部制限あり）",
+    venueNotes: "試合開始45分前よりアップスペース利用可",
+    matchDayOps: {
+      staffRoles: [
+        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
+        { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
+        { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
+        { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏" },
+      ],
+    },
     innings: 7,
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
@@ -204,6 +216,29 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
     venueShortName: "多摩川緑地",
     venueAddress: "神奈川県川崎市高津区二子地先",
     venueMapUrl: "https://maps.google.com/?q=多摩川緑地野球場",
+    venueParkingInfo: "河川敷駐車場あり（1チーム最大5台まで・駐車証をダッシュボードに掲示）",
+    venueSpikeRule: "金属スパイク禁止（ポイントスパイク・トレシューのみ可）",
+    venueNotes: "河川敷は日陰がないためタープ必須。強風時のペグ固定注意。",
+    matchDayOps: {
+      gatherTime: "07:45 集合 / 08:00 出発",
+      gatherPlace: "桜本小学校 正門前（乗り合い出発）",
+      uniform: "公式戦ユニフォーム",
+      meal: "lunch_and_snack",
+      mealNote: "保冷剤入りクーラーバッグ持参",
+      belongingsNote: "水筒2L以上・氷嚢・替えアンダーシャツ持参",
+      carpoolMode: "away_carpool",
+      carLimitNote: "1チーム最大5台まで（駐車証3枚＋予備）",
+      cargoCarMember: "山下 監督（ハイエース）",
+      carpoolSummaryNote: "高速代・ガソリン代は1家族約600円で後日精算",
+      staffRoles: [
+        { roleKey: "plate_umpire", roleLabel: "球審", assignees: ["田中 パパ"], note: "本部派遣と交代制" },
+        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁（審判服着用）" },
+        { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
+        { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"], note: "ベンチ横カウント操作" },
+        { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
+        { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
+      ],
+    },
     innings: 7,
     myInningScores: [],
     opponentInningScores: [],
@@ -224,6 +259,18 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
     venueShortName: "市民第2",
     venueAddress: "神奈川県川崎市川崎区富士見2-1-9",
     venueMapUrl: "https://maps.google.com/?q=川崎市富士見球場",
+    venueParkingInfo: "有料コインパーキング（上限あり）・1チーム5台まで",
+    venueSpikeRule: "ポイントスパイク推奨（金属歯は一部制限あり）",
+    venueNotes: "試合開始45分前よりアップスペース利用可",
+    matchDayOps: {
+      staffRoles: [
+        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
+        { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
+        { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
+        { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏" },
+      ],
+    },
     innings: 7,
     myInningScores: [2, 0, 1, 3, 0, 1, 0],
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
@@ -342,12 +389,12 @@ export function saveCustomDemoMatch(match: Match): void {
 }
 
 export function getDemoMatchById(matchId: string): Match | null {
-  if (DEMO_MATCH_MAP[matchId]) return DEMO_MATCH_MAP[matchId];
   const custom = loadCustomDemoMatches().find((m) => m.id === matchId);
   if (custom) {
     DEMO_MATCH_MAP[matchId] = custom;
     return custom;
   }
+  if (DEMO_MATCH_MAP[matchId]) return DEMO_MATCH_MAP[matchId];
   return null;
 }
 

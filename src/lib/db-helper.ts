@@ -51,6 +51,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "opponent_errors", ddl: "ALTER TABLE matches ADD COLUMN opponent_errors integer DEFAULT 0" },
     { name: "bench_side", ddl: "ALTER TABLE matches ADD COLUMN bench_side text DEFAULT 'unknown'" },
     { name: "scorebook_validations", ddl: "ALTER TABLE matches ADD COLUMN scorebook_validations text DEFAULT '[]'" },
+    { name: "match_day_ops", ddl: "ALTER TABLE matches ADD COLUMN match_day_ops text DEFAULT '{}'" },
   ],
   players: [
     { name: "nickname", ddl: "ALTER TABLE players ADD COLUMN nickname text" },

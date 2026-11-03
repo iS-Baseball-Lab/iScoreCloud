@@ -8,8 +8,9 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
-import { Match } from "@/types/match";
+import { Match, type MatchDayOps } from "@/types/match";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Users,
   Shield,
@@ -40,6 +41,8 @@ import {
   BookOpen,
   FileSpreadsheet,
   Calendar,
+  ClipboardList,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -59,6 +62,7 @@ import {
   isDemoMatchId,
   isDemoTeamId,
   loadDemoMatchLineups,
+  saveCustomDemoMatch,
   formatLineupShareText,
   parseSafeMatchDate,
   type AdjacentMatchSummary,
@@ -67,6 +71,20 @@ import {
   type OpponentLineupSlot,
   type PlayerMatchAttendanceMap,
 } from "@/lib/liff/demo-lineup";
+import {
+  buildPreMatchAnnouncementShareText,
+  type LiffAdultMemberOption,
+  type LiffMatchOpsContextResponse,
+  type LiffMatchScheduleSyncInfo,
+  type LiffMyMatchIdentity,
+} from "@/lib/liff/match-day-ops";
+import {
+  MatchCarpoolSummarySection,
+  MatchDayGuideAndRolesSection,
+  MatchDayOpsEditorModal,
+  shouldShowMatchCarpoolCard,
+  type MatchDayOpsEditorTab,
+} from "@/components/liff/MatchDayOpsSection";
 import {
   MatchStatsSection,
   type LiffBatterStatItem,
@@ -271,7 +289,7 @@ function buildVenueDisplayInfo(match: Match): ResolvedVenueDisplay {
 function MatchesContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId");
-  const { currentTeam, isLoadingTeam, isDemo } = useLiff();
+  const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
@@ -300,6 +318,15 @@ function MatchesContent() {
   const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
   const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
+  const [opsAdultMembers, setOpsAdultMembers] = useState<LiffAdultMemberOption[]>([]);
+  const [opsMyIdentity, setOpsMyIdentity] = useState<LiffMyMatchIdentity | null>(null);
+  const [opsScheduleSync, setOpsScheduleSync] =
+    useState<LiffMatchScheduleSyncInfo | null>(null);
+  const [opsEditorState, setOpsEditorState] = useState<{
+    isOpen: boolean;
+    initialTab: MatchDayOpsEditorTab;
+  }>({ isOpen: false, initialTab: "roles" });
+  const [isSavingMatchOps, setIsSavingMatchOps] = useState(false);
   const [inspectedCellModalState, setInspectedCellModalState] = useState<{
     activeItem: InspectedScorebookCellItem;
     navigationItems: InspectedScorebookCellItem[];
@@ -422,6 +449,7 @@ function MatchesContent() {
     setShowDeleteStatsModal(false);
     setIsManageMenuOpen(false);
     setInspectedCellModalState(null);
+    setOpsEditorState({ isOpen: false, initialTab: "roles" });
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
@@ -766,6 +794,129 @@ function MatchesContent() {
   // 試合詳細ページ用の共有スコアブックバンドル（タイムライン1マス表示・清書シート・記号解説モーダルで共有）
   const activeDetailMatch =
     matchId && match && match.id === matchId && !detailError ? match : null;
+  const activeMatchTeamId = (activeDetailMatch as (Match & { teamId?: string }) | null)
+    ?.teamId;
+
+  // 当日運営スタッフ候補・保護者本人照合・同日スケジュール/配車のバックグラウンド取得
+  useEffect(() => {
+    if (!activeDetailMatch) {
+      setOpsAdultMembers([]);
+      setOpsMyIdentity(null);
+      setOpsScheduleSync(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadOpsContext() {
+      try {
+        const isDemoTarget = isDemo || isDemoMatchId(activeDetailMatch!.id);
+        const storedTeamId =
+          typeof window !== "undefined"
+            ? localStorage.getItem("iscore_selectedTeamId")
+            : null;
+        const effectiveTeamId = isDemoTarget
+          ? "demo-team"
+          : activeMatchTeamId || currentTeam?.id || storedTeamId || "";
+
+        if (!effectiveTeamId) return;
+
+        const qs = new URLSearchParams({
+          teamId: effectiveTeamId,
+          matchDate: activeDetailMatch!.date || "",
+        });
+        if (activeDetailMatch!.matchDayOps?.linkedEventId) {
+          qs.set("linkedEventId", activeDetailMatch!.matchDayOps.linkedEventId);
+        }
+        if (profile?.userId) {
+          qs.set("userId", profile.userId);
+        }
+        if (profile?.displayName) {
+          qs.set("userName", profile.displayName);
+        }
+
+        const res = await fetch(`/api/liff/match-ops-context?${qs.toString()}`, {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const payload = (await res.json()) as LiffMatchOpsContextResponse;
+        if (cancelled || !payload.success) return;
+
+        setOpsAdultMembers(Array.isArray(payload.adultMembers) ? payload.adultMembers : []);
+        setOpsMyIdentity(payload.myIdentity || null);
+        setOpsScheduleSync(payload.scheduleSync || null);
+      } catch (err) {
+        console.warn("Failed to load match ops context:", err);
+      }
+    }
+
+    void loadOpsContext();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeDetailMatch?.id,
+    activeDetailMatch?.date,
+    activeDetailMatch?.matchDayOps?.linkedEventId,
+    activeMatchTeamId,
+    currentTeam?.id,
+    isDemo,
+    profile?.userId,
+    profile?.displayName,
+  ]);
+
+  const handleOpenOpsEditor = useCallback(
+    (initialTab: MatchDayOpsEditorTab = "roles") => {
+      setOpsEditorState({ isOpen: true, initialTab });
+    },
+    []
+  );
+
+  const handleCloseOpsEditor = useCallback(() => {
+    setOpsEditorState((prev) => ({ ...prev, isOpen: false }));
+  }, []);
+
+  const handleSaveMatchDayOps = useCallback(
+    async (nextOps: MatchDayOps) => {
+      if (!match || isSavingMatchOps) return;
+      setIsSavingMatchOps(true);
+      try {
+        if (isDemoMatchId(match.id)) {
+          const updatedDemo: Match = {
+            ...match,
+            matchDayOps: nextOps,
+          };
+          saveCustomDemoMatch(updatedDemo);
+          invalidateLiffApiCache();
+          setMatch(updatedDemo);
+          setOpsEditorState((prev) => ({ ...prev, isOpen: false }));
+          toast.success("当日のしおり・役割担当を保存しました（デモ）");
+          return;
+        }
+
+        const res = await fetch(`/api/matches/${encodeURIComponent(match.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ matchDayOps: nextOps }),
+        });
+        const data = (await res.json()) as { success?: boolean; error?: string };
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "保存に失敗しました");
+        }
+
+        invalidateLiffApiCache();
+        setMatch((prev) => (prev ? { ...prev, matchDayOps: nextOps } : prev));
+        setOpsEditorState((prev) => ({ ...prev, isOpen: false }));
+        toast.success("当日のしおり・役割担当を保存しました");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "保存に失敗しました";
+        toast.error(msg);
+      } finally {
+        setIsSavingMatchOps(false);
+      }
+    },
+    [match, isSavingMatchOps]
+  );
 
   const sharedScorebookMatchMeta = useMemo<ScorebookMatchHeaderMeta | null>(() => {
     if (!activeDetailMatch) return null;
@@ -1034,21 +1185,6 @@ function MatchesContent() {
       : "";
     const shareDateText = formattedDateTime || match.date;
 
-    const baseShareText = isScheduled
-      ? `【試合予定】\nvs ${match.opponent}\n📅 ${shareDateText}${shareBasicLine}${shareVenueLine}`
-      : `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${shareDateText}${shareBasicLine}${shareVenueLine}`;
-
-    const shareText =
-      filledStarters.length > 0
-        ? `${baseShareText}\n\n${formatLineupShareText(
-            match.opponent,
-            match.date,
-            myLineup,
-            remainingPlayers,
-            myAttendance
-          )}`
-        : baseShareText;
-
     const hasPersonalStatsData =
       matchStats.length > 0 ||
       pitcherStats.length > 0 ||
@@ -1062,6 +1198,52 @@ function MatchesContent() {
     // 案A: 試合前・雨天中止（予定モード） vs 試合中・試合後（結果・ライブモード）のスマート表示順切替
     const isPreMatchMode =
       !isLive && (isFutureOrScheduled || isRainout) && !hasScorebookOrStatsData;
+
+    const lineupShareBlock =
+      filledStarters.length > 0
+        ? formatLineupShareText(
+            match.opponent,
+            match.date,
+            myLineup,
+            remainingPlayers,
+            myAttendance
+          )
+        : "";
+
+    const preMatchShareText = buildPreMatchAnnouncementShareText({
+      opponent: match.opponent,
+      dateText: shareDateText,
+      matchTypeLabel,
+      inningsLabel: inningsBadgeLabel,
+      battingOrderLabel,
+      benchSideLabel:
+        match.benchSide === "1B" || match.benchSide === "3B"
+          ? benchSideLabel
+          : undefined,
+      tournamentName: customTournamentName || undefined,
+      venueOfficialName: venueInfo.officialName || undefined,
+      venueAddress: venueInfo.address || undefined,
+      venueExternalMapUrl: venueInfo.externalUrl || undefined,
+      venueParkingInfo: match.venueParkingInfo,
+      venueSpikeRule: match.venueSpikeRule,
+      venueNotes: match.venueNotes,
+      ops: match.matchDayOps,
+      scheduleSync: opsScheduleSync,
+      lineupShareBlock: lineupShareBlock || undefined,
+    });
+
+    const postMatchBaseShareText = `【試合結果】\nvs ${match.opponent}\n${match.myScore} - ${match.opponentScore} (${isWin ? "勝利 🏆" : isLose ? "敗戦" : "引分"})\n📅 ${shareDateText}${shareBasicLine}${shareVenueLine}`;
+
+    const shareText = isPreMatchMode
+      ? preMatchShareText
+      : lineupShareBlock
+        ? `${postMatchBaseShareText}\n\n${lineupShareBlock}`
+        : postMatchBaseShareText;
+
+    const hasSeparateCarpoolCard = shouldShowMatchCarpoolCard(
+      match.matchDayOps,
+      opsScheduleSync
+    );
 
     const isDemoCurrentMatch = isDemo || isDemoMatchId(match.id);
 
@@ -1778,6 +1960,96 @@ function MatchesContent() {
                   </div>
                 </div>
 
+                {/* 球場マスタ連動：駐車場制限・スパイク規定・会場注意事項の自動表示 */}
+                {(() => {
+                  const cleanParking =
+                    match.venueParkingInfo &&
+                    match.venueParkingInfo.trim() !==
+                      "駐車場ルールは管理者にお問い合わせください"
+                      ? match.venueParkingInfo.trim()
+                      : "";
+                  const cleanSpike = (match.venueSpikeRule || "").trim();
+                  const cleanVenueNotes = (match.venueNotes || "").trim();
+                  if (!cleanParking && !cleanSpike && !cleanVenueNotes) {
+                    return null;
+                  }
+
+                  if (isPreMatchMode) {
+                    return (
+                      <div className="pt-2 border-t border-border space-y-1.5 text-xs">
+                        {cleanSpike && (
+                          <div className="p-2.5 rounded-xl bg-rose-500/[0.08] border border-rose-500/30 border-l-4 border-l-rose-600 flex items-start gap-2">
+                            <span className="text-sm leading-none shrink-0 mt-0.5">
+                              👟
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-rose-700 dark:text-rose-300 block">
+                                スパイク・用具規定
+                              </span>
+                              <p className="font-black text-foreground leading-snug break-words">
+                                {cleanSpike}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {cleanParking && (
+                          <div className="p-2.5 rounded-xl bg-amber-500/[0.08] border border-amber-500/30 border-l-4 border-l-amber-500 flex items-start gap-2">
+                            <span className="text-sm leading-none shrink-0 mt-0.5">
+                              🅿️
+                            </span>
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-black text-amber-800 dark:text-amber-300 block">
+                                駐車場・台数制限ルール
+                              </span>
+                              <p className="font-black text-foreground leading-snug break-words">
+                                {cleanParking}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {cleanVenueNotes && (
+                          <div className="p-2.5 rounded-xl bg-muted/60 border border-border flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="text-[10px] font-bold text-muted-foreground block">
+                                グラウンド利用注意事項
+                              </span>
+                              <p className="text-[11px] font-bold text-foreground whitespace-pre-line leading-snug break-words">
+                                {cleanVenueNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="pt-2 border-t border-border flex flex-wrap gap-1.5 text-[11px]">
+                      {cleanSpike && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/25 text-foreground font-bold">
+                          <span>👟</span>
+                          <span>{cleanSpike}</span>
+                        </span>
+                      )}
+                      {cleanParking && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/25 text-foreground font-bold">
+                          <span>🅿️</span>
+                          <span>{cleanParking}</span>
+                        </span>
+                      )}
+                      {cleanVenueNotes && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-muted-foreground font-bold">
+                          <span>⚠️</span>
+                          <span>{cleanVenueNotes}</span>
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* 最下部：リンクボタン */}
                 {venueInfo.embedUrl ? (
                   <div className="pt-2.5 border-t border-border grid grid-cols-2 gap-2">
@@ -2012,7 +2284,26 @@ function MatchesContent() {
 
           {isPreMatchMode ? (
             <>
-              {/* 🗓️ 試合前・雨天中止モード：出場メンバー → 球場・アクセス → 事前動画(設定時のみ) */}
+              {/* 🗓️ 試合前・雨天中止モード：
+                  当日のしおり＆役割担当（前日LINE連絡文生成） → 遠征・配車サマリー → 出場メンバー → 球場・施設ルール → 事前動画(設定時のみ) */}
+              <MatchDayGuideAndRolesSection
+                key="ops-guide-pre"
+                ops={match.matchDayOps}
+                scheduleSync={opsScheduleSync}
+                myIdentity={opsMyIdentity}
+                isPreMatchMode={true}
+                hasSeparateCarpoolCard={hasSeparateCarpoolCard}
+                preMatchShareText={preMatchShareText}
+                onOpenEditor={handleOpenOpsEditor}
+              />
+              <MatchCarpoolSummarySection
+                key="ops-carpool-pre"
+                ops={match.matchDayOps}
+                scheduleSync={opsScheduleSync}
+                myIdentity={opsMyIdentity}
+                venueParkingInfo={match.venueParkingInfo}
+                onOpenEditor={handleOpenOpsEditor}
+              />
               {lineupSection}
               {venueSection}
               {videoSection}
@@ -2020,7 +2311,7 @@ function MatchesContent() {
           ) : (
             <>
               {/* 🏆 試合中・試合後モード（案A ＋ パターン2）：
-                  スコアボード → 注目選手 → 試合映像(設定時のみ) → スコアブック清書シート → タイムライン(1マス解説) → 個人成績 → 出場メンバー → 球場 */}
+                  スコアボード → 注目選手 → 試合映像(設定時のみ) → スコアブック清書シート → タイムライン(1マス解説) → 個人成績 → 出場メンバー → 協力スタッフ記録(登録時のみ) → 球場 */}
               {scoreboardSection}
               <MatchStatsSection
                 key="stats-heroes"
@@ -2040,6 +2331,16 @@ function MatchesContent() {
                 displayPart="tables"
               />
               {lineupSection}
+              <MatchDayGuideAndRolesSection
+                key="ops-guide-archive"
+                ops={match.matchDayOps}
+                scheduleSync={opsScheduleSync}
+                myIdentity={opsMyIdentity}
+                isPreMatchMode={false}
+                hasSeparateCarpoolCard={false}
+                preMatchShareText={preMatchShareText}
+                onOpenEditor={handleOpenOpsEditor}
+              />
               {venueSection}
             </>
           )}
@@ -2202,6 +2503,27 @@ function MatchesContent() {
                         <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                       </Link>
 
+                      <button
+                        type="button"
+                        onClick={() => handleOpenOpsEditor("roles")}
+                        className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                            <ClipboardList className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              当日のしおり・審判/スコア担当・配車メモを編集
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              球審/塁審・スコアラー・BSO・LINE速報担当、集合・弁当・道具車を設定
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </button>
+
                       {!isRainout && hasPersonalStatsData && (
                         <Link
                           href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
@@ -2356,6 +2678,20 @@ function MatchesContent() {
             rules={scorebookBundle.effectiveRules}
             onSelectItem={handleSelectInspectedCell}
             onClose={handleCloseInspectedCell}
+          />
+
+          <MatchDayOpsEditorModal
+            isOpen={opsEditorState.isOpen}
+            initialTab={opsEditorState.initialTab}
+            matchId={match.id}
+            opponentName={match.opponent}
+            ops={match.matchDayOps}
+            adultMembers={opsAdultMembers}
+            scheduleSync={opsScheduleSync}
+            venueParkingInfo={match.venueParkingInfo}
+            isSaving={isSavingMatchOps}
+            onClose={handleCloseOpsEditor}
+            onSave={handleSaveMatchDayOps}
           />
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />

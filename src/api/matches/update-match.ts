@@ -3,7 +3,9 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { matches, tournaments } from '@/db/schema/match';
+import { ensureMatchLineupColumns } from '@/lib/db-helper';
 import type { WorkerEnv } from '@/types/api';
+import type { MatchDayOps } from '@/types/match';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -24,10 +26,12 @@ interface UpdateMatchRequest {
   opponentScore?: number;
   myInningScores?: number[];
   opponentInningScores?: number[];
+  matchDayOps?: MatchDayOps | null;
 }
 
 // ━━━ 試合情報の更新 (PATCH) ━━━
 app.patch('/:id', async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const matchId = c.req.param('id');
 
@@ -70,7 +74,7 @@ app.patch('/:id', async (c) => {
 
     // 💡 更新データのマッピング
     // ※フロント側（edit/page.tsx）の body: JSON.stringify({...}) とキーを合わせています
-    const updateData = {
+    const updateData: Record<string, unknown> = {
       opponent: body.opponent,
       date: body.date, // ※フロント側で "YYYY-MM-DD HH:mm" に結合済みであることを想定
       matchType: body.matchType,
@@ -78,28 +82,29 @@ app.patch('/:id', async (c) => {
       battingOrder: body.battingOrder,
       benchSide: body.benchSide,
       innings: body.innings,
-      surfaceDetails: n(body.location),
-      venueId: n(body.venueId),
+      surfaceDetails: body.location !== undefined ? n(body.location) : undefined,
+      venueId: body.venueId !== undefined ? n(body.venueId) : undefined,
       status: body.status,
       myScore: body.myScore,
       opponentScore: body.opponentScore,
       myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
       opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
+      matchDayOps: body.matchDayOps !== undefined ? JSON.stringify(body.matchDayOps || {}) : undefined,
     };
 
     // 💡 undefined のプロパティは更新対象から外す（部分更新への対応）
-    // Drizzleのupdateは、値が明示的に指定されたカラムのみ更新します。
-    // 不要なundefinedキーを削除するクリーンアップ処理
-    Object.keys(updateData).forEach(key => {
-      if ((updateData as any)[key] === undefined) {
-        delete (updateData as any)[key];
+    Object.keys(updateData).forEach((key) => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
       }
     });
 
     // 💡 UPDATE実行
-    await db.update(matches)
-      .set(updateData)
-      .where(eq(matches.id, matchId));
+    if (Object.keys(updateData).length > 0) {
+      await db.update(matches)
+        .set(updateData)
+        .where(eq(matches.id, matchId));
+    }
 
     return c.json({ success: true });
   } catch (error) {
@@ -142,6 +147,5 @@ app.patch('/:id/finish', async (c) => {
     return c.json({ success: false, error: errorMessage }, 500);
   }
 });
-
 
 export default app;

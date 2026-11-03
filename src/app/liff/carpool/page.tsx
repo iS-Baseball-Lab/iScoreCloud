@@ -1,11 +1,14 @@
 // filepath: src/app/liff/carpool/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { EmptyState } from "@/components/layout/EmptyState";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Car, Clock, MapPin, Users, AlertCircle, ChevronRight, Fuel, Phone, Shield, Loader2 } from "lucide-react";
+import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles } from "lucide-react";
 
 interface CarAssignment {
   carNumber: number;
@@ -28,8 +31,10 @@ interface CarpoolData {
   cars: CarAssignment[];
 }
 
-export default function LiffCarpoolPage() {
+function LiffCarpoolContent() {
   const { currentTeam } = useLiff();
+  const searchParams = useSearchParams();
+  const eventIdParam = searchParams.get("eventId") || "";
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
   const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,9 +43,14 @@ export default function LiffCarpoolPage() {
     try {
       setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
-      const res = await fetch(`/api/liff/carpool?teamId=${teamId}`);
+      const eventQuery = eventIdParam
+        ? `&eventId=${encodeURIComponent(eventIdParam)}`
+        : "";
+      const res = await fetch(
+        `/api/liff/carpool?teamId=${encodeURIComponent(teamId)}${eventQuery}`
+      );
       if (res.ok) {
-        const data = await res.json() as { success: boolean; carpool?: CarpoolData };
+        const data = (await res.json()) as { success: boolean; carpool?: CarpoolData };
         if (data.carpool) {
           setCarpoolInfo(data.carpool);
         } else {
@@ -52,7 +62,7 @@ export default function LiffCarpoolPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeam?.id]);
+  }, [currentTeam?.id, eventIdParam]);
 
   useEffect(() => {
     loadCarpool();
@@ -93,16 +103,19 @@ export default function LiffCarpoolPage() {
           </div>
         ) : !carpoolInfo || cars.length === 0 ? (
           /* 空ステート */
-          <div className="flex flex-col items-center justify-center py-16 text-center rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-6 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-teal-500/12 flex items-center justify-center text-teal-600 dark:text-teal-400">
-              <Car className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-sm font-black text-foreground">配車表はまだ作成されていません</h4>
-              <p className="text-xs font-bold text-muted-foreground">
-                管理者がWeb版から配車割り当てを行うと、ここに自動反映されます。
-              </p>
-            </div>
+          <div className="space-y-3">
+            <EmptyState
+              icon={Car}
+              title="配車表はまだ作成されていません"
+              description="出欠の車出し回答をもとに、遠征の配車割り当てを自動作成できます"
+            />
+            <Link
+              href="/liff/tools/carpool-generator"
+              className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>自動配車ジェネレーターを開く</span>
+            </Link>
           </div>
         ) : (
           <>
@@ -308,5 +321,23 @@ export default function LiffCarpoolPage() {
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
     </div>
+  );
+}
+
+export default function LiffCarpoolPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col flex-1">
+          <LiffHeader />
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">配車表を読み込み中...</span>
+          </div>
+        </div>
+      }
+    >
+      <LiffCarpoolContent />
+    </Suspense>
   );
 }

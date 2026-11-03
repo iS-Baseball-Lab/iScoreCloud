@@ -4,6 +4,7 @@ import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
 import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
 import { players } from "@/db/schema/team";
 import { buildGoogleMapsEmbedFromUrl, expandGoogleMapsShortUrl } from "@/lib/google-maps";
+import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import type {
   DrizzleDB,
   CreateMatchBody,
@@ -142,8 +143,14 @@ export const MatchService = {
         liveStatus: matches.liveStatus,
         lockedByUserName: matches.lockedByUserName,
         lockedByUserId: matches.lockedByUserId,
+        matchDayOps: matches.matchDayOps,
         venueAddress: venues.address,
         venueMapUrl: venues.mapUrl,
+        venueCategory: venues.category,
+        venueSurfaceType: venues.surfaceType,
+        venueParkingInfo: venues.parkingInfo,
+        venueSpikeRule: venues.spikeRule,
+        venueNotes: venues.notes,
       })
         .from(matches)
         .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -165,6 +172,11 @@ export const MatchService = {
     let resolvedVenueShortName = row.venueShortName;
     let resolvedVenueAddress = row.venueAddress;
     let resolvedVenueMapUrl = row.venueMapUrl;
+    let resolvedVenueCategory = row.venueCategory;
+    let resolvedVenueSurfaceType = row.venueSurfaceType;
+    let resolvedVenueParkingInfo = row.venueParkingInfo;
+    let resolvedVenueSpikeRule = row.venueSpikeRule;
+    let resolvedVenueNotes = row.venueNotes;
 
     // 💡 venueId が未紐付けでも surfaceDetails（手入力の球場・グラウンド名）から球場マスタを自動補完
     if (!resolvedVenueId && row.surfaceDetails && row.surfaceDetails.trim()) {
@@ -185,6 +197,11 @@ export const MatchService = {
             shortName: venues.shortName,
             address: venues.address,
             mapUrl: venues.mapUrl,
+            category: venues.category,
+            surfaceType: venues.surfaceType,
+            parkingInfo: venues.parkingInfo,
+            spikeRule: venues.spikeRule,
+            notes: venues.notes,
           })
           .from(venues)
           .all();
@@ -217,6 +234,11 @@ export const MatchService = {
           resolvedVenueShortName = matchedVenue.shortName;
           resolvedVenueAddress = matchedVenue.address;
           resolvedVenueMapUrl = matchedVenue.mapUrl;
+          resolvedVenueCategory = matchedVenue.category;
+          resolvedVenueSurfaceType = matchedVenue.surfaceType;
+          resolvedVenueParkingInfo = matchedVenue.parkingInfo;
+          resolvedVenueSpikeRule = matchedVenue.spikeRule;
+          resolvedVenueNotes = matchedVenue.notes;
         }
       } catch (err) {
         console.warn("Venue fallback lookup skipped:", err);
@@ -232,12 +254,18 @@ export const MatchService = {
     return {
       ...row,
       hasScorebook: Boolean(abCheck),
+      matchDayOps: parseMatchDayOpsJson(row.matchDayOps),
       venueId: resolvedVenueId,
       venueName: resolvedVenueName,
       venueShortName: resolvedVenueShortName,
       venueAddress: resolvedVenueAddress,
       venueMapUrl: resolvedVenueMapUrl,
       venueEmbedMapUrl,
+      venueCategory: resolvedVenueCategory,
+      venueSurfaceType: resolvedVenueSurfaceType,
+      venueParkingInfo: resolvedVenueParkingInfo,
+      venueSpikeRule: resolvedVenueSpikeRule,
+      venueNotes: resolvedVenueNotes,
       tournamentName: row.tournamentName || (row.tournamentId && !row.tournamentId.includes("-") ? row.tournamentId : null),
     };
   },
@@ -310,6 +338,7 @@ export const MatchService = {
       venueId: body.venueId || null,
       innings: body.innings,
       status: "scheduled",
+      matchDayOps: body.matchDayOps ? JSON.stringify(body.matchDayOps) : "{}",
     });
     return matchId;
   },
@@ -345,6 +374,8 @@ export const MatchService = {
       myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
       opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
       youtubeUrl: body.youtubeUrl !== undefined ? (body.youtubeUrl?.trim() || null) : undefined,
+      matchDayOps:
+        body.matchDayOps !== undefined ? JSON.stringify(body.matchDayOps || {}) : undefined,
       liveStatus: body.myInningScores ? "none" : undefined, // 🌟 簡易スコア更新時はライブ下書きを無効化
     };
 

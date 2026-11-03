@@ -9,6 +9,39 @@ export type BattingOrder = 'first' | 'second';
 export type BenchSide = '1B' | '3B' | 'unknown';
 export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'rainout';
 
+/** 🧢 試合当日の保護者・スタッフ役割担当1枠 */
+export interface MatchStaffRoleAssignment {
+  roleKey: string;
+  roleLabel: string;
+  assignees: string[];
+  note?: string;
+}
+
+export type MatchMealOption =
+  | 'none'
+  | 'lunch_and_snack'
+  | 'lunch_only'
+  | 'snack_only'
+  | 'no_meal';
+
+export type MatchCarpoolMode = 'auto' | 'away_carpool' | 'local_gather' | 'none';
+
+/** 🎒 試合当日のしおり・役割担当・遠征配車メモ（matches.match_day_ops JSON） */
+export interface MatchDayOps {
+  gatherTime?: string;
+  gatherPlace?: string;
+  uniform?: string;
+  meal?: MatchMealOption;
+  mealNote?: string;
+  belongingsNote?: string;
+  carpoolMode?: MatchCarpoolMode;
+  linkedEventId?: string | null;
+  carLimitNote?: string;
+  cargoCarMember?: string;
+  carpoolSummaryNote?: string;
+  staffRoles?: MatchStaffRoleAssignment[];
+}
+
 /** 💡 チーム・LINE連携用の定義 */
 export interface Team {
   id: string;
@@ -45,6 +78,12 @@ export interface Match {
   venueAddress?: string | null;
   venueMapUrl?: string | null;
   venueEmbedMapUrl?: string | null;
+  venueCategory?: string | null;
+  venueSurfaceType?: string | null;
+  venueParkingInfo?: string | null;
+  venueSpikeRule?: string | null;
+  venueNotes?: string | null;
+  matchDayOps?: MatchDayOps | null;
   innings?: number;
   myInningScores?: (number | null)[];
   opponentInningScores?: (number | null)[];

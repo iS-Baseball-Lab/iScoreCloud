@@ -317,6 +317,7 @@ app.put("/:id/lineups", async (c) => {
 
 app.post("/", async (c) => {
   try {
+    await ensureMatchLineupColumns(c.env.DB);
     const body = await c.req.json();
     const matchId = await MatchService.createMatch(drizzle(c.env.DB), body);
     return c.json({ success: true, matchId });
@@ -327,6 +328,7 @@ app.post("/", async (c) => {
 
 app.patch("/:id", async (c) => {
   try {
+    await ensureMatchLineupColumns(c.env.DB);
     await MatchService.updateMatch(drizzle(c.env.DB), c.req.param("id"), await c.req.json());
     return c.json({ success: true });
   } catch (error) {
