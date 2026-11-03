@@ -141,6 +141,8 @@ interface ParsedTimelineEntry {
   cellItem?: InspectedScorebookCellItem;
 }
 
+export type MatchStatsDisplayPart = "all" | "heroes" | "timeline" | "tables";
+
 interface MatchStatsSectionProps {
   matchId: string;
   isMyTeamTop: boolean;
@@ -155,6 +157,7 @@ interface MatchStatsSectionProps {
   playLogs: LiffRawPlayLogItem[];
   boxscoreAtBats: LiffBoxscoreAtBatItem[];
   isLoadingStats: boolean;
+  displayPart?: MatchStatsDisplayPart;
   topScorebookModel?: CompiledScorebookSheetModel | null;
   bottomScorebookModel?: CompiledScorebookSheetModel | null;
   scorebookRules?: ScorebookSymbolRules;
@@ -693,6 +696,7 @@ export function MatchStatsSection({
   playLogs,
   boxscoreAtBats,
   isLoadingStats,
+  displayPart = "all",
   topScorebookModel = null,
   bottomScorebookModel = null,
   scorebookRules,
@@ -714,25 +718,45 @@ export function MatchStatsSection({
     setExpandedLogIds({});
   }, [matchId]);
 
+  const needHeroes = displayPart === "all" || displayPart === "heroes";
+  const needTables = displayPart === "all" || displayPart === "tables";
+  const needTimeline =
+    displayPart === "all" ||
+    displayPart === "timeline" ||
+    (needTables && stats.length === 0 && pitcherStats.length === 0);
+
   const highlightHeroes = useMemo(
-    () => extractHighlightHeroes(stats, pitcherStats),
-    [stats, pitcherStats]
+    () => (needHeroes ? extractHighlightHeroes(stats, pitcherStats) : []),
+    [needHeroes, stats, pitcherStats]
   );
 
   const resolvedGameDetails = useMemo(
-    () => gameDetails || buildFallbackGameDetails(boxscoreAtBats, isMyTeamTop),
-    [gameDetails, boxscoreAtBats, isMyTeamTop]
+    () =>
+      needTables
+        ? gameDetails || buildFallbackGameDetails(boxscoreAtBats, isMyTeamTop)
+        : {
+            double: [],
+            triple: [],
+            homeRun: [],
+            sacrificeBunt: [],
+            sacrificeFly: [],
+            stolenBase: [],
+            doublePlay: [],
+          },
+    [needTables, gameDetails, boxscoreAtBats, isMyTeamTop]
   );
 
   const hasGameDetails = useMemo(
-    () => Object.values(resolvedGameDetails).some((arr) => arr.length > 0),
-    [resolvedGameDetails]
+    () =>
+      needTables &&
+      Object.values(resolvedGameDetails).some((arr) => arr.length > 0),
+    [needTables, resolvedGameDetails]
   );
 
   // 打撃成績合計（Web版と同一の20項目＋安打＋チーム打率）
   const batterTotal = useMemo(
     () =>
-      stats.reduce(
+      (needTables ? stats : []).reduce(
         (acc, cur) => {
           acc.plateAppearances += cur.plateAppearances || 0;
           acc.atBats += cur.atBats || 0;
@@ -781,7 +805,7 @@ export function MatchStatsSection({
           putouts: 0,
         }
       ),
-    [stats]
+    [needTables, stats]
   );
 
   const teamAvgStr = useMemo(() => {
@@ -796,7 +820,7 @@ export function MatchStatsSection({
   // 投手成績合計（Web版と同一の全項目＋チーム投球回＋チーム防御率）
   const pitcherTotal = useMemo(
     () =>
-      pitcherStats.reduce(
+      (needTables ? pitcherStats : []).reduce(
         (acc, cur) => {
           acc.outs += cur.outs || 0;
           acc.pitches += cur.pitches || 0;
@@ -831,7 +855,7 @@ export function MatchStatsSection({
           earnedRuns: 0,
         }
       ),
-    [pitcherStats]
+    [needTables, pitcherStats]
   );
 
   const teamIpStr = useMemo(() => {
@@ -846,6 +870,7 @@ export function MatchStatsSection({
   }, [pitcherTotal.earnedRuns, pitcherTotal.outs]);
 
   const timelineEntries = useMemo(() => {
+    if (!needTimeline) return [];
     const base = parseTimelineEntries(playLogs, boxscoreAtBats);
     if (
       (isDemoMatch || base.length === 0) &&
@@ -862,6 +887,7 @@ export function MatchStatsSection({
       bottomScorebookModel
     );
   }, [
+    needTimeline,
     playLogs,
     boxscoreAtBats,
     isDemoMatch,
@@ -921,6 +947,9 @@ export function MatchStatsSection({
   }
 
   if (isLoadingStats) {
+    if (displayPart !== "all" && displayPart !== "tables") {
+      return null;
+    }
     return (
       <section className="space-y-2" aria-label="個人成績読み込み中">
         <div className="flex items-center justify-between px-1">
@@ -938,6 +967,9 @@ export function MatchStatsSection({
   }
 
   if (!hasAnyImportedData) {
+    if (displayPart !== "all" && displayPart !== "tables") {
+      return null;
+    }
     return (
       <section className="space-y-2" aria-label="個人成績未登録">
         <div className="flex items-center justify-between px-1">
@@ -1016,10 +1048,18 @@ export function MatchStatsSection({
     }));
   };
 
+  const showHeroes = needHeroes && highlightHeroes.length > 0;
+  const showTables = needTables;
+  const showTimeline = needTimeline && (displayPart === "all" || displayPart === "timeline") && timelineEntries.length > 0;
+
+  if (!showHeroes && !showTables && !showTimeline) {
+    return null;
+  }
+
   return (
     <div className="space-y-5">
       {/* 🌟 1. 本日の注目選手（Web版 HighlightHero と同一ロジック） */}
-      {highlightHeroes.length > 0 && (
+      {showHeroes && (
         <section className="space-y-2" aria-label="本日の注目選手">
           <div className="flex items-center justify-between gap-2 px-1">
             <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -1097,8 +1137,10 @@ export function MatchStatsSection({
         </section>
       )}
 
-      {/* 🎯 2. 打撃・走塁・守備成績（Web版と同一の全22項目＋打率＋チーム合計） */}
-      <section className="space-y-2" aria-label="打撃・走塁・守備成績">
+      {showTables && (
+        <>
+          {/* 🎯 2. 打撃・走塁・守備成績（Web版と同一の全22項目＋打率＋チーム合計） */}
+          <section className="space-y-2" aria-label="打撃・走塁・守備成績">
         <div className="flex items-center justify-between gap-2 px-1">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
             <Target className="w-4 h-4 text-primary shrink-0" />
@@ -1683,9 +1725,11 @@ export function MatchStatsSection({
           )}
         </div>
       </section>
+        </>
+      )}
 
       {/* 📈 4. タイムライン（各回の打席・一球経過） */}
-      {timelineEntries.length > 0 && (
+      {showTimeline && (
         <section className="space-y-2" aria-label="タイムライン">
           <div className="flex items-center justify-between gap-2 px-1">
             <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">

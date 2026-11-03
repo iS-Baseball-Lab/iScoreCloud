@@ -1055,354 +1055,216 @@ function MatchesContent() {
       playLogs.length > 0 ||
       boxscoreAtBats.length > 0;
 
-    return (
-      <div className="flex flex-col flex-1">
-        <LiffHeader />
+    const hasScorebookOrStatsData =
+      hasPersonalStatsData ||
+      Boolean(scorebookBundle.topModel || scorebookBundle.bottomModel);
 
-        <div className="p-4 space-y-5">
-          {/* ページ内ヘッダー（「試合情報」固定タイトル＋前後切替ピル） */}
-          <LiffPageHeader
-            title="試合情報"
-            icon={
-              <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
-                <Video className="w-4 h-4" />
-              </span>
-            }
-            showBack
-            rightElement={
-              prevMatch || nextMatch || matchPosition ? (
-                <div
-                  role="navigation"
-                  aria-label="前後の試合切替"
-                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border shadow-xs divide-x divide-border overflow-hidden"
-                >
-                  {prevMatch ? (
-                    <Link
-                      href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
-                      replace
-                      aria-label={`前の試合: vs ${prevMatch.opponent}`}
-                      title={`前の試合: vs ${prevMatch.opponent}`}
-                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Link>
-                  ) : (
-                    <span
-                      aria-disabled="true"
-                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </span>
-                  )}
+    // 案A: 試合前・雨天中止（予定モード） vs 試合中・試合後（結果・ライブモード）のスマート表示順切替
+    const isPreMatchMode =
+      !isLive && (isFutureOrScheduled || isRainout) && !hasScorebookOrStatsData;
 
-                  {matchPosition && (
-                    <span className="px-2 h-full flex items-center justify-center text-[11px] font-black tabular-nums text-muted-foreground select-none whitespace-nowrap bg-muted/35">
-                      <span className="text-foreground">{matchPosition.current}</span>
-                      <span className="mx-0.5 text-muted-foreground/60">/</span>
-                      <span>{matchPosition.total}</span>
-                    </span>
-                  )}
+    const isDemoCurrentMatch = isDemo || isDemoMatchId(match.id);
 
-                  {nextMatch ? (
-                    <Link
-                      href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
-                      replace
-                      aria-label={`次の試合: vs ${nextMatch.opponent}`}
-                      title={`次の試合: vs ${nextMatch.opponent}`}
-                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Link>
-                  ) : (
-                    <span
-                      aria-disabled="true"
-                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </span>
-                  )}
-                </div>
-              ) : undefined
-            }
-            shareData={{
-              title: `vs ${match.opponent} 試合情報 & 出場メンバー`,
-              text: shareText,
-            }}
+    const sharedStatsProps = {
+      matchId: match.id,
+      isMyTeamTop: match.battingOrder !== "second",
+      myTeamName: myTeamLabel,
+      opponentName: match.opponent,
+      isFutureOrScheduled,
+      isRainout,
+      isDemoMatch: isDemoCurrentMatch,
+      stats: matchStats,
+      pitcherStats,
+      gameDetails,
+      playLogs,
+      boxscoreAtBats,
+      isLoadingStats: isStatsLoading,
+      topScorebookModel: scorebookBundle.topModel,
+      bottomScorebookModel: scorebookBundle.bottomModel,
+      scorebookRules: scorebookBundle.effectiveRules,
+      onInspectScorebookCell: handleInspectScorebookCell,
+    };
+
+    // 🔒 試合映像（動画URL登録時のみ表示・未登録時は空枠を出さずスッキリ非表示）
+    const videoSection = match.youtubeUrl ? (
+      <section key="section-video" className="space-y-2" aria-label="試合映像">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
+            <Video className="w-4 h-4 text-[#FF0000] shrink-0" />
+            <span>試合映像 (YouTube限定公開)</span>
+          </h2>
+        </div>
+
+        <div className="space-y-2">
+          <YouTubePlayer
+            url={match.youtubeUrl}
+            title={`vs ${match.opponent} (${match.date}) 試合動画`}
           />
 
-          {/* 📋 1. 基本情報・スコアヒーローカード（A-3 上帯ダークキャップ × 純白高コントラストボディ） */}
-          <section aria-label="基本情報">
-            <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-              {/* 上帯ダークソリッドキャップ：バッジ群・日時・大会名 */}
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 space-y-1.5">
-                <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                      matchTypeBadgeClass
-                    )}
-                  >
-                    {matchTypeLabel}
-                  </span>
+          {/* ⚠️ 動画取り扱いに関する注意書き */}
+          <div className="p-3 rounded-2xl border border-border border-l-4 border-l-[#FF0000] bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
+            <ShieldAlert className="w-4 h-4 text-[#FF0000] shrink-0 mt-0.5" />
+            <p className="leading-snug">
+              本動画は選手・チームのプライバシー保護のため
+              <strong className="text-foreground">YouTube限定公開</strong>
+              です。SNS等への無断転載・拡散はご遠慮ください。
+            </p>
+          </div>
+        </div>
+      </section>
+    ) : null;
 
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
-                      neutralBadgeClass
-                    )}
-                  >
-                    {inningsBadgeLabel}
-                  </span>
+    // ⚾️ スコアボード（基本情報の合計スコア直下に直結）
+    const scoreboardSection = (
+      <section key="section-scoreboard" className="space-y-2" aria-label="スコアボード">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
+            <Trophy className="w-4 h-4 text-primary shrink-0" />
+            <span>スコアボード</span>
+          </h2>
 
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                      battingOrderBadgeClass
-                    )}
-                  >
-                    {battingOrderLabel}
-                  </span>
+          {isLive ? (
+            <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs animate-pulse">
+              LIVE
+            </span>
+          ) : isRainout ? (
+            <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black">
+              雨天中止
+            </span>
+          ) : isWin ? (
+            <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black shadow-2xs">
+              WIN
+            </span>
+          ) : isLose ? (
+            <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs">
+              LOSE
+            </span>
+          ) : isDraw ? (
+            <span className="px-2 py-0.5 rounded bg-zinc-500 text-white text-[10px] font-black shadow-2xs">
+              DRAW
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-black">
+              試合予定
+            </span>
+          )}
+        </div>
 
-                  <span
-                    className={cn(
-                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
-                      benchSideBadgeClass
-                    )}
-                  >
-                    {benchSideLabel}
-                  </span>
+        <div className="w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs flex flex-col">
+          <div className="overflow-x-auto scrollbar-none">
+            <table className="w-full text-center whitespace-nowrap text-xs">
+              <thead className="bg-[#0f172a] text-slate-100 border-b-[3px] border-primary">
+                <tr className="text-[10px] font-black">
+                  <th className="p-2 text-left pl-3 min-w-[92px] text-white">TEAM</th>
+                  {inningsArray.map((inningNum) => (
+                    <th key={inningNum} className="w-6 p-2 font-mono text-slate-200">
+                      {inningNum}
+                    </th>
+                  ))}
+                  <th className="w-8 p-2 bg-primary text-primary-foreground font-black border-l border-slate-700 font-mono">
+                    R
+                  </th>
+                  <th className="w-6 p-2 font-mono text-slate-200">H</th>
+                  <th className="w-6 p-2 pr-3 font-mono text-slate-200">E</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border text-xs font-black">
+                {/* 先攻チーム */}
+                <tr className="hover:bg-muted/20">
+                  <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
+                    {topTeamName}
+                  </td>
+                  {inningsArray.map((_, i) => (
+                    <td key={i} className="p-2 font-mono font-bold text-muted-foreground">
+                      {formatScoreCell(topScores[i], false, false, false)}
+                    </td>
+                  ))}
+                  <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                    {isFutureOrScheduled && !isLive ? "-" : firstScore}
+                  </td>
+                  <td className="p-2 font-mono text-muted-foreground text-[11px]">
+                    {isFutureOrScheduled && !isLive ? "-" : topHits}
+                  </td>
+                  <td className="p-2 pr-3 font-mono text-muted-foreground text-[11px]">
+                    {isFutureOrScheduled && !isLive ? "-" : topErrors}
+                  </td>
+                </tr>
 
-                  {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
-                    hasPersonalStatsData ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-emerald-500 text-slate-950 border-emerald-500">
-                        <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
-                        <span>スコア取込済</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-slate-800 text-slate-300 border-slate-700">
-                        スコア未取込
-                      </span>
-                    )
-                  )}
+                {/* 後攻チーム */}
+                <tr className="hover:bg-muted/20">
+                  <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
+                    {bottomTeamName}
+                  </td>
+                  {inningsArray.map((_, i) => (
+                    <td key={i} className="p-2 font-mono font-bold text-muted-foreground">
+                      {formatScoreCell(
+                        bottomScores[i],
+                        true,
+                        i === inningsCount - 1,
+                        isHomeWinning
+                      )}
+                    </td>
+                  ))}
+                  <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
+                    {isFutureOrScheduled && !isLive ? "-" : secondScore}
+                  </td>
+                  <td className="p-2 font-mono text-muted-foreground text-[11px]">
+                    {isFutureOrScheduled && !isLive ? "-" : bottomHits}
+                  </td>
+                  <td className="p-2 pr-3 font-mono text-muted-foreground text-[11px]">
+                    {isFutureOrScheduled && !isLive ? "-" : bottomErrors}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    );
 
-                  {formattedDateTime && (
-                    <span className="text-[11px] sm:text-xs font-bold tabular-nums text-slate-300 leading-tight shrink-0">
-                      {formattedDateTime}
-                    </span>
-                  )}
-                </div>
+    // 📒 デジタルスコアブック清書シート（パターン2: 清書シート → タイムライン → 個人成績）
+    const scorebookSection = (
+      <MatchScorebookSection
+        key="section-scorebook"
+        matchMeta={{
+          matchId: match.id,
+          date: formattedDateTime || match.date,
+          matchTypeLabel,
+          tournamentName: customTournamentName || null,
+          venueName: basicVenueLabel || venueInfo.officialName || null,
+          topTeamName,
+          bottomTeamName,
+          scheduledInnings: match.innings || 7,
+          topInningScores: topScores.filter(
+            (v): v is number => typeof v === "number"
+          ),
+          bottomInningScores: bottomScores.filter(
+            (v): v is number => typeof v === "number"
+          ),
+          topTotalRuns: firstScore ?? 0,
+          bottomTotalRuns: secondScore ?? 0,
+          topTotalHits: typeof topHits === "number" ? topHits : 0,
+          bottomTotalHits: typeof bottomHits === "number" ? bottomHits : 0,
+          topTotalErrors: typeof topErrors === "number" ? topErrors : 0,
+          bottomTotalErrors:
+            typeof bottomErrors === "number" ? bottomErrors : 0,
+        }}
+        isMyTeamTop={match.battingOrder !== "second"}
+        hasPersonalStatsData={hasPersonalStatsData}
+        isLoadingStats={isStatsLoading}
+        isFutureOrScheduled={isFutureOrScheduled}
+        isRainout={isRainout}
+        isDemoMatch={isDemoCurrentMatch}
+        sharedBundle={scorebookBundle}
+        onInspectCell={handleInspectScorebookCell}
+      />
+    );
 
-                {/* 2行目（大会名がある場合のみ表示） */}
-                {customTournamentName && (
-                  <p className="text-xs sm:text-[13px] font-bold text-slate-200 leading-snug break-words">
-                    {customTournamentName}
-                  </p>
-                )}
-              </div>
-
-              {/* 下段ソリッドボディ：vs 相手チーム名 ＋ ＠球場名 ＋ 試合結果スコア */}
-              <div className="px-4 py-3.5 bg-card flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] sm:text-base font-black text-foreground leading-snug tracking-tight min-w-0">
-                  <span className="break-words">vs {match.opponent}</span>
-                  {basicVenueLabel && (
-                    <span className="text-xs sm:text-sm font-extrabold text-muted-foreground break-words">
-                      ＠{basicVenueLabel}
-                    </span>
-                  )}
-                </div>
-
-                {!isFutureOrScheduled && !isRainout && (
-                  <div className="flex items-center gap-2 shrink-0 tabular-nums">
-                    <span className="text-lg sm:text-xl font-black text-foreground leading-none">
-                      <span className={isWin ? "text-primary" : ""}>{match.myScore}</span>
-                      <span className="mx-1 text-muted-foreground text-sm">-</span>
-                      <span>{match.opponentScore}</span>
-                    </span>
-                    {isLive ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
-                        LIVE
-                      </span>
-                    ) : isWin ? (
-                      <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black">
-                        WIN
-                      </span>
-                    ) : isLose ? (
-                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
-                        LOSE
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded bg-zinc-500 text-white text-[10px] font-black">
-                        DRAW
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-
-          {/* 🔒 2. 試合映像（見出しはカード外） */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <Video className="w-4 h-4 text-[#FF0000] shrink-0" />
-                <span>試合映像 (YouTube限定公開)</span>
-              </h2>
-            </div>
-
-            {match.youtubeUrl ? (
-              <div className="space-y-2">
-                <YouTubePlayer
-                  url={match.youtubeUrl}
-                  title={`vs ${match.opponent} (${match.date}) 試合動画`}
-                />
-
-                {/* ⚠️ 動画取り扱いに関する注意書き */}
-                <div className="p-3 rounded-2xl border border-border border-l-4 border-l-[#FF0000] bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
-                  <ShieldAlert className="w-4 h-4 text-[#FF0000] shrink-0 mt-0.5" />
-                  <p className="leading-snug">
-                    本動画は選手・チームのプライバシー保護のため<strong className="text-foreground">YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-4 rounded-2xl border border-border bg-card text-center text-xs font-bold text-muted-foreground shadow-xs">
-                この試合には動画リンクが設定されていません
-              </div>
-            )}
-          </section>
-
-          {/* ⚾️ 2. スコアボード（見出しはカード外・試合カードと同一レイアウト） */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <Trophy className="w-4 h-4 text-primary shrink-0" />
-                <span>スコアボード</span>
-              </h2>
-
-              {isLive ? (
-                <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs animate-pulse">
-                  LIVE
-                </span>
-              ) : isRainout ? (
-                <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black">
-                  雨天中止
-                </span>
-              ) : isWin ? (
-                <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black shadow-2xs">
-                  WIN
-                </span>
-              ) : isLose ? (
-                <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs">
-                  LOSE
-                </span>
-              ) : isDraw ? (
-                <span className="px-2 py-0.5 rounded bg-zinc-500 text-white text-[10px] font-black shadow-2xs">
-                  DRAW
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-black">
-                  試合予定
-                </span>
-              )}
-            </div>
-
-            <div className="w-full overflow-hidden rounded-2xl border border-border bg-card shadow-xs flex flex-col">
-              <div className="overflow-x-auto scrollbar-none">
-                <table className="w-full text-center whitespace-nowrap text-xs">
-                  <thead className="bg-[#0f172a] text-slate-100 border-b-[3px] border-primary">
-                    <tr className="text-[10px] font-black">
-                      <th className="p-2 text-left pl-3 min-w-[92px] text-white">TEAM</th>
-                      {inningsArray.map((inningNum) => (
-                        <th key={inningNum} className="w-6 p-2 font-mono text-slate-200">
-                          {inningNum}
-                        </th>
-                      ))}
-                      <th className="w-8 p-2 bg-primary text-primary-foreground font-black border-l border-slate-700 font-mono">
-                        R
-                      </th>
-                      <th className="w-6 p-2 font-mono text-slate-200">H</th>
-                      <th className="w-6 p-2 pr-3 font-mono text-slate-200">E</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-xs font-black">
-                    {/* 先攻チーム */}
-                    <tr className="hover:bg-muted/20">
-                      <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
-                        {topTeamName}
-                      </td>
-                      {inningsArray.map((_, i) => (
-                        <td key={i} className="p-2 font-mono font-bold text-muted-foreground">
-                          {formatScoreCell(topScores[i], false, false, false)}
-                        </td>
-                      ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                        {isFutureOrScheduled ? "-" : firstScore}
-                      </td>
-                      <td className="p-2 font-mono text-muted-foreground text-[11px]">
-                        {isFutureOrScheduled ? "-" : topHits}
-                      </td>
-                      <td className="p-2 pr-3 font-mono text-muted-foreground text-[11px]">
-                        {isFutureOrScheduled ? "-" : topErrors}
-                      </td>
-                    </tr>
-
-                    {/* 後攻チーム */}
-                    <tr className="hover:bg-muted/20">
-                      <td className="p-2 text-left pl-3 font-bold truncate max-w-[105px] text-foreground">
-                        {bottomTeamName}
-                      </td>
-                      {inningsArray.map((_, i) => (
-                        <td key={i} className="p-2 font-mono font-bold text-muted-foreground">
-                          {formatScoreCell(
-                            bottomScores[i],
-                            true,
-                            i === inningsCount - 1,
-                            isHomeWinning
-                          )}
-                        </td>
-                      ))}
-                      <td className="p-2 font-mono bg-primary/10 text-primary font-black border-l border-border text-sm">
-                        {isFutureOrScheduled ? "-" : secondScore}
-                      </td>
-                      <td className="p-2 font-mono text-muted-foreground text-[11px]">
-                        {isFutureOrScheduled ? "-" : bottomHits}
-                      </td>
-                      <td className="p-2 pr-3 font-mono text-muted-foreground text-[11px]">
-                        {isFutureOrScheduled ? "-" : bottomErrors}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          {/* 📊 2.5 取り込み成績データ（注目選手・打撃20項目・詳細・投手成績・タイムライン） */}
-          <MatchStatsSection
-            matchId={match.id}
-            isMyTeamTop={match.battingOrder !== "second"}
-            myTeamName={myTeamLabel}
-            opponentName={match.opponent}
-            isFutureOrScheduled={isFutureOrScheduled}
-            isRainout={isRainout}
-            isDemoMatch={isDemo || isDemoMatchId(match.id)}
-            stats={matchStats}
-            pitcherStats={pitcherStats}
-            gameDetails={gameDetails}
-            playLogs={playLogs}
-            boxscoreAtBats={boxscoreAtBats}
-            isLoadingStats={isStatsLoading}
-            topScorebookModel={scorebookBundle.topModel}
-            bottomScorebookModel={scorebookBundle.bottomModel}
-            scorebookRules={scorebookBundle.effectiveRules}
-            onInspectScorebookCell={handleInspectScorebookCell}
-          />
-
-          {/* 👥 3. 出場メンバー（見出しはカード外・内部ブロックもすべて見出しを枠外に統一） */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
+    // 👥 出場メンバー（予定モードでは最上部・結果モードでは個人成績の下に配置）
+    const lineupSection = (
+      <section key="section-lineup" className="space-y-2" aria-label="出場メンバー">
+        <div className="flex items-center justify-between gap-2 px-1">
+          <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
                 <Users className="w-4 h-4 text-primary shrink-0" />
                 <span className="truncate">出場メンバー</span>
               </h2>
@@ -1805,10 +1667,12 @@ function MatchesContent() {
               )}
               </div>
             </div>
-          </section>
+      </section>
+    );
 
-          {/* 🏟️ 4. 球場・グラウンド（上部フルワイドGoogle Map ＋ 2行コンパクト情報 ＋ 最下部リンクボタン） */}
-          <section className="space-y-2">
+    // 🏟️ 球場・グラウンド（予定モードでは出場メンバー直下・結果モードでは下部参考エリアへ配置）
+    const venueSection = (
+      <section key="section-venue" className="space-y-2" aria-label="球場・グラウンド">
             <div className="flex items-center justify-between gap-2 px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
                 <MapPin className="w-4 h-4 text-primary shrink-0" />
@@ -1949,42 +1813,236 @@ function MatchesContent() {
                 )}
               </div>
             </div>
+      </section>
+    );
+
+    return (
+      <div className="flex flex-col flex-1">
+        <LiffHeader />
+
+        <div className="p-4 space-y-5">
+          {/* ページ内ヘッダー（「試合情報」固定タイトル＋前後切替ピル） */}
+          <LiffPageHeader
+            title="試合情報"
+            icon={
+              <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
+                <Video className="w-4 h-4" />
+              </span>
+            }
+            showBack
+            rightElement={
+              prevMatch || nextMatch || matchPosition ? (
+                <div
+                  role="navigation"
+                  aria-label="前後の試合切替"
+                  className="inline-flex items-center h-[34px] rounded-2xl bg-card border border-border shadow-xs divide-x divide-border overflow-hidden"
+                >
+                  {prevMatch ? (
+                    <Link
+                      href={`/liff/matches?id=${encodeURIComponent(prevMatch.id)}`}
+                      replace
+                      aria-label={`前の試合: vs ${prevMatch.opponent}`}
+                      title={`前の試合: vs ${prevMatch.opponent}`}
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Link>
+                  ) : (
+                    <span
+                      aria-disabled="true"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </span>
+                  )}
+
+                  {matchPosition && (
+                    <span className="px-2 h-full flex items-center justify-center text-[11px] font-black tabular-nums text-muted-foreground select-none whitespace-nowrap bg-muted/35">
+                      <span className="text-foreground">{matchPosition.current}</span>
+                      <span className="mx-0.5 text-muted-foreground/60">/</span>
+                      <span>{matchPosition.total}</span>
+                    </span>
+                  )}
+
+                  {nextMatch ? (
+                    <Link
+                      href={`/liff/matches?id=${encodeURIComponent(nextMatch.id)}`}
+                      replace
+                      aria-label={`次の試合: vs ${nextMatch.opponent}`}
+                      title={`次の試合: vs ${nextMatch.opponent}`}
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-foreground hover:bg-muted active:bg-muted/80 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
+                  ) : (
+                    <span
+                      aria-disabled="true"
+                      className="w-7 sm:w-8 h-full flex items-center justify-center text-muted-foreground/30 select-none"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </span>
+                  )}
+                </div>
+              ) : undefined
+            }
+            shareData={{
+              title: `vs ${match.opponent} 試合情報 & 出場メンバー`,
+              text: shareText,
+            }}
+          />
+
+          {/* 📋 1. 基本情報・スコアヒーローカード（A-3 上帯ダークキャップ × 純白高コントラストボディ） */}
+          <section aria-label="基本情報">
+            <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              {/* 上帯ダークソリッドキャップ：バッジ群・日時・大会名 */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 space-y-1.5">
+                <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1">
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      matchTypeBadgeClass
+                    )}
+                  >
+                    {matchTypeLabel}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight tabular-nums",
+                      neutralBadgeClass
+                    )}
+                  >
+                    {inningsBadgeLabel}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      battingOrderBadgeClass
+                    )}
+                  >
+                    {battingOrderLabel}
+                  </span>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight",
+                      benchSideBadgeClass
+                    )}
+                  >
+                    {benchSideLabel}
+                  </span>
+
+                  {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
+                    hasPersonalStatsData ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-emerald-500 text-slate-950 border-emerald-500">
+                        <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
+                        <span>スコア取込済</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-black leading-tight bg-slate-800 text-slate-300 border-slate-700">
+                        スコア未取込
+                      </span>
+                    )
+                  )}
+
+                  {formattedDateTime && (
+                    <span className="text-[11px] sm:text-xs font-bold tabular-nums text-slate-300 leading-tight shrink-0">
+                      {formattedDateTime}
+                    </span>
+                  )}
+                </div>
+
+                {/* 2行目（大会名がある場合のみ表示） */}
+                {customTournamentName && (
+                  <p className="text-xs sm:text-[13px] font-bold text-slate-200 leading-snug break-words">
+                    {customTournamentName}
+                  </p>
+                )}
+              </div>
+
+              {/* 下段ソリッドボディ：vs 相手チーム名 ＋ ＠球場名 ＋ 試合結果スコア / 状態バッジ */}
+              <div className="px-4 py-3.5 bg-card flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] sm:text-base font-black text-foreground leading-snug tracking-tight min-w-0">
+                  <span className="break-words">vs {match.opponent}</span>
+                  {basicVenueLabel && (
+                    <span className="text-xs sm:text-sm font-extrabold text-muted-foreground break-words">
+                      ＠{basicVenueLabel}
+                    </span>
+                  )}
+                </div>
+
+                {isRainout ? (
+                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black shrink-0">
+                    雨天中止
+                  </span>
+                ) : !isLive && isFutureOrScheduled ? (
+                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 text-[10px] font-black shrink-0">
+                    試合予定
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                    <span className="text-lg sm:text-xl font-black text-foreground leading-none">
+                      <span className={isWin ? "text-primary" : ""}>{match.myScore}</span>
+                      <span className="mx-1 text-muted-foreground text-sm">-</span>
+                      <span>{match.opponentScore}</span>
+                    </span>
+                    {isLive ? (
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
+                        LIVE
+                      </span>
+                    ) : isWin ? (
+                      <span className="px-2 py-0.5 rounded bg-blue-600 text-white text-[10px] font-black">
+                        WIN
+                      </span>
+                    ) : isLose ? (
+                      <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
+                        LOSE
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded bg-zinc-500 text-white text-[10px] font-black">
+                        DRAW
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
 
-          {/* 📒 4.5 デジタルスコアブック清書シート（標準 ⇄ チーム記号ルール表示切替・PNG保存・A4印刷） */}
-          <MatchScorebookSection
-            matchMeta={{
-              matchId: match.id,
-              date: formattedDateTime || match.date,
-              matchTypeLabel,
-              tournamentName: customTournamentName || null,
-              venueName: basicVenueLabel || venueInfo.officialName || null,
-              topTeamName,
-              bottomTeamName,
-              scheduledInnings: match.innings || 7,
-              topInningScores: topScores.filter(
-                (v): v is number => typeof v === "number"
-              ),
-              bottomInningScores: bottomScores.filter(
-                (v): v is number => typeof v === "number"
-              ),
-              topTotalRuns: firstScore ?? 0,
-              bottomTotalRuns: secondScore ?? 0,
-              topTotalHits: typeof topHits === "number" ? topHits : 0,
-              bottomTotalHits: typeof bottomHits === "number" ? bottomHits : 0,
-              topTotalErrors: typeof topErrors === "number" ? topErrors : 0,
-              bottomTotalErrors:
-                typeof bottomErrors === "number" ? bottomErrors : 0,
-            }}
-            isMyTeamTop={match.battingOrder !== "second"}
-            hasPersonalStatsData={hasPersonalStatsData}
-            isLoadingStats={isStatsLoading}
-            isFutureOrScheduled={isFutureOrScheduled}
-            isRainout={isRainout}
-            isDemoMatch={isDemo || isDemoMatchId(match.id)}
-            sharedBundle={scorebookBundle}
-            onInspectCell={handleInspectScorebookCell}
-          />
+          {isPreMatchMode ? (
+            <>
+              {/* 🗓️ 試合前・雨天中止モード：出場メンバー → 球場・アクセス → 事前動画(設定時のみ) */}
+              {lineupSection}
+              {venueSection}
+              {videoSection}
+            </>
+          ) : (
+            <>
+              {/* 🏆 試合中・試合後モード（案A ＋ パターン2）：
+                  スコアボード → 注目選手 → 試合映像(設定時のみ) → スコアブック清書シート → タイムライン(1マス解説) → 個人成績 → 出場メンバー → 球場 */}
+              {scoreboardSection}
+              <MatchStatsSection
+                key="stats-heroes"
+                {...sharedStatsProps}
+                displayPart="heroes"
+              />
+              {videoSection}
+              {scorebookSection}
+              <MatchStatsSection
+                key="stats-timeline"
+                {...sharedStatsProps}
+                displayPart="timeline"
+              />
+              <MatchStatsSection
+                key="stats-tables"
+                {...sharedStatsProps}
+                displayPart="tables"
+              />
+              {lineupSection}
+              {venueSection}
+            </>
+          )}
 
           {/* ↔️ 5. 前後の試合ナビゲーション */}
           {(prevMatch || nextMatch) && (

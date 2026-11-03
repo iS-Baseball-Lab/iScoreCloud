@@ -299,11 +299,20 @@ export function MatchScorebookSection({
     ]
   );
 
-  if (isFutureOrScheduled || isRainout) {
+  if (isRainout) {
+    return null;
+  }
+
+  if (isFutureOrScheduled && !hasPersonalStatsData && !isDemoMatch) {
     return null;
   }
 
   if (!isDemoMatch && !hasPersonalStatsData && !isLoadingStats) {
+    return null;
+  }
+
+  // 初回成績ロード中かつシート未生成時は MatchStatsSection(tables) 側のスピナーに一本化（二重スピナー・チラつき防止）
+  if (isLoadingStats && !topModel && !bottomModel && !isDemoMatch) {
     return null;
   }
 
