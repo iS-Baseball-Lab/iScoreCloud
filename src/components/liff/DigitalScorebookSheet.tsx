@@ -1806,7 +1806,7 @@ function renderBoundarySubMarkSvg(params: {
   );
 }
 
-function renderCellSubstitutionsOverlaySvg(
+export function renderCellSubstitutionsOverlaySvg(
   cell: CompiledScorebookCell | undefined,
   rules: ScorebookSymbolRules,
   cx: number,
@@ -2939,6 +2939,7 @@ export interface DigitalScorebookSheetProps {
   rules: ScorebookSymbolRules;
   svgRef?: React.Ref<SVGSVGElement>;
   className?: string;
+  onCellClick?: (cell: CompiledScorebookCell) => void;
 }
 
 export function DigitalScorebookSheet({
@@ -2947,6 +2948,7 @@ export function DigitalScorebookSheet({
   rules,
   svgRef,
   className,
+  onCellClick,
 }: DigitalScorebookSheetProps) {
   const PAD = 16;
   const HEADER_H = 74;
@@ -3579,6 +3581,38 @@ export function DigitalScorebookSheet({
         gridStartX,
         gridBodyTopY
       )}
+
+      {/* ━━━ 3C. 記録済みマスのタップ解説用・完全透明ヒットターゲット（PNG/印刷出力に一切影響しない） ━━━ */}
+      {onCellClick &&
+        model.batterRows.map((bRow, rowIdx) => {
+          const ry = gridBodyTopY + rowIdx * CELL_H;
+          return model.columns.map((col, colIdx) => {
+            const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
+            const cell = model.cellsByKey[cellKey];
+            if (!cell || (!cell.atBat && !cell.isTiebreakRunnerOnly)) {
+              return null;
+            }
+            const cx = gridStartX + colIdx * CELL_W;
+            return (
+              <rect
+                key={`hit-cell-${cellKey}`}
+                x={cx}
+                y={ry}
+                width={CELL_W}
+                height={CELL_H}
+                fill="transparent"
+                stroke="none"
+                role="button"
+                aria-label={`${col.inning}回${model.isTop ? "表" : "裏"} ${bRow.battingOrder}番のマスの記号解説を見る`}
+                style={{ cursor: "pointer" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCellClick(cell);
+                }}
+              />
+            );
+          });
+        })}
 
       {/* ━━━ 4. グリッド下段：各イニング集計行（安打・四死/失・残塁・得点）＋ チーム合計 ━━━ */}
       {(

@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   Download,
   FileSpreadsheet,
   Image as ImageIcon,
@@ -16,42 +17,29 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
 import type {
-  ImportScopeMode,
-  ScorebookSheetStructure,
-  ScorebookV2AtBat,
-} from "@/types/scorebook-v2";
-import {
-  DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
-  loadCachedTeamSymbolRules,
-  saveCachedTeamSymbolRules,
-  type ScorebookSymbolRules,
-} from "@/lib/liff/scorebook-symbol-rules";
-import {
-  buildDemoScorebookSavedBundle,
-  compileScorebookSheetModel,
-  type ScorebookMatchHeaderMeta,
+  CompiledScorebookCell,
+  CompiledScorebookSheetModel,
+  ScorebookMatchHeaderMeta,
 } from "@/lib/liff/scorebook-renderer-model";
+import {
+  getChronologicalSheetCells,
+  type InspectedScorebookCellItem,
+} from "@/lib/liff/scorebook-cell-guide";
+import { useMatchScorebookBundle } from "@/lib/liff/use-match-scorebook-bundle";
 import {
   DigitalScorebookSheet,
   exportScorebookSvgElementsToPngBlob,
   printScorebookSvgElements,
 } from "@/components/liff/DigitalScorebookSheet";
 
-interface SavedScorebookApiResponse {
-  success: boolean;
-  error?: string;
-  matchId?: string;
-  importScope?: ImportScopeMode;
-  topStructure?: ScorebookSheetStructure | null;
-  bottomStructure?: ScorebookSheetStructure | null;
-  topAtBats?: ScorebookV2AtBat[];
-  bottomAtBats?: ScorebookV2AtBat[];
-  topImageUrl?: string | null;
-  bottomImageUrl?: string | null;
-  teamName?: string | null;
-  scorebookLegendUrl?: string | null;
-  teamSymbolRules?: ScorebookSymbolRules | null;
+export interface SharedMatchScorebookBundle {
+  topModel: CompiledScorebookSheetModel | null;
+  bottomModel: CompiledScorebookSheetModel | null;
+  effectiveRules: ScorebookSymbolRules;
+  isLoadingSheet: boolean;
+  loadError: string | null;
 }
 
 export interface MatchScorebookSectionProps {
@@ -62,6 +50,13 @@ export interface MatchScorebookSectionProps {
   isFutureOrScheduled: boolean;
   isRainout: boolean;
   isDemoMatch: boolean;
+  /** 親コンポーネントで一括取得・コンパイル済みの共有バンドル（指定時は二重フェッチ・二重コンパイルをスキップ） */
+  sharedBundle?: SharedMatchScorebookBundle;
+  /** シート上の任意のマスがタップされた際の解説モーダル起動コールバック */
+  onInspectCell?: (
+    item: InspectedScorebookCellItem,
+    navigationItems: InspectedScorebookCellItem[]
+  ) => void;
 }
 
 export function MatchScorebookSection({
@@ -72,17 +67,20 @@ export function MatchScorebookSection({
   isFutureOrScheduled,
   isRainout,
   isDemoMatch,
+  sharedBundle,
+  onInspectCell,
 }: MatchScorebookSectionProps) {
-  const [isLoadingSheet, setIsLoadingSheet] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [topStructure, setTopStructure] =
-    useState<ScorebookSheetStructure | null>(null);
-  const [bottomStructure, setBottomStructure] =
-    useState<ScorebookSheetStructure | null>(null);
-  const [topAtBats, setTopAtBats] = useState<ScorebookV2AtBat[]>([]);
-  const [bottomAtBats, setBottomAtBats] = useState<ScorebookV2AtBat[]>([]);
-  const [cloudTeamRules, setCloudTeamRules] =
-    useState<ScorebookSymbolRules | null>(null);
+  const internalBundle = useMatchScorebookBundle({
+    matchMeta: sharedBundle ? null : matchMeta,
+    isMyTeamTop,
+    hasPersonalStatsData,
+    isFutureOrScheduled,
+    isRainout,
+    isDemoMatch,
+  });
+
+  const { topModel, bottomModel, effectiveRules, isLoadingSheet, loadError } =
+    sharedBundle ?? internalBundle;
 
   const [activeSide, setActiveSide] = useState<"top" | "bottom">(
     isMyTeamTop ? "top" : "bottom"
@@ -98,147 +96,67 @@ export function MatchScorebookSection({
   const topSvgRef = useRef<SVGSVGElement | null>(null);
   const bottomSvgRef = useRef<SVGSVGElement | null>(null);
 
-  // 初回マウント時にキャッシュ済みのチーム記号ルールを復元
-  useEffect(() => {
-    const cachedRules = loadCachedTeamSymbolRules();
-    if (cachedRules) {
-      setCloudTeamRules(cachedRules);
-    }
-  }, []);
+  const hasTopModel = Boolean(topModel);
+  const hasBottomModel = Boolean(bottomModel);
 
   // 背景の試合IDが切り替わった際は開いているモーダルを自動リセット（SKILL.md規約5）
   useEffect(() => {
     setIsFullscreenOpen(false);
     setExportedPreviewDataUrl(null);
     setFullscreenZoom(1);
+    setMountOffscreenSheet(false);
     setActiveSide(isMyTeamTop ? "top" : "bottom");
   }, [matchMeta.matchId, isMyTeamTop]);
 
-  // 保存済みスコアブックデータの取得（デモ試合時はデモ用シートを構築）
+  // 片面のみ取込済みの場合はデータが存在する側を自動選択
   useEffect(() => {
-    if (isFutureOrScheduled || isRainout) {
-      setTopStructure(null);
-      setBottomStructure(null);
-      setTopAtBats([]);
-      setBottomAtBats([]);
-      return;
+    if (hasTopModel && !hasBottomModel) {
+      setActiveSide("top");
+    } else if (!hasTopModel && hasBottomModel) {
+      setActiveSide("bottom");
     }
-
-    if (isDemoMatch) {
-      const demoBundle = buildDemoScorebookSavedBundle({
-        matchId: matchMeta.matchId,
-        isMyTeamFirst: isMyTeamTop,
-        myTeamName: isMyTeamTop
-          ? matchMeta.topTeamName
-          : matchMeta.bottomTeamName,
-        opponentName: isMyTeamTop
-          ? matchMeta.bottomTeamName
-          : matchMeta.topTeamName,
-      });
-      setTopStructure(demoBundle.topStructure);
-      setBottomStructure(demoBundle.bottomStructure);
-      setTopAtBats(demoBundle.topAtBats);
-      setBottomAtBats(demoBundle.bottomAtBats);
-      setLoadError(null);
-      return;
-    }
-
-    if (!hasPersonalStatsData) {
-      setTopStructure(null);
-      setBottomStructure(null);
-      setTopAtBats([]);
-      setBottomAtBats([]);
-      return;
-    }
-
-    let cancelled = false;
-    setIsLoadingSheet(true);
-    setLoadError(null);
-
-    fetch(
-      `/api/liff/scorebook/saved?matchId=${encodeURIComponent(
-        matchMeta.matchId
-      )}`
-    )
-      .then(async (res) => {
-        const json = (await res.json()) as SavedScorebookApiResponse;
-        if (cancelled) return;
-        if (!res.ok || !json.success) {
-          setLoadError(json.error || "スコアブックデータの読み込みに失敗しました");
-          return;
-        }
-
-        const nextTopStr = json.topStructure ?? null;
-        const nextBotStr = json.bottomStructure ?? null;
-        const nextTopAbs = Array.isArray(json.topAtBats) ? json.topAtBats : [];
-        const nextBotAbs = Array.isArray(json.bottomAtBats)
-          ? json.bottomAtBats
-          : [];
-
-        setTopStructure(nextTopStr);
-        setBottomStructure(nextBotStr);
-        setTopAtBats(nextTopAbs);
-        setBottomAtBats(nextBotAbs);
-
-        if (json.teamSymbolRules) {
-          setCloudTeamRules(json.teamSymbolRules);
-          saveCachedTeamSymbolRules(json.teamSymbolRules);
-        }
-
-        // 片面のみ取込済みの場合はデータが存在する側を自動選択
-        const hasTop = Boolean(nextTopStr && nextTopAbs.length > 0);
-        const hasBot = Boolean(nextBotStr && nextBotAbs.length > 0);
-        if (hasTop && !hasBot) {
-          setActiveSide("top");
-        } else if (!hasTop && hasBot) {
-          setActiveSide("bottom");
-        } else {
-          setActiveSide(isMyTeamTop ? "top" : "bottom");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLoadError("通信エラーによりスコアブックを読み込めませんでした");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoadingSheet(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    matchMeta.matchId,
-    matchMeta.topTeamName,
-    matchMeta.bottomTeamName,
-    isMyTeamTop,
-    hasPersonalStatsData,
-    isFutureOrScheduled,
-    isRainout,
-    isDemoMatch,
-  ]);
-
-  const topModel = useMemo(() => {
-    if (!topStructure || topAtBats.length === 0) return null;
-    return compileScorebookSheetModel(topStructure, topAtBats, matchMeta);
-  }, [topStructure, topAtBats, matchMeta]);
-
-  const bottomModel = useMemo(() => {
-    if (!bottomStructure || bottomAtBats.length === 0) return null;
-    return compileScorebookSheetModel(bottomStructure, bottomAtBats, matchMeta);
-  }, [bottomStructure, bottomAtBats, matchMeta]);
-
-  // スコア設定ページで設定されたチームの記号ルールを常に適用
-  const effectiveRules: ScorebookSymbolRules = useMemo(
-    () => cloudTeamRules ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
-    [cloudTeamRules]
-  );
+  }, [hasTopModel, hasBottomModel]);
 
   const activeModel = activeSide === "top" ? topModel : bottomModel;
   const hasBothSides = Boolean(topModel && bottomModel);
+
+  const topNavItems = useMemo<InspectedScorebookCellItem[]>(
+    () =>
+      topModel
+        ? getChronologicalSheetCells(topModel).map((c) => ({
+            cell: c,
+            model: topModel,
+          }))
+        : [],
+    [topModel]
+  );
+
+  const bottomNavItems = useMemo<InspectedScorebookCellItem[]>(
+    () =>
+      bottomModel
+        ? getChronologicalSheetCells(bottomModel).map((c) => ({
+            cell: c,
+            model: bottomModel,
+          }))
+        : [],
+    [bottomModel]
+  );
+
+  const handleTopCellClick = useCallback(
+    (cell: CompiledScorebookCell) => {
+      if (!topModel || !onInspectCell) return;
+      onInspectCell({ cell, model: topModel }, topNavItems);
+    },
+    [topModel, topNavItems, onInspectCell]
+  );
+
+  const handleBottomCellClick = useCallback(
+    (cell: CompiledScorebookCell) => {
+      if (!bottomModel || !onInspectCell) return;
+      onInspectCell({ cell, model: bottomModel }, bottomNavItems);
+    },
+    [bottomModel, bottomNavItems, onInspectCell]
+  );
 
   const ensureBothSidesMounted = useCallback(async () => {
     if (!hasBothSides) return;
@@ -445,7 +363,13 @@ export function MatchScorebookSection({
                   )}
                 >
                   <span className="truncate">
-                    <span className={activeSide === "top" && topModel ? "text-primary mr-1" : "mr-1"}>
+                    <span
+                      className={
+                        activeSide === "top" && topModel
+                          ? "text-primary mr-1"
+                          : "mr-1"
+                      }
+                    >
                       先攻:
                     </span>
                     {matchMeta.topTeamName}
@@ -474,7 +398,13 @@ export function MatchScorebookSection({
                   )}
                 >
                   <span className="truncate">
-                    <span className={activeSide === "bottom" && bottomModel ? "text-primary mr-1" : "mr-1"}>
+                    <span
+                      className={
+                        activeSide === "bottom" && bottomModel
+                          ? "text-primary mr-1"
+                          : "mr-1"
+                      }
+                    >
                       後攻:
                     </span>
                     {matchMeta.bottomTeamName}
@@ -492,129 +422,148 @@ export function MatchScorebookSection({
                 </button>
               </div>
 
-            {/* ━━━ スコアブックSVGシート本体（横スクロール＋タップ拡大対応） ━━━ */}
-            {activeModel && (
-              <div className="relative rounded-xl border border-border/60 bg-[#fffefb] overflow-hidden">
-                <div className="overflow-x-auto overscroll-x-contain">
-                  <div className="min-w-[820px] p-1">
-                    {activeSide === "top" && topModel ? (
-                      <DigitalScorebookSheet
-                        model={topModel}
-                        matchMeta={matchMeta}
-                        rules={effectiveRules}
-                        svgRef={topSvgRef}
-                        className="w-full h-auto block"
-                      />
-                    ) : bottomModel ? (
-                      <DigitalScorebookSheet
-                        model={bottomModel}
-                        matchMeta={matchMeta}
-                        rules={effectiveRules}
-                        svgRef={bottomSvgRef}
-                        className="w-full h-auto block"
-                      />
-                    ) : null}
+              {/* ━━━ スコアブックSVGシート本体（横スクロール＋1マスタップ解説＋拡大対応） ━━━ */}
+              {activeModel && (
+                <div className="relative rounded-xl border border-border/60 bg-[#fffefb] overflow-hidden">
+                  <div className="overflow-x-auto overscroll-x-contain">
+                    <div className="min-w-[820px] p-1">
+                      {activeSide === "top" && topModel ? (
+                        <DigitalScorebookSheet
+                          model={topModel}
+                          matchMeta={matchMeta}
+                          rules={effectiveRules}
+                          svgRef={topSvgRef}
+                          onCellClick={
+                            onInspectCell ? handleTopCellClick : undefined
+                          }
+                          className="w-full h-auto block"
+                        />
+                      ) : bottomModel ? (
+                        <DigitalScorebookSheet
+                          model={bottomModel}
+                          matchMeta={matchMeta}
+                          rules={effectiveRules}
+                          svgRef={bottomSvgRef}
+                          onCellClick={
+                            onInspectCell ? handleBottomCellClick : undefined
+                          }
+                          className="w-full h-auto block"
+                        />
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* 横スクロール＆1マスタップ解説案内＋全画面拡大ボタン */}
+                  <div className="px-3 py-1.5 bg-muted/50 border-t border-border/60 flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
+                    <span className="inline-flex items-center gap-1 min-w-0 truncate">
+                      {onInspectCell && (
+                        <BookOpen className="w-3 h-3 text-primary shrink-0" />
+                      )}
+                      <span className="truncate">
+                        {onInspectCell
+                          ? "各マスをタップで記号解説 ／ 左右スワイプで全回確認"
+                          : "← 左右にスワイプして全イニング・個人集計を確認 →"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFullscreenZoom(1);
+                        setIsFullscreenOpen(true);
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/12 text-primary border border-primary/35 hover:bg-primary/18 font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                      <span>拡大表示</span>
+                    </button>
                   </div>
                 </div>
+              )}
 
-                {/* 横スクロール案内＋全画面拡大フローティングピル */}
-                <div className="px-3 py-1.5 bg-muted/50 border-t border-border/60 flex items-center justify-between gap-2 text-[10px] font-bold text-muted-foreground">
-                  <span>← 左右にスワイプして全イニング・個人集計を確認 →</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFullscreenZoom(1);
-                      setIsFullscreenOpen(true);
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary/12 text-primary border border-primary/35 hover:bg-primary/18 font-black text-[10px] shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
-                  >
-                    <Maximize2 className="w-3 h-3" />
-                    <span>拡大表示</span>
-                  </button>
+              {/* 反対側シートは両面保存・両面印刷の実行時にのみオンデマンドでマウント（初期描画のSVGノード数を50%削減） */}
+              {hasBothSides && mountOffscreenSheet && (
+                <div
+                  aria-hidden="true"
+                  className="fixed -left-[9999px] top-0 pointer-events-none opacity-0 overflow-hidden w-0 h-0"
+                >
+                  {activeSide === "top" && bottomModel && (
+                    <DigitalScorebookSheet
+                      model={bottomModel}
+                      matchMeta={matchMeta}
+                      rules={effectiveRules}
+                      svgRef={bottomSvgRef}
+                    />
+                  )}
+                  {activeSide === "bottom" && topModel && (
+                    <DigitalScorebookSheet
+                      model={topModel}
+                      matchMeta={matchMeta}
+                      rules={effectiveRules}
+                      svgRef={topSvgRef}
+                    />
+                  )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* 反対側シートは両面保存・両面印刷の実行時にのみオンデマンドでマウント（初期描画のSVGノード数を50%削減） */}
-            {hasBothSides && mountOffscreenSheet && (
-              <div
-                aria-hidden="true"
-                className="fixed -left-[9999px] top-0 pointer-events-none opacity-0 overflow-hidden w-0 h-0"
-              >
-                {activeSide === "top" && bottomModel && (
-                  <DigitalScorebookSheet
-                    model={bottomModel}
-                    matchMeta={matchMeta}
-                    rules={effectiveRules}
-                    svgRef={bottomSvgRef}
-                  />
-                )}
-                {activeSide === "bottom" && topModel && (
-                  <DigitalScorebookSheet
-                    model={topModel}
-                    matchMeta={matchMeta}
-                    rules={effectiveRules}
-                    svgRef={topSvgRef}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* ━━━ 下段アクションバー：画像保存・LINE共有・A4印刷 ━━━ */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5">
-              <button
-                type="button"
-                disabled={isExportingPng}
-                onClick={() => handleExportPng("current")}
-                className="h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-55"
-              >
-                {isExportingPng ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                ) : (
-                  <Share2 className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>表示中を画像保存</span>
-              </button>
-
-              {hasBothSides ? (
+              {/* ━━━ 下段アクションバー：画像保存・LINE共有・A4印刷 ━━━ */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-0.5">
                 <button
                   type="button"
                   disabled={isExportingPng}
-                  onClick={() => handleExportPng("both")}
-                  className="h-10 px-3 rounded-xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer disabled:opacity-55"
+                  onClick={() => handleExportPng("current")}
+                  className="h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-55"
                 >
-                  <Download className="w-3.5 h-3.5 shrink-0" />
-                  <span>先攻・後攻まとめて保存</span>
+                  {isExportingPng ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <Share2 className="w-3.5 h-3.5 shrink-0" />
+                  )}
+                  <span>表示中を画像保存</span>
                 </button>
-              ) : (
+
+                {hasBothSides ? (
+                  <button
+                    type="button"
+                    disabled={isExportingPng}
+                    onClick={() => handleExportPng("both")}
+                    className="h-10 px-3 rounded-xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer disabled:opacity-55"
+                  >
+                    <Download className="w-3.5 h-3.5 shrink-0" />
+                    <span>先攻・後攻まとめて保存</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFullscreenZoom(1.25);
+                      setIsFullscreenOpen(true);
+                    }}
+                    className="h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span>全画面で大きく見る</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => {
-                    setFullscreenZoom(1.25);
-                    setIsFullscreenOpen(true);
-                  }}
-                  className="h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                  onClick={() =>
+                    handlePrintSheet(hasBothSides ? "both" : "current")
+                  }
+                  className="col-span-2 sm:col-span-1 h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
                 >
-                  <Maximize2 className="w-3.5 h-3.5 text-primary shrink-0" />
-                  <span>全画面で大きく見る</span>
+                  <Printer className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>
+                    {hasBothSides ? "A4横 両面印刷 / PDF" : "A4横 印刷 / PDF"}
+                  </span>
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => handlePrintSheet(hasBothSides ? "both" : "current")}
-                className="col-span-2 sm:col-span-1 h-10 px-3 rounded-xl border border-border/60 bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-primary shrink-0" />
-                <span>{hasBothSides ? "A4横 両面印刷 / PDF" : "A4横 印刷 / PDF"}</span>
-              </button>
+              </div>
             </div>
-          </div>
           </>
         )}
       </div>
 
-      {/* ━━━ モーダル1：全画面・高精細ズームビューア（明示的な×ボタンでのみ閉じる） ━━━ */}
+      {/* ━━━ モーダル1：全画面・高精細ズームビューア（明示的な×ボタンでのみ閉じる・拡大中もマスタップ解説に対応） ━━━ */}
       {isFullscreenOpen && activeModel && (
         <div
           role="dialog"
@@ -624,34 +573,49 @@ export function MatchScorebookSection({
         >
           {/* 上部ツールバー */}
           <div className="px-3 py-2.5 bg-card border-b border-border/60 flex items-center justify-between gap-2 shrink-0">
-            <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 min-w-0">
-              {topModel && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSide("top")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
-                    activeSide === "top"
-                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                  )}
-                >
-                  <span className={activeSide === "top" ? "text-primary" : ""}>先攻</span>
-                </button>
-              )}
-              {bottomModel && (
-                <button
-                  type="button"
-                  onClick={() => setActiveSide("bottom")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
-                    activeSide === "bottom"
-                      ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
-                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                  )}
-                >
-                  <span className={activeSide === "bottom" ? "text-primary" : ""}>後攻</span>
-                </button>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="inline-flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border/60 min-w-0">
+                {topModel && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSide("top")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
+                      activeSide === "top"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                    )}
+                  >
+                    <span className={activeSide === "top" ? "text-primary" : ""}>
+                      先攻
+                    </span>
+                  </button>
+                )}
+                {bottomModel && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSide("bottom")}
+                    className={cn(
+                      "px-2.5 py-1 rounded-xl text-[11px] transition-all cursor-pointer",
+                      activeSide === "bottom"
+                        ? "bg-card text-foreground shadow-sm border border-border/50 font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                    )}
+                  >
+                    <span
+                      className={activeSide === "bottom" ? "text-primary" : ""}
+                    >
+                      後攻
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              {onInspectCell && (
+                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground truncate">
+                  <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>マスをタップで記号解説</span>
+                </span>
               )}
             </div>
 
@@ -659,7 +623,9 @@ export function MatchScorebookSection({
               <button
                 type="button"
                 onClick={() =>
-                  setFullscreenZoom((z) => Math.max(0.75, +(z - 0.25).toFixed(2)))
+                  setFullscreenZoom((z) =>
+                    Math.max(0.75, +(z - 0.25).toFixed(2))
+                  )
                 }
                 aria-label="縮小"
                 className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
@@ -672,7 +638,9 @@ export function MatchScorebookSection({
               <button
                 type="button"
                 onClick={() =>
-                  setFullscreenZoom((z) => Math.min(2.5, +(z + 0.25).toFixed(2)))
+                  setFullscreenZoom((z) =>
+                    Math.min(2.5, +(z + 0.25).toFixed(2))
+                  )
                 }
                 aria-label="拡大"
                 className="w-8 h-8 rounded-lg bg-card border border-border/60 hover:bg-muted text-foreground flex items-center justify-center cursor-pointer active:scale-95"
@@ -703,6 +671,13 @@ export function MatchScorebookSection({
                 model={activeModel}
                 matchMeta={matchMeta}
                 rules={effectiveRules}
+                onCellClick={
+                  onInspectCell
+                    ? activeSide === "top"
+                      ? handleTopCellClick
+                      : handleBottomCellClick
+                    : undefined
+                }
                 className="w-full h-auto rounded-lg shadow-2xl"
               />
             </div>

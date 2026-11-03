@@ -76,6 +76,10 @@ import {
   type LiffRawPlayLogItem,
 } from "@/components/liff/MatchStatsSection";
 import { MatchScorebookSection } from "@/components/liff/MatchScorebookSection";
+import { ScorebookCellGuideModal } from "@/components/liff/ScorebookCellGuideModal";
+import type { InspectedScorebookCellItem } from "@/lib/liff/scorebook-cell-guide";
+import type { ScorebookMatchHeaderMeta } from "@/lib/liff/scorebook-renderer-model";
+import { useMatchScorebookBundle } from "@/lib/liff/use-match-scorebook-bundle";
 import { getDemoMatchStatsBundle } from "@/lib/liff/demo-match-stats";
 import {
   DeletePersonalStatsModal,
@@ -296,6 +300,33 @@ function MatchesContent() {
   const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
   const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
+  const [inspectedCellModalState, setInspectedCellModalState] = useState<{
+    activeItem: InspectedScorebookCellItem;
+    navigationItems: InspectedScorebookCellItem[];
+  } | null>(null);
+
+  const handleInspectScorebookCell = useCallback(
+    (
+      item: InspectedScorebookCellItem,
+      navigationItems: InspectedScorebookCellItem[]
+    ) => {
+      setInspectedCellModalState({ activeItem: item, navigationItems });
+    },
+    []
+  );
+
+  const handleSelectInspectedCell = useCallback(
+    (nextItem: InspectedScorebookCellItem) => {
+      setInspectedCellModalState((prev) =>
+        prev ? { ...prev, activeItem: nextItem } : null
+      );
+    },
+    []
+  );
+
+  const handleCloseInspectedCell = useCallback(() => {
+    setInspectedCellModalState(null);
+  }, []);
 
   // 試合一覧用ステート
   const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
@@ -372,6 +403,7 @@ function MatchesContent() {
         }
 
         setShowDeleteStatsModal(false);
+        setInspectedCellModalState(null);
         toast.success("この試合の個人データを削除しました");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -389,6 +421,7 @@ function MatchesContent() {
     setLineupTeamTab("my");
     setShowDeleteStatsModal(false);
     setIsManageMenuOpen(false);
+    setInspectedCellModalState(null);
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
@@ -729,6 +762,115 @@ function MatchesContent() {
     () => remainingPlayers.filter((p) => myAttendance[p.id] === "absent"),
     [remainingPlayers, myAttendance]
   );
+
+  // 試合詳細ページ用の共有スコアブックバンドル（タイムライン1マス表示・清書シート・記号解説モーダルで共有）
+  const activeDetailMatch =
+    matchId && match && match.id === matchId && !detailError ? match : null;
+
+  const sharedScorebookMatchMeta = useMemo<ScorebookMatchHeaderMeta | null>(() => {
+    if (!activeDetailMatch) return null;
+    const parseInningArr = (raw: unknown): number[] => {
+      let arr: unknown[] = [];
+      if (Array.isArray(raw)) {
+        arr = raw;
+      } else if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) arr = parsed;
+        } catch {
+          arr = [];
+        }
+      }
+      return arr.filter((v): v is number => typeof v === "number");
+    };
+
+    const myInnings = parseInningArr(activeDetailMatch.myInningScores);
+    const oppInnings = parseInningArr(activeDetailMatch.opponentInningScores);
+    const isSecond = activeDetailMatch.battingOrder === "second";
+    const myLabel = currentTeam?.shortName || currentTeam?.name || "自チーム";
+    const vInfo = buildVenueDisplayInfo(activeDetailMatch);
+    const rawBasicV = (vInfo.shortName || vInfo.officialName).trim();
+    const cleanVenue =
+      rawBasicV && !/^(未定|未設定|球場未設定)$/.test(rawBasicV)
+        ? rawBasicV
+        : vInfo.officialName || null;
+    const rawTour = (
+      activeDetailMatch.tournamentName ||
+      activeDetailMatch.tournament ||
+      ""
+    ).trim();
+    const customTour =
+      rawTour && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTour)
+        ? rawTour
+        : null;
+    const mTypeLabel =
+      activeDetailMatch.matchType === "official"
+        ? "公式戦"
+        : activeDetailMatch.matchType === "exchange"
+        ? "交流戦"
+        : "OP戦";
+
+    return {
+      matchId: activeDetailMatch.id,
+      date:
+        formatBasicMatchDateTime(activeDetailMatch.date) ||
+        activeDetailMatch.date,
+      matchTypeLabel: mTypeLabel,
+      tournamentName: customTour,
+      venueName: cleanVenue,
+      topTeamName: isSecond ? activeDetailMatch.opponent : myLabel,
+      bottomTeamName: isSecond ? myLabel : activeDetailMatch.opponent,
+      scheduledInnings: activeDetailMatch.innings || 7,
+      topInningScores: isSecond ? oppInnings : myInnings,
+      bottomInningScores: isSecond ? myInnings : oppInnings,
+      topTotalRuns: isSecond
+        ? activeDetailMatch.opponentScore ?? 0
+        : activeDetailMatch.myScore ?? 0,
+      bottomTotalRuns: isSecond
+        ? activeDetailMatch.myScore ?? 0
+        : activeDetailMatch.opponentScore ?? 0,
+      topTotalHits: isSecond
+        ? activeDetailMatch.opponentHits ?? 0
+        : activeDetailMatch.myHits ?? 0,
+      bottomTotalHits: isSecond
+        ? activeDetailMatch.myHits ?? 0
+        : activeDetailMatch.opponentHits ?? 0,
+      topTotalErrors: isSecond
+        ? activeDetailMatch.opponentErrors ?? 0
+        : activeDetailMatch.myErrors ?? 0,
+      bottomTotalErrors: isSecond
+        ? activeDetailMatch.myErrors ?? 0
+        : activeDetailMatch.opponentErrors ?? 0,
+    };
+  }, [activeDetailMatch, currentTeam?.shortName, currentTeam?.name]);
+
+  const sharedIsFutureOrScheduled = useMemo(() => {
+    if (!activeDetailMatch) return false;
+    if (activeDetailMatch.status === "scheduled") return true;
+    const d = parseSafeMatchDate(activeDetailMatch.date);
+    return Boolean(
+      d && d.getTime() > Date.now() && activeDetailMatch.status !== "finished"
+    );
+  }, [activeDetailMatch]);
+
+  const sharedHasPersonalStats =
+    matchStats.length > 0 ||
+    pitcherStats.length > 0 ||
+    playLogs.length > 0 ||
+    boxscoreAtBats.length > 0;
+
+  const scorebookBundle = useMatchScorebookBundle({
+    matchMeta: sharedScorebookMatchMeta,
+    isMyTeamTop: activeDetailMatch
+      ? activeDetailMatch.battingOrder !== "second"
+      : true,
+    hasPersonalStatsData: sharedHasPersonalStats,
+    isFutureOrScheduled: sharedIsFutureOrScheduled,
+    isRainout: activeDetailMatch?.status === "rainout",
+    isDemoMatch: Boolean(
+      activeDetailMatch && (isDemo || isDemoMatchId(activeDetailMatch.id))
+    ),
+  });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 🅰️ 試合詳細画面 (matchId が指定されている場合)
@@ -1251,6 +1393,10 @@ function MatchesContent() {
             playLogs={playLogs}
             boxscoreAtBats={boxscoreAtBats}
             isLoadingStats={isStatsLoading}
+            topScorebookModel={scorebookBundle.topModel}
+            bottomScorebookModel={scorebookBundle.bottomModel}
+            scorebookRules={scorebookBundle.effectiveRules}
+            onInspectScorebookCell={handleInspectScorebookCell}
           />
 
           {/* 👥 3. 出場メンバー（見出しはカード外・内部ブロックもすべて見出しを枠外に統一） */}
@@ -1836,6 +1982,8 @@ function MatchesContent() {
             isFutureOrScheduled={isFutureOrScheduled}
             isRainout={isRainout}
             isDemoMatch={isDemo || isDemoMatchId(match.id)}
+            sharedBundle={scorebookBundle}
+            onInspectCell={handleInspectScorebookCell}
           />
 
           {/* ↔️ 5. 前後の試合ナビゲーション */}
@@ -2142,6 +2290,14 @@ function MatchesContent() {
             isDeleting={isDeletingPersonalStats}
             onCancel={() => setShowDeleteStatsModal(false)}
             onConfirm={(options) => void handleDeletePersonalStats(options)}
+          />
+
+          <ScorebookCellGuideModal
+            activeItem={inspectedCellModalState?.activeItem ?? null}
+            navigationItems={inspectedCellModalState?.navigationItems ?? []}
+            rules={scorebookBundle.effectiveRules}
+            onSelectItem={handleSelectInspectedCell}
+            onClose={handleCloseInspectedCell}
           />
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />

@@ -15,7 +15,19 @@ import {
   Zap,
 } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { ScorebookSingleCellThumbnail } from "@/components/liff/ScorebookCellGuideModal";
 import { getPositionBadgeInfo } from "@/lib/liff/demo-lineup";
+import {
+  getChronologicalMergedGameCells,
+  getChronologicalSheetCells,
+  resolveCellBatterIdentity,
+  type InspectedScorebookCellItem,
+} from "@/lib/liff/scorebook-cell-guide";
+import type {
+  CompiledScorebookCell,
+  CompiledScorebookSheetModel,
+} from "@/lib/liff/scorebook-renderer-model";
+import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
 import { cn } from "@/lib/utils";
 
 export interface LiffBatterStatItem {
@@ -126,6 +138,7 @@ interface ParsedTimelineEntry {
   hasBso: boolean;
   pitchesList: string[];
   badgeTone: "hr" | "hit" | "walk" | "sac" | "score" | "out";
+  cellItem?: InspectedScorebookCellItem;
 }
 
 interface MatchStatsSectionProps {
@@ -142,6 +155,13 @@ interface MatchStatsSectionProps {
   playLogs: LiffRawPlayLogItem[];
   boxscoreAtBats: LiffBoxscoreAtBatItem[];
   isLoadingStats: boolean;
+  topScorebookModel?: CompiledScorebookSheetModel | null;
+  bottomScorebookModel?: CompiledScorebookSheetModel | null;
+  scorebookRules?: ScorebookSymbolRules;
+  onInspectScorebookCell?: (
+    item: InspectedScorebookCellItem,
+    navigationItems: InspectedScorebookCellItem[]
+  ) => void;
 }
 
 const CANONICAL_RESULT_JA: Record<string, string> = {
@@ -464,6 +484,183 @@ function parseTimelineEntries(
   });
 }
 
+const BASE_CODE_SHORT_JA: Record<string, string> = {
+  BAT: "打席",
+  "1B": "一塁",
+  "2B": "二塁",
+  "3B": "三塁",
+  HP: "本塁",
+};
+
+function buildTimelineEntriesFromScorebookModels(
+  topModel: CompiledScorebookSheetModel | null,
+  bottomModel: CompiledScorebookSheetModel | null
+): ParsedTimelineEntry[] {
+  const merged = getChronologicalMergedGameCells(topModel, bottomModel);
+  return merged
+    .filter((item) => Boolean(item.cell.atBat || item.cell.isTiebreakRunnerOnly))
+    .map((item) => {
+      const { cell, model } = item;
+      const ab = cell.atBat;
+      const batterIdentity = resolveCellBatterIdentity(cell, model);
+
+      if (!ab) {
+        const startJa =
+          cell.tiebreakStartBase === "1B"
+            ? "一塁"
+            : cell.tiebreakStartBase === "3B"
+            ? "三塁"
+            : "二塁";
+        return {
+          id: `sb-${model.isTop ? "top" : "bot"}-${cell.cellKey}`,
+          inning: cell.inning,
+          isTop: model.isTop,
+          orderLabel: String(cell.battingOrder),
+          batterName: batterIdentity.name,
+          pitcherName: "",
+          mainResult: `タイブレーク${startJa}走者`,
+          runnerNote: "",
+          rbiTag: "",
+          balls: 0,
+          strikes: 0,
+          outs: 0,
+          hasBso: false,
+          pitchesList: [],
+          badgeTone: "walk",
+          cellItem: item,
+        };
+      }
+
+      const mainResult =
+        (ab.resultLabel || "").trim() ||
+        CANONICAL_RESULT_JA[ab.resultCode] ||
+        "打席完了";
+
+      const runnerNotes: string[] = [];
+      for (const adv of ab.advances) {
+        if (adv.from === "BAT") continue;
+        const fromJa = BASE_CODE_SHORT_JA[adv.from] || adv.from;
+        const toJa = BASE_CODE_SHORT_JA[adv.to] || adv.to;
+        if (adv.isOut) {
+          runnerNotes.push(`${adv.runnerName || "走者"} ${toJa}アウト`);
+        } else if (adv.method === "steal") {
+          runnerNotes.push(`${adv.runnerName || "走者"} ${toJa}盗塁`);
+        } else if (adv.to === "HP") {
+          runnerNotes.push(`${adv.runnerName || "走者"} 生還`);
+        } else {
+          runnerNotes.push(`${adv.runnerName || "走者"} ${fromJa}→${toJa}`);
+        }
+      }
+
+      const rbiTag = ab.rbi > 0 ? `打点${ab.rbi}` : "";
+      const isHitCode =
+        ab.resultCode === "single" ||
+        ab.resultCode === "double" ||
+        ab.resultCode === "triple" ||
+        ab.resultCode === "home_run";
+
+      return {
+        id: `sb-${model.isTop ? "top" : "bot"}-${cell.cellKey}`,
+        inning: cell.inning,
+        isTop: model.isTop,
+        orderLabel: String(cell.battingOrder),
+        batterName: batterIdentity.name,
+        pitcherName: ab.pitcherName || "",
+        mainResult,
+        runnerNote: runnerNotes.join(" / "),
+        rbiTag,
+        balls: ab.balls || 0,
+        strikes: Math.min(2, ab.strikes || 0),
+        outs: ab.endingOuts || 0,
+        hasBso: ab.pitches.length > 0 || ab.balls > 0 || ab.strikes > 0,
+        pitchesList: [],
+        badgeTone: classifyResultTone(
+          mainResult,
+          isHitCode ? "hit" : ab.runsInPlay > 0 ? "score" : undefined
+        ),
+        cellItem: item,
+      };
+    });
+}
+
+function attachScorebookCellsToTimelineEntries(
+  entries: ParsedTimelineEntry[],
+  topModel: CompiledScorebookSheetModel | null,
+  bottomModel: CompiledScorebookSheetModel | null
+): ParsedTimelineEntry[] {
+  if (!topModel && !bottomModel) {
+    return entries;
+  }
+
+  const buckets = new Map<
+    string,
+    { model: CompiledScorebookSheetModel; cells: CompiledScorebookCell[] }
+  >();
+
+  const registerModel = (model: CompiledScorebookSheetModel | null) => {
+    if (!model) return;
+    const ordered = getChronologicalSheetCells(model).filter((c) =>
+      Boolean(c.atBat)
+    );
+    for (const c of ordered) {
+      const key = `${c.inning}:${model.isTop ? 1 : 0}`;
+      const existing = buckets.get(key);
+      if (existing) {
+        existing.cells.push(c);
+      } else {
+        buckets.set(key, { model, cells: [c] });
+      }
+    }
+  };
+
+  registerModel(topModel);
+  registerModel(bottomModel);
+
+  const cursors = new Map<string, number>();
+
+  return entries.map((entry) => {
+    const key = `${entry.inning}:${entry.isTop ? 1 : 0}`;
+    const bucket = buckets.get(key);
+    if (!bucket || bucket.cells.length === 0) {
+      return entry;
+    }
+
+    const startCursor = cursors.get(key) ?? 0;
+    if (startCursor >= bucket.cells.length) {
+      return entry;
+    }
+
+    const parsedOrder = entry.orderLabel ? Number(entry.orderLabel) : 0;
+    let matchedIdx = startCursor;
+
+    if (parsedOrder > 0 && bucket.cells[startCursor]?.battingOrder !== parsedOrder) {
+      for (let i = startCursor + 1; i < bucket.cells.length; i++) {
+        if (bucket.cells[i]?.battingOrder === parsedOrder) {
+          matchedIdx = i;
+          break;
+        }
+      }
+    }
+
+    const matchedCell = bucket.cells[matchedIdx];
+    cursors.set(key, matchedIdx + 1);
+
+    if (!matchedCell) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      orderLabel: entry.orderLabel || String(matchedCell.battingOrder),
+      pitcherName: entry.pitcherName || matchedCell.atBat?.pitcherName || "",
+      cellItem: {
+        cell: matchedCell,
+        model: bucket.model,
+      },
+    };
+  });
+}
+
 function getMiniPosBadge(pos: string | undefined) {
   if (!pos) return null;
   if (pos === "P") {
@@ -496,6 +693,10 @@ export function MatchStatsSection({
   playLogs,
   boxscoreAtBats,
   isLoadingStats,
+  topScorebookModel = null,
+  bottomScorebookModel = null,
+  scorebookRules,
+  onInspectScorebookCell,
 }: MatchStatsSectionProps) {
   const [batterColumnMode, setBatterColumnMode] = useState<"full" | "compact">("full");
   const [selectedTimelineInning, setSelectedTimelineInning] = useState<number | "all">(
@@ -644,10 +845,29 @@ export function MatchStatsSection({
     return ((pitcherTotal.earnedRuns * 7 * 3) / pitcherTotal.outs).toFixed(2);
   }, [pitcherTotal.earnedRuns, pitcherTotal.outs]);
 
-  const timelineEntries = useMemo(
-    () => parseTimelineEntries(playLogs, boxscoreAtBats),
-    [playLogs, boxscoreAtBats]
-  );
+  const timelineEntries = useMemo(() => {
+    const base = parseTimelineEntries(playLogs, boxscoreAtBats);
+    if (
+      (isDemoMatch || base.length === 0) &&
+      (topScorebookModel || bottomScorebookModel)
+    ) {
+      return buildTimelineEntriesFromScorebookModels(
+        topScorebookModel,
+        bottomScorebookModel
+      );
+    }
+    return attachScorebookCellsToTimelineEntries(
+      base,
+      topScorebookModel,
+      bottomScorebookModel
+    );
+  }, [
+    playLogs,
+    boxscoreAtBats,
+    isDemoMatch,
+    topScorebookModel,
+    bottomScorebookModel,
+  ]);
 
   const timelineInnings = useMemo(
     () =>
@@ -672,6 +892,14 @@ export function MatchStatsSection({
         return true;
       }),
     [timelineEntries, selectedTimelineInning, onlyMyAttackLogs, isMyTeamTop]
+  );
+
+  const filteredTimelineCellItems = useMemo(
+    () =>
+      filteredTimelineEntries
+        .map((e) => e.cellItem)
+        .filter((v): v is InspectedScorebookCellItem => Boolean(v)),
+    [filteredTimelineEntries]
   );
 
   const visibleTimelineEntries = useMemo(() => {
@@ -1518,6 +1746,15 @@ export function MatchStatsSection({
               )}
             </div>
 
+            {filteredTimelineCellItems.length > 0 && onInspectScorebookCell && (
+              <div className="px-3 py-1.5 bg-muted/45 border-b border-border flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
+                <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>
+                  左のスコアマスや「記号解説」をタップすると、配球記号や守備番号の意味を確認できます
+                </span>
+              </div>
+            )}
+
             {visibleTimelineEntries.length === 0 ? (
               <div className="p-6 text-center text-xs font-bold text-muted-foreground">
                 該当するイニングの打席ログがありません
@@ -1532,7 +1769,10 @@ export function MatchStatsSection({
                     prev.isTop !== entry.isTop;
                   const isMyOffense = entry.isTop === isMyTeamTop;
                   const isExpanded = Boolean(expandedLogIds[entry.id]);
-                  const canExpand = entry.pitchesList.length > 0;
+                  const hasCellGuide = Boolean(
+                    entry.cellItem && scorebookRules && onInspectScorebookCell
+                  );
+                  const canExpand = !hasCellGuide && entry.pitchesList.length > 0;
 
                   const badgeStyle =
                     entry.badgeTone === "hr"
@@ -1571,7 +1811,30 @@ export function MatchStatsSection({
                       )}
 
                       <div className="px-3 py-2.5 bg-card space-y-1.5">
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center justify-between gap-2.5">
+                          {/* 左：1マス清書SVGサムネイル（タップで記号解説モーダルを起動） */}
+                          {entry.cellItem && scorebookRules && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onInspectScorebookCell?.(
+                                  entry.cellItem!,
+                                  filteredTimelineCellItems
+                                )
+                              }
+                              aria-label={`${entry.inning}回${
+                                entry.isTop ? "表" : "裏"
+                              } ${entry.batterName} のスコアマス記号解説を開く`}
+                              className="group relative rounded-lg border border-slate-300 hover:border-primary bg-[#fffefb] p-0.5 shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                            >
+                              <ScorebookSingleCellThumbnail
+                                cell={entry.cellItem.cell}
+                                rules={scorebookRules}
+                                className="w-[62px] h-[52px]"
+                              />
+                            </button>
+                          )}
+
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {entry.orderLabel && (
@@ -1620,6 +1883,21 @@ export function MatchStatsSection({
                                 <span>
                                   B{entry.balls}-S{entry.strikes}
                                 </span>
+                              )}
+                              {hasCellGuide && entry.cellItem && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onInspectScorebookCell?.(
+                                      entry.cellItem!,
+                                      filteredTimelineCellItems
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 hover:bg-primary/18 text-primary border border-primary/30 font-sans font-black cursor-pointer active:scale-95 transition-all"
+                                >
+                                  <BookOpen className="w-3 h-3 shrink-0" />
+                                  <span>記号解説</span>
+                                </button>
                               )}
                               {canExpand && (
                                 <button
