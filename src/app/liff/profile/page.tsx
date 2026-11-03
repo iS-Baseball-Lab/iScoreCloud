@@ -591,7 +591,7 @@ export default function LiffProfilePage() {
                   <h2 className="text-sm font-black text-white truncate">アカウント & 基本情報</h2>
                 </div>
                 {isLoggedIn && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black shrink-0">
+                  <span className="px-2 py-0.5 rounded-full bg-[#06C755] text-white text-[10px] font-black shrink-0">
                     LINE連携済
                   </span>
                 )}
@@ -627,7 +627,7 @@ export default function LiffProfilePage() {
                     <div className="flex items-center gap-1.5">
                       <span
                         className={`w-2 h-2 rounded-full shrink-0 ${
-                          isLoggedIn ? "bg-emerald-500" : "bg-muted-foreground/50"
+                          isLoggedIn ? "bg-[#06C755]" : "bg-muted-foreground/50"
                         }`}
                       />
                       <span className="text-[11px] font-bold text-muted-foreground truncate">
@@ -656,7 +656,7 @@ export default function LiffProfilePage() {
                     <button
                       type="button"
                       onClick={login}
-                      className="py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground text-xs font-black shrink-0 transition-all shadow-xs"
+                      className="py-2 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white text-xs font-black shrink-0 transition-all shadow-xs"
                     >
                       LINE連携
                     </button>

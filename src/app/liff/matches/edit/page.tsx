@@ -1341,11 +1341,11 @@ function LiffMatchEditContent() {
           </div>
         </section>
 
-        {/* 📹 4. YouTube 試合映像リンク（A-3 上帯ダークキャップ） */}
+        {/* 📹 4. YouTube 試合映像リンク（A-3 上帯ダークキャップ × YouTubeブランドレッド） */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#FF0000] px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <Video className="w-4 h-4 text-sky-400 shrink-0" />
+              <Video className="w-4 h-4 text-[#FF0000] shrink-0" />
               <span className="text-xs font-black text-white truncate">
                 試合映像（YouTube URL）
               </span>

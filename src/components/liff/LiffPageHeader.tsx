@@ -94,11 +94,11 @@ export function LiffPageHeader({
           <button
             type="button"
             onClick={handleShare}
-            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs"
+            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted hover:border-[#06C755]/40 active:scale-95 transition-all shadow-xs"
             aria-label="LINEで共有"
             title="LINEで共有"
           >
-            <Share2 className="w-4 h-4 text-primary" />
+            <Share2 className="w-4 h-4 text-[#06C755]" />
           </button>
         )}
       </div>

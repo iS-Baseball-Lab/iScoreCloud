@@ -32,7 +32,7 @@ export function YouTubePlayer({
   if (!videoId || !embedUrl) {
     return (
       <div className={`relative w-full aspect-video bg-card rounded-2xl flex flex-col items-center justify-center border border-border shadow-xs p-6 text-center text-muted-foreground ${className}`}>
-        <VideoOff className="w-10 h-10 mb-2 text-primary/40" />
+        <VideoOff className="w-10 h-10 mb-2 text-muted-foreground/45" />
         <p className="text-sm font-semibold">動画は登録されていません</p>
         <p className="text-xs text-muted-foreground/70 mt-1">
           YouTubeの限定公開URLが設定されるとここに表示されます
@@ -71,15 +71,20 @@ export function YouTubePlayer({
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
               />
             )}
-            {/* ソリッド暗幕（グラデーション不使用） */}
+            {/* ソリッド暗幕（グラデーション不使用・YouTube公式ブランドレッド） */}
             <div className="absolute inset-0 bg-slate-950/35 group-hover:bg-slate-950/45 transition-colors flex items-center justify-center">
-              <div className="w-15 h-15 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg border-2 border-white/90 group-hover:scale-105 active:scale-95 transition-transform">
+              <div className="w-15 h-15 rounded-full bg-[#FF0000] group-hover:bg-[#CC0000] text-white flex items-center justify-center shadow-lg border-2 border-white/90 group-hover:scale-105 active:scale-95 transition-all">
                 <Play className="w-7 h-7 fill-current ml-0.5" />
               </div>
             </div>
-            <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-[#0f172a] text-white border border-slate-700 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
-              <Play className="w-3 h-3 text-primary fill-primary shrink-0" />
-              <span>タップして動画を再生</span>
+            <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2 pointer-events-none">
+              <span className="px-2.5 py-1 rounded-lg bg-[#0f172a] text-white border border-slate-700 text-[11px] font-black flex items-center gap-1.5 shadow-sm">
+                <Play className="w-3 h-3 text-[#FF0000] fill-[#FF0000] shrink-0" />
+                <span>タップして動画を再生</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-[#FF0000] text-white text-[10px] sm:text-[11px] font-black shadow-sm">
+                YouTube
+              </span>
             </div>
           </button>
         )}
@@ -88,7 +93,7 @@ export function YouTubePlayer({
       {/* 動画アクション（YouTubeアプリで開く） */}
       <div className="flex items-center justify-between gap-2 px-1 text-xs">
         <span className="flex items-center gap-1 text-muted-foreground font-bold truncate">
-          <Play className="w-3.5 h-3.5 text-primary fill-primary shrink-0" />
+          <Play className="w-3.5 h-3.5 text-[#FF0000] fill-[#FF0000] shrink-0" />
           <span className="truncate">{title}</span>
         </span>
 
@@ -97,7 +102,7 @@ export function YouTubePlayer({
             href={directWatchUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-black transition-colors shadow-xs"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#FF0000] hover:bg-[#CC0000] text-white font-black transition-colors shadow-xs"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>YouTubeで開く</span>

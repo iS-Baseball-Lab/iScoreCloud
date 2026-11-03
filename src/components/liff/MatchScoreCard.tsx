@@ -60,7 +60,7 @@ export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean
       {hasVideo && (
         <div className="w-full aspect-video bg-muted relative flex flex-col items-center justify-center border-b border-border">
           <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-            <Video className="w-6 h-6 text-muted-foreground/40 animate-pulse" />
+            <Video className="w-6 h-6 text-[#FF0000]/45 animate-pulse" />
           </div>
           <div className="mt-2.5 h-2.5 w-28 bg-border rounded-full" />
         </div>
@@ -250,7 +250,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               {!isThumbLoaded && (
                 <div className="absolute inset-0 bg-muted animate-pulse flex flex-col items-center justify-center z-0">
                   <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-                    <Video className="w-6 h-6 text-muted-foreground/40 animate-pulse" />
+                    <Video className="w-6 h-6 text-[#FF0000]/45 animate-pulse" />
                   </div>
                 </div>
               )}
@@ -271,9 +271,9 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               {/* ソリッドスクリム（グラデーションゼロ） */}
               <div className="absolute inset-0 bg-black/30 group-hover/thumb:bg-black/40 transition-colors" />
 
-              {/* 再生ボタン */}
+              {/* 再生ボタン（YouTube公式ブランドレッド・ソリッド単色） */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-all duration-300 ring-4 ring-white/25">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#FF0000] group-hover/thumb:bg-[#CC0000] text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-all duration-300 ring-4 ring-white/25">
                   <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current translate-x-0.5" />
                 </div>
               </div>
@@ -281,10 +281,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               {/* ガイドラベル */}
               <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white pointer-events-none">
                 <span className="flex items-center gap-1.5 bg-slate-950/85 px-2.5 py-1 rounded-full border border-white/20">
-                  <Play className="w-3 h-3 fill-current text-primary" />
+                  <Play className="w-3 h-3 fill-current text-[#FF0000]" />
                   タップして試合動画を再生
                 </span>
-                <span className="bg-primary text-primary-foreground px-2 py-0.5 rounded-md font-black">
+                <span className="bg-[#FF0000] text-white px-2 py-0.5 rounded-md font-black shadow-2xs">
                   YouTube
                 </span>
               </div>

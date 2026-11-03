@@ -271,7 +271,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-emerald-500" : "bg-amber-500"
+                        isLoggedIn ? "bg-[#06C755]" : "bg-amber-500"
                       }`}
                     />
                     <span className="text-[10px] font-bold text-muted-foreground">
@@ -284,7 +284,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               {!isLoggedIn && (
                 <DropdownMenuItem
                   onClick={login}
-                  className="flex items-center gap-2 p-2.5 cursor-pointer font-black text-xs text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl"
+                  className="flex items-center gap-2 p-2.5 cursor-pointer font-black text-xs text-white bg-[#06C755] hover:bg-[#05b34c] focus:bg-[#05b34c] focus:text-white rounded-xl"
                 >
                   <User className="w-4 h-4" />
                   <span>LINEでログインして名前を表示</span>
@@ -398,7 +398,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     onClick={handleShare}
                     className="flex items-center gap-2 p-2 cursor-pointer font-bold text-xs rounded-xl"
                   >
-                    <Share2 className="w-4 h-4 text-primary" />
+                    <Share2 className="w-4 h-4 text-[#06C755]" />
                     <span>LINEでチームに共有</span>
                   </DropdownMenuItem>
                 </>

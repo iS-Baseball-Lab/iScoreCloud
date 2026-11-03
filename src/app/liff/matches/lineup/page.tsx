@@ -1583,16 +1583,16 @@ function LiffLineupContent() {
                 type="button"
                 variant="outline"
                 onClick={handleCopyLineupText}
-                className="w-full h-11 rounded-2xl border-border bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5 shadow-xs"
+                className="w-full h-11 rounded-2xl border-border hover:border-[#06C755]/40 bg-card font-black text-xs text-foreground hover:bg-muted gap-1.5 shadow-xs"
               >
                 {isCopied ? (
                   <>
-                    <Check className="w-4 h-4 text-primary" />
+                    <Check className="w-4 h-4 text-[#06C755]" />
                     <span>メンバー表をコピーしました！</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4 text-primary" />
+                    <Copy className="w-4 h-4 text-[#06C755]" />
                     <span>LINE連絡用テキストをコピー</span>
                   </>
                 )}

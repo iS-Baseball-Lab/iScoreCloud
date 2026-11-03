@@ -526,7 +526,7 @@ export default function LiffGroundsPage() {
                         href={venue.mapUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black active:scale-95 shadow-xs transition-all"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#1A73E8] text-white hover:bg-[#1557B0] text-xs font-black active:scale-95 shadow-xs transition-all"
                       >
                         <Navigation className="w-3.5 h-3.5" />
                         <span>Google Map</span>

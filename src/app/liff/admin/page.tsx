@@ -870,7 +870,7 @@ export default function LiffAdminDashboardPage() {
                     <Button
                       type="button"
                       onClick={handleShareLine}
-                      className="w-full h-10 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs gap-1.5 shadow-xs"
+                      className="w-full h-10 rounded-xl bg-[#06C755] text-white hover:bg-[#05b34c] font-black text-xs gap-1.5 shadow-xs border-0"
                     >
                       <Share2 className="w-4 h-4" />
                       <span>LINEでメンバーを招待する</span>

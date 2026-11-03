@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Loader2,
   Video,
+  Play,
   UserStar,
   UserCheck,
   UserMinus,
@@ -1102,7 +1103,7 @@ function MatchesContent() {
           <section className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                <Video className="w-4 h-4 text-primary shrink-0" />
+                <Video className="w-4 h-4 text-[#FF0000] shrink-0" />
                 <span>試合映像 (YouTube限定公開)</span>
               </h2>
             </div>
@@ -1115,8 +1116,8 @@ function MatchesContent() {
                 />
 
                 {/* ⚠️ 動画取り扱いに関する注意書き */}
-                <div className="p-3 rounded-2xl border border-border border-l-4 border-l-primary bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
-                  <ShieldAlert className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <div className="p-3 rounded-2xl border border-border border-l-4 border-l-[#FF0000] bg-card shadow-xs flex items-start gap-2 text-[11px] text-muted-foreground font-bold">
+                  <ShieldAlert className="w-4 h-4 text-[#FF0000] shrink-0 mt-0.5" />
                   <p className="leading-snug">
                     本動画は選手・チームのプライバシー保護のため<strong className="text-foreground">YouTube限定公開</strong>です。SNS等への無断転載・拡散はご遠慮ください。
                   </p>
@@ -1774,7 +1775,7 @@ function MatchesContent() {
                       href={venueInfo.externalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="h-9 px-3 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+                      className="h-9 px-3 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
                     >
                       <Navigation className="w-3.5 h-3.5 shrink-0" />
                       <span>Google Mapで開く</span>
@@ -2221,9 +2222,9 @@ function MatchesContent() {
         />
 
         {/* 🔒 動画取り扱い・プライバシーに関する重要なお知らせ */}
-        <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-primary bg-card space-y-1.5 shadow-xs">
+        <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-[#FF0000] bg-card space-y-1.5 shadow-xs">
           <div className="flex items-center gap-2 text-xs font-black text-foreground">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-primary" />
+            <ShieldAlert className="w-4 h-4 shrink-0 text-[#FF0000]" />
             <span>【重要】試合動画・写真の取り扱いについて</span>
           </div>
           <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
@@ -2270,7 +2271,8 @@ function MatchesContent() {
                 : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
             )}
           >
-            📹 動画 <span className={filter === "video" ? "text-primary" : ""}>({videoMatchesCount})</span>
+            <Play className="w-3 h-3 inline mr-0.5 -mt-0.5 text-[#FF0000] fill-[#FF0000]" /> 動画{" "}
+            <span className={filter === "video" ? "text-[#FF0000]" : ""}>({videoMatchesCount})</span>
           </button>
 
           <button

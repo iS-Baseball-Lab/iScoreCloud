@@ -205,7 +205,7 @@ export default function LiffHubPage() {
                 <button
                   type="button"
                   onClick={login}
-                  className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                  className="px-3 py-1.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
                 >
                   <span>LINE連携</span>
                 </button>

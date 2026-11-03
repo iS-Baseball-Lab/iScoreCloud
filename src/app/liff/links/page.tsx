@@ -29,6 +29,7 @@ import {
   Flame,
   BookmarkCheck,
   Instagram,
+  Play,
   Upload,
   Image as ImageIcon,
 } from "lucide-react";
@@ -324,6 +325,65 @@ export default function LiffLinksPage() {
     }
   };
 
+  // 外部サービスの公式ブランドカラー判定（単色ソリッド・グラデーション不使用）
+  const getLinkBrandStyle = (url: string, category: string) => {
+    const lowerUrl = (url || "").toLowerCase();
+    if (lowerUrl.includes("youtube.com") || lowerUrl.includes("youtu.be")) {
+      return {
+        icon: <Play className="w-4 h-4 fill-current" />,
+        iconBoxClass: "bg-[#FF0000]/12 text-[#FF0000]",
+        buttonClass: "bg-[#FF0000] hover:bg-[#CC0000] text-white",
+        buttonLabel: "YouTube",
+      };
+    }
+    if (lowerUrl.includes("line.me")) {
+      return {
+        icon: <Share2 className="w-4 h-4" />,
+        iconBoxClass: "bg-[#06C755]/12 text-[#06C755]",
+        buttonClass: "bg-[#06C755] hover:bg-[#05b34c] text-white",
+        buttonLabel: "LINE",
+      };
+    }
+    if (lowerUrl.includes("instagram.com")) {
+      return {
+        icon: <Instagram className="w-4 h-4" />,
+        iconBoxClass: "bg-[#E1306C]/12 text-[#E1306C]",
+        buttonClass: "bg-[#E1306C] hover:bg-[#C1275C] text-white",
+        buttonLabel: "Instagram",
+      };
+    }
+    if (lowerUrl.includes("x.com/") || lowerUrl.includes("twitter.com/")) {
+      return {
+        icon: <Globe className="w-4 h-4" />,
+        iconBoxClass: "bg-slate-900/12 text-slate-900 dark:bg-slate-100/15 dark:text-slate-100",
+        buttonClass: "bg-[#0f172a] hover:bg-slate-800 text-white",
+        buttonLabel: "Xを開く",
+      };
+    }
+    if (
+      lowerUrl.includes("google.com/maps") ||
+      lowerUrl.includes("maps.google") ||
+      lowerUrl.includes("maps.app.goo.gl") ||
+      lowerUrl.includes("goo.gl/maps")
+    ) {
+      return {
+        icon: <MapPin className="w-4 h-4" />,
+        iconBoxClass: "bg-[#1A73E8]/12 text-[#1A73E8]",
+        buttonClass: "bg-[#1A73E8] hover:bg-[#1557B0] text-white",
+        buttonLabel: "Google Map",
+      };
+    }
+    return {
+      icon: getCategoryIcon(category),
+      iconBoxClass:
+        category === "sns"
+          ? "bg-[#E1306C]/12 text-[#E1306C]"
+          : "bg-amber-500/12 text-amber-600 dark:text-amber-400",
+      buttonClass: "bg-primary hover:bg-primary/90 text-primary-foreground",
+      buttonLabel: "開く",
+    };
+  };
+
   const filteredLinks = links.filter((link) => {
     const matchesCategory = selectedCategory === "all" || link.category === selectedCategory;
     const matchesScope = selectedScope === "all" || link.scope === selectedScope;
@@ -497,6 +557,7 @@ export default function LiffLinksPage() {
                 {filteredLinks.map((link) => {
                   const isOrg = link.scope === "organization";
                   const isImportant = !!link.isImportant;
+                  const brandStyle = getLinkBrandStyle(link.url, link.category);
 
                   return (
                     <div
@@ -519,8 +580,8 @@ export default function LiffLinksPage() {
                                 />
                               </div>
                             ) : (
-                              <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 bg-amber-500/12 text-amber-600 dark:text-amber-400">
-                                {getCategoryIcon(link.category)}
+                              <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${brandStyle.iconBoxClass}`}>
+                                {brandStyle.icon}
                               </span>
                             )}
 
@@ -601,14 +662,14 @@ export default function LiffLinksPage() {
                             </span>
                           </div>
 
-                          {/* 🌐 サイトを開くリンクボタン */}
+                          {/* 🌐 サイトを開くリンクボタン（外部サービスは公式ソリッドブランドカラー） */}
                           <a
                             href={link.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center gap-1 shrink-0 hover:bg-primary/90 active:scale-95 transition-all shadow-xs cursor-pointer"
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-xs cursor-pointer ${brandStyle.buttonClass}`}
                           >
-                            <span>開く</span>
+                            <span>{brandStyle.buttonLabel}</span>
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
                         </div>
