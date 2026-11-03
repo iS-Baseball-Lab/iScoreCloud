@@ -8081,4 +8081,189 @@ app.get("/players", async (c) => {
   }
 });
 
+/**
+ * 📷 選手プロフィール写真の撮影・アップロード保存API (POST /players/:playerId/photo)
+ */
+app.post("/players/:playerId/photo", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+
+  try {
+    let file: File | null = null;
+    let teamId = c.req.query("teamId") || "";
+
+    try {
+      const formData = await c.req.formData();
+      const rawFile = formData.get("file");
+      if (rawFile && typeof rawFile !== "string") {
+        file = rawFile as File;
+      }
+      const rawTeamId = formData.get("teamId");
+      if (typeof rawTeamId === "string" && rawTeamId.trim()) {
+        teamId = rawTeamId.trim();
+      }
+    } catch {
+      const body = await c.req.parseBody();
+      const rawFile = body["file"];
+      if (rawFile && typeof rawFile !== "string") {
+        file = rawFile as File;
+      }
+      const rawTeamId = body["teamId"];
+      if (typeof rawTeamId === "string" && rawTeamId.trim()) {
+        teamId = rawTeamId.trim();
+      }
+    }
+
+    if (!file || !file.name) {
+      return c.json({ success: false, error: "写真ファイルが選択されていません" }, 400);
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const mimeType = file.type || "image/jpeg";
+
+    const toDataUrl = (): string => {
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const sub = bytes.subarray(i, i + chunkSize);
+        for (let j = 0; j < sub.length; j++) {
+          binary += String.fromCharCode(sub[j]);
+        }
+      }
+      return `data:${mimeType};base64,${btoa(binary)}`;
+    };
+
+    // デモモードではDBを更新せずプレビュー用DataURLを即時返却
+    if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+        profileImageUrl: toDataUrl(),
+      });
+    }
+
+    const existingPlayer = await db
+      .select({
+        id: players.id,
+        teamId: players.teamId,
+        profileImageUrl: players.profileImageUrl,
+      })
+      .from(players)
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+      .get();
+
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    let imageUrl = "";
+    if (c.env.BUCKET) {
+      // 既存のR2選手写真がある場合は容量節約のためクリーンアップ
+      const prevUrl = existingPlayer.profileImageUrl || "";
+      const prefix = "/api/images/";
+      if (prevUrl.startsWith("/api/images/players/")) {
+        const oldR2Key = prevUrl.slice(prefix.length);
+        await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+      }
+
+      const rawExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const safeExt = rawExt.replace(/[^a-z0-9]/g, "") || "jpg";
+      const safePlayerKey = playerId.replace(/[^a-zA-Z0-9_-]/g, "");
+      const safeTeamKey = teamId.replace(/[^a-zA-Z0-9_-]/g, "");
+      const objectKey = `players/${safeTeamKey}/${safePlayerKey}-${Date.now()}.${safeExt}`;
+
+      await c.env.BUCKET.put(objectKey, arrayBuffer, {
+        httpMetadata: { contentType: mimeType },
+      });
+      imageUrl = `/api/images/${objectKey}`;
+    } else {
+      imageUrl = toDataUrl();
+    }
+
+    await db
+      .update(players)
+      .set({ profileImageUrl: imageUrl })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+      profileImageUrl: imageUrl,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to upload player photo:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手写真の保存に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ 選手プロフィール写真の削除API (DELETE /players/:playerId/photo)
+ */
+app.delete("/players/:playerId/photo", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+  const teamId = c.req.query("teamId") || "";
+
+  try {
+    if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+        profileImageUrl: null,
+      });
+    }
+
+    const existingPlayer = await db
+      .select({
+        id: players.id,
+        profileImageUrl: players.profileImageUrl,
+      })
+      .from(players)
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+      .get();
+
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    if (c.env.BUCKET && existingPlayer.profileImageUrl?.startsWith("/api/images/players/")) {
+      const oldR2Key = existingPlayer.profileImageUrl.slice("/api/images/".length);
+      await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+    }
+
+    await db
+      .update(players)
+      .set({ profileImageUrl: null })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+      profileImageUrl: null,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to delete player photo:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手写真の削除に失敗しました",
+      },
+      500
+    );
+  }
+});
+
 export default app;

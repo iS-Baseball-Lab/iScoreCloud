@@ -20,12 +20,14 @@ import {
   Activity,
   TrendingUp,
   Loader2,
+  Camera,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
 
 type RosterCategory = "投手" | "捕手" | "内野手" | "外野手" | "DH" | "未設定";
 type FilterCategory = "すべて" | RosterCategory;
@@ -277,11 +279,30 @@ export default function LiffPlayersDirectoryPage() {
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>("すべて");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [photoModalPlayerId, setPhotoModalPlayerId] = useState<string | null>(null);
+
+  const activeTeamId =
+    teamInfo?.id ||
+    currentTeam?.id ||
+    (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
+    "demo-team";
 
   // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
   useEffect(() => {
     setSelectedPlayerId(null);
+    setPhotoModalPlayerId(null);
   }, [currentTeam?.id]);
+
+  const handlePhotoUpdated = useCallback(
+    (playerId: string, newProfileImageUrl: string | null) => {
+      setPlayers((prev) =>
+        prev.map((p) =>
+          p.id === playerId ? { ...p, profileImageUrl: newProfileImageUrl } : p
+        )
+      );
+    },
+    []
+  );
 
   const loadPlayers = useCallback(async () => {
     setIsLoading(true);
@@ -401,17 +422,36 @@ export default function LiffPlayersDirectoryPage() {
           showBack
           rightElement={
             players.length > 0 ? (
-              <Link
-                href={`/liff/players/growth?id=${encodeURIComponent(
-                  (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
-                    ? teamInfo.captainId
-                    : players[0].id)
-                )}`}
-                className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-              >
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>個人成長</span>
-              </Link>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstUnshot =
+                      filteredPlayers.find((p) => !p.profileImageUrl) ||
+                      players.find((p) => !p.profileImageUrl) ||
+                      filteredPlayers[0] ||
+                      players[0];
+                    if (firstUnshot) {
+                      setPhotoModalPlayerId(firstUnshot.id);
+                    }
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                >
+                  <Camera className="w-3.5 h-3.5 text-teal-400" />
+                  <span>写真撮影</span>
+                </button>
+                <Link
+                  href={`/liff/players/growth?id=${encodeURIComponent(
+                    (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
+                      ? teamInfo.captainId
+                      : players[0].id)
+                  )}`}
+                  className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                >
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>個人成長</span>
+                </Link>
+              </div>
             ) : undefined
           }
           shareData={{
@@ -693,7 +733,7 @@ export default function LiffPlayersDirectoryPage() {
 
                     {/* 下段: 選手フォト / アスレチックモノグラム */}
                     <div className="relative z-10 flex items-end justify-between">
-                      <Avatar className={`h-12 w-12 border-2 border-card shadow-xs ring-2 ${style.ring}`}>
+                      <Avatar className={`h-14 w-14 border-2 border-card shadow-xs ring-2 ${style.ring}`}>
                         {player.profileImageUrl && (
                           <AvatarImage
                             src={player.profileImageUrl}
@@ -1018,20 +1058,30 @@ export default function LiffPlayersDirectoryPage() {
 
                 {/* 選手メインプロフィール */}
                 <div className="relative z-10 flex items-center gap-4">
-                  <Avatar className="h-18 w-18 border-2 border-slate-700 shadow-xs shrink-0">
-                    {selectedPlayer.profileImageUrl && (
-                      <AvatarImage
-                        src={selectedPlayer.profileImageUrl}
-                        alt={selectedPlayer.name}
-                        className="object-cover"
-                      />
-                    )}
-                    <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
-                      {initial}
-                    </AvatarFallback>
-                  </Avatar>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoModalPlayerId(selectedPlayer.id)}
+                    className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
+                    title="選手写真を撮影・変更"
+                  >
+                    <Avatar className="h-18 w-18 border-2 border-slate-700 shadow-xs">
+                      {selectedPlayer.profileImageUrl && (
+                        <AvatarImage
+                          src={selectedPlayer.profileImageUrl}
+                          alt={selectedPlayer.name}
+                          className="object-cover"
+                        />
+                      )}
+                      <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
+                        {initial}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                      <Camera className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
 
-                  <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="px-2.5 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums">
                         #{numStr}
@@ -1052,9 +1102,19 @@ export default function LiffPlayersDirectoryPage() {
                         {selectedPlayer.nameKana}
                       </p>
                     )}
-                    <h3 className="text-xl font-black tracking-tight text-white truncate">
-                      {selectedPlayer.name}
-                    </h3>
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-xl font-black tracking-tight text-white truncate">
+                        {selectedPlayer.name}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => setPhotoModalPlayerId(selectedPlayer.id)}
+                        className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                      >
+                        <Camera className="w-3 h-3 text-teal-400" />
+                        <span>{selectedPlayer.profileImageUrl ? "写真変更" : "写真撮影"}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1300,6 +1360,24 @@ export default function LiffPlayersDirectoryPage() {
           document.body
         );
       })()}
+
+      {/* ━━━ 📷 選手名鑑 写真撮影・トリミング保存モーダル ━━━ */}
+      {photoModalPlayerId && (
+        <PlayerPhotoCaptureModal
+          isOpen={Boolean(photoModalPlayerId)}
+          teamId={activeTeamId}
+          initialPlayerId={photoModalPlayerId}
+          rosterPlayers={players.map((p) => ({
+            id: p.id,
+            name: p.name,
+            uniformNumber: p.uniformNumber,
+            primaryPosition: p.primaryPosition,
+            profileImageUrl: p.profileImageUrl,
+          }))}
+          onClose={() => setPhotoModalPlayerId(null)}
+          onPhotoUpdated={handlePhotoUpdated}
+        />
+      )}
     </div>
   );
 }

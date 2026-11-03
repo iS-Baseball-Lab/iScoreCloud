@@ -1,0 +1,921 @@
+// filepath: src/components/liff/PlayerPhotoCaptureModal.tsx
+"use client";
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
+import {
+  Camera,
+  Image as ImageIcon,
+  X,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Trash2,
+  Loader2,
+  RefreshCw,
+  ScanFace,
+  ArrowRight,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+
+export interface PhotoTargetPlayer {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  primaryPosition?: string | null;
+  profileImageUrl: string | null;
+}
+
+interface PlayerPhotoCaptureModalProps {
+  isOpen: boolean;
+  teamId: string;
+  initialPlayerId: string;
+  rosterPlayers: PhotoTargetPlayer[];
+  onClose: () => void;
+  onPhotoUpdated: (playerId: string, newProfileImageUrl: string | null) => void;
+}
+
+interface UploadPhotoApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  playerId?: string;
+  profileImageUrl?: string | null;
+  error?: string;
+}
+
+const PREVIEW_CANVAS_PX = 480;
+const EXPORT_CANVAS_PX = 512;
+
+function cleanUniform(raw: string | null | undefined): string {
+  if (!raw) return "--";
+  const c = raw.trim().replace(/^#/, "");
+  return c || "--";
+}
+
+function computeMaxNormOffsets(
+  natW: number,
+  natH: number,
+  rotationDeg: number,
+  zoom: number
+): { maxNormX: number; maxNormY: number } {
+  const rotW = rotationDeg % 180 === 0 ? natW : natH;
+  const rotH = rotationDeg % 180 === 0 ? natH : natW;
+  if (rotW <= 0 || rotH <= 0) return { maxNormX: 0, maxNormY: 0 };
+
+  const baseScale = Math.max(1 / rotW, 1 / rotH);
+  const relW = rotW * baseScale * zoom;
+  const relH = rotH * baseScale * zoom;
+
+  return {
+    maxNormX: Math.max(0, (relW - 1) / 2),
+    maxNormY: Math.max(0, (relH - 1) / 2),
+  };
+}
+
+function clampValue(val: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, val));
+}
+
+function drawCroppedPhotoToCanvas(
+  canvas: HTMLCanvasElement,
+  img: HTMLImageElement,
+  targetSize: number,
+  zoom: number,
+  normX: number,
+  normY: number,
+  rotationDeg: number
+): void {
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillRect(0, 0, targetSize, targetSize);
+
+  const natW = img.naturalWidth || img.width;
+  const natH = img.naturalHeight || img.height;
+  if (natW <= 0 || natH <= 0) return;
+
+  const rotW = rotationDeg % 180 === 0 ? natW : natH;
+  const rotH = rotationDeg % 180 === 0 ? natH : natW;
+  const baseScale = Math.max(targetSize / rotW, targetSize / rotH);
+  const totalScale = baseScale * zoom;
+
+  const { maxNormX, maxNormY } = computeMaxNormOffsets(natW, natH, rotationDeg, zoom);
+  const clampedX = clampValue(normX, -maxNormX, maxNormX);
+  const clampedY = clampValue(normY, -maxNormY, maxNormY);
+
+  ctx.save();
+  ctx.translate(
+    targetSize / 2 + clampedX * targetSize,
+    targetSize / 2 + clampedY * targetSize
+  );
+  ctx.rotate((rotationDeg * Math.PI) / 180);
+  ctx.scale(totalScale, totalScale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, -natW / 2, -natH / 2, natW, natH);
+  ctx.restore();
+}
+
+export function PlayerPhotoCaptureModal({
+  isOpen,
+  teamId,
+  initialPlayerId,
+  rosterPlayers,
+  onClose,
+  onPhotoUpdated,
+}: PlayerPhotoCaptureModalProps) {
+  const [activePlayerId, setActivePlayerId] = useState<string>(initialPlayerId);
+  const [mode, setMode] = useState<"idle" | "live_camera" | "crop">("idle");
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+
+  const [loadedImage, setLoadedImage] = useState<HTMLImageElement | null>(null);
+  const [zoom, setZoom] = useState<number>(1.08);
+  const [normX, setNormX] = useState<number>(0);
+  const [normY, setNormY] = useState<number>(0);
+  const [rotationDeg, setRotationDeg] = useState<number>(0);
+
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const albumInputRef = useRef<HTMLInputElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  const dragStateRef = useRef<{
+    isDragging: boolean;
+    startClientX: number;
+    startClientY: number;
+    startNormX: number;
+    startNormY: number;
+    boxSize: number;
+  }>({
+    isDragging: false,
+    startClientX: 0,
+    startClientY: 0,
+    startNormX: 0,
+    startNormY: 0,
+    boxSize: 240,
+  });
+
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const clearDraftImage = useCallback(() => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+    setLoadedImage(null);
+    setZoom(1.08);
+    setNormX(0);
+    setNormY(0);
+    setRotationDeg(0);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActivePlayerId(initialPlayerId);
+      setMode("idle");
+      clearDraftImage();
+    } else {
+      stopCameraStream();
+      clearDraftImage();
+      setMode("idle");
+    }
+  }, [isOpen, initialPlayerId, clearDraftImage, stopCameraStream]);
+
+  useEffect(() => {
+    return () => {
+      stopCameraStream();
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [stopCameraStream]);
+
+  const activeIndex = useMemo(() => {
+    const idx = rosterPlayers.findIndex((p) => p.id === activePlayerId);
+    return idx >= 0 ? idx : 0;
+  }, [rosterPlayers, activePlayerId]);
+
+  const activePlayer = rosterPlayers[activeIndex] || null;
+  const prevPlayer = activeIndex > 0 ? rosterPlayers[activeIndex - 1] : null;
+  const nextPlayer =
+    activeIndex >= 0 && activeIndex < rosterPlayers.length - 1
+      ? rosterPlayers[activeIndex + 1]
+      : null;
+
+  // 連続撮影用：次の「未撮影」選手を優先検索し、全員撮影済みなら次の背番号順選手を提案
+  const nextRecommendedPlayer = useMemo(() => {
+    if (rosterPlayers.length <= 1) return null;
+    for (let offset = 1; offset < rosterPlayers.length; offset++) {
+      const candidate = rosterPlayers[(activeIndex + offset) % rosterPlayers.length];
+      if (!candidate.profileImageUrl && candidate.id !== activePlayerId) {
+        return candidate;
+      }
+    }
+    return nextPlayer;
+  }, [rosterPlayers, activeIndex, activePlayerId, nextPlayer]);
+
+  const photographedCount = useMemo(
+    () => rosterPlayers.filter((p) => Boolean(p.profileImageUrl)).length,
+    [rosterPlayers]
+  );
+
+  const switchTargetPlayer = useCallback(
+    (targetId: string) => {
+      stopCameraStream();
+      clearDraftImage();
+      setMode("idle");
+      setActivePlayerId(targetId);
+    },
+    [stopCameraStream, clearDraftImage]
+  );
+
+  // プレビューCanvasの再描画
+  useEffect(() => {
+    if (mode !== "crop" || !loadedImage || !previewCanvasRef.current) return;
+    drawCroppedPhotoToCanvas(
+      previewCanvasRef.current,
+      loadedImage,
+      PREVIEW_CANVAS_PX,
+      zoom,
+      normX,
+      normY,
+      rotationDeg
+    );
+  }, [mode, loadedImage, zoom, normX, normY, rotationDeg]);
+
+  const loadImageFromSrc = useCallback(
+    (src: string, isObjectUrl: boolean) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const natW = img.naturalWidth || img.width;
+        const natH = img.naturalHeight || img.height;
+        const initialZoom = 1.08;
+        const { maxNormY } = computeMaxNormOffsets(natW, natH, 0, initialZoom);
+        // 縦長ポートレート写真では帽子・顔が中央に来るよう上寄りを初期表示
+        const initialNormY = natH > natW ? Math.min(maxNormY, 0.14) : 0;
+
+        setLoadedImage(img);
+        setRotationDeg(0);
+        setZoom(initialZoom);
+        setNormX(0);
+        setNormY(initialNormY);
+        setMode("crop");
+      };
+      img.onerror = () => {
+        if (isObjectUrl) URL.revokeObjectURL(src);
+        toast.error("画像の読み込みに失敗しました。別の写真をお試しください。");
+      };
+      img.src = src;
+    },
+    []
+  );
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("画像ファイル（JPEG / PNG / WebP 等）を選択してください");
+      return;
+    }
+
+    stopCameraStream();
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+    }
+    const objUrl = URL.createObjectURL(file);
+    objectUrlRef.current = objUrl;
+    loadImageFromSrc(objUrl, true);
+  };
+
+  // インアプリ・ガイド枠つきライブカメラ起動
+  const startLiveCamera = useCallback(
+    async (targetFacing: "environment" | "user") => {
+      stopCameraStream();
+      if (
+        typeof navigator === "undefined" ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getUserMedia !== "function"
+      ) {
+        cameraInputRef.current?.click();
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: targetFacing },
+            width: { ideal: 1280 },
+            height: { ideal: 1280 },
+          },
+          audio: false,
+        });
+        streamRef.current = stream;
+        setFacingMode(targetFacing);
+        setMode("live_camera");
+
+        requestAnimationFrame(() => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            void videoRef.current.play().catch(() => {});
+          }
+        });
+      } catch {
+        toast.info("標準カメラを起動します");
+        cameraInputRef.current?.click();
+      }
+    },
+    [stopCameraStream]
+  );
+
+  const handleCaptureLiveFrame = () => {
+    const video = videoRef.current;
+    if (!video || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      toast.error("カメラ映像の準備中です。もう一度お試しください。");
+      return;
+    }
+
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    const ctx = tempCanvas.getContext("2d");
+    if (!ctx) return;
+
+    if (facingMode === "user") {
+      ctx.translate(tempCanvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    stopCameraStream();
+    const dataUrl = tempCanvas.toDataURL("image/jpeg", 0.92);
+    loadImageFromSrc(dataUrl, false);
+  };
+
+  // ドラッグ操作（タッチ＆マウス共通 Pointer Events）
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!loadedImage) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const rect = e.currentTarget.getBoundingClientRect();
+    dragStateRef.current = {
+      isDragging: true,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startNormX: normX,
+      startNormY: normY,
+      boxSize: rect.width || 240,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current.isDragging || !loadedImage) return;
+    const { startClientX, startClientY, startNormX, startNormY, boxSize } =
+      dragStateRef.current;
+    const dx = (e.clientX - startClientX) / boxSize;
+    const dy = (e.clientY - startClientY) / boxSize;
+
+    const natW = loadedImage.naturalWidth || loadedImage.width;
+    const natH = loadedImage.naturalHeight || loadedImage.height;
+    const { maxNormX, maxNormY } = computeMaxNormOffsets(natW, natH, rotationDeg, zoom);
+
+    setNormX(clampValue(startNormX + dx, -maxNormX, maxNormX));
+    setNormY(clampValue(startNormY + dy, -maxNormY, maxNormY));
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStateRef.current.isDragging) {
+      dragStateRef.current.isDragging = false;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
+
+  const handleZoomChange = (nextZoom: number) => {
+    const clampedZoom = clampValue(nextZoom, 1, 3);
+    setZoom(clampedZoom);
+    if (loadedImage) {
+      const natW = loadedImage.naturalWidth || loadedImage.width;
+      const natH = loadedImage.naturalHeight || loadedImage.height;
+      const { maxNormX, maxNormY } = computeMaxNormOffsets(
+        natW,
+        natH,
+        rotationDeg,
+        clampedZoom
+      );
+      setNormX((prev) => clampValue(prev, -maxNormX, maxNormX));
+      setNormY((prev) => clampValue(prev, -maxNormY, maxNormY));
+    }
+  };
+
+  const handleRotate90 = () => {
+    const nextRot = (rotationDeg + 90) % 360;
+    setRotationDeg(nextRot);
+    if (loadedImage) {
+      const natW = loadedImage.naturalWidth || loadedImage.width;
+      const natH = loadedImage.naturalHeight || loadedImage.height;
+      const { maxNormX, maxNormY } = computeMaxNormOffsets(natW, natH, nextRot, zoom);
+      setNormX((prev) => clampValue(prev, -maxNormX, maxNormX));
+      setNormY((prev) => clampValue(prev, -maxNormY, maxNormY));
+    }
+  };
+
+  const saveCroppedPhoto = async (advanceToNextPlayerId?: string) => {
+    if (!activePlayer || !loadedImage || isSaving) return;
+
+    setIsSaving(true);
+    try {
+      const exportCanvas = document.createElement("canvas");
+      drawCroppedPhotoToCanvas(
+        exportCanvas,
+        loadedImage,
+        EXPORT_CANVAS_PX,
+        zoom,
+        normX,
+        normY,
+        rotationDeg
+      );
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        exportCanvas.toBlob((b) => resolve(b), "image/jpeg", 0.86)
+      );
+      if (!blob) {
+        throw new Error("写真データの生成に失敗しました");
+      }
+
+      const file = new File([blob], `player-${activePlayer.id}.jpg`, {
+        type: "image/jpeg",
+      });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("teamId", teamId);
+
+      const res = await fetch(
+        `/api/liff/players/${encodeURIComponent(activePlayer.id)}/photo`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = (await res.json()) as UploadPhotoApiResponse;
+      if (!res.ok || !data.success || !data.profileImageUrl) {
+        throw new Error(data.error || "写真のアップロードに失敗しました");
+      }
+
+      invalidateLiffApiCache("/api/liff/players");
+      invalidateLiffApiCache("/api/teams/");
+      onPhotoUpdated(activePlayer.id, data.profileImageUrl);
+
+      if (advanceToNextPlayerId) {
+        toast.success(`#${cleanUniform(activePlayer.uniformNumber)} ${activePlayer.name} の写真を保存しました！`);
+        switchTargetPlayer(advanceToNextPlayerId);
+      } else {
+        toast.success(
+          data.isDemo
+            ? `${activePlayer.name} の写真を反映しました（デモプレビュー）`
+            : `${activePlayer.name} の選手写真を保存しました！`
+        );
+        clearDraftImage();
+        setMode("idle");
+        onClose();
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "写真の保存に失敗しました");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!activePlayer || !activePlayer.profileImageUrl || isDeleting) return;
+    if (!window.confirm(`${activePlayer.name} 選手の登録写真を削除しますか？`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/liff/players/${encodeURIComponent(
+          activePlayer.id
+        )}/photo?teamId=${encodeURIComponent(teamId)}`,
+        { method: "DELETE" }
+      );
+      const data = (await res.json()) as UploadPhotoApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "写真の削除に失敗しました");
+      }
+
+      invalidateLiffApiCache("/api/liff/players");
+      invalidateLiffApiCache("/api/teams/");
+      onPhotoUpdated(activePlayer.id, null);
+      toast.success(`${activePlayer.name} の写真を削除しました`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "写真の削除に失敗しました");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (!isOpen || !activePlayer || typeof document === "undefined") {
+    return null;
+  }
+
+  const numStr = cleanUniform(activePlayer.uniformNumber);
+  const initial = activePlayer.name.replace(/\s+/g, "").slice(0, 1) || "選";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-slate-950/60 p-3 sm:p-4 animate-in fade-in duration-150">
+      {/* 明示的タップで閉じる */}
+      <div
+        className="absolute inset-0"
+        onClick={() => {
+          if (!isSaving && !isDeleting) onClose();
+        }}
+      />
+
+      {/* 非表示ファイル入力（スマホ標準カメラ撮影用 / アルバム選択用） */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+      <input
+        ref={albumInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col animate-in zoom-in-95 duration-150">
+        {/* ━━━ A-3 上帯ダークソリッドキャップ ━━━ */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 space-y-2.5 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
+                <Camera className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-black text-white leading-tight truncate">
+                  選手名鑑 写真撮影・登録
+                </h3>
+                <p className="text-[10px] font-bold text-slate-300 leading-tight">
+                  PLAYER PHOTO STUDIO
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black tabular-nums">
+                撮影済 {photographedCount}/{rosterPlayers.length}
+              </span>
+              <button
+                type="button"
+                disabled={isSaving || isDeleting}
+                onClick={onClose}
+                className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 flex items-center justify-center active:scale-90 transition-all"
+                aria-label="閉じる"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* 連続撮影用・選手クイック切替バー */}
+          {rosterPlayers.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!prevPlayer || isSaving}
+                onClick={() => prevPlayer && switchTargetPlayer(prevPlayer.id)}
+                className="h-8 w-8 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-35 flex items-center justify-center active:scale-95 transition-all shrink-0"
+                aria-label="前の選手"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <select
+                value={activePlayer.id}
+                disabled={isSaving}
+                onChange={(e) => switchTargetPlayer(e.target.value)}
+                aria-label="撮影する選手を選択"
+                className="flex-1 h-8 px-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black text-white focus:outline-hidden focus:ring-2 focus:ring-primary/50 truncate"
+              >
+                {rosterPlayers.map((rp) => (
+                  <option key={rp.id} value={rp.id}>
+                    {rp.profileImageUrl ? "📷 " : "○ "}#{cleanUniform(rp.uniformNumber)}{" "}
+                    {rp.name}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                disabled={!nextPlayer || isSaving}
+                onClick={() => nextPlayer && switchTargetPlayer(nextPlayer.id)}
+                className="h-8 w-8 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-35 flex items-center justify-center active:scale-95 transition-all shrink-0"
+                aria-label="次の選手"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ━━━ ボディエリア ━━━ */}
+        <div className="p-4 pb-[max(env(safe-area-inset-bottom),16px)] space-y-4 overflow-y-auto bg-card">
+          {/* 対象選手バー */}
+          <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-muted border border-border">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded bg-[#0f172a] text-white text-xs font-black tabular-nums shrink-0">
+                #{numStr}
+              </span>
+              <span className="text-sm font-black text-foreground truncate">
+                {activePlayer.name}
+              </span>
+            </div>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                activePlayer.profileImageUrl
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+              }`}
+            >
+              {activePlayer.profileImageUrl ? "写真登録済" : "写真未登録"}
+            </span>
+          </div>
+
+          {mode === "idle" && (
+            <div className="space-y-4">
+              {/* 現在のプロフィール写真プレビュー */}
+              <div className="flex flex-col items-center justify-center py-3 px-4 rounded-2xl bg-muted/60 border border-border space-y-2.5">
+                <Avatar className="h-32 w-32 border-4 border-card shadow-sm ring-2 ring-border">
+                  {activePlayer.profileImageUrl && (
+                    <AvatarImage
+                      src={activePlayer.profileImageUrl}
+                      alt={activePlayer.name}
+                      className="object-cover"
+                    />
+                  )}
+                  <AvatarFallback className="bg-primary text-primary-foreground font-black text-4xl">
+                    {initial}
+                  </AvatarFallback>
+                </Avatar>
+                <p className="text-[11px] font-bold text-muted-foreground text-center">
+                  帽子・顔・胸元のユニフォームが入るように撮影すると名鑑カードが映えます
+                </p>
+              </div>
+
+              {/* 撮影・選択アクション */}
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-sm shadow-xs active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Camera className="w-5 h-5" />
+                  <span>スマホカメラで撮影する</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => albumInputRef.current?.click()}
+                    className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-foreground font-black text-xs shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ImageIcon className="w-4 h-4 text-primary shrink-0" />
+                    <span>アルバムから選択</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void startLiveCamera("environment")}
+                    className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-foreground font-black text-xs shadow-2xs active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ScanFace className="w-4 h-4 text-primary shrink-0" />
+                    <span>ガイド枠カメラ</span>
+                  </button>
+                </div>
+              </div>
+
+              {activePlayer.profileImageUrl && (
+                <div className="pt-2 border-t border-border flex justify-center">
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => void handleDeletePhoto()}
+                    className="px-3.5 py-2 rounded-xl bg-card hover:bg-rose-500/10 border border-rose-500/35 text-rose-600 dark:text-rose-400 text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>現在の写真を削除する</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mode === "live_camera" && (
+            <div className="space-y-3.5">
+              <div className="relative mx-auto w-64 h-64 rounded-2xl overflow-hidden border-2 border-primary bg-slate-950 shadow-xs">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className={`w-full h-full object-cover ${
+                    facingMode === "user" ? "-scale-x-100" : ""
+                  }`}
+                />
+                {/* 丸型顔位置ガイド枠 */}
+                <div className="pointer-events-none absolute inset-3 rounded-full border-2 border-dashed border-white/85 shadow-[0_0_0_9999px_rgba(15,23,42,0.42)]" />
+                <span className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-slate-950/85 text-white text-[10px] font-black whitespace-nowrap border border-white/20">
+                  枠内に顔・帽子を合わせて撮影
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopCameraStream();
+                    setMode("idle");
+                  }}
+                  className="py-2.5 px-3.5 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground active:scale-95 transition-all"
+                >
+                  戻る
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCaptureLiveFrame}
+                  className="flex-1 py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Camera className="w-4.5 h-4.5" />
+                  <span>シャッターを切る</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    void startLiveCamera(
+                      facingMode === "environment" ? "user" : "environment"
+                    )
+                  }
+                  className="py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground active:scale-95 transition-all flex items-center gap-1"
+                  title="内側/外側カメラ切替"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-primary" />
+                  <span>切替</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === "crop" && loadedImage && (
+            <div className="space-y-3.5">
+              {/* ドラッグ＆ピンチ位置調整ビューポート */}
+              <div className="flex flex-col items-center space-y-2">
+                <div
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  className="relative w-60 h-60 rounded-2xl overflow-hidden border-2 border-primary bg-slate-950 shadow-xs touch-none cursor-grab active:cursor-grabbing select-none"
+                >
+                  <canvas
+                    ref={previewCanvasRef}
+                    width={PREVIEW_CANVAS_PX}
+                    height={PREVIEW_CANVAS_PX}
+                    className="w-full h-full block pointer-events-none"
+                  />
+                  {/* 名鑑円形アバターでの見え方ガイド */}
+                  <div className="pointer-events-none absolute inset-2 rounded-full border-2 border-dashed border-white/85 shadow-[0_0_0_9999px_rgba(15,23,42,0.38)]" />
+                </div>
+                <p className="text-[11px] font-bold text-muted-foreground">
+                  写真を指でドラッグして顔の位置を合わせられます
+                </p>
+              </div>
+
+              {/* ズーム ＆ 90°回転ツールバー */}
+              <div className="p-2.5 rounded-2xl bg-muted border border-border space-y-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleZoomChange(zoom - 0.15)}
+                    className="w-7 h-7 rounded-lg bg-card border border-border flex items-center justify-center text-foreground hover:bg-muted active:scale-90"
+                    aria-label="縮小"
+                  >
+                    <ZoomOut className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.02"
+                    value={zoom}
+                    onChange={(e) => handleZoomChange(Number(e.target.value))}
+                    aria-label="ズーム倍率"
+                    className="flex-1 accent-primary cursor-pointer"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleZoomChange(zoom + 0.15)}
+                    className="w-7 h-7 rounded-lg bg-card border border-border flex items-center justify-center text-foreground hover:bg-muted active:scale-90"
+                    aria-label="拡大"
+                  >
+                    <ZoomIn className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRotate90}
+                    className="px-2.5 h-7 rounded-lg bg-card border border-border text-[11px] font-black text-foreground hover:bg-muted active:scale-95 flex items-center gap-1 shrink-0"
+                  >
+                    <RotateCw className="w-3 h-3 text-primary" />
+                    <span>回転</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 保存アクションボタン群 */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void saveCroppedPhoto()}
+                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-sm shadow-xs active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSaving ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Check className="w-4.5 h-4.5" />
+                  )}
+                  <span>この写真を名鑑に保存する</span>
+                </button>
+
+                {nextRecommendedPlayer && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => void saveCroppedPhoto(nextRecommendedPlayer.id)}
+                    className="w-full py-2.5 px-4 rounded-2xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 font-black text-xs shadow-2xs active:scale-[0.99] transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>
+                      保存して次の選手へ（#{cleanUniform(nextRecommendedPlayer.uniformNumber)}{" "}
+                      {nextRecommendedPlayer.name}）
+                    </span>
+                    <ArrowRight className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    clearDraftImage();
+                    setMode("idle");
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-card hover:bg-muted border border-border text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
+                >
+                  撮り直す・別の写真を選ぶ
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+

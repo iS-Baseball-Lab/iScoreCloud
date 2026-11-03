@@ -20,9 +20,11 @@ import {
   ScanLine,
   IdCard,
   Loader2,
+  Camera,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -744,6 +746,43 @@ function PlayerGrowthContent() {
   const [logSortOrder, setLogSortOrder] = useState<"desc" | "asc">("desc");
   const [selectedBatGameIdx, setSelectedBatGameIdx] = useState<number>(0);
   const [selectedPitchGameIdx, setSelectedPitchGameIdx] = useState<number>(0);
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState<boolean>(false);
+
+  const activeTeamId =
+    growthData?.team?.id ||
+    currentTeam?.id ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_selectedTeamId")
+      : "") ||
+    "demo-team";
+
+  // チーム切替時に写真撮影モーダルを自動リセット（規約5遵守）
+  useEffect(() => {
+    setIsPhotoModalOpen(false);
+  }, [currentTeam?.id]);
+
+  const handlePhotoUpdated = useCallback(
+    (targetPlayerId: string, newProfileImageUrl: string | null) => {
+      setGrowthData((prev) => {
+        if (!prev) return prev;
+        const nextRoster = prev.roster?.map((r) =>
+          r.id === targetPlayerId
+            ? { ...r, profileImageUrl: newProfileImageUrl }
+            : r
+        );
+        const nextPlayer =
+          prev.player && prev.player.id === targetPlayerId
+            ? { ...prev.player, profileImageUrl: newProfileImageUrl }
+            : prev.player;
+        return {
+          ...prev,
+          roster: nextRoster,
+          player: nextPlayer,
+        };
+      });
+    },
+    []
+  );
 
   const loadGrowth = useCallback(async () => {
     setIsLoading(true);
@@ -954,18 +993,31 @@ function PlayerGrowthContent() {
                     </span>
 
                     <div className="relative z-10 flex items-center gap-3.5">
-                      <Avatar className="h-16 w-16 border-2 border-slate-700 shadow-xs shrink-0">
-                        {player.profileImageUrl && (
-                          <AvatarImage
-                            src={player.profileImageUrl}
-                            alt={player.name}
-                            className="object-cover"
-                          />
-                        )}
-                        <AvatarFallback className="bg-primary text-primary-foreground font-black text-xl">
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
+                      <button
+                        type="button"
+                        onClick={() => setIsPhotoModalOpen(true)}
+                        title="タップしてプロフィール写真を撮影・変更"
+                        className="relative shrink-0 rounded-full group active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        <Avatar className="h-16 w-16 border-2 border-slate-700 group-hover:border-primary shadow-xs transition-colors">
+                          {player.profileImageUrl && (
+                            <AvatarImage
+                              src={player.profileImageUrl}
+                              alt={player.name}
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback className="bg-primary text-primary-foreground font-black text-xl">
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span
+                          aria-hidden="true"
+                          className="absolute -bottom-0.5 -right-0.5 h-6 w-6 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs"
+                        >
+                          <Camera className="w-3 h-3" />
+                        </span>
+                      </button>
 
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -1869,6 +1921,29 @@ function PlayerGrowthContent() {
           </>
         )}
       </div>
+
+      {player && (
+        <PlayerPhotoCaptureModal
+          isOpen={isPhotoModalOpen}
+          teamId={activeTeamId}
+          initialPlayerId={player.id}
+          rosterPlayers={
+            roster.length > 0
+              ? roster
+              : [
+                  {
+                    id: player.id,
+                    name: player.name,
+                    uniformNumber: player.uniformNumber,
+                    primaryPosition: player.primaryPosition,
+                    profileImageUrl: player.profileImageUrl,
+                  },
+                ]
+          }
+          onClose={() => setIsPhotoModalOpen(false)}
+          onPhotoUpdated={handlePhotoUpdated}
+        />
+      )}
     </div>
   );
 }
