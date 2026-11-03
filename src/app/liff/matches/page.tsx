@@ -38,6 +38,7 @@ import {
   CheckCircle2,
   BookOpen,
   FileSpreadsheet,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -1938,7 +1939,7 @@ function MatchesContent() {
                         試合データの修正・設定・削除
                       </p>
                       <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
-                        打席結果・スタメンの修正、スコアブック記号設定、データ削除
+                        基本情報・打席結果・スタメンの修正、記号設定、データ削除
                       </p>
                     </div>
                   </div>
@@ -1973,6 +1974,26 @@ function MatchesContent() {
                       <p className="text-[10px] font-black text-muted-foreground px-0.5">
                         データの登録・修正
                       </p>
+
+                      <Link
+                        href={`/liff/matches/edit?id=${encodeURIComponent(match.id)}`}
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                            <Calendar className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              試合の基本情報を編集
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              対戦相手・日時・球場・試合種別・大会名・攻守・動画URL・得点を変更
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </Link>
 
                       {!isRainout && hasPersonalStatsData && (
                         <Link

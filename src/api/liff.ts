@@ -8659,4 +8659,51 @@ app.delete("/players/:playerId/photo", async (c) => {
   }
 });
 
+/**
+ * 🏆 大会一覧取得API (GET /tournaments)
+ * LIFF内の試合基本情報編集画面などからセッションCookie不要で登録済み大会候補を取得
+ */
+app.get("/tournaments", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  try {
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        tournaments: [
+          { id: "demo-trn-1", name: "川崎市秋季大会", season: "2026", category: "other" },
+          { id: "demo-trn-2", name: "高津区少年野球大会", season: "2026", category: "other" },
+          { id: "demo-trn-3", name: "多摩川親善交流リーグ", season: "2026", category: "other" },
+        ],
+      });
+    }
+
+    const rows = await db
+      .select({
+        id: tournaments.id,
+        name: tournaments.name,
+        season: tournaments.season,
+        category: tournaments.category,
+      })
+      .from(tournaments)
+      .orderBy(desc(tournaments.createdAt))
+      .all();
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      tournaments: rows,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to fetch LIFF tournaments:", err);
+    return c.json({
+      success: true,
+      isDemo: false,
+      tournaments: [],
+    });
+  }
+});
+
 export default app;

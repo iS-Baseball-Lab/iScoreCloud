@@ -12,7 +12,6 @@ import {
   ChevronUp, 
   Play, 
   Trophy, 
-  ExternalLink,
   Users,
   Video,
   FileText,
@@ -85,9 +84,12 @@ export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean
         </div>
 
         {/* 下部情報 */}
-        <div className="flex items-center justify-between pt-2 border-t border-border/60 gap-2">
-          <div className="h-7 flex-1 bg-muted rounded-xl" />
-          <div className="h-7 w-16 bg-muted rounded-xl" />
+        <div className="flex items-center justify-between pt-2.5 border-t border-border/60 gap-2">
+          <div className="h-3.5 w-12 bg-muted rounded" />
+          <div className="flex items-center gap-1.5">
+            <div className="h-7 w-24 bg-muted rounded-lg" />
+            <div className="h-7 w-24 bg-muted rounded-lg" />
+          </div>
         </div>
       </div>
     </div>
@@ -436,32 +438,39 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
             </div>
           </div>
 
-          {/* 🌟 2.5 折りたたみ時のワンタップ・クイックアクション（スタメン登録 / 詳細） */}
-          {!isExpanded && !isRainout && (
+          {/* 🌟 2.5 折りたたみ時のワンタップ・クイックアクション（展開後フッターとデザイン・文言を完全統一） */}
+          {!isExpanded && (
             <div
-              className="mt-3 pt-2.5 border-t border-border/70 flex items-center justify-between gap-2"
+              className="mt-3 pt-2.5 border-t border-border/70 flex items-center justify-between gap-2 flex-wrap"
               onClick={(e) => e.stopPropagation()}
             >
-              <Link
-                href={`/liff/matches/lineup?id=${match.id}`}
-                className={cn(
-                  "flex-1 inline-flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-xl text-[11px] font-black transition-all active:scale-95",
-                  !match.hasLineup && (isFuture || isLive || match.status === "scheduled")
-                    ? "bg-primary text-primary-foreground shadow-2xs hover:bg-primary/90"
-                    : "bg-muted text-primary border border-border hover:border-primary/40"
+              <span className="text-[10px] font-bold text-muted-foreground pl-0.5">
+                {match.status === "finished"
+                  ? "試合終了"
+                  : isLive
+                  ? "試合中"
+                  : isRainout
+                  ? "雨天中止"
+                  : "予定"}
+              </span>
+              <div className="flex items-center gap-1.5">
+                {!isRainout && (
+                  <Link
+                    href={`/liff/matches/lineup?id=${match.id}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                  </Link>
                 )}
-              >
-                <Users className="w-3.5 h-3.5 shrink-0" />
-                <span>{match.hasLineup ? "スタメン・出欠編集" : "スタメン・出欠登録"}</span>
-              </Link>
-
-              <Link
-                href={`/liff/matches?id=${match.id}`}
-                className="inline-flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-foreground text-[11px] font-black transition-all active:scale-95 shrink-0"
-              >
-                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span>詳細</span>
-              </Link>
+                <Link
+                  href={`/liff/matches?id=${match.id}`}
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>スコア・詳細</span>
+                </Link>
+              </div>
             </div>
           )}
 
@@ -558,23 +567,30 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   onClick={(e) => e.stopPropagation()}
                 >
                   <span className="text-[10px] font-bold text-muted-foreground pl-1">
-                    {match.status === "finished" ? "試合終了" : isLive ? "試合中" : "予定"}
+                    {match.status === "finished"
+                      ? "試合終了"
+                      : isLive
+                      ? "試合中"
+                      : isRainout
+                      ? "雨天中止"
+                      : "予定"}
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <Link
-                      href={`/liff/matches/lineup?id=${match.id}`}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
-                    </Link>
+                    {!isRainout && (
+                      <Link
+                        href={`/liff/matches/lineup?id=${match.id}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                      </Link>
+                    )}
                     <Link
                       href={`/liff/matches?id=${match.id}`}
                       className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>スコア・詳細</span>
-                      <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
                     </Link>
                   </div>
                 </div>

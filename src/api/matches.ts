@@ -503,7 +503,10 @@ app.delete("/logs/:logId", async (c) => {
 
 app.delete("/:id", async (c) => {
   try {
-    await MatchService.deleteMatch(drizzle(c.env.DB), c.req.param("id"));
+    const db = drizzle(c.env.DB);
+    const matchId = c.req.param("id");
+    await deleteMatchPersonalRecordsSafely(db, c.env.BUCKET, matchId);
+    await MatchService.deleteMatch(db, matchId);
     return c.json({ success: true });
   } catch (error) {
     return c.json({ success: false, error: "Failed to delete match" }, 500);

@@ -103,52 +103,60 @@ export const MatchService = {
 
   // 2. 特定の試合の取得
   async getMatchById(db: DrizzleDB, matchId: string) {
-    const row = await db.select({
-      id: matches.id,
-      teamId: matches.teamId,
-      opponent: matches.opponent,
-      date: matches.date,
-      matchType: matches.matchType,
-      battingOrder: matches.battingOrder,
-      benchSide: matches.benchSide,
-      status: matches.status,
-      surfaceDetails: matches.surfaceDetails,
-      innings: matches.innings,
-      tournamentName: tournaments.name,
-      tournamentId: matches.tournamentId,
-      venueName: venues.name,
-      venueShortName: venues.shortName,
-      myScore: matches.myScore,
-      opponentScore: matches.opponentScore,
-      myInningScores: matches.myInningScores,
-      opponentInningScores: matches.opponentInningScores,
-      currentInning: matches.currentInning,
-      isBottom: matches.isBottom,
-      balls: matches.balls,
-      strikes: matches.strikes,
-      outs: matches.outs,
-      runners: matches.runners,
-      myHits: matches.myHits,
-      opponentHits: matches.opponentHits,
-      myErrors: matches.myErrors,
-      opponentErrors: matches.opponentErrors,
-      venueId: matches.venueId,
-      youtubeUrl: matches.youtubeUrl,
-      liveMyScore: matches.liveMyScore,
-      liveOpponentScore: matches.liveOpponentScore,
-      liveMyInningScores: matches.liveMyInningScores,
-      liveOpponentInningScores: matches.liveOpponentInningScores,
-      liveStatus: matches.liveStatus,
-      lockedByUserName: matches.lockedByUserName,
-      lockedByUserId: matches.lockedByUserId,
-      venueAddress: venues.address,
-      venueMapUrl: venues.mapUrl,
-    })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .leftJoin(venues, eq(matches.venueId, venues.id))
-      .where(eq(matches.id, matchId))
-      .get();
+    const [row, abCheck] = await Promise.all([
+      db.select({
+        id: matches.id,
+        teamId: matches.teamId,
+        opponent: matches.opponent,
+        date: matches.date,
+        matchType: matches.matchType,
+        battingOrder: matches.battingOrder,
+        benchSide: matches.benchSide,
+        status: matches.status,
+        surfaceDetails: matches.surfaceDetails,
+        innings: matches.innings,
+        tournamentName: tournaments.name,
+        tournamentId: matches.tournamentId,
+        venueName: venues.name,
+        venueShortName: venues.shortName,
+        myScore: matches.myScore,
+        opponentScore: matches.opponentScore,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+        currentInning: matches.currentInning,
+        isBottom: matches.isBottom,
+        balls: matches.balls,
+        strikes: matches.strikes,
+        outs: matches.outs,
+        runners: matches.runners,
+        myHits: matches.myHits,
+        opponentHits: matches.opponentHits,
+        myErrors: matches.myErrors,
+        opponentErrors: matches.opponentErrors,
+        venueId: matches.venueId,
+        youtubeUrl: matches.youtubeUrl,
+        liveMyScore: matches.liveMyScore,
+        liveOpponentScore: matches.liveOpponentScore,
+        liveMyInningScores: matches.liveMyInningScores,
+        liveOpponentInningScores: matches.liveOpponentInningScores,
+        liveStatus: matches.liveStatus,
+        lockedByUserName: matches.lockedByUserName,
+        lockedByUserId: matches.lockedByUserId,
+        venueAddress: venues.address,
+        venueMapUrl: venues.mapUrl,
+      })
+        .from(matches)
+        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+        .leftJoin(venues, eq(matches.venueId, venues.id))
+        .where(eq(matches.id, matchId))
+        .get(),
+      db
+        .select({ id: atBats.id })
+        .from(atBats)
+        .where(eq(atBats.matchId, matchId))
+        .limit(1)
+        .get(),
+    ]);
 
     if (!row) return null;
 
@@ -223,6 +231,7 @@ export const MatchService = {
 
     return {
       ...row,
+      hasScorebook: Boolean(abCheck),
       venueId: resolvedVenueId,
       venueName: resolvedVenueName,
       venueShortName: resolvedVenueShortName,
@@ -307,16 +316,27 @@ export const MatchService = {
 
   // 6. 試合情報の更新
   async updateMatch(db: DrizzleDB, matchId: string, body: UpdateMatchBody): Promise<void> {
-    const tournamentId = await this._resolveTournament(db, body.matchType, body.tournamentName);
+    const shouldResolveTournament =
+      body.matchType !== undefined || body.tournamentName !== undefined;
+    const tournamentId = shouldResolveTournament
+      ? await this._resolveTournament(db, body.matchType || "official", body.tournamentName)
+      : undefined;
 
-    const updateData: any = {
+    const resolvedSurfaceDetails =
+      body.surfaceDetails !== undefined
+        ? body.surfaceDetails?.trim() || null
+        : body.location !== undefined
+          ? body.location?.trim() || null
+          : undefined;
+
+    const updateData: Record<string, unknown> = {
       opponent: body.opponent,
       tournamentId,
       date: body.date,
       matchType: body.matchType,
       battingOrder: body.battingOrder,
       benchSide: body.benchSide,
-      surfaceDetails: body.location,
+      surfaceDetails: resolvedSurfaceDetails,
       venueId: body.venueId !== undefined ? (body.venueId || null) : undefined,
       innings: body.innings,
       status: body.status,
@@ -324,18 +344,20 @@ export const MatchService = {
       opponentScore: body.opponentScore,
       myInningScores: body.myInningScores ? JSON.stringify(body.myInningScores) : undefined,
       opponentInningScores: body.opponentInningScores ? JSON.stringify(body.opponentInningScores) : undefined,
-      youtubeUrl: body.youtubeUrl,
+      youtubeUrl: body.youtubeUrl !== undefined ? (body.youtubeUrl?.trim() || null) : undefined,
       liveStatus: body.myInningScores ? "none" : undefined, // 🌟 簡易スコア更新時はライブ下書きを無効化
     };
 
     // undefined のキーを除外
-    Object.keys(updateData).forEach(key => {
+    Object.keys(updateData).forEach((key) => {
       if (updateData[key] === undefined) {
         delete updateData[key];
       }
     });
 
-    await db.update(matches).set(updateData).where(eq(matches.id, matchId));
+    if (Object.keys(updateData).length > 0) {
+      await db.update(matches).set(updateData).where(eq(matches.id, matchId));
+    }
   },
 
   // 6.5 スタメン情報の取得と保存
@@ -431,13 +453,15 @@ export const MatchService = {
 
   // 7. 試合削除
   async deleteMatch(db: DrizzleDB, matchId: string) {
-    // 💡 db.run(sql`...`) はPromiseを返しバッチ処理に入らないため、事前に実行してD1/Drizzleのエラーを回避します
+    // 外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し子テーブルから順に削除
+    await db.batch([
+      db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)) as any,
+      db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
+    ]);
     await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
 
     await db.batch([
-      db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)) as any,
       db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
-      db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
       db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
       db.delete(matchLineups).where(eq(matchLineups.matchId, matchId)) as any,
       db.delete(matches).where(eq(matches.id, matchId)) as any,

@@ -103,20 +103,21 @@ export interface CreateMatchBody {
 }
 
 export interface UpdateMatchBody {
-  opponent: string;
-  date: string;
-  matchType: "official" | "practice" | "exchange";
-  battingOrder: "first" | "second";
+  opponent?: string;
+  date?: string;
+  matchType?: "official" | "practice" | "exchange";
+  battingOrder?: "first" | "second";
   benchSide?: "1B" | "3B" | "unknown";
   location?: string;
+  surfaceDetails?: string | null;
   innings?: number;
   tournamentName?: string;
   venueId?: string | null;
   status?: "scheduled" | "live" | "finished" | "rainout";
   myScore?: number;
   opponentScore?: number;
-  myInningScores?: number[];
-  opponentInningScores?: number[];
+  myInningScores?: Array<number | null>;
+  opponentInningScores?: Array<number | null>;
   youtubeUrl?: string | null;
 }
 
