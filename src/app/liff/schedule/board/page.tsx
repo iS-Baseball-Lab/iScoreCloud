@@ -9,6 +9,12 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
+  PLAYER_CONDITION_META,
+  loadDemoPlayerConditionOverrides,
+  normalizePlayerConditionStatus,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
+import {
   Calendar as CalendarIcon,
   Users,
   ChevronLeft,
@@ -213,6 +219,7 @@ interface MemberPerson {
   uniformNumber?: string;
   subText?: string;
   groupType: "player" | "parent" | "mother" | "father" | "staff";
+  conditionStatus?: PlayerConditionStatus;
 }
 
 type MemberSortOrderMap = {
@@ -324,7 +331,23 @@ function SortableMemberRow({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-black text-foreground truncate">{person.name}</p>
+          <div className="flex items-center gap-1 min-w-0">
+            <p className="text-[11px] font-black text-foreground truncate">{person.name}</p>
+            {person.groupType === "player" &&
+              normalizePlayerConditionStatus(person.conditionStatus) !== "active" && (
+                <span
+                  className={`px-1 py-0.2 rounded text-[8.5px] font-black shrink-0 ${
+                    PLAYER_CONDITION_META[normalizePlayerConditionStatus(person.conditionStatus)]
+                      .softBadgeClass
+                  }`}
+                >
+                  {
+                    PLAYER_CONDITION_META[normalizePlayerConditionStatus(person.conditionStatus)]
+                      .matrixTag
+                  }
+                </span>
+              )}
+          </div>
           {person.subText && (
             <p className="text-[8.5px] text-muted-foreground truncate leading-none">{person.subText}</p>
           )}
@@ -471,11 +494,24 @@ export default function AttendanceMatrixBoardPage() {
 
       setEvents(data.events || []);
       const g = data.groups || {};
+      const demoConditionOverrides = data.isDemo ? loadDemoPlayerConditionOverrides() : {};
+      const effectivePlayers: MemberPerson[] = (g.players || [])
+        .map((p) => {
+          const override = demoConditionOverrides[p.id];
+          const cond = override
+            ? override.conditionStatus
+            : normalizePlayerConditionStatus(p.conditionStatus);
+          return {
+            ...p,
+            conditionStatus: cond,
+          };
+        })
+        .filter((p) => p.conditionStatus !== "on_leave");
       const mothers = g.mothers || [];
       const fathers = g.fathers || [];
       const parents = g.parents || [...mothers, ...fathers];
       setGroups({
-        players: g.players || [],
+        players: effectivePlayers,
         parents: parents,
         mothers: mothers,
         fathers: fathers,
@@ -537,7 +573,7 @@ export default function AttendanceMatrixBoardPage() {
             setSelectedGroupTab("staff");
           } else if (parents.some((p: MemberPerson) => myIdsSet.has(p.id))) {
             setSelectedGroupTab("father");
-          } else if ((g.players || []).some((p: MemberPerson) => myIdsSet.has(p.id))) {
+          } else if (effectivePlayers.some((p: MemberPerson) => myIdsSet.has(p.id))) {
             setSelectedGroupTab("player");
           }
         }
@@ -1767,6 +1803,11 @@ export default function AttendanceMatrixBoardPage() {
                         myInfo.memberIds.includes(person.id) ||
                         myInfo.playerIds.includes(person.id);
                       const subLabel = memberSubLabels[person.id];
+                      const pCond =
+                        person.groupType === "player"
+                          ? normalizePlayerConditionStatus(person.conditionStatus)
+                          : "active";
+                      const pCondMeta = PLAYER_CONDITION_META[pCond];
                       return (
                         <th
                           key={person.id}
@@ -1778,12 +1819,23 @@ export default function AttendanceMatrixBoardPage() {
                               ? "bg-primary/15 text-primary font-black"
                               : "bg-muted text-foreground"
                           }`}
-                          title={myInfo.isManager ? `${person.name}: タップして班・ラベルを変更` : person.name}
+                          title={`${person.name}${pCond !== "active" ? `（${pCondMeta.label}）` : ""}${
+                            myInfo.isManager ? ": タップして班・ラベルを変更" : ""
+                          }`}
                         >
                           <div className="flex flex-col items-center justify-center leading-none py-0.5">
                             {person.uniformNumber ? (
-                              <span className="text-[8.5px] font-black text-primary px-0.5 py-0.1 rounded bg-primary/10">
+                              <span
+                                className={`text-[8.5px] font-black px-0.5 py-0.1 rounded ${
+                                  pCond === "rehab"
+                                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                                    : pCond === "restricted"
+                                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                                    : "bg-primary/10 text-primary"
+                                }`}
+                              >
                                 #{person.uniformNumber}
+                                {pCond !== "active" ? pCondMeta.mark : ""}
                               </span>
                             ) : person.groupType === "mother" ? (
                               <span className="text-[8.5px] font-black text-muted-foreground">母</span>
@@ -1791,6 +1843,12 @@ export default function AttendanceMatrixBoardPage() {
                               <span className="text-[8.5px] font-black text-muted-foreground">父</span>
                             ) : person.groupType === "staff" ? (
                               <span className="text-[8.5px] font-black text-muted-foreground">指導</span>
+                            ) : pCond !== "active" ? (
+                              <span
+                                className={`text-[8px] font-black px-0.5 py-0.1 rounded ${pCondMeta.softBadgeClass}`}
+                              >
+                                {pCondMeta.matrixTag}
+                              </span>
                             ) : (
                               <span className="text-[8.5px] font-black text-muted-foreground">保護</span>
                             )}
@@ -1805,6 +1863,13 @@ export default function AttendanceMatrixBoardPage() {
                                   title={subLabel}
                                 >
                                   {subLabel}
+                                </span>
+                              ) : pCond !== "active" && !myInfo.isManager ? (
+                                <span
+                                  className={`text-[7.5px] font-black px-0.5 py-0.1 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${pCondMeta.softBadgeClass}`}
+                                  title={pCondMeta.label}
+                                >
+                                  {pCondMeta.matrixTag}
                                 </span>
                               ) : myInfo.isManager ? (
                                 <span
@@ -2006,6 +2071,23 @@ export default function AttendanceMatrixBoardPage() {
                           {editingCell.person.subText}
                         </span>
                       )}
+                      {editingCell.person.groupType === "player" &&
+                        normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
+                          "active" && (
+                          <span
+                            className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                              PLAYER_CONDITION_META[
+                                normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                              ].solidBadgeClass
+                            }`}
+                          >
+                            {
+                              PLAYER_CONDITION_META[
+                                normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                              ].badgeText
+                            }
+                          </span>
+                        )}
                     </div>
                     <p className="text-xs text-slate-300 font-bold mt-0.5">
                       📅 {editingCell.eventDate} : {editingCell.eventTitle}
@@ -2024,6 +2106,23 @@ export default function AttendanceMatrixBoardPage() {
               </div>
 
               <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
+                {editingCell.person.groupType === "player" &&
+                  normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
+                    "active" && (
+                    <div
+                      className={`p-2.5 rounded-xl text-[11px] font-bold leading-relaxed ${
+                        PLAYER_CONDITION_META[
+                          normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                        ].bannerClass
+                      }`}
+                    >
+                      {normalizePlayerConditionStatus(editingCell.person.conditionStatus) ===
+                      "rehab"
+                        ? "🩹 リハビリ・調整中：試合出場はお休み中ですが、別メニュー練習・ベンチ帯同・配車同乗などの出欠予定を登録できます。"
+                        : "⚠️ 一部制限あり：一部プレー制限を設けて活動参加中です。必要に応じてメモ欄にも補足をご記入ください。"}
+                    </div>
+                  )}
+
                 {/* ステータス選択ボタン一覧 (グループ別設定に準拠) */}
                 <div className="space-y-2">
                   <label className="text-xs font-black text-foreground">
@@ -2123,9 +2222,32 @@ export default function AttendanceMatrixBoardPage() {
                     <MessageSquare className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-black text-white truncate">
-                      {viewingComment.person.name} さんの連絡事項
-                    </h3>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="text-sm font-black text-white truncate">
+                        {viewingComment.person.name} さんの連絡事項
+                      </h3>
+                      {viewingComment.person.groupType === "player" &&
+                        normalizePlayerConditionStatus(viewingComment.person.conditionStatus) !==
+                          "active" && (
+                          <span
+                            className={`text-[10px] font-black px-1.5 py-0.5 rounded shrink-0 ${
+                              PLAYER_CONDITION_META[
+                                normalizePlayerConditionStatus(
+                                  viewingComment.person.conditionStatus
+                                )
+                              ].solidBadgeClass
+                            }`}
+                          >
+                            {
+                              PLAYER_CONDITION_META[
+                                normalizePlayerConditionStatus(
+                                  viewingComment.person.conditionStatus
+                                )
+                              ].compactBadgeText
+                            }
+                          </span>
+                        )}
+                    </div>
                     <p className="text-[10.5px] text-slate-300 font-bold mt-0.5 truncate">
                       📅 {viewingComment.eventDate} : {viewingComment.eventTitle}
                     </p>

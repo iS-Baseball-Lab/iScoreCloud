@@ -64,6 +64,8 @@ export const players = sqliteTable('players', {
   profileImageUrl: text('profile_image_url'), 
   userId: text('user_id').references(() => user.id), // ログインユーザーIDの紐付け (二重登録防止)
   notes: text('notes'), 
+  conditionStatus: text('condition_status').default('active'), // 'active' | 'restricted' | 'rehab' | 'on_leave'
+  conditionNote: text('condition_note'), // 指導者・管理者限定の補足メモ（故障箇所・制限内容・休部期間等）
   isActive: integer('is_active', { mode: 'boolean' }).default(true), 
   joinedAt: integer('joined_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),

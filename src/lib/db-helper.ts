@@ -60,6 +60,8 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "weight", ddl: "ALTER TABLE players ADD COLUMN weight integer" },
     { name: "notes", ddl: "ALTER TABLE players ADD COLUMN notes text" },
     { name: "profile_image_url", ddl: "ALTER TABLE players ADD COLUMN profile_image_url text" },
+    { name: "condition_status", ddl: "ALTER TABLE players ADD COLUMN condition_status text DEFAULT 'active'" },
+    { name: "condition_note", ddl: "ALTER TABLE players ADD COLUMN condition_note text" },
   ],
   venues: [
     { name: "category", ddl: "ALTER TABLE venues ADD COLUMN category TEXT DEFAULT 'stadium'" },

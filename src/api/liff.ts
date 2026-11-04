@@ -42,6 +42,11 @@ import type {
   LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
 import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
+import {
+  comparePlayersByConditionAndUniform,
+  normalizePlayerConditionStatus,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
@@ -1445,6 +1450,7 @@ app.get("/matches", async (c) => {
  */
 app.get("/schedule", async (c) => {
   await ensureEventColumns(c.env.DB);
+  await ensurePlayerProfileColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -1543,7 +1549,7 @@ app.get("/schedule", async (c) => {
         })()
       : Promise.resolve(null);
 
-    const [eventList, teamVenues, teamMemberList, sessionUser] = await Promise.all([
+    const [eventList, teamVenues, teamMemberList, teamPlayerConditionRows, sessionUser] = await Promise.all([
       db
         .select()
         .from(events)
@@ -1562,8 +1568,22 @@ app.get("/schedule", async (c) => {
         .from(teamMembers)
         .where(eq(teamMembers.teamId, teamId))
         .all(),
+      db
+        .select({
+          id: players.id,
+          conditionStatus: players.conditionStatus,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
       sessionPromise,
     ]);
+
+    const onLeavePlayerIds = new Set(
+      teamPlayerConditionRows
+        .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave")
+        .map((p) => p.id)
+    );
 
     const authUserId = sessionUser?.id;
     const authUserName = sessionUser?.name || undefined;
@@ -1585,6 +1605,7 @@ app.get("/schedule", async (c) => {
               status: attendances.status,
               userId: attendances.userId,
               memberId: attendances.memberId,
+              playerId: attendances.playerId,
               selectedGroupId: attendances.selectedGroupId,
             })
             .from(attendances)
@@ -1600,12 +1621,14 @@ app.get("/schedule", async (c) => {
         status: string | null;
         userId: string | null;
         memberId: string | null;
+        playerId: string | null;
         selectedGroupId: string | null;
       }>
     >();
     for (const rows of attChunkResults) {
       for (const row of rows) {
         if (!row.eventId) continue;
+        if (row.playerId && onLeavePlayerIds.has(row.playerId)) continue;
         let bucket = attendancesByEventId.get(row.eventId);
         if (!bucket) {
           bucket = [];
@@ -1801,6 +1824,7 @@ app.get("/attendance-matrix", async (c) => {
   await ensureMemberOrderColumn(c.env.DB);
   await ensureStatusConfigColumn(c.env.DB);
   await ensureMemberSubLabelsColumn(c.env.DB);
+  await ensurePlayerProfileColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -2256,13 +2280,17 @@ app.get("/attendance-matrix", async (c) => {
     const myMemberIds = Array.from(familyMemberIdsSet);
     const myPlayerIds = Array.from(myPlayerIdsSet);
 
+    // ⏸ 休部中 (on_leave) の選手は出欠一覧・未回答カウント・LINE連絡集計から自動除外し、
+    // 🩹 リハビリ・調整中 / ⚠️ 一部制限あり の選手は帯同・配車対象として残した上でバッジ用ステータスを付与する
     const formattedPlayers = allPlayers
-      .map(p => ({
+      .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave")
+      .map((p) => ({
         id: p.id,
         name: p.name,
         uniformNumber: p.uniformNumber || "",
         subText: p.uniformNumber ? `#${p.uniformNumber}` : "",
         groupType: "player" as const,
+        conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
       }))
       .sort((a, b) => {
         const numA = parseInt(a.uniformNumber.replace(/\D/g, "") || "999", 10);
@@ -2779,6 +2807,7 @@ app.post("/attendance-matrix/sub-labels", async (c) => {
  * GET /api/liff/my-family?teamId=xxx&userId=xxx&userName=xxx&parentId=xxx
  */
 app.get("/my-family", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -2791,7 +2820,13 @@ app.get("/my-family", async (c) => {
         success: true,
         isParent: true,
         children: [
-          { id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10", memberType: "player" },
+          {
+            id: "demo-player-1",
+            name: "山田 翔太",
+            uniformNumber: "#10",
+            memberType: "player",
+            conditionStatus: "active" as PlayerConditionStatus,
+          },
         ],
         allFamilyRelations: [
           { id: "demo-rel-1", parentId: "demo-parent-1", parentName: "山田 (保護者)", childId: "demo-player-1", childName: "山田 翔太", uniformNumber: "#10" }
@@ -2809,6 +2844,7 @@ app.get("/my-family", async (c) => {
         childId: parentChildRelations.childId,
         childName: players.name,
         uniformNumber: players.uniformNumber,
+        conditionStatus: players.conditionStatus,
       })
       .from(parentChildRelations)
       .leftJoin(teamMembers, eq(parentChildRelations.parentId, teamMembers.id))
@@ -2889,7 +2925,14 @@ app.get("/my-family", async (c) => {
     }
 
     // 3. 親子関係から該当する保護者のお子様のみを抽出（重複排除）
-    let childrenList: Array<{ id: string; name: string; uniformNumber?: string; parentId?: string; parentName?: string }> = [];
+    let childrenList: Array<{
+      id: string;
+      name: string;
+      uniformNumber?: string;
+      parentId?: string;
+      parentName?: string;
+      conditionStatus?: PlayerConditionStatus;
+    }> = [];
 
     if (member) {
       const myRelations = allRelations.filter(
@@ -2905,6 +2948,7 @@ app.get("/my-family", async (c) => {
             uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
             parentId: member.id,
             parentName: member.name || undefined,
+            conditionStatus: normalizePlayerConditionStatus(rel.conditionStatus),
           });
         }
       }
@@ -7864,7 +7908,7 @@ app.get("/profile", async (c) => {
       createIfMissing: false,
     });
 
-    // チーム選手一覧（背番号順ソート）
+    // チーム選手一覧（背番号順ソート・休部中は末尾へ）
     const rawPlayers = await db
       .select({
         id: players.id,
@@ -7872,6 +7916,7 @@ app.get("/profile", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        conditionStatus: players.conditionStatus,
         isActive: players.isActive,
       })
       .from(players)
@@ -7880,20 +7925,14 @@ app.get("/profile", async (c) => {
 
     const activePlayers = rawPlayers
       .filter((p) => p.isActive !== false)
-      .sort((a, b) => {
-        const numA = parseInt((a.uniformNumber || "").replace(/[^0-9]/g, ""), 10);
-        const numB = parseInt((b.uniformNumber || "").replace(/[^0-9]/g, ""), 10);
-        if (!Number.isNaN(numA) && !Number.isNaN(numB)) return numA - numB;
-        if (!Number.isNaN(numA)) return -1;
-        if (!Number.isNaN(numB)) return 1;
-        return (a.name || "").localeCompare(b.name || "", "ja");
-      })
+      .sort(comparePlayersByConditionAndUniform)
       .map((p) => ({
         id: p.id,
         name: p.name,
         nameKana: p.nameKana,
         uniformNumber: p.uniformNumber,
         primaryPosition: p.primaryPosition,
+        conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
       }));
 
     let myGroups: Array<{ groupId: string; groupName: string; role: string | null }> = [];
@@ -8337,15 +8376,136 @@ app.delete("/profile/cars/:carId", async (c) => {
 // ⚾ 選手名鑑（ロースター & 通算成績付きディレクトリ）API
 // ==========================================
 
+const PLAYER_CONDITION_MANAGER_ROLES = new Set([
+  "admin",
+  "system_admin",
+  "manager",
+  "coach",
+  "scorer",
+  "staff",
+]);
+
+async function resolveCanManageTeamPlayers(
+  c: {
+    env: WorkerEnv;
+    req: { raw: Request };
+  },
+  db: ReturnType<typeof drizzle>,
+  params: {
+    teamId: string;
+    userId?: string | null;
+    userName?: string | null;
+    createdBy?: string | null;
+    organizationId?: string | null;
+  }
+): Promise<boolean> {
+  if (!params.teamId || params.teamId === "demo-team") return true;
+
+  let authUserId: string | undefined;
+  let authUserName: string | undefined;
+  if (c.req.raw.headers.get("cookie")) {
+    try {
+      const auth = getAuth(c.env.DB, c.env);
+      const session = await auth.api
+        .getSession({ headers: c.req.raw.headers })
+        .catch(() => null);
+      const sessRole = ((session?.user as AuthUser | undefined)?.role || "").toUpperCase();
+      if (sessRole === "SYSTEM_ADMIN" || sessRole === "ADMIN") {
+        return true;
+      }
+      authUserId = session?.user?.id;
+      authUserName = session?.user?.name || undefined;
+    } catch {
+      // ignore session error
+    }
+  }
+
+  const searchUserIds = await expandCandidateUserIds(db, [params.userId, authUserId]);
+  if (params.createdBy && searchUserIds.includes(params.createdBy)) {
+    return true;
+  }
+
+  if (params.organizationId && searchUserIds.length > 0) {
+    try {
+      const orgRow = await db
+        .select({ role: organizationMembers.role })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.organizationId, params.organizationId),
+            or(...searchUserIds.map((uid) => eq(organizationMembers.userId, uid)))
+          )
+        )
+        .get();
+      const orgRole = (orgRow?.role || "").toUpperCase();
+      if (orgRole === "OWNER" || orgRole === "ADMIN") {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const allTeamMembersRaw = await db
+    .select()
+    .from(teamMembers)
+    .where(eq(teamMembers.teamId, params.teamId))
+    .all();
+
+  const activeAllMembers = allTeamMembersRaw.filter(
+    (m) => m.status === "active" || !m.status
+  );
+
+  const matchedMembers: Array<typeof teamMembers.$inferSelect> = [];
+  if (searchUserIds.length > 0) {
+    for (const m of activeAllMembers) {
+      if (m.userId && searchUserIds.includes(m.userId)) {
+        matchedMembers.push(m);
+      }
+    }
+  }
+
+  if (matchedMembers.length === 0 && (params.userName || authUserName)) {
+    const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
+      db,
+      activeAllMembers,
+      [params.userName, authUserName],
+      params.userId
+    );
+    if (matchedByUserTable) {
+      matchedMembers.push(matchedByUserTable);
+    }
+  }
+
+  if (matchedMembers.length === 0 && (params.userName || authUserName)) {
+    const matchedByName = findMatchingAdultMemberByName(
+      activeAllMembers,
+      [params.userName, authUserName],
+      { allowAmbiguousFamilyParent: false }
+    );
+    if (matchedByName) {
+      matchedMembers.push(matchedByName);
+    }
+  }
+
+  return matchedMembers.some((m) => {
+    const r = (m.role || "").toLowerCase();
+    return PLAYER_CONDITION_MANAGER_ROLES.has(r) || canManageTeam(m.role);
+  });
+}
+
 app.get("/players", async (c) => {
   await ensurePlayerProfileColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId") || "demo-team";
+  const userId = c.req.query("userId");
+  const userName = c.req.query("userName");
 
   if (teamId === "demo-team") {
     return c.json({
       success: true,
       isDemo: true,
+      canManagePlayers: true,
       team: {
         id: DEMO_TEAM.id,
         name: DEMO_TEAM.name,
@@ -8378,6 +8538,8 @@ app.get("/players", async (c) => {
           weight: 63,
           profileImageUrl: null,
           notes: "伸びのある直球と制球力が武器の大黒柱エース。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 34, ab: 31, hits: 12, hr: 1, walks: 3, avg: ".387" },
@@ -8403,6 +8565,8 @@ app.get("/players", async (c) => {
           weight: 66,
           profileImageUrl: null,
           notes: "強肩と冷静なリードで投手陣を引っ張る扇の要。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 35, ab: 30, hits: 10, hr: 1, walks: 5, avg: ".333" },
@@ -8428,6 +8592,8 @@ app.get("/players", async (c) => {
           weight: 68,
           profileImageUrl: null,
           notes: "広角に長打を放つ左のスラッガー。一塁守備も安定。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 33, ab: 29, hits: 9, hr: 2, walks: 4, avg: ".310" },
@@ -8453,6 +8619,8 @@ app.get("/players", async (c) => {
           weight: 55,
           profileImageUrl: null,
           notes: "俊足巧打のチャンスメーカー。広い守備範囲が魅力。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 38, ab: 33, hits: 12, hr: 3, walks: 5, avg: ".364" },
@@ -8478,6 +8646,8 @@ app.get("/players", async (c) => {
           weight: 62,
           profileImageUrl: null,
           notes: "ホットコーナーを守る元気印。勝負強い打撃が光る。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 30, ab: 27, hits: 8, hr: 0, walks: 3, avg: ".296" },
@@ -8504,6 +8674,8 @@ app.get("/players", async (c) => {
           weight: 58,
           profileImageUrl: null,
           notes: "スイッチヒッターのユーティリティ外野手。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 28, ab: 25, hits: 8, hr: 0, walks: 3, avg: ".320" },
@@ -8529,6 +8701,8 @@ app.get("/players", async (c) => {
           weight: 60,
           profileImageUrl: null,
           notes: "チームNo.1の俊足センター。リリーフ登板もこなす二刀流。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 36, ab: 31, hits: 11, hr: 1, walks: 5, avg: ".355" },
@@ -8554,6 +8728,8 @@ app.get("/players", async (c) => {
           weight: 64,
           profileImageUrl: null,
           notes: "レーザービーム送球が武器の強肩ライト。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 29, ab: 26, hits: 7, hr: 1, walks: 3, avg: ".269" },
@@ -8580,6 +8756,8 @@ app.get("/players", async (c) => {
           weight: 61,
           profileImageUrl: null,
           notes: "走攻守三拍子揃った頼れるキャプテン。ここ一番の集中力は抜群。",
+          conditionStatus: "active" as PlayerConditionStatus,
+          conditionNote: null,
           isCaptain: true,
           joinedAt: null,
           batting: { pa: 37, ab: 32, hits: 14, hr: 2, walks: 5, avg: ".438" },
@@ -8605,6 +8783,8 @@ app.get("/players", async (c) => {
           weight: 64,
           profileImageUrl: null,
           notes: "キレ味鋭いスライダーで三振を奪う本格派右腕。",
+          conditionStatus: "restricted" as PlayerConditionStatus,
+          conditionNote: "右肘ケアのため投球球数制限（打撃・外野守備は通常参加可）",
           isCaptain: false,
           joinedAt: null,
           batting: { pa: 16, ab: 14, hits: 4, hr: 0, walks: 2, avg: ".286" },
@@ -8623,6 +8803,8 @@ app.get("/players", async (c) => {
           year: teams.year,
           managerName: teams.managerName,
           captainId: teams.captainId,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
           orgName: organizations.name,
           logoImageUrl: organizations.logoImageUrl,
         })
@@ -8645,6 +8827,8 @@ app.get("/players", async (c) => {
           weight: players.weight,
           profileImageUrl: players.profileImageUrl,
           notes: players.notes,
+          conditionStatus: players.conditionStatus,
+          conditionNote: players.conditionNote,
           isActive: players.isActive,
           joinedAt: players.joinedAt,
         })
@@ -8682,6 +8866,14 @@ app.get("/players", async (c) => {
     if (!teamRow) {
       return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
     }
+
+    const canManagePlayers = await resolveCanManageTeamPlayers(c, db, {
+      teamId,
+      userId,
+      userName,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
 
     // シーズン打撃成績・投手成績のマップ構築
     interface BatterAggRow {
@@ -8751,19 +8943,7 @@ app.get("/players", async (c) => {
 
     const sortedPlayers = rawPlayers
       .filter((p) => p.isActive !== false)
-      .sort((a, b) => {
-        const strA = (a.uniformNumber || "").trim();
-        const strB = (b.uniformNumber || "").trim();
-        const numA = parseInt(strA.replace(/[^0-9]/g, ""), 10);
-        const numB = parseInt(strB.replace(/[^0-9]/g, ""), 10);
-        if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
-          if (numA !== numB) return numA - numB;
-          return strA.localeCompare(strB);
-        }
-        if (!Number.isNaN(numA)) return -1;
-        if (!Number.isNaN(numB)) return 1;
-        return (a.nameKana || a.name || "").localeCompare(b.nameKana || b.name || "", "ja");
-      })
+      .sort(comparePlayersByConditionAndUniform)
       .map((p) => {
         const bStat = battingMap.get(p.id);
         const pStat = pitchingMap.get(p.id);
@@ -8814,6 +8994,8 @@ app.get("/players", async (c) => {
           joinedTs = p.joinedAt;
         }
 
+        const normalizedCondition = normalizePlayerConditionStatus(p.conditionStatus);
+
         return {
           id: p.id,
           name: p.name,
@@ -8834,6 +9016,8 @@ app.get("/players", async (c) => {
           weight: p.weight ?? null,
           profileImageUrl: p.profileImageUrl || null,
           notes: p.notes || null,
+          conditionStatus: normalizedCondition,
+          conditionNote: canManagePlayers ? p.conditionNote || null : null,
           isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
           joinedAt: joinedTs,
           batting,
@@ -8844,6 +9028,7 @@ app.get("/players", async (c) => {
     return c.json({
       success: true,
       isDemo: false,
+      canManagePlayers,
       team: {
         id: teamRow.id,
         name: `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim(),
@@ -8860,6 +9045,114 @@ app.get("/players", async (c) => {
     console.error("Failed to fetch LIFF players directory:", err);
     return c.json(
       { success: false, error: err instanceof Error ? err.message : "選手名鑑の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * 🩹 選手の在籍・コンディション状態更新API (POST /players/:playerId/condition)
+ * 指導者・管理者限定で「通常 / 一部制限あり / リハビリ・調整中 / 休部中」と非公開メモを保存する
+ */
+app.post("/players/:playerId/condition", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      userId?: string | null;
+      userName?: string | null;
+      conditionStatus?: string;
+      conditionNote?: string | null;
+    };
+
+    const teamId = (body.teamId || c.req.query("teamId") || "").trim();
+    const nextStatus = normalizePlayerConditionStatus(body.conditionStatus);
+    const rawNote = typeof body.conditionNote === "string" ? body.conditionNote.trim() : "";
+    const nextNote = rawNote ? rawNote.slice(0, 160) : null;
+
+    if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+        conditionStatus: nextStatus,
+        conditionNote: nextNote,
+      });
+    }
+
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          teamId: players.teamId,
+        })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const canManagePlayers = await resolveCanManageTeamPlayers(c, db, {
+      teamId,
+      userId: body.userId || c.req.query("userId"),
+      userName: body.userName || c.req.query("userName"),
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+
+    if (!canManagePlayers) {
+      return c.json(
+        {
+          success: false,
+          error: "在籍・コンディション設定を変更する権限がありません（指導者・管理者限定）",
+        },
+        403
+      );
+    }
+
+    await db
+      .update(players)
+      .set({
+        conditionStatus: nextStatus,
+        conditionNote: nextNote,
+      })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+      conditionStatus: nextStatus,
+      conditionNote: nextNote,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to update player condition:", err);
+    return c.json(
+      {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : "在籍・コンディション状態の保存に失敗しました",
+      },
       500
     );
   }

@@ -30,12 +30,18 @@ import {
   Copy,
   Check,
   ArrowLeftRight,
+  Lock,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Match } from "@/types/match";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
+import {
+  PLAYER_CONDITION_META,
+  loadDemoPlayerConditionOverrides,
+  normalizePlayerConditionStatus,
+} from "@/lib/liff/player-condition";
 import {
   LINEUP_POSITIONS,
   DEMO_LINEUP_PLAYERS,
@@ -160,12 +166,41 @@ function getTodayIsoDate(): string {
   return `${y}-${m}-${d}`;
 }
 
+function filterLineupCandidatePlayers(
+  rawPlayers: LineupPlayer[],
+  applyDemoOverrides: boolean
+): LineupPlayer[] {
+  const overrides = applyDemoOverrides ? loadDemoPlayerConditionOverrides() : {};
+  return (Array.isArray(rawPlayers) ? rawPlayers : [])
+    .map((p) => {
+      const ov = overrides[p.id];
+      if (!ov) {
+        return {
+          ...p,
+          conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
+          conditionNote: p.conditionNote ?? null,
+        };
+      }
+      return {
+        ...p,
+        conditionStatus: ov.conditionStatus,
+        conditionNote: ov.conditionNote,
+      };
+    })
+    .filter(
+      (p) =>
+        p.isActive !== false &&
+        p.isActive !== 0 &&
+        normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave"
+    );
+}
+
 function LiffLineupContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlMatchId = searchParams.get("id");
   const urlTeamId = searchParams.get("teamId");
-  const { currentTeam, isLoadingTeam, isDemo } = useLiff();
+  const { currentTeam, profile, isLoadingTeam, isDemo } = useLiff();
 
   const preferredTeamId = useMemo(() => {
     if (urlTeamId && urlTeamId !== "undefined" && urlTeamId !== "null") {
@@ -382,23 +417,33 @@ function LiffLineupContent() {
 
   // 2. 選択された試合の選手・スタメン・テンプレート・当日出欠のロード
   const loadSquadAndLineup = useCallback(async () => {
+    const uid =
+      profile?.userId ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+        : "");
+    const uName =
+      profile?.displayName ||
+      (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+    const authQuery = new URLSearchParams();
+    if (uid) authQuery.set("userId", uid);
+    if (uName) authQuery.set("userName", uName);
+    const authSuffix = authQuery.toString() ? `?${authQuery.toString()}` : "";
+
     if (!selectedMatchId) {
       if (!resolvedTeamId) return;
-      // 試合未選択でも選手一覧だけはロードしておく
+      // 試合未選択でも選手一覧だけはロードしておく（休部中は自動除外）
       if (isDemoTeamId(resolvedTeamId)) {
-        setTeamPlayers(DEMO_LINEUP_PLAYERS);
+        setTeamPlayers(filterLineupCandidatePlayers(DEMO_LINEUP_PLAYERS, true));
       } else {
         try {
           const playersRes = await fetch(
-            `/api/teams/${encodeURIComponent(resolvedTeamId)}/players`,
+            `/api/teams/${encodeURIComponent(resolvedTeamId)}/players${authSuffix}`,
             { cache: "no-store" }
           );
           if (playersRes.ok) {
             const rawPlayers = (await playersRes.json()) as LineupPlayer[];
-            const activePlayers = (Array.isArray(rawPlayers) ? rawPlayers : []).filter(
-              (p) => p.isActive !== false && p.isActive !== 0
-            );
-            setTeamPlayers(activePlayers);
+            setTeamPlayers(filterLineupCandidatePlayers(rawPlayers, false));
           }
         } catch {}
       }
@@ -409,7 +454,8 @@ function LiffLineupContent() {
     try {
       // 🅰️ デモ試合IDの場合のみデモデータを参照（実試合UUIDがデモ扱いされる不具合を完全防止）
       if (isDemoMatchId(selectedMatchId)) {
-        setTeamPlayers(DEMO_LINEUP_PLAYERS);
+        const demoCandidates = filterLineupCandidatePlayers(DEMO_LINEUP_PLAYERS, true);
+        setTeamPlayers(demoCandidates);
         const demoMatch = getDemoMatchById(selectedMatchId) || DEMO_MATCH_MAP["demo-match-3"];
         setCurrentMatch(demoMatch);
 
@@ -422,7 +468,7 @@ function LiffLineupContent() {
         );
 
         const initialAtt: PlayerMatchAttendanceMap = {};
-        DEMO_LINEUP_PLAYERS.forEach((p) => {
+        demoCandidates.forEach((p) => {
           initialAtt[p.id] = demoLineups.myAttendance[p.id] === "absent" ? "absent" : "bench";
         });
         setAttendance(initialAtt);
@@ -468,7 +514,9 @@ function LiffLineupContent() {
 
       if (matchTeamId && !isDemoTeamId(matchTeamId)) {
         const [playersRes, tplRes, attRes] = await Promise.all([
-          fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/players`, { cache: "no-store" }),
+          fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/players${authSuffix}`, {
+            cache: "no-store",
+          }),
           fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/lineup-templates`, {
             cache: "no-store",
           }),
@@ -481,9 +529,7 @@ function LiffLineupContent() {
 
         if (playersRes.ok) {
           const playersData = (await playersRes.json()) as LineupPlayer[];
-          activePlayers = (Array.isArray(playersData) ? playersData : []).filter(
-            (p) => p.isActive !== false && p.isActive !== 0
-          );
+          activePlayers = filterLineupCandidatePlayers(playersData, false);
           setTeamPlayers(activePlayers);
         }
       }
@@ -560,7 +606,7 @@ function LiffLineupContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [resolvedTeamId, selectedMatchId]);
+  }, [profile?.displayName, profile?.userId, resolvedTeamId, selectedMatchId]);
 
   useEffect(() => {
     loadSquadAndLineup();
@@ -692,8 +738,24 @@ function LiffLineupContent() {
           : template.lineupData;
 
       if (Array.isArray(rawLineupData)) {
+        let skippedUnavailableCount = 0;
         const restored = rawLineupData.map((item) => {
           const player = teamPlayers.find((p) => p.id === item.playerId);
+          if (item.playerId) {
+            const cond = player
+              ? normalizePlayerConditionStatus(player.conditionStatus)
+              : "on_leave";
+            if (!player || cond === "rehab" || cond === "on_leave") {
+              skippedUnavailableCount += 1;
+              return {
+                order: item.order,
+                position: "",
+                playerId: "",
+                name: "",
+                uniformNumber: "",
+              };
+            }
+          }
           return {
             order: item.order,
             position: item.position || "",
@@ -730,7 +792,13 @@ function LiffLineupContent() {
         }
 
         setMyLineup(fullLineup);
-        toast.success(`テンプレート「${template.name}」を適用しました`);
+        if (skippedUnavailableCount > 0) {
+          toast.info(
+            `テンプレート「${template.name}」を適用しました（休部・リハビリ中の${skippedUnavailableCount}名は空欄にしました）`
+          );
+        } else {
+          toast.success(`テンプレート「${template.name}」を適用しました`);
+        }
       }
     } catch (error) {
       console.error(error);
@@ -1466,6 +1534,8 @@ function LiffLineupContent() {
                       const status = attendance[player.id] || "bench";
                       const isAbsent = status === "absent";
                       const isLockedBySchedule = originalAbsents.includes(player.id);
+                      const condStatus = normalizePlayerConditionStatus(player.conditionStatus);
+                      const condMeta = PLAYER_CONDITION_META[condStatus];
 
                       return (
                         <div
@@ -1487,16 +1557,34 @@ function LiffLineupContent() {
                               {player.uniformNumber ? `#${player.uniformNumber}` : "-"}
                             </span>
                             <div className="min-w-0">
-                              <span
-                                className={cn(
-                                  "text-sm font-black block truncate",
-                                  isAbsent
-                                    ? "text-muted-foreground line-through"
-                                    : "text-foreground"
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={cn(
+                                    "text-sm font-black block truncate",
+                                    isAbsent
+                                      ? "text-muted-foreground line-through"
+                                      : "text-foreground"
+                                  )}
+                                >
+                                  {player.name}
+                                </span>
+                                {condStatus !== "active" && (
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0",
+                                      condMeta.solidBadgeClass
+                                    )}
+                                  >
+                                    {condMeta.compactBadgeText}
+                                  </span>
                                 )}
-                              >
-                                {player.name}
-                              </span>
+                              </div>
+                              {player.conditionNote && (
+                                <span className="text-[9.5px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5">
+                                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                                  <span className="truncate">{player.conditionNote}</span>
+                                </span>
+                              )}
                               {isLockedBySchedule && (
                                 <span className="text-[9.5px] font-bold text-muted-foreground block">
                                   ※出欠表で欠席登録済
@@ -1783,7 +1871,10 @@ function LiffLineupContent() {
                       return filtered.map((p) => {
                         const isAlreadySelected = disabledPlayers.includes(p.id);
                         const isAbsent = attendance[p.id] === "absent";
-                        const isDisabled = isAlreadySelected || isAbsent;
+                        const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
+                        const condMeta = PLAYER_CONDITION_META[condStatus];
+                        const isRehab = condStatus === "rehab";
+                        const isDisabled = isAlreadySelected || isAbsent || isRehab;
                         const assignedOrder = myLineup.find(
                           (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
                         )?.order;
@@ -1802,16 +1893,24 @@ function LiffLineupContent() {
                               myLineup[activeSelectionIndex].playerId === p.id
                                 ? "bg-primary/10 border-primary text-primary"
                                 : "bg-card hover:bg-muted/40 border-border",
-                              isDisabled && "opacity-45 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
+                              isDisabled && "opacity-55 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
                             )}
                           >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className="text-xs font-black min-w-[26px] text-primary">
-                                {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
-                              </span>
-                              <span className="text-sm font-black text-foreground truncate">
-                                {p.name}
-                              </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="text-xs font-black min-w-[26px] text-primary shrink-0">
+                                  {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
+                                </span>
+                                <span className="text-sm font-black text-foreground truncate">
+                                  {p.name}
+                                </span>
+                              </div>
+                              {p.conditionNote && (
+                                <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5 pl-[36px]">
+                                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                                  <span className="truncate">{p.conditionNote}</span>
+                                </p>
+                              )}
                             </div>
 
                             <div className="flex gap-1.5 items-center shrink-0 ml-2">
@@ -1825,10 +1924,32 @@ function LiffLineupContent() {
                                   欠席
                                 </span>
                               )}
-                              {!isAlreadySelected && !isAbsent && (
-                                <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
-                                  起用可能
+                              {!isAlreadySelected && !isAbsent && isRehab && (
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-black px-2 py-0.5 rounded-md",
+                                    condMeta.solidBadgeClass
+                                  )}
+                                >
+                                  🩹 調整中（出場不可）
                                 </span>
+                              )}
+                              {!isAlreadySelected && !isAbsent && !isRehab && (
+                                <>
+                                  {condStatus === "restricted" && (
+                                    <span
+                                      className={cn(
+                                        "text-[10px] font-black px-2 py-0.5 rounded-md",
+                                        condMeta.solidBadgeClass
+                                      )}
+                                    >
+                                      {condMeta.compactBadgeText}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
+                                    起用可能
+                                  </span>
+                                </>
                               )}
                             </div>
                           </button>
@@ -1847,6 +1968,21 @@ function LiffLineupContent() {
                   >
                     ← 選手選択に戻る
                   </button>
+
+                  {tempSelectedPlayer &&
+                    normalizePlayerConditionStatus(tempSelectedPlayer.conditionStatus) ===
+                      "restricted" && (
+                      <div className="mb-3 p-2.5 rounded-xl bg-amber-500/12 border border-amber-500/35 border-l-4 border-l-amber-500 space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-800 dark:text-amber-300">
+                          <span>⚠️ 一部プレー制限ありの選手です</span>
+                        </div>
+                        <p className="text-[10.5px] font-bold text-foreground leading-snug">
+                          {tempSelectedPlayer.conditionNote
+                            ? `共有メモ: ${tempSelectedPlayer.conditionNote}`
+                            : "投球や守備負荷に制限がないか確認して守備位置を選択してください。"}
+                        </p>
+                      </div>
+                    )}
 
                   <p className="text-xs text-muted-foreground font-bold mb-3">
                     {tempSelectedPlayer?.name} 選手の守備位置を選択してください

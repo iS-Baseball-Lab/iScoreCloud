@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
-import { ensureMatchLineupColumns } from "@/lib/db-helper";
+import { ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
+import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   parseScorebookSymbolRulesJson,
@@ -403,6 +404,7 @@ liffScorebookRouter.get("/context", async (c) => {
       });
     }
 
+    await ensurePlayerProfileColumns(c.env.DB);
     const [rosterRows, matchRows, distinctAbResult] = await Promise.all([
       db
         .select({
@@ -412,6 +414,8 @@ liffScorebookRouter.get("/context", async (c) => {
           uniformNumber: players.uniformNumber,
           primaryPosition: players.primaryPosition,
           bats: players.bats,
+          isActive: players.isActive,
+          conditionStatus: players.conditionStatus,
         })
         .from(players)
         .where(eq(players.teamId, targetTeam.id))
@@ -445,12 +449,26 @@ liffScorebookRouter.get("/context", async (c) => {
         .catch(() => ({ results: [] })),
     ]);
 
-    const sortedRoster: ScorebookRosterPlayer[] = [...rosterRows].sort((a, b) => {
-      const na = parseInt(a.uniformNumber, 10);
-      const nb = parseInt(b.uniformNumber, 10);
-      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-      return a.uniformNumber.localeCompare(b.uniformNumber);
-    });
+    const sortedRoster: ScorebookRosterPlayer[] = rosterRows
+      .filter(
+        (r) =>
+          r.isActive !== false &&
+          normalizePlayerConditionStatus(r.conditionStatus) !== "on_leave"
+      )
+      .map(({ id, name, nameKana, uniformNumber, primaryPosition, bats }) => ({
+        id,
+        name,
+        nameKana,
+        uniformNumber,
+        primaryPosition,
+        bats,
+      }))
+      .sort((a, b) => {
+        const na = parseInt(a.uniformNumber, 10);
+        const nb = parseInt(b.uniformNumber, 10);
+        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+        return a.uniformNumber.localeCompare(b.uniformNumber);
+      });
 
     // すでに打席データが入っている試合ID一覧を取得
     const existingAtBatMatchIds = new Set<string>();

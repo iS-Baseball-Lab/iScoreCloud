@@ -30,6 +30,29 @@ import {
 import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { MatchScoreCard, MatchScoreCardSkeleton } from "@/components/liff/MatchScoreCard";
+import {
+  PLAYER_CONDITION_META,
+  loadDemoPlayerConditionOverrides,
+  normalizePlayerConditionStatus,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
+
+interface FamilyChildItem {
+  id: string;
+  name: string;
+  uniformNumber?: string;
+  parentName?: string;
+  conditionStatus?: PlayerConditionStatus;
+}
+
+interface MyFamilyApiResponse {
+  success?: boolean;
+  memberId?: string | null;
+  memberName?: string | null;
+  children?: FamilyChildItem[];
+  attendances?: Record<string, Record<string, "present" | "absent" | "pending" | "late">>;
+  parentAttendances?: Record<string, "present" | "absent" | "pending" | "late">;
+}
 
 interface HubHeroSectionProps {
   teamName?: string;
@@ -66,7 +89,7 @@ export function HubHeroSection({
 
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
-  const [children, setChildren] = useState<Array<{ id: string; name: string; uniformNumber?: string; parentName?: string }>>([]);
+  const [children, setChildren] = useState<FamilyChildItem[]>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
   const [memberName, setMemberName] = useState<string | null>(null);
 
@@ -102,24 +125,41 @@ export function HubHeroSection({
 
       const res = await fetch(`/api/liff/my-family?teamId=${tid}&userId=${uid}&userName=${encodeURIComponent(uName)}`);
       if (res.ok) {
-        const json = await res.json() as any;
+        const json = (await res.json()) as MyFamilyApiResponse;
         if (json.success) {
           if (json.memberId) setMemberId(json.memberId);
           if (json.memberName) setMemberName(json.memberName);
 
+          const isDemoTeam = isDemo || tid === "demo-team";
+          const demoOverrides = isDemoTeam ? loadDemoPlayerConditionOverrides() : {};
+
           if (Array.isArray(json.children) && json.children.length > 0) {
-            // 重複排除
-            const uniqueChildren: typeof json.children = [];
+            // 重複排除 ＆ コンディション状態反映
+            const uniqueChildren: FamilyChildItem[] = [];
             const seen = new Set<string>();
             for (const c of json.children) {
               if (!seen.has(c.id)) {
                 seen.add(c.id);
-                uniqueChildren.push(c);
+                const override = demoOverrides[c.id];
+                uniqueChildren.push({
+                  ...c,
+                  conditionStatus: override
+                    ? override.conditionStatus
+                    : normalizePlayerConditionStatus(c.conditionStatus),
+                });
               }
             }
             setChildren(uniqueChildren);
-          } else if (isDemo || tid === "demo-team") {
-            setChildren([{ id: "demo-player-1", name: "山田 翔太", uniformNumber: "#10" }]);
+          } else if (isDemoTeam) {
+            const demoOverride = demoOverrides["demo-player-1"];
+            setChildren([
+              {
+                id: "demo-player-1",
+                name: "山田 翔太",
+                uniformNumber: "#10",
+                conditionStatus: demoOverride ? demoOverride.conditionStatus : "active",
+              },
+            ]);
           } else {
             setChildren([]);
           }
@@ -986,13 +1026,50 @@ export function HubHeroSection({
                           <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
                             {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
                             {userRole === "parent" && children.map((child) => {
+                              const childCond = normalizePlayerConditionStatus(child.conditionStatus);
+                              const childCondMeta = PLAYER_CONDITION_META[childCond];
+
+                              if (childCond === "on_leave") {
+                                return (
+                                  <div
+                                    key={child.id}
+                                    className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 space-y-1.5"
+                                  >
+                                    <div className="flex items-center justify-between gap-2 text-xs">
+                                      <span className="font-black text-muted-foreground flex items-center gap-1.5 min-w-0">
+                                        <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs shrink-0">
+                                          👦
+                                        </span>
+                                        <span className="truncate">
+                                          お子様（{child.name}
+                                          {child.uniformNumber ? ` ${child.uniformNumber}` : ""}）
+                                        </span>
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${childCondMeta.solidBadgeClass}`}
+                                      >
+                                        {childCondMeta.badgeText}
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
+                                      休部中のため出欠回答は不要です（出欠一覧表・未回答カウントからも自動除外されています）。
+                                    </p>
+                                  </div>
+                                );
+                              }
+
                               const childStatus = getChildAttendance(ev.id, child.id);
                               return (
                                 <div key={child.id} className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className="font-black text-foreground flex items-center gap-1.5">
-                                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">👦</span>
+                                  <div className="flex items-center justify-between gap-1.5 text-xs flex-wrap">
+                                    <span className="font-black text-foreground flex items-center gap-1.5 flex-wrap">
+                                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs shrink-0">👦</span>
                                       <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
+                                      {childCond !== "active" && (
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${childCondMeta.solidBadgeClass}`}>
+                                          {childCondMeta.compactBadgeText}
+                                        </span>
+                                      )}
                                     </span>
                                     <span className="text-[11px] font-bold">
                                       {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ 参加</span>}
@@ -1001,6 +1078,11 @@ export function HubHeroSection({
                                       {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
                                     </span>
                                   </div>
+                                  {childCond === "rehab" && (
+                                    <p className="text-[10.5px] font-bold text-rose-700 dark:text-rose-300 leading-snug">
+                                      ※ 別メニュー練習・ベンチ帯同・欠席などの予定をご回答ください。
+                                    </p>
+                                  )}
 
                                   <div className="grid grid-cols-4 gap-1.5">
                                     <button

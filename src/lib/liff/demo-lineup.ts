@@ -1,5 +1,6 @@
 // filepath: src/lib/liff/demo-lineup.ts
 import type { Match } from "@/types/match";
+import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
 
 export interface LineupPositionDef {
   id: string;
@@ -70,6 +71,8 @@ export interface LineupPlayer {
   name: string;
   uniformNumber: string | null;
   isActive?: number | boolean;
+  conditionStatus?: PlayerConditionStatus;
+  conditionNote?: string | null;
 }
 
 export interface MyLineupSlot {
@@ -132,7 +135,14 @@ export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
   { id: "demo-p-6", name: "田中 健太", uniformNumber: "6", isActive: 1 },
   { id: "demo-p-7", name: "中村 颯", uniformNumber: "7", isActive: 1 },
   { id: "demo-p-8", name: "山下 颯太", uniformNumber: "8", isActive: 1 },
-  { id: "demo-p-9", name: "小林 樹", uniformNumber: "9", isActive: 1 },
+  {
+    id: "demo-p-9",
+    name: "小林 樹",
+    uniformNumber: "9",
+    isActive: 1,
+    conditionStatus: "restricted",
+    conditionNote: "右肘ケアのため投球球数制限（打撃・外野守備は可）",
+  },
   { id: "demo-p-10", name: "山田 翔太", uniformNumber: "10", isActive: 1 },
   { id: "demo-p-11", name: "佐藤 陽太", uniformNumber: "11", isActive: 1 },
   { id: "demo-p-12", name: "加藤 湊", uniformNumber: "12", isActive: 1 },

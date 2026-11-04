@@ -53,6 +53,10 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
   - **ページ最外枠 ＆ 最下部スペーサー**：`/liff` 配下の各ページ最外枠は `min-h-screen` を使わず `<div className="flex flex-col flex-1">` とし、メインコンテンツ末尾（`<div className="p-4 space-y-4">` の直下末尾）には必ず `<div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />` を配置すること。これにより `LiffLayout` 側の下部余白（`pb-28 sm:pb-32`）と合わせて、`LiffBottomNav`（本体 `68px` ＋ 中央アーチ突起 `26px` ＝ 計 `94px` ＋ Safe Area）に最下部のボタンやカードが絶対に隠れないようにする。また、ページ下部に独自の `fixed bottom-0` アクションバーを設置して `LiffBottomNav` と二重衝突させる設計は禁止する。
   - **モーダル・ボトムシート・全画面ビューアの `createPortal` ＆ `z-[9999]` 必須化**：`LiffLayout` 内で `<LiffBottomNav />`（`z-50`）は `{children}` の後ろにDOM配置されており、また親要素の `animate-in` / `transform` が局所スタッキングコンテキストを生成するため、ページや子コンポーネント内でインラインのまま `fixed inset-0 z-50` 等を描画するとボトムナビの背面に隠れてしまう。すべてのモーダル・ドロワー・拡大プレビュー・カメラUIは必ず `createPortal(..., document.body)` で `document.body` 直下へ脱出させ、`z-[9999]`（親子2段モーダルの背面側は `z-[9990]` 等、`z-50` 以下は厳禁）を指定すること。
   - **モバイル下部シート（`items-end`）の Safe Area ＆ 高さ制限**：モバイルで下寄せ表示するモーダル（`items-end sm:items-center p-0 sm:p-4`）はパネル高さを `max-h-[88dvh]`〜`max-h-[90dvh]` に収め、最下部のフッター（保存・キャンセル・前後送りボタン等）には必ず `pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5`（または `24px`）を付与して、端末のホームバーやLINEミニアプリ下部領域と干渉させないこと。
+・選手の在籍・コンディション区分（休部・長期故障・一部制限）とプライバシー設計：
+  - `players.condition_status` の4区分（`active`: 通常 / `restricted`: `⚠️ 一部制限あり` / `rehab`: `🩹 リハビリ・調整中` / `on_leave`: `⏸ 休部中`）で一元管理し、過去試合・通算成績・個人成長データは絶対に削除せず保持する。
+  - **画面連動ルール**：`on_leave`（休部中）は選手名鑑の末尾へ控えめなスレート調で配置し、出欠マトリクス・未回答カウント・LINE出欠集計コピー・スタメン候補・スコアOCR候補から自動除外する（保護者の出欠回答欄も「回答不要」表示に切り替える）。`rehab`（リハビリ・調整中）は別メニュー練習・ベンチ帯同・配車があるため出欠対象に残しつつ、オーダー編成での手動スタメン誤起用をブロックする。`restricted`（一部制限あり）は起用可能とし、打順・守備位置選択時に注意喚起バナーを表示する。
+  - **プライバシー保護（補足メモのサーバー層マスク）**：ステータスバッジはチーム全員に表示するが、家庭事情・故障部位・制限内容などの補足メモ（`players.condition_note`）は指導者・管理者ロールのみ閲覧・編集可とし、一般保護者・選手向けAPIレスポンスでは必ずサーバー層で `null` にマスクして返却すること。
 
 ## 【パフォーマンス・爆速化規約（超重要）】
 1. DDLロックの完全排除：API（特にGETリクエスト）で毎回 `ALTER TABLE` / `CREATE TABLE` 書き込みクエリを直列実行することを厳禁とする。スキーマ補完が必要な場合は `PRAGMA table_info` / `sqlite_master` の単一バッチ読取＋Isolateメモリキャッシュで判定し、既存環境での書き込みDDLをゼロに保つこと。
