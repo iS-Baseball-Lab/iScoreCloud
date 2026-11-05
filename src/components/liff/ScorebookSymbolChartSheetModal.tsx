@@ -601,7 +601,6 @@ function buildChartColumns(
           resultCode: "fc",
           resultLabel: "二野選",
           battedDirection: "4",
-          pitches: ["ball"],
         },
       }),
     },
@@ -967,8 +966,8 @@ export function ScorebookSymbolChartSheetSvg({
           <g key={col.header}>
             <text
               x={colX + COL_TOTAL_W / 2}
-              y={tableOriginY + 17.5}
-              fontSize={10.5}
+              y={tableOriginY + 17.8}
+              fontSize={11.0}
               fontWeight={900}
               textAnchor="middle"
               fill={COLOR_INK}
@@ -1022,8 +1021,8 @@ export function ScorebookSymbolChartSheetSvg({
                           <g>
                             <text
                               x={labelCenterX}
-                              y={rowY + SCOREBOOK_CELL_H / 2 + 3.5}
-                              fontSize={9.6}
+                              y={rowY + SCOREBOOK_CELL_H / 2 + 3.6}
+                              fontSize={10.0}
                               fontWeight={900}
                               textAnchor="middle"
                               fill={COLOR_INK}
@@ -1036,9 +1035,9 @@ export function ScorebookSymbolChartSheetSvg({
                                 rowY +
                                 SCOREBOOK_CELL_H +
                                 SCOREBOOK_CELL_H / 2 +
-                                3.5
+                                3.6
                               }
-                              fontSize={9.0}
+                              fontSize={9.2}
                               fontWeight={800}
                               textAnchor="middle"
                               fill={COLOR_SUB_INK}
@@ -1050,10 +1049,10 @@ export function ScorebookSymbolChartSheetSvg({
                       }
 
                       const totalLines = mainLines.length + notes.length;
-                      const lineGap = totalLines >= 3 ? 12.2 : 13.4;
+                      const lineGap = totalLines >= 3 ? 12.6 : 13.8;
                       const blockCenterY = rowY + labelBoxH / 2;
                       const firstLineY =
-                        blockCenterY - ((totalLines - 1) * lineGap) / 2 + 3.4;
+                        blockCenterY - ((totalLines - 1) * lineGap) / 2 + 3.5;
 
                       return (
                         <g>
@@ -1064,7 +1063,7 @@ export function ScorebookSymbolChartSheetSvg({
                                 key={`m-${lIdx}`}
                                 x={labelCenterX}
                                 y={firstLineY + lIdx * lineGap}
-                                fontSize={isCompact ? 8.3 : 9.4}
+                                fontSize={isCompact ? 8.7 : 9.8}
                                 fontWeight={900}
                                 textAnchor="middle"
                                 fill={COLOR_INK}
@@ -1080,7 +1079,7 @@ export function ScorebookSymbolChartSheetSvg({
                                 key={`n-${nIdx}`}
                                 x={labelCenterX}
                                 y={firstLineY + idxAll * lineGap}
-                                fontSize={8.0}
+                                fontSize={8.4}
                                 fontWeight={800}
                                 textAnchor="middle"
                                 fill={COLOR_SUB_INK}

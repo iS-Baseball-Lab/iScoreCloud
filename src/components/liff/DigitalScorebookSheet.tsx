@@ -96,18 +96,19 @@ interface CellGeometry {
 }
 
 // ① 十字点線・4分割ダイヤ型（成美堂・早稲田・リトルシニア定番）
+// ダイヤモンド中心 (53.5, 37) に対し、4隅ラベル座標を左右対称 (±17.0)・上下余白確保で配置
 const QUADRANT_CELL_GEOMETRY: CellGeometry = {
   ptHP: { x: 53.5, y: 53.5 },
   pt1B: { x: 70, y: 37 },
   pt2B: { x: 53.5, y: 20.5 },
   pt3B: { x: 37, y: 37 },
   ptCenter: { x: 53.5, y: 37 },
-  playNotationPos: { x: 72, y: 63 },
+  playNotationPos: { x: 71.0, y: 64.2 },
   segments: {
-    1: { from: { x: 53.5, y: 53.5 }, to: { x: 70, y: 37 }, labelPos: { x: 72, y: 50 } },
-    2: { from: { x: 70, y: 37 }, to: { x: 53.5, y: 20.5 }, labelPos: { x: 72.5, y: 20 } },
-    3: { from: { x: 53.5, y: 20.5 }, to: { x: 37, y: 37 }, labelPos: { x: 34.5, y: 20 } },
-    4: { from: { x: 37, y: 37 }, to: { x: 53.5, y: 53.5 }, labelPos: { x: 34.5, y: 58 } },
+    1: { from: { x: 53.5, y: 53.5 }, to: { x: 70, y: 37 }, labelPos: { x: 71.0, y: 64.2 } },
+    2: { from: { x: 70, y: 37 }, to: { x: 53.5, y: 20.5 }, labelPos: { x: 70.5, y: 15.8 } },
+    3: { from: { x: 53.5, y: 20.5 }, to: { x: 37, y: 37 }, labelPos: { x: 36.5, y: 15.8 } },
+    4: { from: { x: 37, y: 37 }, to: { x: 53.5, y: 53.5 }, labelPos: { x: 36.5, y: 64.2 } },
   },
   hasQuadrantCrosshairs: true,
   hasBaseMiniSquares: false,
@@ -120,12 +121,12 @@ const SIMPLE_DIAMOND_CELL_GEOMETRY: CellGeometry = {
   pt2B: { x: 53.5, y: 13 },
   pt3B: { x: 32.5, y: 34 },
   ptCenter: { x: 53.5, y: 34 },
-  playNotationPos: { x: 71.5, y: 64 },
+  playNotationPos: { x: 71.0, y: 65.0 },
   segments: {
-    1: { from: { x: 53.5, y: 55 }, to: { x: 74.5, y: 34 }, labelPos: { x: 70, y: 49 } },
-    2: { from: { x: 74.5, y: 34 }, to: { x: 53.5, y: 13 }, labelPos: { x: 71, y: 18 } },
-    3: { from: { x: 53.5, y: 13 }, to: { x: 32.5, y: 34 }, labelPos: { x: 35, y: 18 } },
-    4: { from: { x: 32.5, y: 34 }, to: { x: 53.5, y: 55 }, labelPos: { x: 34, y: 49 } },
+    1: { from: { x: 53.5, y: 55 }, to: { x: 74.5, y: 34 }, labelPos: { x: 71.0, y: 65.0 } },
+    2: { from: { x: 74.5, y: 34 }, to: { x: 53.5, y: 13 }, labelPos: { x: 71.5, y: 15.0 } },
+    3: { from: { x: 53.5, y: 13 }, to: { x: 32.5, y: 34 }, labelPos: { x: 35.5, y: 15.0 } },
+    4: { from: { x: 32.5, y: 34 }, to: { x: 53.5, y: 55 }, labelPos: { x: 35.5, y: 65.0 } },
   },
   hasQuadrantCrosshairs: false,
   hasBaseMiniSquares: true,
@@ -182,35 +183,35 @@ function renderPitchColumn(
           strokeWidth={0.8}
         />
         <text
-          x={originX + 3.5}
-          y={originY + 9}
-          fontSize={6.5}
-          fontWeight={800}
+          x={originX + 3.0}
+          y={originY + 9.5}
+          fontSize={7.2}
+          fontWeight={900}
           fill={COLOR_MUTED}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           S
         </text>
         <text
-          x={originX + 3.5}
-          y={originY + 47}
-          fontSize={6.5}
-          fontWeight={800}
+          x={originX + 3.0}
+          y={originY + 47.5}
+          fontSize={7.2}
+          fontWeight={900}
           fill={COLOR_MUTED}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           B
         </text>
         {strikeTokens.slice(0, 5).map((tok, i) => (
           <text
             key={`st-${i}`}
-            x={originX + BSO_W / 2 + 1.5}
-            y={originY + 15 + i * 5.2}
-            fontSize={5.8}
-            fontWeight={800}
+            x={originX + BSO_W / 2 + 2.0}
+            y={originY + 15.5 + i * 5.6}
+            fontSize={6.8}
+            fontWeight={900}
             textAnchor="middle"
             fill={COLOR_INK}
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {tok}
           </text>
@@ -218,13 +219,13 @@ function renderPitchColumn(
         {ballTokens.slice(0, 4).map((tok, i) => (
           <text
             key={`bl-${i}`}
-            x={originX + BSO_W / 2 + 1.5}
-            y={originY + 53 + i * 5.6}
-            fontSize={6}
-            fontWeight={800}
+            x={originX + BSO_W / 2 + 2.0}
+            y={originY + 53.5 + i * 5.8}
+            fontSize={7.0}
+            fontWeight={900}
             textAnchor="middle"
             fill={COLOR_INK}
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {tok}
           </text>
@@ -244,13 +245,18 @@ function renderPitchColumn(
   if (visible.length === 0) return null;
 
   const maxDraw = visible.slice(0, 10);
-  const stepY = Math.min(7.2, 62 / Math.max(1, maxDraw.length));
+  const isDense = maxDraw.length >= 7;
+  const stepY = isDense
+    ? 60 / Math.max(1, maxDraw.length)
+    : Math.min(8.8, 60 / Math.max(1, maxDraw.length));
+  const startOffsetY = isDense ? 8.2 : 10.2;
+  const gScale = isDense ? 0.92 : 1.24;
   const cx = originX + BSO_W / 2;
 
   return (
     <g>
       {maxDraw.map((p, idx) => {
-        const cy = originY + 8.5 + idx * stepY;
+        const cy = originY + startOffsetY + idx * stepY;
 
         if (p === "strike") {
           return (
@@ -258,10 +264,10 @@ function renderPitchColumn(
               key={idx}
               cx={cx}
               cy={cy}
-              r={2.5}
+              r={2.55 * gScale}
               fill="none"
               stroke={COLOR_INK}
-              strokeWidth={1.25}
+              strokeWidth={1.4}
             />
           );
         }
@@ -273,12 +279,12 @@ function renderPitchColumn(
                 <circle
                   cx={cx}
                   cy={cy}
-                  r={2.85}
+                  r={2.85 * gScale}
                   fill="none"
                   stroke={COLOR_INK}
-                  strokeWidth={1.15}
+                  strokeWidth={1.35}
                 />
-                <circle cx={cx} cy={cy} r={0.95} fill={COLOR_INK} />
+                <circle cx={cx} cy={cy} r={1.0 * gScale} fill={COLOR_INK} />
               </g>
             );
           }
@@ -286,10 +292,10 @@ function renderPitchColumn(
             return (
               <polygon
                 key={idx}
-                points={`${cx},${cy - 2.9} ${cx + 2.8},${cy} ${cx},${cy + 2.9} ${cx - 2.8},${cy}`}
+                points={`${cx},${cy - 2.9 * gScale} ${cx + 2.8 * gScale},${cy} ${cx},${cy + 2.9 * gScale} ${cx - 2.8 * gScale},${cy}`}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.15}
+                strokeWidth={1.3}
               />
             );
           }
@@ -299,24 +305,25 @@ function renderPitchColumn(
             rules.pitchMark === "cross_swing" ||
             rules.pitchMark === "cross_dot_swing"
           ) {
+            const d = 2.6 * gScale;
             return (
               <g key={idx}>
                 <line
-                  x1={cx - 2.6}
-                  y1={cy - 2.6}
-                  x2={cx + 2.6}
-                  y2={cy + 2.6}
+                  x1={cx - d}
+                  y1={cy - d}
+                  x2={cx + d}
+                  y2={cy + d}
                   stroke={COLOR_INK}
-                  strokeWidth={1.35}
+                  strokeWidth={1.5}
                   strokeLinecap="round"
                 />
                 <line
-                  x1={cx + 2.6}
-                  y1={cy - 2.6}
-                  x2={cx - 2.6}
-                  y2={cy + 2.6}
+                  x1={cx + d}
+                  y1={cy - d}
+                  x2={cx - d}
+                  y2={cy + d}
                   stroke={COLOR_INK}
-                  strokeWidth={1.35}
+                  strokeWidth={1.5}
                   strokeLinecap="round"
                 />
               </g>
@@ -326,33 +333,45 @@ function renderPitchColumn(
             return (
               <line
                 key={idx}
-                x1={cx - 3}
-                y1={cy + 2.5}
-                x2={cx + 3}
-                y2={cy - 2.5}
+                x1={cx - 3.0 * gScale}
+                y1={cy + 2.5 * gScale}
+                x2={cx + 3.0 * gScale}
+                y2={cy - 2.5 * gScale}
                 stroke={COLOR_INK}
-                strokeWidth={1.4}
+                strokeWidth={1.5}
+                strokeLinecap="round"
               />
             );
           }
-          return <circle key={idx} cx={cx} cy={cy} r={2.6} fill={COLOR_INK} />;
+          return (
+            <circle key={idx} cx={cx} cy={cy} r={2.65 * gScale} fill={COLOR_INK} />
+          );
         }
         if (p === "ball") {
           if (
             rules.pitchMark === "slash_swing" ||
             rules.pitchMark === "cross_dot_swing"
           ) {
-            return <circle key={idx} cx={cx} cy={cy} r={1.45} fill={COLOR_INK} />;
+            return (
+              <circle
+                key={idx}
+                cx={cx}
+                cy={cy}
+                r={1.55 * gScale}
+                fill={COLOR_INK}
+              />
+            );
           }
           return (
             <line
               key={idx}
-              x1={cx - 3.2}
+              x1={cx - 3.2 * gScale}
               y1={cy}
-              x2={cx + 3.2}
+              x2={cx + 3.2 * gScale}
               y2={cy}
               stroke={COLOR_INK}
-              strokeWidth={1.35}
+              strokeWidth={1.55}
+              strokeLinecap="round"
             />
           );
         }
@@ -360,10 +379,11 @@ function renderPitchColumn(
           return (
             <polygon
               key={idx}
-              points={`${cx},${cy - 2.7} ${cx - 3},${cy + 2.3} ${cx + 3},${cy + 2.3}`}
+              points={`${cx},${cy - 2.75 * gScale} ${cx - 3.0 * gScale},${cy + 2.35 * gScale} ${cx + 3.0 * gScale},${cy + 2.35 * gScale}`}
               fill="none"
               stroke={COLOR_INK}
-              strokeWidth={1.15}
+              strokeWidth={1.3}
+              strokeLinejoin="round"
             />
           );
         }
@@ -373,14 +393,19 @@ function renderPitchColumn(
             return (
               <g key={idx}>
                 <polyline
-                  points={`${cx - 2.9},${cy - 2.1} ${cx},${cy + 2.7} ${cx + 2.9},${cy - 2.1}`}
+                  points={`${cx - 2.9 * gScale},${cy - 2.1 * gScale} ${cx},${cy + 2.75 * gScale} ${cx + 2.9 * gScale},${cy - 2.1 * gScale}`}
                   fill="none"
                   stroke={COLOR_INK}
-                  strokeWidth={1.2}
+                  strokeWidth={1.35}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
-                <circle cx={cx} cy={cy - 1.5} r={0.95} fill={COLOR_INK} />
+                <circle
+                  cx={cx}
+                  cy={cy - 1.55 * gScale}
+                  r={1.0 * gScale}
+                  fill={COLOR_INK}
+                />
               </g>
             );
           }
@@ -388,10 +413,11 @@ function renderPitchColumn(
             return (
               <polygon
                 key={idx}
-                points={`${cx},${cy + 2.7} ${cx - 3},${cy - 2.3} ${cx + 3},${cy - 2.3}`}
+                points={`${cx},${cy + 2.75 * gScale} ${cx - 3.0 * gScale},${cy - 2.35 * gScale} ${cx + 3.0 * gScale},${cy - 2.35 * gScale}`}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.15}
+                strokeWidth={1.3}
+                strokeLinejoin="round"
               />
             );
           }
@@ -399,17 +425,18 @@ function renderPitchColumn(
             return (
               <polygon
                 key={idx}
-                points={`${cx},${cy - 2.7} ${cx - 3},${cy + 2.3} ${cx + 3},${cy + 2.3}`}
+                points={`${cx},${cy - 2.75 * gScale} ${cx - 3.0 * gScale},${cy + 2.35 * gScale} ${cx + 3.0 * gScale},${cy + 2.35 * gScale}`}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.15}
+                strokeWidth={1.3}
+                strokeLinejoin="round"
               />
             );
           }
           return (
             <polygon
               key={idx}
-              points={`${cx},${cy - 2.7} ${cx - 3},${cy + 2.3} ${cx + 3},${cy + 2.3}`}
+              points={`${cx},${cy - 2.75 * gScale} ${cx - 3.0 * gScale},${cy + 2.35 * gScale} ${cx + 3.0 * gScale},${cy + 2.35 * gScale}`}
               fill={COLOR_INK}
             />
           );
@@ -419,9 +446,9 @@ function renderPitchColumn(
             <text
               key={idx}
               x={cx}
-              y={cy + 2}
-              fontSize={5.5}
-              fontWeight={800}
+              y={cy + 2.4}
+              fontSize={isDense ? 5.8 : 6.8}
+              fontWeight={900}
               textAnchor="middle"
               fill={COLOR_RED}
               fontFamily={FONT_SANS}
@@ -438,10 +465,10 @@ function renderPitchColumn(
             return (
               <polyline
                 key={idx}
-                points={`${cx - 2.7},${cy + 2.1} ${cx},${cy - 2.3} ${cx + 2.7},${cy + 2.1}`}
+                points={`${cx - 2.75 * gScale},${cy + 2.15 * gScale} ${cx},${cy - 2.35 * gScale} ${cx + 2.75 * gScale},${cy + 2.15 * gScale}`}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.35}
+                strokeWidth={1.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -451,10 +478,10 @@ function renderPitchColumn(
             return (
               <polyline
                 key={idx}
-                points={`${cx + 2.3},${cy - 2.5} ${cx - 2.3},${cy} ${cx + 2.3},${cy + 2.5}`}
+                points={`${cx + 2.4 * gScale},${cy - 2.55 * gScale} ${cx - 2.4 * gScale},${cy} ${cx + 2.4 * gScale},${cy + 2.55 * gScale}`}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.35}
+                strokeWidth={1.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
@@ -464,10 +491,10 @@ function renderPitchColumn(
           return (
             <polyline
               key={idx}
-              points={`${cx - 2.3},${cy - 2.5} ${cx + 2.3},${cy} ${cx - 2.3},${cy + 2.5}`}
+              points={`${cx - 2.4 * gScale},${cy - 2.55 * gScale} ${cx + 2.4 * gScale},${cy} ${cx - 2.4 * gScale},${cy + 2.55 * gScale}`}
               fill="none"
               stroke={COLOR_INK}
-              strokeWidth={1.35}
+              strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -482,13 +509,18 @@ function renderPitchColumn(
                 key={idx}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.2}
+                strokeWidth={1.35}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <line x1={cx} y1={cy + 2.7} x2={cx} y2={cy - 2.5} />
+                <line
+                  x1={cx}
+                  y1={cy + 2.8 * gScale}
+                  x2={cx}
+                  y2={cy - 2.6 * gScale}
+                />
                 <polyline
-                  points={`${cx - 2.2},${cy - 0.3} ${cx},${cy - 2.7} ${cx + 2.2},${cy - 0.3}`}
+                  points={`${cx - 2.3 * gScale},${cy - 0.3 * gScale} ${cx},${cy - 2.8 * gScale} ${cx + 2.3 * gScale},${cy - 0.3 * gScale}`}
                 />
               </g>
             );
@@ -499,13 +531,18 @@ function renderPitchColumn(
                 key={idx}
                 fill="none"
                 stroke={COLOR_INK}
-                strokeWidth={1.2}
+                strokeWidth={1.35}
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <line x1={cx + 3.2} y1={cy} x2={cx - 2.8} y2={cy} />
+                <line
+                  x1={cx + 3.2 * gScale}
+                  y1={cy}
+                  x2={cx - 2.8 * gScale}
+                  y2={cy}
+                />
                 <polyline
-                  points={`${cx - 0.4},${cy - 2.1} ${cx - 3.0},${cy} ${cx - 0.4},${cy + 2.1}`}
+                  points={`${cx - 0.3 * gScale},${cy - 2.2 * gScale} ${cx - 3.0 * gScale},${cy} ${cx - 0.3 * gScale},${cy + 2.2 * gScale}`}
                 />
               </g>
             );
@@ -515,13 +552,18 @@ function renderPitchColumn(
               key={idx}
               fill="none"
               stroke={COLOR_INK}
-              strokeWidth={1.2}
+              strokeWidth={1.35}
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <line x1={cx - 3.2} y1={cy} x2={cx + 2.8} y2={cy} />
+              <line
+                x1={cx - 3.2 * gScale}
+                y1={cy}
+                x2={cx + 2.8 * gScale}
+                y2={cy}
+              />
               <polyline
-                points={`${cx + 0.4},${cy - 2.1} ${cx + 3.0},${cy} ${cx + 0.4},${cy + 2.1}`}
+                points={`${cx + 0.3 * gScale},${cy - 2.2 * gScale} ${cx + 3.0 * gScale},${cy} ${cx + 0.3 * gScale},${cy + 2.2 * gScale}`}
               />
             </g>
           );
@@ -540,9 +582,9 @@ function renderPitchColumn(
           <text
             key={idx}
             x={cx}
-            y={cy + 2}
-            fontSize={5.4}
-            fontWeight={800}
+            y={cy + 2.4}
+            fontSize={isDense ? 5.8 : 6.8}
+            fontWeight={900}
             textAnchor="middle"
             fill={COLOR_BLUE}
             fontFamily={FONT_SANS}
@@ -555,16 +597,16 @@ function renderPitchColumn(
         Array.isArray(stealPitchIndices) &&
         stealPitchIndices.map((sIdx) => {
           if (sIdx < 0 || sIdx >= maxDraw.length) return null;
-          const cy = originY + 8.5 + sIdx * stepY;
+          const cy = originY + startOffsetY + sIdx * stepY;
           return (
             <line
               key={`steal-prime-${sIdx}`}
-              x1={cx + 4.4}
-              y1={cy - 3.6}
-              x2={cx + 3.4}
-              y2={cy - 1.1}
+              x1={cx + 4.4 * gScale}
+              y1={cy - 3.7 * gScale}
+              x2={cx + 3.3 * gScale}
+              y2={cy - 1.1 * gScale}
               stroke={COLOR_INK}
-              strokeWidth={1.2}
+              strokeWidth={1.35}
               strokeLinecap="round"
             />
           );
@@ -790,12 +832,21 @@ function renderWasedaDiamondPinchRunnerMark(
   );
 }
 
+function getUnifiedCellLabelFontSize(text: string, hasSlash = false): number {
+  const len = text.trim().length;
+  if (len <= 2) return hasSlash ? 9.4 : 10.4;
+  if (len === 3) return hasSlash ? 8.8 : 9.7;
+  if (len === 4) return hasSlash ? 8.3 : 9.0;
+  return hasSlash ? 7.7 : 8.4;
+}
+
 function renderDiamondSegment(
   seg: CompiledDiamondSegment,
   rules: ScorebookSymbolRules,
   cellGeom: CellGeometry,
   ox: number,
-  oy: number
+  oy: number,
+  hasAtBatPlayNotation = false
 ): React.ReactNode {
   const geom = cellGeom.segments[seg.segment];
   const x1 = ox + geom.from.x;
@@ -823,11 +874,14 @@ function renderDiamondSegment(
       ? 2.8
       : useRedStroke
       ? 2.4
-      : 1.75;
+      : 1.85;
 
+  // 打者が失策(E6/6E)・野選(4FC)・四死球等で1塁セーフになった打席は、右下の playNotation 側で既に出塁理由を記載するため重複描画しない
   const advLabel =
     seg.customLabelOverride !== undefined
       ? seg.customLabelOverride
+      : seg.segment === 1 && seg.status === "safe" && hasAtBatPlayNotation
+      ? ""
       : !seg.isBatterHit
       ? formatAdvanceMethodByRules(
           seg.method,
@@ -843,16 +897,24 @@ function renderDiamondSegment(
         )
       : "";
 
+  const labelFontSize = advLabel ? getUnifiedCellLabelFontSize(advLabel) : 9.6;
+  const labelTracking = advLabel.length >= 5 ? "-0.03em" : undefined;
+  const segLabelPos =
+    seg.segment === 1 && seg.status === "out" && hasAtBatPlayNotation
+      ? { x: 71.5, y: 48.5 }
+      : geom.labelPos;
+
   if (seg.status === "out") {
     if (rules.runnerOutLine === "dotted_only") {
       if (!advLabel) return null;
       return (
         <g key={`seg-${seg.segment}`}>
           <text
-            x={ox + geom.labelPos.x}
-            y={oy + geom.labelPos.y}
-            fontSize={7.2}
-            fontWeight={800}
+            x={ox + segLabelPos.x}
+            y={oy + segLabelPos.y}
+            fontSize={labelFontSize}
+            fontWeight={900}
+            letterSpacing={labelTracking}
             textAnchor="middle"
             fill={COLOR_INK}
             fontFamily={FONT_SANS}
@@ -872,15 +934,15 @@ function renderDiamondSegment(
       const onx = -dy / len;
       const ony = dx / len;
       const outDist = cellGeom.hasQuadrantCrosshairs ? 5.6 : 4.8;
-      const halfArrow = cellGeom.hasQuadrantCrosshairs ? 4.1 : 3.8;
+      const halfArrow = cellGeom.hasQuadrantCrosshairs ? 4.3 : 4.0;
       const mx = (x1 + x2) / 2 + onx * outDist;
       const my = (y1 + y2) / 2 + ony * outDist;
       const ax1 = mx - ux * halfArrow;
       const ay1 = my - uy * halfArrow;
       const ax2 = mx + ux * halfArrow;
       const ay2 = my + uy * halfArrow;
-      const wingBack = 2.6;
-      const wingHalfW = 2.05;
+      const wingBack = 2.7;
+      const wingHalfW = 2.15;
       const w1x = ax2 - ux * wingBack + onx * wingHalfW;
       const w1y = ay2 - uy * wingBack + ony * wingHalfW;
       const w2x = ax2 - ux * wingBack - onx * wingHalfW;
@@ -888,12 +950,12 @@ function renderDiamondSegment(
 
       const arrowLabelPos =
         seg.segment === 1
-          ? { x: 76.5, y: 47.5 }
+          ? { x: 74.5, y: 48.0 }
           : seg.segment === 2
-          ? { x: 76.5, y: cellGeom.hasQuadrantCrosshairs ? 15.5 : 13.5 }
+          ? { x: 73.5, y: cellGeom.hasQuadrantCrosshairs ? 15.8 : 14.5 }
           : seg.segment === 3
-          ? { x: 30.5, y: cellGeom.hasQuadrantCrosshairs ? 15.5 : 13.5 }
-          : { x: 31.5, y: cellGeom.hasQuadrantCrosshairs ? 62.5 : 59.5 };
+          ? { x: 33.5, y: cellGeom.hasQuadrantCrosshairs ? 15.8 : 14.5 }
+          : { x: 33.5, y: cellGeom.hasQuadrantCrosshairs ? 63.5 : 61.5 };
 
       return (
         <g key={`seg-${seg.segment}`}>
@@ -903,14 +965,14 @@ function renderDiamondSegment(
             x2={ax2}
             y2={ay2}
             stroke={COLOR_INK}
-            strokeWidth={1.3}
+            strokeWidth={1.45}
             strokeLinecap="round"
           />
           <polyline
             points={`${w1x.toFixed(2)},${w1y.toFixed(2)} ${ax2.toFixed(2)},${ay2.toFixed(2)} ${w2x.toFixed(2)},${w2y.toFixed(2)}`}
             fill="none"
             stroke={COLOR_INK}
-            strokeWidth={1.3}
+            strokeWidth={1.45}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -918,8 +980,9 @@ function renderDiamondSegment(
             <text
               x={ox + arrowLabelPos.x}
               y={oy + arrowLabelPos.y}
-              fontSize={7.0}
-              fontWeight={800}
+              fontSize={Math.min(9.4, labelFontSize)}
+              fontWeight={900}
+              letterSpacing={labelTracking}
               textAnchor="middle"
               fill={COLOR_INK}
               fontFamily={FONT_SANS}
@@ -937,8 +1000,8 @@ function renderDiamondSegment(
     const dx = x2 - x1;
     const dy = y2 - y1;
     const len = Math.hypot(dx, dy) || 1;
-    const nx = (-dy / len) * 4.0;
-    const ny = (dx / len) * 4.0;
+    const nx = (-dy / len) * 4.2;
+    const ny = (dx / len) * 4.2;
 
     return (
       <g key={`seg-${seg.segment}`}>
@@ -948,7 +1011,7 @@ function renderDiamondSegment(
           x2={stopX}
           y2={stopY}
           stroke={COLOR_INK}
-          strokeWidth={1.7}
+          strokeWidth={1.8}
         />
         <line
           x1={stopX - nx}
@@ -956,15 +1019,16 @@ function renderDiamondSegment(
           x2={stopX + nx}
           y2={stopY + ny}
           stroke={COLOR_INK}
-          strokeWidth={2}
+          strokeWidth={2.1}
           strokeLinecap="round"
         />
         {advLabel && (
           <text
-            x={ox + geom.labelPos.x}
-            y={oy + geom.labelPos.y}
-            fontSize={7.2}
-            fontWeight={800}
+            x={ox + segLabelPos.x}
+            y={oy + segLabelPos.y}
+            fontSize={labelFontSize}
+            fontWeight={900}
+            letterSpacing={labelTracking}
             textAnchor="middle"
             fill={COLOR_INK}
             fontFamily={FONT_SANS}
@@ -1044,8 +1108,9 @@ function renderDiamondSegment(
         <text
           x={ox + geom.labelPos.x}
           y={oy + geom.labelPos.y}
-          fontSize={7.2}
-          fontWeight={800}
+          fontSize={labelFontSize}
+          fontWeight={900}
+          letterSpacing={labelTracking}
           textAnchor="middle"
           fill={seg.method === "tiebreak" ? COLOR_BLUE : COLOR_INK}
           fontFamily={FONT_SANS}
@@ -1076,14 +1141,14 @@ function renderCenterStatus(
           <circle
             cx={cx}
             cy={cy}
-            r={compact ? 6.1 : 6.9}
+            r={compact ? 6.6 : 7.3}
             fill={COLOR_PAPER}
             stroke={runColor}
-            strokeWidth={1.85}
+            strokeWidth={2.0}
           />
         );
       }
-      return <circle cx={cx} cy={cy} r={compact ? 6.3 : 7.2} fill={runColor} />;
+      return <circle cx={cx} cy={cy} r={compact ? 6.8 : 7.5} fill={runColor} />;
     }
     if (rules.runMark === "double_circle") {
       return (
@@ -1091,12 +1156,12 @@ function renderCenterStatus(
           <circle
             cx={cx}
             cy={cy}
-            r={compact ? 7.0 : 7.8}
+            r={compact ? 7.3 : 8.0}
             fill={COLOR_PAPER}
             stroke={runColor}
-            strokeWidth={1.7}
+            strokeWidth={1.8}
           />
-          <circle cx={cx} cy={cy} r={compact ? 3.7 : 4.2} fill={runColor} />
+          <circle cx={cx} cy={cy} r={compact ? 3.9 : 4.4} fill={runColor} />
         </g>
       );
     }
@@ -1106,15 +1171,15 @@ function renderCenterStatus(
           <circle
             cx={cx}
             cy={cy}
-            r={compact ? 7.4 : 8.2}
+            r={compact ? 7.6 : 8.4}
             fill={COLOR_PAPER}
             stroke={runColor}
-            strokeWidth={1.55}
+            strokeWidth={1.65}
           />
           <text
             x={cx}
-            y={cy + 3.2}
-            fontSize={compact ? 8.8 : 9.5}
+            y={cy + 3.4}
+            fontSize={compact ? 9.2 : 9.8}
             fontWeight={900}
             textAnchor="middle"
             fill={runColor}
@@ -1125,16 +1190,90 @@ function renderCenterStatus(
         </g>
       );
     }
-    return <circle cx={cx} cy={cy} r={compact ? 6.3 : 7.2} fill={runColor} />;
+    return <circle cx={cx} cy={cy} r={compact ? 6.8 : 7.5} fill={runColor} />;
   }
 
   if (cell.outNumber) {
+    if (
+      rules.outMark === "roman" &&
+      (cell.outNumber === 1 || cell.outNumber === 2 || cell.outNumber === 3)
+    ) {
+      const n = cell.outNumber;
+      const halfH = compact ? 5.1 : 5.6;
+      const barOffsets =
+        n === 1 ? [0] : n === 2 ? [-1.85, 1.85] : [-3.1, 0, 3.1];
+      const halfCap = n === 1 ? 2.5 : n === 2 ? 3.6 : 4.8;
+      return (
+        <g>
+          {barOffsets.map((dx, idx) => (
+            <line
+              key={idx}
+              x1={cx + dx}
+              y1={cy - halfH}
+              x2={cx + dx}
+              y2={cy + halfH}
+              stroke={COLOR_INK}
+              strokeWidth={1.75}
+              strokeLinecap="butt"
+            />
+          ))}
+          <line
+            x1={cx - halfCap}
+            y1={cy - halfH}
+            x2={cx + halfCap}
+            y2={cy - halfH}
+            stroke={COLOR_INK}
+            strokeWidth={1.45}
+            strokeLinecap="round"
+          />
+          <line
+            x1={cx - halfCap}
+            y1={cy + halfH}
+            x2={cx + halfCap}
+            y2={cy + halfH}
+            stroke={COLOR_INK}
+            strokeWidth={1.45}
+            strokeLinecap="round"
+          />
+        </g>
+      );
+    }
+
+    if (
+      rules.outMark === "circled" &&
+      (cell.outNumber === 1 || cell.outNumber === 2 || cell.outNumber === 3)
+    ) {
+      return (
+        <g>
+          <circle
+            cx={cx}
+            cy={cy}
+            r={compact ? 6.5 : 7.1}
+            fill={COLOR_PAPER}
+            stroke={COLOR_INK}
+            strokeWidth={1.5}
+          />
+          <text
+            x={cx}
+            y={cy + 3.4}
+            fontSize={compact ? 9.4 : 10.0}
+            fontWeight={900}
+            textAnchor="middle"
+            fill={COLOR_INK}
+            fontFamily={FONT_SANS}
+          >
+            {cell.outNumber}
+          </text>
+        </g>
+      );
+    }
+
     const outText = formatOutOrdinalText(cell.outNumber, rules);
     return (
       <text
         x={cx}
         y={cy + 4.3}
-        fontSize={compact ? 12.2 : 13}
+        fontSize={compact ? 12.2 : 13.0}
         fontWeight={900}
         textAnchor="middle"
         fill={COLOR_INK}
@@ -1149,12 +1288,12 @@ function renderCenterStatus(
     return (
       <text
         x={cx}
-        y={cy + 4.2}
-        fontSize={compact ? 11.8 : 12.5}
-        fontWeight={800}
+        y={cy + 4.5}
+        fontSize={compact ? 13.0 : 13.8}
+        fontWeight={900}
         fontStyle="italic"
         textAnchor="middle"
-        fill={COLOR_MUTED}
+        fill={COLOR_INK}
         fontFamily={FONT_SANS}
       >
         ℓ
@@ -1178,8 +1317,8 @@ function renderPlayNotation(
     ox +
     (notation.infieldHitArc
       ? cellGeom.hasQuadrantCrosshairs
-        ? 68.4
-        : 69.2
+        ? 68.6
+        : 69.4
       : hasQuadrantHitSlash
       ? cellGeom.hasQuadrantCrosshairs
         ? 75.5
@@ -1189,8 +1328,8 @@ function renderPlayNotation(
     oy +
     (notation.infieldHitArc
       ? cellGeom.hasQuadrantCrosshairs
-        ? 57.6
-        : 58.6
+        ? 58.8
+        : 59.6
       : hasQuadrantHitSlash
       ? cellGeom.hasQuadrantCrosshairs
         ? 66.2
@@ -1205,23 +1344,23 @@ function renderPlayNotation(
           <text
             x={0}
             y={0}
-            fontSize={11.5}
+            fontSize={10.8}
             fontWeight={900}
             textAnchor="middle"
             fill={ink}
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             K
           </text>
         </g>
         {notation.subText && (
           <text
-            x={px + 9}
-            y={py + 1}
-            fontSize={6.5}
-            fontWeight={800}
-            fill={COLOR_MUTED}
-            fontFamily={FONT_MONO}
+            x={px + 8.5}
+            y={py + 0.5}
+            fontSize={7.2}
+            fontWeight={900}
+            fill={COLOR_INK}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1235,31 +1374,31 @@ function renderPlayNotation(
       <g>
         <circle
           cx={px}
-          cy={py - 3.8}
-          r={6.8}
+          cy={py - 3.9}
+          r={7.1}
           fill="none"
           stroke={ink}
-          strokeWidth={1.3}
+          strokeWidth={1.4}
         />
         <text
           x={px}
           y={py}
-          fontSize={9.5}
+          fontSize={9.8}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           K
         </text>
         {notation.subText && (
           <text
-            x={px + 9.5}
-            y={py + 1}
-            fontSize={6.3}
-            fontWeight={800}
-            fill={COLOR_MUTED}
-            fontFamily={FONT_MONO}
+            x={px + 9.2}
+            y={py + 0.5}
+            fontSize={7.2}
+            fontWeight={900}
+            fill={COLOR_INK}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1275,48 +1414,52 @@ function renderPlayNotation(
   ) {
     const halfArc =
       notation.mainText.length >= 3
-        ? 8.5
+        ? 9.2
         : notation.mainText.length === 2
-        ? 6.9
-        : 5.8;
+        ? 7.5
+        : 6.3;
     const umbrellaFontSize =
-      notation.mainText.length >= 3 ? 8.3 : notation.mainText.length === 2 ? 9.0 : 9.6;
+      notation.mainText.length >= 3
+        ? 9.0
+        : notation.mainText.length === 2
+        ? 9.8
+        : 10.4;
     return (
       <g>
         {notation.decorator === "sac_fly_umbrella" && (
           <polygon
-            points={`${px},${py - 13.5} ${px + 9.5},${py - 3.8} ${px},${py + 5.5} ${px - 9.5},${py - 3.8}`}
+            points={`${px},${py - 14.2} ${px + 10.4},${py - 3.8} ${px},${py + 6.2} ${px - 10.4},${py - 3.8}`}
             fill="none"
             stroke={ink}
-            strokeWidth={1.1}
+            strokeWidth={1.3}
           />
         )}
         {notation.decorator === "bunt_fly_square_umbrella" && (
           <rect
-            x={px - 8.5}
-            y={py - 13}
-            width={17}
-            height={16.5}
+            x={px - 9.2}
+            y={py - 13.6}
+            width={18.4}
+            height={17.4}
             fill="none"
             stroke={ink}
-            strokeWidth={1.15}
+            strokeWidth={1.3}
           />
         )}
         <path
-          d={`M ${(px - halfArc).toFixed(1)} ${py - 8.2} Q ${px} ${py - 12.6} ${(px + halfArc).toFixed(1)} ${py - 8.2}`}
+          d={`M ${(px - halfArc).toFixed(1)} ${py - 8.6} Q ${px} ${py - 13.4} ${(px + halfArc).toFixed(1)} ${py - 8.6}`}
           fill="none"
           stroke={ink}
-          strokeWidth={1.35}
+          strokeWidth={1.55}
           strokeLinecap="round"
         />
         <text
           x={px}
-          y={py + 0.5}
+          y={py + 0.4}
           fontSize={umbrellaFontSize}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
@@ -1327,21 +1470,19 @@ function renderPlayNotation(
                 ? px - 2
                 : notation.decorator === "bunt_fly_square_umbrella"
                 ? px
-                : px + 8.5
+                : px + 8.8
             }
             y={
               notation.subText === "DP" || notation.subText === "TP"
-                ? py + 7.2
+                ? py + 7.5
                 : notation.decorator === "bunt_fly_square_umbrella"
-                ? py + 9.2
+                ? py + 9.4
                 : py + 0.5
             }
             fontSize={
-              notation.subText === "DP" || notation.subText === "TP" ? 6.6 : 6.2
+              notation.subText === "DP" || notation.subText === "TP" ? 7.2 : 6.8
             }
-            fontWeight={
-              notation.subText === "DP" || notation.subText === "TP" ? 900 : 800
-            }
+            fontWeight={900}
             textAnchor={
               notation.subText === "DP" ||
               notation.subText === "TP" ||
@@ -1354,7 +1495,7 @@ function renderPlayNotation(
                 ? COLOR_INK
                 : COLOR_MUTED
             }
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1365,27 +1506,32 @@ function renderPlayNotation(
 
   if (notation.decorator === "under_arc") {
     const isChain = notation.mainText.includes("-");
-    const arcCx = isChain ? px - (notation.mainText.length >= 4 ? 6.5 : 5.4) : px;
-    const halfArc = isChain ? 4.3 : 5.2;
-    const textFontSize = notation.mainText.length >= 4 ? 8.4 : 9.6;
+    const arcCx = isChain ? px - (notation.mainText.length >= 4 ? 6.8 : 5.6) : px;
+    const halfArc = isChain ? 4.6 : 5.6;
+    const textFontSize =
+      notation.mainText.length >= 4
+        ? 8.8
+        : notation.mainText.length === 3
+        ? 9.7
+        : 10.4;
     return (
       <g>
         <text
           x={px}
-          y={py - 0.8}
+          y={py - 1.0}
           fontSize={textFontSize}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
         <path
-          d={`M ${(arcCx - halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)} Q ${arcCx.toFixed(1)} ${(py + 5.8).toFixed(1)} ${(arcCx + halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)}`}
+          d={`M ${(arcCx - halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)} Q ${arcCx.toFixed(1)} ${(py + 6.1).toFixed(1)} ${(arcCx + halfArc).toFixed(1)} ${(py + 1.6).toFixed(1)}`}
           fill="none"
           stroke={ink}
-          strokeWidth={1.35}
+          strokeWidth={1.55}
           strokeLinecap="round"
         />
       </g>
@@ -1393,24 +1539,24 @@ function renderPlayNotation(
   }
 
   if (notation.decorator === "sac_triangle") {
-    const triFontSize = notation.mainText.length >= 2 ? 7.4 : 8.4;
+    const triFontSize = notation.mainText.length >= 2 ? 8.5 : 9.5;
     return (
       <g>
         <polygon
-          points={`${px},${py - 13.5} ${px + 10.6},${py + 3.6} ${px - 10.6},${py + 3.6}`}
+          points={`${px},${py - 14.5} ${px + 11.4},${py + 4.0} ${px - 11.4},${py + 4.0}`}
           fill="none"
           stroke={ink}
-          strokeWidth={1.2}
+          strokeWidth={1.35}
           strokeLinejoin="round"
         />
         <text
           x={px}
-          y={py + 1.0}
+          y={py + 1.2}
           fontSize={triFontSize}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
@@ -1422,22 +1568,22 @@ function renderPlayNotation(
     return (
       <g>
         <line
-          x1={px - 6}
-          y1={py - 9.5}
-          x2={px + 6}
-          y2={py - 9.5}
+          x1={px - 6.6}
+          y1={py - 10.2}
+          x2={px + 6.6}
+          y2={py - 10.2}
           stroke={ink}
-          strokeWidth={1.5}
+          strokeWidth={1.6}
           strokeLinecap="round"
         />
         <text
           x={px}
-          y={py + 0.5}
-          fontSize={9.8}
+          y={py + 0.4}
+          fontSize={notation.mainText.length >= 2 ? 9.8 : 10.4}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
@@ -1448,20 +1594,18 @@ function renderPlayNotation(
                 ? px - 2
                 : px
             }
-            y={py + 7.2}
+            y={py + 7.4}
             fontSize={
-              notation.subText === "DP" || notation.subText === "TP" ? 6.6 : 6.0
+              notation.subText === "DP" || notation.subText === "TP" ? 7.2 : 6.6
             }
-            fontWeight={
-              notation.subText === "DP" || notation.subText === "TP" ? 900 : 800
-            }
+            fontWeight={900}
             textAnchor="middle"
             fill={
               notation.subText === "DP" || notation.subText === "TP"
                 ? COLOR_INK
                 : COLOR_MUTED
             }
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1471,20 +1615,20 @@ function renderPlayNotation(
   }
 
   if (notation.decorator === "sac_square") {
-    const boxW = notation.mainText.length >= 5 ? 21 : 19;
-    const boxH = 12.2;
-    const boxFontSize = notation.mainText.length >= 5 ? 6.8 : 8.1;
+    const boxW = notation.mainText.length >= 5 ? 22.4 : 20.6;
+    const boxH = 13.4;
+    const boxFontSize = notation.mainText.length >= 5 ? 7.6 : 9.0;
     const isDpSub = notation.subText === "DP" || notation.subText === "TP";
     return (
       <g>
         <rect
           x={px - boxW / 2 - (isDpSub ? 1.5 : 0)}
-          y={py - 9.5}
+          y={py - 10.4}
           width={boxW}
           height={boxH}
           fill="none"
           stroke={ink}
-          strokeWidth={1.15}
+          strokeWidth={1.35}
         />
         <text
           x={px - (isDpSub ? 1.5 : 0)}
@@ -1493,19 +1637,19 @@ function renderPlayNotation(
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
         {notation.subText && (
           <text
             x={px - (isDpSub ? 2 : 0)}
-            y={py + 8.3}
-            fontSize={isDpSub ? 6.6 : 5.8}
-            fontWeight={isDpSub ? 900 : 800}
+            y={py + 8.5}
+            fontSize={isDpSub ? 7.2 : 6.4}
+            fontWeight={900}
             textAnchor="middle"
             fill={isDpSub ? COLOR_INK : COLOR_MUTED}
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1519,31 +1663,31 @@ function renderPlayNotation(
     return (
       <g>
         <polygon
-          points={`${px},${py - 12} ${px + 12.5},${py - 3.5} ${px},${py + 5} ${px - 12.5},${py - 3.5}`}
+          points={`${px},${py - 12.8} ${px + 13.4},${py - 3.6} ${px},${py + 5.6} ${px - 13.4},${py - 3.6}`}
           fill="none"
           stroke={ink}
-          strokeWidth={1.15}
+          strokeWidth={1.35}
         />
         <text
           x={px}
-          y={py - 0.5}
-          fontSize={8.2}
+          y={py - 0.3}
+          fontSize={8.8}
           fontWeight={900}
           textAnchor="middle"
           fill={ink}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.mainText}
         </text>
         {notation.subText && (
           <text
             x={px - (isDpSub ? 1.5 : 0)}
-            y={py + 9.2}
-            fontSize={isDpSub ? 6.6 : 5.8}
-            fontWeight={isDpSub ? 900 : 800}
+            y={py + 9.4}
+            fontSize={isDpSub ? 7.2 : 6.4}
+            fontWeight={900}
             textAnchor="middle"
             fill={isDpSub ? COLOR_INK : COLOR_MUTED}
-            fontFamily={FONT_MONO}
+            fontFamily={FONT_SANS}
           >
             {notation.subText}
           </text>
@@ -1553,17 +1697,11 @@ function renderPlayNotation(
   }
 
   const isDpSub = notation.subText === "DP" || notation.subText === "TP";
-  const fontSize = hasQuadrantHitSlash
-    ? notation.mainText.length >= 5
-      ? 7.4
-      : notation.mainText.length >= 4
-      ? 8.0
-      : 9.0
-    : notation.mainText.length >= 5
-    ? 7.8
-    : notation.mainText.length >= 4
-    ? 8.5
-    : 9.8;
+  const fontSize = getUnifiedCellLabelFontSize(
+    notation.mainText,
+    hasQuadrantHitSlash
+  );
+  const tracking = notation.mainText.length >= 5 ? "-0.03em" : undefined;
 
   const mainX = isDpSub ? px - 2.5 : px;
   const mainY = isDpSub ? py - 2.8 : py;
@@ -1575,6 +1713,7 @@ function renderPlayNotation(
         y={mainY}
         fontSize={fontSize}
         fontWeight={900}
+        letterSpacing={tracking}
         textAnchor="middle"
         fill={ink}
         fontFamily={FONT_SANS}
@@ -1584,12 +1723,12 @@ function renderPlayNotation(
       {notation.subText && (
         <text
           x={isDpSub ? px - 2.5 : px}
-          y={isDpSub ? py + 5.2 : py + 7.2}
-          fontSize={isDpSub ? 6.8 : 6.2}
-          fontWeight={isDpSub ? 900 : 800}
+          y={isDpSub ? py + 5.4 : py + 7.2}
+          fontSize={isDpSub ? 7.4 : 6.8}
+          fontWeight={900}
           textAnchor="middle"
           fill={isDpSub ? COLOR_INK : COLOR_MUTED}
-          fontFamily={FONT_MONO}
+          fontFamily={FONT_SANS}
         >
           {notation.subText}
         </text>
@@ -1748,7 +1887,7 @@ export function renderSingleScorebookCellSvg(
               oy +
               Math.min(
                 CELL_H - 12,
-                Math.max(18, 6 + cell.pitcherChangeAtPitchIndex * 7.2)
+                Math.max(19, 7.5 + cell.pitcherChangeAtPitchIndex * 8.8)
               );
             return (
               <g>
@@ -1781,12 +1920,12 @@ export function renderSingleScorebookCellSvg(
                 {pLabel && (
                   <text
                     x={ox + BSO_W + 6.5}
-                    y={stepY + 2.4}
-                    fontSize={6.8}
+                    y={stepY + 2.6}
+                    fontSize={7.6}
                     fontWeight={900}
                     fill={pWaveColor}
                     stroke={COLOR_PAPER}
-                    strokeWidth={2.2}
+                    strokeWidth={2.3}
                     paintOrder="stroke"
                     fontFamily={FONT_SANS}
                   >
@@ -1814,13 +1953,13 @@ export function renderSingleScorebookCellSvg(
               />
               {pLabel && (
                 <text
-                  x={ox + BSO_W + 2.2}
-                  y={oy + 9.2}
-                  fontSize={6.8}
+                  x={ox + BSO_W + 2.4}
+                  y={oy + 9.6}
+                  fontSize={7.6}
                   fontWeight={900}
                   fill={pWaveColor}
                   stroke={COLOR_PAPER}
-                  strokeWidth={2.2}
+                  strokeWidth={2.3}
                   paintOrder="stroke"
                   fontFamily={FONT_SANS}
                 >
@@ -1846,7 +1985,14 @@ export function renderSingleScorebookCellSvg(
         ([1, 2, 3, 4] as const).map((segIdx) => {
           const seg = cell.segments[segIdx];
           if (!seg) return null;
-          return renderDiamondSegment(seg, rules, cellGeom, ox, oy);
+          return renderDiamondSegment(
+            seg,
+            rules,
+            cellGeom,
+            ox,
+            oy,
+            Boolean(playNotation?.mainText) && !cell.isTiebreakRunnerOnly
+          );
         })}
 
       {/* 内野安打・バントヒット時の右下赤円弧囲み（早見表・手書きシート準拠） */}
@@ -2271,8 +2417,8 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
   const yTop = topCellY + 5.0;
   const yBot = topCellY + spanRows * CELL_H - 5.5;
   const boundaryY = topCellY + CELL_H;
-  const dpX = cellX + 72.5;
-  const dpY = boundaryY + 2.8;
+  const dpX = cellX + 71.0;
+  const dpY = boundaryY + 3.0;
   const tagLabel = isTriplePlay ? "TP" : "DP";
 
   return (
@@ -2337,15 +2483,15 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
       <text
         x={dpX}
         y={dpY}
-        fontSize={7.8}
+        fontSize={8.5}
         fontWeight={900}
         textAnchor="middle"
         fill={COLOR_INK}
         stroke={COLOR_PAPER}
-        strokeWidth={3.2}
+        strokeWidth={3.4}
         paintOrder="stroke"
         strokeLinejoin="round"
-        fontFamily={FONT_MONO}
+        fontFamily={FONT_SANS}
       >
         {tagLabel}
       </text>
@@ -2435,16 +2581,16 @@ function renderDoublePlayLinksSvg(
                 />
               )}
               <text
-                x={cx + 72.5}
-                y={ry + 9.5}
-                fontSize={7.4}
+                x={cx + 71.0}
+                y={ry + 10.2}
+                fontSize={8.2}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_INK}
                 stroke={COLOR_PAPER}
-                strokeWidth={3.0}
+                strokeWidth={3.2}
                 paintOrder="stroke"
-                fontFamily={FONT_MONO}
+                fontFamily={FONT_SANS}
               >
                 {tagLabel}
               </text>
@@ -2512,16 +2658,16 @@ function renderDoublePlayLinksSvg(
                     />
                   )}
                   <text
-                    x={cx + 72.5}
-                    y={isBatterCell ? ry + 9.5 : ry + CELL_H - 2.5}
-                    fontSize={7.2}
+                    x={cx + 71.0}
+                    y={isBatterCell ? ry + 10.2 : ry + CELL_H - 2.5}
+                    fontSize={8.0}
                     fontWeight={900}
                     textAnchor="middle"
                     fill={COLOR_INK}
                     stroke={COLOR_PAPER}
-                    strokeWidth={3.0}
+                    strokeWidth={3.2}
                     paintOrder="stroke"
-                    fontFamily={FONT_MONO}
+                    fontFamily={FONT_SANS}
                   >
                     {tagLabel}
                   </text>
@@ -4868,7 +5014,7 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
-      title: "バントゴロ凡",
+      title: "野選・封殺",
       cell: {
         cellKey: "s-3",
         inning: 1,
@@ -4884,21 +5030,42 @@ export function ScorebookSymbolSamplePreview({
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
-          resultCode: "groundout",
-          resultLabel: "三バントゴロ (5-3)",
-          battedDirection: "5-3",
+          resultCode: "fc",
+          resultLabel: "二野選",
+          battedDirection: "4",
           rbi: 0,
-          outsInPlay: 1,
+          outsInPlay: 0,
           endingOuts: 2,
           runsInPlay: 0,
           balls: 1,
           strikes: 1,
-          pitches: ["ball", "bunt_foul", "in_play"],
+          pitches: ["ball", "bunt_foul"],
           advances: [],
           confidence: "high",
         },
         isTiebreakRunnerOnly: false,
-        segments: { 1: null, 2: null, 3: null, 4: null },
+        segments: {
+          1: {
+            segment: 1,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "fc",
+            isPrePlay: false,
+          },
+          2: {
+            segment: 2,
+            status: "out",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "fc",
+            isPrePlay: false,
+            isForceOut: true,
+            throwChain: "6",
+          },
+          3: null,
+          4: null,
+        },
         outNumber: 2,
         runScored: false,
         isResidual: false,
@@ -5020,7 +5187,7 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
-      title: "四球＋残塁",
+      title: "四球・盗塁・残塁",
       cell: {
         cellKey: "s-5",
         inning: 1,
@@ -5059,7 +5226,14 @@ export function ScorebookSymbolSamplePreview({
             method: "walk",
             isPrePlay: false,
           },
-          2: null,
+          2: {
+            segment: 2,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "steal",
+            isPrePlay: true,
+          },
           3: null,
           4: null,
         },

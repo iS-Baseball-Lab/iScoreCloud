@@ -206,7 +206,11 @@ function renderDiamondStripSvg(
   return (
     <svg
       viewBox={`0 0 ${totalW} ${totalH}`}
-      className="w-full h-auto block select-none"
+      className={
+        captionH > 0
+          ? "h-[64px] sm:h-[70px] w-auto max-w-full mx-auto block select-none"
+          : "h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
+      }
       style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
       aria-hidden="true"
     >
@@ -227,8 +231,8 @@ function renderDiamondStripSvg(
             {captionH > 0 && captionLabels?.[idx] && (
               <text
                 x={dx + DIAMOND_CROP_W / 2}
-                y={9.6}
-                fontSize={7.2}
+                y={9.8}
+                fontSize={8.0}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_MUTED}
@@ -332,7 +336,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${SCOREBOOK_CELL_W} ${SCOREBOOK_CELL_H}`}
-              className="h-[58px] sm:h-[64px] w-auto mx-auto block select-none"
+              className="h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -348,7 +352,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${lineupW} ${totalH}`}
-              className="w-full h-auto block select-none"
+              className="h-[68px] sm:h-[74px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -399,7 +403,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${cropW} ${totalH}`}
-              className="h-[62px] sm:h-[68px] w-auto mx-auto block select-none"
+              className="h-[68px] sm:h-[74px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -482,7 +486,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${totalW} ${totalH}`}
-              className="w-full h-auto block select-none"
+              className="h-[64px] sm:h-[70px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -498,8 +502,8 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               />
               <text
                 x={leftPad + SCOREBOOK_CELL_W / 2}
-                y={9.5}
-                fontSize={7.2}
+                y={9.8}
+                fontSize={8.0}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_MUTED}
@@ -508,8 +512,8 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               </text>
               <text
                 x={leftPad + SCOREBOOK_CELL_W + SCOREBOOK_CELL_W / 2}
-                y={9.5}
-                fontSize={7.2}
+                y={9.8}
+                fontSize={8.0}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_MUTED}
@@ -715,7 +719,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${totalW} ${totalH}`}
-              className="h-[88px] sm:h-[96px] w-auto mx-auto block select-none"
+              className="h-[98px] sm:h-[106px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -738,8 +742,8 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               />
               <text
                 x={labelColW / 2}
-                y={SCOREBOOK_CELL_H / 2 + 2.5}
-                fontSize={7.2}
+                y={SCOREBOOK_CELL_H / 2 + 2.8}
+                fontSize={7.8}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_MUTED}
@@ -748,8 +752,8 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               </text>
               <text
                 x={labelColW / 2}
-                y={SCOREBOOK_CELL_H + SCOREBOOK_CELL_H / 2 + 2.5}
-                fontSize={7.2}
+                y={SCOREBOOK_CELL_H + SCOREBOOK_CELL_H / 2 + 2.8}
+                fontSize={7.8}
                 fontWeight={900}
                 textAnchor="middle"
                 fill={COLOR_MUTED}
@@ -826,7 +830,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`${DIAMOND_CROP_X} 0 ${DIAMOND_CROP_W} ${SCOREBOOK_CELL_H}`}
-              className="h-[58px] sm:h-[64px] w-auto mx-auto block select-none"
+              className="h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -856,7 +860,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`${DIAMOND_CROP_X} 0 ${DIAMOND_CROP_W} ${SCOREBOOK_CELL_H}`}
-              className="h-[58px] sm:h-[64px] w-auto mx-auto block select-none"
+              className="h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -919,15 +923,17 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           unearnedSegs[1] = makeSegment(1, "safe", "error");
           unearnedSegs[2] = makeSegment(2, "safe", "wp");
           unearnedSegs[3] = makeSegment(3, "safe", "pb");
-          unearnedSegs[4] = makeSegment(4, "safe", "error");
+          unearnedSegs[4] = makeSegment(4, "safe", "hit", {
+            drivingBatterOrder: 2,
+          });
           const unearnedCell = makeSampleCell("opt-run-unearned", {
             runScored: true,
             isUnearnedRun: true,
             segments: unearnedSegs,
             atBatSeed: {
               resultCode: "error",
-              resultLabel: "遊失策",
-              battedDirection: "E6",
+              resultLabel: "遊捕球失策",
+              battedDirection: "6",
             },
           });
 
@@ -950,7 +956,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`${DIAMOND_CROP_X} 0 ${DIAMOND_CROP_W} ${SCOREBOOK_CELL_H}`}
-              className="h-[58px] sm:h-[64px] w-auto mx-auto block select-none"
+              className="h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -981,7 +987,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           return (
             <svg
               viewBox={`0 0 ${viewW} ${SCOREBOOK_CELL_H}`}
-              className="h-[58px] sm:h-[64px] w-auto mx-auto block select-none"
+              className="h-[55px] sm:h-[60px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
@@ -1015,15 +1021,16 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               pitches: ["bunt_foul", "bunt_swinging", "ball"],
             },
           });
-          const viewW = 72;
+          const viewW = 74;
+          const viewH = 52;
           return (
             <svg
-              viewBox={`0 0 ${viewW} 46`}
-              className="h-[54px] sm:h-[58px] w-auto mx-auto block select-none"
+              viewBox={`0 0 ${viewW} ${viewH}`}
+              className="h-[52px] sm:h-[56px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
-              <svg x={0} y={0} width={19} height={46} viewBox="0 0 19 46">
+              <svg x={0} y={0} width={19} height={viewH} viewBox={`0 0 19 ${viewH}`}>
                 {renderSingleScorebookCellSvg(
                   buntPitchCell,
                   previewRules,
@@ -1031,37 +1038,43 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
                   0
                 )}
               </svg>
-              <rect x={19} y={0} width={viewW - 19} height={46} fill={PAPER_BG} />
+              <rect
+                x={19}
+                y={0}
+                width={viewW - 19}
+                height={viewH}
+                fill={PAPER_BG}
+              />
               <line
                 x1={19}
                 y1={0}
                 x2={19}
-                y2={46}
+                y2={viewH}
                 stroke={COLOR_GRID}
                 strokeWidth={0.85}
               />
               <text
-                x={23}
-                y={11}
-                fontSize={6.8}
+                x={22.5}
+                y={12.8}
+                fontSize={7.2}
                 fontWeight={900}
                 fill={COLOR_MUTED}
               >
                 ←Bファウル
               </text>
               <text
-                x={23}
-                y={18.5}
-                fontSize={6.8}
+                x={22.5}
+                y={21.6}
+                fontSize={7.2}
                 fontWeight={900}
                 fill={COLOR_MUTED}
               >
                 ←B空振り
               </text>
               <text
-                x={23}
-                y={26}
-                fontSize={6.5}
+                x={22.5}
+                y={30.4}
+                fontSize={7.0}
                 fontWeight={800}
                 fill="#94a3b8"
               >
@@ -1071,7 +1084,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
                 x={0.45}
                 y={0.45}
                 width={viewW - 0.9}
-                height={45.1}
+                height={viewH - 0.9}
                 fill="none"
                 stroke={COLOR_GRID}
                 strokeWidth={0.9}
@@ -1087,31 +1100,38 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               pitches: ["pickoff_1b", "pickoff_2b", "pickoff_3b", "strike"],
             },
           });
-          const viewW = 68;
+          const viewW = 70;
+          const viewH = 52;
           return (
             <svg
-              viewBox={`0 0 ${viewW} 46`}
-              className="h-[54px] sm:h-[58px] w-auto mx-auto block select-none"
+              viewBox={`0 0 ${viewW} ${viewH}`}
+              className="h-[52px] sm:h-[56px] w-auto max-w-full mx-auto block select-none"
               style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
               aria-hidden="true"
             >
-              <svg x={0} y={0} width={19} height={46} viewBox="0 0 19 46">
+              <svg x={0} y={0} width={19} height={viewH} viewBox={`0 0 19 ${viewH}`}>
                 {renderSingleScorebookCellSvg(pickoffCell, previewRules, 0, 0)}
               </svg>
-              <rect x={19} y={0} width={viewW - 19} height={46} fill={PAPER_BG} />
+              <rect
+                x={19}
+                y={0}
+                width={viewW - 19}
+                height={viewH}
+                fill={PAPER_BG}
+              />
               <line
                 x1={19}
                 y1={0}
                 x2={19}
-                y2={46}
+                y2={viewH}
                 stroke={COLOR_GRID}
                 strokeWidth={0.85}
               />
               {previewRules.pickoffMark === "hidden" ? (
                 <text
                   x={22}
-                  y={24}
-                  fontSize={6.8}
+                  y={27}
+                  fontSize={7.4}
                   fontWeight={900}
                   fill={COLOR_MUTED}
                 >
@@ -1120,27 +1140,27 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
               ) : (
                 <>
                   <text
-                    x={23}
-                    y={11}
-                    fontSize={6.8}
+                    x={22.5}
+                    y={12.8}
+                    fontSize={7.2}
                     fontWeight={900}
                     fill={COLOR_MUTED}
                   >
                     ←1塁牽制
                   </text>
                   <text
-                    x={23}
-                    y={18.2}
-                    fontSize={6.8}
+                    x={22.5}
+                    y={21.6}
+                    fontSize={7.2}
                     fontWeight={900}
                     fill={COLOR_MUTED}
                   >
                     ←2塁牽制
                   </text>
                   <text
-                    x={23}
-                    y={25.4}
-                    fontSize={6.8}
+                    x={22.5}
+                    y={30.4}
+                    fontSize={7.2}
                     fontWeight={900}
                     fill={COLOR_MUTED}
                   >
@@ -1152,7 +1172,7 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
                 x={0.45}
                 y={0.45}
                 width={viewW - 0.9}
-                height={45.1}
+                height={viewH - 0.9}
                 fill="none"
                 stroke={COLOR_GRID}
                 strokeWidth={0.9}
@@ -1164,7 +1184,6 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
         case "advanceError": {
           const errSegs = makeEmptySegments();
           errSegs[1] = makeSegment(1, "safe", "error");
-          errSegs[2] = makeSegment(2, "safe", "wp");
           const errCell = makeSampleCell("opt-adv-err", {
             segments: errSegs,
             atBatSeed: {
@@ -1174,99 +1193,27 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
             },
           });
 
-          const fcStealSegs = makeEmptySegments();
-          fcStealSegs[1] = makeSegment(1, "safe", "fc");
-          fcStealSegs[2] = makeSegment(2, "safe", "steal");
-          const fcStealCell = makeSampleCell("opt-adv-fc", {
-            segments: fcStealSegs,
-            stealPitchIndices: [0],
+          const fcSegs = makeEmptySegments();
+          fcSegs[1] = makeSegment(1, "safe", "fc");
+          const fcCell = makeSampleCell("opt-adv-fc", {
+            segments: fcSegs,
             atBatSeed: {
               resultCode: "fc",
+              resultLabel: "二野選",
               battedDirection: "4",
-              pitches: ["strike"],
             },
           });
 
-          const captionH = 13;
-          const totalW = DIAMOND_CROP_W + SCOREBOOK_CELL_W;
-          const totalH = SCOREBOOK_CELL_H + captionH;
+          const stealSegs = makeEmptySegments();
+          stealSegs[2] = makeSegment(2, "safe", "steal");
+          const stealCell = makeSampleCell("opt-adv-steal", {
+            segments: stealSegs,
+          });
 
-          return (
-            <svg
-              viewBox={`0 0 ${totalW} ${totalH}`}
-              className="w-full h-auto block select-none"
-              style={{ fontFamily: FONT_SANS, backgroundColor: PAPER_BG }}
-              aria-hidden="true"
-            >
-              <rect x={0} y={0} width={totalW} height={totalH} fill={PAPER_BG} />
-              <rect
-                x={0}
-                y={0}
-                width={totalW}
-                height={captionH}
-                fill={HEADER_BG}
-              />
-              <text
-                x={DIAMOND_CROP_W / 2}
-                y={9.5}
-                fontSize={7.0}
-                fontWeight={900}
-                textAnchor="middle"
-                fill={COLOR_MUTED}
-              >
-                失策・暴投
-              </text>
-              <text
-                x={DIAMOND_CROP_W + SCOREBOOK_CELL_W / 2}
-                y={9.5}
-                fontSize={7.0}
-                fontWeight={900}
-                textAnchor="middle"
-                fill={COLOR_MUTED}
-              >
-                野選・盗塁
-              </text>
-              <svg
-                x={0}
-                y={captionH}
-                width={DIAMOND_CROP_W}
-                height={SCOREBOOK_CELL_H}
-                viewBox={`${DIAMOND_CROP_X} 0 ${DIAMOND_CROP_W} ${SCOREBOOK_CELL_H}`}
-              >
-                {renderSingleScorebookCellSvg(errCell, previewRules, 0, 0)}
-              </svg>
-              {renderSingleScorebookCellSvg(
-                fcStealCell,
-                previewRules,
-                DIAMOND_CROP_W,
-                captionH
-              )}
-              <line
-                x1={DIAMOND_CROP_W}
-                y1={0}
-                x2={DIAMOND_CROP_W}
-                y2={totalH}
-                stroke={COLOR_GRID}
-                strokeWidth={0.95}
-              />
-              <line
-                x1={0}
-                y1={captionH}
-                x2={totalW}
-                y2={captionH}
-                stroke={COLOR_GRID}
-                strokeWidth={0.85}
-              />
-              <rect
-                x={0.45}
-                y={0.45}
-                width={totalW - 0.9}
-                height={totalH - 0.9}
-                fill="none"
-                stroke={COLOR_GRID}
-                strokeWidth={0.9}
-              />
-            </svg>
+          return renderDiamondStripSvg(
+            [errCell, fcCell, stealCell],
+            previewRules,
+            ["捕球失策", "野選", "盗塁"]
           );
         }
 

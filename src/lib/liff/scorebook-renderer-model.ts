@@ -290,6 +290,11 @@ function applyRunnerStepSegments(
   const endLv = baseToLevel(toBase);
   if (endLv <= startLv) return;
 
+  const suppressBatterSamePlayDup =
+    fromBase === "BAT" &&
+    !isOut &&
+    (options.method === "error" || options.method === "fc");
+
   for (let lv = startLv + 1; lv <= endLv; lv++) {
     const segIdx = lv as BaseSegmentIndex;
     const isFinalStep = lv === endLv;
@@ -304,6 +309,8 @@ function applyRunnerStepSegments(
       isForceOut: isFinalStep ? options.isForceOut : undefined,
       throwChain: isFinalStep ? options.throwChain : undefined,
       isDoubleSteal: isFinalStep ? options.isDoubleSteal : undefined,
+      customLabelOverride:
+        !isFinalStep || suppressBatterSamePlayDup ? "" : undefined,
     };
   }
 }

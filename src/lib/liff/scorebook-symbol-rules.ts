@@ -1733,7 +1733,7 @@ export function formatAtBatPlayNotation(
     };
   }
 
-  // 8. 野手選択 (FC)
+  // 8. 野手選択 (FC) — 2個表記や極小2段添字を廃止し、1箇所に明瞭な単一行表記（例: 4FC / FC / 野）で統一
   if (rc === "fc") {
     if (/^[1-9]-$/.test(dir)) {
       return {
@@ -1743,19 +1743,17 @@ export function formatAtBatPlayNotation(
       };
     }
     const chain = inferFielderToken(dir, label, "");
-    if (rules.advanceError === "senior_chart") {
-      return {
-        mainText: chain ? `${chain}FC` : "FC",
-        decorator: "none",
-        isRedInk: false,
-      };
-    }
-    const fcTag = rules.advanceError === "kanji" ? "野" : "FC";
-    const fcMain = chain || fcTag;
+    const fcMain =
+      rules.advanceError === "senior_chart"
+        ? chain
+          ? `${chain}FC`
+          : "FC"
+        : rules.advanceError === "kanji"
+        ? "野"
+        : "FC";
     return {
       mainText:
         isBuntPlay && rules.buntMark === "b_prefix" ? `B${fcMain}` : fcMain,
-      subText: chain ? fcTag : undefined,
       decorator:
         isBuntPlay && rules.buntMark === "square_all_bh"
           ? "sac_square"
