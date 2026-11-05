@@ -134,6 +134,58 @@ export interface LiffMatchOpsContextResponse {
   scheduleSync: LiffMatchScheduleSyncInfo | null;
 }
 
+export const DEMO_SCHEDULED_MATCH_CARPOOL_SYNC: LiffMatchScheduleSyncInfo = {
+  eventId: "demo-event-3",
+  title: "秋季大会 2回戦 vs レッドソックス",
+  dutyGroup: "B班（鈴木・佐藤・高橋）",
+  needsLunch: true,
+  needsSnack: true,
+  gatherTime: "07:45",
+  gatherLocation: "桜本小学校 正門前",
+  destination: "多摩川緑地野球場 第1駐車場",
+  cars: [
+    {
+      carNumber: 1,
+      driverName: "鈴木 パパ",
+      carModel: "セレナ (白)",
+      plate: "・12-34",
+      capacity: 6,
+      isCargo: false,
+      passengers: [
+        { name: "鈴木 蓮 (選手)", type: "player" },
+        { name: "高橋 陸 (選手)", type: "player" },
+        { name: "田中 健太 (選手)", type: "player" },
+        { name: "佐藤 ママ (保護者)", type: "adult" },
+      ],
+    },
+    {
+      carNumber: 2,
+      driverName: "田中 パパ",
+      carModel: "アルファード (黒)",
+      plate: "・・88",
+      capacity: 5,
+      isCargo: false,
+      passengers: [
+        { name: "渡辺 陽向 (選手)", type: "player" },
+        { name: "山本 大翔 (選手)", type: "player" },
+        { name: "渡辺 パパ (指導者)", type: "adult" },
+      ],
+    },
+    {
+      carNumber: 3,
+      driverName: "山下 監督",
+      carModel: "ハイエース (道具車)",
+      plate: "・56-78",
+      capacity: 3,
+      isCargo: true,
+      passengers: [
+        { name: "中村 颯 (選手)", type: "player" },
+        { name: "小林 樹 (選手)", type: "player" },
+      ],
+    },
+  ],
+};
+
 const VALID_MEAL_OPTIONS = new Set<MatchMealOption>([
   "none",
   "lunch_and_snack",

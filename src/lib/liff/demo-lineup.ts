@@ -1,6 +1,10 @@
 // filepath: src/lib/liff/demo-lineup.ts
 import type { Match, MatchDayOps } from "@/types/match";
 import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
+import {
+  DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
+  type LiffMatchScheduleSyncInfo,
+} from "@/lib/liff/match-day-ops";
 
 export interface LineupPositionDef {
   id: string;
@@ -116,6 +120,7 @@ export interface DemoMatchCardItem {
   youtubeUrl?: string | null;
   venueName?: string | null;
   venueShortName?: string | null;
+  venueParkingInfo?: string | null;
   surfaceDetails?: string | null;
   tournamentName?: string | null;
   battingOrder?: "first" | "second";
@@ -125,6 +130,7 @@ export interface DemoMatchCardItem {
   hasLineup?: boolean;
   hasScorebook?: boolean;
   matchDayOps?: MatchDayOps | null;
+  scheduleSync?: LiffMatchScheduleSyncInfo | null;
 }
 
 export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
@@ -306,12 +312,14 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     battingOrder: "first",
     venueName: "多摩川緑地野球場 (1面)",
     venueShortName: "多摩川緑地",
+    venueParkingInfo: "河川敷駐車場利用（可能な限り乗り合い必須）",
     innings: 7,
     myInningScores: [],
     opponentInningScores: [],
     hasLineup: false,
     hasScorebook: false,
     matchDayOps: DEMO_MATCH_MAP["demo-match-3"]?.matchDayOps ?? null,
+    scheduleSync: DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
   },
   {
     id: "demo-match-1",

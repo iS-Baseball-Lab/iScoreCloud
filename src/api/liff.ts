@@ -35,6 +35,7 @@ import {
 } from "@/db/schema";
 import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
 import {
+  DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
   parseMatchDayOpsJson,
   type LiffAdultMemberOption,
   type LiffMatchOpsContextResponse,
@@ -509,6 +510,249 @@ async function ensureLineAccountLink(
   }
 }
 
+const extractMatchDateKey = (raw: string | null | undefined): string => {
+  if (!raw) return "";
+  const m = raw.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (!m) return "";
+  return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+};
+
+const toEventJstDateKey = (
+  val: Date | number | string | null | undefined
+): string => {
+  if (!val) return "";
+  const ms =
+    val instanceof Date
+      ? val.getTime()
+      : typeof val === "number"
+        ? val
+        : new Date(val).getTime();
+  if (!Number.isFinite(ms)) return "";
+  const jst = new Date(ms + 9 * 3600 * 1000);
+  return jst.toISOString().slice(0, 10);
+};
+
+const toEventJstTimeText = (
+  val: Date | number | string | null | undefined
+): string | null => {
+  if (!val) return null;
+  const ms =
+    val instanceof Date
+      ? val.getTime()
+      : typeof val === "number"
+        ? val
+        : new Date(val).getTime();
+  if (!Number.isFinite(ms)) return null;
+  const jst = new Date(ms + 9 * 3600 * 1000);
+  const hh = String(jst.getUTCHours()).padStart(2, "0");
+  const mi = String(jst.getUTCMinutes()).padStart(2, "0");
+  if (hh === "00" && mi === "00") return null;
+  return `${hh}:${mi}`;
+};
+
+/**
+ * 🚗 予定試合（scheduled 等）のカード向けに、同日スケジュール・配車情報を N+1 ゼロで一括解決する
+ */
+async function buildScheduledMatchCarpoolSyncMap(
+  db: ReturnType<typeof drizzle>,
+  teamId: string,
+  matchRows: ReadonlyArray<{
+    id: string;
+    date: string | null;
+    status: string | null;
+    matchDayOps?: unknown;
+  }>,
+  preloadedEvents?: ReadonlyArray<typeof events.$inferSelect>
+): Promise<Map<string, LiffMatchScheduleSyncInfo>> {
+  const result = new Map<string, LiffMatchScheduleSyncInfo>();
+  const candidateMatches = matchRows.filter(
+    (m) => m.status !== "finished" && m.status !== "live"
+  );
+  if (candidateMatches.length === 0) {
+    return result;
+  }
+
+  const teamEvents =
+    preloadedEvents ??
+    (await db
+      .select()
+      .from(events)
+      .where(eq(events.teamId, teamId))
+      .orderBy(desc(events.startAt))
+      .all()
+      .catch(() => [] as Array<typeof events.$inferSelect>));
+
+  if (teamEvents.length === 0) {
+    return result;
+  }
+
+  const eventIdByMatchId = new Map<string, string>();
+  const targetEventMap = new Map<string, (typeof teamEvents)[number]>();
+
+  for (const m of candidateMatches) {
+    const ops = parseMatchDayOpsJson(m.matchDayOps);
+    if (ops.carpoolMode === "none") continue;
+
+    let targetEvent: (typeof teamEvents)[number] | undefined;
+    if (ops.linkedEventId) {
+      targetEvent = teamEvents.find((ev) => ev.id === ops.linkedEventId);
+    }
+    if (!targetEvent) {
+      const dateKey = extractMatchDateKey(m.date);
+      if (dateKey) {
+        const sameDay = teamEvents.filter(
+          (ev) => toEventJstDateKey(ev.startAt) === dateKey
+        );
+        targetEvent =
+          sameDay.find(
+            (ev) => ev.eventType === "match" || ev.amType === "match"
+          ) || sameDay[0];
+      }
+    }
+
+    if (targetEvent) {
+      eventIdByMatchId.set(m.id, targetEvent.id);
+      targetEventMap.set(targetEvent.id, targetEvent);
+    }
+  }
+
+  const targetEventIds = Array.from(targetEventMap.keys());
+  if (targetEventIds.length === 0) {
+    return result;
+  }
+
+  const eventIdChunks: string[][] = [];
+  for (let i = 0; i < targetEventIds.length; i += 80) {
+    eventIdChunks.push(targetEventIds.slice(i, i + 80));
+  }
+
+  const carpoolChunkResults = await Promise.all(
+    eventIdChunks.map((chunk) =>
+      db
+        .select({
+          id: eventCarpools.id,
+          eventId: eventCarpools.eventId,
+          driverName: teamMembers.name,
+          capacity: eventCarpools.capacity,
+          carType: eventCarpools.carType,
+          carName: memberCars.name,
+          carColor: memberCars.color,
+          numberPlate: memberCars.numberPlate,
+        })
+        .from(eventCarpools)
+        .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
+        .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
+        .where(inArray(eventCarpools.eventId, chunk))
+        .all()
+    )
+  );
+  const allCarpools = carpoolChunkResults.flat();
+
+  const carpoolIds = allCarpools.map((c) => c.id);
+  const carpoolIdChunks: string[][] = [];
+  for (let i = 0; i < carpoolIds.length; i += 80) {
+    carpoolIdChunks.push(carpoolIds.slice(i, i + 80));
+  }
+
+  const riderChunkResults =
+    carpoolIdChunks.length > 0
+      ? await Promise.all(
+          carpoolIdChunks.map((chunk) =>
+            db
+              .select({
+                carpoolId: eventCarpoolRiders.carpoolId,
+                riderPlayerName: players.name,
+                riderMemberName: teamMembers.name,
+                riderMemberType: teamMembers.memberType,
+              })
+              .from(eventCarpoolRiders)
+              .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
+              .leftJoin(
+                teamMembers,
+                eq(eventCarpoolRiders.memberId, teamMembers.id)
+              )
+              .where(inArray(eventCarpoolRiders.carpoolId, chunk))
+              .all()
+          )
+        )
+      : [];
+  const allRiders = riderChunkResults.flat();
+
+  const ridersByCarpoolId = new Map<string, typeof allRiders>();
+  for (const r of allRiders) {
+    if (!r.carpoolId) continue;
+    const list = ridersByCarpoolId.get(r.carpoolId) || [];
+    list.push(r);
+    ridersByCarpoolId.set(r.carpoolId, list);
+  }
+
+  const carpoolsByEventId = new Map<string, typeof allCarpools>();
+  for (const car of allCarpools) {
+    if (!car.eventId) continue;
+    const list = carpoolsByEventId.get(car.eventId) || [];
+    list.push(car);
+    carpoolsByEventId.set(car.eventId, list);
+  }
+
+  const syncByEventId = new Map<string, LiffMatchScheduleSyncInfo>();
+  for (const [evId, targetEvent] of targetEventMap.entries()) {
+    const carpoolsList = carpoolsByEventId.get(evId) || [];
+    const cars: LiffMatchScheduleCarpoolCar[] = carpoolsList.map(
+      (car, index) => {
+        const riders = ridersByCarpoolId.get(car.id) || [];
+        const passengers = riders.map((r) => {
+          if (r.riderPlayerName) {
+            return {
+              name: `${r.riderPlayerName} (選手)`,
+              type: "player" as const,
+            };
+          }
+          return {
+            name: `${r.riderMemberName || "メンバー"} (${
+              r.riderMemberType === "staff" ? "指導者" : "保護者"
+            })`,
+            type: "adult" as const,
+          };
+        });
+
+        return {
+          carNumber: index + 1,
+          driverName: car.driverName || "ドライバー",
+          carModel: car.carName
+            ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}`
+            : "登録車",
+          plate: car.numberPlate || "未登録",
+          capacity: car.capacity || 4,
+          isCargo: car.carType === "cargo",
+          passengers,
+        };
+      }
+    );
+
+    const gatherTimeRaw = toEventJstTimeText(targetEvent.startAt);
+    syncByEventId.set(evId, {
+      eventId: targetEvent.id,
+      title: targetEvent.title,
+      dutyGroup: targetEvent.dutyGroup || null,
+      needsLunch: toBoolean(targetEvent.needsLunch, false),
+      needsSnack: toBoolean(targetEvent.needsSnack, false),
+      gatherTime: gatherTimeRaw ? `${gatherTimeRaw}頃` : null,
+      gatherLocation: targetEvent.location || null,
+      destination: targetEvent.location || null,
+      cars,
+    });
+  }
+
+  for (const [matchId, evId] of eventIdByMatchId.entries()) {
+    const sync = syncByEventId.get(evId);
+    if (sync) {
+      result.set(matchId, sync);
+    }
+  }
+
+  return result;
+}
+
 /**
  * デモチーム（体験用サンプルデータ）
  */
@@ -602,6 +846,7 @@ const DEMO_MATCHES = [
     battingOrder: "first" as const,
     venueName: "多摩川緑地野球場 (1面)",
     venueShortName: "多摩川緑地",
+    venueParkingInfo: "河川敷駐車場利用（可能な限り乗り合い必須）",
     innings: 7,
     myInningScores: [],
     opponentInningScores: [],
@@ -621,6 +866,7 @@ const DEMO_MATCHES = [
         { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
       ],
     },
+    scheduleSync: DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
   },
 ];
 
@@ -1133,6 +1379,7 @@ app.get("/hub", async (c) => {
           tournamentId: matches.tournamentId,
           venueName: venues.name,
           venueShortName: venues.shortName,
+          venueParkingInfo: venues.parkingInfo,
           surfaceDetails: matches.surfaceDetails,
           battingOrder: matches.battingOrder,
           innings: matches.innings,
@@ -1180,8 +1427,8 @@ app.get("/hub", async (c) => {
 
     const hubMatchIds = matchesList.map((m) => m.id);
 
-    // ⚡ 出欠ステータス取得と at_bats 存在確認（selectDistinct で最大10行のみ転送）を並列取得
-    const [atts, abRows] = await Promise.all([
+    // ⚡ 出欠ステータス取得・at_bats 存在確認・予定試合の配車連携を完全並列取得
+    const [atts, abRows, hubScheduleSyncMap] = await Promise.all([
       attConditions.length > 0
         ? db
             .select({
@@ -1199,6 +1446,7 @@ app.get("/hub", async (c) => {
             .where(inArray(atBats.matchId, hubMatchIds))
             .all()
         : Promise.resolve([]),
+      buildScheduledMatchCarpoolSyncMap(db, teamId, matchesList, allEventsList),
     ]);
 
     for (const a of atts) {
@@ -1313,6 +1561,7 @@ app.get("/hub", async (c) => {
         myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
         opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
         matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
+        scheduleSync: hubScheduleSyncMap.get(m.id) || null,
       };
     });
 
@@ -1412,6 +1661,7 @@ app.get("/matches", async (c) => {
         tournamentId: matches.tournamentId,
         venueName: venues.name,
         venueShortName: venues.shortName,
+        venueParkingInfo: venues.parkingInfo,
         surfaceDetails: matches.surfaceDetails,
         battingOrder: matches.battingOrder,
         innings: matches.innings,
@@ -1437,15 +1687,18 @@ app.get("/matches", async (c) => {
     for (let i = 0; i < listMatchIds.length; i += 80) {
       chunks.push(listMatchIds.slice(i, i + 80));
     }
-    const chunkResults = await Promise.all(
-      chunks.map((chunk) =>
-        db
-          .selectDistinct({ matchId: atBats.matchId })
-          .from(atBats)
-          .where(inArray(atBats.matchId, chunk))
-          .all()
-      )
-    );
+    const [chunkResults, listScheduleSyncMap] = await Promise.all([
+      Promise.all(
+        chunks.map((chunk) =>
+          db
+            .selectDistinct({ matchId: atBats.matchId })
+            .from(atBats)
+            .where(inArray(atBats.matchId, chunk))
+            .all()
+        )
+      ),
+      buildScheduledMatchCarpoolSyncMap(db, teamId, rawMatches),
+    ]);
     for (const abRows of chunkResults) {
       for (const ab of abRows) {
         if (ab.matchId) listScorebookIds.add(ab.matchId);
@@ -1488,6 +1741,7 @@ app.get("/matches", async (c) => {
         myInningScores: myInnings,
         opponentInningScores: opponentInnings,
         matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
+        scheduleSync: listScheduleSyncMap.get(m.id) || null,
       };
     });
 
@@ -3526,57 +3780,7 @@ app.get("/match-ops-context", async (c) => {
     const isDemoScheduledMatch = !targetDateKey || targetDateKey === "2026-11-08";
 
     const demoScheduleSync: LiffMatchScheduleSyncInfo | null = isDemoScheduledMatch
-      ? {
-          eventId: "demo-event-3",
-          title: "秋季大会 2回戦 vs レッドソックス",
-          dutyGroup: "B班（鈴木・佐藤・高橋）",
-          needsLunch: true,
-          needsSnack: true,
-          gatherTime: "07:45",
-          gatherLocation: "桜本小学校 正門前",
-          destination: "多摩川緑地野球場 第1駐車場",
-          cars: [
-            {
-              carNumber: 1,
-              driverName: "鈴木 パパ",
-              carModel: "セレナ (白)",
-              plate: "・12-34",
-              capacity: 6,
-              isCargo: false,
-              passengers: [
-                { name: "鈴木 蓮 (選手)", type: "player" },
-                { name: "高橋 陸 (選手)", type: "player" },
-                { name: "田中 健太 (選手)", type: "player" },
-                { name: "佐藤 ママ (保護者)", type: "adult" },
-              ],
-            },
-            {
-              carNumber: 2,
-              driverName: "田中 パパ",
-              carModel: "アルファード (黒)",
-              plate: "・・88",
-              capacity: 5,
-              isCargo: false,
-              passengers: [
-                { name: "渡辺 陽向 (選手)", type: "player" },
-                { name: "山本 大翔 (選手)", type: "player" },
-                { name: "渡辺 パパ (指導者)", type: "adult" },
-              ],
-            },
-            {
-              carNumber: 3,
-              driverName: "山下 監督",
-              carModel: "ハイエース (道具車)",
-              plate: "・56-78",
-              capacity: 3,
-              isCargo: true,
-              passengers: [
-                { name: "中村 颯 (選手)", type: "player" },
-                { name: "小林 樹 (選手)", type: "player" },
-              ],
-            },
-          ],
-        }
+      ? DEMO_SCHEDULED_MATCH_CARPOOL_SYNC
       : null;
 
     const demoDisplayName =
@@ -6317,6 +6521,7 @@ app.get("/matches", async (c) => {
         tournamentName: tournaments.name,
         venueName: venues.name,
         venueShortName: venues.shortName,
+        venueParkingInfo: venues.parkingInfo,
         surfaceDetails: matches.surfaceDetails,
         battingOrder: matches.battingOrder,
         innings: matches.innings,
@@ -6335,11 +6540,18 @@ app.get("/matches", async (c) => {
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .all();
 
+    const secondScheduleSyncMap = await buildScheduledMatchCarpoolSyncMap(
+      db,
+      teamId,
+      matchesList
+    );
+
     const formattedMatches = matchesList.map(({ matchDayOps: rawMatchDayOps, ...m }) => ({
       ...m,
       myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
       opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
       matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
+      scheduleSync: secondScheduleSyncMap.get(m.id) || null,
     }));
 
     return c.json({
