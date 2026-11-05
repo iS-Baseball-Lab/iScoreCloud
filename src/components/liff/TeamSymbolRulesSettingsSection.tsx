@@ -1,7 +1,7 @@
 // filepath: src/components/liff/TeamSymbolRulesSettingsSection.tsx
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
   FileSpreadsheet,
@@ -9,6 +9,7 @@ import {
   Printer,
   Sparkles,
   Wand2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import {
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
 import { ScorebookSymbolSamplePreview } from "@/components/liff/DigitalScorebookSheet";
+import { ScorebookRuleOptionMiniPreview } from "@/components/liff/ScorebookRuleOptionMiniPreview";
 
 interface SaveSymbolRulesApiResponse {
   success: boolean;
@@ -65,25 +67,49 @@ export function TeamSymbolRulesSettingsSection({
   const [lastAiSummary, setLastAiSummary] = useState<string | null>(null);
   const [hasSavedCloud, setHasSavedCloud] = useState(false);
 
-  const hydratedRef = useRef(false);
+  const effectiveTeamKey = isDemo ? "demo-team" : (teamId || "").trim();
 
   useEffect(() => {
-    const cached = loadCachedTeamSymbolRules();
-    if (cached && !hydratedRef.current) {
-      setRules(cached);
-      onRulesChange?.(cached);
+    setLastAiSummary(null);
+  }, [effectiveTeamKey]);
+
+  useEffect(() => {
+    if (isLoadingTeam) {
+      const cached = loadCachedTeamSymbolRules(effectiveTeamKey);
+      const next = cached ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES;
+      setRules(next);
+      setHasSavedCloud(Boolean(cached));
+      onRulesChange?.(next);
+      return;
     }
-  }, [onRulesChange]);
 
-  useEffect(() => {
     if (initialCloudRules) {
-      hydratedRef.current = true;
-      setRules(initialCloudRules);
+      const sanitized = sanitizeScorebookSymbolRules(
+        initialCloudRules,
+        DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+      );
+      setRules(sanitized);
       setHasSavedCloud(true);
-      saveCachedTeamSymbolRules(initialCloudRules);
-      onRulesChange?.(initialCloudRules);
+      saveCachedTeamSymbolRules(sanitized, effectiveTeamKey);
+      onRulesChange?.(sanitized);
+      return;
     }
-  }, [initialCloudRules, onRulesChange]);
+
+    if (isDemo || !effectiveTeamKey) {
+      const demoCached = loadCachedTeamSymbolRules("demo-team");
+      const next = demoCached ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES;
+      setRules(next);
+      setHasSavedCloud(Boolean(demoCached));
+      onRulesChange?.(next);
+      return;
+    }
+
+    // 切替先チームにまだクラウド保存ルールがない場合は、前チームの値・補足メモを残さず初期値へ完全リセット
+    setRules(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
+    setHasSavedCloud(false);
+    saveCachedTeamSymbolRules(null, effectiveTeamKey);
+    onRulesChange?.(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
+  }, [effectiveTeamKey, initialCloudRules, isDemo, isLoadingTeam, onRulesChange]);
 
   const persistRules = useCallback(
     async (
@@ -95,7 +121,7 @@ export function TeamSymbolRulesSettingsSection({
         DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
       );
       setRules(sanitized);
-      saveCachedTeamSymbolRules(sanitized);
+      saveCachedTeamSymbolRules(sanitized, effectiveTeamKey);
       onRulesChange?.(sanitized);
 
       if (isDemo || !teamId) {
@@ -132,7 +158,7 @@ export function TeamSymbolRulesSettingsSection({
         setIsSaving(false);
       }
     },
-    [isDemo, teamId, onRulesChange]
+    [effectiveTeamKey, isDemo, teamId, onRulesChange]
   );
 
   const handleFieldSelect = <K extends keyof ScorebookSymbolRules>(
@@ -181,10 +207,14 @@ export function TeamSymbolRulesSettingsSection({
         );
       }
 
-      setRules(json.scorebookSymbolRules);
+      const sanitizedAi = sanitizeScorebookSymbolRules(
+        json.scorebookSymbolRules,
+        DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+      );
+      setRules(sanitizedAi);
       setHasSavedCloud(true);
-      saveCachedTeamSymbolRules(json.scorebookSymbolRules);
-      onRulesChange?.(json.scorebookSymbolRules);
+      saveCachedTeamSymbolRules(sanitizedAi, effectiveTeamKey);
+      onRulesChange?.(sanitizedAi);
       if (json.summary) {
         setLastAiSummary(json.summary);
       }
@@ -431,20 +461,20 @@ export function TeamSymbolRulesSettingsSection({
           </div>
         </div>
 
-        {/* 3. 各記号の詳細カスタマイズ */}
-        <div className="space-y-3 pt-1 border-t border-border">
+        {/* 3. 各記号の詳細カスタマイズ（全選択肢にリアル清書マス見本プレビュー付き） */}
+        <div className="space-y-4 pt-2 border-t border-border">
           {fieldSections.map((sec) => {
             const currentVal = rules[sec.key];
             const gridClass =
-              sec.options.length === 2 || sec.options.length >= 4
-                ? "grid-cols-2"
-                : "grid-cols-3";
+              sec.key === "lineupStyle"
+                ? "grid-cols-1 sm:grid-cols-2"
+                : "grid-cols-2";
             return (
-              <div key={sec.key} className="space-y-1.5">
-                <label className="text-[11px] font-black text-foreground block">
+              <div key={sec.key} className="space-y-2">
+                <label className="text-xs font-black text-foreground block">
                   {sec.title}
                 </label>
-                <div className={cn("grid gap-1.5", gridClass)}>
+                <div className={cn("grid gap-2", gridClass)}>
                   {sec.options.map((opt) => {
                     const isActive = currentVal === opt.value;
                     return (
@@ -459,23 +489,42 @@ export function TeamSymbolRulesSettingsSection({
                           )
                         }
                         className={cn(
-                          "py-2 px-2 rounded-xl border text-left transition-all active:scale-95 cursor-pointer",
+                          "p-2 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer flex flex-col gap-1.5",
                           isActive
-                            ? "bg-primary/12 text-primary border-primary shadow-2xs"
-                            : "bg-muted/50 border-border text-foreground hover:bg-muted"
+                            ? "bg-primary/12 text-primary border-primary ring-1 ring-primary/35 shadow-2xs"
+                            : "bg-muted/40 border-border text-foreground hover:bg-muted/70"
                         )}
                       >
-                        <p className="text-[11px] font-black leading-tight truncate">
-                          {opt.label}
-                        </p>
-                        <p
-                          className={cn(
-                            "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
-                            isActive ? "text-primary/80" : "text-muted-foreground"
-                          )}
-                        >
-                          {opt.sample}
-                        </p>
+                        <ScorebookRuleOptionMiniPreview
+                          fieldKey={sec.key}
+                          optionValue={opt.value}
+                          baseRules={rules}
+                          className={
+                            isActive
+                              ? "border-primary/45"
+                              : "border-slate-300/90"
+                          }
+                        />
+                        <div className="w-full min-w-0 px-0.5">
+                          <div className="flex items-start justify-between gap-1">
+                            <p className="text-[11px] font-black leading-snug">
+                              {opt.label}
+                            </p>
+                            {isActive && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
+                            )}
+                          </div>
+                          <p
+                            className={cn(
+                              "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
+                              isActive
+                                ? "text-primary/85"
+                                : "text-muted-foreground"
+                            )}
+                          >
+                            {opt.sample}
+                          </p>
+                        </div>
                       </button>
                     );
                   })}
@@ -490,16 +539,37 @@ export function TeamSymbolRulesSettingsSection({
               チーム独自ルール補足メモ（任意・シート上部に印字）
             </label>
             <div className="flex gap-2">
-              <input
-                type="text"
-                maxLength={80}
-                value={rules.customNote || ""}
-                onChange={(e) =>
-                  setRules((prev) => ({ ...prev, customNote: e.target.value }))
-                }
-                placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
-                className="flex-1 h-10 px-3 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
-              />
+              <div className="relative flex-1 min-w-0">
+                <input
+                  type="text"
+                  maxLength={80}
+                  value={rules.customNote || ""}
+                  onChange={(e) =>
+                    setRules((prev) => ({
+                      ...prev,
+                      customNote: e.target.value,
+                    }))
+                  }
+                  placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
+                  className="w-full h-10 pl-3 pr-8 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
+                />
+                {Boolean(rules.customNote) && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() =>
+                      void persistRules(
+                        { ...rules, customNote: "" },
+                        "補足メモのクリア"
+                      )
+                    }
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                    aria-label="補足メモを消去"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <button
                 type="button"
                 disabled={isSaving}

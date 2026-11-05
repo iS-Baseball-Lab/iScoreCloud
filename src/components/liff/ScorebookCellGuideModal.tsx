@@ -80,7 +80,8 @@ export function ScorebookSingleCellThumbnail({
         rules,
         leftPad,
         0,
-        hasUpperRightSubMark
+        hasUpperRightSubMark,
+        true
       )}
       {renderCellSubstitutionsOverlaySvg(cellForOverlay, rules, leftPad, 0, 0)}
     </svg>

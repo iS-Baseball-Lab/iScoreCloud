@@ -53,7 +53,7 @@ export function CreateOrgModal({ isOpen, onOpenChange, isCreating, isExternalOrg
             {/* 🔥 究極UI: フォームの半透明化 */}
             <div className="space-y-3">
               <label className="text-base font-black text-foreground/90 pl-1 flex items-center gap-2 drop-shadow-sm"><Building2 className="h-4 w-4 text-primary" />{isExternalOrgCreate ? "対戦相手のチーム名" : "チーム名"}</label>
-              <input type="text" required placeholder={isExternalOrgCreate ? "例: 世田谷西シニア" : "例: 川崎中央シニア"} className="flex h-14 w-full rounded-[20px] border border-border/50 bg-background/40 backdrop-blur-sm px-5 text-lg font-bold shadow-sm focus-visible:ring-2 focus-visible:ring-primary transition-all text-foreground" value={name} onChange={(e) => setName(e.target.value)} disabled={isCreating} autoFocus />
+              <input type="text" required placeholder={isExternalOrgCreate ? "例: 〇〇クラブ" : "例: 〇〇ベースボールクラブ"} className="flex h-14 w-full rounded-[20px] border border-border/50 bg-background px-5 text-lg font-bold shadow-xs focus-visible:ring-2 focus-visible:ring-primary transition-all text-foreground" value={name} onChange={(e) => setName(e.target.value)} disabled={isCreating} autoFocus />
             </div>
 
             <div className="space-y-3">

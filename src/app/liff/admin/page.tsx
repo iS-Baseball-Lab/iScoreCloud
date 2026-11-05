@@ -133,7 +133,7 @@ export default function LiffAdminDashboardPage() {
     try {
       const tid = currentTeam?.id || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") || "demo-team";
       const uid = profile?.userId || (typeof window !== "undefined" ? localStorage.getItem("iscore_user_id") : "") || "";
-      const uName = profile?.displayName || (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") : "") || "佐藤 守";
+      const uName = profile?.displayName || (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") : "") || "";
 
       const res = await fetch(
         `/api/liff/admin/dashboard?teamId=${encodeURIComponent(tid)}&userId=${encodeURIComponent(uid)}&userName=${encodeURIComponent(uName)}`
@@ -172,7 +172,10 @@ export default function LiffAdminDashboardPage() {
         }),
       });
 
-      const resJson = await res.json() as any;
+      const resJson = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+      };
       if (resJson.success) {
         toast.success(action === "approve" ? "参加申請を承認しました！" : "参加申請を却下しました");
         // ローカルステート即時更新
@@ -232,7 +235,10 @@ export default function LiffAdminDashboardPage() {
         }),
       });
 
-      const resJson = await res.json() as any;
+      const resJson = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+      };
       if (resJson.success) {
         toast.success(`${editingMember.name} さんの設定を更新しました`);
         setData((prev) => {
@@ -312,9 +318,11 @@ export default function LiffAdminDashboardPage() {
       } else {
         toast.error(json.error || "メンバーの統合に失敗しました");
       }
-    } catch (err: any) {
+      } catch (err: unknown) {
       console.error("Failed to merge members:", err);
-      toast.error(err?.message || "メンバー統合処理に失敗しました");
+      toast.error(
+        err instanceof Error ? err.message : "メンバー統合処理に失敗しました"
+      );
     } finally {
       setIsMerging(false);
     }
@@ -381,11 +389,7 @@ export default function LiffAdminDashboardPage() {
     data?.isDemo ||
     currentTeam?.role === "admin" ||
     currentTeam?.role === "manager" ||
-    (profile?.displayName || "").includes("佐藤") ||
-    (profile?.displayName || "").includes("守") ||
     (typeof window !== "undefined" && (
-      (localStorage.getItem("iscore_user_name") || "").includes("佐藤") ||
-      (localStorage.getItem("iscore_user_name") || "").includes("守") ||
       localStorage.getItem("iscore_user_role") === "admin" ||
       localStorage.getItem("iscore_setting_user_role") === "admin"
     ));

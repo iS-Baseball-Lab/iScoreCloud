@@ -34,34 +34,58 @@ const ORGANIZATION_CATEGORIES = [
   { id: "general_hard", label: "一般硬式・大学・社会人" },
 ];
 
+const DEFAULT_TARGET_GROUPS = [
+  "全体",
+  "Aチーム",
+  "Bチーム",
+  "高学年",
+  "低学年",
+];
+
 export default function LiffTeamSettingsPage() {
   const { currentTeam } = useLiff();
 
   // チーム基本情報ステート
-  const [teamName, setTeamName] = useState(currentTeam?.name || "東京ジャイアンツ");
+  const [teamName, setTeamName] = useState(currentTeam?.name || "");
   const [category, setCategory] = useState("gakudou");
 
   // 活動区分・班設定
-  const [targetGroups, setTargetGroups] = useState<string[]>(["全体", "Aチーム", "Bチーム", "高学年", "低学年"]);
+  const [targetGroups, setTargetGroups] = useState<string[]>(
+    DEFAULT_TARGET_GROUPS
+  );
   const [newGroupInput, setNewGroupInput] = useState("");
 
-  // 初期ロード
+  // 初期ロード＆チーム切替時の同期（前チームの値が残らないよう未保存時は初期値へリセット）
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (currentTeam?.name) setTeamName(currentTeam.name);
+    const tid = currentTeam?.id || "default";
+    const savedName = localStorage.getItem(`iscore_team_name_${tid}`);
+    setTeamName(currentTeam?.name || savedName || "");
 
     try {
-      const savedGroups = localStorage.getItem(`iscore_team_target_groups_${currentTeam?.id || "default"}`);
+      const savedGroups = localStorage.getItem(`iscore_team_target_groups_${tid}`);
       if (savedGroups) {
-        const parsed = JSON.parse(savedGroups);
-        if (Array.isArray(parsed) && parsed.length > 0) setTargetGroups(parsed);
+        const parsed = JSON.parse(savedGroups) as unknown;
+        if (
+          Array.isArray(parsed) &&
+          parsed.length > 0 &&
+          parsed.every((item): item is string => typeof item === "string")
+        ) {
+          setTargetGroups(parsed);
+        } else {
+          setTargetGroups(DEFAULT_TARGET_GROUPS);
+        }
+      } else {
+        setTargetGroups(DEFAULT_TARGET_GROUPS);
       }
 
-      const savedCategory = localStorage.getItem(`iscore_team_category_${currentTeam?.id || "default"}`);
-      if (savedCategory) setCategory(savedCategory);
+      const savedCategory = localStorage.getItem(`iscore_team_category_${tid}`);
+      setCategory(savedCategory || "gakudou");
     } catch (e) {
       console.error("Failed to load team settings", e);
+      setTargetGroups(DEFAULT_TARGET_GROUPS);
+      setCategory("gakudou");
     }
   }, [currentTeam?.id, currentTeam?.name]);
 

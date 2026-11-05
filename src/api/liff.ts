@@ -4249,7 +4249,7 @@ function buildDemoStatsResponse() {
     {
       id: "demo-match-3",
       date: "2026-10-11 09:00",
-      opponent: "川崎中央クラブ",
+      opponent: "中央ベアーズ",
       matchType: "official",
       tournamentName: "市連盟秋季大会 準々決勝",
       venueName: "等々力球場",
@@ -7211,16 +7211,7 @@ app.get("/admin/dashboard", async (c) => {
       const matchedByName = teamAllMembers.find((m) => {
         if (!m.name) return false;
         const normalizedMember = m.name.replace(/\s+/g, "");
-        if (normalizedMember === normalizedTarget) return true;
-        if (normalizedTarget.includes(normalizedMember) || normalizedMember.includes(normalizedTarget)) return true;
-        // 「佐藤 守」などの姓・名マッチング
-        if (
-          (normalizedTarget.includes("佐藤") && normalizedMember.includes("佐藤")) ||
-          (normalizedTarget.includes("守") && normalizedMember.includes("守"))
-        ) {
-          return true;
-        }
-        return false;
+        return normalizedMember.length >= 2 && normalizedMember === normalizedTarget;
       });
 
       if (matchedByName) {

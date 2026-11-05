@@ -8,13 +8,17 @@ import { Calendar, ArrowLeft, Users, CheckSquare, Sparkles } from "lucide-react"
 
 export default function TeamSchedulePlannerPage() {
   const [teamId, setTeamId] = useState<string>("team_1");
-  const [teamName, setTeamName] = useState<string>("東京ジャイアンツ");
+  const [teamName, setTeamName] = useState<string>("");
 
   useEffect(() => {
     // localStorage から選択中チームを取得
-    const savedTeamId = localStorage.getItem("currentTeamId");
+    const savedTeamId =
+      localStorage.getItem("iscore_selectedTeamId") ||
+      localStorage.getItem("currentTeamId");
     if (savedTeamId) {
       setTeamId(savedTeamId);
+      const savedName = localStorage.getItem(`iscore_team_name_${savedTeamId}`);
+      if (savedName) setTeamName(savedName);
     }
   }, []);
 

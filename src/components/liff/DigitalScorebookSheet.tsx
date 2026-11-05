@@ -1603,11 +1603,14 @@ export function renderSingleScorebookCellSvg(
   rules: ScorebookSymbolRules,
   ox: number,
   oy: number,
-  hasUpperRightSubMark = false
+  hasUpperRightSubMark = false,
+  standaloneSingleCell = false
 ): React.ReactNode {
   const ab = cell?.atBat ?? null;
   const cellGeom = getCellGeometry(rules);
-  const playNotation = ab ? formatAtBatPlayNotation(ab, rules) : null;
+  const playNotation = ab
+    ? formatAtBatPlayNotation(ab, rules, { standaloneSingleCell })
+    : null;
   const abHitBases = getAtBatHitBases(ab?.resultCode);
   const hasQuadrantHitSlash =
     rules.hitLine === "quadrant_slash_hr_diamond" &&
@@ -2239,6 +2242,117 @@ export function renderCellSubstitutionsOverlaySvg(
   );
 }
 
+export function renderDoublePlayVerticalSpanOverlaySvg(params: {
+  cellX: number;
+  topCellY: number;
+  spanRows?: number;
+  rules: ScorebookSymbolRules;
+  isTriplePlay?: boolean;
+  middleRowOffsets?: number[];
+}): React.ReactNode {
+  const {
+    cellX,
+    topCellY,
+    spanRows = 2,
+    rules,
+    isTriplePlay = false,
+    middleRowOffsets = [],
+  } = params;
+
+  if (
+    rules.doublePlayMark !== "bracket_dp" &&
+    rules.doublePlayMark !== "wavy_link"
+  ) {
+    return null;
+  }
+
+  const xBar = cellX + CELL_W - 3.0;
+  const xTick = cellX + CELL_W - 8.2;
+  const yTop = topCellY + 5.0;
+  const yBot = topCellY + spanRows * CELL_H - 5.5;
+  const boundaryY = topCellY + CELL_H;
+  const dpX = cellX + 72.5;
+  const dpY = boundaryY + 2.8;
+  const tagLabel = isTriplePlay ? "TP" : "DP";
+
+  return (
+    <g>
+      {rules.doublePlayMark === "wavy_link" ? (
+        <>
+          <line
+            x1={xTick}
+            y1={yTop}
+            x2={xBar}
+            y2={yTop}
+            stroke={COLOR_INK}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+          <path
+            d={buildVerticalWavePath(xBar, yTop, yBot, 1.5, 5.8)}
+            fill="none"
+            stroke={COLOR_INK}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+          <line
+            x1={xTick}
+            y1={yBot}
+            x2={xBar}
+            y2={yBot}
+            stroke={COLOR_INK}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+        </>
+      ) : (
+        <>
+          <path
+            d={`M ${xTick} ${yTop} L ${xBar} ${yTop} L ${xBar} ${yBot} L ${xTick} ${yBot}`}
+            fill="none"
+            stroke={COLOR_INK}
+            strokeWidth={1.7}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {middleRowOffsets.map((rowOffset) => {
+            const yMid = topCellY + rowOffset * CELL_H + CELL_H * 0.5;
+            return (
+              <line
+                key={`mid-${rowOffset}`}
+                x1={xTick + 1.5}
+                y1={yMid}
+                x2={xBar}
+                y2={yMid}
+                stroke={COLOR_INK}
+                strokeWidth={1.4}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </>
+      )}
+
+      {/* 1マス目と2マス目の境界線上に DP（三重殺は TP）を白フチ付きでくっきり印字 */}
+      <text
+        x={dpX}
+        y={dpY}
+        fontSize={7.8}
+        fontWeight={900}
+        textAnchor="middle"
+        fill={COLOR_INK}
+        stroke={COLOR_PAPER}
+        strokeWidth={3.2}
+        paintOrder="stroke"
+        strokeLinejoin="round"
+        fontFamily={FONT_MONO}
+      >
+        {tagLabel}
+      </text>
+    </g>
+  );
+}
+
 function renderDoublePlayLinksSvg(
   links: CompiledDoublePlayLink[],
   columns: CompiledScorebookSheetModel["columns"],
@@ -2287,7 +2401,56 @@ function renderDoublePlayLinksSvg(
             (p): p is { colIdx: number; rowIdx: number; cellKey: string } =>
               p !== null
           );
-        if (resolved.length < 2) return null;
+        if (resolved.length === 0) return null;
+
+        const tagLabel = link.isTriplePlay ? "TP" : "DP";
+
+        // 先行走者マスが特定できなかった単独DP打席のフォールバック描画
+        if (resolved.length === 1) {
+          const only = resolved[0]!;
+          const cx = gridStartX + only.colIdx * CELL_W;
+          const ry = battersTopY + only.rowIdx * CELL_H;
+          const xBar = cx + CELL_W - 3.0;
+          const xTick = cx + CELL_W - 8.0;
+          const y1 = ry + 5.5;
+          const y2 = ry + CELL_H - 5.5;
+          return (
+            <g key={link.id}>
+              {rules.doublePlayMark === "wavy_link" ? (
+                <path
+                  d={buildVerticalWavePath(xBar, y1, y2, 1.45, 5.6)}
+                  fill="none"
+                  stroke={COLOR_INK}
+                  strokeWidth={1.45}
+                  strokeLinecap="round"
+                />
+              ) : (
+                <path
+                  d={`M ${xTick} ${y1} L ${xBar} ${y1} L ${xBar} ${y2} L ${xTick} ${y2}`}
+                  fill="none"
+                  stroke={COLOR_INK}
+                  strokeWidth={1.65}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+              <text
+                x={cx + 72.5}
+                y={ry + 9.5}
+                fontSize={7.4}
+                fontWeight={900}
+                textAnchor="middle"
+                fill={COLOR_INK}
+                stroke={COLOR_PAPER}
+                strokeWidth={3.0}
+                paintOrder="stroke"
+                fontFamily={FONT_MONO}
+              >
+                {tagLabel}
+              </text>
+            </g>
+          );
+        }
 
         const firstCol = resolved[0]!.colIdx;
         const sameCol = resolved.every((p) => p.colIdx === firstCol);
@@ -2295,96 +2458,47 @@ function renderDoublePlayLinksSvg(
         const minRow = sortedByRow[0]!.rowIdx;
         const maxRow = sortedByRow[sortedByRow.length - 1]!.rowIdx;
 
-        // 同一イニング列かつ近接打順（例: 2番走者Ⅱと3番打者Ⅲ 6-4-3）を右端「 ] 」または縦波線で連結
+        // 同一イニング列かつ近接打順（縦2マス等）の右側内を上部〜下部まで括り、1・2マス間にDPを描画
         if (sameCol && maxRow > minRow && maxRow - minRow <= 3) {
           const cx = gridStartX + firstCol * CELL_W;
-          const xBar = cx + CELL_W - 2.6;
-          const xTick = cx + CELL_W - 7.2;
-          const yTop = battersTopY + minRow * CELL_H + CELL_H * 0.44;
-          const yBot = battersTopY + maxRow * CELL_H + CELL_H * 0.54;
-
-          if (rules.doublePlayMark === "wavy_link") {
-            return (
-              <g key={link.id}>
-                <line
-                  x1={xTick}
-                  y1={yTop}
-                  x2={xBar}
-                  y2={yTop}
-                  stroke={COLOR_INK}
-                  strokeWidth={1.45}
-                  strokeLinecap="round"
-                />
-                <path
-                  d={buildVerticalWavePath(xBar, yTop, yBot, 1.5, 5.8)}
-                  fill="none"
-                  stroke={COLOR_INK}
-                  strokeWidth={1.45}
-                  strokeLinecap="round"
-                />
-                <line
-                  x1={xTick}
-                  y1={yBot}
-                  x2={xBar}
-                  y2={yBot}
-                  stroke={COLOR_INK}
-                  strokeWidth={1.45}
-                  strokeLinecap="round"
-                />
-              </g>
-            );
-          }
-
+          const topCellY = battersTopY + minRow * CELL_H;
+          const spanRows = maxRow - minRow + 1;
+          const midOffsets = sortedByRow
+            .slice(1, -1)
+            .map((mid) => mid.rowIdx - minRow);
           return (
-            <g key={link.id}>
-              <path
-                d={`M ${xTick} ${yTop} L ${xBar} ${yTop} L ${xBar} ${yBot} L ${xTick} ${yBot}`}
-                fill="none"
-                stroke={COLOR_INK}
-                strokeWidth={1.65}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              {sortedByRow.slice(1, -1).map((mid) => {
-                const yMid =
-                  battersTopY + mid.rowIdx * CELL_H + CELL_H * 0.49;
-                return (
-                  <line
-                    key={mid.cellKey}
-                    x1={xTick + 1.5}
-                    y1={yMid}
-                    x2={xBar}
-                    y2={yMid}
-                    stroke={COLOR_INK}
-                    strokeWidth={1.4}
-                    strokeLinecap="round"
-                  />
-                );
+            <React.Fragment key={link.id}>
+              {renderDoublePlayVerticalSpanOverlaySvg({
+                cellX: cx,
+                topCellY,
+                spanRows,
+                rules,
+                isTriplePlay: link.isTriplePlay,
+                middleRowOffsets: midOffsets,
               })}
-            </g>
+            </React.Fragment>
           );
         }
 
-        // 打順折り返し（9番→1番等）で離れている場合は無関係な行を跨がず各対象マス右端にペア括弧＋DP添字を描画
-        const tagLabel = link.isTriplePlay ? "TP" : "DP";
+        // 打順折り返し（9番→1番等）で離れている場合は無関係な行を跨がず各対象マス右内を括り境界寄りにDPを描画
         return (
           <g key={link.id}>
             {sortedByRow.map((pt) => {
               const cx = gridStartX + pt.colIdx * CELL_W;
               const ry = battersTopY + pt.rowIdx * CELL_H;
-              const xBar = cx + CELL_W - 2.6;
-              const xTick = cx + CELL_W - 6.6;
-              const y1 = ry + 22;
-              const y2 = ry + 45;
+              const xBar = cx + CELL_W - 3.0;
+              const xTick = cx + CELL_W - 8.0;
+              const y1 = ry + 5.5;
+              const y2 = ry + CELL_H - 5.5;
               const isBatterCell = pt.cellKey === link.batterCellKey;
               return (
                 <g key={pt.cellKey}>
                   {rules.doublePlayMark === "wavy_link" ? (
                     <path
-                      d={buildVerticalWavePath(xBar, y1, y2, 1.4, 5.5)}
+                      d={buildVerticalWavePath(xBar, y1, y2, 1.45, 5.6)}
                       fill="none"
                       stroke={COLOR_INK}
-                      strokeWidth={1.4}
+                      strokeWidth={1.45}
                       strokeLinecap="round"
                     />
                   ) : (
@@ -2392,24 +2506,25 @@ function renderDoublePlayLinksSvg(
                       d={`M ${xTick} ${y1} L ${xBar} ${y1} L ${xBar} ${y2} L ${xTick} ${y2}`}
                       fill="none"
                       stroke={COLOR_INK}
-                      strokeWidth={1.55}
+                      strokeWidth={1.65}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                     />
                   )}
-                  {!isBatterCell && (
-                    <text
-                      x={xTick - 1.5}
-                      y={ry + 36}
-                      fontSize={6.2}
-                      fontWeight={900}
-                      textAnchor="end"
-                      fill={COLOR_INK}
-                      fontFamily={FONT_MONO}
-                    >
-                      {tagLabel}
-                    </text>
-                  )}
+                  <text
+                    x={cx + 72.5}
+                    y={isBatterCell ? ry + 9.5 : ry + CELL_H - 2.5}
+                    fontSize={7.2}
+                    fontWeight={900}
+                    textAnchor="middle"
+                    fill={COLOR_INK}
+                    stroke={COLOR_PAPER}
+                    strokeWidth={3.0}
+                    paintOrder="stroke"
+                    fontFamily={FONT_MONO}
+                  >
+                    {tagLabel}
+                  </text>
                 </g>
               );
             })}
@@ -2420,7 +2535,7 @@ function renderDoublePlayLinksSvg(
   );
 }
 
-function getLineupTotalWidth(rules: ScorebookSymbolRules): number {
+export function getLineupTotalWidth(rules: ScorebookSymbolRules): number {
   return rules.lineupStyle === "compact_order_first"
     ? COMPACT_LINEUP_TOTAL_W
     : CLASSIC_LINEUP_TOTAL_W;
@@ -2608,7 +2723,7 @@ function buildClassicBatterSlotModel(
   return { rows, posGrid };
 }
 
-function renderLineupHeaderSvg(
+export function renderLineupHeaderSvg(
   lineupX: number,
   tableTopY: number,
   colHeadH: number,
@@ -2822,7 +2937,7 @@ function renderLineupHeaderSvg(
   );
 }
 
-function renderBatterLineupRowSvg(params: {
+export function renderBatterLineupRowSvg(params: {
   slot: ScorebookBatterSlot;
   battingOrder: number;
   hasActivePlateAppearances: boolean;
@@ -4550,26 +4665,137 @@ export function ScorebookSymbolSamplePreview({
     rightInsideSub: { name: "佐藤", subType: "DEF" },
   };
 
+  const row2Inning1SacBuntCell: CompiledScorebookCell = {
+    cellKey: "r2-inn-1",
+    inning: 1,
+    columnIndex: 1,
+    battingOrder: 2,
+    atBat: {
+      id: "r2-ab-1",
+      inning: 1,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 2,
+      batterName: "田中",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "sac_bunt",
+      resultLabel: "投犠打 (1-3)",
+      battedDirection: "1-3",
+      rbi: 0,
+      outsInPlay: 1,
+      endingOuts: 1,
+      runsInPlay: 0,
+      balls: 0,
+      strikes: 2,
+      pitches: ["bunt_swinging", "bunt_foul", "in_play"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: { 1: null, 2: null, 3: null, 4: null },
+    outNumber: 1,
+    runScored: false,
+    isResidual: false,
+    isInningEndCell: false,
+    hasPitcherChangeBefore: false,
+  };
+
+  const row2Inning2DoublePlayCell: CompiledScorebookCell = {
+    cellKey: "r2-inn-2",
+    inning: 2,
+    columnIndex: 1,
+    battingOrder: 2,
+    atBat: {
+      id: "r2-ab-2",
+      inning: 2,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 2,
+      batterName: "田中",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "double_play",
+      resultLabel: "遊ゴロ併殺打 (6-4-3)",
+      battedDirection: "6-4-3",
+      rbi: 0,
+      outsInPlay: 2,
+      endingOuts: 2,
+      runsInPlay: 0,
+      balls: 1,
+      strikes: 1,
+      pitches: ["ball", "strike", "in_play"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: { 1: null, 2: null, 3: null, 4: null },
+    outNumber: 2,
+    runScored: false,
+    isResidual: false,
+    isInningEndCell: false,
+    hasPitcherChangeBefore: false,
+  };
+
+  const row2Inning3CalledStrikeoutCell: CompiledScorebookCell = {
+    cellKey: "r2-inn-3",
+    inning: 3,
+    columnIndex: 1,
+    battingOrder: 2,
+    atBat: {
+      id: "r2-ab-3",
+      inning: 3,
+      isTop: true,
+      columnIndex: 1,
+      battingOrder: 2,
+      batterName: "田中",
+      batterPlayerId: null,
+      pitcherName: "投手",
+      pitcherPlayerId: null,
+      resultCode: "strikeout",
+      resultLabel: "見逃し三振",
+      battedDirection: "",
+      rbi: 0,
+      outsInPlay: 1,
+      endingOuts: 3,
+      runsInPlay: 0,
+      balls: 1,
+      strikes: 3,
+      pitches: ["swinging_strike", "pickoff_2b", "ball", "foul", "strike"],
+      advances: [],
+      confidence: "high",
+    },
+    isTiebreakRunnerOnly: false,
+    segments: { 1: null, 2: null, 3: null, 4: null },
+    outNumber: 3,
+    runScored: false,
+    isResidual: false,
+    isInningEndCell: true,
+    hasPitcherChangeBefore: false,
+  };
+
   const sampleCells: Array<{ title: string; cell: CompiledScorebookCell }> = [
     {
-      title: "見逃三振(1死)",
+      title: "空振三振",
       cell: {
         cellKey: "s-1",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 2,
+        battingOrder: 3,
         atBat: {
           id: "s-ab-1",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 2,
+          battingOrder: 3,
           batterName: "サンプル1",
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
           resultCode: "strikeout",
-          resultLabel: "見逃し三振",
+          resultLabel: "空振り三振",
           battedDirection: "",
           rbi: 0,
           outsInPlay: 1,
@@ -4577,7 +4803,7 @@ export function ScorebookSymbolSamplePreview({
           runsInPlay: 0,
           balls: 1,
           strikes: 3,
-          pitches: ["swinging_strike", "pickoff_2b", "ball", "foul", "strike"],
+          pitches: ["strike", "ball", "foul", "swinging_strike"],
           advances: [],
           confidence: "high",
         },
@@ -4591,38 +4817,50 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
-      title: "犠打・バント球",
+      title: "三振振逃げ",
       cell: {
         cellKey: "s-2",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 3,
+        battingOrder: 4,
         atBat: {
           id: "s-ab-2",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 3,
+          battingOrder: 4,
           batterName: "サンプル2",
           batterPlayerId: null,
           pitcherName: "投手",
           pitcherPlayerId: null,
-          resultCode: "sac_bunt",
-          resultLabel: "投犠打 (1-3)",
-          battedDirection: "1-3",
+          resultCode: "dropped_third_strike",
+          resultLabel: "振逃げ",
+          battedDirection: "",
           rbi: 0,
-          outsInPlay: 1,
-          endingOuts: 2,
+          outsInPlay: 0,
+          endingOuts: 1,
           runsInPlay: 0,
-          balls: 0,
-          strikes: 2,
-          pitches: ["bunt_swinging", "bunt_foul", "in_play"],
+          balls: 1,
+          strikes: 3,
+          pitches: ["ball", "strike", "swinging_strike", "swinging_strike"],
           advances: [],
           confidence: "high",
         },
         isTiebreakRunnerOnly: false,
-        segments: { 1: null, 2: null, 3: null, 4: null },
-        outNumber: 2,
+        segments: {
+          1: {
+            segment: 1,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "walk",
+            isPrePlay: false,
+          },
+          2: null,
+          3: null,
+          4: null,
+        },
+        outNumber: null,
         runScored: false,
         isResidual: false,
         isInningEndCell: false,
@@ -4635,13 +4873,13 @@ export function ScorebookSymbolSamplePreview({
         cellKey: "s-3",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 4,
+        battingOrder: 5,
         atBat: {
           id: "s-ab-3",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 4,
+          battingOrder: 5,
           batterName: "サンプル3",
           batterPlayerId: null,
           pitcherName: "投手",
@@ -4651,89 +4889,11 @@ export function ScorebookSymbolSamplePreview({
           battedDirection: "5-3",
           rbi: 0,
           outsInPlay: 1,
-          endingOuts: 3,
+          endingOuts: 2,
           runsInPlay: 0,
           balls: 1,
           strikes: 1,
           pitches: ["ball", "bunt_foul", "in_play"],
-          advances: [],
-          confidence: "high",
-        },
-        isTiebreakRunnerOnly: false,
-        segments: { 1: null, 2: null, 3: null, 4: null },
-        outNumber: 3,
-        runScored: false,
-        isResidual: false,
-        isInningEndCell: false,
-        hasPitcherChangeBefore: false,
-      },
-    },
-    {
-      title: "併殺打(DP)",
-      cell: {
-        cellKey: "s-dp",
-        inning: 1,
-        columnIndex: 1,
-        battingOrder: 5,
-        atBat: {
-          id: "s-ab-dp",
-          inning: 1,
-          isTop: true,
-          columnIndex: 1,
-          battingOrder: 5,
-          batterName: "サンプルDP",
-          batterPlayerId: null,
-          pitcherName: "投手",
-          pitcherPlayerId: null,
-          resultCode: "double_play",
-          resultLabel: "遊ゴロ併殺打 (6-4-3)",
-          battedDirection: "6-4-3",
-          rbi: 0,
-          outsInPlay: 2,
-          endingOuts: 3,
-          runsInPlay: 0,
-          balls: 1,
-          strikes: 1,
-          pitches: ["ball", "strike", "in_play"],
-          advances: [],
-          confidence: "high",
-        },
-        isTiebreakRunnerOnly: false,
-        segments: { 1: null, 2: null, 3: null, 4: null },
-        outNumber: 3,
-        runScored: false,
-        isResidual: false,
-        isInningEndCell: true,
-        hasPitcherChangeBefore: false,
-      },
-    },
-    {
-      title: "中飛(2死)",
-      cell: {
-        cellKey: "s-4",
-        inning: 1,
-        columnIndex: 1,
-        battingOrder: 6,
-        atBat: {
-          id: "s-ab-4",
-          inning: 1,
-          isTop: true,
-          columnIndex: 1,
-          battingOrder: 6,
-          batterName: "サンプル4",
-          batterPlayerId: null,
-          pitcherName: "投手",
-          pitcherPlayerId: null,
-          resultCode: "flyout",
-          resultLabel: "中飛",
-          battedDirection: "8",
-          rbi: 0,
-          outsInPlay: 1,
-          endingOuts: 2,
-          runsInPlay: 0,
-          balls: 1,
-          strikes: 0,
-          pitches: ["pickoff_3b", "ball", "in_play"],
           advances: [],
           confidence: "high",
         },
@@ -4747,18 +4907,131 @@ export function ScorebookSymbolSamplePreview({
       },
     },
     {
+      title: "邪飛(ファウル飛)",
+      cell: {
+        cellKey: "s-foulfly",
+        inning: 1,
+        columnIndex: 1,
+        battingOrder: 6,
+        atBat: {
+          id: "s-ab-ff",
+          inning: 1,
+          isTop: true,
+          columnIndex: 1,
+          battingOrder: 6,
+          batterName: "サンプルFF",
+          batterPlayerId: null,
+          pitcherName: "投手",
+          pitcherPlayerId: null,
+          resultCode: "flyout",
+          resultLabel: "左邪飛",
+          battedDirection: "7",
+          rbi: 0,
+          outsInPlay: 1,
+          endingOuts: 2,
+          runsInPlay: 0,
+          balls: 0,
+          strikes: 1,
+          pitches: ["foul", "in_play"],
+          advances: [],
+          confidence: "high",
+        },
+        isTiebreakRunnerOnly: false,
+        segments: { 1: null, 2: null, 3: null, 4: null },
+        outNumber: 2,
+        runScored: false,
+        isResidual: false,
+        isInningEndCell: false,
+        hasPitcherChangeBefore: false,
+      },
+    },
+    {
+      title: "失策(非自責点)",
+      cell: {
+        cellKey: "s-4",
+        inning: 1,
+        columnIndex: 1,
+        battingOrder: 7,
+        atBat: {
+          id: "s-ab-4",
+          inning: 1,
+          isTop: true,
+          columnIndex: 1,
+          battingOrder: 7,
+          batterName: "サンプル4",
+          batterPlayerId: null,
+          pitcherName: "投手",
+          pitcherPlayerId: null,
+          resultCode: "error",
+          resultLabel: "遊捕球失策",
+          battedDirection: "6",
+          rbi: 0,
+          outsInPlay: 0,
+          endingOuts: 2,
+          runsInPlay: 1,
+          balls: 1,
+          strikes: 0,
+          pitches: ["pickoff_3b", "ball", "in_play"],
+          advances: [],
+          confidence: "high",
+        },
+        isTiebreakRunnerOnly: false,
+        segments: {
+          1: {
+            segment: 1,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "error",
+            isPrePlay: false,
+          },
+          2: {
+            segment: 2,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "wp",
+            isPrePlay: true,
+          },
+          3: {
+            segment: 3,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "pb",
+            isPrePlay: true,
+          },
+          4: {
+            segment: 4,
+            status: "safe",
+            isBatterHit: false,
+            hitBases: 0,
+            method: "hit",
+            drivingBatterOrder: 8,
+            isPrePlay: false,
+          },
+        },
+        outNumber: null,
+        runScored: true,
+        isUnearnedRun: true,
+        isResidual: false,
+        isInningEndCell: false,
+        hasPitcherChangeBefore: false,
+      },
+    },
+    {
       title: "四球＋残塁",
       cell: {
         cellKey: "s-5",
         inning: 1,
         columnIndex: 1,
-        battingOrder: 7,
+        battingOrder: 8,
         atBat: {
           id: "s-ab-5",
           inning: 1,
           isTop: true,
           columnIndex: 1,
-          battingOrder: 7,
+          battingOrder: 8,
           batterName: "サンプル5",
           batterPlayerId: null,
           pitcherName: "投手",
@@ -4830,16 +5103,28 @@ export function ScorebookSymbolSamplePreview({
     ],
   };
 
+  const sampleLineupSlot2: ScorebookBatterSlot = {
+    battingOrder: 2,
+    name: "田中",
+    uniformNumber: "6",
+    position: "6",
+    playerId: "sample-p4",
+    bats: "R",
+    substitutions: [],
+  };
+
   const gap = 4;
   const lineupW = getLineupTotalWidth(rules);
   const colHeadH = 30;
+  const topRowsCount = 2;
+  const topGridH = CELL_H * topRowsCount;
   const topPreviewW = lineupW + CELL_W * 3;
   const cellsRowW =
     sampleCells.length * CELL_W + (sampleCells.length - 1) * gap;
   const totalW = Math.max(topPreviewW, cellsRowW) + 12;
   const topOriginX = (totalW - topPreviewW) / 2;
   const topOriginY = 6;
-  const cellsLabelY = topOriginY + colHeadH + CELL_H + 17;
+  const cellsLabelY = topOriginY + colHeadH + topGridH + 17;
   const cellsOriginY = cellsLabelY + 5;
   const totalH = cellsOriginY + CELL_H + 8;
   const isClassicHead = rules.lineupStyle === "classic_three_row";
@@ -4853,7 +5138,7 @@ export function ScorebookSymbolSamplePreview({
     >
       <rect x={0} y={0} width={totalW} height={totalH} fill={COLOR_PAPER} />
 
-      {/* 上段：メンバー欄＋1回（二塁打）・2回（バント単打）・3回（代打本塁打）マスのリアルプレビュー */}
+      {/* 上段：メンバー欄（1・2番）＋1回・2回（縦2マス併殺打DP）・3回（代打本塁打・チェンジ）のリアルプレビュー */}
       <g>
         <rect
           x={topOriginX}
@@ -4873,7 +5158,7 @@ export function ScorebookSymbolSamplePreview({
           x1={topOriginX + lineupW}
           y1={topOriginY}
           x2={topOriginX + lineupW}
-          y2={topOriginY + colHeadH + CELL_H}
+          y2={topOriginY + colHeadH + topGridH}
           stroke={COLOR_FRAME}
           strokeWidth={1.5}
         />
@@ -4881,7 +5166,7 @@ export function ScorebookSymbolSamplePreview({
           x1={topOriginX + lineupW + CELL_W}
           y1={topOriginY}
           x2={topOriginX + lineupW + CELL_W}
-          y2={topOriginY + colHeadH + CELL_H}
+          y2={topOriginY + colHeadH + topGridH}
           stroke={COLOR_GRID}
           strokeWidth={0.9}
         />
@@ -4889,7 +5174,7 @@ export function ScorebookSymbolSamplePreview({
           x1={topOriginX + lineupW + CELL_W * 2}
           y1={topOriginY}
           x2={topOriginX + lineupW + CELL_W * 2}
-          y2={topOriginY + colHeadH + CELL_H}
+          y2={topOriginY + colHeadH + topGridH}
           stroke={COLOR_GRID}
           strokeWidth={0.9}
         />
@@ -4924,6 +5209,7 @@ export function ScorebookSymbolSamplePreview({
           {isClassicHead ? "3" : "3回"}
         </text>
 
+        {/* 1番打者行 */}
         {renderBatterLineupRowSvg({
           slot: sampleLineupSlot,
           battingOrder: 1,
@@ -4953,6 +5239,45 @@ export function ScorebookSymbolSamplePreview({
           topOriginY + colHeadH,
           rules.pinchHitterMark !== "lineup_only"
         )}
+
+        {/* 2番打者行 */}
+        {renderBatterLineupRowSvg({
+          slot: sampleLineupSlot2,
+          battingOrder: 2,
+          hasActivePlateAppearances: true,
+          isTop: true,
+          rules,
+          lineupX: topOriginX,
+          ry: topOriginY + colHeadH + CELL_H,
+        })}
+        {renderSingleScorebookCellSvg(
+          row2Inning1SacBuntCell,
+          rules,
+          topOriginX + lineupW,
+          topOriginY + colHeadH + CELL_H
+        )}
+        {renderSingleScorebookCellSvg(
+          row2Inning2DoublePlayCell,
+          rules,
+          topOriginX + lineupW + CELL_W,
+          topOriginY + colHeadH + CELL_H
+        )}
+        {renderSingleScorebookCellSvg(
+          row2Inning3CalledStrikeoutCell,
+          rules,
+          topOriginX + lineupW + CELL_W * 2,
+          topOriginY + colHeadH + CELL_H
+        )}
+
+        {/* 2回：1番〜2番の縦2マス併殺打オーバーレイ（右内上部〜下部括弧 ＋ 1・2マス間にDP） */}
+        {renderDoublePlayVerticalSpanOverlaySvg({
+          cellX: topOriginX + lineupW + CELL_W,
+          topCellY: topOriginY + colHeadH,
+          spanRows: 2,
+          rules,
+        })}
+
+        {/* 3回1番：代打（左赤波線）・守備交代（右内赤波線）オーバーレイ */}
         {renderCellSubstitutionsOverlaySvg(
           topInning3HomeRunCell,
           rules,
@@ -4961,11 +5286,12 @@ export function ScorebookSymbolSamplePreview({
           0,
           true
         )}
+
         <line
           x1={topOriginX + lineupW}
           y1={topOriginY + colHeadH}
           x2={topOriginX + lineupW}
-          y2={topOriginY + colHeadH + CELL_H}
+          y2={topOriginY + colHeadH + topGridH}
           stroke={COLOR_FRAME}
           strokeWidth={1.5}
         />
@@ -4973,17 +5299,16 @@ export function ScorebookSymbolSamplePreview({
           x={topOriginX}
           y={topOriginY}
           width={topPreviewW}
-          height={colHeadH + CELL_H}
+          height={colHeadH + topGridH}
           fill="none"
           stroke={COLOR_FRAME}
           strokeWidth={1.4}
         />
       </g>
 
-      {/* 下段：6パターンの打席・バント・併殺・走塁記号サンプル */}
+      {/* 下段：6パターンの打席・バント・失策・走塁記号サンプル */}
       {sampleCells.map((item, idx) => {
         const ox = (totalW - cellsRowW) / 2 + idx * (CELL_W + gap);
-        const isDpSample = item.cell.atBat?.resultCode === "double_play";
         return (
           <g key={item.title}>
             <text
@@ -4997,56 +5322,6 @@ export function ScorebookSymbolSamplePreview({
               {item.title}
             </text>
             {renderSingleScorebookCellSvg(item.cell, rules, ox, cellsOriginY)}
-            {isDpSample &&
-              (rules.doublePlayMark === "bracket_dp" ||
-                rules.doublePlayMark === "wavy_link") && (
-                <g>
-                  {rules.doublePlayMark === "wavy_link" ? (
-                    <>
-                      <line
-                        x1={ox + CELL_W - 7.2}
-                        y1={cellsOriginY + 4}
-                        x2={ox + CELL_W - 2.6}
-                        y2={cellsOriginY + 4}
-                        stroke={COLOR_INK}
-                        strokeWidth={1.45}
-                        strokeLinecap="round"
-                      />
-                      <path
-                        d={buildVerticalWavePath(
-                          ox + CELL_W - 2.6,
-                          cellsOriginY + 4,
-                          cellsOriginY + CELL_H * 0.54,
-                          1.5,
-                          5.8
-                        )}
-                        fill="none"
-                        stroke={COLOR_INK}
-                        strokeWidth={1.45}
-                        strokeLinecap="round"
-                      />
-                      <line
-                        x1={ox + CELL_W - 7.2}
-                        y1={cellsOriginY + CELL_H * 0.54}
-                        x2={ox + CELL_W - 2.6}
-                        y2={cellsOriginY + CELL_H * 0.54}
-                        stroke={COLOR_INK}
-                        strokeWidth={1.45}
-                        strokeLinecap="round"
-                      />
-                    </>
-                  ) : (
-                    <path
-                      d={`M ${ox + CELL_W - 7.2} ${cellsOriginY + 4} L ${ox + CELL_W - 2.6} ${cellsOriginY + 4} L ${ox + CELL_W - 2.6} ${cellsOriginY + CELL_H * 0.54} L ${ox + CELL_W - 7.2} ${cellsOriginY + CELL_H * 0.54}`}
-                      fill="none"
-                      stroke={COLOR_INK}
-                      strokeWidth={1.65}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  )}
-                </g>
-              )}
           </g>
         );
       })}

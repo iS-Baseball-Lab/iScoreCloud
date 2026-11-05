@@ -366,10 +366,20 @@ const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
 liffScorebookRouter.get("/context", async (c) => {
   await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB, { schema });
-  const requestedTeamId = c.req.query("teamId") || "";
+  const requestedTeamId = (c.req.query("teamId") || "").trim();
 
   try {
-    let targetTeam = requestedTeamId
+    if (requestedTeamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        team: null,
+        roster: [] as ScorebookRosterPlayer[],
+        matches: [] as ScorebookMatchSummary[],
+      });
+    }
+
+    const targetTeam = requestedTeamId
       ? await db
         .select({
           id: teams.id,
@@ -380,10 +390,7 @@ liffScorebookRouter.get("/context", async (c) => {
         .from(teams)
         .where(eq(teams.id, requestedTeamId))
         .get()
-      : undefined;
-
-    if (!targetTeam) {
-      targetTeam = await db
+      : await db
         .select({
           id: teams.id,
           name: teams.name,
@@ -392,12 +399,11 @@ liffScorebookRouter.get("/context", async (c) => {
         })
         .from(teams)
         .get();
-    }
 
     if (!targetTeam) {
       return c.json({
         success: true,
-        isDemo: true,
+        isDemo: !requestedTeamId,
         team: null,
         roster: [] as ScorebookRosterPlayer[],
         matches: [] as ScorebookMatchSummary[],
@@ -534,26 +540,31 @@ liffScorebookRouter.post("/legend", async (c) => {
 
   try {
     const body = (await c.req.json()) as UpdateTeamLegendPayload;
-    let targetTeam = body.teamId
+    const requestedTeamId = (body.teamId || "").trim();
+    if (requestedTeamId === "demo-team") {
+      return c.json({
+        success: true,
+        teamId: "demo-team",
+        scorebookLegendUrl: body.clear ? null : null,
+      });
+    }
+
+    const targetTeam = requestedTeamId
       ? await db
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
         })
         .from(teams)
-        .where(eq(teams.id, body.teamId))
+        .where(eq(teams.id, requestedTeamId))
         .get()
-      : undefined;
-
-    if (!targetTeam) {
-      targetTeam = await db
+      : await db
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
         })
         .from(teams)
         .get();
-    }
 
     if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -674,17 +685,33 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
 
   try {
     const body = (await c.req.json()) as UpdateTeamSymbolRulesPayload;
-    let targetTeam = body.teamId
+    const requestedTeamId = (body.teamId || "").trim();
+    if (requestedTeamId === "demo-team") {
+      if (body.clear || body.rules === null) {
+        return c.json({
+          success: true,
+          teamId: "demo-team",
+          scorebookSymbolRules: null,
+        });
+      }
+      const demoSanitized = sanitizeScorebookSymbolRules(
+        body.rules,
+        DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+      );
+      return c.json({
+        success: true,
+        teamId: "demo-team",
+        scorebookSymbolRules: demoSanitized,
+      });
+    }
+
+    const targetTeam = requestedTeamId
       ? await db
         .select({ id: teams.id })
         .from(teams)
-        .where(eq(teams.id, body.teamId))
+        .where(eq(teams.id, requestedTeamId))
         .get()
-      : undefined;
-
-    if (!targetTeam) {
-      targetTeam = await db.select({ id: teams.id }).from(teams).get();
-    }
+      : await db.select({ id: teams.id }).from(teams).get();
 
     if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -771,28 +798,28 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 
   try {
     const body = (await c.req.json()) as ExtractTeamSymbolRulesPayload;
-    let targetTeam = body.teamId
+    const requestedTeamId = (body.teamId || "").trim();
+    const isDemoTeamRequest = requestedTeamId === "demo-team";
+    const targetTeam = isDemoTeamRequest
+      ? undefined
+      : requestedTeamId
       ? await db
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
         })
         .from(teams)
-        .where(eq(teams.id, body.teamId))
+        .where(eq(teams.id, requestedTeamId))
         .get()
-      : undefined;
-
-    if (!targetTeam) {
-      targetTeam = await db
+      : await db
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
         })
         .from(teams)
         .get();
-    }
 
-    if (!targetTeam) {
+    if (!targetTeam && !isDemoTeamRequest) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
     }
 
@@ -805,7 +832,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
     const legendPart = await resolveLegendImagePart(
       c,
       db,
-      targetTeam.id,
+      targetTeam?.id || "demo-team",
       cleanOverride,
       body.mimeType
     );
@@ -833,7 +860,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "strikeout": "k_called_so_swing" | "k_called_reverse" | "k_called_circle" | "k_only" | "so", // 三振: 見逃しが通常K・空振りがSO・振逃げが左右反転K(ꓘ)なら "k_called_so_swing"、見逃しが左右反転K(ꓘ)で空振りがKなら "k_called_reverse"、丸囲みⓀなら "k_called_circle"、区別なしKなら "k_only"、すべてSO表記なら "so"
   "walkHbp": "b_db" | "bb_hbp" | "kanji", // 四死球: B/DBなら "b_db"、BB/HBPなら "bb_hbp"、四/死なら "kanji"
   "buntMark": "square_sac_triangle_sf_bh" | "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント・犠飛表記: 犠打が四角囲み□[1-3]＋犠飛が三角囲み△8＋バント安打BH5なら "square_sac_triangle_sf_bh"、犠打もバント凡退も四角囲み□[5-3]＋BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
-  "doublePlayMark": "bracket_dp" | "dp_only" | "wavy_link" | "chain_only", // 併殺打(DP)表記: アウトになった2人のマス右端を『 ] 』括弧で結びDPを添えるなら "bracket_dp"、括弧なしでDP添字のみなら "dp_only"、縦波線で2マスを結ぶ早稲田式なら "wavy_link"、6-4-3等の送球番号のみなら "chain_only"（不明なら "bracket_dp"）
+  "doublePlayMark": "bracket_dp" | "dp_only" | "wavy_link" | "chain_only", // 併殺打(DP)表記: アウトになった縦2マスの右側内を上部〜下部まで『 ] 』括弧で括り1・2マス間にDPを添えるなら "bracket_dp"、括弧なしでDP添字のみなら "dp_only"、縦波線で2マスを結ぶ早稲田式なら "wavy_link"、6-4-3等の送球番号のみなら "chain_only"（不明なら "bracket_dp"）
   "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・(V̇)＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
   "hitLine": "red_edge_infield_arc" | "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 進塁辺を赤太線で引き内野安打/BHの右下欄を赤円弧で囲む(RHは二重赤ダイヤ)なら "red_edge_infield_arc"、右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし・赤円弧なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runnerLine": "dotted_only" | "solid_trace", // 出塁・進塁時のひし形ライン: 通常の出塁・進塁ではひし形の点線を黒実線でなぞらず点線のまま残し進塁記号のみを添える方式なら "dotted_only"、進んだ塁間を黒実線でなぞる早稲田式なら "solid_trace"
@@ -846,7 +873,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "flyLiner": "umbrella_f_prefix_ground_arc" | "umbrella" | "paren" | "alphabet", // フライ・邪飛・ゴロ・ライナー: フライ︵7・ファールフライ︵F7・ゴロ下弧6⏝・ライナー￣6なら "umbrella_f_prefix_ground_arc"、傘曲線︵8・邪飛︵8F・直線￣8(ゴロ下弧なし)なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
   "advanceError": "senior_chart" | "english" | "kanji", // 盗塁・失策・妨害等の略号: 捕球エラーE6/送球エラー6E・野選4FC・打撃妨害2IF・走塁妨害OB6・守備妨害IP・盗塁S′/DSなら "senior_chart"、S/WP/PB/6E/FCなら "english"、盗/暴/捕/6失なら "kanji"
   "positionLabel": "kanji" | "number" | "english", // 守備位置表記: 投・捕・遊なら "kanji"、1〜9なら "number"、P/C/SSなら "english"
-  "customNote": "早見表に記載されている特記事項（50文字以内・なければ空文字）",
+  "customNote": "上記20項目に含まれないチーム独自の特別ルール（例: 臨時代走はTR表記 等）が画像内に明記されている場合のみ50文字以内で記載。早見表の表題やチーム名、『〇〇早見表に基づく表記ルール』のような説明文は絶対に入れず、特記事項がなければ必ず空文字 \"\" にすること",
   "summary": "読み取った記号ルールの特徴を日本語1文（60文字以内）で要約"
 }`;
 
@@ -865,7 +892,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
       DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
     );
 
-    if (body.saveToTeam !== false) {
+    if (body.saveToTeam !== false && targetTeam) {
       await db
         .update(teams)
         .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
@@ -874,7 +901,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
 
     return c.json({
       success: true,
-      teamId: targetTeam.id,
+      teamId: targetTeam?.id || "demo-team",
       scorebookSymbolRules: sanitized,
       summary:
         typeof rawExtracted.summary === "string" && rawExtracted.summary.trim()

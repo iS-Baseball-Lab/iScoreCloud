@@ -127,7 +127,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
 };
 
 /**
- * シニア・チーム早見表準拠テンプレート（川崎中央リトルシニア等の現場早見表フル対応）
+ * シニア・チーム早見表準拠テンプレート（中学硬式・現場早見表フル対応）
  */
 export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   cellStyle: "quadrant",
@@ -576,18 +576,18 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "bracket_dp",
-        label: "「 ] 」でつなぎ DP 表記",
-        sample: "2マス右端を ] で連結＋DP",
+        label: "縦2マス右内「 ] 」＋ 間にDP",
+        sample: "上部〜下部を ] で括り1・2マス間にDP",
       },
       {
         value: "dp_only",
         label: "送球番号 ＋ DP のみ",
-        sample: "6-4-3 DP（連結線は引かない）",
+        sample: "6-4-3 DP（括弧なし）",
       },
       {
         value: "wavy_link",
-        label: "波線・曲線でつなぐ（早稲田）",
-        sample: "2マス右端を波線連結＋DP",
+        label: "縦2マス右内 波線連結 ＋ 間にDP",
+        sample: "上部〜下部を波線で括り1・2マス間にDP",
       },
       {
         value: "chain_only",
@@ -631,8 +631,31 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
   },
 } as const;
 
-const LOCAL_TEAM_RULES_KEY = "iscore_team_scorebook_symbol_rules_v1";
+const LEGACY_GLOBAL_TEAM_RULES_KEY = "iscore_team_scorebook_symbol_rules_v1";
+const TEAM_RULES_STORAGE_PREFIX = "iscore_team_scorebook_symbol_rules_v2:";
 const LOCAL_NOTATION_MODE_KEY = "iscore_scorebook_notation_mode_v1";
+
+function buildTeamRulesStorageKey(teamId?: string | null): string | null {
+  const clean = (teamId || "").trim();
+  if (!clean) return null;
+  return `${TEAM_RULES_STORAGE_PREFIX}${clean}`;
+}
+
+/**
+ * AI自動読取時に早見表タイトルから誤生成された定型文（例:「〇〇スコア記号早見表に基づく表記ルール。」）を除外し、
+ * ユーザーが実際に設定した独自補足ルールのみを保持する
+ */
+function sanitizeCustomNote(rawNote: unknown, fallbackNote = ""): string {
+  const candidate =
+    typeof rawNote === "string"
+      ? rawNote.trim().slice(0, 160)
+      : fallbackNote.trim().slice(0, 160);
+  if (!candidate) return "";
+  if (/早見表に基づく(表記)?ルール[。.]?$/u.test(candidate)) {
+    return "";
+  }
+  return candidate;
+}
 
 function isOneOf<T extends string>(
   val: unknown,
@@ -649,13 +672,13 @@ export function sanitizeScorebookSymbolRules(
   fallback: ScorebookSymbolRules = STANDARD_SCOREBOOK_SYMBOL_RULES
 ): ScorebookSymbolRules {
   if (!raw || typeof raw !== "object") {
-    return { ...fallback };
+    return {
+      ...fallback,
+      customNote: sanitizeCustomNote(fallback.customNote),
+    };
   }
   const obj = raw as Record<string, unknown>;
-  const note =
-    typeof obj.customNote === "string"
-      ? obj.customNote.trim().slice(0, 160)
-      : fallback.customNote || "";
+  const note = sanitizeCustomNote(obj.customNote, fallback.customNote || "");
 
   return {
     cellStyle: isOneOf(
@@ -799,26 +822,33 @@ export function parseScorebookSymbolRulesJson(
   }
 }
 
-export function loadCachedTeamSymbolRules(): ScorebookSymbolRules | null {
+export function loadCachedTeamSymbolRules(
+  teamId?: string | null
+): ScorebookSymbolRules | null {
   if (typeof window === "undefined") return null;
   try {
-    return parseScorebookSymbolRulesJson(
-      localStorage.getItem(LOCAL_TEAM_RULES_KEY)
-    );
+    localStorage.removeItem(LEGACY_GLOBAL_TEAM_RULES_KEY);
+    const key = buildTeamRulesStorageKey(teamId);
+    if (!key) return null;
+    return parseScorebookSymbolRulesJson(localStorage.getItem(key));
   } catch {
     return null;
   }
 }
 
 export function saveCachedTeamSymbolRules(
-  rules: ScorebookSymbolRules | null
+  rules: ScorebookSymbolRules | null,
+  teamId?: string | null
 ): void {
   if (typeof window === "undefined") return;
   try {
+    localStorage.removeItem(LEGACY_GLOBAL_TEAM_RULES_KEY);
+    const key = buildTeamRulesStorageKey(teamId);
+    if (!key) return;
     if (!rules) {
-      localStorage.removeItem(LOCAL_TEAM_RULES_KEY);
+      localStorage.removeItem(key);
     } else {
-      localStorage.setItem(LOCAL_TEAM_RULES_KEY, JSON.stringify(rules));
+      localStorage.setItem(key, JSON.stringify(rules));
     }
   } catch {
     // ignore storage errors
@@ -1288,12 +1318,18 @@ function isBuntAtBatPlay(ab: ScorebookV2AtBat): boolean {
   return false;
 }
 
+export interface FormatAtBatPlayNotationOptions {
+  /** 1マス単独サムネイル表示時など、縦2マス連結オーバーレイがない場合に打者マス側にもDP/TP添字を出すか */
+  standaloneSingleCell?: boolean;
+}
+
 /**
  * 1打席の結果・打球方向・投球履歴を、指定された記号ルール（標準 or チームルール）の表記へ変換する
  */
 export function formatAtBatPlayNotation(
   ab: ScorebookV2AtBat,
-  rules: ScorebookSymbolRules
+  rules: ScorebookSymbolRules,
+  options?: FormatAtBatPlayNotationOptions
 ): FormattedPlayNotation {
   const rc: CanonicalAtBatResult = ab.resultCode;
   const dir = (ab.battedDirection || "").trim();
@@ -1740,14 +1776,17 @@ export function formatAtBatPlayNotation(
     const isDp =
       rc === "double_play" || (ab.outsInPlay === 2 && rc !== "triple_play");
     const isTp = rc === "triple_play" || ab.outsInPlay >= 3;
-    const dpSub =
-      rules.doublePlayMark === "chain_only"
-        ? undefined
-        : isTp
-        ? "TP"
-        : isDp
-        ? "DP"
-        : undefined;
+    const shouldEmbedDpInCell =
+      rules.doublePlayMark === "dp_only" ||
+      (Boolean(options?.standaloneSingleCell) &&
+        rules.doublePlayMark !== "chain_only");
+    const dpSub = !shouldEmbedDpInCell
+      ? undefined
+      : isTp
+      ? "TP"
+      : isDp
+      ? "DP"
+      : undefined;
 
     if (/^[1-9](?:-[1-9])*(?:A|B|C|H|TO)$/i.test(dir)) {
       return {

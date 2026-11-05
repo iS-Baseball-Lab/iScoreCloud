@@ -31,6 +31,8 @@ import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRule
 import { useLiff } from "@/components/liff/LiffProvider";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
+  loadCachedTeamSymbolRules,
+  sanitizeScorebookSymbolRules,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
@@ -127,18 +129,30 @@ export default function LiffScoreSettingsPage() {
 
       setIsDemoContext(Boolean(data.isDemo));
       if (data.team) {
+        const sanitizedTeamRules = data.team.scorebookSymbolRules
+          ? sanitizeScorebookSymbolRules(
+              data.team.scorebookSymbolRules,
+              DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+            )
+          : null;
         setResolvedTeamId(data.team.id);
         setResolvedTeamName(data.team.name);
         setSavedLegendUrl(data.team.scorebookLegendUrl);
-        setSavedTeamSymbolRules(data.team.scorebookSymbolRules ?? null);
-        if (data.team.scorebookSymbolRules) {
-          setActiveSymbolRules(data.team.scorebookSymbolRules);
-        }
+        setSavedTeamSymbolRules(sanitizedTeamRules);
+        setActiveSymbolRules(
+          sanitizedTeamRules ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        );
       } else {
+        const demoCached = data.isDemo
+          ? loadCachedTeamSymbolRules("demo-team")
+          : null;
         setResolvedTeamId(qTeam);
         setResolvedTeamName(currentTeam?.name || "マイチーム");
         setSavedLegendUrl(null);
         setSavedTeamSymbolRules(null);
+        setActiveSymbolRules(
+          demoCached ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

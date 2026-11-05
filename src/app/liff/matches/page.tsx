@@ -1021,6 +1021,7 @@ function MatchesContent() {
     isDemoMatch: Boolean(
       activeDetailMatch && (isDemo || isDemoMatchId(activeDetailMatch.id))
     ),
+    teamId: currentTeam?.id,
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

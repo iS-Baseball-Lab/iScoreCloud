@@ -121,17 +121,17 @@ function CarpoolAssignmentContent() {
   // LINE共有テキスト生成用の状態
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const [isLineTextOpen, setIsLineTextOpen] = useState(false);
-  const [lineTitle, setLineTitle] = useState("29期連絡網　川崎中央チーム");
-  const [lineMeetingTime, setLineMeetingTime] = useState("ミューザ集合5:45/出発6:00");
-  const [lineOpponents, setLineOpponents] = useState("東ブロック一年生交流戦（WH）\nvs 鶴見シニア@鶴見シニアG\nvs 青葉緑東シニア@鶴見シニア");
-  const [lineDetails, setLineDetails] = useState("-現地7:00〜7:15到着予定\n-○○さん　審判帯同");
-  const [lineGround, setLineGround] = useState("鶴見シニアG\n千葉県袖ヶ浦市川原井2074-2\n(https://maps.app.goo.gl/oPRqYwytuZbziKym6)");
-  const [lineRoute, setLineRoute] = useState("ミューザ→浜川崎IC(1号横羽線)→大師JCT(6号川崎線)→川崎浮島JCT(アクアライン)→木更津JCT(館山道)→姉崎袖ヶ浦IC→現地（往復）\n→多摩川\n※セブンイレブン姉崎袖ケ浦インター店で集合の上、現地入りして下さい。");
-  const [lineStaff, setLineStaff] = useState("○帯同スタッフ：連絡網を確認ください\n○スコアブック：スタッフ持参\n○チームカメラ：スタッフ持参\n○試合球：遠征道具車積み込み\n○審判：当日打ち合わせ\n○スコアラー：当日打ち合わせ\n○遠征詳細メール：必要\n○アナウンス：当番班母にて\n○お土産手配：当番班母にて※要否確認\n○飲料水：持参");
-  const [lineNotes, setLineNotes] = useState("○助手席の方は、当日ブロマネより助手席メール配信がありますので登録をお願いします。\n○選手の携帯電話使用は禁止です。乗車前にエナメルまたはクーラーボックスに収納すること！\n※ご家庭で周知徹底願います。\n○車内では騒がないこと！！乗車マナーの徹底をお願いします。\n○選手及び父母の服装等は遠征詳細配信メールを厳守願います。\n○高速道路では後部座席もシートベルトを締めましょう。\n○配車内容の変更は基本的に禁止です。変更理由がある場合は相談してください。");
+  const [lineTitle, setLineTitle] = useState("遠征連絡網");
+  const [lineMeetingTime, setLineMeetingTime] = useState("");
+  const [lineOpponents, setLineOpponents] = useState("");
+  const [lineDetails, setLineDetails] = useState("");
+  const [lineGround, setLineGround] = useState("");
+  const [lineRoute, setLineRoute] = useState("");
+  const [lineStaff, setLineStaff] = useState("");
+  const [lineNotes, setLineNotes] = useState("");
   const [lineFeesPerPlayer, setLineFeesPerPlayer] = useState("");
   const [lineMicroFee, setLineMicroFee] = useState("なし");
-  const [lineRep, setLineRep] = useState("配車担当  28期河本  29期祖一");
+  const [lineRep, setLineRep] = useState("配車担当");
 
   // 選択中の未アサインメンバー (タップアサイン用)
   const [selectedRider, setSelectedRider] = useState<Attendee | null>(null);
@@ -2228,7 +2228,7 @@ ${lineRep}`;
                   <Input 
                     value={lineTitle} 
                     onChange={e => setLineTitle(e.target.value)} 
-                    placeholder="例: 29期連絡網　川崎中央チーム"
+                    placeholder="例: 遠征連絡網　〇〇チーム"
                     className="h-10 rounded-xl font-bold"
                   />
                 </div>
@@ -2238,7 +2238,7 @@ ${lineRep}`;
                   <Input 
                     value={lineMeetingTime} 
                     onChange={e => setLineMeetingTime(e.target.value)} 
-                    placeholder="例: ミューザ集合5:45/出発6:00"
+                    placeholder="例: 駅前集合5:45 / 出発6:00"
                     className="h-10 rounded-xl font-bold"
                   />
                 </div>
@@ -2248,7 +2248,7 @@ ${lineRep}`;
                   <textarea 
                     value={lineOpponents} 
                     onChange={e => setLineOpponents(e.target.value)} 
-                    placeholder="例: 東ブロック一年生交流戦&#13;vs 鶴見シニア@鶴見シニアG"
+                    placeholder="例: 秋季交流戦&#13;vs 〇〇クラブ@〇〇球場"
                     rows={3}
                     className="w-full text-sm p-3 rounded-xl border border-input bg-background font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   />

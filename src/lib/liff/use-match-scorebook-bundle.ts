@@ -10,6 +10,7 @@ import type {
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   loadCachedTeamSymbolRules,
+  sanitizeScorebookSymbolRules,
   saveCachedTeamSymbolRules,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
@@ -43,6 +44,7 @@ export interface UseMatchScorebookBundleParams {
   isFutureOrScheduled: boolean;
   isRainout: boolean;
   isDemoMatch: boolean;
+  teamId?: string;
 }
 
 export interface MatchScorebookBundleState {
@@ -65,6 +67,7 @@ export function useMatchScorebookBundle({
   isFutureOrScheduled,
   isRainout,
   isDemoMatch,
+  teamId,
 }: UseMatchScorebookBundleParams): MatchScorebookBundleState {
   const [isLoadingSheet, setIsLoadingSheet] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,12 +80,20 @@ export function useMatchScorebookBundle({
   const [cloudTeamRules, setCloudTeamRules] =
     useState<ScorebookSymbolRules | null>(null);
 
-  useEffect(() => {
-    const cachedRules = loadCachedTeamSymbolRules();
-    if (cachedRules) {
-      setCloudTeamRules(cachedRules);
+  const resolvedTeamKey = useMemo(() => {
+    if (isDemoMatch) return "demo-team";
+    const explicit = (teamId || "").trim();
+    if (explicit) return explicit;
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("iscore_selectedTeamId") || "").trim();
     }
-  }, []);
+    return "";
+  }, [isDemoMatch, teamId]);
+
+  useEffect(() => {
+    const cachedRules = loadCachedTeamSymbolRules(resolvedTeamKey);
+    setCloudTeamRules(cachedRules);
+  }, [resolvedTeamKey]);
 
   const resetBundle = useCallback(() => {
     setTopStructure(null);
@@ -162,8 +173,15 @@ export function useMatchScorebookBundle({
         setBottomAtBats(nextBotAbs);
 
         if (json.teamSymbolRules) {
-          setCloudTeamRules(json.teamSymbolRules);
-          saveCachedTeamSymbolRules(json.teamSymbolRules);
+          const sanitized = sanitizeScorebookSymbolRules(
+            json.teamSymbolRules,
+            DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+          );
+          setCloudTeamRules(sanitized);
+          saveCachedTeamSymbolRules(sanitized, resolvedTeamKey);
+        } else {
+          setCloudTeamRules(null);
+          saveCachedTeamSymbolRules(null, resolvedTeamKey);
         }
       })
       .catch(() => {
@@ -189,6 +207,7 @@ export function useMatchScorebookBundle({
     isFutureOrScheduled,
     isRainout,
     isDemoMatch,
+    resolvedTeamKey,
   ]);
 
   const topModel = useMemo(() => {

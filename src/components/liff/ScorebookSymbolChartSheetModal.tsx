@@ -35,13 +35,12 @@ import {
   exportScorebookSvgElementsToPngBlob,
   printScorebookSvgElements,
   renderCellSubstitutionsOverlaySvg,
+  renderDoublePlayVerticalSpanOverlaySvg,
   renderSingleScorebookCellSvg,
 } from "@/components/liff/DigitalScorebookSheet";
 
 const CHART_FONT_SANS =
   "'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', system-ui, -apple-system, sans-serif";
-const CHART_FONT_MONO =
-  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 
 const COLOR_PAPER = "#fffefb";
 const COLOR_LABEL_BG = "#f8fafc";
@@ -196,29 +195,6 @@ function makeSegment(
       method === "balk",
     ...extra,
   };
-}
-
-function buildVerticalWaveSvgPath(
-  x: number,
-  yStart: number,
-  yEnd: number,
-  amp = 1.6,
-  step = 5.8
-): string {
-  const parts: string[] = [`M ${x.toFixed(1)} ${yStart.toFixed(1)}`];
-  let curY = yStart;
-  let dir = 1;
-  while (curY + 0.5 < yEnd) {
-    const nextY = Math.min(yEnd, curY + step);
-    const midY = (curY + nextY) / 2;
-    const ctrlX = x + dir * amp;
-    parts.push(
-      `Q ${ctrlX.toFixed(1)} ${midY.toFixed(1)} ${x.toFixed(1)} ${nextY.toFixed(1)}`
-    );
-    curY = nextY;
-    dir *= -1;
-  }
-  return parts.join(" ");
 }
 
 function buildChartColumns(
@@ -705,7 +681,8 @@ function buildChartColumns(
       cell: makeCell("c4-11", {
         outNumber: 2,
         atBatSeed: {
-          resultCode: "groundout",
+          resultCode: "double_play",
+          outsInPlay: 2,
           battedDirection: "6-4-3",
         },
       }),
@@ -920,7 +897,7 @@ export function ScorebookSymbolChartSheetSvg({
   svgRef,
 }: ScorebookSymbolChartSheetSvgProps) {
   const columns = useMemo(
-    () => buildChartColumns(rules, samplePlayerSurname || "川崎"),
+    () => buildChartColumns(rules, samplePlayerSurname || "山田"),
     [rules, samplePlayerSurname]
   );
 
@@ -1147,67 +1124,14 @@ export function ScorebookSymbolChartSheetSvg({
                     />
                   )}
 
-                  {/* ダブルプレイ上段セルの "DP" 添字＆2マス連結記号 */}
-                  {item?.dpLinkRole === "top" && (
-                    <g>
-                      {rules.doublePlayMark !== "chain_only" && (
-                        <text
-                          x={cellX + 72}
-                          y={rowY + 71.2}
-                          fontSize={7.2}
-                          fontWeight={900}
-                          textAnchor="middle"
-                          fill={COLOR_INK}
-                          fontFamily={CHART_FONT_MONO}
-                        >
-                          DP
-                        </text>
-                      )}
-                      {rules.doublePlayMark === "bracket_dp" && (
-                        <path
-                          d={`M ${cellX + SCOREBOOK_CELL_W - 7.5} ${rowY + 37} L ${cellX + SCOREBOOK_CELL_W - 2.6} ${rowY + 37} L ${cellX + SCOREBOOK_CELL_W - 2.6} ${rowY + SCOREBOOK_CELL_H * 2 - 8} L ${cellX + SCOREBOOK_CELL_W - 7.5} ${rowY + SCOREBOOK_CELL_H * 2 - 8}`}
-                          fill="none"
-                          stroke={COLOR_INK}
-                          strokeWidth={1.7}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      )}
-                      {rules.doublePlayMark === "wavy_link" && (
-                        <g>
-                          <line
-                            x1={cellX + SCOREBOOK_CELL_W - 7.5}
-                            y1={rowY + 37}
-                            x2={cellX + SCOREBOOK_CELL_W - 2.6}
-                            y2={rowY + 37}
-                            stroke={COLOR_INK}
-                            strokeWidth={1.45}
-                            strokeLinecap="round"
-                          />
-                          <path
-                            d={buildVerticalWaveSvgPath(
-                              cellX + SCOREBOOK_CELL_W - 2.6,
-                              rowY + 37,
-                              rowY + SCOREBOOK_CELL_H * 2 - 8
-                            )}
-                            fill="none"
-                            stroke={COLOR_INK}
-                            strokeWidth={1.45}
-                            strokeLinecap="round"
-                          />
-                          <line
-                            x1={cellX + SCOREBOOK_CELL_W - 7.5}
-                            y1={rowY + SCOREBOOK_CELL_H * 2 - 8}
-                            x2={cellX + SCOREBOOK_CELL_W - 2.6}
-                            y2={rowY + SCOREBOOK_CELL_H * 2 - 8}
-                            stroke={COLOR_INK}
-                            strokeWidth={1.45}
-                            strokeLinecap="round"
-                          />
-                        </g>
-                      )}
-                    </g>
-                  )}
+                  {/* ダブルプレイ縦2マス（上下2セル描画後に右内上部〜下部括弧＋1・2マス間DPを重ね描画） */}
+                  {item?.dpLinkRole === "bottom" &&
+                    renderDoublePlayVerticalSpanOverlaySvg({
+                      cellX,
+                      topCellY: rowY - SCOREBOOK_CELL_H,
+                      spanRows: 2,
+                      rules,
+                    })}
 
                   {/* 代打（左赤波線＋縦書き氏名）・代走/守備交代（右内赤波線＋縦書き氏名）オーバーレイ */}
                   {item?.cell &&
@@ -1292,8 +1216,16 @@ export function ScorebookSymbolChartSheetModal({
 
   const defaultSampleSurname = useMemo(() => {
     const clean = (teamName || "").trim();
-    if (!clean || clean === "マイチーム") return "川崎";
-    return clean.slice(0, 2);
+    if (
+      !clean ||
+      clean === "マイチーム" ||
+      clean === "チーム" ||
+      clean === "体験デモチーム"
+    ) {
+      return "山田";
+    }
+    const jpMatch = clean.match(/^[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]{2,}/);
+    return jpMatch ? jpMatch[0].slice(0, 2) : "山田";
   }, [teamName]);
 
   const [chartTitle, setChartTitle] = useState(defaultTitle);
@@ -1434,7 +1366,7 @@ export function ScorebookSymbolChartSheetModal({
                 maxLength={40}
                 value={chartTitle}
                 onChange={(e) => setChartTitle(e.target.value)}
-                placeholder="例: 川崎中央 スコア記号 早見表"
+                placeholder="例: チーム名 スコア記号 早見表"
                 className="flex-1 h-8 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
               />
             </div>
@@ -1448,7 +1380,7 @@ export function ScorebookSymbolChartSheetModal({
                 maxLength={4}
                 value={sampleSurname}
                 onChange={(e) => setSampleSurname(e.target.value)}
-                placeholder="川崎"
+                placeholder="山田"
                 className="w-full h-8 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary"
               />
             </div>

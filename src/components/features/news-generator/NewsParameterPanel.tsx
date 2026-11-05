@@ -105,7 +105,7 @@ export function NewsParameterPanel({
           type="text"
           value={reporterName}
           onChange={(e) => handleReporterChange(e.target.value)}
-          placeholder="例: 佐藤 祖一"
+          placeholder="例: 山田 太郎"
           className="w-full h-10 bg-background border border-border/60 text-foreground text-xs px-3 rounded-xl outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-all placeholder:text-muted-foreground font-bold"
         />
       </div>

@@ -708,7 +708,9 @@ function buildResultSection(
     };
   }
 
-  const notation = formatAtBatPlayNotation(ab, rules);
+  const notation = formatAtBatPlayNotation(ab, rules, {
+    standaloneSingleCell: true,
+  });
   const headlineResult =
     (ab.resultLabel || "").trim() ||
     CANONICAL_RESULT_HEADLINE_JA[ab.resultCode] ||
@@ -987,7 +989,7 @@ function buildResultSection(
         badgeTone: "amber",
         title: "DP ＝ 併殺（ダブルプレー）",
         description:
-          "1つの打球から連続して2つのアウトを取った併殺プレイを表します（シート全体ではアウトになった走者マスと連結記号で結ばれます）。",
+          "1つの打球から連続して2つのアウトを取った併殺プレイを表します（清書シート全体では縦2マスの右側内を上部から下部まで括弧「 ] 」等で括り、1マス目と2マス目の間に DP を記載します）。",
       });
     } else if (notation.subText === "TP" || rc === "triple_play") {
       rows.push({
