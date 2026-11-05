@@ -407,9 +407,9 @@ export function compileScorebookSheetModel(
     ? matchMeta.bottomTeamName
     : matchMeta.topTeamName;
 
-  // 1. 打順行（最低9人、全員打ち等で10人以上なら拡張）を構築
+  // 1. 打順行（標準紙面に合わせて最低10番まで表示、全員打ち等で11人以上なら自動拡張）を構築
   const maxOrder = Math.max(
-    9,
+    10,
     ...structure.batters.map((b) => b.battingOrder),
     ...atBats.map((a) => a.battingOrder || 1)
   );
@@ -438,11 +438,14 @@ export function compileScorebookSheetModel(
   }
 
   // 2. イニングごとに打席を割り当て、サブ列（打者一巡時の2列目・3列目）を衝突ゼロで確定
+  // 清書シート紙面は常に最低9回までマスを表示し、延長10回以降は自動拡張する
+  const maxPlayedInning =
+    atBats.length > 0 ? Math.max(1, ...atBats.map((a) => a.inning || 1)) : 0;
   const maxInning = Math.max(
-    7,
-    matchMeta.scheduledInnings || 7,
+    9,
+    matchMeta.scheduledInnings || 9,
     ...structure.innings.map((m) => m.inning),
-    ...atBats.map((a) => a.inning || 1)
+    maxPlayedInning
   );
 
   const atBatsByInning = new Map<number, ScorebookV2AtBat[]>();
@@ -549,15 +552,25 @@ export function compileScorebookSheetModel(
       const fallbackScore = isTop
         ? matchMeta.topInningScores[inn - 1]
         : matchMeta.bottomInningScores[inn - 1];
+      const hasNonZeroMeta = Boolean(
+        innMeta && ((innMeta.runs ?? 0) > 0 || (innMeta.hits ?? 0) > 0)
+      );
       inningSummaries.push({
         inning: inn,
-        runs: innMeta?.runs ?? (typeof fallbackScore === "number" && fallbackScore >= 0 ? fallbackScore : 0),
+        runs:
+          innMeta?.runs ??
+          (typeof fallbackScore === "number" && fallbackScore >= 0
+            ? fallbackScore
+            : 0),
         hits: innMeta?.hits ?? 0,
         errors: 0,
         walksHbp: 0,
         leftOnBase: 0,
         plateAppearances: 0,
-        hasData: Boolean(innMeta) || (typeof fallbackScore === "number" && fallbackScore >= 0),
+        hasData:
+          (typeof fallbackScore === "number" && fallbackScore >= 0) ||
+          inn <= maxPlayedInning ||
+          hasNonZeroMeta,
       });
       continue;
     }
@@ -568,6 +581,7 @@ export function compileScorebookSheetModel(
       "3B": null,
     };
     let outsTracker = 0;
+    const assignedOutCellKeysInInning = new Set<string>();
     let virtualErrorSavedOuts = 0;
     let innRuns = 0;
     let innHits = 0;
@@ -659,7 +673,9 @@ export function compileScorebookSheetModel(
       }
 
       const innRunsBeforePlay = innRuns;
-      outsTracker = snap.outsBefore;
+      if (idx === 0 && outsTracker === 0 && snap.outsBefore > 0) {
+        outsTracker = Math.min(2, snap.outsBefore);
+      }
 
       // タイブレーク等で打席開始前に突如ベースに出現した先行走者の起点マスを確保
       for (const bKey of ["3B", "2B", "1B"] as const) {
@@ -740,16 +756,42 @@ export function compileScorebookSheetModel(
         }
       }
 
-      const nextOutOrdinal = (): 1 | 2 | 3 => {
-        outsTracker = Math.min(3, outsTracker + 1);
-        return outsTracker as 1 | 2 | 3;
-      };
-
       const playOutCellKeys: string[] = [];
       const recordPlayOutCell = (outKey: string) => {
         if (!playOutCellKeys.includes(outKey)) {
           playOutCellKeys.push(outKey);
         }
+      };
+
+      const assignInningOutOrdinal = (
+        targetCell?: CompiledScorebookCell,
+        recordForPlayLink = false
+      ): 1 | 2 | 3 | null => {
+        if (targetCell) {
+          if (assignedOutCellKeysInInning.has(targetCell.cellKey)) {
+            if (recordForPlayLink && targetCell.outNumber) {
+              recordPlayOutCell(targetCell.cellKey);
+            }
+            return targetCell.outNumber;
+          }
+          if (outsTracker >= 3) {
+            return null;
+          }
+          outsTracker += 1;
+          const ord = outsTracker as 1 | 2 | 3;
+          targetCell.outNumber = ord;
+          assignedOutCellKeysInInning.add(targetCell.cellKey);
+          if (recordForPlayLink) {
+            recordPlayOutCell(targetCell.cellKey);
+          }
+          return ord;
+        }
+
+        if (outsTracker >= 3) {
+          return null;
+        }
+        outsTracker += 1;
+        return outsTracker as 1 | 2 | 3;
       };
 
       // 同一打席中の盗塁数（2人以上ならダブルスチール DS）
@@ -821,10 +863,7 @@ export function compileScorebookSheetModel(
         }
 
         if (pr.isOutPrePlay) {
-          const ord = nextOutOrdinal();
-          if (originCell) {
-            originCell.outNumber = ord;
-          }
+          assignInningOutOrdinal(originCell, false);
         }
       }
 
@@ -848,8 +887,7 @@ export function compileScorebookSheetModel(
 
       const assignBatterOutIfApplicable = () => {
         if (isBatterIntrinsicOut || snap.batterSummary.isOutOnBases) {
-          cell.outNumber = nextOutOrdinal();
-          recordPlayOutCell(cell.cellKey);
+          assignInningOutOrdinal(cell, true);
         }
       };
 
@@ -900,10 +938,9 @@ export function compileScorebookSheetModel(
                   throwChain: runnerThrowChain || undefined,
                 }
               );
-              originCell.outNumber = nextOutOrdinal();
-              recordPlayOutCell(originCell.cellKey);
+              assignInningOutOrdinal(originCell, true);
             } else {
-              nextOutOrdinal();
+              assignInningOutOrdinal(undefined, false);
             }
           } else if (baseToLevel(pr.finalBase) > baseToLevel(inPlayFrom)) {
             if (pr.effectiveMethod === "error" && ab.resultCode !== "error") {
@@ -1414,8 +1451,12 @@ export function compileScorebookSheetModel(
     lastSeenAtBatBatterByOrder.set(ab.battingOrder, curKey);
   }
 
-  // 4. 相手（守備側）投手ごとの登板成績集計
-  const pitcherRows = compilePitcherRows(structure.pitchers, atBats, maxInning);
+  // 4. 相手（守備側）投手ごとの登板成績集計（空表示の8・9回枠ではなく実プレイ最終回を上限とする）
+  const pitcherRows = compilePitcherRows(
+    structure.pitchers,
+    atBats,
+    Math.max(1, maxPlayedInning)
+  );
 
   const batterRows = normalizedSlots.map(
     (s) => batterStatsMap.get(s.battingOrder)!

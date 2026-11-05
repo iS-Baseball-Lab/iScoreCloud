@@ -304,7 +304,10 @@ function buildEffectivePreviewRules(
   ) {
     next.pitchMark = "cross_swing";
   }
-  if (fieldKey === "rbiMark" && next.hitLine === "mono_bold") {
+  if (
+    (fieldKey === "rbiMark" || fieldKey === "inningEndMark") &&
+    next.hitLine === "mono_bold"
+  ) {
     next.hitLine = "red_edge_infield_arc";
   }
   return next;
@@ -898,15 +901,45 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
             throwChain: "3",
           });
           const tagCell = makeSampleCell("opt-tag-1b", {
-            outNumber: 3,
-            isInningEndCell: true,
+            outNumber: 2,
+            isInningEndCell: false,
             segments: tagSegs,
           });
 
           return renderDiamondStripSvg(
             [forceCell, tagCell],
             previewRules,
-            ["2塁封殺", "触球・チェンジ"]
+            ["2塁封殺", "触球アウト"]
+          );
+        }
+
+        case "inningEndMark": {
+          const endBatterCell = makeSampleCell("opt-inning-end-1", {
+            outNumber: 3,
+            isInningEndCell: true,
+            atBatSeed: {
+              resultCode: "groundout",
+              resultLabel: "遊ゴロ",
+              battedDirection: "6-3",
+            },
+          });
+          const fcEndSegs = makeEmptySegments();
+          fcEndSegs[1] = makeSegment(1, "safe", "fc");
+          const endFcCell = makeSampleCell("opt-inning-end-2", {
+            isResidual: true,
+            residualBase: "1B",
+            isInningEndCell: true,
+            segments: fcEndSegs,
+            atBatSeed: {
+              resultCode: "fc",
+              battedDirection: "6-",
+            },
+          });
+
+          return renderDiamondStripSvg(
+            [endBatterCell, endFcCell],
+            previewRules,
+            ["打者3死終了", "封殺チェンジ"]
           );
         }
 

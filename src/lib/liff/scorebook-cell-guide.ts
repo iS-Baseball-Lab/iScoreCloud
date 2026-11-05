@@ -1422,15 +1422,32 @@ function buildDiamondSection(
     });
   }
 
-  // 4. 右下角：イニング終了二重斜線
-  if (cell.isInningEndCell) {
+  // 4. 右下角・下辺：イニング終了区切り線
+  if (cell.isInningEndCell && rules.inningEndMark !== "none") {
+    const isRedEnd =
+      rules.inningEndMark === "red_double_slash" &&
+      rules.hitLine !== "mono_bold";
+    const endSymbolText =
+      rules.inningEndMark === "bottom_double_line"
+        ? "＝＝"
+        : rules.inningEndMark === "single_slash"
+        ? "／"
+        : "／／";
+    const endZoneLabel =
+      rules.inningEndMark === "bottom_double_line" ? "マス下辺" : "マス右下角";
+    const endDescShape =
+      rules.inningEndMark === "bottom_double_line"
+        ? "マス下辺の二重横線"
+        : rules.inningEndMark === "single_slash"
+        ? "マス右下角の斜線"
+        : `マス右下角の${isRedEnd ? "赤い" : "黒い"}二重斜線`;
+
     rows.push({
-      zoneLabel: "マス右下角",
-      symbolText: "／／",
-      tone: "dark",
+      zoneLabel: endZoneLabel,
+      symbolText: endSymbolText,
+      tone: isRedEnd ? "red" : "dark",
       title: "イニング終了線（3アウトチェンジ）",
-      description:
-        "マス右下の二重斜線は「この打者のところで3アウトになり、この回の攻撃が終わった」という区切り印です。次の回は次の列の次の打順から始まります。",
+      description: `${endDescShape}は「この打者のところで3アウトになり、この回の攻撃が終わった」という区切り印です。次の回は次の列の次の打順から始まります。`,
     });
   }
 

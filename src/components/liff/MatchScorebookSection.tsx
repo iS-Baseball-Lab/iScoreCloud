@@ -31,6 +31,7 @@ import {
 import { useMatchScorebookBundle } from "@/lib/liff/use-match-scorebook-bundle";
 import {
   DigitalScorebookSheet,
+  exportScorebookSvgElementsToPdfBlob,
   exportScorebookSvgElementsToPngBlob,
   printScorebookSvgElements,
 } from "@/components/liff/DigitalScorebookSheet";
@@ -291,10 +292,66 @@ export function MatchScorebookSection({
         toast.error("印刷するスコアブックシートがありません");
         return;
       }
-      printScorebookSvgElements(
-        targets,
-        `${matchMeta.date} ${matchMeta.topTeamName} vs ${matchMeta.bottomTeamName} スコアブック`
-      );
+      const docTitle = `${matchMeta.date} ${matchMeta.topTeamName} vs ${matchMeta.bottomTeamName} スコアブック`;
+      const printed = printScorebookSvgElements(targets, docTitle, "landscape");
+      if (!printed) {
+        try {
+          setIsExportingPng(true);
+          const pdfBlob = await exportScorebookSvgElementsToPdfBlob(
+            targets,
+            "landscape",
+            2.4
+          );
+          const safeDate = (matchMeta.date || "scorebook").replace(
+            /[^0-9-]/g,
+            ""
+          );
+          const sideSuffix =
+            scope === "both"
+              ? "両面"
+              : activeSide === "top"
+              ? "先攻"
+              : "後攻";
+          const fileName = `scorebook_${safeDate}_${sideSuffix}.pdf`;
+          const pdfFile = new File([pdfBlob], fileName, {
+            type: "application/pdf",
+          });
+          if (
+            typeof navigator !== "undefined" &&
+            typeof navigator.share === "function" &&
+            typeof navigator.canShare === "function" &&
+            navigator.canShare({ files: [pdfFile] })
+          ) {
+            await navigator.share({
+              title: docTitle,
+              files: [pdfFile],
+            });
+            toast.success("スコアブックA4 PDFを出力しました");
+            return;
+          }
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onloadend = () =>
+              typeof reader.result === "string"
+                ? resolve(reader.result)
+                : reject(new Error("PDF変換失敗"));
+            reader.onerror = () => reject(new Error("PDF変換失敗"));
+            reader.readAsDataURL(pdfBlob);
+          });
+          const anchor = document.createElement("a");
+          anchor.href = dataUrl;
+          anchor.download = fileName;
+          document.body.appendChild(anchor);
+          anchor.click();
+          document.body.removeChild(anchor);
+          toast.success("スコアブックA4 PDFを保存しました");
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
+          toast.error("PDFの出力に失敗しました");
+        } finally {
+          setIsExportingPng(false);
+        }
+      }
     },
     [
       activeSide,
@@ -441,7 +498,7 @@ export function MatchScorebookSection({
               {activeModel && (
                 <div className="relative rounded-xl border border-border/60 bg-[#fffefb] overflow-hidden">
                   <div className="overflow-x-auto overscroll-x-contain">
-                    <div className="min-w-[820px] p-1">
+                    <div className="min-w-[940px] p-1">
                       {activeSide === "top" && topModel ? (
                         <DigitalScorebookSheet
                           model={topModel}
@@ -681,7 +738,7 @@ export function MatchScorebookSection({
             <div className="flex-1 overflow-auto p-3 pb-[max(env(safe-area-inset-bottom),20px)]">
               <div
                 style={{
-                  width: `${Math.round(980 * fullscreenZoom)}px`,
+                  width: `${Math.round(1120 * fullscreenZoom)}px`,
                 }}
                 className="mx-auto"
               >

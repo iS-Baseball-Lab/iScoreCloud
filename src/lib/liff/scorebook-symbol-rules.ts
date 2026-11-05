@@ -74,6 +74,12 @@ export type DoublePlayMarkStyle =
   | "chain_only";
 export type AdvanceErrorMarkStyle = "senior_chart" | "english" | "kanji";
 export type PositionLabelStyle = "kanji" | "number" | "english";
+export type InningEndMarkStyle =
+  | "red_double_slash"
+  | "black_double_slash"
+  | "single_slash"
+  | "bottom_double_line"
+  | "none";
 
 export interface ScorebookSymbolRules {
   cellStyle: CellGridStyle;
@@ -96,6 +102,7 @@ export interface ScorebookSymbolRules {
   flyLiner: FlyLinerMarkStyle;
   advanceError: AdvanceErrorMarkStyle;
   positionLabel: PositionLabelStyle;
+  inningEndMark: InningEndMarkStyle;
   customNote?: string;
 }
 
@@ -123,6 +130,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   flyLiner: "umbrella",
   advanceError: "english",
   positionLabel: "number",
+  inningEndMark: "black_double_slash",
   customNote: "",
 };
 
@@ -150,6 +158,7 @@ export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   flyLiner: "umbrella_f_prefix_ground_arc",
   advanceError: "senior_chart",
   positionLabel: "number",
+  inningEndMark: "red_double_slash",
   customNote: "",
 };
 
@@ -213,6 +222,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       flyLiner: "paren",
       advanceError: "kanji",
       positionLabel: "number",
+      inningEndMark: "black_double_slash",
       customNote: "",
     },
   },
@@ -241,6 +251,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       flyLiner: "alphabet",
       advanceError: "english",
       positionLabel: "english",
+      inningEndMark: "single_slash",
       customNote: "",
     },
   },
@@ -269,6 +280,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       flyLiner: "umbrella",
       advanceError: "kanji",
       positionLabel: "kanji",
+      inningEndMark: "black_double_slash",
       customNote: "",
     },
   },
@@ -438,7 +450,7 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       {
         value: "standard_to",
         label: "T.O / CS 表記（塁アルファベットなし）",
-        sample: "走塁死 T.O・盗塁死 CS・チェンジ黒 //",
+        sample: "走塁死 T.O・盗塁死 CS（A/B/C/H なし）",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<ForceOutMarkStyle>>,
   },
@@ -701,6 +713,36 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       { value: "english", label: "英字略称（P〜RF）", sample: "P・C・1B・SS・CF" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PositionLabelStyle>>,
   },
+  inningEndMark: {
+    title: "イニング終了（3アウトチェンジ）の記載方法",
+    options: [
+      {
+        value: "red_double_slash",
+        label: "マス右下角に赤の二重斜線（赤 ／／）",
+        sample: "最終打者マスの右下角に赤2本線",
+      },
+      {
+        value: "black_double_slash",
+        label: "マス右下角に黒の二重斜線（黒 ／／）",
+        sample: "最終打者マスの右下角に黒2本線",
+      },
+      {
+        value: "single_slash",
+        label: "マス右下角に黒の一重斜線（／）",
+        sample: "最終打者マスの右下角に黒1本線",
+      },
+      {
+        value: "bottom_double_line",
+        label: "マス下辺に二重横線（＝＝）",
+        sample: "最終打者マスの下枠に沿って二重横線",
+      },
+      {
+        value: "none",
+        label: "記載しない（アウト数字のみ）",
+        sample: "区切り線を引かず Ⅲ / ③ のみ記載",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<InningEndMarkStyle>>,
+  },
 } as const;
 
 const LEGACY_GLOBAL_TEAM_RULES_KEY = "iscore_team_scorebook_symbol_rules_v1";
@@ -874,6 +916,23 @@ export function sanitizeScorebookSymbolRules(
       obj.positionLabel,
       ["kanji", "number", "english"],
       fallback.positionLabel
+    ),
+    inningEndMark: isOneOf(
+      obj.inningEndMark,
+      [
+        "red_double_slash",
+        "black_double_slash",
+        "single_slash",
+        "bottom_double_line",
+        "none",
+      ],
+      obj.hitLine === "mono_bold"
+        ? "black_double_slash"
+        : typeof obj.forceOutMark === "string"
+        ? obj.forceOutMark === "base_letter_abch"
+          ? "red_double_slash"
+          : "black_double_slash"
+        : fallback.inningEndMark
     ),
     customNote: note,
   };
@@ -1057,6 +1116,15 @@ export function summarizeSymbolRulesBadges(
   }
   if (rules.advanceError === "senior_chart") {
     badges.push("E6/6E・4FC・S′");
+  }
+  if (rules.inningEndMark === "red_double_slash") {
+    badges.push("赤／／イニング終了");
+  } else if (rules.inningEndMark === "black_double_slash") {
+    badges.push("黒／／イニング終了");
+  } else if (rules.inningEndMark === "single_slash") {
+    badges.push("／イニング終了");
+  } else if (rules.inningEndMark === "bottom_double_line") {
+    badges.push("＝＝下辺イニング終了");
   }
 
   return badges;

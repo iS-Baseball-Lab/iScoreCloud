@@ -1534,6 +1534,34 @@ function rebalanceInningOutsAfterRecovery(
     advances: x.advances.map((a) => ({ ...a })),
   }));
 
+  // イニング途中の安打・四死球・失策等の安全出塁打席で走塁死advancesが0件にもかかわらず
+  // 後続打席でのアウト数字(Ⅱ/Ⅲ)が outsInPlay に乗っていた場合は先に0へ正規化し、
+  // 逆に同一打席内で盗塁死＋封殺など複数走塁死が明示されている fc/other 打席は実走塁死数を反映する
+  for (let i = 0; i < cloned.length; i++) {
+    const ab = cloned[i];
+    const explicitOutAdvCount = ab.advances.filter((a) => a.isOut).length;
+    const isSafeReach =
+      ab.resultCode === "single" ||
+      ab.resultCode === "double" ||
+      ab.resultCode === "triple" ||
+      ab.resultCode === "home_run" ||
+      ab.resultCode === "walk" ||
+      ab.resultCode === "intentional_walk" ||
+      ab.resultCode === "hit_by_pitch" ||
+      ab.resultCode === "interference" ||
+      ab.resultCode === "dropped_third_strike" ||
+      ab.resultCode === "error";
+    if (i < cloned.length - 1 && isSafeReach && explicitOutAdvCount === 0 && ab.outsInPlay > 0) {
+      ab.outsInPlay = 0;
+    } else if (
+      (ab.resultCode === "fc" || ab.resultCode === "other") &&
+      explicitOutAdvCount >= 2 &&
+      ab.outsInPlay < explicitOutAdvCount
+    ) {
+      ab.outsInPlay = Math.min(3, explicitOutAdvCount);
+    }
+  }
+
   let totalOuts = cloned.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
 
   // ケース1: 2アウト＋最終打者が野選/封殺(fc)で outsInPlay=0 になっていた場合 ➔ 1塁走者封殺の1アウトを補完して3アウト化
@@ -2261,7 +2289,11 @@ export function reconcileSheetExcessOutsDeterministically(
         }
       } else if (ab.resultCode === "fc") {
         const exactOuts =
-          ab.outsInPlay >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+          occupiedBaseRunnerOuts >= 2
+            ? Math.min(3 - runningOuts, occupiedBaseRunnerOuts)
+            : ab.outsInPlay >= 1 || occupiedBaseRunnerOuts >= 1
+            ? 1
+            : 0;
         if (ab.outsInPlay !== exactOuts) {
           ab.outsInPlay = exactOuts;
           changed = true;

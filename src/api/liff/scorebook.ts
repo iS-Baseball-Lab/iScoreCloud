@@ -780,6 +780,7 @@ interface GeminiExtractedSymbolRulesResponse {
   flyLiner?: string;
   advanceError?: string;
   positionLabel?: string;
+  inningEndMark?: string;
   customNote?: string;
   summary?: string;
 }
@@ -873,7 +874,8 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "flyLiner": "umbrella_f_prefix_ground_arc" | "umbrella" | "paren" | "alphabet", // フライ・邪飛・ゴロ・ライナー: フライ︵7・ファールフライ︵F7・ゴロ下弧6⏝・ライナー￣6なら "umbrella_f_prefix_ground_arc"、傘曲線︵8・邪飛︵8F・直線￣8(ゴロ下弧なし)なら "umbrella"、(8)・[8]なら "paren"、8F・8Lなら "alphabet"
   "advanceError": "senior_chart" | "english" | "kanji", // 盗塁・失策・妨害等の略号: 捕球エラーE6/送球エラー6E・野選4FC・打撃妨害2IF・走塁妨害OB6・守備妨害IP・盗塁S′/DSなら "senior_chart"、S/WP/PB/6E/FCなら "english"、盗/暴/捕/6失なら "kanji"
   "positionLabel": "kanji" | "number" | "english", // 守備位置表記: 投・捕・遊なら "kanji"、1〜9なら "number"、P/C/SSなら "english"
-  "customNote": "上記20項目に含まれないチーム独自の特別ルール（例: 臨時代走はTR表記 等）が画像内に明記されている場合のみ50文字以内で記載。早見表の表題やチーム名、『〇〇早見表に基づく表記ルール』のような説明文は絶対に入れず、特記事項がなければ必ず空文字 \"\" にすること",
+  "inningEndMark": "red_double_slash" | "black_double_slash" | "single_slash" | "bottom_double_line" | "none", // イニング終了（チェンジ）表記: マス右下角に赤の二重斜線なら "red_double_slash"、黒の二重斜線なら "black_double_slash"、一重斜線なら "single_slash"、マス下辺に二重横線なら "bottom_double_line"、線を引かないなら "none"
+  "customNote": "上記21項目に含まれないチーム独自の特別ルール（例: 臨時代走はTR表記 等）が画像内に明記されている場合のみ50文字以内で記載。早見表の表題やチーム名、『〇〇早見表に基づく表記ルール』のような説明文は絶対に入れず、特記事項がなければ必ず空文字 \"\" にすること",
   "summary": "読み取った記号ルールの特徴を日本語1文（60文字以内）で要約"
 }`;
 

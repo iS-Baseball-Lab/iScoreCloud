@@ -2062,37 +2062,93 @@ export function renderSingleScorebookCellSvg(
           hasQuadrantHitSlash
         )}
 
-      {/* イニング3アウト終了打者マスの右下二重斜線 */}
-      {cell?.isInningEndCell && (
-        <g>
-          <line
-            x1={ox + CELL_W - 14}
-            y1={oy + CELL_H}
-            x2={ox + CELL_W}
-            y2={oy + CELL_H - 14}
-            stroke={
-              rules.forceOutMark === "base_letter_abch" &&
-              rules.hitLine !== "mono_bold"
-                ? COLOR_RED
-                : COLOR_INK
-            }
-            strokeWidth={1.7}
-          />
-          <line
-            x1={ox + CELL_W - 10}
-            y1={oy + CELL_H}
-            x2={ox + CELL_W}
-            y2={oy + CELL_H - 10}
-            stroke={
-              rules.forceOutMark === "base_letter_abch" &&
-              rules.hitLine !== "mono_bold"
-                ? COLOR_RED
-                : COLOR_INK
-            }
-            strokeWidth={1.1}
-          />
-        </g>
-      )}
+      {/* イニング3アウト終了打者マスの区切り線（設定ルール連動） */}
+      {cell?.isInningEndCell && renderInningEndMarkSvg(ox, oy, rules)}
+    </g>
+  );
+}
+
+function hasCornerInningEndSlash(
+  isInningEndCell: boolean | undefined,
+  rules: ScorebookSymbolRules
+): boolean {
+  if (!isInningEndCell) return false;
+  return (
+    rules.inningEndMark === "red_double_slash" ||
+    rules.inningEndMark === "black_double_slash" ||
+    rules.inningEndMark === "single_slash"
+  );
+}
+
+function renderInningEndMarkSvg(
+  ox: number,
+  oy: number,
+  rules: ScorebookSymbolRules
+): React.ReactNode {
+  if (rules.inningEndMark === "none") {
+    return null;
+  }
+
+  if (rules.inningEndMark === "bottom_double_line") {
+    return (
+      <g>
+        <line
+          x1={ox + 1.5}
+          y1={oy + CELL_H - 3.6}
+          x2={ox + CELL_W - 1.5}
+          y2={oy + CELL_H - 3.6}
+          stroke={COLOR_INK}
+          strokeWidth={1.35}
+        />
+        <line
+          x1={ox + 1.5}
+          y1={oy + CELL_H - 1.1}
+          x2={ox + CELL_W - 1.5}
+          y2={oy + CELL_H - 1.1}
+          stroke={COLOR_INK}
+          strokeWidth={1.35}
+        />
+      </g>
+    );
+  }
+
+  if (rules.inningEndMark === "single_slash") {
+    return (
+      <line
+        x1={ox + CELL_W - 13.5}
+        y1={oy + CELL_H}
+        x2={ox + CELL_W}
+        y2={oy + CELL_H - 13.5}
+        stroke={COLOR_INK}
+        strokeWidth={1.75}
+      />
+    );
+  }
+
+  const slashStroke =
+    rules.inningEndMark === "red_double_slash" &&
+    rules.hitLine !== "mono_bold"
+      ? COLOR_RED
+      : COLOR_INK;
+
+  return (
+    <g>
+      <line
+        x1={ox + CELL_W - 14}
+        y1={oy + CELL_H}
+        x2={ox + CELL_W}
+        y2={oy + CELL_H - 14}
+        stroke={slashStroke}
+        strokeWidth={1.7}
+      />
+      <line
+        x1={ox + CELL_W - 10}
+        y1={oy + CELL_H}
+        x2={ox + CELL_W}
+        y2={oy + CELL_H - 10}
+        stroke={slashStroke}
+        strokeWidth={1.1}
+      />
     </g>
   );
 }
@@ -2211,8 +2267,12 @@ function renderBoundarySubMarkSvg(params: {
       : cx + CELL_W - 2.8 - shiftLeftPx;
   const waveYStart = ry + 2.5;
   const waveYEnd =
-    anchorSide === "right_inside" && isInningEndCell && shiftLeftPx === 0
-      ? ry + CELL_H - 13.5
+    anchorSide === "right_inside" && shiftLeftPx === 0
+      ? hasCornerInningEndSlash(isInningEndCell, rules)
+        ? ry + CELL_H - 13.5
+        : isInningEndCell && rules.inningEndMark === "bottom_double_line"
+        ? ry + CELL_H - 6.0
+        : ry + CELL_H - 2.5
       : ry + CELL_H - 2.5;
   const wavePath = buildVerticalWavePath(
     waveX,
@@ -2428,9 +2488,16 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
   const xBar = cellX + CELL_W - 3.0;
   const xTick = cellX + CELL_W - 8.2;
   const yTop = topCellY + 5.0;
-  // 下段セルが3アウトチェンジ（右下二本線 //）の場合は括弧下端を上げて // との重なりを防ぐ
-  const yBot =
-    topCellY + spanRows * CELL_H - (bottomCellIsInningEnd ? 14.0 : 5.5);
+  // 下段セルが3アウトチェンジ（右下斜線や下辺二重線）の場合は括弧下端を上げて重なりを防ぐ
+  const bottomEndClearance = hasCornerInningEndSlash(
+    bottomCellIsInningEnd,
+    rules
+  )
+    ? 14.0
+    : bottomCellIsInningEnd && rules.inningEndMark === "bottom_double_line"
+    ? 7.5
+    : 5.5;
+  const yBot = topCellY + spanRows * CELL_H - bottomEndClearance;
   const boundaryY = topCellY + CELL_H;
   const dpX = cellX + 71.0;
   const dpY = boundaryY + 3.0;
@@ -2619,7 +2686,16 @@ function renderDoublePlayLinksSvg(
               const xBar = cx + CELL_W - 3.0;
               const xTick = cx + CELL_W - 8.0;
               const y1 = ry + 5.5;
-              const y2 = ry + CELL_H - (isCellInningEnd ? 14.0 : 5.5);
+              const endClearance = hasCornerInningEndSlash(
+                isCellInningEnd,
+                rules
+              )
+                ? 14.0
+                : isCellInningEnd &&
+                  rules.inningEndMark === "bottom_double_line"
+                ? 7.5
+                : 5.5;
+              const y2 = ry + CELL_H - endClearance;
               return (
                 <g key={pt.cellKey}>
                   {rules.doublePlayMark === "wavy_link" ? (
@@ -3162,7 +3238,8 @@ export function renderBatterLineupRowSvg(params: {
               fill={COLOR_MUTED}
               fontFamily={FONT_MONO}
             >
-              {slot.uniformNumber || "-"}
+              {slot.uniformNumber ||
+                (slot.name.trim() || hasActivePlateAppearances ? "-" : "")}
             </text>
             <text
               x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W + 8}
@@ -3657,12 +3734,17 @@ export function DigitalScorebookSheet({
     }
   });
 
-  // 上部ミニスコアボード列数
+  // 上部ミニスコアボード列数（紙面と同じく最低9回まで表示し、延長時は自動拡張）
+  const maxSheetInning =
+    inningGroups.length > 0
+      ? inningGroups[inningGroups.length - 1]!.inning
+      : 9;
   const sbInningsCount = Math.max(
-    matchMeta.scheduledInnings || 7,
+    9,
+    maxSheetInning,
+    matchMeta.scheduledInnings || 9,
     matchMeta.topInningScores.length,
-    matchMeta.bottomInningScores.length,
-    7
+    matchMeta.bottomInningScores.length
   );
   const sbColW = 20;
   const sbTeamW = 112;
@@ -3827,11 +3909,12 @@ export function DigitalScorebookSheet({
             const cx = sbX + sbTeamW + idx * sbColW;
             const topVal = matchMeta.topInningScores[idx];
             const botVal = matchMeta.bottomInningScores[idx];
-            const isLastScheduled = idx === sbInningsCount - 1;
+            const lastPlayedTopIdx = matchMeta.topInningScores.length - 1;
             const isWalkOffOrX =
-              isLastScheduled &&
+              lastPlayedTopIdx >= 0 &&
+              idx === lastPlayedTopIdx &&
               botVal === undefined &&
-              topVal !== undefined &&
+              typeof topVal === "number" &&
               matchMeta.bottomTotalRuns > matchMeta.topTotalRuns;
 
             return (
@@ -4061,9 +4144,15 @@ export function DigitalScorebookSheet({
         })}
       </g>
 
-      {/* ━━━ 3. 打順行（1番〜9番+）＆ 打席グリッド ＆ 右端個人集計 ━━━ */}
+      {/* ━━━ 3. 打順行（1番〜10番+）＆ 打席グリッド ＆ 右端個人集計 ━━━ */}
       {model.batterRows.map((bRow, rowIdx) => {
         const ry = gridBodyTopY + rowIdx * CELL_H;
+        const isUnusedBatterRow =
+          !bRow.slot.name.trim() &&
+          bRow.slot.substitutions.every((s) => !s.name.trim()) &&
+          bRow.plateAppearances === 0 &&
+          bRow.runs === 0 &&
+          bRow.stolenBases === 0;
 
         return (
           <g key={`batter-row-${bRow.battingOrder}`}>
@@ -4152,23 +4241,25 @@ export function DigitalScorebookSheet({
                     stroke={COLOR_GRID}
                     strokeWidth={0.85}
                   />
-                  <text
-                    x={sx + 12}
-                    y={ry + CELL_H / 2 + 4}
-                    fontSize={11}
-                    fontWeight={val > 0 ? 900 : 600}
-                    textAnchor="middle"
-                    fill={
-                      isHighlight && val > 0
-                        ? COLOR_RED
-                        : val > 0
-                        ? COLOR_INK
-                        : "#94a3b8"
-                    }
-                    fontFamily={FONT_MONO}
-                  >
-                    {val}
-                  </text>
+                  {!isUnusedBatterRow && (
+                    <text
+                      x={sx + 12}
+                      y={ry + CELL_H / 2 + 4}
+                      fontSize={11}
+                      fontWeight={val > 0 ? 900 : 600}
+                      textAnchor="middle"
+                      fill={
+                        isHighlight && val > 0
+                          ? COLOR_RED
+                          : val > 0
+                          ? COLOR_INK
+                          : "#94a3b8"
+                      }
+                      fontFamily={FONT_MONO}
+                    >
+                      {val}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -5515,6 +5606,102 @@ export function ScorebookSymbolSamplePreview({
   );
 }
 
+function serializeNormalizedSvgElement(svgEl: SVGSVGElement): {
+  xml: string;
+  w: number;
+  h: number;
+} {
+  const vb = svgEl.viewBox?.baseVal;
+  const attrW = Number(svgEl.getAttribute("width"));
+  const attrH = Number(svgEl.getAttribute("height"));
+  const w =
+    vb && vb.width > 0
+      ? vb.width
+      : Number.isFinite(attrW) && attrW > 0
+      ? attrW
+      : 1100;
+  const h =
+    vb && vb.height > 0
+      ? vb.height
+      : Number.isFinite(attrH) && attrH > 0
+      ? attrH
+      : 860;
+
+  const clone = svgEl.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+  clone.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  clone.setAttribute("width", String(w));
+  clone.setAttribute("height", String(h));
+  clone.removeAttribute("class");
+  clone.style.width = `${w}px`;
+  clone.style.height = `${h}px`;
+
+  const serializer = new XMLSerializer();
+  const xml = serializer.serializeToString(clone);
+  return { xml, w, h };
+}
+
+async function rasterizeSvgElementToImage(svgEl: SVGSVGElement): Promise<{
+  img: HTMLImageElement;
+  w: number;
+  h: number;
+}> {
+  const { xml, w, h } = serializeNormalizedSvgElement(svgEl);
+  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+
+  const loadFromSrc = (src: string): Promise<HTMLImageElement> =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.decoding = "sync";
+      image.onload = () => resolve(image);
+      image.onerror = () =>
+        reject(new Error("スコアブック画像のラスタライズに失敗しました"));
+      image.src = src;
+    });
+
+  try {
+    const img = await loadFromSrc(dataUrl);
+    if (typeof img.decode === "function") {
+      await img.decode().catch(() => undefined);
+    }
+    return { img, w, h };
+  } catch {
+    const svgBlob = new Blob([xml], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const objUrl = URL.createObjectURL(svgBlob);
+    try {
+      const img = await loadFromSrc(objUrl);
+      if (typeof img.decode === "function") {
+        await img.decode().catch(() => undefined);
+      }
+      return { img, w, h };
+    } finally {
+      URL.revokeObjectURL(objUrl);
+    }
+  }
+}
+
+function dataUrlToUint8Array(dataUrl: string): Uint8Array {
+  const commaIdx = dataUrl.indexOf(",");
+  const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function encodeAsciiBytes(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) {
+    bytes[i] = text.charCodeAt(i) & 0x7f;
+  }
+  return bytes;
+}
+
 /**
  * 1枚または2枚（先攻＋後攻）のSVG要素を高解像度PNG Blobへ変換する
  */
@@ -5526,7 +5713,6 @@ export async function exportScorebookSvgElementsToPngBlob(
     throw new Error("出力対象のスコアブックシートがありません");
   }
 
-  const serializer = new XMLSerializer();
   const loadedImages: Array<{
     img: HTMLImageElement;
     w: number;
@@ -5534,31 +5720,8 @@ export async function exportScorebookSvgElementsToPngBlob(
   }> = [];
 
   for (const svgEl of svgElements) {
-    const vb = svgEl.viewBox.baseVal;
-    const w = vb && vb.width > 0 ? vb.width : Number(svgEl.getAttribute("width")) || 1100;
-    const h = vb && vb.height > 0 ? vb.height : Number(svgEl.getAttribute("height")) || 860;
-    let xml = serializer.serializeToString(svgEl);
-    if (!xml.includes("xmlns=")) {
-      xml = xml.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-
-    const svgBlob = new Blob([xml], {
-      type: "image/svg+xml;charset=utf-8",
-    });
-    const objUrl = URL.createObjectURL(svgBlob);
-
-    try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () =>
-          reject(new Error("スコアブック画像のラスタライズに失敗しました"));
-        image.src = objUrl;
-      });
-      loadedImages.push({ img, w, h });
-    } finally {
-      URL.revokeObjectURL(objUrl);
-    }
+    const loaded = await rasterizeSvgElementToImage(svgEl);
+    loadedImages.push(loaded);
   }
 
   const sheetGap = loadedImages.length > 1 ? 24 : 0;
@@ -5592,17 +5755,180 @@ export async function exportScorebookSvgElementsToPngBlob(
   }
 
   const pngBlob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (b) => {
-        if (b) resolve(b);
-        else reject(new Error("PNGデータの生成に失敗しました"));
-      },
-      "image/png",
-      1.0
-    );
+    try {
+      canvas.toBlob(
+        (b) => {
+          if (b) {
+            resolve(b);
+            return;
+          }
+          try {
+            const fallbackBytes = dataUrlToUint8Array(
+              canvas.toDataURL("image/png")
+            );
+            resolve(
+              new Blob([fallbackBytes.buffer as ArrayBuffer], {
+                type: "image/png",
+              })
+            );
+          } catch {
+            reject(new Error("PNGデータの生成に失敗しました"));
+          }
+        },
+        "image/png",
+        1.0
+      );
+    } catch {
+      try {
+        const fallbackBytes = dataUrlToUint8Array(
+          canvas.toDataURL("image/png")
+        );
+        resolve(
+          new Blob([fallbackBytes.buffer as ArrayBuffer], {
+            type: "image/png",
+          })
+        );
+      } catch {
+        reject(new Error("PNGデータの生成に失敗しました"));
+      }
+    }
   });
 
   return pngBlob;
+}
+
+/**
+ * 1枚または複数枚のSVG要素をA4（縦/横）の標準PDFファイル(Blob)へ直接変換する
+ * LINEアプリ内ブラウザ（LIFF）など window.print() が動作しない環境でも確実にA4 PDF出力可能
+ */
+export async function exportScorebookSvgElementsToPdfBlob(
+  svgElements: SVGSVGElement[],
+  orientation: "landscape" | "portrait" = "landscape",
+  scale = 2.5
+): Promise<Blob> {
+  if (svgElements.length === 0) {
+    throw new Error("出力対象のスコアブックシートがありません");
+  }
+
+  const pageImages: Array<{
+    jpegBytes: Uint8Array;
+    pixelW: number;
+    pixelH: number;
+  }> = [];
+
+  for (const svgEl of svgElements) {
+    const { img, w, h } = await rasterizeSvgElementToImage(svgEl);
+    const pixelW = Math.max(1, Math.round(w * scale));
+    const pixelH = Math.max(1, Math.round(h * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = pixelW;
+    canvas.height = pixelH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      throw new Error("PDF描画用Canvasの初期化に失敗しました");
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pixelW, pixelH);
+    ctx.drawImage(img, 0, 0, pixelW, pixelH);
+
+    const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.94);
+    const jpegBytes = dataUrlToUint8Array(jpegDataUrl);
+    canvas.width = 1;
+    canvas.height = 1;
+    pageImages.push({ jpegBytes, pixelW, pixelH });
+  }
+
+  const pageW = orientation === "portrait" ? 595.28 : 841.89;
+  const pageH = orientation === "portrait" ? 841.89 : 595.28;
+  const marginPt = 14;
+  const availW = pageW - marginPt * 2;
+  const availH = pageH - marginPt * 2;
+
+  const pageCount = pageImages.length;
+  const totalObjs = 2 + pageCount * 3;
+  const offsets = new Array<number>(totalObjs + 1).fill(0);
+  const chunks: Uint8Array[] = [];
+  let byteCursor = 0;
+
+  const pushBytes = (bytes: Uint8Array) => {
+    chunks.push(bytes);
+    byteCursor += bytes.byteLength;
+  };
+  const pushAscii = (str: string) => {
+    pushBytes(encodeAsciiBytes(str));
+  };
+
+  // PDF 1.4 ヘッダー（バイナリ識別コメント付き）
+  pushBytes(
+    new Uint8Array([
+      0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3,
+      0xcf, 0xd3, 0x0a,
+    ])
+  );
+
+  // 1 0 obj: Catalog
+  offsets[1] = byteCursor;
+  pushAscii("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+  // 2 0 obj: Pages
+  const kidsRefs = pageImages
+    .map((_, idx) => `${3 + idx * 3} 0 R`)
+    .join(" ");
+  offsets[2] = byteCursor;
+  pushAscii(
+    `2 0 obj\n<< /Type /Pages /Count ${pageCount} /Kids [${kidsRefs}] >>\nendobj\n`
+  );
+
+  // 各ページ（Page / Contents / Image XObject）
+  pageImages.forEach((pg, idx) => {
+    const pageObjNum = 3 + idx * 3;
+    const contentObjNum = 4 + idx * 3;
+    const imgObjNum = 5 + idx * 3;
+
+    const fit = Math.min(availW / pg.pixelW, availH / pg.pixelH);
+    const drawW = (pg.pixelW * fit).toFixed(2);
+    const drawH = (pg.pixelH * fit).toFixed(2);
+    const offsetX = ((pageW - pg.pixelW * fit) / 2).toFixed(2);
+    const offsetY = (pageH - marginPt - pg.pixelH * fit).toFixed(2);
+
+    const contentStream = `q\n${drawW} 0 0 ${drawH} ${offsetX} ${offsetY} cm\n/Im0 Do\nQ\n`;
+    const contentBytes = encodeAsciiBytes(contentStream);
+
+    offsets[pageObjNum] = byteCursor;
+    pushAscii(
+      `${pageObjNum} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /ProcSet [/PDF /ImageC] /XObject << /Im0 ${imgObjNum} 0 R >> >> /Contents ${contentObjNum} 0 R >>\nendobj\n`
+    );
+
+    offsets[contentObjNum] = byteCursor;
+    pushAscii(
+      `${contentObjNum} 0 obj\n<< /Length ${contentBytes.byteLength} >>\nstream\n`
+    );
+    pushBytes(contentBytes);
+    pushAscii("\nendstream\nendobj\n");
+
+    offsets[imgObjNum] = byteCursor;
+    pushAscii(
+      `${imgObjNum} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pg.pixelW} /Height ${pg.pixelH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.jpegBytes.byteLength} >>\nstream\n`
+    );
+    pushBytes(pg.jpegBytes);
+    pushAscii("\nendstream\nendobj\n");
+  });
+
+  const xrefOffset = byteCursor;
+  pushAscii(`xref\n0 ${totalObjs + 1}\n0000000000 65535 f \n`);
+  for (let objNum = 1; objNum <= totalObjs; objNum++) {
+    pushAscii(`${String(offsets[objNum]).padStart(10, "0")} 00000 n \n`);
+  }
+  pushAscii(
+    `trailer\n<< /Size ${totalObjs + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`
+  );
+
+  return new Blob(chunks as BlobPart[], { type: "application/pdf" });
+}
+
+export function isPrintUnsupportedInAppBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Line\/|LIFF|FBAN|FBAV|Instagram/i.test(navigator.userAgent || "");
 }
 
 /**
@@ -5612,20 +5938,20 @@ export function printScorebookSvgElements(
   svgElements: SVGSVGElement[],
   documentTitle: string,
   orientation: "landscape" | "portrait" = "landscape"
-): void {
-  if (typeof document === "undefined" || svgElements.length === 0) return;
+): boolean {
+  if (typeof document === "undefined" || svgElements.length === 0) return false;
+  if (isPrintUnsupportedInAppBrowser()) {
+    return false;
+  }
 
-  const serializer = new XMLSerializer();
   const pagesHtml = svgElements
     .map((el) => {
-      let xml = serializer.serializeToString(el);
-      if (!xml.includes("xmlns=")) {
-        xml = xml.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-      }
+      const { xml } = serializeNormalizedSvgElement(el);
       return `<div class="sheet-page">${xml}</div>`;
     })
     .join("");
 
+  const maxPageWidthMm = orientation === "portrait" ? 198 : 285;
   const maxPageHeightMm = orientation === "portrait" ? 284 : 196;
   const html = `<!DOCTYPE html>
 <html lang="ja">
@@ -5645,17 +5971,18 @@ export function printScorebookSvgElements(
     width: 100%;
     page-break-after: always;
     break-after: page;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    text-align: center;
   }
   .sheet-page:last-child {
     page-break-after: auto;
     break-after: auto;
   }
   .sheet-page svg {
-    width: 100%;
-    height: auto;
+    display: block;
+    margin: 0 auto;
+    width: auto !important;
+    height: auto !important;
+    max-width: ${maxPageWidthMm}mm;
     max-height: ${maxPageHeightMm}mm;
   }
 </style>
@@ -5663,38 +5990,59 @@ export function printScorebookSvgElements(
 <body>${pagesHtml}</body>
 </html>`;
 
+  const existingFrame = document.getElementById(
+    "iscore-scorebook-print-frame"
+  ) as HTMLIFrameElement | null;
+  if (existingFrame && existingFrame.parentNode) {
+    existingFrame.parentNode.removeChild(existingFrame);
+  }
+
   const iframe = document.createElement("iframe");
+  iframe.id = "iscore-scorebook-print-frame";
   iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = orientation === "portrait" ? "960px" : "1360px";
+  iframe.style.height = orientation === "portrait" ? "1360px" : "960px";
   iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  iframe.style.pointerEvents = "none";
   iframe.setAttribute("aria-hidden", "true");
   document.body.appendChild(iframe);
 
-  const doc = iframe.contentWindow?.document;
-  if (!doc || !iframe.contentWindow) {
-    document.body.removeChild(iframe);
-    return;
+  const win = iframe.contentWindow;
+  const doc = win?.document;
+  if (!doc || !win) {
+    if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    return false;
   }
 
   doc.open();
   doc.write(html);
   doc.close();
 
-  const trigger = () => {
-    try {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-    } finally {
-      setTimeout(() => {
-        if (iframe.parentNode) {
-          iframe.parentNode.removeChild(iframe);
-        }
-      }, 3000);
-    }
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    setTimeout(() => {
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }, 1000);
   };
 
-  setTimeout(trigger, 250);
+  win.addEventListener("afterprint", cleanup, { once: true });
+  setTimeout(cleanup, 180_000);
+
+  setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      cleanup();
+    }
+  }, 120);
+
+  return true;
 }

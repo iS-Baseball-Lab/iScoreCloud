@@ -6,7 +6,9 @@ import { createPortal } from "react-dom";
 import {
   CheckCircle2,
   Download,
+  FileDown,
   FileSpreadsheet,
+  Image as ImageIcon,
   Loader2,
   Maximize2,
   Minimize2,
@@ -32,6 +34,7 @@ import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
 import {
   SCOREBOOK_CELL_H,
   SCOREBOOK_CELL_W,
+  exportScorebookSvgElementsToPdfBlob,
   exportScorebookSvgElementsToPngBlob,
   printScorebookSvgElements,
   renderCellSubstitutionsOverlaySvg,
@@ -367,7 +370,18 @@ function buildChartColumns(
       noteLines: ["※ファースト", "タッチアウト"],
       cell: makeCell("c2-10", { segments: tagOut1bSegs }),
     },
-    null,
+    {
+      lines: ["イニング終了", "(チェンジ)"],
+      cell: makeCell("c2-11", {
+        outNumber: 3,
+        isInningEndCell: true,
+        atBatSeed: {
+          resultCode: "groundout",
+          resultLabel: "遊ゴロ",
+          battedDirection: "6-3",
+        },
+      }),
+    },
     null,
     null,
     null,
@@ -909,9 +923,11 @@ export function ScorebookSymbolChartSheetSvg({
   return (
     <svg
       ref={svgRef}
+      xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
-      width="100%"
-      className="block select-none"
+      width={SVG_WIDTH}
+      height={SVG_HEIGHT}
+      className="w-full h-auto block select-none"
       style={{
         fontFamily: CHART_FONT_SANS,
         backgroundColor: COLOR_PAPER,
@@ -1234,8 +1250,12 @@ export function ScorebookSymbolChartSheetModal({
     "portrait" | "landscape"
   >("portrait");
   const [isZoomed, setIsZoomed] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [isRegisteringCloud, setIsRegisteringCloud] = useState(false);
+  const [exportedPreviewDataUrl, setExportedPreviewDataUrl] = useState<
+    string | null
+  >(null);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
 
@@ -1253,13 +1273,84 @@ export function ScorebookSymbolChartSheetModal({
 
   if (!mounted || !isOpen) return null;
 
+  const buildSafeFileBaseName = (): string =>
+    (chartTitle || "scorebook-symbol-chart")
+      .replace(/[\\/:*?"<>|\s]+/g, "_")
+      .slice(0, 50) || "scorebook-symbol-chart";
+
+  const blobToDataUrl = (blob: Blob): Promise<string> =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () =>
+        typeof reader.result === "string"
+          ? resolve(reader.result)
+          : reject(new Error("データ変換に失敗しました"));
+      reader.onerror = () => reject(new Error("データ変換に失敗しました"));
+      reader.readAsDataURL(blob);
+    });
+
+  const handleExportPdf = async () => {
+    if (!svgRef.current || isExportingPdf) return;
+    try {
+      setIsExportingPdf(true);
+      const pdfBlob = await exportScorebookSvgElementsToPdfBlob(
+        [svgRef.current],
+        printOrientation,
+        2.5
+      );
+      const fileName = `${buildSafeFileBaseName()}.pdf`;
+      const pdfFile = new File([pdfBlob], fileName, {
+        type: "application/pdf",
+      });
+
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function" &&
+        typeof navigator.canShare === "function" &&
+        navigator.canShare({ files: [pdfFile] })
+      ) {
+        try {
+          await navigator.share({
+            title: chartTitle || "スコア記号早見表",
+            files: [pdfFile],
+          });
+          toast.success("早見表のA4 PDFを出力しました");
+          return;
+        } catch (shareErr) {
+          if (shareErr instanceof Error && shareErr.name === "AbortError") {
+            return;
+          }
+        }
+      }
+
+      const dataUrl = await blobToDataUrl(pdfBlob);
+      const anchor = document.createElement("a");
+      anchor.href = dataUrl;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      toast.success("早見表のA4 PDFファイルを保存しました");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "PDFファイルの書き出しに失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   const handlePrintPdf = () => {
     if (!svgRef.current) return;
-    printScorebookSvgElements(
+    const printed = printScorebookSvgElements(
       [svgRef.current],
       chartTitle || "スコア記号早見表",
       printOrientation
     );
+    if (!printed) {
+      // LINEアプリ内ブラウザ等、window.print() が無効な環境では自動的にA4 PDF出力へフォールバック
+      void handleExportPdf();
+    }
   };
 
   const handleDownloadPng = async () => {
@@ -1270,19 +1361,41 @@ export function ScorebookSymbolChartSheetModal({
         [svgRef.current],
         2.5
       );
-      const url = URL.createObjectURL(blob);
+      const fileName = `${buildSafeFileBaseName()}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function" &&
+        typeof navigator.canShare === "function" &&
+        navigator.canShare({ files: [file] })
+      ) {
+        try {
+          await navigator.share({
+            title: chartTitle || "スコア記号早見表",
+            files: [file],
+          });
+          toast.success("早見表の高画質PNG画像を出力しました");
+          return;
+        } catch (shareErr) {
+          if (shareErr instanceof Error && shareErr.name === "AbortError") {
+            return;
+          }
+        }
+      }
+
+      const dataUrl = await blobToDataUrl(blob);
       const a = document.createElement("a");
-      const safeName =
-        (chartTitle || "scorebook-symbol-chart")
-          .replace(/[\\/:*?"<>|\s]+/g, "_")
-          .slice(0, 50) || "scorebook-symbol-chart";
-      a.href = url;
-      a.download = `${safeName}.png`;
+      a.href = dataUrl;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
-      toast.success("早見表の高画質PNG画像を保存しました");
+
+      setExportedPreviewDataUrl(dataUrl);
+      toast.success(
+        "早見表PNG画像を生成しました（画像を長押しして写真保存もできます）"
+      );
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "PNG画像の書き出しに失敗しました";
@@ -1496,30 +1609,50 @@ export function ScorebookSymbolChartSheetModal({
 
             <button
               type="button"
-              onClick={handlePrintPdf}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+              disabled={isExportingPdf || isExportingPng || isRegisteringCloud}
+              onClick={() => void handleExportPdf()}
+              className="flex-1 py-2.5 px-2.5 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
-              <Printer className="w-4 h-4 text-primary shrink-0" />
-              <span>A4印刷 / PDF</span>
+              {isExportingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                  <span>PDF生成...</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-4 h-4 text-primary shrink-0" />
+                  <span>PDF保存</span>
+                </>
+              )}
             </button>
 
             <button
               type="button"
-              disabled={isExportingPng || isRegisteringCloud}
+              disabled={isExportingPng || isExportingPdf || isRegisteringCloud}
               onClick={() => void handleDownloadPng()}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              className="flex-1 py-2.5 px-2.5 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
             >
               {isExportingPng ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
-                  <span>生成中...</span>
+                  <span>画像生成...</span>
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4 text-primary shrink-0" />
-                  <span>PNG画像保存</span>
+                  <span>PNG画像</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              disabled={isExportingPdf || isExportingPng || isRegisteringCloud}
+              onClick={handlePrintPdf}
+              className="py-2.5 px-3 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+            >
+              <Printer className="w-4 h-4 text-primary shrink-0" />
+              <span>印刷</span>
             </button>
           </div>
 
@@ -1531,6 +1664,41 @@ export function ScorebookSymbolChartSheetModal({
           </p>
         </div>
       </div>
+
+      {/* 生成PNG画像の長押し保存プレビュー（LINEアプリ内ブラウザ・モバイル完全対応） */}
+      {exportedPreviewDataUrl && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="生成したスコア記号早見表画像"
+          className="fixed inset-0 z-[10005] bg-slate-950 flex flex-col p-3 pb-[max(env(safe-area-inset-bottom),20px)]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-2.5 text-white shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <ImageIcon className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-black truncate">
+                画像を長押しして「写真に保存」できます
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExportedPreviewDataUrl(null)}
+              aria-label="プレビューを閉じる"
+              className="p-2 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto flex items-start justify-center">
+            <img
+              src={exportedPreviewDataUrl}
+              alt="スコア記号早見表プレビュー"
+              className="max-w-full h-auto rounded-xl border border-slate-700 shadow-xl"
+            />
+          </div>
+        </div>
+      )}
     </div>,
     document.body
   );
