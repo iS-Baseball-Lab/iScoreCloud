@@ -28,6 +28,7 @@ import {
   saveCachedTeamSymbolRules,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { saveTeamScoreNameDisplayMode } from "@/lib/liff/score-settings";
 import { ScorebookSymbolSamplePreview } from "@/components/liff/DigitalScorebookSheet";
 import { ScorebookRuleOptionMiniPreview } from "@/components/liff/ScorebookRuleOptionMiniPreview";
 
@@ -97,6 +98,10 @@ export function TeamSymbolRulesSettingsSection({
       setRules(sanitized);
       setHasSavedCloud(true);
       saveCachedTeamSymbolRules(sanitized, effectiveTeamKey);
+      saveTeamScoreNameDisplayMode(
+        effectiveTeamKey,
+        sanitized.scoreTeamNameMode ?? "organization"
+      );
       onRulesChange?.(sanitized);
       return;
     }
@@ -114,6 +119,7 @@ export function TeamSymbolRulesSettingsSection({
     setRules(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
     setHasSavedCloud(false);
     saveCachedTeamSymbolRules(null, effectiveTeamKey);
+    saveTeamScoreNameDisplayMode(effectiveTeamKey, "organization");
     onRulesChange?.(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
   }, [effectiveTeamKey, initialCloudRules, isDemo, isLoadingTeam, onRulesChange]);
 
@@ -128,6 +134,10 @@ export function TeamSymbolRulesSettingsSection({
       );
       setRules(sanitized);
       saveCachedTeamSymbolRules(sanitized, effectiveTeamKey);
+      saveTeamScoreNameDisplayMode(
+        effectiveTeamKey,
+        sanitized.scoreTeamNameMode ?? "organization"
+      );
       onRulesChange?.(sanitized);
 
       if (isDemo || !teamId) {
@@ -183,6 +193,7 @@ export function TeamSymbolRulesSettingsSection({
     void persistRules(
       {
         ...presetRules,
+        scoreTeamNameMode: rules.scoreTeamNameMode ?? "organization",
         customNote: rules.customNote || "",
       },
       `プリセット「${presetLabel}」`
@@ -215,11 +226,18 @@ export function TeamSymbolRulesSettingsSection({
 
       const sanitizedAi = sanitizeScorebookSymbolRules(
         json.scorebookSymbolRules,
-        DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        {
+          ...DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
+          scoreTeamNameMode: rules.scoreTeamNameMode ?? "organization",
+        }
       );
       setRules(sanitizedAi);
       setHasSavedCloud(true);
       saveCachedTeamSymbolRules(sanitizedAi, effectiveTeamKey);
+      saveTeamScoreNameDisplayMode(
+        effectiveTeamKey,
+        sanitizedAi.scoreTeamNameMode ?? "organization"
+      );
       onRulesChange?.(sanitizedAi);
       if (json.summary) {
         setLastAiSummary(json.summary);
@@ -236,7 +254,10 @@ export function TeamSymbolRulesSettingsSection({
     }
   };
 
-  type RuleFieldKey = Exclude<keyof ScorebookSymbolRules, "customNote">;
+  type RuleFieldKey = Exclude<
+    keyof ScorebookSymbolRules,
+    "customNote" | "scoreTeamNameMode"
+  >;
 
   interface RuleFieldSectionItem {
     itemNo: string;

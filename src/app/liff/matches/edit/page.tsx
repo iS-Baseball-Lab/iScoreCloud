@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -168,6 +168,7 @@ function LiffMatchEditContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId") || "";
   const { currentTeam } = useLiff();
+  const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -492,7 +493,7 @@ function LiffMatchEditContent() {
     [youtubeUrl]
   );
 
-  const myTeamName = currentTeam?.shortName || currentTeam?.name || "自チーム";
+  const myTeamName = scoreTeamName;
   const topTeamName =
     battingOrder === "second" ? opponent.trim() || "相手チーム" : myTeamName;
   const bottomTeamName =

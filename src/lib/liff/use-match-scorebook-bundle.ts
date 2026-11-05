@@ -14,6 +14,7 @@ import {
   saveCachedTeamSymbolRules,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { saveTeamScoreNameDisplayMode } from "@/lib/liff/score-settings";
 import {
   buildDemoScorebookSavedBundle,
   compileScorebookSheetModel,
@@ -179,6 +180,10 @@ export function useMatchScorebookBundle({
           );
           setCloudTeamRules(sanitized);
           saveCachedTeamSymbolRules(sanitized, resolvedTeamKey);
+          saveTeamScoreNameDisplayMode(
+            resolvedTeamKey,
+            sanitized.scoreTeamNameMode ?? "organization"
+          );
         } else {
           setCloudTeamRules(null);
           saveCachedTeamSymbolRules(null, resolvedTeamKey);

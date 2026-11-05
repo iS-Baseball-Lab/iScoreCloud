@@ -7,7 +7,7 @@ import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { buildLiffHubUrl, fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
 import Link from "next/link";
 import { UserPlus, ShieldCheck } from "lucide-react";
@@ -46,6 +46,7 @@ function resolveInitialHubCache(): HubDataResponse | null {
 
 export default function LiffHubPage() {
   const { profile, currentTeam, isLoadingTeam, isLoggedIn, login, isDemo, refreshTeams } = useLiff();
+  const { scoreTeamName } = useScoreTeamDisplayName("チーム");
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("iscore_user_name") || "メンバー";
@@ -216,7 +217,7 @@ export default function LiffHubPage() {
           {/* 🌟 ヒーローセクション：タブ切り替え（直近の試合 / 直近の予定） */}
           <section>
             <HubHeroSection
-              teamName={teamName}
+              teamName={scoreTeamName}
               isDemo={isDemo}
               userId={profile?.userId || undefined}
               userName={userName || undefined}

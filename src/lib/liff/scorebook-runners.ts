@@ -1402,6 +1402,69 @@ export function simulateSheetRunners(
       }
 
       if (!isThirdOutBatterPlay && trackedRunners.length > 0) {
+        // 3-A2. イニング最終打席で安打・失策等の出塁結果かつ先行走者アウトが0なのに3アウト終了している場合、
+        // 打者走者のオーバーラン・進塁タッチアウト（例: 二塁打→三塁/本塁憤死でⅢ）を補完する
+        if (
+          abIdx === inningAtBats.length - 1 &&
+          outsBefore < 3 &&
+          outsBefore + Math.max(0, ab.outsInPlay) >= 3 &&
+          !batterOutOnBases &&
+          batterInitialBase !== null &&
+          batterInitialBase !== "HP" &&
+          !isIntrinsicBatterOutResult(
+            ab.resultCode,
+            ab.battedDirection,
+            ab.resultLabel
+          ) &&
+          trackedRunners.every((tr) => !tr.isOut) &&
+          (batterExtraExplicit !== null ||
+            trackedRunners.every((tr) => tr.finalBase === "HP"))
+        ) {
+          const nextStretchBase: OccupiedBaseKey | "HP" =
+            batterFinalBase &&
+            getBaseClosestToHomeRank(batterFinalBase) >
+              getBaseClosestToHomeRank(batterInitialBase)
+              ? batterFinalBase
+              : batterInitialBase === "1B"
+              ? "2B"
+              : batterInitialBase === "2B"
+              ? "3B"
+              : "HP";
+          batterOutOnBases = true;
+          batterFinalBase = nextStretchBase;
+          batterEffectiveMethod = "out_on_base";
+        }
+
+        // 実プレーで発生したアウト数（投球間走塁死＋インプレー走塁死＋打者アウト）と ab.outsInPlay のズレを解消：
+        // - 同一打席内で盗塁死＋野選封殺の2アウトが発生している場合は実アウト数を優先
+        // - 逆にイニング途中の安打・四死球・失策等で実アウト0なのに後続打席での走塁死数字(Ⅱ/Ⅲ)が誤って outsInPlay に混入していた場合は0アウトへ補正
+        const actualRunnerOutsCount = trackedRunners.filter(
+          (tr) => tr.isOut
+        ).length;
+        const actualBatterOutCount =
+          (isIntrinsicBatterOutResult(
+            ab.resultCode,
+            ab.battedDirection,
+            ab.resultLabel
+          ) &&
+            batterInitialBase === null) ||
+          batterOutOnBases
+            ? 1
+            : 0;
+        const actualOutsOnPlay = actualRunnerOutsCount + actualBatterOutCount;
+        if (actualOutsOnPlay > ab.outsInPlay) {
+          outsAfterPlay = Math.min(3, outsBefore + actualOutsOnPlay);
+        } else if (
+          actualOutsOnPlay === 0 &&
+          ab.outsInPlay > 0 &&
+          batterInitialBase !== null &&
+          abIdx < inningAtBats.length - 1
+        ) {
+          outsAfterPlay = outsBefore;
+        }
+      }
+
+      if (!isThirdOutBatterPlay && trackedRunners.length > 0) {
         const stillActiveUnmoved = trackedRunners.filter(
           (tr) =>
             !tr.isOut &&

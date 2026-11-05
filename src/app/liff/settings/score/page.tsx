@@ -33,8 +33,11 @@ import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   loadCachedTeamSymbolRules,
   sanitizeScorebookSymbolRules,
+  saveCachedTeamSymbolRules,
   type ScorebookSymbolRules,
+  type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
@@ -44,7 +47,9 @@ import {
 import {
   DEFAULT_LIFF_SCORE_SETTINGS,
   loadLiffScoreSettings,
+  loadTeamScoreNameDisplayMode,
   saveLiffScoreSettings,
+  saveTeamScoreNameDisplayMode,
   type LiffScoreSettings,
   type ScoreDefaultMatchType,
   type ScoreMercyRule,
@@ -59,9 +64,19 @@ interface ScoreContextApiResponse {
   team?: {
     id: string;
     name: string;
+    /** `organizations.name` = チーム名 */
+    orgName?: string | null;
+    /** `teams.name` = 構成名 */
+    squadName?: string | null;
     scorebookLegendUrl: string | null;
     scorebookSymbolRules?: ScorebookSymbolRules | null;
   } | null;
+  error?: string;
+}
+
+interface SaveSymbolRulesModeApiResponse {
+  success: boolean;
+  scorebookSymbolRules?: ScorebookSymbolRules | null;
   error?: string;
 }
 
@@ -81,12 +96,15 @@ interface StagedLegendState {
 }
 
 export default function LiffScoreSettingsPage() {
-  const { currentTeam } = useLiff();
+  const { currentTeam, refreshTeams } = useLiff();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [isDemoContext, setIsDemoContext] = useState(false);
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
   const [resolvedTeamName, setResolvedTeamName] = useState<string>("");
+  const [resolvedOrgName, setResolvedOrgName] = useState<string>("");
+  const [resolvedSquadName, setResolvedSquadName] = useState<string>("");
+  const [isSavingTeamNameMode, setIsSavingTeamNameMode] = useState(false);
   const [savedLegendUrl, setSavedLegendUrl] = useState<string | null>(null);
   const [savedTeamSymbolRules, setSavedTeamSymbolRules] =
     useState<ScorebookSymbolRules | null>(null);
@@ -135,24 +153,72 @@ export default function LiffScoreSettingsPage() {
               DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
             )
           : null;
+        const orgLabel = (
+          data.team.orgName ||
+          currentTeam?.orgName ||
+          data.team.name ||
+          ""
+        ).trim();
+        const squadLabel = (
+          data.team.squadName ||
+          (currentTeam?.teamName && currentTeam.teamName !== "チームHUB"
+            ? currentTeam.teamName
+            : "") ||
+          data.team.name ||
+          ""
+        ).trim();
+        const resolvedMode =
+          sanitizedTeamRules?.scoreTeamNameMode ?? "organization";
+        saveTeamScoreNameDisplayMode(data.team.id, resolvedMode, false);
+
         setResolvedTeamId(data.team.id);
-        setResolvedTeamName(data.team.name);
+        setResolvedOrgName(orgLabel);
+        setResolvedSquadName(squadLabel);
+        setResolvedTeamName(
+          resolvedMode === "squad" ? squadLabel || orgLabel : orgLabel || squadLabel
+        );
         setSavedLegendUrl(data.team.scorebookLegendUrl);
         setSavedTeamSymbolRules(sanitizedTeamRules);
         setActiveSymbolRules(
           sanitizedTeamRules ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
         );
       } else {
+        const demoKey = data.isDemo ? "demo-team" : qTeam || "demo-team";
         const demoCached = data.isDemo
           ? loadCachedTeamSymbolRules("demo-team")
           : null;
-        setResolvedTeamId(qTeam);
-        setResolvedTeamName(currentTeam?.name || "マイチーム");
-        setSavedLegendUrl(null);
-        setSavedTeamSymbolRules(null);
-        setActiveSymbolRules(
-          demoCached ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        const demoMode = loadTeamScoreNameDisplayMode(
+          demoKey,
+          demoCached?.scoreTeamNameMode ?? currentTeam?.scoreTeamNameMode ?? "organization"
         );
+        const fallbackOrg = (
+          currentTeam?.orgName ||
+          currentTeam?.name ||
+          "マイチーム"
+        ).trim();
+        const fallbackSquad = (
+          (currentTeam?.teamName && currentTeam.teamName !== "チームHUB"
+            ? currentTeam.teamName
+            : "") ||
+          currentTeam?.shortName ||
+          fallbackOrg
+        ).trim();
+        const initialDemoRules = sanitizeScorebookSymbolRules(
+          demoCached
+            ? { ...demoCached, scoreTeamNameMode: demoMode }
+            : { ...DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES, scoreTeamNameMode: demoMode },
+          DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        );
+
+        setResolvedTeamId(qTeam);
+        setResolvedOrgName(fallbackOrg);
+        setResolvedSquadName(fallbackSquad);
+        setResolvedTeamName(
+          demoMode === "squad" ? fallbackSquad : fallbackOrg
+        );
+        setSavedLegendUrl(null);
+        setSavedTeamSymbolRules(demoCached ? initialDemoRules : null);
+        setActiveSymbolRules(initialDemoRules);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -160,7 +226,14 @@ export default function LiffScoreSettingsPage() {
     } finally {
       setIsLoadingTeam(false);
     }
-  }, [currentTeam?.id, currentTeam?.name]);
+  }, [
+    currentTeam?.id,
+    currentTeam?.name,
+    currentTeam?.orgName,
+    currentTeam?.scoreTeamNameMode,
+    currentTeam?.shortName,
+    currentTeam?.teamName,
+  ]);
 
   const [mounted, setMounted] = useState(false);
 
@@ -435,6 +508,130 @@ export default function LiffScoreSettingsPage() {
     toast.success(`${toastLabel}を変更しました`);
   };
 
+  // ⚠️ 内部DBスキーマでは organizations (`orgName`) = チーム名、teams (`squadName`/`teamName`) = 構成名
+  const effectiveTeamKey =
+    isDemoContext || currentTeam?.id === "demo-team"
+      ? "demo-team"
+      : (resolvedTeamId || currentTeam?.id || "").trim();
+
+  const scoreTeamNameMode: ScoreTeamNameDisplayMode =
+    activeSymbolRules.scoreTeamNameMode ??
+    loadTeamScoreNameDisplayMode(
+      effectiveTeamKey,
+      currentTeam?.scoreTeamNameMode ?? "organization"
+    );
+
+  const previewOrgName =
+    (
+      resolvedOrgName ||
+      currentTeam?.orgName ||
+      currentTeam?.name ||
+      "〇〇クラブ"
+    ).trim() || "〇〇クラブ";
+
+  const previewSquadName =
+    (
+      resolvedSquadName ||
+      (currentTeam?.teamName && currentTeam.teamName !== "チームHUB"
+        ? currentTeam.teamName
+        : "") ||
+      currentTeam?.shortName ||
+      "1年生 / Aチーム"
+    ).trim() || "1年生 / Aチーム";
+
+  const effectiveScoreDisplayTeamName =
+    scoreTeamNameMode === "squad" ? previewSquadName : previewOrgName;
+
+  const handleSelectScoreTeamNameMode = async (
+    nextMode: ScoreTeamNameDisplayMode
+  ) => {
+    if (isSavingTeamNameMode || scoreTeamNameMode === nextMode) return;
+
+    const targetKey = effectiveTeamKey || "demo-team";
+    const nextRules = sanitizeScorebookSymbolRules(
+      {
+        ...activeSymbolRules,
+        scoreTeamNameMode: nextMode,
+      },
+      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+    );
+
+    // 1. ローカル状態 ＆ チーム別キャッシュを 0ms で即時更新し全画面へ反映
+    setActiveSymbolRules(nextRules);
+    setSavedTeamSymbolRules(nextRules);
+    setResolvedTeamName(
+      nextMode === "squad" ? previewSquadName : previewOrgName
+    );
+    saveCachedTeamSymbolRules(nextRules, targetKey);
+    saveTeamScoreNameDisplayMode(targetKey, nextMode, true);
+
+    if (typeof window !== "undefined") {
+      try {
+        const rawCur = localStorage.getItem("iscore_currentTeam_json");
+        if (rawCur) {
+          const parsedCur = JSON.parse(rawCur) as {
+            id?: string;
+            scoreTeamNameMode?: ScoreTeamNameDisplayMode;
+          };
+          if (parsedCur && parsedCur.id === targetKey) {
+            parsedCur.scoreTeamNameMode = nextMode;
+            localStorage.setItem(
+              "iscore_currentTeam_json",
+              JSON.stringify(parsedCur)
+            );
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    const modeLabel =
+      nextMode === "organization" ? "チーム名" : "構成名";
+
+    if (isDemoContext || targetKey === "demo-team" || !resolvedTeamId) {
+      toast.success(`スコア表示の自チーム名を「${modeLabel}」に変更しました`);
+      return;
+    }
+
+    // 2. チーム共通設定として D1 へ永続化 & HUBキャッシュ更新
+    setIsSavingTeamNameMode(true);
+    try {
+      const res = await fetch("/api/liff/scorebook/symbol-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: resolvedTeamId,
+          scoreTeamNameMode: nextMode,
+        }),
+      });
+      const json = (await res.json()) as SaveSymbolRulesModeApiResponse;
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "スコア表示チーム名設定の保存に失敗しました");
+      }
+      if (json.scorebookSymbolRules) {
+        const synced = sanitizeScorebookSymbolRules(
+          json.scorebookSymbolRules,
+          DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+        );
+        setActiveSymbolRules(synced);
+        setSavedTeamSymbolRules(synced);
+        saveCachedTeamSymbolRules(synced, targetKey);
+      }
+      invalidateLiffApiCache("/api/liff/hub");
+      void refreshTeams();
+      toast.success(
+        `スコア表示の自チーム名を「${modeLabel}」に保存しました（チーム共通）`
+      );
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "設定の保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsSavingTeamNameMode(false);
+    }
+  };
+
   const previewImageUrl =
     stagedLegend?.processed?.dataUrl || savedLegendUrl || null;
 
@@ -451,7 +648,7 @@ export default function LiffScoreSettingsPage() {
       <ScorebookSymbolChartSheetModal
         isOpen={isChartGeneratorOpen}
         onClose={() => setIsChartGeneratorOpen(false)}
-        teamName={resolvedTeamName}
+        teamName={effectiveScoreDisplayTeamName}
         rules={activeSymbolRules}
         onRegisterLegendToCloud={handleSaveGeneratedLegendToCloud}
       />
@@ -496,6 +693,97 @@ export default function LiffScoreSettingsPage() {
           </div>
 
           <div className="p-4 space-y-4">
+            {/* 0. スコア表示の自チーム名（チーム名 [organizations] vs 構成名 [teams]） */}
+            <div className="space-y-2 pb-3.5 border-b border-border">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-black text-foreground block">
+                  スコア表示の自チーム名
+                </label>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 shrink-0">
+                  {isSavingTeamNameMode ? "保存中..." : "チーム共通設定"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      id: "organization" as const,
+                      title: "チーム名を使用",
+                      badge: "初期値",
+                      preview: previewOrgName,
+                      desc: "クラブ・チーム全体名を表示",
+                    },
+                    {
+                      id: "squad" as const,
+                      title: "構成名を使用",
+                      badge: null,
+                      preview: previewSquadName,
+                      desc: "学年・編成ごとの構成名を表示",
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const isActive = scoreTeamNameMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={isSavingTeamNameMode}
+                      onClick={() =>
+                        void handleSelectScoreTeamNameMode(opt.id)
+                      }
+                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-1.5 disabled:opacity-60 ${
+                        isActive
+                          ? "bg-primary/12 border-2 border-primary shadow-2xs"
+                          : "bg-muted/45 border-border hover:bg-muted/70"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span
+                          className={`text-xs font-black truncate ${
+                            isActive ? "text-primary" : "text-foreground"
+                          }`}
+                        >
+                          {opt.title}
+                        </span>
+                        {isActive ? (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-primary text-primary-foreground shrink-0">
+                            選択中
+                          </span>
+                        ) : opt.badge ? (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-card text-muted-foreground border border-border shrink-0">
+                            {opt.badge}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div
+                        className={`px-2 py-1 rounded-lg border text-[11px] font-black truncate ${
+                          isActive
+                            ? "bg-card text-foreground border-primary/35"
+                            : "bg-card/80 text-foreground border-border"
+                        }`}
+                      >
+                        {opt.preview}
+                      </div>
+
+                      <p
+                        className={`text-[10px] leading-snug font-bold ${
+                          isActive ? "text-primary/85" : "text-muted-foreground"
+                        }`}
+                      >
+                        {opt.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                ※ スコアボード・試合一覧カード・清書スコアブック・打席経過・早見表の自チーム表記に反映されます（初期値：チーム名）
+              </p>
+            </div>
+
             {/* 1. 規定イニング数 & 新規試合の初期種別 */}
             <div className="grid grid-cols-2 gap-2.5">
               <div className="space-y-1">
@@ -953,7 +1241,7 @@ export default function LiffScoreSettingsPage() {
         {/* ━━━ セクション 2.5: 📒 チーム記号ルール（清書シート表示切替用） ━━━ */}
         <TeamSymbolRulesSettingsSection
           teamId={resolvedTeamId}
-          teamName={resolvedTeamName}
+          teamName={effectiveScoreDisplayTeamName}
           isDemo={isDemoContext}
           savedLegendUrl={savedLegendUrl}
           initialCloudRules={savedTeamSymbolRules}

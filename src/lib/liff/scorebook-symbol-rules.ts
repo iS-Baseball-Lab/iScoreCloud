@@ -8,6 +8,14 @@ import type {
 
 export type ScorebookNotationMode = "standard" | "team";
 
+/**
+ * スコア表示における自チーム名の表記モード
+ * ⚠️ 重要: 内部DBスキーマでは `organizations` = 「チーム名」、`teams` = 「構成名（編成名）」であるため絶対に逆転させないこと。
+ * - `"organization"` (デフォルト): チーム名を使用 (`organizations.name` / `orgName`)
+ * - `"squad"`: 構成名を使用 (`teams.name` / `teamName`)
+ */
+export type ScoreTeamNameDisplayMode = "organization" | "squad";
+
 export type CellGridStyle = "quadrant" | "quadrant_bso_grid" | "simple_diamond";
 export type LineupColumnStyle = "classic_three_row" | "compact_order_first";
 export type OutMarkStyle = "roman" | "circled";
@@ -103,6 +111,7 @@ export interface ScorebookSymbolRules {
   advanceError: AdvanceErrorMarkStyle;
   positionLabel: PositionLabelStyle;
   inningEndMark: InningEndMarkStyle;
+  scoreTeamNameMode?: ScoreTeamNameDisplayMode;
   customNote?: string;
 }
 
@@ -131,6 +140,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   advanceError: "english",
   positionLabel: "number",
   inningEndMark: "black_double_slash",
+  scoreTeamNameMode: "organization",
   customNote: "",
 };
 
@@ -159,6 +169,7 @@ export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   advanceError: "senior_chart",
   positionLabel: "number",
   inningEndMark: "red_double_slash",
+  scoreTeamNameMode: "organization",
   customNote: "",
 };
 
@@ -788,6 +799,7 @@ export function sanitizeScorebookSymbolRules(
   if (!raw || typeof raw !== "object") {
     return {
       ...fallback,
+      scoreTeamNameMode: fallback.scoreTeamNameMode ?? "organization",
       customNote: sanitizeCustomNote(fallback.customNote),
     };
   }
@@ -934,8 +946,33 @@ export function sanitizeScorebookSymbolRules(
           : "black_double_slash"
         : fallback.inningEndMark
     ),
+    scoreTeamNameMode: isOneOf<ScoreTeamNameDisplayMode>(
+      obj.scoreTeamNameMode,
+      ["organization", "squad"],
+      fallback.scoreTeamNameMode ?? "organization"
+    ),
     customNote: note,
   };
+}
+
+/**
+ * DB保存済みの `teams.scorebook_symbol_rules` JSON文字列からスコア自チーム名モードを軽量抽出する
+ * （未設定・パース失敗時は常にデフォルト `"organization"` = チーム名 を返す）
+ */
+export function extractScoreTeamNameModeFromJson(
+  jsonText: string | null | undefined
+): ScoreTeamNameDisplayMode {
+  if (!jsonText || typeof jsonText !== "string" || !jsonText.trim()) {
+    return "organization";
+  }
+  try {
+    const parsed: unknown = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== "object") return "organization";
+    const mode = (parsed as Record<string, unknown>).scoreTeamNameMode;
+    return mode === "squad" ? "squad" : "organization";
+  } catch {
+    return "organization";
+  }
 }
 
 export function parseScorebookSymbolRulesJson(

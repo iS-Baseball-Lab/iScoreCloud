@@ -12,18 +12,31 @@ import {
   invalidateLiffApiCache,
   prefetchLiffCoreEndpoints,
 } from "@/lib/liff/api-cache";
+import {
+  LIFF_SCORE_SETTINGS_CHANGE_EVENT,
+  loadTeamScoreNameDisplayMode,
+  resolveScoreTeamDisplayName,
+  saveTeamScoreNameDisplayMode,
+  type ScoreTeamNameDisplayMode,
+} from "@/lib/liff/score-settings";
 import { authClient } from "@/lib/auth-client";
 
+/**
+ * ⚠️ 重要: 内部DBスキーマでは `organizations` (`orgName`) = 「チーム名」、`teams` (`teamName`) = 「構成名」であるため絶対に逆転させないこと。
+ */
 export interface LiffTeamItem {
   id: string;
   name: string;
+  /** `organizations.name` = チーム名（クラブ・団体全体名） */
   orgName?: string;
+  /** `teams.name` = 構成名（学年・階層・編成ごとの名称） */
   teamName?: string;
   shortName: string;
   logoImageUrl?: string;
   role?: string;
   isDemo?: boolean;
   isMember?: boolean;
+  scoreTeamNameMode?: ScoreTeamNameDisplayMode;
 }
 
 interface HubTeamsPayload {
@@ -36,6 +49,7 @@ interface HubTeamsPayload {
     teamName?: string;
     shortName: string;
     logoImageUrl?: string;
+    scoreTeamNameMode?: ScoreTeamNameDisplayMode;
   };
 }
 
@@ -144,8 +158,9 @@ export function LiffProvider({
           id: storedId,
           name: storedName || "チーム",
           orgName: storedName || "チーム",
-          teamName: "チームHUB",
+          teamName: storedName || "チーム",
           shortName: storedName || "チーム",
+          scoreTeamNameMode: loadTeamScoreNameDisplayMode(storedId, "organization"),
         };
       }
     }
@@ -164,11 +179,12 @@ export function LiffProvider({
         if (!found) {
           found = {
             id: "demo-team",
-            name: "iScoreドリームス",
-            orgName: "iScoreドリームス",
+            name: "iScore ドリームス (体験デモ)",
+            orgName: "iScore ドリームス",
             teamName: "体験デモチーム",
             shortName: "ドリームス",
             isDemo: true,
+            scoreTeamNameMode: loadTeamScoreNameDisplayMode("demo-team", "organization"),
           };
         }
         setCurrentTeam(found);
@@ -203,13 +219,20 @@ export function LiffProvider({
 
     let activeTeam: LiffTeamItem | null = null;
     if (demoFlag || targetTeamId === "demo-team") {
-      activeTeam = teamList.find((t) => t.id === "demo-team") || {
+      const baseDemo = teamList.find((t) => t.id === "demo-team") || {
         id: "demo-team",
-        name: "iScoreドリームス",
-        orgName: "iScoreドリームス",
+        name: "iScore ドリームス (体験デモ)",
+        orgName: "iScore ドリームス",
         teamName: "体験デモチーム",
         shortName: "ドリームス",
         isDemo: true,
+      };
+      activeTeam = {
+        ...baseDemo,
+        scoreTeamNameMode: loadTeamScoreNameDisplayMode(
+          "demo-team",
+          baseDemo.scoreTeamNameMode ?? "organization"
+        ),
       };
     } else if (targetTeamId) {
       activeTeam = teamList.find((t) => t.id === targetTeamId) || null;
@@ -224,6 +247,7 @@ export function LiffProvider({
         shortName: data.team.shortName,
         logoImageUrl: data.team.logoImageUrl,
         isDemo: demoFlag,
+        scoreTeamNameMode: data.team.scoreTeamNameMode,
       };
     }
     if (!activeTeam && teamList.length > 0) {
@@ -231,13 +255,24 @@ export function LiffProvider({
     }
 
     if (activeTeam) {
+      if (!activeTeam.isDemo && activeTeam.scoreTeamNameMode) {
+        saveTeamScoreNameDisplayMode(
+          activeTeam.id,
+          activeTeam.scoreTeamNameMode,
+          false
+        );
+      }
       setCurrentTeam((prev) => {
         if (
           prev &&
           prev.id === activeTeam!.id &&
           prev.name === activeTeam!.name &&
+          prev.orgName === activeTeam!.orgName &&
+          prev.teamName === activeTeam!.teamName &&
+          prev.shortName === activeTeam!.shortName &&
           prev.logoImageUrl === activeTeam!.logoImageUrl &&
-          prev.isDemo === activeTeam!.isDemo
+          prev.isDemo === activeTeam!.isDemo &&
+          prev.scoreTeamNameMode === activeTeam!.scoreTeamNameMode
         ) {
           return prev;
         }
@@ -464,4 +499,54 @@ export function LiffProvider({
 
 export function useLiff() {
   return useContext(LiffContext);
+}
+
+/**
+ * スコア表示（試合カード・スコアボード・清書スコアブック・打席経過・個人成績・早見表等）で
+ * チーム共通設定（`organization` = チーム名 [デフォルト] / `squad` = 構成名）に応じた自チーム名をリアクティブに取得するフック
+ * ⚠️ 内部DBスキーマでは `organizations` (`orgName`) = チーム名、`teams` (`teamName`) = 構成名であるため絶対に逆転させないこと。
+ */
+export function useScoreTeamDisplayName(fallback = "自チーム"): {
+  scoreTeamName: string;
+  scoreTeamNameMode: ScoreTeamNameDisplayMode;
+  orgDisplayName: string;
+  squadDisplayName: string;
+} {
+  const { currentTeam } = useLiff();
+  const [, setRevision] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setRevision((v) => v + 1);
+    window.addEventListener(LIFF_SCORE_SETTINGS_CHANGE_EVENT, bump);
+    window.addEventListener("storage", bump);
+    return () => {
+      window.removeEventListener(LIFF_SCORE_SETTINGS_CHANGE_EVENT, bump);
+      window.removeEventListener("storage", bump);
+    };
+  }, []);
+
+  const scoreTeamNameMode = loadTeamScoreNameDisplayMode(
+    currentTeam?.id,
+    currentTeam?.scoreTeamNameMode
+  );
+  const orgDisplayName =
+    (currentTeam?.orgName || currentTeam?.name || fallback).trim() || fallback;
+  const rawSquad = (currentTeam?.teamName || "").trim();
+  const squadDisplayName =
+    (rawSquad && rawSquad !== "チームHUB"
+      ? rawSquad
+      : currentTeam?.shortName || currentTeam?.name || fallback
+    ).trim() || fallback;
+  const scoreTeamName = resolveScoreTeamDisplayName(
+    currentTeam,
+    scoreTeamNameMode,
+    fallback
+  );
+
+  return {
+    scoreTeamName,
+    scoreTeamNameMode,
+    orgDisplayName,
+    squadDisplayName,
+  };
 }

@@ -48,6 +48,7 @@ import {
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
+import { extractScoreTeamNameModeFromJson } from "@/lib/liff/scorebook-symbol-rules";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageTeam } from "@/lib/roles";
@@ -516,6 +517,7 @@ const DEMO_TEAM = {
   orgName: "iScore ドリームス",
   teamName: "体験デモチーム",
   shortName: "ドリームス",
+  scoreTeamNameMode: "organization" as const,
   managerName: "山田 監督",
   homeGround: "多摩川緑地野球場 (1面)",
   logoImageUrl: undefined as string | undefined,
@@ -661,7 +663,12 @@ app.get("/my-status", async (c) => {
       .filter((m) => m.status === "active" && m.teamId)
       .map((m) => ({
         id: m.teamId,
-        name: `${m.orgName ? `${m.orgName} ` : ""}${m.teamName || "チーム"}`.trim(),
+        name:
+          m.orgName && m.orgName !== m.teamName
+            ? `${m.orgName} ${m.teamName || "チーム"}`.trim()
+            : m.teamName || m.orgName || "チーム",
+        orgName: m.orgName || m.teamName || "チーム",
+        teamName: m.teamName || "チーム",
         shortName: m.teamName || "チーム",
         logoImageUrl: m.logoImageUrl || undefined,
         role: m.role,
@@ -671,7 +678,12 @@ app.get("/my-status", async (c) => {
       .filter((m) => m.status === "pending" && m.teamId)
       .map((m) => ({
         id: m.teamId,
-        name: `${m.orgName ? `${m.orgName} ` : ""}${m.teamName || "チーム"}`.trim(),
+        name:
+          m.orgName && m.orgName !== m.teamName
+            ? `${m.orgName} ${m.teamName || "チーム"}`.trim()
+            : m.teamName || m.orgName || "チーム",
+        orgName: m.orgName || m.teamName || "チーム",
+        teamName: m.teamName || "チーム",
         shortName: m.teamName || "チーム",
         logoImageUrl: m.logoImageUrl || undefined,
       }));
@@ -931,6 +943,7 @@ app.get("/hub", async (c) => {
         year: teams.year,
         orgName: organizations.name,
         logoImageUrl: organizations.logoImageUrl,
+        scorebookSymbolRules: teams.scorebookSymbolRules,
       })
       .from(teams)
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -978,15 +991,22 @@ app.get("/hub", async (c) => {
     }
 
     // チームリストの生成:
+    // ⚠️ 内部DBスキーマでは organizations.name (`orgName`) = チーム名、teams.name (`teamName`) = 構成名
     // 所属チームを上位に表示しつつ、すべての有効なチームを選択可能にする
     const teamList: Array<any> = allTeams
       .map((t) => ({
         id: t.id,
-        name: `${t.orgName ? `${t.orgName} ` : ""}${t.name}`.trim(),
+        name:
+          t.orgName && t.orgName !== t.name
+            ? `${t.orgName} ${t.name}`.trim()
+            : t.name,
         orgName: t.orgName || t.name,
         teamName: t.name,
         shortName: t.shortName,
         logoImageUrl: t.logoImageUrl || undefined,
+        scoreTeamNameMode: extractScoreTeamNameModeFromJson(
+          t.scorebookSymbolRules
+        ),
         isDemo: false,
         isMember: userTeamIds.has(t.id),
       }))
@@ -1045,7 +1065,10 @@ app.get("/hub", async (c) => {
     }
 
     const teamId = targetTeam.id;
-    const fullTeamName = `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim();
+    const fullTeamName =
+      targetTeam.orgName && targetTeam.orgName !== targetTeam.name
+        ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
+        : targetTeam.name;
 
     // ⚡ イベント・メンバー・球場・直近10試合の4クエリを完全並列取得
     const [allEventsList, teamMemberList, teamVenues, matchesList] = await Promise.all([
@@ -1276,6 +1299,9 @@ app.get("/hub", async (c) => {
         orgName: targetTeam.orgName || targetTeam.name,
         teamName: targetTeam.name,
         shortName: targetTeam.name,
+        scoreTeamNameMode: extractScoreTeamNameModeFromJson(
+          targetTeam.scorebookSymbolRules
+        ),
         homeGround: targetTeam.homeGround || null,
         logoImageUrl: targetTeam.logoImageUrl || undefined,
       },

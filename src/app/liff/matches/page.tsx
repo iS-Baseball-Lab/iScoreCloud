@@ -9,7 +9,7 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match, type MatchDayOps } from "@/types/match";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Users,
@@ -290,6 +290,7 @@ function MatchesContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
+  const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
@@ -938,7 +939,7 @@ function MatchesContent() {
     const myInnings = parseInningArr(activeDetailMatch.myInningScores);
     const oppInnings = parseInningArr(activeDetailMatch.opponentInningScores);
     const isSecond = activeDetailMatch.battingOrder === "second";
-    const myLabel = currentTeam?.shortName || currentTeam?.name || "自チーム";
+    const myLabel = scoreTeamName;
     const vInfo = buildVenueDisplayInfo(activeDetailMatch);
     const rawBasicV = (vInfo.shortName || vInfo.officialName).trim();
     const cleanVenue =
@@ -993,7 +994,7 @@ function MatchesContent() {
         ? activeDetailMatch.myErrors ?? 0
         : activeDetailMatch.opponentErrors ?? 0,
     };
-  }, [activeDetailMatch, currentTeam?.shortName, currentTeam?.name]);
+  }, [activeDetailMatch, scoreTeamName]);
 
   const sharedIsFutureOrScheduled = useMemo(() => {
     if (!activeDetailMatch) return false;
@@ -1087,8 +1088,8 @@ function MatchesContent() {
     const isLose = isFinished && match.myScore < match.opponentScore;
     const isDraw = isFinished && match.myScore === match.opponentScore;
 
-    // 試合カード（MatchScoreCard）と同一の先攻・後攻スコアボード計算
-    const myTeamLabel = currentTeam?.shortName || currentTeam?.name || "自チーム";
+    // 試合カード（MatchScoreCard）と同一の先攻・後攻スコアボード計算（チーム名[標準] / 構成名 の設定に従う）
+    const myTeamLabel = scoreTeamName;
     const topScores = match.battingOrder === "second" ? opponentInningScores : myInningScores;
     const bottomScores = match.battingOrder === "second" ? myInningScores : opponentInningScores;
     const topTeamName = match.battingOrder === "second" ? match.opponent : myTeamLabel;
@@ -2767,7 +2768,7 @@ function MatchesContent() {
             </Link>
           }
           shareData={{
-            title: `【試合情報】${currentTeam?.name || "チーム"} 試合一覧`,
+            title: `【試合情報】${scoreTeamName} 試合一覧`,
             text: `試合ハイライト動画・スコアボードはこちらから確認できます！`,
           }}
         />
@@ -2918,7 +2919,7 @@ function MatchesContent() {
               <MatchScoreCard
                 key={m.id}
                 match={m}
-                teamName={currentTeam?.shortName || currentTeam?.name || "自チーム"}
+                teamName={scoreTeamName}
               />
             ))}
           </div>

@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { cn } from "@/lib/utils";
 import {
@@ -222,6 +222,7 @@ function cleanUniform(raw: string): string {
 
 export default function LiffStatsPage() {
   const { currentTeam, isLoadingTeam } = useLiff();
+  const { scoreTeamName } = useScoreTeamDisplayName("チーム");
   const [filter, setFilter] = useState<StatsFilterKey>("all");
   const [tab, setTab] = useState<StatsMainTab>("matches");
   const [matchImportFilter, setMatchImportFilter] = useState<
@@ -403,7 +404,7 @@ export default function LiffStatsPage() {
       ? "OP戦 成績"
       : `${seasonYear}シーズン 通算成績`;
 
-  const teamDisplayName = currentTeam?.name || "チーム";
+  const teamDisplayName = scoreTeamName;
   const sharePayload = {
     title: `【チーム成績】${teamDisplayName} ${summary.wins}勝${summary.losses}敗${
       summary.draws > 0 ? `${summary.draws}分` : ""

@@ -10,6 +10,7 @@ import {
   parseScorebookSymbolRulesJson,
   sanitizeScorebookSymbolRules,
   type ScorebookSymbolRules,
+  type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/scorebook-symbol-rules";
 import {
   defaultGenericDirection,
@@ -68,6 +69,7 @@ const {
   matches,
   tournaments,
   matchLineups,
+  organizations,
   teams,
   players,
   atBats,
@@ -379,25 +381,30 @@ liffScorebookRouter.get("/context", async (c) => {
       });
     }
 
+    // ⚠️ 内部DBスキーマでは organizations.name (`orgName`) = チーム名、teams.name (`name`) = 構成名
     const targetTeam = requestedTeamId
       ? await db
         .select({
           id: teams.id,
           name: teams.name,
+          orgName: organizations.name,
           scorebookLegendUrl: teams.scorebookLegendUrl,
           scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
         .where(eq(teams.id, requestedTeamId))
         .get()
       : await db
         .select({
           id: teams.id,
           name: teams.name,
+          orgName: organizations.name,
           scorebookLegendUrl: teams.scorebookLegendUrl,
           scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
         .get();
 
     if (!targetTeam) {
@@ -504,16 +511,25 @@ liffScorebookRouter.get("/context", async (c) => {
         hasExistingAtBats: existingAtBatMatchIds.has(m.id),
       }));
 
+    const parsedSymbolRules = parseScorebookSymbolRulesJson(
+      targetTeam.scorebookSymbolRules
+    );
+    const resolvedOrgName = targetTeam.orgName || targetTeam.name;
+    const resolvedSquadName = targetTeam.name;
+
     return c.json({
       success: true,
       isDemo: false,
       team: {
         id: targetTeam.id,
-        name: targetTeam.name,
+        name:
+          (parsedSymbolRules?.scoreTeamNameMode ?? "organization") === "squad"
+            ? resolvedSquadName
+            : resolvedOrgName,
+        orgName: resolvedOrgName,
+        squadName: resolvedSquadName,
         scorebookLegendUrl: targetTeam.scorebookLegendUrl,
-        scorebookSymbolRules: parseScorebookSymbolRulesJson(
-          targetTeam.scorebookSymbolRules
-        ),
+        scorebookSymbolRules: parsedSymbolRules,
       },
       roster: sortedRoster,
       matches: formattedMatches,
@@ -677,6 +693,7 @@ interface UpdateTeamSymbolRulesPayload {
   teamId?: string;
   clear?: boolean;
   rules?: Partial<ScorebookSymbolRules> | null;
+  scoreTeamNameMode?: ScoreTeamNameDisplayMode;
 }
 
 liffScorebookRouter.post("/symbol-rules", async (c) => {
@@ -686,6 +703,12 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
   try {
     const body = (await c.req.json()) as UpdateTeamSymbolRulesPayload;
     const requestedTeamId = (body.teamId || "").trim();
+    const requestedMode: ScoreTeamNameDisplayMode | undefined =
+      body.scoreTeamNameMode === "organization" ||
+      body.scoreTeamNameMode === "squad"
+        ? body.scoreTeamNameMode
+        : undefined;
+
     if (requestedTeamId === "demo-team") {
       if (body.clear || body.rules === null) {
         return c.json({
@@ -695,7 +718,9 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
         });
       }
       const demoSanitized = sanitizeScorebookSymbolRules(
-        body.rules,
+        requestedMode
+          ? { ...(body.rules || {}), scoreTeamNameMode: requestedMode }
+          : body.rules,
         DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
       );
       return c.json({
@@ -707,11 +732,20 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
 
     const targetTeam = requestedTeamId
       ? await db
-        .select({ id: teams.id })
+        .select({
+          id: teams.id,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
+        })
         .from(teams)
         .where(eq(teams.id, requestedTeamId))
         .get()
-      : await db.select({ id: teams.id }).from(teams).get();
+      : await db
+        .select({
+          id: teams.id,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
+        })
+        .from(teams)
+        .get();
 
     if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -729,10 +763,18 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       });
     }
 
-    const sanitized = sanitizeScorebookSymbolRules(
-      body.rules,
-      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
-    );
+    const existingRules =
+      parseScorebookSymbolRulesJson(targetTeam.scorebookSymbolRules) ??
+      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES;
+
+    const mergedInput = requestedMode
+      ? {
+          ...(body.rules ?? existingRules),
+          scoreTeamNameMode: requestedMode,
+        }
+      : body.rules;
+
+    const sanitized = sanitizeScorebookSymbolRules(mergedInput, existingRules);
     await db
       .update(teams)
       .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
@@ -808,6 +850,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
         .where(eq(teams.id, requestedTeamId))
@@ -816,6 +859,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
         .select({
           id: teams.id,
           scorebookLegendUrl: teams.scorebookLegendUrl,
+          scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
         .get();
@@ -889,10 +933,14 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
         { maxBudgetMs: 36_000 }
       );
 
-    const sanitized = sanitizeScorebookSymbolRules(
-      rawExtracted,
-      DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
+    const existingSymbolRules = parseScorebookSymbolRulesJson(
+      targetTeam?.scorebookSymbolRules
     );
+    const sanitized = sanitizeScorebookSymbolRules(rawExtracted, {
+      ...DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
+      scoreTeamNameMode:
+        existingSymbolRules?.scoreTeamNameMode ?? "organization",
+    });
 
     if (body.saveToTeam !== false && targetTeam) {
       await db
@@ -4267,10 +4315,12 @@ liffScorebookRouter.get("/saved", async (c) => {
       db
         .select({
           name: teams.name,
+          orgName: organizations.name,
           scorebookLegendUrl: teams.scorebookLegendUrl,
           scorebookSymbolRules: teams.scorebookSymbolRules,
         })
         .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
         .where(eq(teams.id, match.teamId))
         .get(),
     ]);
@@ -4926,6 +4976,12 @@ liffScorebookRouter.get("/saved", async (c) => {
     topStructure = enrichStructureHandedness(topStructure);
     bottomStructure = enrichStructureHandedness(bottomStructure);
 
+    const savedTeamRules = parseScorebookSymbolRulesJson(
+      matchTeam?.scorebookSymbolRules
+    );
+    const savedOrgName = matchTeam?.orgName || matchTeam?.name || null;
+    const savedSquadName = matchTeam?.name ?? null;
+
     return c.json({
       success: true,
       matchId: match.id,
@@ -4937,11 +4993,14 @@ liffScorebookRouter.get("/saved", async (c) => {
       topImageUrl: topAtBats.length > 0 ? snap?.topImageUrl ?? null : null,
       bottomImageUrl:
         bottomAtBats.length > 0 ? snap?.bottomImageUrl ?? null : null,
-      teamName: matchTeam?.name ?? null,
+      teamName:
+        (savedTeamRules?.scoreTeamNameMode ?? "organization") === "squad"
+          ? savedSquadName
+          : savedOrgName,
+      orgName: savedOrgName,
+      squadName: savedSquadName,
       scorebookLegendUrl: matchTeam?.scorebookLegendUrl ?? null,
-      teamSymbolRules: parseScorebookSymbolRulesJson(
-        matchTeam?.scorebookSymbolRules
-      ),
+      teamSymbolRules: savedTeamRules,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
