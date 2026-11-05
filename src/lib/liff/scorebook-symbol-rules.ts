@@ -171,17 +171,17 @@ export interface ScorebookSymbolPreset {
 export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   {
     id: "senior_chart_style",
-    label: "シニア・早見表準拠式",
+    label: "詳細記号・点線タイプ",
     description:
-      "ⅠⅡⅢ・見逃K/空振SO/振逃反転K・□犠打/△犠飛・内野安打赤弧・1A/6B/5C・赤波線",
+      "ⅠⅡⅢ・見逃K/空振SO・□犠打/△犠飛・内野安打赤弧・1A/6B・赤波線",
     rules: {
       ...SENIOR_CHART_SCOREBOOK_SYMBOL_RULES,
     },
   },
   {
     id: "waseda_standard",
-    label: "早稲田・成美堂 標準",
-    description: "3段メンバー欄・ⅠⅡⅢ・反転K・◇犠打・傘フライ・塁線代走",
+    label: "実線なぞり・ひし形タイプ",
+    description: "ⅠⅡⅢ・見逃反転K・●空振り・◇犠打・進塁黒実線・T字止め線",
     rules: {
       ...STANDARD_SCOREBOOK_SYMBOL_RULES,
       pickoffMark: "full_arrow",
@@ -190,8 +190,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   },
   {
     id: "youth_senior",
-    label: "学童・丸数字スラッシュ式",
-    description: "①②③・進塁点線維持・右下赤斜線／・×空振り・□バント/BH",
+    label: "丸数字・赤斜線タイプ",
+    description: "①②③・丸囲みK・右下赤斜線／・×空振り・□バント・漢字略号",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
@@ -218,8 +218,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   },
   {
     id: "numbered_modern",
-    label: "球数番号・英字式",
-    description: "球数番号BS・BB/HBP・B添字/BH・8F/8L",
+    label: "球数番号・英字タイプ",
+    description: "S/B球数番号・①②③・BB/HBP・B添字バント・8F/8L表記",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "compact_order_first",
@@ -246,8 +246,8 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
   },
   {
     id: "mono_print",
-    label: "白黒印刷くっきり式",
-    description: "3段メンバー欄・黒太線ヒット・□犠打・コピー判別容易",
+    label: "白黒コピーくっきりタイプ",
+    description: "黒太線ヒット・丸得マーク・黒打点・モノクロ印刷でも判別容易",
     rules: {
       cellStyle: "quadrant",
       lineupStyle: "classic_three_row",
@@ -284,9 +284,21 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
   cellStyle: {
     title: "1打席マスの罫線デザイン",
     options: [
-      { value: "quadrant", label: "十字4分割（標準）", sample: "4部屋・BSO空欄" },
-      { value: "quadrant_bso_grid", label: "十字4分割＋横枠", sample: "4部屋・BSO線入" },
-      { value: "simple_diamond", label: "大ダイヤ単独型", sample: "十字なしシンプル" },
+      {
+        value: "quadrant",
+        label: "十字点線・4分割",
+        sample: "4象限点線・BSO欄は枠線なし",
+      },
+      {
+        value: "quadrant_bso_grid",
+        label: "十字点線＋BSO横罫線",
+        sample: "4象限点線・BSO欄に横区切り線",
+      },
+      {
+        value: "simple_diamond",
+        label: "大ダイヤ単独（十字なし）",
+        sample: "中央ダイヤのみ・ベース小四角付き",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<CellGridStyle>>,
   },
   lineupStyle: {
@@ -294,12 +306,12 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "classic_three_row",
-        label: "3段フル様式（標準）",
-        sample: "先発・守備｜打順(1/11/21)｜左○｜氏名｜背番",
+        label: "3段フル様式（先発＋交代2段）",
+        sample: "守備｜打順(1/11/21)｜左○｜氏名｜背番",
       },
       {
         value: "compact_order_first",
-        label: "打順先頭シンプル式",
+        label: "1段シンプル様式（打順先頭）",
         sample: "順｜守備｜背番｜選手名",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<LineupColumnStyle>>,
@@ -307,30 +319,42 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
   outMark: {
     title: "アウトカウント表記",
     options: [
-      { value: "roman", label: "ローマ数字", sample: "Ⅰ・Ⅱ・Ⅲ" },
-      { value: "circled", label: "丸数字", sample: "①・②・③" },
+      { value: "roman", label: "ローマ数字（Ⅰ・Ⅱ・Ⅲ）", sample: "Ⅰ・Ⅱ・Ⅲ" },
+      { value: "circled", label: "丸数字（①・②・③）", sample: "①・②・③" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<OutMarkStyle>>,
   },
   strikeout: {
-    title: "三振（見逃し / 空振り / 振逃げ）",
+    title: "三振（見逃し / 空振り / 振り逃げ）",
     options: [
       {
         value: "k_called_so_swing",
-        label: "見逃K・空振SO・振逃反転K",
+        label: "見逃K・空振SO・振逃は反転K",
         sample: "見逃 K / 空振 SO / 振逃 反転K",
       },
-      { value: "k_called_reverse", label: "反転K式（早稲田）", sample: "空振 K / 見逃 反転K" },
-      { value: "k_called_circle", label: "丸囲みK式", sample: "空振 K / 見逃 Ⓚ" },
-      { value: "k_only", label: "K統一", sample: "すべて K" },
-      { value: "so", label: "SO表記", sample: "すべて SO" },
+      {
+        value: "k_called_reverse",
+        label: "空振K・見逃は反転K",
+        sample: "空振 K / 見逃 反転K",
+      },
+      {
+        value: "k_called_circle",
+        label: "空振K・見逃は丸囲みⓀ",
+        sample: "空振 K / 見逃 Ⓚ",
+      },
+      { value: "k_only", label: "すべて K に統一", sample: "見逃・空振とも K" },
+      { value: "so", label: "すべて SO に統一", sample: "見逃・空振とも SO" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<StrikeoutMarkStyle>>,
   },
   walkHbp: {
     title: "四球・死球・敬遠",
     options: [
-      { value: "b_db", label: "B / DB（標準）", sample: "B・DB・IB" },
-      { value: "bb_hbp", label: "BB / HBP", sample: "BB・HBP・IBB" },
-      { value: "kanji", label: "漢字1文字", sample: "四・死・敬" },
+      { value: "b_db", label: "B / DB 表記", sample: "四球 B・死球 DB・敬遠 IB" },
+      {
+        value: "bb_hbp",
+        label: "BB / HBP 表記",
+        sample: "四球 BB・死球 HBP・敬遠 IBB",
+      },
+      { value: "kanji", label: "漢字1文字（四 / 死 / 敬）", sample: "四・死・敬" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<WalkHbpMarkStyle>>,
   },
   hitLine: {
@@ -338,83 +362,83 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "red_edge_infield_arc",
-        label: "進塁赤線＋内野安打赤弧（早見表）",
+        label: "到達塁まで赤実線＋内野安打は赤弧",
         sample: "1〜4辺赤線 / 内野安打(BH5・6)右下赤弧囲み",
       },
       {
         value: "quadrant_slash_hr_diamond",
-        label: "右下赤斜線＋HR1周赤",
+        label: "右下に赤斜線（／）＋本塁打1周赤",
         sample: "右下 ／・／／・／／／ / HRダイヤ赤囲み",
       },
       {
         value: "red_plain",
-        label: "進塁辺を赤実線のみ",
-        sample: "到達塁まで赤線（チョン線なし）",
+        label: "到達塁まで赤実線のみ",
+        sample: "到達塁まで赤線（弧・刻み線なし）",
       },
       {
         value: "red_slash",
-        label: "進塁赤線＋直交線（早稲田）",
-        sample: "赤進塁線＋1塁線に1〜4本",
+        label: "到達塁まで赤実線＋1塁線に直交刻み",
+        sample: "赤進塁線＋1塁線上に1〜4本の刻み線",
       },
       {
         value: "parallel_bars",
-        label: "進塁赤線＋1塁平行重線",
+        label: "1塁線を平行重線（単1・二2・三3本）",
         sample: "単1本・二2重・三3重・HR二重枠",
       },
       {
         value: "mono_bold",
-        label: "黒太線（白黒印刷向き）",
-        sample: "黒太線＋直交線（守備も黒）",
+        label: "黒太線＋直交刻み（白黒印刷向き）",
+        sample: "赤を使わず黒太線＋直交刻みで表現",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<HitLineStyle>>,
   },
   runnerLine: {
-    title: "出塁・進塁時のひし形ライン（黒実線）",
+    title: "四死球・進塁時のひし形ライン",
     options: [
       {
         value: "dotted_only",
-        label: "なぞらない（点線のまま）",
-        sample: "ひし形は点線維持・進塁記号のみ",
+        label: "なぞらない（点線のまま・記号のみ）",
+        sample: "ひし形は点線維持・進塁記号のみ記載",
       },
       {
         value: "solid_trace",
-        label: "黒実線でなぞる（早稲田式）",
-        sample: "進んだ塁間を黒実線でなぞる",
+        label: "進んだ塁間を黒実線でなぞる",
+        sample: "四死球や進塁した辺を黒実線で結ぶ",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerLineStyle>>,
   },
   runnerOutLine: {
-    title: "走塁死・封殺時のひし形ライン（ストップ線）",
+    title: "走塁死・封殺時のひし形ライン",
     options: [
       {
         value: "dotted_only",
         label: "線なし（点線のまま・記号のみ）",
-        sample: "ひし形は点線維持・中央アウト＋記号",
+        sample: "ひし形は点線維持・アウト記号のみ記載",
       },
       {
         value: "quadrant_arrow",
-        label: "外側に矢印 ＋ 記号（点線維持）",
-        sample: "ひし形外側に進行矢印＋T.O/CS等",
+        label: "ひし形外側に進行矢印＋記号",
+        sample: "点線の外側に矢印とアウト記号を記載",
       },
       {
         value: "t_stop",
-        label: "T字ストップ線 ━━┫（早稲田式）",
-        sample: "塁間途中で切って垂直の止め線を描く",
+        label: "塁間途中でT字ストップ線（━━┫）",
+        sample: "塁間の途中で実線を止め垂直線を描く",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunnerOutLineStyle>>,
   },
   forceOutMark: {
-    title: "ベースアウト（封殺）・タッチアウト・チェンジ斜線",
+    title: "封殺（フォースアウト）・タッチアウト表記",
     options: [
       {
         value: "base_letter_abch",
-        label: "1A・6B・5C・2H ＋ 3TO（早見表）",
-        sample: "封殺 A/B/C/H・触球 TO・チェンジ赤 //",
+        label: "封殺は塁記号（A/B/C/H）・触球はTO",
+        sample: "1A・6B・5C・2H / タッチアウト 3TO",
       },
       {
         value: "standard_to",
-        label: "T.O / CS 標準表記",
-        sample: "走塁死 T.O・盗死 CS・チェンジ黒 //",
+        label: "T.O / CS 表記（塁アルファベットなし）",
+        sample: "走塁死 T.O・盗塁死 CS・チェンジ黒 //",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<ForceOutMarkStyle>>,
   },
@@ -423,12 +447,20 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "earned_filled_unearned_open",
-        label: "自責● / 非自責○ 使い分け",
-        sample: "自責点＝塗り丸 ● / 非自責点＝白丸 ○",
+        label: "自責＝塗り丸 ● ／ 非自責＝白丸 ○",
+        sample: "自責点 ● と 非自責点 ○ を使い分け",
       },
-      { value: "red_dot", label: "中央赤丸統一（標準）", sample: "すべて ●" },
-      { value: "double_circle", label: "二重丸", sample: "◎" },
-      { value: "kanji_toku", label: "丸得マーク", sample: "㋣（得）" },
+      {
+        value: "red_dot",
+        label: "すべて塗り赤丸 ● に統一",
+        sample: "自責・非自責を区別せず中央 ●",
+      },
+      { value: "double_circle", label: "二重丸（◎）", sample: "中央に二重丸 ◎" },
+      {
+        value: "kanji_toku",
+        label: "丸囲み「得」マーク",
+        sample: "中央に丸得マーク",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunMarkStyle>>,
   },
   rbiMark: {
@@ -437,28 +469,48 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
       {
         value: "hidden",
         label: "記載しない（なし）",
-        sample: "生還走者の (打順) 等で判別",
+        sample: "生還走者マスの (打順) 等で判別",
       },
       {
         value: "red_dots",
-        label: "右上に赤点（早稲田式）",
-        sample: "打点数分の赤丸（●・●●…）",
+        label: "マス右上に赤ドット（●）",
+        sample: "打点数分の赤点を右上に打つ",
       },
       {
         value: "black_dots",
-        label: "右上に黒点（鉛筆・白黒式）",
-        sample: "打点数分の黒丸（・ / ・・…）",
+        label: "マス右上に黒ドット（・）",
+        sample: "打点数分の黒点を右上に打つ",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RbiMarkStyle>>,
   },
   pitchMark: {
-    title: "投球（BSO）記録方式",
+    title: "投球（BSO）記録記号",
     options: [
-      { value: "cross_swing", label: "×空振り式（横棒B）", sample: "○見逃 ×空振 ーB △F" },
-      { value: "waseda_symbols", label: "早稲田記号式", sample: "○見逃 ●空振 ーB △F" },
-      { value: "cross_dot_swing", label: "×空振り式（点・B）", sample: "○見逃 ×空振 ・B △F" },
-      { value: "slash_swing", label: "斜線空振り式", sample: "○見逃 ／空振 ・B △F" },
-      { value: "numbered_bs", label: "球数番号式", sample: "B/S枠に 1,2,3..." },
+      {
+        value: "cross_swing",
+        label: "見逃○・空振×・ボール横棒（ー）",
+        sample: "○見逃  ×空振  ーB  △ファウル",
+      },
+      {
+        value: "waseda_symbols",
+        label: "見逃○・空振●（黒丸）・ボール横棒（ー）",
+        sample: "○見逃  ●空振  ーB  △ファウル",
+      },
+      {
+        value: "cross_dot_swing",
+        label: "見逃○・空振×・ボール黒点（・）",
+        sample: "○見逃  ×空振  ・B  △ファウル",
+      },
+      {
+        value: "slash_swing",
+        label: "見逃○・空振斜線（／）・ボール黒点（・）",
+        sample: "○見逃  ／空振  ・B  △ファウル",
+      },
+      {
+        value: "numbered_bs",
+        label: "S / B 枠に球数番号（1, 2, 3…）",
+        sample: "投球順の数字をS欄・B欄に記入",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PitchMarkStyle>>,
   },
   buntPitchMark: {
@@ -466,23 +518,23 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "v_dot_circle_dot",
-        label: "Vに点・丸に点式（早見表）",
-        sample: "BF＝V̇ / 空振＝⊙",
+        label: "ファウル V̇（点付V）・空振 ⊙（丸に点）",
+        sample: "バントF＝V̇ ／ バント空振＝⊙",
       },
       {
         value: "filled_triangle",
-        label: "黒塗り三角式（早稲田）",
-        sample: "BF＝▲ / 空振＝通常空振",
+        label: "ファウル ▲（黒三角）・空振は通常記号",
+        sample: "バントF＝▲ ／ バント空振＝×または●",
       },
       {
         value: "inv_triangle_diamond",
-        label: "逆三角・ひし形式",
-        sample: "BF＝▽ / 空振＝◇",
+        label: "ファウル ▽（逆三角）・空振 ◇（ひし形）",
+        sample: "バントF＝▽ ／ バント空振＝◇",
       },
       {
         value: "same_as_normal",
-        label: "通常記号と区別しない",
-        sample: "BF＝△ / 空振＝通常空振",
+        label: "通常投球記号と同じ（区別しない）",
+        sample: "バントF＝△ ／ バント空振＝通常空振",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntPitchMarkStyle>>,
   },
@@ -491,23 +543,23 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "chevron_arrow",
-        label: "矢先のみ（早見表）",
-        sample: "1塁＞  2塁∧  3塁＜",
+        label: "矢先記号のみ（＞・∧・＜）",
+        sample: "1塁 ＞ ／ 2塁 ∧ ／ 3塁 ＜",
       },
       {
         value: "full_arrow",
-        label: "軸付き矢印",
-        sample: "1塁→  2塁↑  3塁←",
+        label: "軸付き矢印（→・↑・←）",
+        sample: "1塁 → ／ 2塁 ↑ ／ 3塁 ←",
       },
       {
         value: "kanji_num",
-        label: "塁番号＋牽",
+        label: "塁番号＋牽（1牽・2牽・3牽）",
         sample: "1牽・2牽・3牽",
       },
       {
         value: "hidden",
         label: "BSO欄に記載しない",
-        sample: "投球記号のみ表示",
+        sample: "牽制球は省略し投球記号のみ表示",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PickoffMarkStyle>>,
   },
@@ -516,53 +568,53 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "square_sac_triangle_sf_bh",
-        label: "□犠打 ＋ △犠飛 ＋ BH（早見表）",
-        sample: "犠打 □[1-3] / 犠飛 △8 / 安 BH5",
+        label: "□犠打 ＋ △犠飛 ＋ BH安打",
+        sample: "犠打 □1-3 / 犠飛 △8 / 安打 BH5",
       },
       {
         value: "square_all_bh",
-        label: "四角囲み □（全バント）＋ BH",
-        sample: "犠・凡 □[5-3] / 安 BH5",
+        label: "□全バント四角囲み ＋ BH安打",
+        sample: "犠打・凡打とも □5-3 / 安打 BH5",
       },
       {
         value: "square_sac",
-        label: "四角囲み □（犠打のみ）＋ BH",
-        sample: "犠 □[1-3] / 安 BH5",
+        label: "□犠打のみ四角囲み ＋ BH安打",
+        sample: "犠打 □1-3 / 凡打 5-3 / 安打 BH5",
       },
       {
         value: "diamond_sac",
-        label: "ひし形 ◇（早稲田標準）",
-        sample: "犠 ◇1-3 / 犠飛 ◇︵8",
+        label: "◇ひし形囲み（犠打・犠飛とも）",
+        sample: "犠打 ◇1-3 / 犠飛 ◇︵8",
       },
       {
         value: "b_prefix",
-        label: "◇犠打 ＋ B添字・BH式",
-        sample: "犠 ◇1-3 / 凡 B5-3 / 安 BH5",
+        label: "◇犠打 ＋ 凡打はB添字・BH安打",
+        sample: "犠打 ◇1-3 / 凡打 B5-3 / 安打 BH5",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<BuntMarkStyle>>,
   },
   pinchHitterMark: {
-    title: "選手交代（代打・代走・守備・継投）の赤波線表記",
+    title: "選手交代（代打・代走・守備・継投）の表記",
     options: [
       {
         value: "red_wave_name",
-        label: "赤縦波線 ＋ 縦書き氏名（早見表）",
-        sample: "代打＝左罫線・代走/守備＝右内・継投＝上辺赤波線",
+        label: "赤縦波線 ＋ 縦書き氏名",
+        sample: "代打＝左罫線・代走/守備＝右内・継投＝上辺波線",
       },
       {
         value: "waseda_diamond_pr",
-        label: "早稲田式（代走は塁線波線）",
-        sample: "代打/守備＝境界赤波線・代走＝出塁ベース赤波線",
+        label: "赤波線 ＋ 代走は塁線上に波線",
+        sample: "代打/守備＝縦赤波線・代走＝出塁辺に赤波線",
       },
       {
         value: "left_wave_only",
-        label: "赤縦波線のみ（氏名は選手欄）",
-        sample: "境界に赤波線のみ（氏名は左メンバー欄）",
+        label: "赤縦波線のみ（氏名はメンバー欄）",
+        sample: "マス境界に赤波線のみ・マス内氏名なし",
       },
       {
         value: "cell_badge",
-        label: "赤縦波線 ＋ PH / PR 記号表記",
-        sample: "赤波線の左上に PH・PR・交 バッジ",
+        label: "赤縦波線 ＋ PH / PR バッジ",
+        sample: "赤波線の横に PH・PR・交 バッジを表示",
       },
       {
         value: "lineup_only",
@@ -576,22 +628,22 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "bracket_dp",
-        label: "縦2マス右内「 ] 」＋ 間にDP",
+        label: "縦2マス右内「 ] 」括弧 ＋ 間にDP",
         sample: "上部〜下部を ] で括り1・2マス間にDP",
       },
       {
         value: "dp_only",
-        label: "送球番号 ＋ DP のみ",
-        sample: "6-4-3 DP（括弧なし）",
+        label: "打者マスに送球番号 ＋ DP（括弧なし）",
+        sample: "6-4-3 DP（縦括弧なし）",
       },
       {
         value: "wavy_link",
-        label: "縦2マス右内 波線連結 ＋ 間にDP",
+        label: "縦2マス右内 波線括り ＋ 間にDP",
         sample: "上部〜下部を波線で括り1・2マス間にDP",
       },
       {
         value: "chain_only",
-        label: "送球番号のみ（DP・線なし）",
+        label: "送球番号のみ（DP・括弧なし）",
         sample: "6-4-3 のみ記載",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<DoublePlayMarkStyle>>,
@@ -601,31 +653,51 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
     options: [
       {
         value: "umbrella_f_prefix_ground_arc",
-        label: "傘︵7・邪飛︵F7・ゴロ下弧（早見表）",
+        label: "飛球︵7・邪飛︵F7・ゴロ下弧6⏝",
         sample: "飛 ︵7 / 邪 ︵F7 / ゴロ 6⏝ / 直 ￣6",
       },
-      { value: "umbrella", label: "傘・直線記号（標準）", sample: "︵8 / ︵8F / ￣8" },
-      { value: "paren", label: "カッコ囲み式", sample: "(8) / [8]" },
-      { value: "alphabet", label: "F / L 添字式", sample: "8F / 8L" },
+      {
+        value: "umbrella",
+        label: "飛球︵8・邪飛︵8F・ゴロ番号のみ",
+        sample: "飛 ︵8 / 邪 ︵8F / ゴロ 6-3 / 直 ￣6",
+      },
+      {
+        value: "paren",
+        label: "カッコ囲み式（(8) / [6]）",
+        sample: "飛 (8) / ライナー [6]",
+      },
+      {
+        value: "alphabet",
+        label: "英字添字式（8F / 6L）",
+        sample: "飛 8F / 邪 7FF / ライナー 6L",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<FlyLinerMarkStyle>>,
   },
   advanceError: {
-    title: "盗塁・失策・妨害などの略号",
+    title: "失策・野選・盗塁・妨害などの略号",
     options: [
       {
         value: "senior_chart",
-        label: "早見表詳細式（E6/6E・4FC・S′）",
+        label: "捕球E6 / 送球6E・4FC・盗塁S′",
         sample: "捕E6・送6E・4FC・2IF・OB6・IP・S′/DS",
       },
-      { value: "english", label: "英字略号（標準）", sample: "S・WP・PB・6E・FC" },
-      { value: "kanji", label: "漢字略号", sample: "盗・暴・捕・6失・野" },
+      {
+        value: "english",
+        label: "英字シンプル（6E・FC・盗塁S）",
+        sample: "6E・FC・S・WP・PB・INT・OBS",
+      },
+      {
+        value: "kanji",
+        label: "漢字略号（6失・野・盗）",
+        sample: "6失・野・盗・暴・捕・打妨・妨",
+      },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<AdvanceErrorMarkStyle>>,
   },
   positionLabel: {
     title: "メンバー欄の守備位置表記",
     options: [
       { value: "number", label: "守備番号（1〜9）", sample: "1・2・3・6・8" },
-      { value: "kanji", label: "漢字（投〜右）", sample: "投・捕・一・遊・中" },
+      { value: "kanji", label: "漢字1文字（投〜右）", sample: "投・捕・一・遊・中" },
       { value: "english", label: "英字略称（P〜RF）", sample: "P・C・1B・SS・CF" },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<PositionLabelStyle>>,
   },

@@ -4,10 +4,16 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   CheckCircle2,
+  CircleDot,
+  Diamond,
   FileSpreadsheet,
+  LayoutGrid,
   Loader2,
+  NotebookPen,
   Printer,
   Sparkles,
+  Swords,
+  Trophy,
   Wand2,
   X,
 } from "lucide-react";
@@ -230,110 +236,201 @@ export function TeamSymbolRulesSettingsSection({
     }
   };
 
-  const fieldSections: Array<{
-    key: Exclude<keyof ScorebookSymbolRules, "customNote">;
+  type RuleFieldKey = Exclude<keyof ScorebookSymbolRules, "customNote">;
+
+  interface RuleFieldSectionItem {
+    itemNo: string;
+    key: RuleFieldKey;
     title: string;
     options: ReadonlyArray<{ value: string; label: string; sample: string }>;
-  }> = [
+  }
+
+  interface RuleCategoryGroup {
+    id: string;
+    stepLabel: string;
+    title: string;
+    subtitle: string;
+    rangeLabel: string;
+    accentBorderClass: string;
+    icon: React.ReactNode;
+    items: RuleFieldSectionItem[];
+  }
+
+  const categoryGroups: RuleCategoryGroup[] = [
     {
-      key: "cellStyle",
-      title: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.options,
+      id: "sheet-lineup",
+      stepLabel: "カテゴリ 1",
+      title: "シート罫線・メンバー欄・選手交代",
+      subtitle: "マス目の基本デザイン、打順欄の並び、代打・代走の波線ルール",
+      rangeLabel: "01〜04",
+      accentBorderClass: "border-l-blue-400",
+      icon: <LayoutGrid className="w-4 h-4 text-blue-300 shrink-0" />,
+      items: [
+        {
+          itemNo: "01",
+          key: "cellStyle",
+          title: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.cellStyle.options,
+        },
+        {
+          itemNo: "02",
+          key: "lineupStyle",
+          title: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.options,
+        },
+        {
+          itemNo: "03",
+          key: "positionLabel",
+          title: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.options,
+        },
+        {
+          itemNo: "04",
+          key: "pinchHitterMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.options,
+        },
+      ],
     },
     {
-      key: "lineupStyle",
-      title: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.lineupStyle.options,
+      id: "bso-pitch",
+      stepLabel: "カテゴリ 2",
+      title: "配球・カウント・牽制（左BSO欄）",
+      subtitle: "1球ごとのストライク・ボール・バント球・牽制記号",
+      rangeLabel: "05〜07",
+      accentBorderClass: "border-l-teal-400",
+      icon: <CircleDot className="w-4 h-4 text-teal-300 shrink-0" />,
+      items: [
+        {
+          itemNo: "05",
+          key: "pitchMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.options,
+        },
+        {
+          itemNo: "06",
+          key: "buntPitchMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.options,
+        },
+        {
+          itemNo: "07",
+          key: "pickoffMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.options,
+        },
+      ],
     },
     {
-      key: "positionLabel",
-      title: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.positionLabel.options,
+      id: "batting-result",
+      stepLabel: "カテゴリ 3",
+      title: "打撃結果・三振・四死球（マス右下・安打線）",
+      subtitle: "三振・四死球・飛球/ゴロ・犠打/犠飛・併殺打・安打赤線",
+      rangeLabel: "08〜13",
+      accentBorderClass: "border-l-amber-400",
+      icon: <Swords className="w-4 h-4 text-amber-300 shrink-0" />,
+      items: [
+        {
+          itemNo: "08",
+          key: "strikeout",
+          title: SYMBOL_RULE_FIELD_CONFIGS.strikeout.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.strikeout.options,
+        },
+        {
+          itemNo: "09",
+          key: "walkHbp",
+          title: SYMBOL_RULE_FIELD_CONFIGS.walkHbp.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.walkHbp.options,
+        },
+        {
+          itemNo: "10",
+          key: "flyLiner",
+          title: SYMBOL_RULE_FIELD_CONFIGS.flyLiner.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.flyLiner.options,
+        },
+        {
+          itemNo: "11",
+          key: "buntMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.buntMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.buntMark.options,
+        },
+        {
+          itemNo: "12",
+          key: "doublePlayMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.options,
+        },
+        {
+          itemNo: "13",
+          key: "hitLine",
+          title: SYMBOL_RULE_FIELD_CONFIGS.hitLine.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.hitLine.options,
+        },
+      ],
     },
     {
-      key: "pinchHitterMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.pinchHitterMark.options,
+      id: "runner-advance",
+      stepLabel: "カテゴリ 4",
+      title: "進塁・走塁アウト・失策略号（ダイヤ外周）",
+      subtitle: "進塁線・ストップ線・封殺記号・失策/野選/盗塁の略号",
+      rangeLabel: "14〜17",
+      accentBorderClass: "border-l-emerald-400",
+      icon: <Diamond className="w-4 h-4 text-emerald-300 shrink-0" />,
+      items: [
+        {
+          itemNo: "14",
+          key: "runnerLine",
+          title: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.options,
+        },
+        {
+          itemNo: "15",
+          key: "runnerOutLine",
+          title: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.options,
+        },
+        {
+          itemNo: "16",
+          key: "forceOutMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.options,
+        },
+        {
+          itemNo: "17",
+          key: "advanceError",
+          title: SYMBOL_RULE_FIELD_CONFIGS.advanceError.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.advanceError.options,
+        },
+      ],
     },
     {
-      key: "outMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.outMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.outMark.options,
-    },
-    {
-      key: "strikeout",
-      title: SYMBOL_RULE_FIELD_CONFIGS.strikeout.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.strikeout.options,
-    },
-    {
-      key: "walkHbp",
-      title: SYMBOL_RULE_FIELD_CONFIGS.walkHbp.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.walkHbp.options,
-    },
-    {
-      key: "flyLiner",
-      title: SYMBOL_RULE_FIELD_CONFIGS.flyLiner.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.flyLiner.options,
-    },
-    {
-      key: "buntMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.buntMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.buntMark.options,
-    },
-    {
-      key: "doublePlayMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.doublePlayMark.options,
-    },
-    {
-      key: "hitLine",
-      title: SYMBOL_RULE_FIELD_CONFIGS.hitLine.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.hitLine.options,
-    },
-    {
-      key: "runnerLine",
-      title: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.runnerLine.options,
-    },
-    {
-      key: "runnerOutLine",
-      title: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.runnerOutLine.options,
-    },
-    {
-      key: "forceOutMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.forceOutMark.options,
-    },
-    {
-      key: "runMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.runMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,
-    },
-    {
-      key: "rbiMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.options,
-    },
-    {
-      key: "pitchMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.pitchMark.options,
-    },
-    {
-      key: "buntPitchMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.buntPitchMark.options,
-    },
-    {
-      key: "pickoffMark",
-      title: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.pickoffMark.options,
-    },
-    {
-      key: "advanceError",
-      title: SYMBOL_RULE_FIELD_CONFIGS.advanceError.title,
-      options: SYMBOL_RULE_FIELD_CONFIGS.advanceError.options,
+      id: "center-score-out",
+      stepLabel: "カテゴリ 5",
+      title: "アウト・得点・打点（ダイヤ中央・右上）",
+      subtitle: "アウトカウント数字、自責点/非自責点マーク、打点ドット",
+      rangeLabel: "18〜20",
+      accentBorderClass: "border-l-rose-400",
+      icon: <Trophy className="w-4 h-4 text-rose-300 shrink-0" />,
+      items: [
+        {
+          itemNo: "18",
+          key: "outMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.outMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.outMark.options,
+        },
+        {
+          itemNo: "19",
+          key: "runMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.runMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.runMark.options,
+        },
+        {
+          itemNo: "20",
+          key: "rbiMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.options,
+        },
+      ],
     },
   ];
 
@@ -438,22 +535,27 @@ export function TeamSymbolRulesSettingsSection({
         )}
 
         {/* 1. かんたん一括プリセット */}
-        <div className="space-y-1.5 pt-1 border-t border-border">
-          <label className="text-xs font-black text-foreground block">
-            定番テンプレートから一括セット
-          </label>
-          <div className="grid grid-cols-2 gap-1.5">
+        <div className="rounded-2xl border border-[#cbd5e1] dark:border-border bg-[#eef2f6] dark:bg-muted/40 overflow-hidden">
+          <div className="bg-card border-b border-[#cbd5e1] dark:border-border px-3 py-2 flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-foreground">
+              一括テンプレートからまとめてセット
+            </span>
+            <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+              あとから個別変更OK
+            </span>
+          </div>
+          <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
             {SCOREBOOK_SYMBOL_PRESETS.map((preset) => (
               <button
                 key={preset.id}
                 type="button"
                 onClick={() => handleApplyPreset(preset.label, preset.rules)}
-                className="p-2.5 rounded-2xl border border-border bg-card hover:bg-muted hover:border-primary/40 text-left transition-all active:scale-95 cursor-pointer"
+                className="p-2.5 rounded-xl border border-[#cbd5e1] dark:border-border bg-card hover:bg-muted/60 hover:border-primary/50 text-left transition-all active:scale-[0.98] shadow-2xs cursor-pointer"
               >
-                <p className="text-[11px] font-black text-foreground leading-tight">
+                <p className="text-xs font-black text-foreground leading-tight">
                   {preset.label}
                 </p>
-                <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-1">
                   {preset.description}
                 </p>
               </button>
@@ -461,123 +563,198 @@ export function TeamSymbolRulesSettingsSection({
           </div>
         </div>
 
-        {/* 3. 各記号の詳細カスタマイズ（全選択肢にリアル清書マス見本プレビュー付き） */}
-        <div className="space-y-4 pt-2 border-t border-border">
-          {fieldSections.map((sec) => {
-            const currentVal = rules[sec.key];
-            const gridClass =
-              sec.key === "lineupStyle"
-                ? "grid-cols-1 sm:grid-cols-2"
-                : "grid-cols-2";
-            return (
-              <div key={sec.key} className="space-y-2">
-                <label className="text-xs font-black text-foreground block">
-                  {sec.title}
-                </label>
-                <div className={cn("grid gap-2", gridClass)}>
-                  {sec.options.map((opt) => {
-                    const isActive = currentVal === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() =>
-                          handleFieldSelect(
-                            sec.key,
-                            opt.value as ScorebookSymbolRules[typeof sec.key],
-                            sec.title
-                          )
-                        }
-                        className={cn(
-                          "p-2 rounded-xl border text-left transition-all active:scale-[0.98] cursor-pointer flex flex-col gap-1.5",
-                          isActive
-                            ? "bg-primary/12 text-primary border-primary ring-1 ring-primary/35 shadow-2xs"
-                            : "bg-muted/40 border-border text-foreground hover:bg-muted/70"
-                        )}
-                      >
-                        <ScorebookRuleOptionMiniPreview
-                          fieldKey={sec.key}
-                          optionValue={opt.value}
-                          baseRules={rules}
-                          className={
-                            isActive
-                              ? "border-primary/45"
-                              : "border-slate-300/90"
-                          }
-                        />
-                        <div className="w-full min-w-0 px-0.5">
-                          <div className="flex items-start justify-between gap-1">
-                            <p className="text-[11px] font-black leading-snug">
-                              {opt.label}
-                            </p>
-                            {isActive && (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                            )}
-                          </div>
-                          <p
-                            className={cn(
-                              "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
-                              isActive
-                                ? "text-primary/85"
-                                : "text-muted-foreground"
-                            )}
-                          >
-                            {opt.sample}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+        {/* 2. カテゴリ別・各記号の詳細カスタマイズ（全20項目・各項目独立カード枠＋見出し帯） */}
+        <div className="pt-3 border-t-2 border-slate-200 dark:border-border space-y-5">
+          <div className="flex items-center justify-between gap-2 px-0.5">
+            <div>
+              <h3 className="text-xs sm:text-[13px] font-black text-foreground">
+                項目ごとの詳細ルール選択（全20項目）
+              </h3>
+              <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
+                5つのカテゴリ別に整理しています。各見本をタップすると即座に保存されます。
+              </p>
+            </div>
+          </div>
 
-          {/* チーム補足メモ（ヘッダーに小さく印字可能） */}
-          <div className="space-y-1.5 pt-1">
-            <label className="text-[11px] font-black text-foreground block">
-              チーム独自ルール補足メモ（任意・シート上部に印字）
-            </label>
-            <div className="flex gap-2">
-              <div className="relative flex-1 min-w-0">
-                <input
-                  type="text"
-                  maxLength={80}
-                  value={rules.customNote || ""}
-                  onChange={(e) =>
-                    setRules((prev) => ({
-                      ...prev,
-                      customNote: e.target.value,
-                    }))
-                  }
-                  placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
-                  className="w-full h-10 pl-3 pr-8 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
-                />
-                {Boolean(rules.customNote) && (
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={() =>
-                      void persistRules(
-                        { ...rules, customNote: "" },
-                        "補足メモのクリア"
-                      )
-                    }
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                    aria-label="補足メモを消去"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+          {categoryGroups.map((group, groupIdx) => (
+            <div
+              key={group.id}
+              className={cn(
+                "space-y-3",
+                groupIdx > 0 &&
+                  "pt-4 border-t-2 border-slate-200 dark:border-border"
+              )}
+            >
+              {/* カテゴリ大見出しキャップ */}
+              <div
+                className={cn(
+                  "rounded-xl bg-[#0f172a] text-slate-50 border-l-4 px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-2xs",
+                  group.accentBorderClass
                 )}
-              </div>
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => void persistRules(rules, "補足メモ")}
-                className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
               >
-                保存
-              </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {group.icon}
+                    <span className="text-[10px] font-black text-slate-300 tracking-wide">
+                      {group.stepLabel}
+                    </span>
+                    <h4 className="text-xs sm:text-[13px] font-black text-white truncate">
+                      {group.title}
+                    </h4>
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-300 leading-snug mt-0.5">
+                    {group.subtitle}
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-200 border border-slate-700 font-mono text-[10px] font-black shrink-0">
+                  {group.rangeLabel}
+                </span>
+              </div>
+
+              {/* カテゴリ内の各設定項目（1項目ごとに独立した枠線＋白ヘッダー帯＋スレート背景トレイで完全分離） */}
+              <div className="space-y-3.5">
+                {group.items.map((sec) => {
+                  const currentVal = rules[sec.key];
+                  const gridClass =
+                    sec.key === "lineupStyle"
+                      ? "grid-cols-1 sm:grid-cols-2"
+                      : "grid-cols-2";
+                  return (
+                    <div
+                      key={sec.key}
+                      className="rounded-2xl border border-[#cbd5e1] dark:border-border bg-[#eef2f6] dark:bg-muted/45 overflow-hidden shadow-2xs"
+                    >
+                      {/* 項目見出しバー */}
+                      <div className="bg-card border-b border-[#cbd5e1] dark:border-border px-3 py-2 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="inline-flex items-center justify-center min-w-[26px] h-5 px-1.5 rounded-md bg-[#0f172a] text-white font-mono text-[10px] font-black shrink-0">
+                            {sec.itemNo}
+                          </span>
+                          <label className="text-xs sm:text-[13px] font-black text-foreground leading-snug">
+                            {sec.title}
+                          </label>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-muted text-slate-600 dark:text-muted-foreground border border-slate-300 dark:border-border text-[10px] font-black shrink-0">
+                          {sec.options.length}択
+                        </span>
+                      </div>
+
+                      {/* 選択肢カード群 */}
+                      <div className={cn("p-2.5 grid gap-2", gridClass)}>
+                        {sec.options.map((opt) => {
+                          const isActive = currentVal === opt.value;
+                          return (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() =>
+                                handleFieldSelect(
+                                  sec.key,
+                                  opt.value as ScorebookSymbolRules[typeof sec.key],
+                                  sec.title
+                                )
+                              }
+                              className={cn(
+                                "p-2 rounded-xl text-left transition-all active:scale-[0.98] cursor-pointer flex flex-col gap-1.5",
+                                isActive
+                                  ? "bg-blue-50 dark:bg-primary/15 text-primary border-2 border-primary shadow-xs"
+                                  : "bg-card border border-[#cbd5e1] dark:border-border text-foreground hover:border-slate-400 shadow-2xs"
+                              )}
+                            >
+                              <ScorebookRuleOptionMiniPreview
+                                fieldKey={sec.key}
+                                optionValue={opt.value}
+                                baseRules={rules}
+                                className={
+                                  isActive
+                                    ? "border-primary/50"
+                                    : "border-slate-300/90"
+                                }
+                              />
+                              <div className="w-full min-w-0 px-0.5">
+                                <div className="flex items-start justify-between gap-1">
+                                  <p className="text-[11px] font-black leading-snug">
+                                    {opt.label}
+                                  </p>
+                                  {isActive && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[9px] font-black shrink-0">
+                                      <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                                      <span>選択中</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <p
+                                  className={cn(
+                                    "text-[10px] font-mono font-bold leading-tight mt-0.5 truncate",
+                                    isActive
+                                      ? "text-primary/85"
+                                      : "text-muted-foreground"
+                                  )}
+                                >
+                                  {opt.sample}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {/* 3. チーム補足メモ（独立ボックス） */}
+          <div className="pt-4 border-t-2 border-slate-200 dark:border-border">
+            <div className="rounded-2xl border border-[#cbd5e1] dark:border-border bg-[#eef2f6] dark:bg-muted/40 overflow-hidden shadow-2xs">
+              <div className="bg-card border-b border-[#cbd5e1] dark:border-border px-3 py-2 flex items-center gap-2">
+                <NotebookPen className="w-3.5 h-3.5 text-primary shrink-0" />
+                <label className="text-xs font-black text-foreground block">
+                  チーム独自ルール補足メモ（任意・シート上部に印字）
+                </label>
+              </div>
+              <div className="p-2.5 flex gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <input
+                    type="text"
+                    maxLength={80}
+                    value={rules.customNote || ""}
+                    onChange={(e) =>
+                      setRules((prev) => ({
+                        ...prev,
+                        customNote: e.target.value,
+                      }))
+                    }
+                    placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
+                    className="w-full h-10 pl-3 pr-8 rounded-xl bg-card border border-[#cbd5e1] dark:border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
+                  />
+                  {Boolean(rules.customNote) && (
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() =>
+                        void persistRules(
+                          { ...rules, customNote: "" },
+                          "補足メモのクリア"
+                        )
+                      }
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+                      aria-label="補足メモを消去"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => void persistRules(rules, "補足メモ")}
+                  className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  保存
+                </button>
+              </div>
             </div>
           </div>
         </div>

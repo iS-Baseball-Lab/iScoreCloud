@@ -805,7 +805,7 @@ function buildResultSection(
           badgeTone: "amber",
           title: "三振振り逃げ（反転K）",
           description:
-            "早見表ルールでは、左右反転させた「ꓘ」で三振振り逃げを表します（見逃し三振＝K、空振り三振＝SO と3区分します）。",
+            "現在のチーム記号ルールでは、左右反転させた「ꓘ」で三振振り逃げを表します（見逃し三振＝K、空振り三振＝SO と3区分します）。",
         });
       } else {
         decoratorLabel = "反転K（見逃し三振）";
