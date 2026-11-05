@@ -19,15 +19,16 @@ import {
   ShieldCheck,
   ClipboardList,
   Clock,
+  Plus,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchDayOps } from "@/types/match";
 import { parseSafeMatchDate, hasMatchTime } from "@/lib/liff/demo-lineup";
 import {
-  getFilledStaffRoles,
   isAssigneeMatchingIdentity,
   parseMatchDayOpsJson,
+  splitPresetAndCustomStaffRoles,
   type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
 import { useLiff } from "@/components/liff/LiffProvider";
@@ -201,8 +202,16 @@ function MatchCountdown({ date }: { date: string }) {
 export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false, isLoading = false }: MatchScoreCardProps) {
   const { profile } = useLiff();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
+  const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [isThumbLoaded, setIsThumbLoaded] = useState(false);
+
+  // SKILL.md 規約5: 対象試合変更時やカード折りたたみ時に手動追加役割の展開状態もリセット
+  useEffect(() => {
+    if (!isExpanded) {
+      setIsCustomRolesExpanded(false);
+    }
+  }, [isExpanded, match?.id]);
 
   if (isLoading || !match) {
     return <MatchScoreCardSkeleton />;
@@ -226,7 +235,12 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
   const isDraw = match.status === "finished" && match.myScore === match.opponentScore;
 
   const normalizedOps = match.matchDayOps ? parseMatchDayOpsJson(match.matchDayOps) : null;
-  const filledRoles = getFilledStaffRoles(normalizedOps);
+  const {
+    presetRoles,
+    customRoles,
+    assignedPresetCount,
+    assignedTotalCount,
+  } = splitPresetAndCustomStaffRoles(normalizedOps);
   const viewerIdentity: LiffMyMatchIdentity | null = profile?.displayName
     ? {
         memberId: null,
@@ -235,6 +249,9 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         childNames: [],
       }
     : null;
+  const hasMyCustomRole = customRoles.some((r) =>
+    r.assignees.some((person) => isAssigneeMatchingIdentity(person, viewerIdentity))
+  );
 
   const footerStatusLabel =
     match.status === "finished"
@@ -243,8 +260,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
       ? "試合中"
       : isRainout
       ? "雨天中止"
-      : filledRoles.length > 0
-      ? `予定 • 役割 ${filledRoles.length}枠`
+      : assignedTotalCount > 0 || customRoles.length > 0
+      ? `予定 • 役割 ${assignedPresetCount}/${presetRoles.length}枠${
+          customRoles.length > 0 ? `＋追加${customRoles.length}` : ""
+        }`
       : "予定 • 役割未設定";
 
   const firstScore = match.battingOrder === "second" ? match.opponentScore : match.myScore;
@@ -537,7 +556,9 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                           当日の役割担当
                         </span>
                         <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono tabular-nums shrink-0">
-                          {filledRoles.length > 0 ? `${filledRoles.length}枠` : "未設定"}
+                          {`${assignedPresetCount}/${presetRoles.length}枠${
+                            customRoles.length > 0 ? `＋追加${customRoles.length}` : ""
+                          }`}
                         </span>
                       </div>
                       {normalizedOps?.gatherTime && (
@@ -548,72 +569,157 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                       )}
                     </div>
 
-                    {filledRoles.length > 0 ? (
-                      <div className="divide-y divide-border text-xs">
-                        {filledRoles.map((role) => (
-                          <div
-                            key={role.roleKey}
-                            className="px-3 py-2 flex items-start justify-between gap-2 odd:bg-card even:bg-muted/30"
-                          >
-                            <div className="min-w-0 shrink-0 pt-0.5">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900 text-white dark:bg-slate-800 text-[10.5px] font-black leading-tight">
-                                {role.roleLabel}
-                              </span>
-                            </div>
+                    {/* ① 固定の役割（全7枠常時表示） */}
+                    <div className="divide-y divide-border text-xs">
+                      {presetRoles.map((role) => (
+                        <div
+                          key={role.roleKey}
+                          className="px-3 py-1.5 flex items-start justify-between gap-2 odd:bg-card even:bg-muted/30"
+                        >
+                          <div className="min-w-0 shrink-0 pt-0.5">
+                            <span
+                              className={cn(
+                                "inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-black leading-tight",
+                                role.isAssigned
+                                  ? "bg-slate-900 text-white dark:bg-slate-800"
+                                  : "bg-muted text-muted-foreground border border-border"
+                              )}
+                            >
+                              {role.roleLabel}
+                            </span>
+                          </div>
 
-                            <div className="flex-1 min-w-0 text-right">
-                              <div className="flex flex-wrap items-center justify-end gap-1">
-                                {role.assignees.length > 0 ? (
-                                  role.assignees.map((person) => {
-                                    const isMe = isAssigneeMatchingIdentity(person, viewerIdentity);
-                                    return (
-                                      <span
-                                        key={`${role.roleKey}-${person}`}
-                                        className={cn(
-                                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black",
-                                          isMe
-                                            ? "bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs"
-                                            : "bg-primary/10 text-primary border border-primary/25"
-                                        )}
-                                      >
-                                        {isMe && <Zap className="w-3 h-3 shrink-0" />}
-                                        <span>{person}</span>
-                                      </span>
-                                    );
-                                  })
-                                ) : (
-                                  <span className="text-[11px] font-bold text-muted-foreground">
-                                    調整中
-                                  </span>
-                                )}
-                              </div>
-                              {role.note && (
-                                <p className="text-[10px] font-bold text-muted-foreground mt-0.5 break-words">
-                                  {role.note}
-                                </p>
+                          <div className="flex-1 min-w-0 text-right">
+                            <div className="flex flex-wrap items-center justify-end gap-1">
+                              {role.assignees.length > 0 ? (
+                                role.assignees.map((person) => {
+                                  const isMe = isAssigneeMatchingIdentity(
+                                    person,
+                                    viewerIdentity
+                                  );
+                                  return (
+                                    <span
+                                      key={`${role.roleKey}-${person}`}
+                                      className={cn(
+                                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black",
+                                        isMe
+                                          ? "bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs"
+                                          : "bg-primary/10 text-primary border border-primary/25"
+                                      )}
+                                    >
+                                      {isMe && <Zap className="w-3 h-3 shrink-0" />}
+                                      <span>{person}</span>
+                                    </span>
+                                  );
+                                })
+                              ) : (
+                                <span className="text-[11px] font-bold text-muted-foreground">
+                                  {role.note ? "メモ参照" : "未定"}
+                                </span>
                               )}
                             </div>
+                            {role.note && (
+                              <p className="text-[10px] font-bold text-muted-foreground mt-0.5 break-words">
+                                {role.note}
+                              </p>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* ② 手動追加したカスタム役割（折りたたみ・タップ展開） */}
+                    {customRoles.length > 0 && (
                       <div
-                        className="px-3.5 py-4 text-center space-y-2 bg-card"
+                        className="border-t border-border bg-card"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <p className="text-xs font-black text-foreground">
-                          審判・スコアラー・BSO・ブザー・動画撮影などの役割はまだ未設定です
-                        </p>
-                        <div>
-                          <Link
-                            href={`/liff/matches?id=${match.id}`}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-muted hover:bg-muted/80 border border-border text-foreground text-[11px] font-black transition-all active:scale-95"
-                          >
-                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                            <span>役割担当・当日しおりを設定する</span>
-                            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
-                          </Link>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomRolesExpanded((prev) => !prev)}
+                          className="w-full px-3 py-2 bg-muted/50 hover:bg-muted/80 flex items-center justify-between gap-2 text-left transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
+                            <span className="text-[11px] font-black text-foreground truncate">
+                              追加の役割（{customRoles.length}枠）
+                            </span>
+                            {hasMyCustomRole && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 border border-amber-500 text-[9.5px] font-black shrink-0">
+                                <Zap className="w-2.5 h-2.5 shrink-0" />
+                                <span>担当あり</span>
+                              </span>
+                            )}
+                          </div>
+                          <span className="inline-flex items-center gap-1 text-[10.5px] font-black text-primary shrink-0">
+                            <span>{isCustomRolesExpanded ? "閉じる" : "展開する"}</span>
+                            {isCustomRolesExpanded ? (
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            ) : (
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            )}
+                          </span>
+                        </button>
+
+                        {isCustomRolesExpanded && (
+                          <div className="divide-y divide-border border-t border-border text-xs animate-in fade-in duration-150">
+                            {customRoles.map((role) => (
+                              <div
+                                key={role.roleKey}
+                                className="px-3 py-1.5 flex items-start justify-between gap-2 odd:bg-card even:bg-muted/30"
+                              >
+                                <div className="min-w-0 shrink-0 pt-0.5 flex items-center gap-1">
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-black leading-tight",
+                                      role.isAssigned
+                                        ? "bg-slate-800 text-white"
+                                        : "bg-muted text-muted-foreground border border-border"
+                                    )}
+                                  >
+                                    {role.roleLabel}
+                                  </span>
+                                </div>
+
+                                <div className="flex-1 min-w-0 text-right">
+                                  <div className="flex flex-wrap items-center justify-end gap-1">
+                                    {role.assignees.length > 0 ? (
+                                      role.assignees.map((person) => {
+                                        const isMe = isAssigneeMatchingIdentity(
+                                          person,
+                                          viewerIdentity
+                                        );
+                                        return (
+                                          <span
+                                            key={`${role.roleKey}-${person}`}
+                                            className={cn(
+                                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-black",
+                                              isMe
+                                                ? "bg-amber-400 text-slate-950 border border-amber-500 shadow-2xs"
+                                                : "bg-primary/10 text-primary border border-primary/25"
+                                            )}
+                                          >
+                                            {isMe && <Zap className="w-3 h-3 shrink-0" />}
+                                            <span>{person}</span>
+                                          </span>
+                                        );
+                                      })
+                                    ) : (
+                                      <span className="text-[11px] font-bold text-muted-foreground">
+                                        {role.note ? "メモ参照" : "未定"}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {role.note && (
+                                    <p className="text-[10px] font-bold text-muted-foreground mt-0.5 break-words">
+                                      {role.note}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

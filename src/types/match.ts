@@ -24,7 +24,12 @@ export type MatchMealOption =
   | 'snack_only'
   | 'no_meal';
 
-export type MatchCarpoolMode = 'auto' | 'away_carpool' | 'local_gather' | 'none';
+export type MatchCarpoolMode =
+  | 'auto'
+  | 'away_carpool'
+  | 'local_gather'
+  | 'no_carpool'
+  | 'none';
 
 /** 🎒 試合当日のしおり・役割担当・遠征配車メモ（matches.match_day_ops JSON） */
 export interface MatchDayOps {

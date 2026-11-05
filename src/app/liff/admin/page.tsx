@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   ShieldCheck, 
   UserCheck, 
@@ -33,6 +34,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -94,6 +96,8 @@ const ROLE_OPTIONS = [
 const PRESET_SUB_LABELS = ["1班", "2班", "3班", "4班", "配車", "審判", "用具", "救急"];
 
 export default function LiffAdminDashboardPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { currentTeam, profile, isDemo: providerDemo, liff } = useLiff();
   const [activeTab, setActiveTab] = useState<"requests" | "members" | "invite">("requests");
 
@@ -448,6 +452,7 @@ export default function LiffAdminDashboardPage() {
               </p>
               <Link
                 href="/liff"
+                onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
                 className="inline-block mt-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black"
               >
                 チームHUBへ戻る

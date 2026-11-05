@@ -28,6 +28,7 @@ import {
   Loader2,
   Share2,
   ParkingCircle,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -526,7 +527,13 @@ export function shouldShowMatchCarpoolCard(
 ): boolean {
   const mode = ops?.carpoolMode || "auto";
   if (mode === "none") return false;
-  if (mode === "away_carpool" || mode === "local_gather") return true;
+  if (
+    mode === "away_carpool" ||
+    mode === "local_gather" ||
+    mode === "no_carpool"
+  ) {
+    return true;
+  }
   if (scheduleSync && scheduleSync.cars.length > 0) return true;
   if (ops?.carLimitNote || ops?.cargoCarMember || ops?.carpoolSummaryNote) {
     return true;
@@ -565,6 +572,8 @@ export function MatchCarpoolSummarySection({
       : "");
 
   const isLocalGather = ops?.carpoolMode === "local_gather";
+  const isNoCarpool = ops?.carpoolMode === "no_carpool";
+  const hideVehicleBreakdown = isLocalGather || isNoCarpool;
   const carpoolPageHref = scheduleSync?.eventId
     ? `/liff/carpool?eventId=${encodeURIComponent(scheduleSync.eventId)}`
     : "/liff/carpool";
@@ -577,13 +586,15 @@ export function MatchCarpoolSummarySection({
           <span className="truncate">遠征・配車サマリー</span>
         </h2>
 
-        <Link
-          href="/liff/tools/carpool-generator"
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
-        >
-          <Sparkles className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-          <span>自動配車ツール</span>
-        </Link>
+        {!isNoCarpool && (
+          <Link
+            href="/liff/tools/carpool-generator"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
+          >
+            <Sparkles className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+            <span>自動配車ツール</span>
+          </Link>
+        )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -592,12 +603,22 @@ export function MatchCarpoolSummarySection({
           <div className="flex items-center gap-2 min-w-0">
             <Car className="w-4 h-4 text-teal-400 shrink-0" />
             <span className="text-xs font-black text-white truncate">
-              {isLocalGather ? "現地集合・駐車案内" : "遠征配車・乗り合い案内"}
+              {isNoCarpool
+                ? "配車案内（本日は配車なし）"
+                : isLocalGather
+                ? "現地集合・駐車案内"
+                : "遠征配車・乗り合い案内"}
             </span>
-            {cars.length > 0 && (
-              <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[10px] font-black font-mono tabular-nums shrink-0">
-                {cars.length}台 / {totalPassengers}名乗車
+            {isNoCarpool ? (
+              <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black shrink-0">
+                配車なし
               </span>
+            ) : (
+              cars.length > 0 && (
+                <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[10px] font-black font-mono tabular-nums shrink-0">
+                  {cars.length}台 / {totalPassengers}名乗車
+                </span>
+              )
             )}
           </div>
 
@@ -613,7 +634,7 @@ export function MatchCarpoolSummarySection({
 
         <div className="p-3.5 space-y-3">
           {/* 🚗 ログイン家族の乗車号車ハイライト */}
-          {myFamilyCars.length > 0 && (
+          {!hideVehicleBreakdown && myFamilyCars.length > 0 && (
             <div className="rounded-xl bg-teal-500/12 border-2 border-teal-600 p-3 flex items-start gap-2.5">
               <span className="w-7 h-7 rounded-lg bg-teal-600 text-white flex items-center justify-center shrink-0 mt-0.5">
                 <Car className="w-4 h-4" />
@@ -637,6 +658,22 @@ export function MatchCarpoolSummarySection({
                     </span>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {isNoCarpool && (
+            <div className="p-3 rounded-xl bg-muted border-2 border-slate-400 dark:border-slate-600 flex items-start gap-2.5">
+              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-black shrink-0 mt-0.5">
+                配車なし
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground leading-snug">
+                  この試合はチーム配車を行いません
+                </p>
+                <p className="text-[10.5px] font-bold text-muted-foreground mt-0.5 leading-snug">
+                  各自での移動・集合をお願いします
+                </p>
               </div>
             </div>
           )}
@@ -688,7 +725,7 @@ export function MatchCarpoolSummarySection({
           )}
 
           {/* 車両一覧コンパクトサマリー */}
-          {!isLocalGather && cars.length > 0 && (
+          {!hideVehicleBreakdown && cars.length > 0 && (
             <div className="space-y-1.5">
               <span className="text-[10px] font-black text-muted-foreground px-0.5 block">
                 号車別サマリー
@@ -730,7 +767,7 @@ export function MatchCarpoolSummarySection({
           )}
 
           {/* 配車表詳細への遷移アクション */}
-          {!isLocalGather && (
+          {!hideVehicleBreakdown && (
             <div className="pt-2 border-t border-border flex items-center gap-2">
               <Link
                 href={carpoolPageHref}
@@ -924,6 +961,19 @@ export function MatchDayOpsEditorModal({
     );
   };
 
+  const handleUpdateCustomRoleLabel = (roleKey: string, labelVal: string) => {
+    setRoleRows((prev) =>
+      prev.map((row) =>
+        row.roleKey === roleKey ? { ...row, roleLabel: labelVal } : row
+      )
+    );
+  };
+
+  const handleRemoveCustomRole = (roleKey: string) => {
+    setRoleRows((prev) => prev.filter((row) => row.roleKey !== roleKey));
+    setExpandedRoleKey((prev) => (prev === roleKey ? "" : prev));
+  };
+
   const handleAddCustomRole = () => {
     const label = newCustomRoleLabel.trim();
     if (!label) return;
@@ -945,14 +995,28 @@ export function MatchDayOpsEditorModal({
   };
 
   const handleSubmit = async () => {
+    const hasBlankCustomLabel = roleRows.some(
+      (r) => r.isCustom && r.roleLabel.trim().length === 0
+    );
+    if (hasBlankCustomLabel) {
+      toast.error("追加した役割の名前を入力するか、不要な枠を削除してください");
+      setActiveTab("roles");
+      return;
+    }
+
     const cleanedRoles: MatchStaffRoleAssignment[] = roleRows
+      .filter((r) => {
+        const cleanLabel = r.roleLabel.trim();
+        if (!cleanLabel) return false;
+        if (r.isCustom) return true;
+        return r.assignees.length > 0 || Boolean(r.note.trim());
+      })
       .map((r) => ({
         roleKey: r.roleKey,
         roleLabel: r.roleLabel.trim(),
         assignees: r.assignees.map((a) => a.trim()).filter(Boolean),
         note: r.note.trim() || undefined,
-      }))
-      .filter((r) => r.roleLabel && (r.assignees.length > 0 || Boolean(r.note)));
+      }));
 
     const payload: MatchDayOps = {
       gatherTime: gatherTime.trim() || undefined,
@@ -1087,19 +1151,27 @@ export function MatchDayOpsEditorModal({
                   return (
                     <div
                       key={row.roleKey}
-                      className="rounded-xl border border-border bg-card overflow-hidden"
+                      className={cn(
+                        "rounded-xl border bg-card overflow-hidden",
+                        row.isCustom ? "border-amber-500/45" : "border-border"
+                      )}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedRoleKey(isExpanded ? "" : row.roleKey)
-                        }
-                        className="w-full px-3 py-2.5 flex items-center justify-between gap-2 bg-muted/40 hover:bg-muted/70 text-left transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-black shrink-0">
-                            {row.roleLabel}
+                      <div className="w-full px-3 py-2.5 flex items-center justify-between gap-2 bg-muted/40 hover:bg-muted/70 transition-colors">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedRoleKey(isExpanded ? "" : row.roleKey)
+                          }
+                          className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+                        >
+                          <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-black shrink-0 max-w-[140px] truncate">
+                            {row.roleLabel.trim() || "名称未入力"}
                           </span>
+                          {row.isCustom && (
+                            <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0">
+                              追加枠
+                            </span>
+                          )}
                           <span className="text-[11px] font-bold text-muted-foreground truncate">
                             {count > 0
                               ? row.assignees.join("・")
@@ -1107,23 +1179,76 @@ export function MatchDayOpsEditorModal({
                                 ? row.note
                                 : row.shortHint}
                           </span>
-                        </div>
+                        </button>
+
                         <div className="flex items-center gap-1.5 shrink-0">
                           {count > 0 && (
                             <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black font-mono">
                               {count}名
                             </span>
                           )}
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                          {row.isCustom && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCustomRole(row.roleKey)}
+                              aria-label={`${row.roleLabel || "追加枠"}を削除`}
+                              title="この役割枠を削除"
+                              className="w-7 h-7 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 flex items-center justify-center transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedRoleKey(isExpanded ? "" : row.roleKey)
+                            }
+                            aria-label={isExpanded ? "閉じる" : "展開する"}
+                            className="p-0.5 text-muted-foreground cursor-pointer"
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </button>
                         </div>
-                      </button>
+                      </div>
 
                       {isExpanded && (
                         <div className="p-3 space-y-2.5 border-t border-border bg-card">
+                          {/* 手動追加枠：役割名の編集 ＆ 枠の削除 */}
+                          {row.isCustom && (
+                            <div className="p-2.5 rounded-xl bg-amber-500/[0.07] border border-amber-500/30 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10.5px] font-black text-foreground">
+                                  役割名の編集
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRemoveCustomRole(row.roleKey)
+                                  }
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-rose-300 dark:border-rose-800 bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-[10.5px] font-black cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3 shrink-0" />
+                                  <span>この役割を削除</span>
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                value={row.roleLabel}
+                                onChange={(e) =>
+                                  handleUpdateCustomRoleLabel(
+                                    row.roleKey,
+                                    e.target.value
+                                  )
+                                }
+                                placeholder="役割名を入力（例: 駐車場誘導・救護係）"
+                                className="w-full h-9 px-3 rounded-xl border border-border bg-background text-xs font-black text-foreground"
+                              />
+                            </div>
+                          )}
                           {/* 選択済みメンバー */}
                           {row.assignees.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
@@ -1223,6 +1348,12 @@ export function MatchDayOpsEditorModal({
                     type="text"
                     value={newCustomRoleLabel}
                     onChange={(e) => setNewCustomRoleLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddCustomRole();
+                      }
+                    }}
                     placeholder="役割名を入力"
                     className="flex-1 h-9 px-3 rounded-xl border border-border bg-background text-xs font-bold text-foreground"
                   />
@@ -1378,10 +1509,11 @@ export function MatchDayOpsEditorModal({
                 <div className="grid grid-cols-2 gap-1.5">
                   {(
                     [
-                      { value: "auto", label: "自動（配車表と連動）" },
-                      { value: "away_carpool", label: "遠征・乗り合い配車" },
-                      { value: "local_gather", label: "現地集合（各自移動）" },
-                      { value: "none", label: "配車枠を表示しない" },
+                      { value: "auto", label: "自動（配車表と連動）", spanFull: false },
+                      { value: "away_carpool", label: "遠征・乗り合い配車", spanFull: false },
+                      { value: "local_gather", label: "現地集合（各自移動）", spanFull: false },
+                      { value: "no_carpool", label: "あえて「配車なし」を表示", spanFull: false },
+                      { value: "none", label: "配車枠自体を表示しない", spanFull: true },
                     ] as const
                   ).map((item) => (
                     <button
@@ -1390,6 +1522,7 @@ export function MatchDayOpsEditorModal({
                       onClick={() => setCarpoolMode(item.value)}
                       className={cn(
                         "h-9 px-2.5 rounded-xl border text-[11px] flex items-center justify-center text-center cursor-pointer",
+                        item.spanFull && "col-span-2",
                         carpoolMode === item.value
                           ? "bg-teal-600 text-white border-teal-600 font-black"
                           : "bg-card hover:bg-muted border-border text-foreground font-bold"

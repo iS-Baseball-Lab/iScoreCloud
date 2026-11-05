@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ChevronDown,
@@ -20,6 +21,10 @@ import {
 } from "lucide-react";
 import { useLiff } from "./LiffProvider";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
+import {
+  handleLiffRootLinkClick,
+  navigateToLiffRoot,
+} from "@/lib/liff/navigation";
 import {
   LIFF_THEME_CHANGE_EVENT,
   syncLiffThemeClasses,
@@ -65,6 +70,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
     isDemo,
     refreshTeams,
   } = useLiff();
+  const router = useRouter();
+  const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
 
@@ -121,6 +128,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud for LINEミニアプリ) */}
         <Link
           href="/liff"
+          onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
           className="flex items-center gap-2 shrink-0 group outline-hidden"
           title="チームHUBトップへ"
         >
@@ -192,7 +200,13 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               {teams.map((t) => (
                 <DropdownMenuItem
                   key={t.id}
-                  onClick={() => selectTeam(t.id)}
+                  onClick={() => {
+                    const isTeamChanged = currentTeam?.id !== t.id;
+                    selectTeam(t.id);
+                    if (isTeamChanged) {
+                      navigateToLiffRoot(router, pathname);
+                    }
+                  }}
                   className={`flex items-center justify-between p-2 cursor-pointer rounded-xl font-black text-xs ${
                     currentTeam?.id === t.id ? "bg-primary/10 text-primary" : "hover:bg-muted"
                   }`}
@@ -417,7 +431,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         onClose={() => setIsJoinModalOpen(false)}
         onSuccess={() => {
           setIsJoinModalOpen(false);
-          refreshTeams();
+          void refreshTeams();
+          navigateToLiffRoot(router, pathname);
         }}
       />
     </header>

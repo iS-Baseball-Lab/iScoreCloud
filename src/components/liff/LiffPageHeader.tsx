@@ -2,10 +2,11 @@
 "use client";
 
 import React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronLeft, Share2 } from "lucide-react";
 import { useLiff } from "./LiffProvider";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
+import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 
 interface LiffPageHeaderProps {
   title: string;
@@ -29,6 +30,7 @@ export function LiffPageHeader({
   shareData,
 }: LiffPageHeaderProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const { isInClient } = useLiff();
 
   const handleShare = async () => {
@@ -65,7 +67,13 @@ export function LiffPageHeader({
         {showBack && (
           <button
             type="button"
-            onClick={() => router.back()}
+            onClick={() => {
+              if (canGoBackInLiff()) {
+                router.back();
+              } else {
+                navigateToLiffRoot(router, pathname);
+              }
+            }}
             className="p-2 -ml-1 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
             aria-label="戻る"
           >

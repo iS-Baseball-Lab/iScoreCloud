@@ -2,6 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { Liff } from "@line/liff";
 import { LiffUserProfile, initLiff, getLiffProfile } from "@/lib/liff/liff-client";
 import { LIFF_THEME_CHANGE_EVENT, syncLiffThemeClasses } from "@/lib/liff/theme-settings";
@@ -12,6 +13,13 @@ import {
   invalidateLiffApiCache,
   prefetchLiffCoreEndpoints,
 } from "@/lib/liff/api-cache";
+import {
+  getLiffHistoryDepth,
+  installLiffHistoryTracker,
+  invalidateLiffForwardHistory,
+  isPendingLiffRootReset,
+  navigateToLiffRoot,
+} from "@/lib/liff/navigation";
 import {
   LIFF_SCORE_SETTINGS_CHANGE_EVENT,
   loadTeamScoreNameDisplayMode,
@@ -100,7 +108,10 @@ export function LiffProvider({
 }) {
   if (typeof window !== "undefined") {
     installLiffFastFetchCache();
+    installLiffHistoryTracker();
   }
+  const router = useRouter();
+  const pathname = usePathname();
   const [liff, setLiff] = useState<Liff | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isInClient, setIsInClient] = useState(false);
@@ -169,43 +180,83 @@ export function LiffProvider({
     return null;
   });
   const [isLoadingTeam, setIsLoadingTeam] = useState<boolean>(() => currentTeam === null);
+  const teamsRef = useRef<LiffTeamItem[]>(teams);
+  teamsRef.current = teams;
+  const hasExplicitTeamSelectionRef = useRef<boolean>(false);
+  const prevPathnameRef = useRef<string | null>(null);
 
-  // チーム選択ハンドラー（LocalStorageに永続化し、全画面で同期）
+  // トップページ（/liff）へ遷移した際は、どの経路からであってもアプリ内遷移履歴をクリアする
+  useEffect(() => {
+    if (!pathname) return;
+    if (pathname === "/liff") {
+      if (getLiffHistoryDepth() > 0 && !isPendingLiffRootReset()) {
+        navigateToLiffRoot(router, "/liff");
+      } else if (
+        prevPathnameRef.current !== null &&
+        prevPathnameRef.current !== "/liff"
+      ) {
+        invalidateLiffForwardHistory();
+      }
+    }
+    prevPathnameRef.current = pathname;
+  }, [pathname, router]);
+
+  // チーム選択ハンドラー（LocalStorageに永続化し、全画面で0ms同期）
   const selectTeam = useCallback((teamId: string) => {
+    hasExplicitTeamSelectionRef.current = true;
+    const storedUserId =
+      typeof window !== "undefined"
+        ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+        : "";
+    const storedUserName =
+      typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "";
+
     if (teamId === "demo-team") {
       setIsDemo(true);
       localStorage.setItem("iscore_isDemo", "true");
       localStorage.setItem("iscore_selectedTeamId", "demo-team");
-      setTeams((prevTeams) => {
-        let found = prevTeams.find((t) => t.id === "demo-team");
-        if (!found) {
-          found = {
-            id: "demo-team",
-            name: "iScore ドリームス (体験デモ)",
-            orgName: "iScore ドリームス",
-            teamName: "体験デモチーム",
-            shortName: "ドリームス",
-            isDemo: true,
-            scoreTeamNameMode: loadTeamScoreNameDisplayMode("demo-team", "organization"),
-          };
-        }
-        setCurrentTeam(found);
-        localStorage.setItem("iscore_selectedTeamName", found.name);
-        localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
-        return prevTeams;
+      const savedDemoLogo =
+        typeof window !== "undefined"
+          ? localStorage.getItem("iscore_demo_team_logo") || undefined
+          : undefined;
+      const baseFound = teamsRef.current.find((t) => t.id === "demo-team") || {
+        id: "demo-team",
+        name: "iScore ドリームス (体験デモ)",
+        orgName: "iScore ドリームス",
+        teamName: "体験デモチーム",
+        shortName: "ドリームス",
+        isDemo: true,
+      };
+      const nextDemoTeam: LiffTeamItem = {
+        ...baseFound,
+        logoImageUrl: savedDemoLogo ?? baseFound.logoImageUrl,
+        scoreTeamNameMode: loadTeamScoreNameDisplayMode(
+          "demo-team",
+          baseFound.scoreTeamNameMode ?? "organization"
+        ),
+      };
+      setCurrentTeam(nextDemoTeam);
+      localStorage.setItem("iscore_selectedTeamName", nextDemoTeam.name);
+      localStorage.setItem("iscore_currentTeam_json", JSON.stringify(nextDemoTeam));
+      prefetchLiffCoreEndpoints({
+        teamId: "demo-team",
+        userId: storedUserId,
+        userName: storedUserName,
       });
     } else {
       setIsDemo(false);
       localStorage.setItem("iscore_isDemo", "false");
       localStorage.setItem("iscore_selectedTeamId", teamId);
-      setTeams((prevTeams) => {
-        const found = prevTeams.find((t) => t.id === teamId);
-        if (found) {
-          setCurrentTeam(found);
-          localStorage.setItem("iscore_selectedTeamName", found.name);
-          localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
-        }
-        return prevTeams;
+      const found = teamsRef.current.find((t) => t.id === teamId);
+      if (found) {
+        setCurrentTeam(found);
+        localStorage.setItem("iscore_selectedTeamName", found.name);
+        localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
+      }
+      prefetchLiffCoreEndpoints({
+        teamId,
+        userId: storedUserId,
+        userName: storedUserName,
       });
     }
   }, []);
@@ -313,7 +364,7 @@ export function LiffProvider({
         typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "";
 
       let targetTeamId: string | null = null;
-      if (urlTeamId) {
+      if (urlTeamId && !hasExplicitTeamSelectionRef.current) {
         targetTeamId = urlTeamId;
       } else if (storedTeamId) {
         if (storedTeamId === "demo-team") {

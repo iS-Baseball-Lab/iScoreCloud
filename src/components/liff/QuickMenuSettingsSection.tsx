@@ -3,6 +3,8 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import {
   ArrowDown,
   ArrowUp,
@@ -38,6 +40,8 @@ import {
 } from "@/lib/liff/quick-menu-settings";
 
 export function QuickMenuSettingsSection() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [config, setConfig] = useState<QuickMenuConfig>(() =>
     getDefaultQuickMenuConfig(),
   );
@@ -440,6 +444,7 @@ export function QuickMenuSettingsSection() {
       <div className="pt-1">
         <Link
           href="/liff"
+          onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
           className="w-full py-2.5 px-4 rounded-2xl bg-card hover:bg-muted border border-border hover:border-primary/40 text-xs font-black text-foreground flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all"
         >
           <span>トップページでクイックメニューを確認する</span>

@@ -3,7 +3,9 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useLiff } from "./LiffProvider";
+import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import { 
   Home, 
   Trophy, 
@@ -307,7 +309,9 @@ const MENU_ITEMS: MenuItem[] = [
 ];
 
 export function LiffBottomNav() {
+  const router = useRouter();
   const pathname = usePathname();
+  const { currentTeam } = useLiff();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule");
 
@@ -330,7 +334,7 @@ export function LiffBottomNav() {
     } else {
       setSelectedCategory("schedule");
     }
-  }, [pathname]);
+  }, [pathname, currentTeam?.id]);
 
   const filteredItems = useMemo(() => {
     return MENU_ITEMS.filter((item) => item.category === selectedCategory);
@@ -404,7 +408,11 @@ export function LiffBottomNav() {
               {/* ① 🏠 ホーム */}
               <Link
                 href="/liff"
-                onClick={() => setIsOtherMenuOpen(false)}
+                onClick={(e) =>
+                  handleLiffRootLinkClick(e, router, pathname, () =>
+                    setIsOtherMenuOpen(false)
+                  )
+                }
                 className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                   isHome && !isOtherMenuOpen
                     ? "text-primary font-black"

@@ -146,6 +146,7 @@ const VALID_CARPOOL_MODES = new Set<MatchCarpoolMode>([
   "auto",
   "away_carpool",
   "local_gather",
+  "no_carpool",
   "none",
 ]);
 
@@ -156,15 +157,35 @@ const LEGACY_UMPIRE_ROLE_KEYS = new Set([
 ]);
 const LEGACY_UMPIRE_ROLE_LABELS = new Set(["審判", "球審", "塁審"]);
 
+const PRESET_ROLE_KEY_SET = new Set<string>([
+  ...DEFAULT_MATCH_STAFF_ROLES.map((r) => r.roleKey),
+  "plate_umpire",
+  "base_umpire",
+]);
+const PRESET_ROLE_LABEL_SET = new Set<string>([
+  ...DEFAULT_MATCH_STAFF_ROLES.map((r) => r.roleLabel),
+  "球審",
+  "塁審",
+]);
+
 function isUmpireStaffRole(roleKey: string, roleLabel: string): boolean {
   return (
-    LEGACY_UMPIRE_ROLE_KEYS.has(roleKey) ||
-    LEGACY_UMPIRE_ROLE_LABELS.has(roleLabel.trim())
+    !roleKey.startsWith("custom_") &&
+    (LEGACY_UMPIRE_ROLE_KEYS.has(roleKey) ||
+      LEGACY_UMPIRE_ROLE_LABELS.has(roleLabel.trim()))
   );
+}
+
+export function isPresetStaffRole(roleKey: string, roleLabel: string): boolean {
+  const cleanKey = (roleKey || "").trim();
+  if (cleanKey.startsWith("custom_")) return false;
+  if (PRESET_ROLE_KEY_SET.has(cleanKey)) return true;
+  return PRESET_ROLE_LABEL_SET.has((roleLabel || "").trim());
 }
 
 /**
  * 既存の「球審」「塁審」個別データを「審判（umpire）」1枠へ自動統合する（後方互換対応）
+ * ※固定プリセット枠は担当者またはメモがある場合のみ保持し、手動追加されたカスタム枠は未割当でも枠自体を保持する
  */
 export function normalizeUnifiedStaffRoles(
   rawRoles: readonly MatchStaffRoleAssignment[] | undefined | null
@@ -187,8 +208,9 @@ export function normalizeUnifiedStaffRoles(
       .map((a) => a.trim())
       .filter((a) => a.length > 0);
     const cleanNote = (item.note || "").trim();
+    const isPreset = isPresetStaffRole(cleanKey, cleanLabel);
 
-    if (cleanAssignees.length === 0 && !cleanNote) continue;
+    if (isPreset && cleanAssignees.length === 0 && !cleanNote) continue;
 
     if (isUmpireStaffRole(cleanKey, cleanLabel)) {
       if (mergedUmpireIndex === -1) {
@@ -316,21 +338,113 @@ const ROLE_PRESET_ORDER_BY_LABEL = new Map<string, number>(
   DEFAULT_MATCH_STAFF_ROLES.map((r, idx) => [r.roleLabel, idx])
 );
 
+export interface ResolvedMatchStaffRoleRow {
+  roleKey: string;
+  roleLabel: string;
+  shortHint: string;
+  assignees: string[];
+  note?: string;
+  isCustom: boolean;
+  isAssigned: boolean;
+}
+
+export interface SplitMatchStaffRolesResult {
+  presetRoles: ResolvedMatchStaffRoleRow[];
+  customRoles: ResolvedMatchStaffRoleRow[];
+  assignedPresetCount: number;
+  assignedCustomCount: number;
+  assignedTotalCount: number;
+}
+
+/**
+ * 固定プリセット役割（全7枠常時）と、手動追加されたカスタム役割を分離して返す
+ */
+export function splitPresetAndCustomStaffRoles(
+  ops: MatchDayOps | null | undefined
+): SplitMatchStaffRolesResult {
+  const normalized = normalizeUnifiedStaffRoles(ops?.staffRoles);
+  const consumedIndices = new Set<number>();
+
+  const presetRoles: ResolvedMatchStaffRoleRow[] = DEFAULT_MATCH_STAFF_ROLES.map(
+    (preset) => {
+      const matchIdx = normalized.findIndex((item, idx) => {
+        if (consumedIndices.has(idx)) return false;
+        if (item.roleKey.startsWith("custom_")) return false;
+        return (
+          item.roleKey === preset.roleKey ||
+          item.roleLabel.trim() === preset.roleLabel
+        );
+      });
+
+      const saved = matchIdx >= 0 ? normalized[matchIdx] : undefined;
+      if (matchIdx >= 0) {
+        consumedIndices.add(matchIdx);
+      }
+
+      const assignees = saved ? [...saved.assignees] : [];
+      const note = saved?.note?.trim() || undefined;
+      return {
+        roleKey: preset.roleKey,
+        roleLabel: preset.roleLabel,
+        shortHint: preset.shortHint,
+        assignees,
+        note,
+        isCustom: false,
+        isAssigned: assignees.length > 0 || Boolean(note),
+      };
+    }
+  );
+
+  const customRoles: ResolvedMatchStaffRoleRow[] = [];
+  normalized.forEach((item, idx) => {
+    if (consumedIndices.has(idx)) return;
+    const cleanLabel = item.roleLabel.trim();
+    if (!cleanLabel) return;
+    const assignees = [...item.assignees];
+    const note = item.note?.trim() || undefined;
+    customRoles.push({
+      roleKey: item.roleKey || `custom_${idx + 1}`,
+      roleLabel: cleanLabel,
+      shortHint: "追加役割",
+      assignees,
+      note,
+      isCustom: true,
+      isAssigned: assignees.length > 0 || Boolean(note),
+    });
+  });
+
+  const assignedPresetCount = presetRoles.filter((r) => r.isAssigned).length;
+  const assignedCustomCount = customRoles.filter((r) => r.isAssigned).length;
+
+  return {
+    presetRoles,
+    customRoles,
+    assignedPresetCount,
+    assignedCustomCount,
+    assignedTotalCount: assignedPresetCount + assignedCustomCount,
+  };
+}
+
 export function getFilledStaffRoles(
   ops: MatchDayOps | null | undefined
 ): MatchStaffRoleAssignment[] {
   if (!ops?.staffRoles) return [];
   return normalizeUnifiedStaffRoles(ops.staffRoles)
-    .filter(
-      (r) =>
-        r.roleLabel.trim().length > 0 &&
-        (r.assignees.length > 0 || Boolean(r.note?.trim()))
-    )
+    .filter((r) => {
+      const cleanLabel = r.roleLabel.trim();
+      if (!cleanLabel) return false;
+      if (!isPresetStaffRole(r.roleKey, cleanLabel)) {
+        return true;
+      }
+      return r.assignees.length > 0 || Boolean(r.note?.trim());
+    })
     .map((r, originalIdx) => {
-      const rank =
-        ROLE_PRESET_ORDER_BY_KEY.get(r.roleKey) ??
-        ROLE_PRESET_ORDER_BY_LABEL.get(r.roleLabel.trim()) ??
-        1000 + originalIdx;
+      const isCustom = r.roleKey.startsWith("custom_");
+      const rank = isCustom
+        ? 1000 + originalIdx
+        : (ROLE_PRESET_ORDER_BY_KEY.get(r.roleKey) ??
+          ROLE_PRESET_ORDER_BY_LABEL.get(r.roleLabel.trim()) ??
+          1000 + originalIdx);
       return { role: r, rank };
     })
     .sort((a, b) => a.rank - b.rank)
@@ -566,15 +680,19 @@ export function buildPreMatchAnnouncementShareText(
 
   // 3. 配車・駐車場・スパイク規定
   const carLines: string[] = [];
-  if (ops.carpoolMode === "local_gather") {
+  if (ops.carpoolMode === "no_carpool") {
+    carLines.push("🚫 配車: 配車なし（各自での移動・集合をお願いします）");
+  } else if (ops.carpoolMode === "local_gather") {
     carLines.push("🚙 移動: 現地集合（各自移動）");
-  } else if (sync && sync.cars.length > 0) {
-    const totalRiders = sync.cars.reduce((s, c) => s + c.passengers.length, 0);
-    carLines.push(
-      `🚗 配車: 計${sync.cars.length}台（乗車${totalRiders}名・アプリ内「配車表」参照）`
-    );
-  } else if (ops.carpoolMode === "away_carpool") {
-    carLines.push("🚗 配車: 遠征乗り合い配車");
+  } else if (ops.carpoolMode !== "none") {
+    if (sync && sync.cars.length > 0) {
+      const totalRiders = sync.cars.reduce((s, c) => s + c.passengers.length, 0);
+      carLines.push(
+        `🚗 配車: 計${sync.cars.length}台（乗車${totalRiders}名・アプリ内「配車表」参照）`
+      );
+    } else if (ops.carpoolMode === "away_carpool") {
+      carLines.push("🚗 配車: 遠征乗り合い配車");
+    }
   }
 
   const cargoText =
