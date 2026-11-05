@@ -620,6 +620,7 @@ export default function LiffPlayersDirectoryPage() {
 
   const teamHeadline = teamInfo?.orgName || currentTeam?.orgName || currentTeam?.name || "チーム";
   const teamSubname = teamInfo?.teamName || currentTeam?.teamName || "";
+  const effectiveTeamLogoUrl = currentTeam?.logoImageUrl || teamInfo?.logoImageUrl || null;
   const seasonYear = teamInfo?.year || 2026;
 
   return (
@@ -706,40 +707,51 @@ export default function LiffPlayersDirectoryPage() {
             </svg>
 
             <div className="relative z-10 flex items-start justify-between gap-3">
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-widest uppercase">
-                    {seasonYear} ROSTER
-                  </span>
-                  {hasMatchAggregatedPositions && (
-                    <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-black">
-                      実戦守備集計
+              <div className="flex items-center gap-3 min-w-0">
+                {effectiveTeamLogoUrl && (
+                  <div className="w-12 h-12 rounded-2xl border border-slate-700 bg-slate-900 shadow-2xs overflow-hidden flex items-center justify-center shrink-0">
+                    <img
+                      src={effectiveTeamLogoUrl}
+                      alt={teamHeadline}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                )}
+                <div className="min-w-0 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-widest uppercase">
+                      {seasonYear} ROSTER
                     </span>
-                  )}
-                  {(isDemoMode || providerDemo) && (
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black">
-                      DEMO
-                    </span>
-                  )}
-                </div>
+                    {hasMatchAggregatedPositions && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-black">
+                        実戦守備集計
+                      </span>
+                    )}
+                    {(isDemoMode || providerDemo) && (
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black">
+                        DEMO
+                      </span>
+                    )}
+                  </div>
 
-                <h2 className="text-lg sm:text-xl font-black tracking-tight text-white truncate">
-                  {teamHeadline}
-                </h2>
+                  <h2 className="text-lg sm:text-xl font-black tracking-tight text-white truncate">
+                    {teamHeadline}
+                  </h2>
 
-                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 flex-wrap">
-                  {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
-                  {teamInfo?.managerName && (
-                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-100 text-[10px] font-bold">
-                      監督: {teamInfo.managerName}
-                    </span>
-                  )}
-                  {(rosterStatusCounts.restrictedCount > 0 ||
-                    rosterStatusCounts.rehabCount > 0) && (
-                    <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 text-[10px] font-black">
-                      🩹 ケア・制限 {rosterStatusCounts.restrictedCount + rosterStatusCounts.rehabCount}名
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 flex-wrap">
+                    {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
+                    {teamInfo?.managerName && (
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-100 text-[10px] font-bold">
+                        監督: {teamInfo.managerName}
+                      </span>
+                    )}
+                    {(rosterStatusCounts.restrictedCount > 0 ||
+                      rosterStatusCounts.rehabCount > 0) && (
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 text-[10px] font-black">
+                        🩹 ケア・制限 {rosterStatusCounts.restrictedCount + rosterStatusCounts.rehabCount}名
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

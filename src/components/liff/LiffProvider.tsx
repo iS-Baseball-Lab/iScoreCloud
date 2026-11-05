@@ -29,6 +29,22 @@ import {
 } from "@/lib/liff/score-settings";
 import { authClient } from "@/lib/auth-client";
 
+export const DEMO_TEAM_DEFAULT_LOGO_URL = "/demo-team-logo.svg";
+const DEMO_TEAM_LOGO_CLEARED_SENTINEL = "__NONE__";
+
+function resolveDemoTeamLogoUrl(serverFallback?: string): string | undefined {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("iscore_demo_team_logo");
+    if (saved === DEMO_TEAM_LOGO_CLEARED_SENTINEL) {
+      return undefined;
+    }
+    if (saved && saved.trim()) {
+      return saved.trim();
+    }
+  }
+  return serverFallback || DEMO_TEAM_DEFAULT_LOGO_URL;
+}
+
 /**
  * ⚠️ 重要: 内部DBスキーマでは `organizations` (`orgName`) = 「チーム名」、`teams` (`teamName`) = 「構成名」であるため絶対に逆転させないこと。
  */
@@ -142,7 +158,12 @@ export function LiffProvider({
       try {
         const storedTeams = localStorage.getItem("iscore_teams_json");
         if (storedTeams) {
-          return JSON.parse(storedTeams) as LiffTeamItem[];
+          const parsed = JSON.parse(storedTeams) as LiffTeamItem[];
+          return parsed.map((t) =>
+            t.id === "demo-team" || t.isDemo
+              ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
+              : t
+          );
         }
       } catch {}
     }
@@ -161,7 +182,14 @@ export function LiffProvider({
       try {
         const storedTeamJson = localStorage.getItem("iscore_currentTeam_json");
         if (storedTeamJson) {
-          return JSON.parse(storedTeamJson) as LiffTeamItem;
+          const parsed = JSON.parse(storedTeamJson) as LiffTeamItem;
+          if (parsed.id === "demo-team" || parsed.isDemo) {
+            return {
+              ...parsed,
+              logoImageUrl: resolveDemoTeamLogoUrl(parsed.logoImageUrl),
+            };
+          }
+          return parsed;
         }
       } catch {}
       const storedId = localStorage.getItem("iscore_selectedTeamId");
@@ -173,6 +201,8 @@ export function LiffProvider({
           orgName: storedName || "チーム",
           teamName: storedName || "チーム",
           shortName: storedName || "チーム",
+          logoImageUrl:
+            storedId === "demo-team" ? resolveDemoTeamLogoUrl() : undefined,
           scoreTeamNameMode: loadTeamScoreNameDisplayMode(storedId, "organization"),
         };
       }
@@ -215,10 +245,6 @@ export function LiffProvider({
       setIsDemo(true);
       localStorage.setItem("iscore_isDemo", "true");
       localStorage.setItem("iscore_selectedTeamId", "demo-team");
-      const savedDemoLogo =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iscore_demo_team_logo") || undefined
-          : undefined;
       const baseFound = teamsRef.current.find((t) => t.id === "demo-team") || {
         id: "demo-team",
         name: "iScore ドリームス (体験デモ)",
@@ -229,7 +255,7 @@ export function LiffProvider({
       };
       const nextDemoTeam: LiffTeamItem = {
         ...baseFound,
-        logoImageUrl: savedDemoLogo ?? baseFound.logoImageUrl,
+        logoImageUrl: resolveDemoTeamLogoUrl(baseFound.logoImageUrl),
         scoreTeamNameMode: loadTeamScoreNameDisplayMode(
           "demo-team",
           baseFound.scoreTeamNameMode ?? "organization"
@@ -266,16 +292,16 @@ export function LiffProvider({
     setIsDemo(demoFlag);
     localStorage.setItem("iscore_isDemo", demoFlag ? "true" : "false");
 
-    const teamList = data.teams || [];
+    const teamList = (data.teams || []).map((t) =>
+      t.id === "demo-team" || t.isDemo
+        ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
+        : t
+    );
     setTeams(teamList);
     localStorage.setItem("iscore_teams_json", JSON.stringify(teamList));
 
     let activeTeam: LiffTeamItem | null = null;
     if (demoFlag || targetTeamId === "demo-team") {
-      const savedDemoLogo =
-        typeof window !== "undefined"
-          ? localStorage.getItem("iscore_demo_team_logo") || undefined
-          : undefined;
       const baseDemo = teamList.find((t) => t.id === "demo-team") || {
         id: "demo-team",
         name: "iScore ドリームス (体験デモ)",
@@ -286,7 +312,7 @@ export function LiffProvider({
       };
       activeTeam = {
         ...baseDemo,
-        logoImageUrl: savedDemoLogo ?? baseDemo.logoImageUrl,
+        logoImageUrl: resolveDemoTeamLogoUrl(baseDemo.logoImageUrl),
         scoreTeamNameMode: loadTeamScoreNameDisplayMode(
           "demo-team",
           baseDemo.scoreTeamNameMode ?? "organization"
@@ -415,10 +441,15 @@ export function LiffProvider({
         if (typeof window !== "undefined") {
           localStorage.setItem("iscore_currentTeam_json", JSON.stringify(updated));
           if (prev.id === "demo-team" || prev.isDemo) {
-            if (normalized) {
+            if (normalized === DEMO_TEAM_DEFAULT_LOGO_URL) {
+              localStorage.removeItem("iscore_demo_team_logo");
+            } else if (normalized) {
               localStorage.setItem("iscore_demo_team_logo", normalized);
             } else {
-              localStorage.removeItem("iscore_demo_team_logo");
+              localStorage.setItem(
+                "iscore_demo_team_logo",
+                DEMO_TEAM_LOGO_CLEARED_SENTINEL
+              );
             }
           }
         }

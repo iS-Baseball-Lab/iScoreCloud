@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="iScore ドリームス キャップロゴ">
+  <rect x="0" y="0" width="200" height="200" rx="40" fill="#0f172a" />
+  <line x1="100" y1="8" x2="100" y2="192" stroke="#1e293b" stroke-width="2" stroke-dasharray="5 5" />
+  <path d="M 16,174 Q 100,158 184,174" fill="none" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round" />
+  <g transform="translate(100,101) scale(0.80) skewX(-6) translate(-100,-100)">
+    <path d="M 32,82 L 68,82 L 68,142 L 76,142 L 76,158 L 30,158 L 30,142 L 42,142 L 42,98 L 32,98 Z" fill="none" stroke="#0ea5e9" stroke-width="10" stroke-linejoin="miter" />
+    <path d="M 98,42 L 154,42 L 168,56 L 168,76 L 142,76 L 142,65 L 109,65 L 109,88 L 154,88 L 168,102 L 168,144 L 154,158 L 98,158 L 84,144 L 84,124 L 110,124 L 110,135 L 142,135 L 142,112 L 98,112 L 84,98 L 84,56 Z" fill="none" stroke="#0ea5e9" stroke-width="10" stroke-linejoin="miter" />
+    <path d="M 32,82 L 68,82 L 68,142 L 76,142 L 76,158 L 30,158 L 30,142 L 42,142 L 42,98 L 32,98 Z" fill="none" stroke="#0f172a" stroke-width="4" stroke-linejoin="miter" />
+    <path d="M 98,42 L 154,42 L 168,56 L 168,76 L 142,76 L 142,65 L 109,65 L 109,88 L 154,88 L 168,102 L 168,144 L 154,158 L 98,158 L 84,144 L 84,124 L 110,124 L 110,135 L 142,135 L 142,112 L 98,112 L 84,98 L 84,56 Z" fill="none" stroke="#0f172a" stroke-width="4" stroke-linejoin="miter" />
+    <path d="M 32,82 L 68,82 L 68,142 L 76,142 L 76,158 L 30,158 L 30,142 L 42,142 L 42,98 L 32,98 Z" fill="#ffffff" />
+    <path d="M 98,42 L 154,42 L 168,56 L 168,76 L 142,76 L 142,65 L 109,65 L 109,88 L 154,88 L 168,102 L 168,144 L 154,158 L 98,158 L 84,144 L 84,124 L 110,124 L 110,135 L 142,135 L 142,112 L 98,112 L 84,98 L 84,56 Z" fill="#ffffff" />
+    <path d="M 55,34 L 72,51 L 55,68 L 38,51 Z" fill="none" stroke="#ffffff" stroke-width="6" stroke-linejoin="miter" />
+    <path d="M 55,34 L 72,51 L 55,68 L 38,51 Z" fill="none" stroke="#0f172a" stroke-width="2.5" stroke-linejoin="miter" />
+    <path d="M 55,34 L 72,51 L 55,68 L 38,51 Z" fill="#38bdf8" />
+  </g>
+</svg>
+

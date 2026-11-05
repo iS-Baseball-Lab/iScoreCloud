@@ -512,6 +512,8 @@ async function ensureLineAccountLink(
 /**
  * デモチーム（体験用サンプルデータ）
  */
+const DEMO_TEAM_LOGO_URL = "/demo-team-logo.svg";
+
 const DEMO_TEAM = {
   id: "demo-team",
   name: "iScore ドリームス (体験デモ)",
@@ -521,7 +523,7 @@ const DEMO_TEAM = {
   scoreTeamNameMode: "organization" as const,
   managerName: "山田 監督",
   homeGround: "多摩川緑地野球場 (1面)",
-  logoImageUrl: undefined as string | undefined,
+  logoImageUrl: DEMO_TEAM_LOGO_URL as string | undefined,
   year: 2026,
   isDemo: true,
 };
@@ -4590,6 +4592,7 @@ function buildDemoStatsResponse() {
       id: DEMO_TEAM.id,
       name: DEMO_TEAM.name,
       orgName: DEMO_TEAM.orgName,
+      logoImageUrl: DEMO_TEAM.logoImageUrl,
       year: DEMO_TEAM.year || 2026,
     },
     stats: allSummary,
@@ -7134,6 +7137,7 @@ app.get("/admin/dashboard", async (c) => {
         id: "demo-team",
         name: DEMO_TEAM.name,
         orgName: DEMO_TEAM.orgName,
+        logoImageUrl: DEMO_TEAM.logoImageUrl,
         inviteCode: "DEMO2026",
       },
       stats: {

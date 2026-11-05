@@ -212,9 +212,13 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <Avatar className="h-7 w-7 border border-border shrink-0">
+                    <Avatar className="h-7 w-7 border border-border bg-card shrink-0 overflow-hidden">
                       {t.logoImageUrl ? (
-                        <AvatarImage src={t.logoImageUrl} alt={t.name} />
+                        <img
+                          src={t.logoImageUrl}
+                          alt={t.name}
+                          className="h-full w-full object-contain"
+                        />
                       ) : (
                         <AvatarFallback className="text-[10px] font-black">
                           {(t.orgName || t.name || "チーム").slice(0, 2)}

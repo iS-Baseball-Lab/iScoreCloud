@@ -243,6 +243,7 @@ export interface PlayerGrowthResponse {
     name: string;
     orgName: string;
     teamName: string;
+    logoImageUrl?: string | null;
     year: number;
   };
   roster?: PlayerGrowthRosterItem[];

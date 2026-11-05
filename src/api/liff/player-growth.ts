@@ -1438,9 +1438,10 @@ function buildDemoPlayerGrowthResponse(
     isDemo: true,
     team: {
       id: "demo-team",
-      name: "iScore ヒーローズ (Aチーム)",
-      orgName: "iScore ヒーローズ",
-      teamName: "Aチーム",
+      name: "iScore ドリームス (体験デモ)",
+      orgName: "iScore ドリームス",
+      teamName: "体験デモチーム",
+      logoImageUrl: "/demo-team-logo.svg",
       year: 2026,
     },
     roster,

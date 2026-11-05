@@ -16,10 +16,14 @@ import {
   ImagePlus,
   Trash2,
   Loader2,
+  RotateCcw,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  DEMO_TEAM_DEFAULT_LOGO_URL,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { toast } from "sonner";
 
@@ -228,6 +232,14 @@ export default function LiffTeamSettingsPage() {
     }
   };
 
+  const handleRestoreDemoDefaultLogo = () => {
+    if (isUploadingLogo) return;
+    setLogoPreviewUrl(DEMO_TEAM_DEFAULT_LOGO_URL);
+    updateCurrentTeamLogo(DEMO_TEAM_DEFAULT_LOGO_URL);
+    invalidateLiffApiCache();
+    toast.success("デモチームの初期ロゴに戻しました");
+  };
+
   const saveSetting = (key: string, value: string) => {
     if (typeof window !== "undefined") {
       localStorage.setItem(key, value);
@@ -320,7 +332,7 @@ export default function LiffTeamSettingsPage() {
                     <img
                       src={logoPreviewUrl}
                       alt="チームロゴ"
-                      className="w-full h-full object-contain p-1"
+                      className="w-full h-full object-contain"
                     />
                   ) : (
                     <span className="text-sm font-black text-primary select-none">
@@ -375,6 +387,19 @@ export default function LiffTeamSettingsPage() {
                         <span>削除</span>
                       </button>
                     )}
+
+                    {(currentTeam?.id === "demo-team" || currentTeam?.isDemo) &&
+                      logoPreviewUrl !== DEMO_TEAM_DEFAULT_LOGO_URL && (
+                        <button
+                          type="button"
+                          disabled={isUploadingLogo}
+                          onClick={handleRestoreDemoDefaultLogo}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                          <span>初期ロゴに戻す</span>
+                        </button>
+                      )}
                   </div>
                 </div>
               </div>
