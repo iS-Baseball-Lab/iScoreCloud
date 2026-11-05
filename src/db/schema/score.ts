@@ -2,7 +2,7 @@
 import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { matches } from "./match";
-import { players } from "./team";
+import { teams, players } from "./team";
 
 // ==========================================
 // 🏏 打席（At Bat）テーブル
@@ -105,3 +105,19 @@ export const matchScorebookSnapshots = sqliteTable("match_scorebook_snapshots", 
     bottomImageUrl: text("bottom_image_url"),
     updatedAt: integer("updated_at").notNull(),
 });
+
+// ==========================================
+// 📣 試合速報ジェネレータv2 クラウド下書き同期テーブル
+// LINEトークへの貼り付け往復や複数担当者（途中引き継ぎ）でも続きから再開可能にする
+// ==========================================
+export const matchLiveReports = sqliteTable("match_live_reports", {
+    id: text("id").primaryKey(),
+    teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    matchId: text("match_id").references(() => matches.id, { onDelete: "cascade" }),
+    reportJson: text("report_json").notNull(),
+    updatedByName: text("updated_by_name"),
+    updatedAt: integer("updated_at").notNull(),
+}, (table) => ({
+    teamIdx: index("idx_match_live_reports_team_id").on(table.teamId),
+    matchIdx: index("idx_match_live_reports_match_id").on(table.matchId),
+}));

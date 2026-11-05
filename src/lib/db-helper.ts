@@ -141,6 +141,17 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "match_live_reports",
+    ddl: `CREATE TABLE IF NOT EXISTS match_live_reports (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      match_id text,
+      report_json text NOT NULL,
+      updated_by_name text,
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -149,6 +160,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_team_links_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_links_org_id ON team_links (organization_id)" },
   { name: "idx_team_links_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_links_team_id ON team_links (team_id)" },
   { name: "idx_lineup_templates_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_lineup_templates_team_id ON lineup_templates (team_id)" },
+  { name: "idx_match_live_reports_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_team_id ON match_live_reports (team_id)" },
+  { name: "idx_match_live_reports_match_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_match_id ON match_live_reports (match_id)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {
@@ -257,5 +270,9 @@ export async function ensurePlayerProfileColumns(d1?: D1Database | null): Promis
 }
 
 export async function ensureVenuesColumns(d1?: D1Database | null): Promise<void> {
+  await ensureAllSchemasOnce(d1);
+}
+
+export async function ensureLiveReportsTable(d1?: D1Database | null): Promise<void> {
   await ensureAllSchemasOnce(d1);
 }

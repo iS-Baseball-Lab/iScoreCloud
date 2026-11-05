@@ -41,10 +41,10 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     id: "news-generator",
     title: "試合速報ジェネレータ",
     shortTitle: "速報生成",
-    subtitle: "スコア連携不要・簡易入力でLINE速報テキストを作成",
+    subtitle: "試合・スタメン連携＆片手タップで本格LINE速報を作成",
     href: "/liff/tools/news-generator",
-    statusLabel: "準備中",
-    statusTone: "rose",
+    statusLabel: "v2稼働中",
+    statusTone: "emerald",
     icon: Megaphone,
     iconColorClass: "bg-primary/12 text-primary",
   },
@@ -126,7 +126,7 @@ export function LiffToolOtherLinks() {
         {otherTools.map((tool) => {
           const Icon = tool.icon;
           const statusBadgeClass =
-            tool.id === "scorebook-import"
+            tool.id === "scorebook-import" || tool.id === "news-generator"
               ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
               : tool.id === "carpool-generator"
               ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"

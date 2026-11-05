@@ -11,6 +11,7 @@ import {
   baseAdvances,
   pitches,
   matchScorebookSnapshots,
+  matchLiveReports,
 } from "@/db/schema/score";
 import { matches, matchLineups } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
@@ -508,6 +509,13 @@ app.delete("/:id", async (c) => {
     const db = drizzle(c.env.DB);
     const matchId = c.req.param("id");
     await deleteMatchPersonalRecordsSafely(db, c.env.BUCKET, matchId);
+    try {
+      await db
+        .delete(matchLiveReports)
+        .where(eq(matchLiveReports.matchId, matchId));
+    } catch {
+      // live reports table optional in older environments
+    }
     await MatchService.deleteMatch(db, matchId);
     return c.json({ success: true, deletedMatchId: matchId });
   } catch (error) {

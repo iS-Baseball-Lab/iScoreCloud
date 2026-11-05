@@ -37,10 +37,10 @@ export default function LiffToolsIndexPage() {
           </div>
           <div className="p-4 space-y-1">
             <h2 className="text-xs font-black text-foreground">
-              現場で使える便利ツールを順次追加予定
+              現場で使える便利ツール（順次拡張中）
             </h2>
             <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-              現在は各ツールの画面構成・要件確認用の「枠（プロトタイプ）」を公開しています。
+              「スコアブック取り込み v2」と「試合速報ジェネレータ v2」が稼働中です。応援歌・配車支援ツールも順次公開予定です。
             </p>
           </div>
         </div>
@@ -50,7 +50,8 @@ export default function LiffToolsIndexPage() {
             const Icon = tool.icon;
             const isCarpool =
               tool.id === "carpool-generator" || tool.href.includes("carpool");
-            const isLiveTool = tool.id === "scorebook-import";
+            const isLiveTool =
+              tool.id === "scorebook-import" || tool.id === "news-generator";
             return (
               <Link
                 key={tool.id}

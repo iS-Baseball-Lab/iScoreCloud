@@ -43,6 +43,7 @@ import {
   Calendar,
   ClipboardList,
   AlertTriangle,
+  Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -2345,6 +2346,21 @@ function MatchesContent() {
                   </div>
                 )}
               </div>
+
+              {!isRainout && (
+                <div className="px-4 py-2 bg-muted/50 border-t border-border flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-muted-foreground truncate">
+                    1打席ごとのLINE試合速報テキスト作成・共有
+                  </span>
+                  <Link
+                    href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/40 text-xs font-black text-primary shrink-0 transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>速報ジェネレータv2</span>
+                  </Link>
+                </div>
+              )}
             </div>
           </section>
 

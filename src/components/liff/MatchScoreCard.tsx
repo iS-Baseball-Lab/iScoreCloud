@@ -24,6 +24,7 @@ import {
   Car,
   Package,
   ParkingCircle,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchDayOps } from "@/types/match";
@@ -1049,13 +1050,22 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   </span>
                   <div className="flex items-center gap-1.5">
                     {!isRainout && (
-                      <Link
-                        href={`/liff/matches/lineup?id=${match.id}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                      >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
-                      </Link>
+                      <>
+                        <Link
+                          href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-foreground hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                        >
+                          <Megaphone className="w-3.5 h-3.5 text-primary" />
+                          <span>速報作成</span>
+                        </Link>
+                        <Link
+                          href={`/liff/matches/lineup?id=${match.id}`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                        </Link>
+                      </>
                     )}
                     <Link
                       href={`/liff/matches?id=${match.id}`}

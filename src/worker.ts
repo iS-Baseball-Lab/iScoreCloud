@@ -29,6 +29,7 @@ import venuesRoute from './api/venues'
 import liffRoute from './api/liff'
 import liffScorebookRoute from './api/liff/scorebook'
 import liffPlayerGrowthRoute from './api/liff/player-growth'
+import liffNewsGeneratorRoute from './api/liff/news-generator'
 import documentsRoute from './api/documents'
 import type { WorkerEnv } from './types/api'
 
@@ -47,6 +48,7 @@ app.use('*', cors({
 app.route('/api/auth', authRoute)
 app.route('/api/liff/scorebook', liffScorebookRoute)
 app.route('/api/liff/players/growth', liffPlayerGrowthRoute)
+app.route('/api/liff/news-generator', liffNewsGeneratorRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)
 app.route('/api/attendance', attendanceRoute)      // GET /api/attendance/:eventId
