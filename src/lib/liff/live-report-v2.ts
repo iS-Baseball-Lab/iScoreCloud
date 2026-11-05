@@ -1421,73 +1421,83 @@ export function hydrateLiveReportFromScorebookSnapshot(params: {
 }
 
 // =========================================================
-// 7. LINE速報テキスト生成エンジン（プロポーショナルフォント完全対応）
+// 7. LINE速報テキスト生成エンジン（丸数字スペース式・ズレ完全ゼロ仕様）
 // =========================================================
 
-function getFullWidthUnits(str: string): number {
-  let units = 0;
+function toFullWidthAscii(str: string): string {
+  let out = "";
   for (const ch of Array.from(str)) {
     const code = ch.codePointAt(0) || 0;
-    if (
-      (code >= 0x3000 && code <= 0x9fff) ||
-      (code >= 0xff01 && code <= 0xff60) ||
-      code >= 0x1f000
-    ) {
-      units += 2;
+    if (code === 0x20) {
+      out += "　";
+    } else if (code >= 0x21 && code <= 0x7e) {
+      out += String.fromCodePoint(code + 0xfee0);
     } else {
-      units += 1;
+      out += ch;
     }
   }
-  return units;
+  return out;
 }
 
-function padScoreboardTeamLabel(raw: string, targetUnits: number): string {
-  const formatted = deriveScoreboardShortName(raw);
-  const currentUnits = getFullWidthUnits(formatted);
-  if (currentUnits >= targetUnits) return formatted;
-  const diff = targetUnits - currentUnits;
-  const fullSpaces = Math.floor(diff / 2);
-  const halfSpaces = diff % 2;
-  return `${formatted}${"　".repeat(fullSpaces)}${" ".repeat(halfSpaces)}`;
+function toFullWidthDigits(num: number): string {
+  return String(Math.max(0, Math.trunc(num))).replace(/[0-9]/g, (d) =>
+    String.fromCodePoint(0xff10 + Number(d))
+  );
+}
+
+function formatCircledInning(inn: number): string {
+  if (inn >= 1 && inn <= 20) {
+    return String.fromCodePoint(0x2460 + inn - 1);
+  }
+  return toFullWidthDigits(inn);
+}
+
+function padStartFullWidth(str: string, targetChars: number): string {
+  const chars = Array.from(str);
+  if (chars.length >= targetChars) return str;
+  return `${"　".repeat(targetChars - chars.length)}${str}`;
+}
+
+function normalizeScoreboardTeamChars(raw: string, fallback: string): string[] {
+  const cleaned = toFullWidthAscii((raw || "").trim() || fallback);
+  const chars = Array.from(cleaned);
+  if (chars.length === 1) {
+    return ["　", chars[0], "　"];
+  }
+  if (chars.length === 2) {
+    return [chars[0], "　", chars[1]];
+  }
+  return chars;
 }
 
 export function formatScoreboardBlock(
   doc: LiveReportV2Document,
   summary: CumulativeScoreSummary
 ): string {
-  const firstRaw = (doc.firstTeamShortName || "").trim() || "先　攻";
-  const secondRaw = (doc.secondTeamShortName || "").trim() || "後　攻";
+  const fChars = normalizeScoreboardTeamChars(doc.firstTeamShortName, "先　攻");
+  const sChars = normalizeScoreboardTeamChars(doc.secondTeamShortName, "後　攻");
 
-  // 2文字チーム名は自動で「綾　瀬」のように全角スペースを挟んで揃える
-  const format2Char = (s: string) => {
-    const chars = Array.from(s.trim());
-    return chars.length === 2 ? `${chars[0]}　${chars[1]}` : s.trim();
-  };
-  const fDisp = format2Char(firstRaw);
-  const sDisp = format2Char(secondRaw);
+  const labelWidth = Math.max(fChars.length, sChars.length, 3);
+  const fPadded = `${fChars.join("")}${"　".repeat(
+    Math.max(0, labelWidth - fChars.length)
+  )}`;
+  const sPadded = `${sChars.join("")}${"　".repeat(
+    Math.max(0, labelWidth - sChars.length)
+  )}`;
+  const headerLabel = `回${"　".repeat(Math.max(1, labelWidth - 2))}数`;
 
-  const maxUnits = Math.max(getFullWidthUnits(fDisp), getFullWidthUnits(sDisp), 6);
-  const fPadded = padScoreboardTeamLabel(fDisp, maxUnits);
-  const sPadded = padScoreboardTeamLabel(sDisp, maxUnits);
-
-  const headerIndentFullSpaces = Math.floor(maxUnits / 2);
-  const headerIndentHalfSpaces = maxUnits % 2;
-  const headerPrefix = `${"　".repeat(headerIndentFullSpaces)}${" ".repeat(
-    headerIndentHalfSpaces
-  )} `;
-
-  const inningNums: string[] = [];
+  const inningHeaders: string[] = [];
   const fCells: string[] = [];
   const sCells: string[] = [];
 
   for (let i = 0; i < summary.maxInning; i++) {
     const inn = i + 1;
-    inningNums.push(String(inn));
+    const hRaw = formatCircledInning(inn);
 
     const fs = summary.firstInningScores[i];
     const ss = summary.secondInningScores[i];
 
-    fCells.push(fs !== null && fs !== undefined ? String(fs) : " ");
+    const fRaw = fs !== null && fs !== undefined ? toFullWidthDigits(fs) : "－";
 
     const isUnplayedFinalBottom =
       doc.isGameFinished &&
@@ -1496,18 +1506,38 @@ export function formatScoreboardBlock(
       ss === null &&
       summary.secondTotal > summary.firstTotal;
 
-    if (ss !== null && ss !== undefined) {
-      sCells.push(String(ss));
-    } else if (isUnplayedFinalBottom && doc.showWalkoffX) {
-      sCells.push("x");
-    } else {
-      sCells.push(" ");
-    }
+    const sRaw =
+      ss !== null && ss !== undefined
+        ? toFullWidthDigits(ss)
+        : isUnplayedFinalBottom && doc.showWalkoffX
+        ? "ｘ"
+        : "－";
+
+    const colWidth = Math.max(
+      Array.from(hRaw).length,
+      Array.from(fRaw).length,
+      Array.from(sRaw).length
+    );
+
+    inningHeaders.push(padStartFullWidth(hRaw, colWidth));
+    fCells.push(padStartFullWidth(fRaw, colWidth));
+    sCells.push(padStartFullWidth(sRaw, colWidth));
   }
 
-  const headerLine = `${headerPrefix}${inningNums.join(" ")} 計`;
-  const firstLine = `${fPadded} ${fCells.join(" ")} ${summary.firstTotal}`;
-  const secondLine = `${sPadded} ${sCells.join(" ")} ${summary.secondTotal}`;
+  const fTotalRaw = toFullWidthDigits(summary.firstTotal);
+  const sTotalRaw = toFullWidthDigits(summary.secondTotal);
+  const totalWidth = Math.max(
+    Array.from(fTotalRaw).length,
+    Array.from(sTotalRaw).length
+  );
+  const totalHeader =
+    totalWidth <= 1 ? "計" : padStartFullWidth("合計", totalWidth);
+  const fTotalPadded = padStartFullWidth(fTotalRaw, totalWidth);
+  const sTotalPadded = padStartFullWidth(sTotalRaw, totalWidth);
+
+  const headerLine = `${headerLabel}｜${inningHeaders.join(" ")}｜${totalHeader}`;
+  const firstLine = `${fPadded}｜${fCells.join(" ")}｜${fTotalPadded}`;
+  const secondLine = `${sPadded}｜${sCells.join(" ")}｜${sTotalPadded}`;
 
   return `${headerLine}\n${firstLine}\n${secondLine}`;
 }

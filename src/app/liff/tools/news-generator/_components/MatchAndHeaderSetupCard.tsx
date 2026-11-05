@@ -501,7 +501,7 @@ export function MatchAndHeaderSetupCard({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] font-black">
-                      最終裏省略時に「x」
+                      最終裏省略時に「ｘ」
                     </span>
                     <span
                       className={cn(
@@ -511,7 +511,7 @@ export function MatchAndHeaderSetupCard({
                           : "bg-muted text-muted-foreground"
                       )}
                     >
-                      {doc.showWalkoffX ? "x表示" : "空白"}
+                      {doc.showWalkoffX ? "ｘ表示" : "－表示"}
                     </span>
                   </div>
                 </button>

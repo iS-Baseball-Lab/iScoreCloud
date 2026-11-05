@@ -50,7 +50,11 @@ import {
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
-import { extractScoreTeamNameModeFromJson } from "@/lib/liff/scorebook-symbol-rules";
+import {
+  DEFAULT_PRACTICE_MATCH_LABEL,
+  extractPracticeMatchLabelFromJson,
+  extractScoreTeamNameModeFromJson,
+} from "@/lib/liff/scorebook-symbol-rules";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageTeam } from "@/lib/roles";
@@ -765,6 +769,7 @@ const DEMO_TEAM = {
   teamName: "体験デモチーム",
   shortName: "ドリームス",
   scoreTeamNameMode: "organization" as const,
+  practiceMatchLabel: DEFAULT_PRACTICE_MATCH_LABEL,
   managerName: "山田 監督",
   homeGround: "多摩川緑地野球場 (1面)",
   logoImageUrl: DEMO_TEAM_LOGO_URL as string | undefined,
@@ -1280,6 +1285,9 @@ app.get("/hub", async (c) => {
         scoreTeamNameMode: extractScoreTeamNameModeFromJson(
           t.scorebookSymbolRules
         ),
+        practiceMatchLabel: extractPracticeMatchLabelFromJson(
+          t.scorebookSymbolRules
+        ),
         isDemo: false,
         isMember: userTeamIds.has(t.id),
       }))
@@ -1578,6 +1586,9 @@ app.get("/hub", async (c) => {
         teamName: targetTeam.name,
         shortName: targetTeam.name,
         scoreTeamNameMode: extractScoreTeamNameModeFromJson(
+          targetTeam.scorebookSymbolRules
+        ),
+        practiceMatchLabel: extractPracticeMatchLabelFromJson(
           targetTeam.scorebookSymbolRules
         ),
         homeGround: targetTeam.homeGround || null,

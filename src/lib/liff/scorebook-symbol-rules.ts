@@ -112,7 +112,50 @@ export interface ScorebookSymbolRules {
   positionLabel: PositionLabelStyle;
   inningEndMark: InningEndMarkStyle;
   scoreTeamNameMode?: ScoreTeamNameDisplayMode;
+  practiceMatchLabel?: string;
   customNote?: string;
+}
+
+export const DEFAULT_PRACTICE_MATCH_LABEL = "練習試合";
+
+export const PRACTICE_MATCH_LABEL_PRESETS = [
+  "練習試合",
+  "OP戦",
+  "オープン戦",
+  "親善試合",
+  "TRM",
+] as const;
+
+export function sanitizePracticeMatchLabel(
+  raw: unknown,
+  fallback = DEFAULT_PRACTICE_MATCH_LABEL
+): string {
+  if (typeof raw !== "string") return fallback;
+  const trimmed = raw.trim().slice(0, 16);
+  return trimmed.length > 0 ? trimmed : fallback;
+}
+
+export function isGenericMatchTournamentName(
+  rawName: string | null | undefined,
+  customPracticeLabel?: string | null
+): boolean {
+  const trimmed = (rawName || "").trim();
+  if (!trimmed) return true;
+  const genericSet = new Set([
+    "公式戦",
+    "交流戦",
+    "練習試合",
+    "OP戦",
+    "ＯＰ戦",
+    "オープン戦",
+    "親善試合",
+    "練習戦",
+    "TRM",
+  ]);
+  if (customPracticeLabel && customPracticeLabel.trim()) {
+    genericSet.add(customPracticeLabel.trim());
+  }
+  return genericSet.has(trimmed);
 }
 
 /**
@@ -141,6 +184,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   positionLabel: "number",
   inningEndMark: "black_double_slash",
   scoreTeamNameMode: "organization",
+  practiceMatchLabel: DEFAULT_PRACTICE_MATCH_LABEL,
   customNote: "",
 };
 
@@ -170,6 +214,7 @@ export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   positionLabel: "number",
   inningEndMark: "red_double_slash",
   scoreTeamNameMode: "organization",
+  practiceMatchLabel: DEFAULT_PRACTICE_MATCH_LABEL,
   customNote: "",
 };
 
@@ -800,6 +845,10 @@ export function sanitizeScorebookSymbolRules(
     return {
       ...fallback,
       scoreTeamNameMode: fallback.scoreTeamNameMode ?? "organization",
+      practiceMatchLabel: sanitizePracticeMatchLabel(
+        fallback.practiceMatchLabel,
+        DEFAULT_PRACTICE_MATCH_LABEL
+      ),
       customNote: sanitizeCustomNote(fallback.customNote),
     };
   }
@@ -951,6 +1000,13 @@ export function sanitizeScorebookSymbolRules(
       ["organization", "squad"],
       fallback.scoreTeamNameMode ?? "organization"
     ),
+    practiceMatchLabel: sanitizePracticeMatchLabel(
+      obj.practiceMatchLabel,
+      sanitizePracticeMatchLabel(
+        fallback.practiceMatchLabel,
+        DEFAULT_PRACTICE_MATCH_LABEL
+      )
+    ),
     customNote: note,
   };
 }
@@ -972,6 +1028,28 @@ export function extractScoreTeamNameModeFromJson(
     return mode === "squad" ? "squad" : "organization";
   } catch {
     return "organization";
+  }
+}
+
+/**
+ * DB保存済みの `teams.scorebook_symbol_rules` JSON文字列から練習試合の呼称を軽量抽出する
+ * （未設定・パース失敗時はデフォルト `"練習試合"` を返す）
+ */
+export function extractPracticeMatchLabelFromJson(
+  jsonText: string | null | undefined
+): string {
+  if (!jsonText || typeof jsonText !== "string" || !jsonText.trim()) {
+    return DEFAULT_PRACTICE_MATCH_LABEL;
+  }
+  try {
+    const parsed: unknown = JSON.parse(jsonText);
+    if (!parsed || typeof parsed !== "object") return DEFAULT_PRACTICE_MATCH_LABEL;
+    return sanitizePracticeMatchLabel(
+      (parsed as Record<string, unknown>).practiceMatchLabel,
+      DEFAULT_PRACTICE_MATCH_LABEL
+    );
+  } catch {
+    return DEFAULT_PRACTICE_MATCH_LABEL;
   }
 }
 

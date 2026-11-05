@@ -33,8 +33,10 @@ import {
 } from "@/components/liff/LiffToolSubNav";
 import {
   useLiff,
+  usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
+import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import {
   DEMO_LINEUP_PLAYERS,
   getHydratedDemoMatchCards,
@@ -157,6 +159,7 @@ function LiffNewsGeneratorContent() {
 
   const { currentTeam, isDemo, profile } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   const resolvedTeamId = useMemo(() => {
     if (isDemo || currentTeam?.id === "demo-team") return "demo-team";
@@ -225,8 +228,17 @@ function LiffNewsGeneratorContent() {
           : fallbackReporter;
 
       const tournamentLabel =
-        matchOpt.tournamentName ||
-        (matchOpt.matchType === "official" ? "公式戦" : "練習試合");
+        matchOpt.tournamentName &&
+        !isGenericMatchTournamentName(
+          matchOpt.tournamentName,
+          practiceMatchLabel
+        )
+          ? matchOpt.tournamentName
+          : matchOpt.matchType === "official"
+          ? "公式戦"
+          : matchOpt.matchType === "exchange"
+          ? "交流戦"
+          : practiceMatchLabel;
 
       let nextDoc = createInitialLiveReportDocument({
         matchId: matchOpt.id,
@@ -287,7 +299,7 @@ function LiffNewsGeneratorContent() {
 
       return nextDoc;
     },
-    [scoreTeamName]
+    [scoreTeamName, practiceMatchLabel]
   );
 
   // デモチーム用バンドル構築
@@ -893,8 +905,17 @@ function LiffNewsGeneratorContent() {
           opponentName: selectedMatch.opponent,
           date: selectedMatch.date,
           tournamentName:
-            selectedMatch.tournamentName ||
-            (selectedMatch.matchType === "official" ? "公式戦" : "練習試合"),
+            selectedMatch.tournamentName &&
+            !isGenericMatchTournamentName(
+              selectedMatch.tournamentName,
+              practiceMatchLabel
+            )
+              ? selectedMatch.tournamentName
+              : selectedMatch.matchType === "official"
+              ? "公式戦"
+              : selectedMatch.matchType === "exchange"
+              ? "交流戦"
+              : practiceMatchLabel,
           venueName:
             selectedMatch.venueShortName || selectedMatch.venueName || "",
           battingOrder: selectedMatch.battingOrder,

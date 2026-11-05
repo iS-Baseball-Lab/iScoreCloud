@@ -6,7 +6,11 @@ import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
-import { extractScoreTeamNameModeFromJson } from "@/lib/liff/scorebook-symbol-rules";
+import {
+  DEFAULT_PRACTICE_MATCH_LABEL,
+  extractPracticeMatchLabelFromJson,
+  extractScoreTeamNameModeFromJson,
+} from "@/lib/liff/scorebook-symbol-rules";
 import {
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
@@ -250,6 +254,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           orgName: "iScore ドリームス",
           teamName: "体験デモチーム",
           scoreTeamNameMode: "organization",
+          practiceMatchLabel: DEFAULT_PRACTICE_MATCH_LABEL,
         },
         matches: [],
         players: [],
@@ -468,6 +473,9 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
     const scoreTeamNameMode = extractScoreTeamNameModeFromJson(
       teamRow?.scorebookSymbolRules
     );
+    const practiceMatchLabel = extractPracticeMatchLabelFromJson(
+      teamRow?.scorebookSymbolRules
+    );
 
     return c.json({
       success: true,
@@ -477,6 +485,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         orgName: teamRow?.orgName || "",
         teamName: teamRow?.teamName || "",
         scoreTeamNameMode,
+        practiceMatchLabel,
       },
       matches: formattedMatches,
       players: activePlayers,

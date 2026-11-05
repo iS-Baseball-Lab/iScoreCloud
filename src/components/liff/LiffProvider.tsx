@@ -22,11 +22,14 @@ import {
 } from "@/lib/liff/navigation";
 import {
   LIFF_SCORE_SETTINGS_CHANGE_EVENT,
+  loadTeamPracticeMatchLabel,
   loadTeamScoreNameDisplayMode,
   resolveScoreTeamDisplayName,
+  saveTeamPracticeMatchLabel,
   saveTeamScoreNameDisplayMode,
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/score-settings";
+import { DEFAULT_PRACTICE_MATCH_LABEL } from "@/lib/liff/scorebook-symbol-rules";
 import { authClient } from "@/lib/auth-client";
 
 export const DEMO_TEAM_DEFAULT_LOGO_URL = "/demo-team-logo.svg";
@@ -61,6 +64,7 @@ export interface LiffTeamItem {
   isDemo?: boolean;
   isMember?: boolean;
   scoreTeamNameMode?: ScoreTeamNameDisplayMode;
+  practiceMatchLabel?: string;
 }
 
 interface HubTeamsPayload {
@@ -74,6 +78,7 @@ interface HubTeamsPayload {
     shortName: string;
     logoImageUrl?: string;
     scoreTeamNameMode?: ScoreTeamNameDisplayMode;
+    practiceMatchLabel?: string;
   };
 }
 
@@ -204,6 +209,10 @@ export function LiffProvider({
           logoImageUrl:
             storedId === "demo-team" ? resolveDemoTeamLogoUrl() : undefined,
           scoreTeamNameMode: loadTeamScoreNameDisplayMode(storedId, "organization"),
+          practiceMatchLabel: loadTeamPracticeMatchLabel(
+            storedId,
+            DEFAULT_PRACTICE_MATCH_LABEL
+          ),
         };
       }
     }
@@ -259,6 +268,10 @@ export function LiffProvider({
         scoreTeamNameMode: loadTeamScoreNameDisplayMode(
           "demo-team",
           baseFound.scoreTeamNameMode ?? "organization"
+        ),
+        practiceMatchLabel: loadTeamPracticeMatchLabel(
+          "demo-team",
+          baseFound.practiceMatchLabel ?? DEFAULT_PRACTICE_MATCH_LABEL
         ),
       };
       setCurrentTeam(nextDemoTeam);
@@ -317,6 +330,10 @@ export function LiffProvider({
           "demo-team",
           baseDemo.scoreTeamNameMode ?? "organization"
         ),
+        practiceMatchLabel: loadTeamPracticeMatchLabel(
+          "demo-team",
+          baseDemo.practiceMatchLabel ?? DEFAULT_PRACTICE_MATCH_LABEL
+        ),
       };
     } else if (targetTeamId) {
       activeTeam = teamList.find((t) => t.id === targetTeamId) || null;
@@ -332,6 +349,7 @@ export function LiffProvider({
         logoImageUrl: data.team.logoImageUrl,
         isDemo: demoFlag,
         scoreTeamNameMode: data.team.scoreTeamNameMode,
+        practiceMatchLabel: data.team.practiceMatchLabel,
       };
     }
     if (!activeTeam && teamList.length > 0) {
@@ -346,6 +364,13 @@ export function LiffProvider({
           false
         );
       }
+      if (!activeTeam.isDemo && activeTeam.practiceMatchLabel) {
+        saveTeamPracticeMatchLabel(
+          activeTeam.id,
+          activeTeam.practiceMatchLabel,
+          false
+        );
+      }
       setCurrentTeam((prev) => {
         if (
           prev &&
@@ -356,7 +381,8 @@ export function LiffProvider({
           prev.shortName === activeTeam!.shortName &&
           prev.logoImageUrl === activeTeam!.logoImageUrl &&
           prev.isDemo === activeTeam!.isDemo &&
-          prev.scoreTeamNameMode === activeTeam!.scoreTeamNameMode
+          prev.scoreTeamNameMode === activeTeam!.scoreTeamNameMode &&
+          prev.practiceMatchLabel === activeTeam!.practiceMatchLabel
         ) {
           return prev;
         }
@@ -679,4 +705,27 @@ export function useScoreTeamDisplayName(fallback = "自チーム"): {
     orgDisplayName,
     squadDisplayName,
   };
+}
+
+/**
+ * チーム設定で指定された「練習試合の呼称」（例: `練習試合` / `OP戦` / `オープン戦` 等）をリアクティブに取得するフック
+ */
+export function usePracticeMatchLabel(): string {
+  const { currentTeam } = useLiff();
+  const [, setRevision] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setRevision((v) => v + 1);
+    window.addEventListener(LIFF_SCORE_SETTINGS_CHANGE_EVENT, bump);
+    window.addEventListener("storage", bump);
+    return () => {
+      window.removeEventListener(LIFF_SCORE_SETTINGS_CHANGE_EVENT, bump);
+      window.removeEventListener("storage", bump);
+    };
+  }, []);
+
+  return loadTeamPracticeMatchLabel(
+    currentTeam?.id,
+    currentTeam?.practiceMatchLabel
+  );
 }

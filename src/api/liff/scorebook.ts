@@ -6,8 +6,10 @@ import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
 import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
 import {
+  DEFAULT_PRACTICE_MATCH_LABEL,
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   parseScorebookSymbolRulesJson,
+  sanitizePracticeMatchLabel,
   sanitizeScorebookSymbolRules,
   type ScorebookSymbolRules,
   type ScoreTeamNameDisplayMode,
@@ -694,6 +696,7 @@ interface UpdateTeamSymbolRulesPayload {
   clear?: boolean;
   rules?: Partial<ScorebookSymbolRules> | null;
   scoreTeamNameMode?: ScoreTeamNameDisplayMode;
+  practiceMatchLabel?: string;
 }
 
 liffScorebookRouter.post("/symbol-rules", async (c) => {
@@ -708,6 +711,11 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       body.scoreTeamNameMode === "squad"
         ? body.scoreTeamNameMode
         : undefined;
+    const requestedPracticeLabel: string | undefined =
+      typeof body.practiceMatchLabel === "string" &&
+      body.practiceMatchLabel.trim().length > 0
+        ? sanitizePracticeMatchLabel(body.practiceMatchLabel)
+        : undefined;
 
     if (requestedTeamId === "demo-team") {
       if (body.clear || body.rules === null) {
@@ -717,10 +725,15 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
           scorebookSymbolRules: null,
         });
       }
+      const demoMerged: Partial<ScorebookSymbolRules> = {
+        ...(body.rules || {}),
+        ...(requestedMode ? { scoreTeamNameMode: requestedMode } : {}),
+        ...(requestedPracticeLabel
+          ? { practiceMatchLabel: requestedPracticeLabel }
+          : {}),
+      };
       const demoSanitized = sanitizeScorebookSymbolRules(
-        requestedMode
-          ? { ...(body.rules || {}), scoreTeamNameMode: requestedMode }
-          : body.rules,
+        demoMerged,
         DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
       );
       return c.json({
@@ -767,12 +780,16 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       parseScorebookSymbolRulesJson(targetTeam.scorebookSymbolRules) ??
       DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES;
 
-    const mergedInput = requestedMode
-      ? {
-          ...(body.rules ?? existingRules),
-          scoreTeamNameMode: requestedMode,
-        }
-      : body.rules;
+    const mergedInput =
+      requestedMode || requestedPracticeLabel
+        ? {
+            ...(body.rules ?? existingRules),
+            ...(requestedMode ? { scoreTeamNameMode: requestedMode } : {}),
+            ...(requestedPracticeLabel
+              ? { practiceMatchLabel: requestedPracticeLabel }
+              : {}),
+          }
+        : body.rules;
 
     const sanitized = sanitizeScorebookSymbolRules(mergedInput, existingRules);
     await db
@@ -940,6 +957,8 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
       ...DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
       scoreTeamNameMode:
         existingSymbolRules?.scoreTeamNameMode ?? "organization",
+      practiceMatchLabel:
+        existingSymbolRules?.practiceMatchLabel ?? DEFAULT_PRACTICE_MATCH_LABEL,
     });
 
     if (body.saveToTeam !== false && targetTeam) {

@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -201,6 +201,7 @@ function LiffLineupContent() {
   const urlMatchId = searchParams.get("id");
   const urlTeamId = searchParams.get("teamId");
   const { currentTeam, profile, isLoadingTeam, isDemo } = useLiff();
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   const preferredTeamId = useMemo(() => {
     if (urlTeamId && urlTeamId !== "undefined" && urlTeamId !== "null") {
@@ -1080,7 +1081,7 @@ function LiffLineupContent() {
                     ? "公式戦"
                     : currentMatch?.matchType === "exchange"
                     ? "交流戦"
-                    : "OP戦"}
+                    : practiceMatchLabel}
                 </span>
                 {currentMatch?.tournamentName && (
                   <span className="text-[11px] font-bold text-slate-300 truncate">
@@ -2116,7 +2117,7 @@ function LiffLineupContent() {
                 <div className="grid grid-cols-3 gap-1.5">
                   {(
                     [
-                      { id: "practice", label: "練習試合" },
+                      { id: "practice", label: practiceMatchLabel },
                       { id: "official", label: "公式戦" },
                       { id: "exchange", label: "交流戦" },
                     ] as const

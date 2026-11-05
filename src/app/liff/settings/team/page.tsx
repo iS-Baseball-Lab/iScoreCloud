@@ -23,8 +23,16 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
   DEMO_TEAM_DEFAULT_LOGO_URL,
   useLiff,
+  usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import { saveTeamPracticeMatchLabel } from "@/lib/liff/score-settings";
+import {
+  DEFAULT_PRACTICE_MATCH_LABEL,
+  PRACTICE_MATCH_LABEL_PRESETS,
+  sanitizePracticeMatchLabel,
+} from "@/lib/liff/scorebook-symbol-rules";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface TeamLogoApiResponse {
@@ -32,6 +40,11 @@ interface TeamLogoApiResponse {
   isDemo?: boolean;
   teamId?: string;
   logoImageUrl?: string | null;
+  error?: string;
+}
+
+interface SavePracticeLabelApiResponse {
+  success: boolean;
   error?: string;
 }
 
@@ -116,6 +129,7 @@ const DEFAULT_TARGET_GROUPS = [
 
 export default function LiffTeamSettingsPage() {
   const { currentTeam, refreshTeams, updateCurrentTeamLogo } = useLiff();
+  const activePracticeLabel = usePracticeMatchLabel();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // チーム基本情報ステート
@@ -125,12 +139,19 @@ export default function LiffTeamSettingsPage() {
     currentTeam?.logoImageUrl || null
   );
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [customPracticeLabelInput, setCustomPracticeLabelInput] =
+    useState<string>(activePracticeLabel);
+  const [isSavingPracticeLabel, setIsSavingPracticeLabel] = useState(false);
 
   // 活動区分・班設定
   const [targetGroups, setTargetGroups] = useState<string[]>(
     DEFAULT_TARGET_GROUPS
   );
   const [newGroupInput, setNewGroupInput] = useState("");
+
+  useEffect(() => {
+    setCustomPracticeLabelInput(activePracticeLabel);
+  }, [activePracticeLabel, currentTeam?.id]);
 
   // 初期ロード＆チーム切替時の同期（前チームの値が残らないよう未保存時は初期値へリセット）
   useEffect(() => {
@@ -246,11 +267,57 @@ export default function LiffTeamSettingsPage() {
     }
   };
 
+  const persistPracticeMatchLabel = async (
+    rawLabel: string,
+    silentToast = false
+  ) => {
+    const nextLabel = sanitizePracticeMatchLabel(
+      rawLabel,
+      DEFAULT_PRACTICE_MATCH_LABEL
+    );
+    const targetTeamId = currentTeam?.id || "demo-team";
+    setCustomPracticeLabelInput(nextLabel);
+    saveTeamPracticeMatchLabel(targetTeamId, nextLabel, true);
+
+    setIsSavingPracticeLabel(true);
+    try {
+      const res = await fetch("/api/liff/scorebook/symbol-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: targetTeamId,
+          practiceMatchLabel: nextLabel,
+        }),
+      });
+      const data = (await res.json()) as SavePracticeLabelApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "練習試合の呼称の保存に失敗しました");
+      }
+      invalidateLiffApiCache();
+      if (targetTeamId !== "demo-team" && !currentTeam?.isDemo) {
+        void refreshTeams();
+      }
+      if (!silentToast) {
+        toast.success(`練習試合の呼称を「${nextLabel}」に設定しました`);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "練習試合の呼称の保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsSavingPracticeLabel(false);
+    }
+  };
+
   const handleSaveAll = () => {
     const tid = currentTeam?.id || "default";
     saveSetting(`iscore_team_name_${tid}`, teamName);
     saveSetting(`iscore_team_category_${tid}`, category);
     saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
+    const trimmedPractice = customPracticeLabelInput.trim();
+    if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
+      void persistPracticeMatchLabel(trimmedPractice, true);
+    }
     toast.success("チーム設定を保存しました");
   };
 
@@ -444,6 +511,70 @@ export default function LiffTeamSettingsPage() {
               </select>
               <p className="text-[10px] text-muted-foreground font-bold">
                 ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
+              </p>
+            </div>
+
+            {/* 練習試合の呼称設定（練習試合 / OP戦 / オープン戦 / 自由入力） */}
+            <div className="space-y-2.5 pt-3 border-t border-border">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-black text-foreground">
+                  練習試合の呼称（チーム共通表記）
+                </label>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#0f172a] text-slate-100 text-[10px] font-black shrink-0">
+                  <span>現在:</span>
+                  <span>⚾ {activePracticeLabel}</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                {PRACTICE_MATCH_LABEL_PRESETS.map((preset) => {
+                  const isSelected = activePracticeLabel === preset;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={isSavingPracticeLabel}
+                      onClick={() => void persistPracticeMatchLabel(preset)}
+                      className={cn(
+                        "py-2 px-2 rounded-xl border text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 truncate",
+                        isSelected
+                          ? "border-2 border-primary bg-primary/10 text-primary font-black shadow-2xs"
+                          : "border-border bg-muted/35 hover:bg-muted text-foreground font-bold"
+                      )}
+                    >
+                      {preset}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={customPracticeLabelInput}
+                  onChange={(e) => setCustomPracticeLabelInput(e.target.value)}
+                  placeholder="自由入力 (例: 練習戦, 紅白戦, TM)"
+                  className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    isSavingPracticeLabel ||
+                    !customPracticeLabelInput.trim() ||
+                    customPracticeLabelInput.trim() === activePracticeLabel
+                  }
+                  onClick={() =>
+                    void persistPracticeMatchLabel(customPracticeLabelInput)
+                  }
+                  className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-45 shrink-0"
+                >
+                  {isSavingPracticeLabel ? "保存中..." : "適用"}
+                </button>
+              </div>
+
+              <p className="text-[10px] text-muted-foreground font-bold leading-relaxed">
+                ※ 試合カード・チーム成績・個人成績・スタメン編成・試合速報ジェネレータなどの表記にチーム全体で反映されます
               </p>
             </div>
           </div>

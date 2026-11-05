@@ -5,7 +5,11 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
+import {
+  useLiff,
+  usePracticeMatchLabel,
+  useScoreTeamDisplayName,
+} from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { cn } from "@/lib/utils";
 import {
@@ -223,6 +227,17 @@ function cleanUniform(raw: string): string {
 export default function LiffStatsPage() {
   const { currentTeam, isLoadingTeam } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
+  const practiceMatchLabel = usePracticeMatchLabel();
+  const matchTypeMeta = useMemo(
+    () => ({
+      ...MATCH_TYPE_META,
+      practice: {
+        ...MATCH_TYPE_META.practice,
+        label: practiceMatchLabel,
+      },
+    }),
+    [practiceMatchLabel]
+  );
   const [filter, setFilter] = useState<StatsFilterKey>("all");
   const [tab, setTab] = useState<StatsMainTab>("matches");
   const [matchImportFilter, setMatchImportFilter] = useState<
@@ -401,7 +416,7 @@ export default function LiffStatsPage() {
       : filter === "exchange"
       ? "交流戦 成績"
       : filter === "practice"
-      ? "OP戦 成績"
+      ? `${practiceMatchLabel} 成績`
       : `${seasonYear}シーズン 通算成績`;
 
   const teamDisplayName = scoreTeamName;
@@ -442,7 +457,7 @@ export default function LiffStatsPage() {
               { key: "all" as const, label: "すべて", count: countAll },
               { key: "official" as const, label: "🏆 公式戦", count: countOfficial },
               { key: "exchange" as const, label: "🤝 交流戦", count: countExchange },
-              { key: "practice" as const, label: "⚾ OP戦", count: countPractice },
+              { key: "practice" as const, label: `⚾ ${practiceMatchLabel}`, count: countPractice },
             ] as const
           ).map((item) => {
             const active = filter === item.key;
@@ -656,9 +671,9 @@ export default function LiffStatsPage() {
                   <div className="space-y-1">
                     {(
                       [
-                        { key: "official" as const, meta: MATCH_TYPE_META.official },
-                        { key: "exchange" as const, meta: MATCH_TYPE_META.exchange },
-                        { key: "practice" as const, meta: MATCH_TYPE_META.practice },
+                        { key: "official" as const, meta: matchTypeMeta.official },
+                        { key: "exchange" as const, meta: matchTypeMeta.exchange },
+                        { key: "practice" as const, meta: matchTypeMeta.practice },
                       ] as const
                     ).map(({ key, meta }) => {
                       const sub = sectionsByFilter[key].summary;
@@ -854,7 +869,7 @@ export default function LiffStatsPage() {
                     ) : (
                     <div className="space-y-2">
                       {displayedMatches.map((m) => {
-                        const typeMeta = MATCH_TYPE_META[m.matchType];
+                        const typeMeta = matchTypeMeta[m.matchType];
                         const resultBadge =
                           m.result === "win"
                             ? {

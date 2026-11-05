@@ -9,7 +9,12 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match, type MatchDayOps } from "@/types/match";
-import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
+import {
+  useLiff,
+  usePracticeMatchLabel,
+  useScoreTeamDisplayName,
+} from "@/components/liff/LiffProvider";
+import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Users,
@@ -301,6 +306,7 @@ function MatchesContent() {
   const matchId = searchParams.get("id") || searchParams.get("matchId");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   // 単一試合詳細用ステート
   const [match, setMatch] = useState<Match | null>(null);
@@ -1017,7 +1023,7 @@ function MatchesContent() {
       ""
     ).trim();
     const customTour =
-      rawTour && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTour)
+      rawTour && !isGenericMatchTournamentName(rawTour, practiceMatchLabel)
         ? rawTour
         : null;
     const mTypeLabel =
@@ -1025,7 +1031,7 @@ function MatchesContent() {
         ? "公式戦"
         : activeDetailMatch.matchType === "exchange"
         ? "交流戦"
-        : "OP戦";
+        : practiceMatchLabel;
 
     return {
       matchId: activeDetailMatch.id,
@@ -1196,7 +1202,7 @@ function MatchesContent() {
         ? "公式戦"
         : match.matchType === "exchange"
           ? "交流戦"
-          : "OP戦";
+          : practiceMatchLabel;
     const matchTypeBadgeClass =
       match.matchType === "official"
         ? "bg-amber-400 text-slate-950 border border-amber-400"
@@ -1210,7 +1216,8 @@ function MatchesContent() {
 
     const rawTournament = (match.tournamentName || match.tournament || "").trim();
     const customTournamentName =
-      rawTournament && !["公式戦", "OP戦", "練習試合", "交流戦"].includes(rawTournament)
+      rawTournament &&
+      !isGenericMatchTournamentName(rawTournament, practiceMatchLabel)
         ? rawTournament
         : "";
 

@@ -194,6 +194,7 @@ export function TeamSymbolRulesSettingsSection({
       {
         ...presetRules,
         scoreTeamNameMode: rules.scoreTeamNameMode ?? "organization",
+        practiceMatchLabel: rules.practiceMatchLabel,
         customNote: rules.customNote || "",
       },
       `プリセット「${presetLabel}」`
@@ -229,6 +230,7 @@ export function TeamSymbolRulesSettingsSection({
         {
           ...DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
           scoreTeamNameMode: rules.scoreTeamNameMode ?? "organization",
+          practiceMatchLabel: rules.practiceMatchLabel,
         }
       );
       setRules(sanitizedAi);
@@ -256,7 +258,7 @@ export function TeamSymbolRulesSettingsSection({
 
   type RuleFieldKey = Exclude<
     keyof ScorebookSymbolRules,
-    "customNote" | "scoreTeamNameMode"
+    "customNote" | "scoreTeamNameMode" | "practiceMatchLabel"
   >;
 
   interface RuleFieldSectionItem {

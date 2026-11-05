@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { cn } from "@/lib/utils";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
@@ -195,6 +195,7 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
 
 export default function LiffSchedulePage() {
   const { currentTeam, profile } = useLiff();
+  const practiceMatchLabel = usePracticeMatchLabel();
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -1885,7 +1886,14 @@ export default function LiffSchedulePage() {
                   {/* タイトルの定型プリセットボタン */}
                   <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
                     <span className="text-[10px] font-bold text-muted-foreground shrink-0">定型:</span>
-                    {["通常練習", "公式戦・大会", "練習試合", "合宿・遠征", "ミーティング", "グラウンド整備"].map((preset) => (
+                    {[
+                      "通常練習",
+                      "公式戦・大会",
+                      practiceMatchLabel,
+                      "合宿・遠征",
+                      "ミーティング",
+                      "グラウンド整備",
+                    ].map((preset) => (
                       <button
                         key={preset}
                         type="button"

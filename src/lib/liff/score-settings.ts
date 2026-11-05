@@ -1,6 +1,10 @@
 // filepath: src/lib/liff/score-settings.ts
 import type { ImportScopeMode } from "@/types/scorebook-v2";
-import type { ScoreTeamNameDisplayMode } from "@/lib/liff/scorebook-symbol-rules";
+import {
+  DEFAULT_PRACTICE_MATCH_LABEL,
+  sanitizePracticeMatchLabel,
+  type ScoreTeamNameDisplayMode,
+} from "@/lib/liff/scorebook-symbol-rules";
 
 export type { ScoreTeamNameDisplayMode };
 
@@ -10,6 +14,8 @@ export type ScorePositionNotation = "kanji" | "number" | "english";
 
 export const LIFF_SCORE_SETTINGS_CHANGE_EVENT = "iscore-score-settings-change";
 const TEAM_SCORE_NAME_MODE_STORAGE_PREFIX = "iscore_score_team_name_mode_v1:";
+const TEAM_PRACTICE_MATCH_LABEL_STORAGE_PREFIX =
+  "iscore_team_practice_label_v1:";
 
 export interface LiffScoreSettings {
   defaultImportScope: ImportScopeMode;
@@ -242,6 +248,83 @@ export function resolveScoreTeamDisplayName(
     return squadLabel || orgLabel || rawFullName || fallback;
   }
   return orgLabel || squadLabel || rawFullName || fallback;
+}
+
+function buildTeamPracticeMatchLabelKey(teamId?: string | null): string | null {
+  const clean = (teamId || "").trim();
+  if (!clean) return null;
+  return `${TEAM_PRACTICE_MATCH_LABEL_STORAGE_PREFIX}${clean}`;
+}
+
+/**
+ * チーム別の「練習試合の呼称」（例: `練習試合` / `OP戦` / `オープン戦`）を取得する
+ */
+export function loadTeamPracticeMatchLabel(
+  teamId?: string | null,
+  cloudFallback?: string | null
+): string {
+  const safeFallback = sanitizePracticeMatchLabel(
+    cloudFallback,
+    DEFAULT_PRACTICE_MATCH_LABEL
+  );
+  if (typeof window === "undefined") {
+    return safeFallback;
+  }
+  try {
+    const key = buildTeamPracticeMatchLabelKey(teamId);
+    if (!key) return safeFallback;
+    const stored = localStorage.getItem(key);
+    if (stored && stored.trim()) {
+      return sanitizePracticeMatchLabel(stored, safeFallback);
+    }
+    return safeFallback;
+  } catch {
+    return safeFallback;
+  }
+}
+
+/**
+ * チーム別の「練習試合の呼称」を保存し、全画面へ即時変更イベントを発火する
+ */
+export function saveTeamPracticeMatchLabel(
+  teamId: string | null | undefined,
+  label: string | null,
+  emitEvent = true
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const key = buildTeamPracticeMatchLabelKey(teamId);
+    if (!key) return;
+    if (!label || !label.trim()) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(
+        key,
+        sanitizePracticeMatchLabel(label, DEFAULT_PRACTICE_MATCH_LABEL)
+      );
+    }
+    if (emitEvent) {
+      window.dispatchEvent(
+        new CustomEvent(LIFF_SCORE_SETTINGS_CHANGE_EVENT, {
+          detail: { teamId: (teamId || "").trim(), practiceMatchLabel: label },
+        })
+      );
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function resolveMatchTypeDisplayLabel(
+  matchType: string | null | undefined,
+  practiceMatchLabel?: string | null
+): string {
+  if (matchType === "official" || matchType === "tournament") return "公式戦";
+  if (matchType === "exchange") return "交流戦";
+  return sanitizePracticeMatchLabel(
+    practiceMatchLabel,
+    DEFAULT_PRACTICE_MATCH_LABEL
+  );
 }
 
 

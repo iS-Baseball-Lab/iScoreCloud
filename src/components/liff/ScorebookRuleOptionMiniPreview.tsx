@@ -29,7 +29,7 @@ import {
 
 export type SymbolRulePreviewFieldKey = Exclude<
   keyof ScorebookSymbolRules,
-  "customNote" | "scoreTeamNameMode"
+  "customNote" | "scoreTeamNameMode" | "practiceMatchLabel"
 >;
 
 export interface ScorebookRuleOptionMiniPreviewProps {

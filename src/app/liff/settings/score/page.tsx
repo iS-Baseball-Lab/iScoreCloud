@@ -28,7 +28,7 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import { ScorebookSymbolChartSheetModal } from "@/components/liff/ScorebookSymbolChartSheetModal";
 import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRulesSettingsSection";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   loadCachedTeamSymbolRules,
@@ -97,6 +97,7 @@ interface StagedLegendState {
 
 export default function LiffScoreSettingsPage() {
   const { currentTeam, refreshTeams } = useLiff();
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [isDemoContext, setIsDemoContext] = useState(false);
@@ -823,7 +824,7 @@ export default function LiffScoreSettingsPage() {
                   }
                   className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
                 >
-                  <option value="practice">OP戦（練習試合）</option>
+                  <option value="practice">{practiceMatchLabel}</option>
                   <option value="official">公式戦</option>
                   <option value="exchange">交流戦</option>
                 </select>

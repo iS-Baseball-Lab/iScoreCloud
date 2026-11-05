@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchDayOps } from "@/types/match";
+import { usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import {
   parseSafeMatchDate,
   hasMatchTime,
@@ -219,6 +221,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
   const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [isThumbLoaded, setIsThumbLoaded] = useState(false);
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   // SKILL.md 規約5: 対象試合変更時やカード折りたたみ時に手動追加役割の展開状態もリセット
   useEffect(() => {
@@ -439,17 +442,25 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   : "bg-slate-700 text-slate-100"
               )}
             >
-              {match.matchType === "official" ? "公式戦" : match.matchType === "exchange" ? "交流戦" : "OP戦"}
+              {match.matchType === "official"
+                ? "公式戦"
+                : match.matchType === "exchange"
+                ? "交流戦"
+                : practiceMatchLabel}
             </span>
 
             <span className="text-[11px] sm:text-xs font-bold text-slate-100 truncate min-w-0">
-              {match.tournamentName && match.tournamentName !== "公式戦" && match.tournamentName !== "OP戦"
+              {match.tournamentName &&
+              !isGenericMatchTournamentName(
+                match.tournamentName,
+                practiceMatchLabel
+              )
                 ? match.tournamentName
                 : match.matchType === "official"
                 ? "大会名未登録"
                 : match.matchType === "exchange"
                 ? "交流戦"
-                : "練習試合"}
+                : practiceMatchLabel}
             </span>
 
             {!isFuture && match.status !== "scheduled" && !isRainout && (

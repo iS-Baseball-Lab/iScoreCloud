@@ -24,6 +24,8 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
+import { usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
 import { ActionStatusBanner } from "./ActionStatusBanner";
@@ -434,6 +436,7 @@ export function Step1MatchAndImages({
   onRequestDeleteSavedScorebook,
   isDeletingSavedScorebook = false,
 }: Step1MatchAndImagesProps) {
+  const practiceMatchLabel = usePracticeMatchLabel();
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
     null
@@ -1134,8 +1137,17 @@ export function Step1MatchAndImages({
                       </span>
                     ) : null}
                     <span className="text-muted-foreground">
-                      {selectedMatch.tournamentName ||
-                        (isOfficialMatch ? "公式戦" : "OP戦")}
+                      {selectedMatch.tournamentName &&
+                      !isGenericMatchTournamentName(
+                        selectedMatch.tournamentName,
+                        practiceMatchLabel
+                      )
+                        ? selectedMatch.tournamentName
+                        : isOfficialMatch
+                        ? "公式戦"
+                        : isExchangeMatch
+                        ? "交流戦"
+                        : practiceMatchLabel}
                     </span>
                   </div>
                 </div>
@@ -1252,7 +1264,7 @@ export function Step1MatchAndImages({
                   }
                   className="w-full h-10 px-2.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground"
                 >
-                  <option value="practice">OP戦（練習試合）</option>
+                  <option value="practice">{practiceMatchLabel}</option>
                   <option value="official">公式戦</option>
                   <option value="exchange">交流戦</option>
                 </select>

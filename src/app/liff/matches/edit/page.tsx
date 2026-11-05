@@ -7,7 +7,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
+import {
+  useLiff,
+  usePracticeMatchLabel,
+  useScoreTeamDisplayName,
+} from "@/components/liff/LiffProvider";
+import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -169,6 +174,7 @@ function LiffMatchEditContent() {
   const matchId = searchParams.get("id") || searchParams.get("matchId") || "";
   const { currentTeam } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
+  const practiceMatchLabel = usePracticeMatchLabel();
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -352,7 +358,10 @@ function LiffMatchEditContent() {
               : "practice";
 
         const rawTournament = (m.tournamentName || m.tournament || "").trim();
-        const cleanedTournament = ["練習試合", "OP戦"].includes(rawTournament)
+        const cleanedTournament = isGenericMatchTournamentName(
+          rawTournament,
+          practiceMatchLabel
+        )
           ? ""
           : rawTournament;
 
@@ -810,7 +819,7 @@ function LiffMatchEditContent() {
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  ⚾ OP戦
+                  ⚾ {practiceMatchLabel}
                 </button>
               </div>
             </div>

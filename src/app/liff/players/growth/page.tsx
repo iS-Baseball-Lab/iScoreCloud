@@ -25,7 +25,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -735,6 +735,17 @@ function PlayerGrowthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentTeam, isDemo: providerDemo } = useLiff();
+  const practiceMatchLabel = usePracticeMatchLabel();
+  const matchTypeBadges = useMemo(
+    () => ({
+      ...MATCH_TYPE_BADGES,
+      practice: {
+        ...MATCH_TYPE_BADGES.practice,
+        label: practiceMatchLabel,
+      },
+    }),
+    [practiceMatchLabel]
+  );
 
   const queryPlayerId = searchParams.get("id");
 
@@ -1114,7 +1125,7 @@ function PlayerGrowthContent() {
                   },
                   {
                     key: "practice" as const,
-                    label: "⚾ OP戦",
+                    label: `⚾ ${practiceMatchLabel}`,
                     count:
                       growthData.sectionsByFilter.practice.battingSummary.games,
                   },
@@ -1766,7 +1777,7 @@ function PlayerGrowthContent() {
 
                   <div className="space-y-2.5">
                     {orderedGameLogs.map((g) => {
-                      const typeBadge = MATCH_TYPE_BADGES[g.matchType];
+                      const typeBadge = matchTypeBadges[g.matchType];
                       const pLine = pitchingByMatchId.get(g.matchId);
                       const resBadge =
                         g.result === "win"

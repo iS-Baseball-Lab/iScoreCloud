@@ -98,7 +98,7 @@ export function useNewsText({
   showSurnameOnly
 }: UseNewsTextProps) {
 
-  // 🏟️ スコアボードテキストの動的生成 (プロポーショナルフォント最適化仕様)
+  // 🏟️ スコアボードテキストの動的生成 (丸数字スペース式・プロポーショナルフォント完全対応)
   const generateScoreTableText = (
     match: any,
     isFinal: boolean,
@@ -108,95 +108,110 @@ export function useNewsText({
     const isFirst = match.battingOrder === "first";
     const firstTeamRaw = firstTeamDisp || (isFirst ? teamName : match.opponent);
     const secondTeamRaw = secondTeamDisp || (isFirst ? match.opponent : teamName);
-    
+
     const firstScores = isFirst ? match.myInningScores : match.opponentInningScores;
     const secondScores = isFirst ? match.opponentInningScores : match.myInningScores;
-    
+
     const regulationInnings = 7;
     let inningCount = Math.max(firstScores.length, secondScores.length, regulationInnings);
     if (!isFinal && inningLimit) {
       inningCount = Math.max(inningLimit, regulationInnings);
     }
-    
-    const getDisplayWidth = (str: string) => {
-      let width = 0;
-      for (let i = 0; i < str.length; i++) {
-        const code = str.charCodeAt(i);
-        if ((code >= 0x3000 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF)) {
-          width += 2;
-        } else {
-          width += 1;
-        }
+
+    const toFullWidthAscii = (str: string) => {
+      let out = "";
+      for (const ch of Array.from(str)) {
+        const code = ch.codePointAt(0) || 0;
+        if (code === 0x20) out += "　";
+        else if (code >= 0x21 && code <= 0x7e) out += String.fromCodePoint(code + 0xfee0);
+        else out += ch;
       }
-      return width;
+      return out;
     };
 
-    const formatTeamName = (nameStr: string) => {
-      let formatted = nameStr.trim();
-      if (formatted.length === 2) {
-        formatted = `${formatted[0]}　${formatted[1]}`;
-      }
-      return formatted;
+    const toFullWidthDigits = (num: number) =>
+      String(Math.max(0, Math.trunc(num))).replace(/[0-9]/g, (d) =>
+        String.fromCodePoint(0xff10 + Number(d))
+      );
+
+    const formatCircledInning = (inn: number) =>
+      inn >= 1 && inn <= 20 ? String.fromCodePoint(0x2460 + inn - 1) : toFullWidthDigits(inn);
+
+    const padStartFullWidth = (str: string, targetChars: number) => {
+      const chars = Array.from(str);
+      return chars.length >= targetChars ? str : `${"　".repeat(targetChars - chars.length)}${str}`;
     };
 
-    const padTeamName = (nameStr: string) => {
-      const formatted = formatTeamName(nameStr);
-      const width = getDisplayWidth(formatted);
-      if (width < 12) {
-        return formatted + " ".repeat(12 - width);
-      }
-      return formatted;
+    const normalizeTeamChars = (raw: string, fallback: string) => {
+      const cleaned = toFullWidthAscii((raw || "").trim() || fallback);
+      const chars = Array.from(cleaned);
+      if (chars.length === 1) return ["　", chars[0], "　"];
+      if (chars.length === 2) return [chars[0], "　", chars[1]];
+      return chars;
     };
 
-    const padEndWithDisplayWidth = (str: string, targetWidth: number, padChar = " ") => {
-      const currentWidth = getDisplayWidth(str);
-      if (currentWidth < targetWidth) {
-        return str + padChar.repeat(targetWidth - currentWidth);
-      }
-      return str;
-    };
+    const fChars = normalizeTeamChars(firstTeamRaw, "先　攻");
+    const sChars = normalizeTeamChars(secondTeamRaw, "後　攻");
+    const labelWidth = Math.max(fChars.length, sChars.length, 3);
+    const fPadded = `${fChars.join("")}${"　".repeat(Math.max(0, labelWidth - fChars.length))}`;
+    const sPadded = `${sChars.join("")}${"　".repeat(Math.max(0, labelWidth - sChars.length))}`;
+    const headerLabel = `回${"　".repeat(Math.max(1, labelWidth - 2))}数`;
 
-    let header = "               "; // 15 spaces
-    for (let i = 1; i <= inningCount; i++) {
-      header += `${i} `;
-    }
-    header = header.trimEnd() + " 計";
+    const inningHeaders: string[] = [];
+    const fCells: string[] = [];
+    const sCells: string[] = [];
 
-    let firstLine = padTeamName(firstTeamRaw) + "   ";
-    let secondLine = padTeamName(secondTeamRaw) + "   ";
-    
     let firstTotal = 0;
     let secondTotal = 0;
-    
+
     for (let i = 1; i <= inningCount; i++) {
+      const hRaw = formatCircledInning(i);
+
       const score1 = firstScores[i - 1];
       const hasScore1 = score1 !== undefined && score1 !== null && (!inningLimit || i <= inningLimit);
+      let fRaw = "－";
       if (hasScore1) {
-        firstLine += `${score1} `;
-        firstTotal += score1;
-      } else {
-        firstLine += "  ";
+        fRaw = toFullWidthDigits(Number(score1) || 0);
+        firstTotal += Number(score1) || 0;
       }
 
-      const isCurrentInningUnfinishedBottom = !isFinal && inningLimit && i === inningLimit && !isBottomLimit;
+      const isCurrentInningUnfinishedBottom =
+        !isFinal && inningLimit && i === inningLimit && !isBottomLimit;
       const score2 = secondScores[i - 1];
-      const hasScore2 = score2 !== undefined && score2 !== null && (!inningLimit || i <= inningLimit) && !isCurrentInningUnfinishedBottom;
+      const hasScore2 =
+        score2 !== undefined &&
+        score2 !== null &&
+        (!inningLimit || i <= inningLimit) &&
+        !isCurrentInningUnfinishedBottom;
+      let sRaw = "－";
       if (hasScore2) {
-        secondLine += `${score2} `;
-        secondTotal += score2;
-      } else {
-        secondLine += "  ";
+        sRaw = toFullWidthDigits(Number(score2) || 0);
+        secondTotal += Number(score2) || 0;
       }
+
+      const colWidth = Math.max(
+        Array.from(hRaw).length,
+        Array.from(fRaw).length,
+        Array.from(sRaw).length
+      );
+      inningHeaders.push(padStartFullWidth(hRaw, colWidth));
+      fCells.push(padStartFullWidth(fRaw, colWidth));
+      sCells.push(padStartFullWidth(sRaw, colWidth));
     }
 
-    const total1 = isFinal ? (isFirst ? match.myScore : match.opponentScore) : firstTotal;
-    const total2 = isFinal ? (isFirst ? match.opponentScore : match.myScore) : secondTotal;
+    const total1 = Number(isFinal ? (isFirst ? match.myScore : match.opponentScore) : firstTotal) || 0;
+    const total2 = Number(isFinal ? (isFirst ? match.opponentScore : match.myScore) : secondTotal) || 0;
 
-    const headerPrefixWidth = getDisplayWidth(header.substring(0, header.indexOf("計")));
-    firstLine = padEndWithDisplayWidth(firstLine, headerPrefixWidth) + (total1 !== undefined && total1 !== null ? total1 : "0");
-    secondLine = padEndWithDisplayWidth(secondLine, headerPrefixWidth) + (total2 !== undefined && total2 !== null ? total2 : "0");
+    const fTotalRaw = toFullWidthDigits(total1);
+    const sTotalRaw = toFullWidthDigits(total2);
+    const totalWidth = Math.max(Array.from(fTotalRaw).length, Array.from(sTotalRaw).length);
+    const totalHeader = totalWidth <= 1 ? "計" : padStartFullWidth("合計", totalWidth);
 
-    return `${header}\n${firstLine}\n${secondLine}`;
+    const headerLine = `${headerLabel}｜${inningHeaders.join(" ")}｜${totalHeader}`;
+    const firstLine = `${fPadded}｜${fCells.join(" ")}｜${padStartFullWidth(fTotalRaw, totalWidth)}`;
+    const secondLine = `${sPadded}｜${sCells.join(" ")}｜${padStartFullWidth(sTotalRaw, totalWidth)}`;
+
+    return `${headerLine}\n${firstLine}\n${secondLine}`;
   };
 
   // 📋 スタメン選手・交代の追記追跡ロジック
