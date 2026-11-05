@@ -70,6 +70,7 @@ interface LiffContextType {
   isLoadingTeam: boolean;
   isDemo: boolean;
   refreshTeams: () => Promise<void>;
+  updateCurrentTeamLogo: (logoImageUrl: string | undefined) => void;
 }
 
 const LiffContext = createContext<LiffContextType>({
@@ -87,6 +88,7 @@ const LiffContext = createContext<LiffContextType>({
   isLoadingTeam: true,
   isDemo: false,
   refreshTeams: async () => {},
+  updateCurrentTeamLogo: () => {},
 });
 
 export function LiffProvider({
@@ -219,6 +221,10 @@ export function LiffProvider({
 
     let activeTeam: LiffTeamItem | null = null;
     if (demoFlag || targetTeamId === "demo-team") {
+      const savedDemoLogo =
+        typeof window !== "undefined"
+          ? localStorage.getItem("iscore_demo_team_logo") || undefined
+          : undefined;
       const baseDemo = teamList.find((t) => t.id === "demo-team") || {
         id: "demo-team",
         name: "iScore ドリームス (体験デモ)",
@@ -229,6 +235,7 @@ export function LiffProvider({
       };
       activeTeam = {
         ...baseDemo,
+        logoImageUrl: savedDemoLogo ?? baseDemo.logoImageUrl,
         scoreTeamNameMode: loadTeamScoreNameDisplayMode(
           "demo-team",
           baseDemo.scoreTeamNameMode ?? "organization"
@@ -344,6 +351,46 @@ export function LiffProvider({
   const refreshTeams = useCallback(async () => {
     await loadTeams(true);
   }, [loadTeams]);
+
+  const updateCurrentTeamLogo = useCallback(
+    (nextLogoUrl: string | undefined) => {
+      const normalized = nextLogoUrl && nextLogoUrl.trim() ? nextLogoUrl.trim() : undefined;
+      setCurrentTeam((prev) => {
+        if (!prev) return prev;
+        const updated: LiffTeamItem = {
+          ...prev,
+          logoImageUrl: normalized,
+        };
+        if (typeof window !== "undefined") {
+          localStorage.setItem("iscore_currentTeam_json", JSON.stringify(updated));
+          if (prev.id === "demo-team" || prev.isDemo) {
+            if (normalized) {
+              localStorage.setItem("iscore_demo_team_logo", normalized);
+            } else {
+              localStorage.removeItem("iscore_demo_team_logo");
+            }
+          }
+        }
+        return updated;
+      });
+      setTeams((prevTeams) => {
+        if (prevTeams.length === 0) return prevTeams;
+        const targetOrgName = currentTeam?.orgName;
+        const targetId = currentTeam?.id;
+        const updatedList = prevTeams.map((t) => {
+          const sameTeamOrOrg =
+            (targetId && t.id === targetId) ||
+            (targetOrgName && t.orgName && t.orgName === targetOrgName);
+          return sameTeamOrOrg ? { ...t, logoImageUrl: normalized } : t;
+        });
+        if (typeof window !== "undefined") {
+          localStorage.setItem("iscore_teams_json", JSON.stringify(updatedList));
+        }
+        return updatedList;
+      });
+    },
+    [currentTeam?.id, currentTeam?.orgName]
+  );
 
   useEffect(() => {
     syncLiffThemeClasses();
@@ -490,6 +537,7 @@ export function LiffProvider({
         isLoadingTeam,
         isDemo,
         refreshTeams,
+        updateCurrentTeamLogo,
       }}
     >
       {children}

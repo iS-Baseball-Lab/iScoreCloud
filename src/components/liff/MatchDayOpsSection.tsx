@@ -48,6 +48,7 @@ import {
   getFilledStaffRoles,
   hasAnyGuidebookContent,
   isAssigneeMatchingIdentity,
+  normalizeUnifiedStaffRoles,
   resolveEffectiveMealLabel,
   type LiffAdultMemberOption,
   type LiffMatchScheduleSyncInfo,
@@ -266,7 +267,7 @@ export function MatchDayGuideAndRolesSection({
               <EmptyState
                 icon={ClipboardList}
                 title="当日の集合・審判/スコア担当が未設定です"
-                description="集合時刻・ユニフォーム・弁当や、球審/塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を1タップで共有できます"
+                description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を1タップで共有できます"
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -413,7 +414,7 @@ export function MatchDayGuideAndRolesSection({
                     className="w-full rounded-xl bg-muted/40 hover:bg-muted/70 border border-dashed border-border p-3 text-center transition-colors cursor-pointer"
                   >
                     <p className="text-xs font-black text-foreground">
-                      球審・塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
+                      審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
                     </p>
                     <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
                       タップして保護者メンバーから1タップ選択できます
@@ -800,7 +801,7 @@ export function MatchDayOpsEditorModal({
   const [carpoolSummaryNote, setCarpoolSummaryNote] = useState("");
 
   const [roleRows, setRoleRows] = useState<EditableStaffRoleRow[]>([]);
-  const [expandedRoleKey, setExpandedRoleKey] = useState<string>("plate_umpire");
+  const [expandedRoleKey, setExpandedRoleKey] = useState<string>("umpire");
   const [showFathersFirstOnly, setShowFathersFirstOnly] = useState<boolean>(false);
   const [customAssigneeInput, setCustomAssigneeInput] = useState<string>("");
   const [newCustomRoleLabel, setNewCustomRoleLabel] = useState<string>("");
@@ -821,7 +822,7 @@ export function MatchDayOpsEditorModal({
     setCargoCarMember(ops?.cargoCarMember || "");
     setCarpoolSummaryNote(ops?.carpoolSummaryNote || "");
 
-    const existingList = ops?.staffRoles || [];
+    const existingList = normalizeUnifiedStaffRoles(ops?.staffRoles);
     const existingByKey = new Map<string, MatchStaffRoleAssignment>();
     for (const r of existingList) {
       existingByKey.set(r.roleKey, r);
@@ -859,7 +860,7 @@ export function MatchDayOpsEditorModal({
     }
 
     setRoleRows(mergedRows);
-    setExpandedRoleKey(mergedRows[0]?.roleKey || "plate_umpire");
+    setExpandedRoleKey(mergedRows[0]?.roleKey || "umpire");
     setCustomAssigneeInput("");
     setNewCustomRoleLabel("");
   }, [isOpen, initialTab, matchId, ops]);

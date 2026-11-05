@@ -559,7 +559,7 @@ const DEMO_MATCHES = [
     hasScorebook: true,
     matchDayOps: {
       staffRoles: [
-        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "umpire", roleLabel: "審判", assignees: ["小西 父", "中島 父"], note: "球審・塁審（当日割振）" },
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
@@ -611,8 +611,7 @@ const DEMO_MATCHES = [
       uniform: "公式戦ユニフォーム",
       meal: "lunch_and_snack",
       staffRoles: [
-        { roleKey: "plate_umpire", roleLabel: "球審", assignees: ["田中 パパ"], note: "本部派遣と交代制" },
-        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁（審判服着用）" },
+        { roleKey: "umpire", roleLabel: "審判", assignees: ["田中 パパ", "小西 父", "中島 父"], note: "審判服着用（球審・塁審は当日決定）" },
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"], note: "ベンチ横カウント操作" },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
@@ -9436,6 +9435,243 @@ app.get("/tournaments", async (c) => {
       isDemo: false,
       tournaments: [],
     });
+  }
+});
+
+/**
+ * 🛡️ チームロゴ画像のアップロード・更新API (POST /teams/:teamId/logo)
+ * LIFF内のチーム設定画面からセッションCookie不要で `organizations.logoImageUrl` + R2 を安全に更新する
+ */
+app.post("/teams/:teamId/logo", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = (c.req.param("teamId") || "").trim();
+
+  try {
+    const body = (await c.req.json()) as {
+      imageBase64?: string;
+      mimeType?: string;
+      clear?: boolean;
+    };
+
+    if (!teamId || teamId === "demo-team") {
+      if (body.clear) {
+        return c.json({
+          success: true,
+          isDemo: true,
+          teamId: "demo-team",
+          logoImageUrl: null,
+        });
+      }
+      const rawData = (body.imageBase64 || "").trim();
+      if (!rawData) {
+        return c.json({ success: false, error: "ロゴ画像データがありません" }, 400);
+      }
+      const safeMime = (body.mimeType || "image/png").trim() || "image/png";
+      const dataUrl = rawData.startsWith("data:")
+        ? rawData
+        : `data:${safeMime};base64,${rawData}`;
+      return c.json({
+        success: true,
+        isDemo: true,
+        teamId: "demo-team",
+        logoImageUrl: dataUrl,
+      });
+    }
+
+    const teamObj = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        organizationId: teams.organizationId,
+        logoImageUrl: organizations.logoImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamObj) {
+      return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
+    }
+
+    let orgId = teamObj.organizationId;
+    if (!orgId) {
+      orgId = crypto.randomUUID();
+      await db.insert(organizations).values({
+        id: orgId,
+        name: teamObj.name,
+        category: "other",
+      });
+      await db
+        .update(teams)
+        .set({ organizationId: orgId })
+        .where(eq(teams.id, teamObj.id));
+    }
+
+    const cleanupOldLogoInR2 = async () => {
+      const prevUrl = teamObj.logoImageUrl || "";
+      if (c.env.BUCKET && prevUrl.startsWith("/api/images/teams/")) {
+        const oldR2Key = prevUrl.slice("/api/images/".length);
+        await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+      }
+    };
+
+    if (body.clear) {
+      await cleanupOldLogoInR2();
+      await db
+        .update(organizations)
+        .set({ logoImageUrl: null })
+        .where(eq(organizations.id, orgId));
+
+      return c.json({
+        success: true,
+        isDemo: false,
+        teamId: teamObj.id,
+        logoImageUrl: null,
+      });
+    }
+
+    const rawBase64 = (body.imageBase64 || "").trim();
+    if (!rawBase64) {
+      return c.json({ success: false, error: "ロゴ画像データがありません" }, 400);
+    }
+
+    const cleanBase64 = rawBase64.includes(",")
+      ? (rawBase64.split(",")[1] || "").trim()
+      : rawBase64;
+    const binaryStr = atob(cleanBase64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+
+    if (bytes.byteLength === 0 || bytes.byteLength > 2_400_000) {
+      return c.json(
+        {
+          success: false,
+          error: "画像サイズが大きすぎます（2.4MB以下の画像をお選びください）",
+        },
+        400
+      );
+    }
+
+    const rawMime = (body.mimeType || "image/png").toLowerCase();
+    const safeMimeType =
+      rawMime === "image/svg+xml"
+        ? "image/svg+xml"
+        : rawMime === "image/webp"
+          ? "image/webp"
+          : rawMime === "image/jpeg" || rawMime === "image/jpg"
+            ? "image/jpeg"
+            : "image/png";
+    const ext =
+      safeMimeType === "image/svg+xml"
+        ? "svg"
+        : safeMimeType === "image/webp"
+          ? "webp"
+          : safeMimeType === "image/jpeg"
+            ? "jpg"
+            : "png";
+
+    let nextLogoUrl: string;
+    if (c.env.BUCKET) {
+      const safeOrgKey = orgId.replace(/[^a-zA-Z0-9_-]/g, "");
+      const r2Key = `teams/logo-${safeOrgKey}-${Date.now()}.${ext}`;
+      const arrayBuf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer;
+      await c.env.BUCKET.put(r2Key, arrayBuf, {
+        httpMetadata: { contentType: safeMimeType },
+      });
+      await cleanupOldLogoInR2();
+      nextLogoUrl = `/api/images/${r2Key}`;
+    } else {
+      nextLogoUrl = `data:${safeMimeType};base64,${cleanBase64}`;
+    }
+
+    await db
+      .update(organizations)
+      .set({ logoImageUrl: nextLogoUrl })
+      .where(eq(organizations.id, orgId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      teamId: teamObj.id,
+      logoImageUrl: nextLogoUrl,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to upload team logo:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "チームロゴの保存に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ チームロゴ画像の削除API (DELETE /teams/:teamId/logo)
+ */
+app.delete("/teams/:teamId/logo", async (c) => {
+  const db = drizzle(c.env.DB);
+  const teamId = (c.req.param("teamId") || "").trim();
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        teamId: "demo-team",
+        logoImageUrl: null,
+      });
+    }
+
+    const teamObj = await db
+      .select({
+        id: teams.id,
+        organizationId: teams.organizationId,
+        logoImageUrl: organizations.logoImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamObj) {
+      return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
+    }
+
+    if (c.env.BUCKET && teamObj.logoImageUrl?.startsWith("/api/images/teams/")) {
+      const oldR2Key = teamObj.logoImageUrl.slice("/api/images/".length);
+      await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+    }
+
+    if (teamObj.organizationId) {
+      await db
+        .update(organizations)
+        .set({ logoImageUrl: null })
+        .where(eq(organizations.id, teamObj.organizationId));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      teamId: teamObj.id,
+      logoImageUrl: null,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to delete team logo:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "チームロゴの削除に失敗しました",
+      },
+      500
+    );
   }
 });
 

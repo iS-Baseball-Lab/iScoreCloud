@@ -509,9 +509,10 @@ app.delete("/:id", async (c) => {
     const matchId = c.req.param("id");
     await deleteMatchPersonalRecordsSafely(db, c.env.BUCKET, matchId);
     await MatchService.deleteMatch(db, matchId);
-    return c.json({ success: true });
+    return c.json({ success: true, deletedMatchId: matchId });
   } catch (error) {
-    return c.json({ success: false, error: "Failed to delete match" }, 500);
+    console.error("Failed to delete match completely:", error);
+    return c.json({ success: false, error: "試合データの削除に失敗しました" }, 500);
   }
 });
 

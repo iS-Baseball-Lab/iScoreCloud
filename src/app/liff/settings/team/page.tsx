@@ -1,30 +1,98 @@
 // filepath: src/app/liff/settings/team/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { 
-  Users, 
   ShieldCheck, 
-  Sliders, 
   MapPin, 
   Car, 
-  SendHorizontal, 
-  Check, 
   Save, 
   ChevronRight, 
-  Sparkles,
   Layers,
-  Info,
-  Calendar,
   Building,
   Bell,
-  BookOpen
+  BookOpen,
+  ImagePlus,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { toast } from "sonner";
+
+interface TeamLogoApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  teamId?: string;
+  logoImageUrl?: string | null;
+  error?: string;
+}
+
+async function compressTeamLogoImage(file: File): Promise<{
+  dataUrl: string;
+  mimeType: string;
+}> {
+  // SVG はベクター鮮明度を維持したまま DataURL 化（最大 512KB）
+  if (file.type === "image/svg+xml") {
+    if (file.size > 512 * 1024) {
+      throw new Error("SVG画像は 512KB 以下のファイルを選択してください");
+    }
+    const svgDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("SVGファイルの読み込みに失敗しました"));
+      reader.readAsDataURL(file);
+    });
+    return { dataUrl: svgDataUrl, mimeType: "image/svg+xml" };
+  }
+
+  const rawDataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("画像ファイルの読み込みに失敗しました"));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("画像のデコードに失敗しました"));
+    el.src = rawDataUrl;
+  });
+
+  const MAX_SIDE = 512;
+  const scale = Math.min(1, MAX_SIDE / Math.max(img.width || 1, img.height || 1));
+  const targetW = Math.max(1, Math.round(img.width * scale));
+  const targetH = Math.max(1, Math.round(img.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return { dataUrl: rawDataUrl, mimeType: file.type || "image/png" };
+  }
+  ctx.clearRect(0, 0, targetW, targetH);
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+
+  // PNG / WebP は透過背景を保持、JPEG は高画質圧縮
+  const keepAlpha = file.type === "image/png" || file.type === "image/webp";
+  const outputMime = keepAlpha ? "image/png" : "image/jpeg";
+  let dataUrl = keepAlpha
+    ? canvas.toDataURL("image/png")
+    : canvas.toDataURL("image/jpeg", 0.88);
+
+  // 万一 PNG が大きい場合は WebP へフォールバック圧縮
+  if (dataUrl.length > 2_000_000) {
+    dataUrl = canvas.toDataURL("image/webp", 0.85);
+    return { dataUrl, mimeType: "image/webp" };
+  }
+
+  return { dataUrl, mimeType: outputMime };
+}
 
 const ORGANIZATION_CATEGORIES = [
   { id: "gakudou", label: "学童・少年野球 (小学生)" },
@@ -43,11 +111,16 @@ const DEFAULT_TARGET_GROUPS = [
 ];
 
 export default function LiffTeamSettingsPage() {
-  const { currentTeam } = useLiff();
+  const { currentTeam, refreshTeams, updateCurrentTeamLogo } = useLiff();
+  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // チーム基本情報ステート
   const [teamName, setTeamName] = useState(currentTeam?.name || "");
   const [category, setCategory] = useState("gakudou");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(
+    currentTeam?.logoImageUrl || null
+  );
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   // 活動区分・班設定
   const [targetGroups, setTargetGroups] = useState<string[]>(
@@ -62,6 +135,7 @@ export default function LiffTeamSettingsPage() {
     const tid = currentTeam?.id || "default";
     const savedName = localStorage.getItem(`iscore_team_name_${tid}`);
     setTeamName(currentTeam?.name || savedName || "");
+    setLogoPreviewUrl(currentTeam?.logoImageUrl || null);
 
     try {
       const savedGroups = localStorage.getItem(`iscore_team_target_groups_${tid}`);
@@ -87,7 +161,72 @@ export default function LiffTeamSettingsPage() {
       setTargetGroups(DEFAULT_TARGET_GROUPS);
       setCategory("gakudou");
     }
-  }, [currentTeam?.id, currentTeam?.name]);
+  }, [currentTeam?.id, currentTeam?.name, currentTeam?.logoImageUrl]);
+
+  const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const targetTeamId = currentTeam?.id || "demo-team";
+    setIsUploadingLogo(true);
+    try {
+      const { dataUrl, mimeType } = await compressTeamLogoImage(file);
+      const res = await fetch(`/api/liff/teams/${encodeURIComponent(targetTeamId)}/logo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          mimeType,
+        }),
+      });
+      const data = (await res.json()) as TeamLogoApiResponse;
+      if (!res.ok || !data.success || !data.logoImageUrl) {
+        throw new Error(data.error || "チームロゴの保存に失敗しました");
+      }
+
+      setLogoPreviewUrl(data.logoImageUrl);
+      updateCurrentTeamLogo(data.logoImageUrl);
+      invalidateLiffApiCache();
+      if (!data.isDemo) {
+        void refreshTeams();
+      }
+      toast.success("チームロゴを更新しました");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "チームロゴの保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!logoPreviewUrl || isUploadingLogo) return;
+    const targetTeamId = currentTeam?.id || "demo-team";
+    setIsUploadingLogo(true);
+    try {
+      const res = await fetch(`/api/liff/teams/${encodeURIComponent(targetTeamId)}/logo`, {
+        method: "DELETE",
+      });
+      const data = (await res.json()) as TeamLogoApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "チームロゴの削除に失敗しました");
+      }
+
+      setLogoPreviewUrl(null);
+      updateCurrentTeamLogo(undefined);
+      invalidateLiffApiCache();
+      if (!data.isDemo) {
+        void refreshTeams();
+      }
+      toast.success("チームロゴを削除しました");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "チームロゴの削除に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
 
   const saveSetting = (key: string, value: string) => {
     if (typeof window !== "undefined") {
@@ -164,6 +303,83 @@ export default function LiffTeamSettingsPage() {
           </div>
 
           <div className="p-4 space-y-3.5">
+            {/* チームロゴ設定 */}
+            <div className="space-y-2 pb-3.5 border-b border-border">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-foreground">
+                  チームロゴ（エンブレム）
+                </label>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  透過PNG・JPG・WebP・SVG対応
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3.5 p-3 rounded-xl bg-muted/40 border border-border">
+                <div className="w-16 h-16 rounded-2xl border border-border bg-card shadow-2xs flex items-center justify-center overflow-hidden shrink-0">
+                  {logoPreviewUrl ? (
+                    <img
+                      src={logoPreviewUrl}
+                      alt="チームロゴ"
+                      className="w-full h-full object-contain p-1"
+                    />
+                  ) : (
+                    <span className="text-sm font-black text-primary select-none">
+                      {(currentTeam?.orgName || currentTeam?.name || "TM")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0 space-y-2">
+                  <p className="text-[11px] font-bold text-muted-foreground leading-snug">
+                    上部ヘッダー・チーム切替メニュー・選手名鑑などに表示されます。
+                  </p>
+
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleLogoFileChange}
+                    className="hidden"
+                  />
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isUploadingLogo}
+                      onClick={() => logoFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                    >
+                      {isUploadingLogo ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span>反映中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImagePlus className="w-3.5 h-3.5 shrink-0" />
+                          <span>{logoPreviewUrl ? "ロゴを変更" : "ロゴを設定"}</span>
+                        </>
+                      )}
+                    </button>
+
+                    {logoPreviewUrl && (
+                      <button
+                        type="button"
+                        disabled={isUploadingLogo}
+                        onClick={handleRemoveLogo}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>削除</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* チーム名 */}
             <div className="space-y-1">
               <label className="text-xs font-black text-foreground">チーム名称</label>

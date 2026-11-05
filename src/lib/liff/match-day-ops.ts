@@ -16,16 +16,10 @@ export interface MatchStaffRolePreset {
 
 export const DEFAULT_MATCH_STAFF_ROLES: readonly MatchStaffRolePreset[] = [
   {
-    roleKey: "plate_umpire",
-    roleLabel: "球審",
-    shortHint: "主審担当",
-    notePlaceholder: "例: 奇数回・防具持参",
-  },
-  {
-    roleKey: "base_umpire",
-    roleLabel: "塁審",
-    shortHint: "1・2・3塁審",
-    notePlaceholder: "例: 1塁 小西父 / 3塁 中島父",
+    roleKey: "umpire",
+    roleLabel: "審判",
+    shortHint: "球審・塁審（当日割振）",
+    notePlaceholder: "例: 審判服・防具持参（球審/塁審は当日決定）",
   },
   {
     roleKey: "scorer",
@@ -155,6 +149,88 @@ const VALID_CARPOOL_MODES = new Set<MatchCarpoolMode>([
   "none",
 ]);
 
+const LEGACY_UMPIRE_ROLE_KEYS = new Set([
+  "umpire",
+  "plate_umpire",
+  "base_umpire",
+]);
+const LEGACY_UMPIRE_ROLE_LABELS = new Set(["審判", "球審", "塁審"]);
+
+function isUmpireStaffRole(roleKey: string, roleLabel: string): boolean {
+  return (
+    LEGACY_UMPIRE_ROLE_KEYS.has(roleKey) ||
+    LEGACY_UMPIRE_ROLE_LABELS.has(roleLabel.trim())
+  );
+}
+
+/**
+ * 既存の「球審」「塁審」個別データを「審判（umpire）」1枠へ自動統合する（後方互換対応）
+ */
+export function normalizeUnifiedStaffRoles(
+  rawRoles: readonly MatchStaffRoleAssignment[] | undefined | null
+): MatchStaffRoleAssignment[] {
+  if (!rawRoles || rawRoles.length === 0) return [];
+
+  const result: MatchStaffRoleAssignment[] = [];
+  let mergedUmpireIndex = -1;
+  const umpireAssignees: string[] = [];
+  const umpireAssigneeSet = new Set<string>();
+  const umpireNotes: string[] = [];
+  const umpireNoteSet = new Set<string>();
+
+  for (const item of rawRoles) {
+    const cleanKey = (item.roleKey || "").trim();
+    const cleanLabel = (item.roleLabel || "").trim();
+    if (!cleanLabel) continue;
+
+    const cleanAssignees = (item.assignees || [])
+      .map((a) => a.trim())
+      .filter((a) => a.length > 0);
+    const cleanNote = (item.note || "").trim();
+
+    if (cleanAssignees.length === 0 && !cleanNote) continue;
+
+    if (isUmpireStaffRole(cleanKey, cleanLabel)) {
+      if (mergedUmpireIndex === -1) {
+        mergedUmpireIndex = result.length;
+        result.push({
+          roleKey: "umpire",
+          roleLabel: "審判",
+          assignees: [],
+        });
+      }
+      for (const person of cleanAssignees) {
+        if (!umpireAssigneeSet.has(person)) {
+          umpireAssigneeSet.add(person);
+          umpireAssignees.push(person);
+        }
+      }
+      if (cleanNote && !umpireNoteSet.has(cleanNote)) {
+        umpireNoteSet.add(cleanNote);
+        umpireNotes.push(cleanNote);
+      }
+    } else {
+      result.push({
+        roleKey: cleanKey || `custom_${result.length + 1}`,
+        roleLabel: cleanLabel,
+        assignees: cleanAssignees,
+        note: cleanNote || undefined,
+      });
+    }
+  }
+
+  if (mergedUmpireIndex !== -1) {
+    result[mergedUmpireIndex] = {
+      roleKey: "umpire",
+      roleLabel: "審判",
+      assignees: umpireAssignees,
+      note: umpireNotes.length > 0 ? umpireNotes.join(" / ") : undefined,
+    };
+  }
+
+  return result;
+}
+
 export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
   if (!raw) return {};
   let obj: Record<string, unknown> | null = null;
@@ -182,7 +258,7 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
       ? (obj.carpoolMode as MatchCarpoolMode)
       : "auto";
 
-  const staffRoles: MatchStaffRoleAssignment[] = [];
+  const parsedStaffRoles: MatchStaffRoleAssignment[] = [];
   if (Array.isArray(obj.staffRoles)) {
     for (const item of obj.staffRoles) {
       if (!item || typeof item !== "object") continue;
@@ -197,8 +273,8 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
         : [];
       const note = typeof rec.note === "string" ? rec.note.trim() : "";
       if (roleLabel && (assignees.length > 0 || note.length > 0)) {
-        staffRoles.push({
-          roleKey: roleKey || `custom_${staffRoles.length + 1}`,
+        parsedStaffRoles.push({
+          roleKey: roleKey || `custom_${parsedStaffRoles.length + 1}`,
           roleLabel,
           assignees,
           note: note || undefined,
@@ -206,6 +282,7 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
       }
     }
   }
+  const staffRoles = normalizeUnifiedStaffRoles(parsedStaffRoles);
 
   const str = (v: unknown): string | undefined => {
     if (typeof v !== "string") return undefined;
@@ -243,7 +320,7 @@ export function getFilledStaffRoles(
   ops: MatchDayOps | null | undefined
 ): MatchStaffRoleAssignment[] {
   if (!ops?.staffRoles) return [];
-  return ops.staffRoles
+  return normalizeUnifiedStaffRoles(ops.staffRoles)
     .filter(
       (r) =>
         r.roleLabel.trim().length > 0 &&

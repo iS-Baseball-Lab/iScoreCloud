@@ -171,7 +171,7 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
     venueNotes: "試合開始45分前よりアップスペース利用可",
     matchDayOps: {
       staffRoles: [
-        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "umpire", roleLabel: "審判", assignees: ["小西 父", "中島 父"], note: "球審・塁審（当日割振）" },
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
@@ -242,8 +242,7 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
       cargoCarMember: "山下 監督（ハイエース）",
       carpoolSummaryNote: "高速代・ガソリン代は1家族約600円で後日精算",
       staffRoles: [
-        { roleKey: "plate_umpire", roleLabel: "球審", assignees: ["田中 パパ"], note: "本部派遣と交代制" },
-        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁（審判服着用）" },
+        { roleKey: "umpire", roleLabel: "審判", assignees: ["田中 パパ", "小西 父", "中島 父"], note: "審判服着用（球審・塁審は当日決定）" },
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"], note: "ベンチ横カウント操作" },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
@@ -276,7 +275,7 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
     venueNotes: "試合開始45分前よりアップスペース利用可",
     matchDayOps: {
       staffRoles: [
-        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "umpire", roleLabel: "審判", assignees: ["小西 父", "中島 父"], note: "球審・塁審（当日割振）" },
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
@@ -381,6 +380,20 @@ export function isDemoMatchOrTeam(matchId?: string | null, teamId?: string | nul
 }
 
 const CUSTOM_DEMO_MATCHES_KEY = "iscore_demo_custom_matches";
+const DELETED_DEMO_MATCH_IDS_KEY = "iscore_demo_deleted_match_ids";
+
+export function loadDeletedDemoMatchIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(DELETED_DEMO_MATCH_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((id): id is string => typeof id === "string"));
+  } catch {
+    return new Set();
+  }
+}
 
 export function loadCustomDemoMatches(): Match[] {
   if (typeof window === "undefined") return [];
@@ -388,7 +401,8 @@ export function loadCustomDemoMatches(): Match[] {
     const raw = localStorage.getItem(CUSTOM_DEMO_MATCHES_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as Match[];
-    return Array.isArray(parsed) ? parsed : [];
+    const deletedSet = loadDeletedDemoMatchIds();
+    return Array.isArray(parsed) ? parsed.filter((m) => !deletedSet.has(m.id)) : [];
   } catch {
     return [];
   }
@@ -398,12 +412,32 @@ export function saveCustomDemoMatch(match: Match): void {
   DEMO_MATCH_MAP[match.id] = match;
   if (typeof window === "undefined") return;
   try {
+    const deletedSet = loadDeletedDemoMatchIds();
+    if (deletedSet.has(match.id)) {
+      deletedSet.delete(match.id);
+      localStorage.setItem(DELETED_DEMO_MATCH_IDS_KEY, JSON.stringify([...deletedSet]));
+    }
     const existing = loadCustomDemoMatches().filter((m) => m.id !== match.id);
     localStorage.setItem(CUSTOM_DEMO_MATCHES_KEY, JSON.stringify([match, ...existing]));
   } catch {}
 }
 
+export function deleteDemoMatch(matchId: string): void {
+  delete DEMO_MATCH_MAP[matchId];
+  if (typeof window === "undefined") return;
+  try {
+    const remainingCustom = loadCustomDemoMatches().filter((m) => m.id !== matchId);
+    localStorage.setItem(CUSTOM_DEMO_MATCHES_KEY, JSON.stringify(remainingCustom));
+    const deletedSet = loadDeletedDemoMatchIds();
+    deletedSet.add(matchId);
+    localStorage.setItem(DELETED_DEMO_MATCH_IDS_KEY, JSON.stringify([...deletedSet]));
+    localStorage.removeItem(`iscore_demo_lineups_${matchId}`);
+  } catch {}
+}
+
 export function getDemoMatchById(matchId: string): Match | null {
+  const deletedSet = loadDeletedDemoMatchIds();
+  if (deletedSet.has(matchId)) return null;
   const custom = loadCustomDemoMatches().find((m) => m.id === matchId);
   if (custom) {
     DEMO_MATCH_MAP[matchId] = custom;
@@ -414,9 +448,12 @@ export function getDemoMatchById(matchId: string): Match | null {
 }
 
 export function getHydratedDemoMatchCards(baseList?: DemoMatchCardItem[]): DemoMatchCardItem[] {
+  const deletedSet = loadDeletedDemoMatchIds();
   const customMatches = loadCustomDemoMatches();
   const customById = new Map(customMatches.map((m) => [m.id, m]));
-  const base = baseList && baseList.length > 0 ? baseList : DEMO_MATCH_CARDS;
+  const base = (baseList && baseList.length > 0 ? baseList : DEMO_MATCH_CARDS).filter(
+    (m) => !deletedSet.has(m.id)
+  );
   const existingIds = new Set(base.map((m) => m.id));
 
   const customCards: DemoMatchCardItem[] = customMatches

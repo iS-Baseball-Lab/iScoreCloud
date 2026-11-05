@@ -1,7 +1,14 @@
 // filepath: src/services/match.service.ts
 import { eq, desc, asc, sql, and, inArray } from "drizzle-orm";
 import { matches, tournaments, venues, matchLineups } from "@/db/schema/match";
-import { playLogs, atBats, baseAdvances, pitches, matchUndoHistories } from "@/db/schema/score";
+import {
+  playLogs,
+  atBats,
+  baseAdvances,
+  pitches,
+  matchUndoHistories,
+  matchScorebookSnapshots,
+} from "@/db/schema/score";
 import { players } from "@/db/schema/team";
 import { buildGoogleMapsEmbedFromUrl, expandGoogleMapsShortUrl } from "@/lib/google-maps";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
@@ -482,18 +489,32 @@ export const MatchService = {
     }).where(eq(matches.id, matchId));
   },
 
-  // 7. 試合削除
+  // 7. 試合削除（関連テーブルすべてを外部キー制約順・任意テーブル耐障害付きで完全削除）
   async deleteMatch(db: DrizzleDB, matchId: string) {
-    // 外部キー制約（base_advances.pitch_id -> pitches.id, play_logs.at_bat_id -> at_bats.id）を遵守し子テーブルから順に削除
     await db.batch([
       db.delete(baseAdvances).where(eq(baseAdvances.matchId, matchId)) as any,
       db.delete(playLogs).where(eq(playLogs.matchId, matchId)) as any,
     ]);
     await db.run(sql`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id = ${matchId})`);
 
+    try {
+      await db
+        .delete(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId));
+    } catch {
+      // optional snapshot table
+    }
+
+    try {
+      await db
+        .delete(matchUndoHistories)
+        .where(eq(matchUndoHistories.matchId, matchId));
+    } catch {
+      // optional undo table
+    }
+
     await db.batch([
       db.delete(atBats).where(eq(atBats.matchId, matchId)) as any,
-      db.delete(matchUndoHistories).where(eq(matchUndoHistories.matchId, matchId)) as any,
       db.delete(matchLineups).where(eq(matchLineups.matchId, matchId)) as any,
       db.delete(matches).where(eq(matches.id, matchId)) as any,
     ]);

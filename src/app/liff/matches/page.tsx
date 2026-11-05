@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, Suspense, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
@@ -55,6 +55,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DEMO_LINEUP_PLAYERS,
+  deleteDemoMatch,
   getDemoAdjacentMatches,
   getDemoMatchById,
   getHydratedDemoMatchCards,
@@ -103,6 +104,7 @@ import {
   DeletePersonalStatsModal,
   type DeletePersonalStatsOptions,
 } from "@/components/matches/DeletePersonalStatsModal";
+import { DeleteMatchModal } from "@/components/liff/DeleteMatchModal";
 import {
   clearScorebookDraft,
   peekScorebookDraftMeta,
@@ -115,6 +117,12 @@ interface DeletePersonalStatsApiResponse {
   deletedAtBatsCount?: number;
   clearLineups?: boolean;
   resetMatchScore?: boolean;
+  error?: string;
+}
+
+interface DeleteMatchApiResponse {
+  success?: boolean;
+  deletedMatchId?: string;
   error?: string;
 }
 
@@ -287,6 +295,7 @@ function buildVenueDisplayInfo(match: Match): ResolvedVenueDisplay {
 }
 
 function MatchesContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
@@ -318,6 +327,8 @@ function MatchesContent() {
   const [isAddressCopied, setIsAddressCopied] = useState(false);
   const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
   const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
+  const [showDeleteMatchModal, setShowDeleteMatchModal] = useState(false);
+  const [isDeletingMatch, setIsDeletingMatch] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
   const [opsAdultMembers, setOpsAdultMembers] = useState<LiffAdultMemberOption[]>([]);
   const [opsMyIdentity, setOpsMyIdentity] = useState<LiffMyMatchIdentity | null>(null);
@@ -443,11 +454,54 @@ function MatchesContent() {
     [match, isDeletingPersonalStats, currentTeam?.id]
   );
 
+  const handleDeleteMatch = useCallback(async () => {
+    if (!match || isDeletingMatch) return;
+    setIsDeletingMatch(true);
+    const deletingId = match.id;
+    try {
+      const teamKey = currentTeam?.id || "default";
+      const draftMeta = peekScorebookDraftMeta(teamKey);
+      if (draftMeta?.selectedMatchId === deletingId) {
+        await clearScorebookDraft(teamKey);
+      }
+
+      if (isDemoMatchId(deletingId)) {
+        deleteDemoMatch(deletingId);
+        invalidateLiffApiCache();
+        setMatchesList((prev) => prev.filter((item) => item.id !== deletingId));
+        setShowDeleteMatchModal(false);
+        toast.success("試合データとすべての関連データを削除しました（デモ）");
+        router.replace("/liff/matches");
+        return;
+      }
+
+      const res = await fetch(`/api/matches/${encodeURIComponent(deletingId)}`, {
+        method: "DELETE",
+      });
+      const data = (await res.json()) as DeleteMatchApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "試合データの削除に失敗しました");
+      }
+
+      invalidateLiffApiCache();
+      setMatchesList((prev) => prev.filter((item) => item.id !== deletingId));
+      setShowDeleteMatchModal(false);
+      toast.success("試合データとすべての関連データを削除しました");
+      router.replace("/liff/matches");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg || "試合データの削除に失敗しました");
+    } finally {
+      setIsDeletingMatch(false);
+    }
+  }, [match, isDeletingMatch, currentTeam?.id, router]);
+
   // 1. 試合詳細 ＆ 出場メンバー・成績データのロード (matchId がある場合)
   useEffect(() => {
     setIsAddressCopied(false);
     setLineupTeamTab("my");
     setShowDeleteStatsModal(false);
+    setShowDeleteMatchModal(false);
     setIsManageMenuOpen(false);
     setInspectedCellModalState(null);
     setOpsEditorState({ isOpen: false, initialTab: "guide" });
@@ -2438,206 +2492,206 @@ function MatchesContent() {
           )}
 
           {/* ⚙️ 6. ページ最下部：折りたたみ式の「試合データの修正・削除」まとめエリア */}
-          {!isDemo && !isDemoMatchId(match.id) && (
-            <section
-              aria-label="試合データの修正・削除"
-              className="pt-1"
-            >
-              <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-                <button
-                  type="button"
-                  aria-expanded={isManageMenuOpen}
-                  onClick={() => setIsManageMenuOpen((prev) => !prev)}
-                  className="w-full bg-[#0f172a] hover:bg-slate-900 text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shrink-0">
-                      <Settings className="w-4 h-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-black text-white leading-snug">
-                        試合データの修正・設定・削除
-                      </p>
-                      <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
-                        基本情報・打席結果・スタメンの修正、記号設定、データ削除
-                      </p>
-                    </div>
+          <section
+            aria-label="試合データの修正・削除"
+            className="pt-1"
+          >
+            <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <button
+                type="button"
+                aria-expanded={isManageMenuOpen}
+                onClick={() => setIsManageMenuOpen((prev) => !prev)}
+                className="w-full bg-[#0f172a] hover:bg-slate-900 text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2.5 text-left transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200 shrink-0">
+                    <Settings className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-white leading-snug">
+                      試合データの修正・設定・削除
+                    </p>
+                    <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
+                      基本情報・打席結果・スタメンの修正、記号設定、試合削除
+                    </p>
                   </div>
+                </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
-                    {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
-                      hasPersonalStatsData ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-emerald-500 text-slate-950 border-emerald-500">
-                          <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
-                          <span>取込済</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-slate-800 text-slate-200 border-slate-700">
-                          未取込
-                        </span>
-                      )
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isFutureOrScheduled && !isRainout && !isStatsLoading && (
+                    hasPersonalStatsData ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black bg-emerald-500 text-slate-950 border-emerald-500">
+                        <CheckCircle2 className="w-3 h-3 shrink-0 text-slate-950" />
+                        <span>取込済</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black bg-slate-800 text-slate-200 border-slate-700">
+                        未取込
+                      </span>
+                    )
+                  )}
+                  <span className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200">
+                    {isManageMenuOpen ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
                     )}
-                    <span className="w-6 h-6 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-200">
-                      {isManageMenuOpen ? (
-                        <ChevronUp className="w-4 h-4" />
-                      ) : (
-                        <ChevronDown className="w-4 h-4" />
-                      )}
-                    </span>
+                  </span>
+                </div>
+              </button>
+
+              {isManageMenuOpen && (
+                <div className="bg-muted/35 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
+                  {/* 登録・修正アクション一覧 */}
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black text-muted-foreground px-0.5">
+                      データの登録・修正
+                    </p>
+
+                    <Link
+                      href={`/liff/matches/edit?id=${encodeURIComponent(match.id)}`}
+                      className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                          <Calendar className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground leading-snug">
+                            試合の基本情報を編集
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                            対戦相手・日時・球場・試合種別・大会名・攻守・動画URL・得点を変更
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenOpsEditor("guide")}
+                      className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                          <ClipboardList className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground leading-snug">
+                            当日のしおり・審判/スコア担当・配車メモを編集
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                            審判・スコアラー・BSO・LINE速報・ブザー・動画撮影担当、集合・弁当・道具車を設定
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </button>
+
+                    {!isRainout && hasPersonalStatsData && !isDemo && !isDemoMatchId(match.id) && (
+                      <Link
+                        href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                          match.id
+                        )}&mode=edit`}
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-primary/5 border border-primary/25 shadow-2xs active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                            <Edit3 className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              打席結果・選手交代・個人成績を修正
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              保存済みの1球履歴・走者進塁・途中交代・継投を再編集
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-primary shrink-0" />
+                      </Link>
+                    )}
+
+                    <Link
+                      href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
+                      className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                          <Users className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground leading-snug">
+                            {filledStarters.length > 0
+                              ? "スタメン・出欠メンバーを編集"
+                              : "スタメン・出欠メンバーを登録"}
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                            スターティングメンバー・控え・欠席者を変更
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </Link>
+
+                    {!isRainout && !isDemo && !isDemoMatchId(match.id) && (
+                      <Link
+                        href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+                          match.id
+                        )}`}
+                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                            <ScanLine className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground leading-snug">
+                              {hasPersonalStatsData
+                                ? "紙スコアブック画像から再取り込み"
+                                : "紙スコアブックをAIで取り込む"}
+                            </p>
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              {hasPersonalStatsData
+                                ? "新しく撮影したスコアシート画像で上書き取り込み"
+                                : "スコアブック写真から打席・個人成績を一括登録"}
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                      </Link>
+                    )}
+
+                    <Link
+                      href="/liff/settings/score#symbol-rules"
+                      className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
+                          <FileSpreadsheet className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground leading-snug">
+                            スコアブック記号・マス目の設定
+                          </p>
+                          <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                            清書シートのマス目・アウト・空振り(×)・牽制記号などを変更
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </Link>
                   </div>
-                </button>
 
-                {isManageMenuOpen && (
-                  <div className="bg-muted/35 p-3.5 space-y-3 animate-in fade-in slide-in-from-top-1 duration-150">
-                    {/* 登録・修正アクション一覧 */}
-                    <div className="space-y-2">
-                      <p className="text-[10px] font-black text-muted-foreground px-0.5">
-                        データの登録・修正
-                      </p>
+                  {/* 削除アクション */}
+                  <div className="pt-2.5 border-t border-border space-y-2.5">
+                    <p className="text-[10px] font-black text-rose-700 dark:text-rose-400 px-0.5">
+                      データの削除
+                    </p>
 
-                      <Link
-                        href={`/liff/matches/edit?id=${encodeURIComponent(match.id)}`}
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
-                            <Calendar className="w-4 h-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-foreground leading-snug">
-                              試合の基本情報を編集
-                            </p>
-                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                              対戦相手・日時・球場・試合種別・大会名・攻守・動画URL・得点を変更
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </Link>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenOpsEditor("guide")}
-                        className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
-                            <ClipboardList className="w-4 h-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-foreground leading-snug">
-                              当日のしおり・審判/スコア担当・配車メモを編集
-                            </p>
-                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                              球審/塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影担当、集合・弁当・道具車を設定
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </button>
-
-                      {!isRainout && hasPersonalStatsData && (
-                        <Link
-                          href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                            match.id
-                          )}&mode=edit`}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-primary/5 border border-primary/25 shadow-2xs active:scale-[0.99] transition-all"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-                              <Edit3 className="w-4 h-4" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-black text-foreground leading-snug">
-                                打席結果・選手交代・個人成績を修正
-                              </p>
-                              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                                保存済みの1球履歴・走者進塁・途中交代・継投を再編集
-                              </p>
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-primary shrink-0" />
-                        </Link>
-                      )}
-
-                      <Link
-                        href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
-                            <Users className="w-4 h-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-foreground leading-snug">
-                              {filledStarters.length > 0
-                                ? "スタメン・出欠メンバーを編集"
-                                : "スタメン・出欠メンバーを登録"}
-                            </p>
-                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                              スターティングメンバー・控え・欠席者を変更
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </Link>
-
-                      {!isRainout && (
-                        <Link
-                          href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
-                            match.id
-                          )}`}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
-                              <ScanLine className="w-4 h-4" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-black text-foreground leading-snug">
-                                {hasPersonalStatsData
-                                  ? "紙スコアブック画像から再取り込み"
-                                  : "紙スコアブックをAIで取り込む"}
-                              </p>
-                              <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                                {hasPersonalStatsData
-                                  ? "新しく撮影したスコアシート画像で上書き取り込み"
-                                  : "スコアブック写真から打席・個人成績を一括登録"}
-                              </p>
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                        </Link>
-                      )}
-
-                      <Link
-                        href="/liff/settings/score#symbol-rules"
-                        className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary border border-primary/25 flex items-center justify-center shrink-0">
-                            <FileSpreadsheet className="w-4 h-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-foreground leading-snug">
-                              スコアブック記号・マス目の設定
-                            </p>
-                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                              清書シートのマス目・アウト・空振り(×)・牽制記号などを変更
-                            </p>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                      </Link>
-                    </div>
-
-                    {/* 削除アクション */}
-                    <div className="pt-2.5 border-t border-border space-y-2">
-                      <p className="text-[10px] font-black text-rose-700 dark:text-rose-400 px-0.5">
-                        データの削除
-                      </p>
-
-                      {hasPersonalStatsData ? (
+                    {!isDemo && !isDemoMatchId(match.id) && (
+                      hasPersonalStatsData ? (
                         <button
                           type="button"
                           onClick={() => setShowDeleteStatsModal(true)}
@@ -2663,13 +2717,35 @@ function MatchesContent() {
                           <Trash2 className="w-3.5 h-3.5 shrink-0 opacity-60" />
                           <span>現在この試合に削除対象の個人データはありません</span>
                         </div>
-                      )}
-                    </div>
+                      )
+                    )}
+
+                    {/* 試合データ自体＋全関連データの完全削除 */}
+                    <button
+                      type="button"
+                      onClick={() => setShowDeleteMatchModal(true)}
+                      className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-950/70 border-2 border-rose-500 shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                          <AlertTriangle className="w-4 h-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-rose-700 dark:text-rose-300 leading-snug">
+                            この試合データ自体を削除
+                          </p>
+                          <p className="text-[10px] font-bold text-foreground/80 leading-snug mt-0.5">
+                            試合予定/結果・スコア・スタメン・打席成績・役割メモなど関連データもすべて完全消去
+                          </p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                    </button>
                   </div>
-                )}
-              </div>
-            </section>
-          )}
+                </div>
+              )}
+            </div>
+          </section>
 
           <DeletePersonalStatsModal
             isOpen={showDeleteStatsModal}
@@ -2682,6 +2758,20 @@ function MatchesContent() {
             isDeleting={isDeletingPersonalStats}
             onCancel={() => setShowDeleteStatsModal(false)}
             onConfirm={(options) => void handleDeletePersonalStats(options)}
+          />
+
+          <DeleteMatchModal
+            isOpen={showDeleteMatchModal}
+            matchId={match.id}
+            opponentName={match.opponent}
+            matchDateText={formattedDateTime || match.date}
+            scoreSummaryText={
+              isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
+            }
+            hasPersonalStatsData={hasPersonalStatsData && !isDemo && !isDemoMatchId(match.id)}
+            isDeleting={isDeletingMatch}
+            onCancel={() => setShowDeleteMatchModal(false)}
+            onConfirm={() => void handleDeleteMatch()}
           />
 
           <ScorebookCellGuideModal
