@@ -1737,13 +1737,128 @@ function renderPlayNotation(
   );
 }
 
+export function renderPitcherChangeOverlaySvg(
+  cell: CompiledScorebookCell | undefined,
+  rules: ScorebookSymbolRules,
+  ox: number,
+  oy: number
+): React.ReactNode {
+  if (!cell?.hasPitcherChangeBefore) return null;
+
+  const pWaveColor = rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
+  const rawPitcherName = (cell.newPitcherName || "")
+    .replace(/\u3000/g, " ")
+    .trim();
+  const isGenericPlaceholderName =
+    rawPitcherName === "相手投手" || rawPitcherName === "投手";
+  const pSurname =
+    rawPitcherName && !isGenericPlaceholderName
+      ? (rawPitcherName.split(/\s+/)[0] || rawPitcherName).slice(0, 5)
+      : "";
+  const pLabel =
+    pSurname ||
+    (cell.newPitcherUniformNumber ? `#${cell.newPitcherUniformNumber}` : "");
+
+  if (typeof cell.pitcherChangeAtPitchIndex === "number") {
+    const stepY =
+      oy +
+      Math.min(
+        CELL_H - 12,
+        Math.max(20, 8.5 + cell.pitcherChangeAtPitchIndex * 8.8)
+      );
+    const hasPitchesBeforeChange =
+      (cell.atBat?.pitches?.length || 0) > 0 &&
+      cell.pitcherChangeAtPitchIndex > 0;
+    const labelX = hasPitchesBeforeChange ? ox + BSO_W + 1.8 : ox + 1.8;
+    const waveRightX = ox + BSO_W + 16.5;
+
+    return (
+      <g>
+        <path
+          d={buildHorizontalWavePath(ox + 1.2, waveRightX, stepY, 1.5, 5.6)}
+          fill="none"
+          stroke={pWaveColor}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+        <path
+          d={buildVerticalWavePath(
+            ox + 1.2,
+            stepY,
+            oy + CELL_H - 1.5,
+            1.5,
+            5.8
+          )}
+          fill="none"
+          stroke={pWaveColor}
+          strokeWidth={1.6}
+          strokeLinecap="round"
+        />
+        {pLabel && (
+          <text
+            x={labelX}
+            y={stepY - 2.6}
+            fontSize={7.8}
+            fontWeight={900}
+            textAnchor="start"
+            fill={pWaveColor}
+            stroke={COLOR_PAPER}
+            strokeWidth={2.5}
+            paintOrder="stroke"
+            strokeLinejoin="round"
+            fontFamily={FONT_SANS}
+          >
+            {pLabel}
+          </text>
+        )}
+      </g>
+    );
+  }
+
+  return (
+    <g>
+      <path
+        d={buildHorizontalWavePath(
+          ox + 0.8,
+          ox + CELL_W - 0.8,
+          oy + 0.5,
+          1.55,
+          6.0
+        )}
+        fill="none"
+        stroke={pWaveColor}
+        strokeWidth={1.65}
+        strokeLinecap="round"
+      />
+      {pLabel && (
+        <text
+          x={ox + 1.8}
+          y={oy - 2.6}
+          fontSize={7.8}
+          fontWeight={900}
+          textAnchor="start"
+          fill={pWaveColor}
+          stroke={COLOR_PAPER}
+          strokeWidth={2.6}
+          paintOrder="stroke"
+          strokeLinejoin="round"
+          fontFamily={FONT_SANS}
+        >
+          {pLabel}
+        </text>
+      )}
+    </g>
+  );
+}
+
 export function renderSingleScorebookCellSvg(
   cell: CompiledScorebookCell | undefined,
   rules: ScorebookSymbolRules,
   ox: number,
   oy: number,
   hasUpperRightSubMark = false,
-  standaloneSingleCell = false
+  standaloneSingleCell = false,
+  suppressPitcherChangeInline = false
 ): React.ReactNode {
   const ab = cell?.atBat ?? null;
   const cellGeom = getCellGeometry(rules);
@@ -1867,108 +1982,9 @@ export function renderSingleScorebookCellSvg(
           )
         )}
 
-      {/* 投手交代の赤波線マーク（打席前＝マス上辺赤波線 ／ イニング・打席途中交代＝階段状赤波線） */}
-      {cell?.hasPitcherChangeBefore &&
-        (() => {
-          const pWaveColor =
-            rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED;
-          const pSurname = cell.newPitcherName
-            ? (
-                cell.newPitcherName.replace(/\u3000/g, " ").trim().split(/\s+/)[0] ||
-                cell.newPitcherName
-              ).slice(0, 4)
-            : "";
-          const pLabel = cell.newPitcherUniformNumber
-            ? `#${cell.newPitcherUniformNumber}`
-            : pSurname;
-
-          if (typeof cell.pitcherChangeAtPitchIndex === "number") {
-            const stepY =
-              oy +
-              Math.min(
-                CELL_H - 12,
-                Math.max(19, 7.5 + cell.pitcherChangeAtPitchIndex * 8.8)
-              );
-            return (
-              <g>
-                <path
-                  d={buildHorizontalWavePath(
-                    ox + 1.4,
-                    ox + BSO_W + 4.5,
-                    stepY,
-                    1.55,
-                    5.6
-                  )}
-                  fill="none"
-                  stroke={pWaveColor}
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                />
-                <path
-                  d={buildVerticalWavePath(
-                    ox + 1.4,
-                    stepY,
-                    oy + CELL_H - 1.5,
-                    1.55,
-                    5.8
-                  )}
-                  fill="none"
-                  stroke={pWaveColor}
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                />
-                {pLabel && (
-                  <text
-                    x={ox + BSO_W + 6.5}
-                    y={stepY + 2.6}
-                    fontSize={7.6}
-                    fontWeight={900}
-                    fill={pWaveColor}
-                    stroke={COLOR_PAPER}
-                    strokeWidth={2.3}
-                    paintOrder="stroke"
-                    fontFamily={FONT_SANS}
-                  >
-                    {pLabel}
-                  </text>
-                )}
-              </g>
-            );
-          }
-
-          return (
-            <g>
-              <path
-                d={buildHorizontalWavePath(
-                  ox + 1,
-                  ox + CELL_W - 1,
-                  oy + 1.7,
-                  1.6,
-                  6.2
-                )}
-                fill="none"
-                stroke={pWaveColor}
-                strokeWidth={1.65}
-                strokeLinecap="round"
-              />
-              {pLabel && (
-                <text
-                  x={ox + BSO_W + 2.4}
-                  y={oy + 9.6}
-                  fontSize={7.6}
-                  fontWeight={900}
-                  fill={pWaveColor}
-                  stroke={COLOR_PAPER}
-                  strokeWidth={2.3}
-                  paintOrder="stroke"
-                  fontFamily={FONT_SANS}
-                >
-                  {pLabel}
-                </text>
-              )}
-            </g>
-          );
-        })()}
+      {/* 投手交代の赤波線＋左上の投手名（清書シート全体では上段セルによる隠れ防止のため3Bオーバーレイ層で描画） */}
+      {!suppressPitcherChangeInline &&
+        renderPitcherChangeOverlaySvg(cell, rules, ox, oy)}
 
       {/* 投球履歴 (BSO) */}
       {ab &&
@@ -1999,15 +2015,10 @@ export function renderSingleScorebookCellSvg(
       {playNotation?.infieldHitArc &&
         renderInfieldHitArc(cellGeom, rules, ox, oy)}
 
-      {/* ランニングホームラン(RH) または parallel_bars 時の本塁打用：内側赤ダイヤ二重枠 */}
-      {(playNotation?.isRunningHomeRun ||
-        (rules.hitLine === "parallel_bars" && abHitBases === 4)) &&
-        renderParallelHitInnerDiamond(
-          cellGeom,
-          ox,
-          oy,
-          rules.hitLine === "mono_bold" ? COLOR_INK : COLOR_RED
-        )}
+      {/* parallel_bars 選択時の本塁打用：内側赤ダイヤ二重枠（※ランニングホームランは通常の1重赤ダイヤで描画） */}
+      {rules.hitLine === "parallel_bars" &&
+        abHitBases === 4 &&
+        renderParallelHitInnerDiamond(cellGeom, ox, oy, COLOR_RED)}
 
       {/* quadrant_slash_hr_diamond 時の単打・二塁打・三塁打用：右下赤斜線（／・／／・／／／） */}
       {hasQuadrantHitSlash &&
@@ -2395,6 +2406,7 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
   rules: ScorebookSymbolRules;
   isTriplePlay?: boolean;
   middleRowOffsets?: number[];
+  bottomCellIsInningEnd?: boolean;
 }): React.ReactNode {
   const {
     cellX,
@@ -2403,6 +2415,7 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
     rules,
     isTriplePlay = false,
     middleRowOffsets = [],
+    bottomCellIsInningEnd = false,
   } = params;
 
   if (
@@ -2415,7 +2428,9 @@ export function renderDoublePlayVerticalSpanOverlaySvg(params: {
   const xBar = cellX + CELL_W - 3.0;
   const xTick = cellX + CELL_W - 8.2;
   const yTop = topCellY + 5.0;
-  const yBot = topCellY + spanRows * CELL_H - 5.5;
+  // 下段セルが3アウトチェンジ（右下二本線 //）の場合は括弧下端を上げて // との重なりを防ぐ
+  const yBot =
+    topCellY + spanRows * CELL_H - (bottomCellIsInningEnd ? 14.0 : 5.5);
   const boundaryY = topCellY + CELL_H;
   const dpX = cellX + 71.0;
   const dpY = boundaryY + 3.0;
@@ -2503,6 +2518,7 @@ function renderDoublePlayLinksSvg(
   links: CompiledDoublePlayLink[],
   columns: CompiledScorebookSheetModel["columns"],
   batterRows: CompiledScorebookSheetModel["batterRows"],
+  cellsByKey: CompiledScorebookSheetModel["cellsByKey"],
   rules: ScorebookSymbolRules,
   gridStartX: number,
   battersTopY: number
@@ -2550,68 +2566,28 @@ function renderDoublePlayLinksSvg(
         if (resolved.length === 0) return null;
 
         const tagLabel = link.isTriplePlay ? "TP" : "DP";
-
-        // 先行走者マスが特定できなかった単独DP打席のフォールバック描画
-        if (resolved.length === 1) {
-          const only = resolved[0]!;
-          const cx = gridStartX + only.colIdx * CELL_W;
-          const ry = battersTopY + only.rowIdx * CELL_H;
-          const xBar = cx + CELL_W - 3.0;
-          const xTick = cx + CELL_W - 8.0;
-          const y1 = ry + 5.5;
-          const y2 = ry + CELL_H - 5.5;
-          return (
-            <g key={link.id}>
-              {rules.doublePlayMark === "wavy_link" ? (
-                <path
-                  d={buildVerticalWavePath(xBar, y1, y2, 1.45, 5.6)}
-                  fill="none"
-                  stroke={COLOR_INK}
-                  strokeWidth={1.45}
-                  strokeLinecap="round"
-                />
-              ) : (
-                <path
-                  d={`M ${xTick} ${y1} L ${xBar} ${y1} L ${xBar} ${y2} L ${xTick} ${y2}`}
-                  fill="none"
-                  stroke={COLOR_INK}
-                  strokeWidth={1.65}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              )}
-              <text
-                x={cx + 71.0}
-                y={ry + 10.2}
-                fontSize={8.2}
-                fontWeight={900}
-                textAnchor="middle"
-                fill={COLOR_INK}
-                stroke={COLOR_PAPER}
-                strokeWidth={3.2}
-                paintOrder="stroke"
-                fontFamily={FONT_SANS}
-              >
-                {tagLabel}
-              </text>
-            </g>
-          );
-        }
-
         const firstCol = resolved[0]!.colIdx;
         const sameCol = resolved.every((p) => p.colIdx === firstCol);
         const sortedByRow = [...resolved].sort((a, b) => a.rowIdx - b.rowIdx);
         const minRow = sortedByRow[0]!.rowIdx;
         const maxRow = sortedByRow[sortedByRow.length - 1]!.rowIdx;
+        const isStrictlyAdjacentVerticalSpan =
+          sameCol &&
+          resolved.length >= 2 &&
+          maxRow - minRow === resolved.length - 1;
 
-        // 同一イニング列かつ近接打順（縦2マス等）の右側内を上部〜下部まで括り、1・2マス間にDPを描画
-        if (sameCol && maxRow > minRow && maxRow - minRow <= 3) {
+        // 同一イニング列かつ連続する隣接打順（縦2マス、三重殺は縦3マス）の右側内を上部〜下部まで括り、1・2マス間にDPを描画
+        if (isStrictlyAdjacentVerticalSpan) {
           const cx = gridStartX + firstCol * CELL_W;
           const topCellY = battersTopY + minRow * CELL_H;
           const spanRows = maxRow - minRow + 1;
           const midOffsets = sortedByRow
             .slice(1, -1)
             .map((mid) => mid.rowIdx - minRow);
+          const bottomCellKey = sortedByRow[sortedByRow.length - 1]!.cellKey;
+          const bottomCellIsInningEnd = Boolean(
+            cellsByKey[bottomCellKey]?.isInningEndCell
+          );
           return (
             <React.Fragment key={link.id}>
               {renderDoublePlayVerticalSpanOverlaySvg({
@@ -2621,22 +2597,26 @@ function renderDoublePlayLinksSvg(
                 rules,
                 isTriplePlay: link.isTriplePlay,
                 middleRowOffsets: midOffsets,
+                bottomCellIsInningEnd,
               })}
             </React.Fragment>
           );
         }
 
-        // 打順折り返し（9番→1番等）で離れている場合は無関係な行を跨がず各対象マス右内を括り境界寄りにDPを描画
+        // 間に別打者を挟む場合（1番出塁→2番三振→3番併殺打 等）・打順折り返し（9番→1番）・単独DPマスの場合：
+        // 無関係な中間打者マスを跨がず、実際にアウトになった対象マスの右内側のみを括り、一塁頂点右の空き領域にDPを描画
         return (
           <g key={link.id}>
             {sortedByRow.map((pt) => {
               const cx = gridStartX + pt.colIdx * CELL_W;
               const ry = battersTopY + pt.rowIdx * CELL_H;
+              const isCellInningEnd = Boolean(
+                cellsByKey[pt.cellKey]?.isInningEndCell
+              );
               const xBar = cx + CELL_W - 3.0;
               const xTick = cx + CELL_W - 8.0;
               const y1 = ry + 5.5;
-              const y2 = ry + CELL_H - 5.5;
-              const isBatterCell = pt.cellKey === link.batterCellKey;
+              const y2 = ry + CELL_H - (isCellInningEnd ? 14.0 : 5.5);
               return (
                 <g key={pt.cellKey}>
                   {rules.doublePlayMark === "wavy_link" ? (
@@ -2658,15 +2638,16 @@ function renderDoublePlayLinksSvg(
                     />
                   )}
                   <text
-                    x={cx + 71.0}
-                    y={isBatterCell ? ry + 10.2 : ry + CELL_H - 2.5}
-                    fontSize={8.0}
+                    x={cx + 76.5}
+                    y={ry + 39.8}
+                    fontSize={7.8}
                     fontWeight={900}
                     textAnchor="middle"
                     fill={COLOR_INK}
                     stroke={COLOR_PAPER}
-                    strokeWidth={3.2}
+                    strokeWidth={3.0}
                     paintOrder="stroke"
+                    strokeLinejoin="round"
                     fontFamily={FONT_SANS}
                   >
                     {tagLabel}
@@ -4116,7 +4097,9 @@ export function DigitalScorebookSheet({
                     rules,
                     cx,
                     ry,
-                    hasUpperRightSubMark
+                    hasUpperRightSubMark,
+                    false,
+                    true
                   )}
                 </React.Fragment>
               );
@@ -4196,59 +4179,83 @@ export function DigitalScorebookSheet({
         );
       })}
 
-      {/* ━━━ 3B. 代打(マス左境界)・代走/守備交代(マス右内)の赤波線＋縦書き氏名 ＆ 併殺ブラケット「 ] 」 ━━━ */}
-      {model.batterRows.map((bRow, rowIdx) => {
-        const ry = gridBodyTopY + rowIdx * CELL_H;
-        return model.columns.map((col, colIdx) => {
-          const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
-          const cell = model.cellsByKey[cellKey];
-          if (!cell?.leftOutsideSub && !cell?.rightInsideSub) return null;
-          const cx = gridStartX + colIdx * CELL_W;
-          const prevCol = colIdx > 0 ? model.columns[colIdx - 1] : undefined;
-          const prevCell = prevCol
-            ? model.cellsByKey[
-                `${prevCol.inning}-${prevCol.columnIndex}-${bRow.battingOrder}`
-              ]
-            : undefined;
-          const nextCol =
-            colIdx + 1 < model.columns.length
-              ? model.columns[colIdx + 1]
+      {/* ━━━ 3B. 投手交代(上辺赤波線＋左上氏名)・代打(マス左境界)・代走/守備交代(マス右内) ＆ 併殺ブラケット「 ] 」 ━━━ */}
+      {(() => {
+        const dpBracketCellKeySet = new Set<string>();
+        if (
+          rules.doublePlayMark === "bracket_dp" ||
+          rules.doublePlayMark === "wavy_link"
+        ) {
+          for (const dpLink of model.doublePlayLinks) {
+            for (const k of dpLink.outCellKeys) {
+              dpBracketCellKeySet.add(k);
+            }
+          }
+        }
+
+        return model.batterRows.map((bRow, rowIdx) => {
+          const ry = gridBodyTopY + rowIdx * CELL_H;
+          return model.columns.map((col, colIdx) => {
+            const cellKey = `${col.inning}-${col.columnIndex}-${bRow.battingOrder}`;
+            const cell = model.cellsByKey[cellKey];
+            if (
+              !cell?.leftOutsideSub &&
+              !cell?.rightInsideSub &&
+              !cell?.hasPitcherChangeBefore
+            ) {
+              return null;
+            }
+            const cx = gridStartX + colIdx * CELL_W;
+            const prevCol = colIdx > 0 ? model.columns[colIdx - 1] : undefined;
+            const prevCell = prevCol
+              ? model.cellsByKey[
+                  `${prevCol.inning}-${prevCol.columnIndex}-${bRow.battingOrder}`
+                ]
               : undefined;
-          const nextCell = nextCol
-            ? model.cellsByKey[
-                `${nextCol.inning}-${nextCol.columnIndex}-${bRow.battingOrder}`
-              ]
-            : undefined;
-          const leftSideBlocked =
-            colIdx === 0 ||
-            Boolean(
-              prevCell?.atBat ||
-                prevCell?.isTiebreakRunnerOnly ||
-                prevCell?.rightInsideSub
+            const nextCol =
+              colIdx + 1 < model.columns.length
+                ? model.columns[colIdx + 1]
+                : undefined;
+            const nextCell = nextCol
+              ? model.cellsByKey[
+                  `${nextCol.inning}-${nextCol.columnIndex}-${bRow.battingOrder}`
+                ]
+              : undefined;
+            const leftSideBlocked =
+              colIdx === 0 ||
+              Boolean(
+                prevCell?.atBat ||
+                  prevCell?.isTiebreakRunnerOnly ||
+                  prevCell?.rightInsideSub
+              );
+            const rightInsideShiftLeftPx =
+              cell.rightInsideSub &&
+              ((nextCell?.leftOutsideSub && !leftSideBlocked) ||
+                dpBracketCellKeySet.has(cellKey))
+                ? 14
+                : 0;
+            return (
+              <React.Fragment key={`bchg-${cellKey}`}>
+                {renderPitcherChangeOverlaySvg(cell, rules, cx, ry)}
+                {renderCellSubstitutionsOverlaySvg(
+                  cell,
+                  rules,
+                  cx,
+                  ry,
+                  rightInsideShiftLeftPx,
+                  leftSideBlocked
+                )}
+              </React.Fragment>
             );
-          const rightInsideShiftLeftPx =
-            cell.rightInsideSub && nextCell?.leftOutsideSub && !leftSideBlocked
-              ? 14
-              : 0;
-          return (
-            <React.Fragment key={`bchg-${cellKey}`}>
-              {renderCellSubstitutionsOverlaySvg(
-                cell,
-                rules,
-                cx,
-                ry,
-                rightInsideShiftLeftPx,
-                leftSideBlocked
-              )}
-            </React.Fragment>
-          );
+          });
         });
-      })}
+      })()}
 
       {renderDoublePlayLinksSvg(
         model.doublePlayLinks,
         model.columns,
         model.batterRows,
+        model.cellsByKey,
         rules,
         gridStartX,
         gridBodyTopY

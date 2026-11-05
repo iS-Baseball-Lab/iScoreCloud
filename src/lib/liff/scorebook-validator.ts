@@ -92,12 +92,30 @@ export function inferCanonicalResultCode(
     "other",
   ]);
 
+  const label = (rawLabel || "").trim();
+  const upper = label.toUpperCase();
+
+  if (rawCode === "groundout" || rawCode === "flyout") {
+    if (
+      label.includes("三重殺") ||
+      label.includes("トリプルプレー") ||
+      /\bTP\b/i.test(upper)
+    ) {
+      return "triple_play";
+    }
+    if (
+      label.includes("併殺") ||
+      label.includes("ダブルプレー") ||
+      label.includes("ゲッツー") ||
+      /\bDP\b/i.test(upper)
+    ) {
+      return "double_play";
+    }
+  }
+
   if (rawCode && validCodes.has(rawCode as CanonicalAtBatResult)) {
     return rawCode as CanonicalAtBatResult;
   }
-
-  const label = (rawLabel || "").trim();
-  const upper = label.toUpperCase();
 
   if (upper.includes("HR") || label.includes("本塁打") || label.includes("ホームラン")) {
     return "home_run";
@@ -2222,9 +2240,15 @@ export function reconcileSheetExcessOutsDeterministically(
           changed = true;
         }
       } else if (isSingleBatterOutCode(ab.resultCode)) {
-        const exactOuts = Math.min(3, 1 + occupiedBaseRunnerOuts);
-        if (ab.outsInPlay !== exactOuts) {
-          ab.outsInPlay = exactOuts;
+        const preservedMultiOuts =
+          occupiedBaseRunnerOuts === 0 &&
+          ab.outsInPlay >= 2 &&
+          activeRunnersCount >= 1 &&
+          runningOuts <= 1
+            ? Math.min(3 - runningOuts, 1 + activeRunnersCount, ab.outsInPlay)
+            : Math.min(3, 1 + occupiedBaseRunnerOuts);
+        if (ab.outsInPlay !== preservedMultiOuts) {
+          ab.outsInPlay = preservedMultiOuts;
           changed = true;
         }
       } else if (isSafeBatterReachCode(ab.resultCode)) {

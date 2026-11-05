@@ -1104,9 +1104,14 @@ export function simulateSheetRunners(
       }
 
       // Phase 3: 明示的インプレー進塁が未登録の先行走者に対する野球物理推論
+      // ※ 1死からの併殺打(outsBefore=1, outsInPlay=2 → 3アウト終了)や無死三重殺では
+      //    先行走者の封殺・帰塁アウトを省略せず確実に記録するため、2死かつ単一打者アウト時のみスキップする
       const outsAfterPlay = Math.min(3, outsBefore + Math.max(0, ab.outsInPlay));
       const isThirdOutBatterPlay =
-        outsAfterPlay >= 3 &&
+        outsBefore >= 2 &&
+        ab.outsInPlay <= 1 &&
+        ab.resultCode !== "double_play" &&
+        ab.resultCode !== "triple_play" &&
         isIntrinsicBatterOutResult(
           ab.resultCode,
           ab.battedDirection,
@@ -1117,17 +1122,46 @@ export function simulateSheetRunners(
       const explicitRunnerOutsCount = trackedRunners.filter(
         (tr) => tr.isOut
       ).length;
+      const rawDirTrimmed = (ab.battedDirection || "").trim();
+      const rawLabelTrimmed = (ab.resultLabel || "").trim();
+      const isAerialMultiOutPlay =
+        ab.resultCode === "flyout" ||
+        ab.resultCode === "sac_fly" ||
+        ab.resultCode === "infield_fly" ||
+        ((ab.resultCode === "double_play" || ab.resultCode === "triple_play") &&
+          (/飛|フライ|直|ライナー|[⌒︵]/.test(rawLabelTrimmed) ||
+            /^[1-9][FL](?:-[1-9])?$/i.test(rawDirTrimmed)));
+
+      const expectedTotalRunnerOuts = !isThirdOutBatterPlay
+        ? ab.resultCode === "triple_play"
+          ? Math.max(0, Math.min(3 - outsBefore, 3) - 1)
+          : ab.resultCode === "double_play"
+          ? outsBefore <= 1
+            ? 1
+            : 0
+          : ab.resultCode === "fc" && ab.outsInPlay >= 1
+          ? 1
+          : isForceOutGroundout(
+              ab.resultCode,
+              ab.battedDirection,
+              ab.resultLabel
+            )
+          ? 1
+          : (ab.resultCode === "groundout" ||
+              ab.resultCode === "flyout" ||
+              ab.resultCode === "strikeout") &&
+            ab.outsInPlay >= 2 &&
+            outsBefore <= 1
+          ? Math.min(2, ab.outsInPlay - 1)
+          : 0
+        : 0;
+
+      const missingImplicitRunnerOuts = Math.max(
+        0,
+        expectedTotalRunnerOuts - explicitRunnerOutsCount
+      );
       const hasImplicitRunnerForceOut =
-        !isThirdOutBatterPlay &&
-        explicitRunnerOutsCount === 0 &&
-        ((ab.resultCode === "fc" && ab.outsInPlay >= 1) ||
-          ab.resultCode === "double_play" ||
-          ab.resultCode === "triple_play" ||
-          isForceOutGroundout(
-            ab.resultCode,
-            ab.battedDirection,
-            ab.resultLabel
-          ));
+        missingImplicitRunnerOuts > 0 && !isAerialMultiOutPlay;
 
       const batterInitialBase = getBatterInitialSafeBase(
         ab,
@@ -1199,53 +1233,107 @@ export function simulateSheetRunners(
       );
 
       if (!isThirdOutBatterPlay && trackedRunners.length > 0) {
-        // 3-A. 野選封殺 / ゴロ封殺 / 併殺打 で先行走者アウトが未登録なら該当走者を封殺アウト化
-        if (hasImplicitRunnerForceOut && unmovedInPlayRunners.length > 0) {
-          const dir = (ab.battedDirection || "").trim();
-          const label = (ab.resultLabel || "").trim();
-          let forcedTargetRunner: InternalTrackedRunner | undefined;
-          let outAtBase: OccupiedBaseKey | "HP" = "2B";
+        // 3-A. 野選封殺 / ゴロ封殺 / 併殺打 / 三重殺 / フライ・ライナー飛び出し併殺 で先行走者アウトが未登録なら該当走者をアウト化
+        if (missingImplicitRunnerOuts > 0 && unmovedInPlayRunners.length > 0) {
+          const dir = rawDirTrimmed;
+          const label = rawLabelTrimmed;
+          const dirDigits = dir.match(/[1-9]/g) || [];
+          const lastFielderDigit =
+            dirDigits.length >= 2 ? dirDigits[dirDigits.length - 1] : "";
 
-          if (
-            (/^[1-9]-2/.test(dir) || label.includes("本封")) &&
-            unmovedInPlayRunners.some((r) => r.currentBase === "3B")
-          ) {
-            forcedTargetRunner = unmovedInPlayRunners.find(
-              (r) => r.currentBase === "3B"
-            );
-            outAtBase = "HP";
-          } else if (
-            (/^[1-9]-5/.test(dir) || label.includes("三封")) &&
-            unmovedInPlayRunners.some((r) => r.currentBase === "2B")
-          ) {
-            forcedTargetRunner = unmovedInPlayRunners.find(
-              (r) => r.currentBase === "2B"
-            );
-            outAtBase = "3B";
-          } else if (
-            unmovedInPlayRunners.some((r) => r.currentBase === "1B")
-          ) {
-            forcedTargetRunner = unmovedInPlayRunners.find(
-              (r) => r.currentBase === "1B"
-            );
-            outAtBase = "2B";
-          } else {
-            forcedTargetRunner =
-              unmovedInPlayRunners[unmovedInPlayRunners.length - 1];
-            outAtBase =
-              forcedTargetRunner.currentBase === "3B"
-                ? "HP"
-                : forcedTargetRunner.currentBase === "2B"
-                ? "3B"
-                : "2B";
-          }
+          for (let mIdx = 0; mIdx < missingImplicitRunnerOuts; mIdx++) {
+            const candidates = unmovedInPlayRunners.filter((r) => !r.isOut);
+            if (candidates.length === 0) break;
 
-          if (forcedTargetRunner) {
-            forcedTargetRunner.isOut = true;
-            forcedTargetRunner.finalBase = outAtBase;
-            forcedTargetRunner.currentBase = null;
-            forcedTargetRunner.effectiveMethod = "fc";
-            forcedTargetRunner.isImplicit = true;
+            if (isAerialMultiOutPlay) {
+              // フライ・ライナー併殺：送球先の塁にいる走者の帰塁アウト（本塁送球2のみ3塁走者タッチアップ本塁憤死）を優先
+              let aerialTarget: InternalTrackedRunner | undefined;
+              let aerialOutBase: OccupiedBaseKey | "HP" = "1B";
+              let aerialMethod: AdvanceMethodCode = "other";
+
+              if (
+                lastFielderDigit === "2" &&
+                candidates.some((r) => r.currentBase === "3B")
+              ) {
+                aerialTarget = candidates.find((r) => r.currentBase === "3B");
+                aerialOutBase = "HP";
+                aerialMethod = "throw_advance";
+              } else if (
+                lastFielderDigit === "5" &&
+                candidates.some((r) => r.currentBase === "3B")
+              ) {
+                aerialTarget = candidates.find((r) => r.currentBase === "3B");
+                aerialOutBase = "3B";
+              } else if (
+                (lastFielderDigit === "4" || lastFielderDigit === "6") &&
+                candidates.some((r) => r.currentBase === "2B")
+              ) {
+                aerialTarget = candidates.find((r) => r.currentBase === "2B");
+                aerialOutBase = "2B";
+              } else if (candidates.some((r) => r.currentBase === "1B")) {
+                aerialTarget = candidates.find((r) => r.currentBase === "1B");
+                aerialOutBase = "1B";
+              } else if (candidates.some((r) => r.currentBase === "2B")) {
+                aerialTarget = candidates.find((r) => r.currentBase === "2B");
+                aerialOutBase = "2B";
+              } else {
+                aerialTarget = candidates[0];
+                aerialOutBase = aerialTarget?.currentBase || "1B";
+              }
+
+              if (aerialTarget) {
+                aerialTarget.isOut = true;
+                aerialTarget.finalBase = aerialOutBase;
+                aerialTarget.currentBase = null;
+                aerialTarget.effectiveMethod = aerialMethod;
+                aerialTarget.isImplicit = true;
+              }
+              continue;
+            }
+
+            let forcedTargetRunner: InternalTrackedRunner | undefined;
+            let outAtBase: OccupiedBaseKey | "HP" = "2B";
+
+            if (
+              (/^[1-9]-2/.test(dir) || label.includes("本封")) &&
+              candidates.some((r) => r.currentBase === "3B")
+            ) {
+              forcedTargetRunner = candidates.find(
+                (r) => r.currentBase === "3B"
+              );
+              outAtBase = "HP";
+            } else if (
+              (/^[1-9]-5/.test(dir) ||
+                (ab.resultCode === "triple_play" && /^5-/.test(dir)) ||
+                label.includes("三封")) &&
+              candidates.some((r) => r.currentBase === "2B")
+            ) {
+              forcedTargetRunner = candidates.find(
+                (r) => r.currentBase === "2B"
+              );
+              outAtBase = "3B";
+            } else if (candidates.some((r) => r.currentBase === "1B")) {
+              forcedTargetRunner = candidates.find(
+                (r) => r.currentBase === "1B"
+              );
+              outAtBase = "2B";
+            } else {
+              forcedTargetRunner = candidates[candidates.length - 1];
+              outAtBase =
+                forcedTargetRunner.currentBase === "3B"
+                  ? "HP"
+                  : forcedTargetRunner.currentBase === "2B"
+                  ? "3B"
+                  : "2B";
+            }
+
+            if (forcedTargetRunner) {
+              forcedTargetRunner.isOut = true;
+              forcedTargetRunner.finalBase = outAtBase;
+              forcedTargetRunner.currentBase = null;
+              forcedTargetRunner.effectiveMethod = "fc";
+              forcedTargetRunner.isImplicit = true;
+            }
           }
         }
 

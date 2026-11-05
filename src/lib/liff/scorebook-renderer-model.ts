@@ -305,6 +305,30 @@ function applyRunnerStepSegments(
 ): void {
   const startLv = baseToLevel(fromBase);
   const endLv = baseToLevel(toBase);
+
+  // 牽制死（1B→1B 等）やフライ・ライナー飛び出し帰塁アウト（1B→1B 等）は次区間（1Bなら右上seg2）にアウト表記を記録
+  if (
+    isOut &&
+    fromBase !== "BAT" &&
+    endLv === startLv &&
+    startLv >= 1 &&
+    startLv <= 3
+  ) {
+    const segIdx = (startLv + 1) as BaseSegmentIndex;
+    cell.segments[segIdx] = {
+      segment: segIdx,
+      status: "out",
+      isBatterHit: false,
+      hitBases: 0,
+      method: options.method,
+      drivingBatterOrder: options.drivingBatterOrder,
+      isPrePlay: options.isPrePlay,
+      isForceOut: false,
+      throwChain: options.throwChain,
+    };
+    return;
+  }
+
   if (endLv <= startLv) return;
 
   const suppressBatterSamePlayDup =
@@ -574,7 +598,6 @@ export function compileScorebookSheetModel(
       if (curPitcherKey) {
         if (prevPitcherKey !== null && prevPitcherKey !== curPitcherKey) {
           cell.hasPitcherChangeBefore = true;
-          cell.newPitcherName = ab.pitcherName || undefined;
           const matchedPitcher = structure.pitchers.find(
             (st) =>
               (ab.pitcherPlayerId &&
@@ -584,6 +607,14 @@ export function compileScorebookSheetModel(
                 st.name.replace(/\s+/g, "") ===
                   ab.pitcherName.replace(/\s+/g, ""))
           );
+          const rawAbPitcherName = (ab.pitcherName || "").trim();
+          const hasRealAbName =
+            Boolean(rawAbPitcherName) &&
+            rawAbPitcherName !== "相手投手" &&
+            rawAbPitcherName !== "投手";
+          cell.newPitcherName = hasRealAbName
+            ? rawAbPitcherName
+            : matchedPitcher?.name || rawAbPitcherName || undefined;
           if (matchedPitcher?.uniformNumber) {
             cell.newPitcherUniformNumber = matchedPitcher.uniformNumber;
           }
@@ -750,12 +781,23 @@ export function compileScorebookSheetModel(
             innErrors += 1;
           }
           if (originCell && pm.from !== "BAT") {
+            const defaultPickoffChain =
+              pm.isOut && pm.method === "pickoff_out"
+                ? pm.from === "1B"
+                  ? "1-3"
+                  : pm.from === "2B"
+                  ? "1-6"
+                  : pm.from === "3B"
+                  ? "1-5"
+                  : undefined
+                : undefined;
             applyRunnerStepSegments(originCell, pm.from, pm.to, pm.isOut, {
               isBatterHit: false,
               hitBases: 0,
               method: pm.method,
               isPrePlay: true,
               isForceOut: false,
+              throwChain: defaultPickoffChain,
               isDoubleSteal:
                 !pm.isOut && pm.method === "steal" && stealRunnersInAtBat >= 2,
             });
@@ -792,13 +834,19 @@ export function compileScorebookSheetModel(
         }
       }
 
-      // B) インプレーアウト順序の決定（フライ併殺等は打者先アウト、ゴロ封殺・併殺は先行走者先アウト）
+      // B) インプレーアウト順序の決定（フライ・ライナー併殺等は打者先アウト、ゴロ封殺・併殺は先行走者先アウト）
+      const isAerialDpOrTp =
+        (ab.resultCode === "double_play" || ab.resultCode === "triple_play") &&
+        (/飛|フライ|直|ライナー|[⌒︵]/.test(ab.resultLabel || "") ||
+          /^[1-9][FL](?:-[1-9])?$/i.test((ab.battedDirection || "").trim()));
+
       const batterFirstOut =
         ab.resultCode === "flyout" ||
         ab.resultCode === "sac_fly" ||
         ab.resultCode === "infield_fly" ||
         ab.resultCode === "strikeout" ||
-        ab.resultCode === "dropped_third_strike_out";
+        ab.resultCode === "dropped_third_strike_out" ||
+        isAerialDpOrTp;
 
       const isBatterIntrinsicOut =
         isIntrinsicBatterOutCode(ab.resultCode) &&
@@ -826,7 +874,8 @@ export function compileScorebookSheetModel(
                 ab.resultCode !== "flyout" &&
                 ab.resultCode !== "sac_fly" &&
                 ab.resultCode !== "infield_fly" &&
-                ab.resultCode !== "strikeout";
+                ab.resultCode !== "strikeout" &&
+                !isAerialDpOrTp;
               const isRunnerForced =
                 isNonFlyPlay &&
                 ((inPlayFrom === "1B" && pr.finalBase === "2B") ||
@@ -915,10 +964,14 @@ export function compileScorebookSheetModel(
       if (
         playOutCellKeys.length >= 2 ||
         ab.resultCode === "double_play" ||
-        ab.resultCode === "triple_play"
+        ab.resultCode === "triple_play" ||
+        ab.outsInPlay >= 2
       ) {
         const resolvedOutCellKeys = [...playOutCellKeys];
-        if (resolvedOutCellKeys.length === 1 && ab.resultCode === "double_play") {
+        if (
+          resolvedOutCellKeys.length === 1 &&
+          (ab.resultCode === "double_play" || ab.outsInPlay >= 2)
+        ) {
           const fallbackRunnerKey =
             originByBase["1B"] ?? originByBase["2B"] ?? originByBase["3B"];
           if (fallbackRunnerKey && !resolvedOutCellKeys.includes(fallbackRunnerKey)) {
@@ -934,7 +987,9 @@ export function compileScorebookSheetModel(
               : [cell.cellKey],
           batterCellKey: cell.cellKey,
           isTriplePlay:
-            ab.resultCode === "triple_play" || resolvedOutCellKeys.length >= 3,
+            ab.resultCode === "triple_play" ||
+            ab.outsInPlay >= 3 ||
+            resolvedOutCellKeys.length >= 3,
         });
       }
 

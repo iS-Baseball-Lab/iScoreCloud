@@ -53,8 +53,13 @@ export function ScorebookSingleCellThumbnail({
     showLeftOutsideSub &&
     Boolean(cell.leftOutsideSub) &&
     rules.pinchHitterMark !== "lineup_only";
+  const hasTopPitcherChange =
+    Boolean(cell.hasPitcherChangeBefore) &&
+    typeof cell.pitcherChangeAtPitchIndex !== "number";
   const leftPad = hasLeftSub ? 22 : 0;
+  const topPad = hasTopPitcherChange ? 12 : 0;
   const totalW = CELL_W + leftPad;
+  const totalH = CELL_H + topPad;
   const hasUpperRightSubMark =
     rules.pinchHitterMark !== "lineup_only" && Boolean(cell.rightInsideSub);
 
@@ -65,25 +70,31 @@ export function ScorebookSingleCellThumbnail({
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox={`0 0 ${totalW} ${CELL_H}`}
+      viewBox={`0 0 ${totalW} ${totalH}`}
       width={totalW}
-      height={CELL_H}
+      height={totalH}
       className={cn("block select-none", className)}
       style={{ backgroundColor: PAPER_BG }}
       aria-hidden="true"
     >
-      {leftPad > 0 && (
-        <rect x={0} y={0} width={totalW} height={CELL_H} fill={PAPER_BG} />
+      {(leftPad > 0 || topPad > 0) && (
+        <rect x={0} y={0} width={totalW} height={totalH} fill={PAPER_BG} />
       )}
       {renderSingleScorebookCellSvg(
         cell,
         rules,
         leftPad,
-        0,
+        topPad,
         hasUpperRightSubMark,
         true
       )}
-      {renderCellSubstitutionsOverlaySvg(cellForOverlay, rules, leftPad, 0, 0)}
+      {renderCellSubstitutionsOverlaySvg(
+        cellForOverlay,
+        rules,
+        leftPad,
+        topPad,
+        0
+      )}
     </svg>
   );
 }

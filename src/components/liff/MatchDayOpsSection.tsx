@@ -54,7 +54,7 @@ import {
   type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
 
-export type MatchDayOpsEditorTab = "roles" | "guide" | "carpool";
+export type MatchDayOpsEditorTab = "guide" | "roles" | "carpool";
 
 interface MatchDayGuideAndRolesSectionProps {
   ops: MatchDayOps | null | undefined;
@@ -223,7 +223,7 @@ export function MatchDayGuideAndRolesSection({
 
           <button
             type="button"
-            onClick={() => onOpenEditor(hasGuideOrRoles ? "roles" : "guide")}
+            onClick={() => onOpenEditor("guide")}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
           >
             <Edit3 className="w-3 h-3 text-amber-400" />
@@ -1008,23 +1008,9 @@ export function MatchDayOpsEditorModal({
           </button>
         </div>
 
-        {/* 3タブ切替バー */}
+        {/* 3タブ切替バー（当日しおり → 役割担当 → 遠征・配車） */}
         <div className="p-2.5 pb-0 bg-card shrink-0">
           <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-2xl border border-border">
-            <button
-              type="button"
-              onClick={() => setActiveTab("roles")}
-              className={cn(
-                "py-2 px-2 rounded-xl text-[11px] flex items-center justify-center gap-1 transition-all cursor-pointer",
-                activeTab === "roles"
-                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-              )}
-            >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-              <span>役割担当</span>
-            </button>
-
             <button
               type="button"
               onClick={() => setActiveTab("guide")}
@@ -1037,6 +1023,20 @@ export function MatchDayOpsEditorModal({
             >
               <ClipboardList className="w-3.5 h-3.5 shrink-0 text-primary" />
               <span>当日しおり</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("roles")}
+              className={cn(
+                "py-2 px-2 rounded-xl text-[11px] flex items-center justify-center gap-1 transition-all cursor-pointer",
+                activeTab === "roles"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+              )}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+              <span>役割担当</span>
             </button>
 
             <button

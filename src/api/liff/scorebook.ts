@@ -862,7 +862,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "buntMark": "square_sac_triangle_sf_bh" | "square_all_bh" | "square_sac" | "diamond_sac" | "b_prefix", // バント・犠飛表記: 犠打が四角囲み□[1-3]＋犠飛が三角囲み△8＋バント安打BH5なら "square_sac_triangle_sf_bh"、犠打もバント凡退も四角囲み□[5-3]＋BH5なら "square_all_bh"、犠打のみ四角囲み□[1-3]なら "square_sac"、早稲田式の菱形囲み◇1-3なら "diamond_sac"、B1-3/BH5のB添字式なら "b_prefix"
   "doublePlayMark": "bracket_dp" | "dp_only" | "wavy_link" | "chain_only", // 併殺打(DP)表記: アウトになった縦2マスの右側内を上部〜下部まで『 ] 』括弧で括り1・2マス間にDPを添えるなら "bracket_dp"、括弧なしでDP添字のみなら "dp_only"、縦波線で2マスを結ぶ早稲田式なら "wavy_link"、6-4-3等の送球番号のみなら "chain_only"（不明なら "bracket_dp"）
   "buntPitchMark": "v_dot_circle_dot" | "filled_triangle" | "inv_triangle_diamond" | "same_as_normal", // BSOバント球記号: バントファウルがVの中に・(V̇)＆バント空振りが○の中に・(⊙)なら "v_dot_circle_dot"、黒塗り三角▲なら "filled_triangle"、逆三角▽/ダイヤ◇なら "inv_triangle_diamond"、通常球と同じ記号なら "same_as_normal"
-  "hitLine": "red_edge_infield_arc" | "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 進塁辺を赤太線で引き内野安打/BHの右下欄を赤円弧で囲む(RHは二重赤ダイヤ)なら "red_edge_infield_arc"、右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし・赤円弧なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
+  "hitLine": "red_edge_infield_arc" | "quadrant_slash_hr_diamond" | "red_plain" | "red_slash" | "parallel_bars" | "mono_bold", // 安打赤線パターン: 進塁辺を赤太線で引き内野安打/BHの右下欄を赤円弧で囲む(RHは右下RH表記)なら "red_edge_infield_arc"、右下欄に赤斜線（／・／／・／／／）＋HRはダイヤ1周赤囲みなら "quadrant_slash_hr_diamond"、ダイヤ進塁辺を赤実線のみ（チョン線なし・赤円弧なし）なら "red_plain"、進塁赤線＋1塁線上の直交チョン線なら "red_slash"、進塁赤線＋1塁線平行の二重・三重線なら "parallel_bars"、白黒太線のみなら "mono_bold"
   "runnerLine": "dotted_only" | "solid_trace", // 出塁・進塁時のひし形ライン: 通常の出塁・進塁ではひし形の点線を黒実線でなぞらず点線のまま残し進塁記号のみを添える方式なら "dotted_only"、進んだ塁間を黒実線でなぞる早稲田式なら "solid_trace"
   "runnerOutLine": "dotted_only" | "quadrant_arrow" | "t_stop", // 走塁死・封殺時のひし形ライン: 線を描かず点線のまま中央アウトと記号のみなら "dotted_only"、ひし形は点線のまま外側に進行方向の矢印＋T.O/CS等を添える方式なら "quadrant_arrow"、塁間途中で切って先端に垂直の止め線（━━┫）を描く早稲田式なら "t_stop"
   "forceOutMark": "base_letter_abch" | "standard_to", // ベースアウト・タッチアウト表記: 1塁=1A・2塁=6B・3塁=5C・本塁=2Hのように塁アルファベット(A/B/C/H)を使いタッチアウトを3TO/1-3TOと書くなら "base_letter_abch"、T.OやFCで統一する標準式なら "standard_to"
@@ -2175,7 +2175,27 @@ ${targetInningMetaLines.join("\n")}
       } else if (resultCode === "double_play") {
         outsVal = 2;
       } else if (isDefiniteBatterOut) {
-        outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+        if (
+          occupiedBaseRunnerOuts === 0 &&
+          rawOutsVal >= 2 &&
+          activeRunnersCount >= 1 &&
+          runningInningOuts <= 1
+        ) {
+          outsVal = Math.min(
+            3 - runningInningOuts,
+            1 + activeRunnersCount,
+            rawOutsVal
+          );
+          if (
+            resultCode === "groundout" &&
+            outsVal === 2 &&
+            /^[1-9]-[1-9]-[1-9]$/.test((reconciled.rawDir || "").trim())
+          ) {
+            resultCode = "double_play";
+          }
+        } else {
+          outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+        }
       } else if (isSafeBatterReach) {
         outsVal = Math.min(2, occupiedBaseRunnerOuts + batterOverrunOut);
       } else if (resultCode === "fc") {
@@ -3106,7 +3126,27 @@ ${batterRowsDesc.join("\n")}
       } else if (resultCode === "double_play") {
         outsVal = 2;
       } else if (isDefiniteBatterOut) {
-        outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+        if (
+          occupiedBaseRunnerOuts === 0 &&
+          rawOutsVal >= 2 &&
+          activeRunnersCount >= 1 &&
+          runningOuts <= 1
+        ) {
+          outsVal = Math.min(
+            3 - runningOuts,
+            1 + activeRunnersCount,
+            rawOutsVal
+          );
+          if (
+            resultCode === "groundout" &&
+            outsVal === 2 &&
+            /^[1-9]-[1-9]-[1-9]$/.test((reconciled.rawDir || "").trim())
+          ) {
+            resultCode = "double_play";
+          }
+        } else {
+          outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
+        }
       } else if (isSafeBatterReach) {
         outsVal = Math.min(2, occupiedBaseRunnerOuts);
       } else if (resultCode === "fc") {
@@ -4647,23 +4687,44 @@ liffScorebookRouter.get("/saved", async (c) => {
             scoredAdvCount,
             resultCode === "home_run" && scoredAdvCount === 0 ? 1 : 0
           );
-          const defaultOuts =
-            resultCode === "triple_play"
-              ? 3
-              : resultCode === "double_play"
-                ? 2
-                : resultCode === "groundout" ||
-                  resultCode === "flyout" ||
-                  resultCode === "infield_fly" ||
-                  resultCode === "strikeout" ||
-                  resultCode === "dropped_third_strike_out" ||
-                  resultCode === "sac_bunt" ||
-                  resultCode === "sac_fly" ||
-                  resultCode === "interference_out"
-                  ? 1
-                  : 0;
-          const outsInPlay =
-            parsedOuts !== undefined ? parsedOuts : defaultOuts;
+          const runnerOutAdvCount = mappedAdvances.filter(
+            (a) => a.isOut
+          ).length;
+          // ※ Live Score 保存時は play_logs.description の [O:z] に「イニング累積アウト数（0〜2）」が入るため、
+          //    double_play(2) / triple_play(3) / 安打(0) 等を [O:z] で上書きしないよう結果コードと走塁死から厳密算出する
+          let outsInPlay = 0;
+          if (resultCode === "triple_play") {
+            outsInPlay = Math.max(1, Math.min(3 - runningOuts, 3));
+          } else if (resultCode === "double_play") {
+            outsInPlay = runningOuts <= 1 ? 2 : 1;
+          } else if (
+            resultCode === "groundout" ||
+            resultCode === "flyout" ||
+            resultCode === "infield_fly" ||
+            resultCode === "strikeout" ||
+            resultCode === "dropped_third_strike_out" ||
+            resultCode === "sac_bunt" ||
+            resultCode === "sac_fly" ||
+            resultCode === "interference_out"
+          ) {
+            outsInPlay = Math.min(3 - runningOuts, 1 + runnerOutAdvCount);
+          } else if (resultCode === "fc") {
+            outsInPlay =
+              runnerOutAdvCount > 0
+                ? Math.min(2, runnerOutAdvCount)
+                : parsedOuts === 1
+                ? 1
+                : 0;
+          } else if (resultCode === "other") {
+            outsInPlay =
+              runnerOutAdvCount > 0
+                ? Math.min(3 - runningOuts, runnerOutAdvCount)
+                : parsedOuts !== undefined && parsedOuts >= 1 && parsedOuts <= 2
+                ? Math.min(3 - runningOuts, parsedOuts)
+                : 0;
+          } else {
+            outsInPlay = Math.min(2, runnerOutAdvCount);
+          }
           runningOuts = Math.min(3, runningOuts + Math.max(0, outsInPlay));
 
           const lapKey = `${dbAb.inning}-${battingOrder}`;

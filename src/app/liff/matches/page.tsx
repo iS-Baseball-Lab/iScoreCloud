@@ -325,7 +325,7 @@ function MatchesContent() {
   const [opsEditorState, setOpsEditorState] = useState<{
     isOpen: boolean;
     initialTab: MatchDayOpsEditorTab;
-  }>({ isOpen: false, initialTab: "roles" });
+  }>({ isOpen: false, initialTab: "guide" });
   const [isSavingMatchOps, setIsSavingMatchOps] = useState(false);
   const [inspectedCellModalState, setInspectedCellModalState] = useState<{
     activeItem: InspectedScorebookCellItem;
@@ -449,7 +449,7 @@ function MatchesContent() {
     setShowDeleteStatsModal(false);
     setIsManageMenuOpen(false);
     setInspectedCellModalState(null);
-    setOpsEditorState({ isOpen: false, initialTab: "roles" });
+    setOpsEditorState({ isOpen: false, initialTab: "guide" });
     if (!matchId) {
       setDetailError(null);
       setPrevMatch(null);
@@ -866,7 +866,7 @@ function MatchesContent() {
   ]);
 
   const handleOpenOpsEditor = useCallback(
-    (initialTab: MatchDayOpsEditorTab = "roles") => {
+    (initialTab: MatchDayOpsEditorTab = "guide") => {
       setOpsEditorState({ isOpen: true, initialTab });
     },
     []
@@ -2506,7 +2506,7 @@ function MatchesContent() {
 
                       <button
                         type="button"
-                        onClick={() => handleOpenOpsEditor("roles")}
+                        onClick={() => handleOpenOpsEditor("guide")}
                         className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-card hover:border-primary/40 hover:bg-muted/50 border border-border shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">

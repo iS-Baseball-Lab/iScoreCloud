@@ -1194,10 +1194,18 @@ export function formatAdvanceMethodByRules(
   const isSeniorChart = rules.advanceError === "senior_chart";
   const chain = (extra?.throwChain || "").trim();
 
-  if (
-    rules.forceOutMark === "base_letter_abch" &&
-    (method === "out_on_base" || (extra?.isOut && method === "fc"))
-  ) {
+  const isInPlayRunnerOut =
+    method === "out_on_base" ||
+    Boolean(
+      extra?.isOut &&
+        (method === "fc" ||
+          method === "throw_advance" ||
+          method === "hit" ||
+          method === "sac" ||
+          method === "other")
+    );
+
+  if (rules.forceOutMark === "base_letter_abch" && isInPlayRunnerOut) {
     const baseLetter =
       extra?.targetBase === 1
         ? "A"
@@ -1212,6 +1220,16 @@ export function formatAdvanceMethodByRules(
       return chain ? `${chain}${baseLetter}` : baseLetter;
     }
     return chain ? `${chain}TO` : "TO";
+  }
+
+  if (
+    extra?.isOut &&
+    (method === "throw_advance" ||
+      method === "hit" ||
+      method === "sac" ||
+      method === "other")
+  ) {
+    return isKanji ? "走死" : "T.O";
   }
 
   switch (method) {
@@ -1689,12 +1707,22 @@ export function formatAtBatPlayNotation(
       /^F[1-9]|[1-9]F$|^FF[1-9]|[1-9]FF$/i.test(dir);
     const isIf = rc === "infield_fly";
     const liner = !isIf && isLinerPlay(ab);
+    const shouldEmbedAerialDp =
+      ab.outsInPlay >= 2 &&
+      (rules.doublePlayMark === "dp_only" ||
+        (Boolean(options?.standaloneSingleCell) &&
+          rules.doublePlayMark !== "chain_only"));
+    const aerialDpSub = shouldEmbedAerialDp
+      ? ab.outsInPlay >= 3
+        ? "TP"
+        : "DP"
+      : undefined;
 
     if (rules.flyLiner === "umbrella_f_prefix_ground_arc") {
       if (liner) {
         return {
           mainText: f,
-          subText: isIf ? "IF" : undefined,
+          subText: isIf ? "IF" : aerialDpSub,
           decorator: "overline",
           isRedInk: false,
         };
@@ -1702,14 +1730,14 @@ export function formatAtBatPlayNotation(
       if (isFoulFly) {
         return {
           mainText: `F${f}`,
-          subText: isIf ? "IF" : undefined,
+          subText: isIf ? "IF" : aerialDpSub,
           decorator: "umbrella",
           isRedInk: false,
         };
       }
       return {
         mainText: f,
-        subText: isIf ? "IF" : undefined,
+        subText: isIf ? "IF" : aerialDpSub,
         decorator: "umbrella",
         isRedInk: false,
       };
@@ -1719,7 +1747,7 @@ export function formatAtBatPlayNotation(
       if (isBuntPlay && rules.buntMark === "square_all_bh" && !liner) {
         return {
           mainText: f,
-          subText: isIf ? "IF" : isFoulFly ? "F" : undefined,
+          subText: isIf ? "IF" : isFoulFly ? "F" : aerialDpSub,
           decorator: "bunt_fly_square_umbrella",
           isRedInk: false,
         };
@@ -1734,7 +1762,7 @@ export function formatAtBatPlayNotation(
             : "B"
           : isFoulFly
           ? "F"
-          : undefined,
+          : aerialDpSub,
         decorator: liner ? "overline" : "umbrella",
         isRedInk: false,
       };
@@ -1746,7 +1774,7 @@ export function formatAtBatPlayNotation(
           isBuntPlay && rules.buntMark === "b_prefix"
             ? `B${baseText}`
             : baseText,
-        subText: isIf ? "IF" : isFoulFly ? "F" : undefined,
+        subText: isIf ? "IF" : isFoulFly ? "F" : aerialDpSub,
         decorator:
           isBuntPlay && rules.buntMark === "square_all_bh"
             ? "sac_square"
@@ -1760,7 +1788,7 @@ export function formatAtBatPlayNotation(
         isBuntPlay && rules.buntMark === "b_prefix"
           ? `B${alphaText}`
           : alphaText,
-      subText: isIf ? "IF" : undefined,
+      subText: isIf ? "IF" : aerialDpSub,
       decorator:
         isBuntPlay && rules.buntMark === "square_all_bh"
           ? "sac_square"
@@ -1861,6 +1889,42 @@ export function formatAtBatPlayNotation(
     if (/^[1-9](?:-[1-9])*(?:A|B|C|H|TO)$/i.test(dir)) {
       return {
         mainText: dir.toUpperCase(),
+        subText: dpSub,
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+
+    // フライ併殺・ライナー併殺（例: 左飛併殺・遊直併殺）の場合は第1野手番号にフライ傘曲線・ライナー直線記号を付与
+    const isLinerDp = (rc === "double_play" || rc === "triple_play") && isLinerPlay(ab);
+    const isFlyDp =
+      (rc === "double_play" || rc === "triple_play") &&
+      !isLinerDp &&
+      (/飛|フライ|[⌒︵]/.test(label) || /^[1-9]F(?:-[1-9])?$/i.test(dir));
+
+    if (isLinerDp || isFlyDp) {
+      const fDigits = (dir.match(/[1-9]/g) || [])[0] || inferFielderToken(dir, label, "6").slice(0, 1) || "6";
+      if (
+        rules.flyLiner === "umbrella_f_prefix_ground_arc" ||
+        rules.flyLiner === "umbrella"
+      ) {
+        return {
+          mainText: fDigits,
+          subText: dpSub,
+          decorator: isLinerDp ? "overline" : "umbrella",
+          isRedInk: false,
+        };
+      }
+      if (rules.flyLiner === "paren") {
+        return {
+          mainText: isLinerDp ? `[${fDigits}]` : `(${fDigits})`,
+          subText: dpSub,
+          decorator: "none",
+          isRedInk: false,
+        };
+      }
+      return {
+        mainText: isLinerDp ? `${fDigits}L` : `${fDigits}F`,
         subText: dpSub,
         decorator: "none",
         isRedInk: false,

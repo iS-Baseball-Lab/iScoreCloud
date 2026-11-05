@@ -732,7 +732,7 @@ function buildResultSection(
         ? "三塁打（スリーベース）"
         : "本塁打（ホームラン）";
     const slashRuleJa = notation.isRunningHomeRun
-      ? "ダイヤモンドの二重赤囲みと「RH」表記でランニングホームランを表します。"
+      ? "ダイヤモンドを1周する赤太線と右下の「RH」表記でランニングホームランを表します。"
       : notation.infieldHitArc
       ? "一塁線の赤実線に加え、右下の部屋を赤い円弧で囲むことで「内野安打（またはバントヒット）」であることを一目で表します。"
       : rules.hitLine === "red_edge_infield_arc" || rules.hitLine === "red_plain"
@@ -1434,7 +1434,7 @@ function buildDiamondSection(
     });
   }
 
-  // 5. マス上辺：投手交代の赤波線
+  // 5. マス上辺：投手交代の赤波線＋左上の投手名
   if (cell.hasPitcherChangeBefore) {
     rows.push({
       zoneLabel:
@@ -1448,10 +1448,10 @@ function buildDiamondSection(
       }`,
       description:
         typeof cell.pitcherChangeAtPitchIndex === "number"
-          ? `投球カウント欄の途中から左辺へ階段状に引かれた赤い波線は、打席の途中で相手投手が${
+          ? `投球カウント欄の途中から左辺へ階段状に引かれた赤い波線と左上の投手名は、打席の途中で相手投手が${
               cell.newPitcherName ? `「${cell.newPitcherName}」に` : ""
             }交代したことを表します。`
-          : `マスの上辺に引かれた赤い波線は、この打者の打席から相手投手が${
+          : `マスの上辺に引かれた赤い波線と左上の投手名は、この打者の打席から相手投手が${
               cell.newPitcherName ? `「${cell.newPitcherName}」に` : ""
             }交代したことを表します。`,
     });
