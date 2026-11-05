@@ -2603,8 +2603,9 @@ function renderDoublePlayLinksSvg(
           );
         }
 
-        // 間に別打者を挟む場合（1番出塁→2番三振→3番併殺打 等）・打順折り返し（9番→1番）・単独DPマスの場合：
-        // 無関係な中間打者マスを跨がず、実際にアウトになった対象マスの右内側のみを括り、一塁頂点右の空き領域にDPを描画
+        // 間に別打者を挟む場合（1番出塁→2番安打/三振→3番併殺打 等）・打順折り返し（9番→1番）・単独DPマスの場合：
+        // 先行走者の出塁マス（DB・B・安打等）の内部に「DP」と印字すると出塁記号（特にDB）と混同するため、
+        // 先行走者マスには右内側の小括弧のみを描画し、「DP/TP」文字は実際に併殺打を打った打者マス側にのみ描画する
         return (
           <g key={link.id}>
             {sortedByRow.map((pt) => {
@@ -2613,6 +2614,8 @@ function renderDoublePlayLinksSvg(
               const isCellInningEnd = Boolean(
                 cellsByKey[pt.cellKey]?.isInningEndCell
               );
+              const isBatterDpCell =
+                pt.cellKey === link.batterCellKey || sortedByRow.length === 1;
               const xBar = cx + CELL_W - 3.0;
               const xTick = cx + CELL_W - 8.0;
               const y1 = ry + 5.5;
@@ -2637,21 +2640,23 @@ function renderDoublePlayLinksSvg(
                       strokeLinejoin="round"
                     />
                   )}
-                  <text
-                    x={cx + 76.5}
-                    y={ry + 39.8}
-                    fontSize={7.8}
-                    fontWeight={900}
-                    textAnchor="middle"
-                    fill={COLOR_INK}
-                    stroke={COLOR_PAPER}
-                    strokeWidth={3.0}
-                    paintOrder="stroke"
-                    strokeLinejoin="round"
-                    fontFamily={FONT_SANS}
-                  >
-                    {tagLabel}
-                  </text>
+                  {isBatterDpCell && (
+                    <text
+                      x={cx + 76.5}
+                      y={ry + 39.8}
+                      fontSize={7.8}
+                      fontWeight={900}
+                      textAnchor="middle"
+                      fill={COLOR_INK}
+                      stroke={COLOR_PAPER}
+                      strokeWidth={3.0}
+                      paintOrder="stroke"
+                      strokeLinejoin="round"
+                      fontFamily={FONT_SANS}
+                    >
+                      {tagLabel}
+                    </text>
+                  )}
                 </g>
               );
             })}

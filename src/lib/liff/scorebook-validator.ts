@@ -141,6 +141,7 @@ export function inferCanonicalResultCode(
     upper.includes("HBP") ||
     upper === "D" ||
     upper === "DB" ||
+    /\bDB\b/.test(upper) ||
     label.includes("死球") ||
     label.includes("デッド")
   ) {
@@ -271,7 +272,8 @@ export function inferCanonicalResultCode(
     upper.includes("FC") ||
     upper === "OB" ||
     upper === "O.B." ||
-    label.includes("野選")
+    label.includes("野選") ||
+    /^(?:[1-9]-)[1-9][BCH]$|^[1-9][CH]$|^[4-6]B$/i.test(normErrToken)
   ) {
     return "fc";
   }

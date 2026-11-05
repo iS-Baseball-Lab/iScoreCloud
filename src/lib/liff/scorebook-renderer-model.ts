@@ -824,12 +824,6 @@ export function compileScorebookSheetModel(
           const ord = nextOutOrdinal();
           if (originCell) {
             originCell.outNumber = ord;
-            if (
-              ab.resultCode === "strikeout" ||
-              ab.resultCode === "dropped_third_strike_out"
-            ) {
-              recordPlayOutCell(originCell.cellKey);
-            }
           }
         }
       }
@@ -961,16 +955,22 @@ export function compileScorebookSheetModel(
         assignBatterOutIfApplicable();
       }
 
-      if (
-        playOutCellKeys.length >= 2 ||
+      const isGenuineDoubleOrTriplePlay =
         ab.resultCode === "double_play" ||
         ab.resultCode === "triple_play" ||
-        ab.outsInPlay >= 2
-      ) {
+        ((ab.resultCode === "flyout" || ab.resultCode === "infield_fly") &&
+          playOutCellKeys.length >= 2) ||
+        (ab.resultCode === "groundout" &&
+          playOutCellKeys.length >= 2 &&
+          /[1-9]-[1-9]-[1-9]/.test(ab.battedDirection || ""));
+
+      if (isGenuineDoubleOrTriplePlay) {
         const resolvedOutCellKeys = [...playOutCellKeys];
         if (
           resolvedOutCellKeys.length === 1 &&
-          (ab.resultCode === "double_play" || ab.outsInPlay >= 2)
+          (ab.resultCode === "double_play" ||
+            ab.resultCode === "triple_play" ||
+            ab.outsInPlay >= 2)
         ) {
           const fallbackRunnerKey =
             originByBase["1B"] ?? originByBase["2B"] ?? originByBase["3B"];

@@ -1867,7 +1867,7 @@ ${targetInningMetaLines.join("\n")}
    - **[中央・右下拡大]で上部に山なりアーチ曲線『︵』が見え、下に数字の脚があり、本塁→1塁が破線（b1: false）で中央にアウト数字があるマスは100%フライアウト（rc: "flyout", dir: "4"〜"9"）です！絶対に英字『B』（四球 walk）と誤読しないでください！**
 2. **ゴロ・封殺・併殺（rc: "groundout" / "double_play"）の連綿（一筆書き接触）分解と『 ] 』＋『DP』判定**:
    - ハイフン繋ぎの送球番号（例: **6-3**=遊ゴロ, **4-3**=二ゴロ, **5-3**=三ゴロ, **1-3**=投ゴロ, **2-3**=捕ゴロ, **3-1**=一ゴロ投カバー、封殺 **6-4 / 4-6 / 5-4 / 5-2**、併殺 **6-4-3 / 4-6-3 / 5-4-3 / 1-6-3**）または一塁無補殺の単独 **『3』『〜3』** はゴロです！
-   - **🔥併殺打（rc: "double_play", o: 2）の確実な識別**: 6-4-3 / 4-6-3 / 5-4-3 等の3者中継だけでなく、**上下2つのアウトマス（例: 先行走者の『Ⅱ FC』マスと打者の『Ⅲ 6-4-3』マス）の右端が縦の角括弧『 ] 』や縦波線で結ばれ、『DP』が添えられている場合**は 100% 併殺打（打者側の打席を **rc: "double_play", dir: "6-4-3" 等, o: 2** とし、先行走者の封殺アウトも a 配列に含める）です！
+   - **🔥併殺打（rc: "double_play", o: 2）の確実な識別と上段走者マスへの誤帰属防止**: 6-4-3 / 4-6-3 / 5-4-3 等の3者中継だけでなく、**上下2つのアウトマス（例: 先行走者の『Ⅱ FC / 5C / B / DB』マスと打者の『Ⅲ 6-4-3』マス）の右端が縦の角括弧『 ] 』や縦波線で結ばれ、1・2マスの境界（上段マスの下端付近）に『DP』が添えられている場合**は 100% 併殺打です！このとき、**上段（先行走者）マス自体の打席結果（例: 死球 DB・野選 5C・四球 B・安打 等）を絶対に double_play（o: 2）にしてはいけません！実際に併殺打を打った下段（打者）マスの打席のみを rc: "double_play", dir: "6-4-3" 等, o: 2 とし、先行走者の封殺アウトも下段打者の a 配列に含めてください**！
    - 手書きでは左の数字・ハイフン『-』・右の数字がペンを離さず繋がって（連綿で）書かれることが多いため、[中央・右下拡大]でハイフン位置を切り離して左右の数字を特定してください。
    - **⚠️にじんだ手書き数字（1〜9）の字形見分けと野球理論チェック**:
      ・**『4』**(角張った縦横交差で下に縦脚が突き出る) vs **『6』**(上から左へ降りて下半分が丸ループ) vs **『5』**(上端に水平横棒＋下丸み) vs **『8』**(上下2つの閉じた輪) vs **『1』**(縦1本線) vs **『2』**(上丸＋下水平線) を[中央・右下拡大]で1画ずつ確認せよ！
@@ -1883,8 +1883,8 @@ ${targetInningMetaLines.join("\n")}
      ② 早稲田式の打球方向線（本塁からダイヤモンド外へ伸びる線＋先端の点『・』や山『⌒』）で書かれている場合: ダイヤモンドの向きに合わせて **左上（三遊間〜レフト側）="7"**、**真上（二塁ベース上〜センター側）="8"**、**右上（一二塁間〜ライト側）="9"**、**左斜め上中間="7-8"**、**右斜め上中間="8-9"** と正確に判定してください（左上7と右上9を絶対に逆にしないこと）！
 5. **犠打・バント凡退・失策・野選・四死球・その他**:
    - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], [5-3], ◇1-3, ◇5-4**）➔ 走者進塁を伴う送りバントなら **rc: "sac_bunt"**, dir: "1-3" 等。**無走者時**にバントを四角『□』等で囲むチーム表記（例: 無走者で **[5-3]**）は犠打ではなくバントゴロ凡退なので **rc: "groundout"**, dir: "5-3", rl: "三バントゴロ" とすること！三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
-   - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。野選 **『FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』** ➔ **rc: "fc"**, dir: "FC6-2" / "FC6" 等。
-   - 四球は**BSOにボール4球かつ右下英字『B』（b1: true、点線維持式では本塁→1塁が点線のままでも可）**のとき ➔ **rc: "walk"**。死球『DB』『D』『HBP』➔ **rc: "hit_by_pitch"**。敬遠 ➔ **rc: "intentional_walk"**。
+   - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。野選 **『FC』『4FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』** および本塁→1塁が実線（b1: true）で先行走者が二塁・三塁・本塁封殺されたベースアウト記号 **『6B』『5C』『2H』『6-4B』** ➔ **rc: "fc"**, dir: "FC6" / "5" 等（o: 1、先行走者の封殺アウトのみ計上）。一塁ベースアウト **『1A』『3A』**（b1: false）➔ **rc: "groundout"**, dir: "1A" / "3A"（o: 1）。
+   - 四球は**BSOにボール4球かつ右下英字『B』（b1: true、点線維持式では本塁→1塁が点線のままでも可）**のとき ➔ **rc: "walk"**。死球『DB』『D』『HBP』➔ **rc: "hit_by_pitch"**, dir: "DB"（※手書きの『DB』は下のループが潰れると『DP』に似て見えますが、守備番号 6-4-3 等が無く本塁→1塁実線 b1: true または後続打席での進塁・得点・残塁・封殺がある単独『DB』は 100% 死球 hit_by_pitch であり、絶対に併殺打 DP と誤読しないこと！）。敬遠 ➔ **rc: "intentional_walk"**。
    - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
    - 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マスのみ ➔ **rc: "other"**, rl: "打席途中断（走塁死チェンジ）", o: 1（白紙マスには絶対に使わないこと！）。
 
@@ -6349,7 +6349,7 @@ function reconcileRawAtBatEvidence(
     rbText &&
     rbText !== "無" &&
     rbText !== "なし" &&
-    !/^(?:B|BB|四球|D|死球|K|SO|三振)$/i.test(rbText)
+    !/^(?:B|BB|四球|D|DB|HBP|死球|K|SO|三振)$/i.test(rbText)
   ) {
     const cleanedRb = rbText.replace(/\(.*?\)|（.*?）/g, "").trim();
     if (cleanedRb && (!rawDir || /[1-9]/.test(cleanedRb))) {
@@ -6418,10 +6418,10 @@ function reconcileRawAtBatEvidence(
       outsInPlay = Math.max(1, outsInPlay);
     }
 
-    if (rawResultLabel && /四球|死球|BB/i.test(rawResultLabel)) {
+    if (rawResultLabel && /四球|死球|BB|DB|HBP/i.test(rawResultLabel)) {
       rawResultLabel = "";
     }
-    if (rawDir && /^(?:B|BB|四球|D|死球)$/i.test(rawDir)) {
+    if (rawDir && /^(?:B|BB|四球|D|DB|HBP|死球)$/i.test(rawDir)) {
       rawDir = "";
     }
 
@@ -6451,9 +6451,52 @@ function reconcileRawAtBatEvidence(
       .trim();
 
     const rawRuns = toFiniteInt(ab.ru ?? ab.runsInPlay, 0) || 0;
+    const hasExplicitHbpPitchOrObs =
+      rawPitches.some((tok) => /^(?:D|DB|HBP|死球)$/i.test((tok || "").trim())) ||
+      /\b(?:DB|HBP)\b|死球|デッド/i.test(`${rbText} ${rawResultLabel || ""}`);
 
-    // 3-A2. 『4E-3』『6E-3』『4E』『6-3E』等の失策・悪送球記号があるのにゴロ等と誤出力されたケースの補正
+    // 3-A2. 手書きの『DB（死球）』が下のループ潰れ等で『DP（併殺打）』と誤読されたケースの自己補正:
+    // 守備番号(1〜9)が一切無く、本塁→1塁が実線(b1: true)・死球投球記録・無アウト/得点/残塁のいずれかがある単独DPは100%死球(DB)
     if (
+      (prelimCode === "double_play" || /^DP$/i.test(normDir)) &&
+      !/[1-9]/.test(normDir) &&
+      !/[1-9]\s*[-－ー=＝→]\s*[1-9]/.test(rbText) &&
+      (effectiveB1 === true ||
+        hasExplicitHbpPitchOrObs ||
+        (!hasRunnerOutAdvance &&
+          (outsInPlay === 0 ||
+            endingOuts <= runningInningOuts ||
+            /^(?:無|なし|空|[●○◎ℓlL残得])$/.test(centerText))))
+    ) {
+      rawResultCode = "hit_by_pitch";
+      rawResultLabel = "死球";
+      rawDir = "DB";
+      outsInPlay = 0;
+      endingOuts = runningInningOuts;
+      rawPitches = rawPitches.filter(
+        (tok) => !/^(?:X|IN_PLAY)$/i.test((tok || "").trim())
+      );
+      if (
+        !rawPitches.some((tok) => /^(?:D|HBP)$/i.test((tok || "").trim()))
+      ) {
+        rawPitches = [...rawPitches, "D"];
+      }
+    } else if (
+      // 3-A3. 『5C』『6B』『2H』『6-4B』等の二塁・三塁・本塁ベースアウト野選マス（b1: true）の下端境界に
+      // 次打者の併殺打用の『DP』が書かれているために、この出塁マス自身が2アウト(double_play/groundout)と誤読されたケースの補正
+      hasAnyActiveRunner &&
+      effectiveB1 === true &&
+      /^(?:[1-9]-)?[1-9][BCH](?:\s*DP)?$/i.test(normDir)
+    ) {
+      const cleanedFcDir = normDir.replace(/\s*DP$/i, "").trim();
+      const leadFielder = cleanedFcDir.match(/[1-9]/)?.[0] || "";
+      rawResultCode = "fc";
+      rawDir = leadFielder || cleanedFcDir;
+      rawResultLabel = "";
+      outsInPlay = hasRunnerOutAdvance ? 1 : Math.min(1, outsInPlay);
+      endingOuts = Math.min(3, runningInningOuts + outsInPlay);
+    } else if (
+      // 3-A4. 『4E-3』『6E-3』『4E』『6-3E』等の失策・悪送球記号があるのにゴロ等と誤出力されたケースの補正
       prelimCode !== "error" &&
       prelimCode !== "dropped_third_strike" &&
       (/^(?:E[1-9](?:-[1-9])?|[1-9]E(?:-[1-9])?|[1-9]-(?:E[1-9]|[1-9]E))$/i.test(

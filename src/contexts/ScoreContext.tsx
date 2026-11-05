@@ -106,7 +106,8 @@ function getNormalizedAtBatResult(actionNote: string): string {
     : actionNote.trim();
 
   if (cleanNote.includes("三振")) return "strikeout";
-  if (cleanNote.includes("フォアボール") || cleanNote.includes("デッドボール") || cleanNote.includes("四球") || cleanNote.includes("死球")) return "walk";
+  if (cleanNote.includes("デッドボール") || cleanNote.includes("死球")) return "hit_by_pitch";
+  if (cleanNote.includes("フォアボール") || cleanNote.includes("四球")) return "walk";
   if (cleanNote.includes("本塁打") || cleanNote.includes("本")) return "home_run";
   if (cleanNote.includes("三塁打") || cleanNote.includes("三")) return "triple";
   if (cleanNote.includes("二塁打") || cleanNote.includes("二")) return "double";
@@ -159,7 +160,7 @@ function getNormalizedAtBatResult(actionNote: string): string {
           history: updatedState.history, // 🌟 データベースにやり直し用履歴を同期！
           isUndo, // 🌟 追加
           isAtBatUndo, // 🌟 追加
-          newAtBat: isUndo ? null : (actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
+          newAtBat: isUndo ? null : (actionNote.includes("チェンジ") || actionNote.includes("三振") || actionNote.includes("フォアボール") || actionNote.includes("四球") || actionNote.includes("デッドボール") || actionNote.includes("死球") || actionNote.includes("アウト") || actionNote.includes("安") || actionNote.includes("打") || actionNote.includes("エラー") || actionNote.includes("犠") ? {
             inning: updatedState.inning,
             isTop: updatedState.isTop,
             batterId: updatedState.batterId,
