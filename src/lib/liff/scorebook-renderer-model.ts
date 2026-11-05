@@ -68,6 +68,21 @@ export interface CompiledCellSubMark {
   subType: "PH" | "PR" | "TR" | "DEF";
 }
 
+export interface CompiledCellBasePresence {
+  "1B": boolean;
+  "2B": boolean;
+  "3B": boolean;
+}
+
+export interface CompiledCellSituation {
+  outsBefore: number;
+  outsAfter: number;
+  basesBefore: CompiledCellBasePresence;
+  basesAfterPlay: CompiledCellBasePresence;
+  isInningOver: boolean;
+  runsInPlay: number;
+}
+
 export interface CompiledScorebookCell {
   cellKey: string;
   inning: number;
@@ -76,6 +91,8 @@ export interface CompiledScorebookCell {
   atBat: ScorebookV2AtBat | null;
   isTiebreakRunnerOnly: boolean;
   tiebreakStartBase?: OccupiedBaseKey;
+  /** 打席前後のアウト数・塁上走者・得点状況スナップショット（タイムライン等で使用） */
+  situation?: CompiledCellSituation;
   /** セグメント 1(HP->1B), 2(1B->2B), 3(2B->3B), 4(3B->HP) */
   segments: Record<BaseSegmentIndex, CompiledDiamondSegment | null>;
   /** このマス（打者または走者）が記録したアウト番号 (1〜3) */
@@ -610,6 +627,7 @@ export function compileScorebookSheetModel(
         continue;
       }
 
+      const innRunsBeforePlay = innRuns;
       outsTracker = snap.outsBefore;
 
       // タイブレーク等で打席開始前に突如ベースに出現した先行走者の起点マスを確保
@@ -623,6 +641,18 @@ export function compileScorebookSheetModel(
               const tbCell = makeEmptyCell(inn, 1, rOrder, null);
               tbCell.isTiebreakRunnerOnly = true;
               tbCell.tiebreakStartBase = bKey;
+              tbCell.situation = {
+                outsBefore: 0,
+                outsAfter: 0,
+                basesBefore: { "1B": false, "2B": false, "3B": false },
+                basesAfterPlay: {
+                  "1B": Boolean(snap.basesBefore["1B"]),
+                  "2B": Boolean(snap.basesBefore["2B"]),
+                  "3B": Boolean(snap.basesBefore["3B"]),
+                },
+                isInningOver: false,
+                runsInPlay: 0,
+              };
               applyRunnerStepSegments(tbCell, "BAT", bKey, false, {
                 isBatterHit: false,
                 hitBases: 0,
@@ -965,6 +995,23 @@ export function compileScorebookSheetModel(
       }
 
       // D) 次打席に向けた塁上起点セルの更新
+      cell.situation = {
+        outsBefore: snap.outsBefore,
+        outsAfter: snap.outsAfter,
+        basesBefore: {
+          "1B": Boolean(snap.basesBefore["1B"]),
+          "2B": Boolean(snap.basesBefore["2B"]),
+          "3B": Boolean(snap.basesBefore["3B"]),
+        },
+        basesAfterPlay: {
+          "1B": Boolean(snap.basesAfterPlay["1B"]),
+          "2B": Boolean(snap.basesAfterPlay["2B"]),
+          "3B": Boolean(snap.basesAfterPlay["3B"]),
+        },
+        isInningOver: snap.isInningOver,
+        runsInPlay: Math.max(ab.runsInPlay || 0, innRuns - innRunsBeforePlay),
+      };
+
       const nextOrigins: Record<OccupiedBaseKey, string | null> = {
         "1B": null,
         "2B": null,

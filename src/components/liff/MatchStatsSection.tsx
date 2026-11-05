@@ -24,10 +24,12 @@ import {
   type InspectedScorebookCellItem,
 } from "@/lib/liff/scorebook-cell-guide";
 import type {
+  CompiledCellBasePresence,
   CompiledScorebookCell,
   CompiledScorebookSheetModel,
 } from "@/lib/liff/scorebook-renderer-model";
 import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
+import type { CanonicalAtBatResult } from "@/types/scorebook-v2";
 import { cn } from "@/lib/utils";
 
 export interface LiffBatterStatItem {
@@ -122,6 +124,22 @@ interface HighlightHeroItem {
   description: string;
 }
 
+type TimelineBadgeTone =
+  | "hr"
+  | "xbh"
+  | "hit"
+  | "walk"
+  | "sac"
+  | "reach"
+  | "so"
+  | "dp"
+  | "out";
+
+interface TimelineRunnerChip {
+  text: string;
+  kind: "score" | "advance" | "out";
+}
+
 interface ParsedTimelineEntry {
   id: string;
   inning: number;
@@ -131,13 +149,17 @@ interface ParsedTimelineEntry {
   pitcherName: string;
   mainResult: string;
   runnerNote: string;
+  runnerChips: TimelineRunnerChip[];
   rbiTag: string;
+  runsInPlay: number;
   balls: number;
   strikes: number;
   outs: number;
   hasBso: boolean;
+  basesAfter: CompiledCellBasePresence;
+  isInningOver: boolean;
   pitchesList: string[];
-  badgeTone: "hr" | "hit" | "walk" | "sac" | "score" | "out";
+  badgeTone: TimelineBadgeTone;
   cellItem?: InspectedScorebookCellItem;
 }
 
@@ -343,33 +365,550 @@ function buildFallbackGameDetails(
   return details;
 }
 
+const EMPTY_BASES_PRESENCE: CompiledCellBasePresence = {
+  "1B": false,
+  "2B": false,
+  "3B": false,
+};
+
 function classifyResultTone(
   text: string,
-  resultType?: string
-): ParsedTimelineEntry["badgeTone"] {
-  if (text.includes("本塁打") || text.includes("本") || text.includes("HR")) {
+  resultType?: string,
+  resultCode?: CanonicalAtBatResult
+): TimelineBadgeTone {
+  if (resultCode) {
+    switch (resultCode) {
+      case "home_run":
+        return "hr";
+      case "double":
+      case "triple":
+        return "xbh";
+      case "single":
+        return "hit";
+      case "walk":
+      case "intentional_walk":
+      case "hit_by_pitch":
+        return "walk";
+      case "sac_bunt":
+      case "sac_fly":
+        return "sac";
+      case "double_play":
+      case "triple_play":
+        return "dp";
+      case "strikeout":
+      case "dropped_third_strike_out":
+        return "so";
+      case "error":
+      case "fc":
+      case "dropped_third_strike":
+      case "interference":
+        return "reach";
+      case "groundout":
+      case "flyout":
+      case "infield_fly":
+      case "interference_out":
+      case "other":
+        return "out";
+    }
+  }
+
+  const t = (text || "").trim();
+  if (/本塁打|ホームラン|満塁本|[左中右]越本|[左中右]本|^HR$/i.test(t)) {
     return "hr";
   }
   if (
+    /二塁打|２塁打|ツーベース|三塁打|３塁打|スリーベース|[投捕一二三遊左中右](?:前|中間|線|越)[二三](?:$|[^ゴ飛直邪失野併])|^2B$|^3B$/i.test(
+      t
+    )
+  ) {
+    return "xbh";
+  }
+  if (
     resultType === "hit" ||
-    text.includes("安") ||
-    text.includes("二塁打") ||
-    text.includes("三塁打") ||
-    text.includes("二") ||
-    text.includes("三") && !text.includes("三振") && !text.includes("三ゴ") && !text.includes("三飛") && !text.includes("三直") && !text.includes("三邪") && !text.includes("三重殺")
+    /安打|内野安|バント安|バントヒット|[投捕一二三遊左中右](?:前|中間|線|越)?安|^1B$|^H$/i.test(
+      t
+    )
   ) {
     return "hit";
   }
-  if (text.includes("四球") || text.includes("死球") || text.includes("敬遠")) {
+  if (/四球|死球|敬遠|フォアボール|デッドボール|^BB$|^IBB$|^HBP$|^DB$/i.test(t)) {
     return "walk";
   }
-  if (text.includes("犠打") || text.includes("犠飛")) {
+  if (/犠打|犠飛|送りバント|犠牲フライ|^SH$|^SF$/i.test(t)) {
     return "sac";
   }
-  if (resultType === "score" || text.includes("打点") || text.includes("生還")) {
-    return "score";
+  if (/併殺|ダブルプレー|ゲッツー|三重殺|トリプルプレー|\bDP\b|\bTP\b/i.test(t)) {
+    return "dp";
+  }
+  if (
+    !/振逃出塁|振り逃げ出塁/.test(t) &&
+    /三振|空三振|見三振|振り逃げアウト|振逃アウト|^SO$|^K$/i.test(t)
+  ) {
+    return "so";
+  }
+  if (
+    /敵失|失策|エラー|野選|野手選択|フィルダースチョイス|振逃|振り逃げ|打撃妨害|タイブレーク|^E[1-9]?$|^[1-9]E$|^FC$/i.test(
+      t
+    )
+  ) {
+    return "reach";
   }
   return "out";
+}
+
+function parseRunnerNoteToChips(runnerNote: string): TimelineRunnerChip[] {
+  const clean = (runnerNote || "").trim();
+  if (!clean) return [];
+  return clean
+    .split(/\s*(?:、|\/|／)\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((rawPart) => {
+      const normalized = rawPart
+        .replace(/[:：]/g, " ")
+        .replace(/(?:一塁|二塁|三塁|1塁|2塁|3塁)→本塁生還/g, "生還")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (/生還|本進|ホームイン/.test(rawPart)) {
+        return { text: normalized, kind: "score" as const };
+      }
+      if (/アウト|死|刺/.test(rawPart)) {
+        return { text: normalized, kind: "out" as const };
+      }
+      return { text: normalized, kind: "advance" as const };
+    });
+}
+
+function extractRunsFromTags(
+  rbiTag: string,
+  runnerChips: TimelineRunnerChip[],
+  badgeTone: TimelineBadgeTone
+): number {
+  let tagRuns = 0;
+  const rbiMatch = rbiTag.match(/(?:打点|得点)(\d+)/);
+  if (rbiMatch) {
+    tagRuns = Number(rbiMatch[1]) || 0;
+  }
+  const scoredRunners = runnerChips.filter((c) => c.kind === "score").length;
+  const selfHr = badgeTone === "hr" ? 1 : 0;
+  return Math.max(tagRuns, scoredRunners + selfHr);
+}
+
+function formatTimelineSituationLabel(
+  outs: number,
+  bases: CompiledCellBasePresence,
+  isInningOver: boolean
+): string {
+  if (isInningOver || outs >= 3) {
+    return "3死チェンジ";
+  }
+  const outsText = outs <= 0 ? "無死" : `${outs}死`;
+  const b1 = bases["1B"];
+  const b2 = bases["2B"];
+  const b3 = bases["3B"];
+
+  let baseText = "走者なし";
+  if (b1 && b2 && b3) baseText = "満塁";
+  else if (b2 && b3) baseText = "二・三塁";
+  else if (b1 && b3) baseText = "一・三塁";
+  else if (b1 && b2) baseText = "一・二塁";
+  else if (b3) baseText = "三塁";
+  else if (b2) baseText = "二塁";
+  else if (b1) baseText = "一塁";
+
+  return `${outsText} ${baseText}`;
+}
+
+/**
+ * スコアブックモデルが無い試合（ライブ入力ログ・ボックススコアのみ等）でも
+ * 各イニング表裏のアウト累積数・一〜三塁の進塁状態を時系列シミュレーションして補完する
+ */
+function enrichTimelineEntriesWithSituation(
+  entries: ParsedTimelineEntry[]
+): ParsedTimelineEntry[] {
+  let currentSideKey = "";
+  let runningOuts = 0;
+  let runningBases: CompiledCellBasePresence = { ...EMPTY_BASES_PRESENCE };
+
+  return entries.map((entry) => {
+    const sideKey = `${entry.inning}:${entry.isTop ? 1 : 0}`;
+    if (sideKey !== currentSideKey) {
+      currentSideKey = sideKey;
+      runningOuts = 0;
+      runningBases = { ...EMPTY_BASES_PRESENCE };
+    }
+
+    const exactSit = entry.cellItem?.cell.situation;
+    if (exactSit) {
+      runningOuts = exactSit.isInningOver ? 0 : exactSit.outsAfter;
+      runningBases = exactSit.isInningOver
+        ? { ...EMPTY_BASES_PRESENCE }
+        : { ...exactSit.basesAfterPlay };
+      return {
+        ...entry,
+        outs: exactSit.outsAfter,
+        basesAfter: exactSit.basesAfterPlay,
+        isInningOver: exactSit.isInningOver,
+        runsInPlay: Math.max(entry.runsInPlay, exactSit.runsInPlay),
+      };
+    }
+
+    // フォールバック：打席結果・走者ノートから進塁状態と累積アウトを推定
+    let nextOuts = runningOuts;
+    let nextBases: CompiledCellBasePresence = { ...runningBases };
+    const tone = entry.badgeTone;
+    const text = entry.mainResult;
+
+    // 1) 明示的な走者ノートがある場合は生還・アウト・進塁先を先に反映
+    for (const chip of entry.runnerChips) {
+      const ct = chip.text;
+      const from1 =
+        /一走|(?:一塁|1塁)→/.test(ct) ||
+        (/(?:一塁|1塁)/.test(ct) && !/→(?:一塁|1塁)/.test(ct));
+      const from2 =
+        /二走|(?:二塁|2塁)→/.test(ct) ||
+        (/(?:二塁|2塁)/.test(ct) && !/→(?:二塁|2塁)|二進|二塁盗塁/.test(ct));
+      const from3 =
+        /三走|(?:三塁|3塁)→/.test(ct) ||
+        (/(?:三塁|3塁)/.test(ct) && !/→(?:三塁|3塁)|三進|三塁盗塁/.test(ct));
+
+      if (from3) nextBases["3B"] = false;
+      else if (from2) nextBases["2B"] = false;
+      else if (from1) nextBases["1B"] = false;
+
+      if (chip.kind === "out") {
+        nextOuts = Math.min(3, nextOuts + 1);
+      } else if (chip.kind === "advance") {
+        if (/三進|→三塁|→3塁|三塁盗塁/.test(ct)) nextBases["3B"] = true;
+        else if (/二進|→二塁|→2塁|二塁盗塁|盗塁/.test(ct)) nextBases["2B"] = true;
+      }
+    }
+
+    const hadExplicitRunnerMoves = entry.runnerChips.length > 0;
+    let estRuns = entry.runsInPlay;
+
+    // 2) 打者自身の結果による進塁・アウト遷移
+    if (/タイブレーク/.test(text)) {
+      if (/一塁/.test(text)) nextBases["1B"] = true;
+      else if (/三塁/.test(text)) nextBases["3B"] = true;
+      else nextBases["2B"] = true;
+    } else if (tone === "hr") {
+      const runnersOn =
+        (runningBases["1B"] ? 1 : 0) +
+        (runningBases["2B"] ? 1 : 0) +
+        (runningBases["3B"] ? 1 : 0);
+      estRuns = Math.max(estRuns, runnersOn + 1);
+      nextBases = { "1B": false, "2B": false, "3B": false };
+    } else if (tone === "xbh") {
+      const isTriple = /三塁打|３塁打|スリーベース|[左中右](?:中間|線|越)?三$|^3B$/i.test(
+        text
+      );
+      if (isTriple) {
+        nextBases = { "1B": false, "2B": false, "3B": true };
+      } else {
+        if (!hadExplicitRunnerMoves) {
+          const keep3B = runningBases["1B"] && estRuns === 0;
+          nextBases = { "1B": false, "2B": true, "3B": keep3B };
+        } else {
+          nextBases["1B"] = false;
+          nextBases["2B"] = true;
+        }
+      }
+    } else if (tone === "hit" || tone === "reach") {
+      if (!hadExplicitRunnerMoves) {
+        const next3B = estRuns > 0 ? false : runningBases["2B"] || runningBases["3B"];
+        const next2B = runningBases["1B"];
+        nextBases = { "1B": true, "2B": next2B, "3B": next3B };
+      } else {
+        nextBases["1B"] = true;
+      }
+    } else if (tone === "walk") {
+      if (!hadExplicitRunnerMoves) {
+        const next3B =
+          (runningBases["1B"] && runningBases["2B"]) ||
+          (runningBases["3B"] && !(runningBases["1B"] && runningBases["2B"]));
+        const next2B =
+          runningBases["1B"] || (runningBases["2B"] && !runningBases["1B"]);
+        nextBases = { "1B": true, "2B": next2B, "3B": next3B };
+      } else {
+        nextBases["1B"] = true;
+      }
+    } else if (tone === "sac") {
+      nextOuts = Math.min(3, runningOuts + 1);
+      if (!hadExplicitRunnerMoves && nextOuts < 3) {
+        if (/犠飛|犠牲フライ|SF/i.test(text)) {
+          nextBases["3B"] = false;
+        } else {
+          nextBases = {
+            "1B": false,
+            "2B": runningBases["1B"],
+            "3B": runningBases["2B"] || (runningBases["3B"] && estRuns === 0),
+          };
+        }
+      }
+    } else if (tone === "dp") {
+      const outDelta = /三重殺|トリプルプレー|TP/i.test(text) ? 3 : 2;
+      nextOuts = Math.min(3, runningOuts + outDelta);
+      if (!hadExplicitRunnerMoves) {
+        if (nextBases["1B"]) nextBases["1B"] = false;
+        else if (nextBases["2B"]) nextBases["2B"] = false;
+      }
+    } else {
+      // 三振・ゴロ・フライ等の通常アウト（走塁死単独ログの場合は二重加算しない）
+      const runnerOnlyOut =
+        hadExplicitRunnerMoves &&
+        entry.runnerChips.some((c) => c.kind === "out") &&
+        /盗塁死|牽制死|走塁死/.test(text);
+      if (!runnerOnlyOut) {
+        nextOuts = Math.min(3, runningOuts + 1);
+      }
+    }
+
+    const isInningOver = nextOuts >= 3;
+    const finalBases = isInningOver
+      ? { ...EMPTY_BASES_PRESENCE }
+      : { ...nextBases };
+
+    runningOuts = isInningOver ? 0 : nextOuts;
+    runningBases = { ...finalBases };
+
+    return {
+      ...entry,
+      outs: nextOuts,
+      basesAfter: nextBases,
+      isInningOver,
+      runsInPlay: estRuns,
+    };
+  });
+}
+
+function getTimelineBadgeAndRowStyle(
+  tone: TimelineBadgeTone,
+  hasRunsScored: boolean
+): {
+  badgeClass: string;
+  rowAccentClass: string;
+  rowBgClass: string;
+} {
+  switch (tone) {
+    case "hr":
+      return {
+        badgeClass:
+          "bg-rose-600 text-white border-rose-700 shadow-2xs",
+        rowAccentClass: "border-l-rose-600",
+        rowBgClass: "bg-[#fff1f2] dark:bg-rose-950",
+      };
+    case "xbh":
+      return {
+        badgeClass:
+          "bg-orange-500 text-white border-orange-600 shadow-2xs",
+        rowAccentClass: hasRunsScored ? "border-l-amber-500" : "border-l-orange-500",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+    case "hit":
+      return {
+        badgeClass:
+          "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-800",
+        rowAccentClass: hasRunsScored ? "border-l-amber-500" : "border-l-rose-500",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+    case "walk":
+      return {
+        badgeClass:
+          "bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800",
+        rowAccentClass: hasRunsScored
+          ? "border-l-amber-500"
+          : "border-l-emerald-500",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+    case "sac":
+      return {
+        badgeClass:
+          "bg-sky-50 text-sky-700 border-sky-300 dark:bg-sky-950 dark:text-sky-200 dark:border-sky-800",
+        rowAccentClass: hasRunsScored ? "border-l-amber-500" : "border-l-sky-500",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+    case "reach":
+      return {
+        badgeClass:
+          "bg-amber-100 text-amber-900 border-amber-400 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-700",
+        rowAccentClass: "border-l-amber-500",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+    case "so":
+      return {
+        badgeClass:
+          "bg-indigo-50 text-indigo-700 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-200 dark:border-indigo-800",
+        rowAccentClass: "border-l-indigo-400 dark:border-l-indigo-500",
+        rowBgClass: "bg-card",
+      };
+    case "dp":
+      return {
+        badgeClass:
+          "bg-slate-700 text-white border-slate-800 dark:bg-slate-600 dark:text-white dark:border-slate-500",
+        rowAccentClass: "border-l-slate-600 dark:border-l-slate-500",
+        rowBgClass: "bg-card",
+      };
+    case "out":
+      return {
+        badgeClass:
+          "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+        rowAccentClass: hasRunsScored
+          ? "border-l-amber-500"
+          : "border-l-slate-300 dark:border-l-slate-700",
+        rowBgClass: hasRunsScored
+          ? "bg-[#fffbeb] dark:bg-amber-950"
+          : "bg-card",
+      };
+  }
+}
+
+/**
+ * 一塁・二塁・三塁の「3つのひし形」で現在の進塁状況を直感的に表すソリッドSVGアイコン
+ */
+function TimelineThreeBaseDiamond({
+  bases,
+  isInningOver,
+}: {
+  bases: CompiledCellBasePresence;
+  isInningOver: boolean;
+}) {
+  const has1B = !isInningOver && bases["1B"];
+  const has2B = !isInningOver && bases["2B"];
+  const has3B = !isInningOver && bases["3B"];
+
+  const emptyClass = isInningOver
+    ? "fill-slate-200 dark:fill-slate-800 stroke-slate-300 dark:stroke-slate-700"
+    : "fill-white dark:fill-slate-900 stroke-slate-400 dark:stroke-slate-500";
+
+  return (
+    <svg
+      width={30}
+      height={21}
+      viewBox="0 0 36 25"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      {/* 二塁（上中央） */}
+      <polygon
+        points="18,1.4 23.8,7.2 18,13 12.2,7.2"
+        fill={has2B ? "#f59e0b" : undefined}
+        stroke={has2B ? "#b45309" : undefined}
+        strokeWidth={has2B ? 1.65 : 1.45}
+        className={has2B ? undefined : emptyClass}
+      />
+      {/* 三塁（左下） */}
+      <polygon
+        points="10.2,9.6 16,15.4 10.2,21.2 4.4,15.4"
+        fill={has3B ? "#f59e0b" : undefined}
+        stroke={has3B ? "#b45309" : undefined}
+        strokeWidth={has3B ? 1.65 : 1.45}
+        className={has3B ? undefined : emptyClass}
+      />
+      {/* 一塁（右下） */}
+      <polygon
+        points="25.8,9.6 31.6,15.4 25.8,21.2 20,15.4"
+        fill={has1B ? "#f59e0b" : undefined}
+        stroke={has1B ? "#b45309" : undefined}
+        strokeWidth={has1B ? 1.65 : 1.45}
+        className={has1B ? undefined : emptyClass}
+      />
+    </svg>
+  );
+}
+
+/**
+ * B（緑3灯）・S（黄2灯）・O（赤3灯）をスコアボードと同じ丸記号（●/○）で表示するインジケーター
+ */
+function TimelineBsoSymbolBar({
+  balls,
+  strikes,
+  outs,
+  hasPitchCount,
+}: {
+  balls: number;
+  strikes: number;
+  outs: number;
+  hasPitchCount: boolean;
+}) {
+  const litB = Math.max(0, Math.min(3, balls));
+  const litS = Math.max(0, Math.min(2, strikes));
+  const litO = Math.max(0, Math.min(3, outs));
+
+  const unlitDotClass =
+    "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600";
+
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 shrink-0 select-none"
+      aria-label={
+        hasPitchCount
+          ? `ボール${balls} ストライク${strikes} アウト${outs}`
+          : `アウト${outs}`
+      }
+    >
+      {hasPitchCount && (
+        <>
+          <span className="inline-flex items-center gap-[2px]">
+            <span className="text-[9.5px] font-mono font-black text-emerald-700 dark:text-emerald-400 leading-none mr-[1px]">
+              B
+            </span>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={`b-${i}`}
+                className={cn(
+                  "w-[7px] h-[7px] rounded-full border",
+                  i < litB
+                    ? "bg-emerald-500 border-emerald-700"
+                    : unlitDotClass
+                )}
+              />
+            ))}
+          </span>
+
+          <span className="inline-flex items-center gap-[2px]">
+            <span className="text-[9.5px] font-mono font-black text-amber-600 dark:text-amber-400 leading-none mr-[1px]">
+              S
+            </span>
+            {[0, 1].map((i) => (
+              <span
+                key={`s-${i}`}
+                className={cn(
+                  "w-[7px] h-[7px] rounded-full border",
+                  i < litS ? "bg-amber-400 border-amber-600" : unlitDotClass
+                )}
+              />
+            ))}
+          </span>
+        </>
+      )}
+
+      <span className="inline-flex items-center gap-[2px]">
+        <span className="text-[9.5px] font-mono font-black text-rose-600 dark:text-rose-400 leading-none mr-[1px]">
+          O
+        </span>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={`o-${i}`}
+            className={cn(
+              "w-[7px] h-[7px] rounded-full border",
+              i < litO ? "bg-rose-500 border-rose-700" : unlitDotClass
+            )}
+          />
+        ))}
+      </span>
+    </div>
+  );
 }
 
 function parseTimelineEntries(
@@ -443,6 +982,9 @@ function parseTimelineEntries(
       }
 
       const mainResult = bodyText || "打席完了";
+      const badgeTone = classifyResultTone(mainResult, log.resultType);
+      const runnerChips = parseRunnerNoteToChips(runnerNote);
+      const runsInPlay = extractRunsFromTags(rbiTag, runnerChips, badgeTone);
 
       return {
         id: log.id,
@@ -453,13 +995,17 @@ function parseTimelineEntries(
         pitcherName: matchedBox?.pitcherName || "",
         mainResult,
         runnerNote,
+        runnerChips,
         rbiTag,
+        runsInPlay,
         balls,
         strikes,
         outs,
         hasBso,
+        basesAfter: { ...EMPTY_BASES_PRESENCE },
+        isInningOver: false,
         pitchesList,
-        badgeTone: classifyResultTone(mainResult, log.resultType),
+        badgeTone,
       };
     });
   }
@@ -467,6 +1013,7 @@ function parseTimelineEntries(
   return boxscoreAtBats.map((ab) => {
     const rawRes = ab.result || "";
     const displayRes = CANONICAL_RESULT_JA[rawRes] || rawRes || "打席完了";
+    const badgeTone = classifyResultTone(displayRes);
     return {
       id: ab.id,
       inning: ab.inning,
@@ -476,13 +1023,17 @@ function parseTimelineEntries(
       pitcherName: ab.pitcherName || "",
       mainResult: displayRes,
       runnerNote: "",
+      runnerChips: [],
       rbiTag: "",
+      runsInPlay: badgeTone === "hr" ? 1 : 0,
       balls: 0,
       strikes: 0,
       outs: 0,
       hasBso: false,
+      basesAfter: { ...EMPTY_BASES_PRESENCE },
+      isInningOver: false,
       pitchesList: [],
-      badgeTone: classifyResultTone(displayRes),
+      badgeTone,
     };
   });
 }
@@ -514,6 +1065,11 @@ function buildTimelineEntriesFromScorebookModels(
             : cell.tiebreakStartBase === "3B"
             ? "三塁"
             : "二塁";
+        const tbBases: CompiledCellBasePresence = cell.situation?.basesAfterPlay ?? {
+          "1B": cell.tiebreakStartBase === "1B",
+          "2B": cell.tiebreakStartBase !== "1B" && cell.tiebreakStartBase !== "3B",
+          "3B": cell.tiebreakStartBase === "3B",
+        };
         return {
           id: `sb-${model.isTop ? "top" : "bot"}-${cell.cellKey}`,
           inning: cell.inning,
@@ -523,13 +1079,17 @@ function buildTimelineEntriesFromScorebookModels(
           pitcherName: "",
           mainResult: `タイブレーク${startJa}走者`,
           runnerNote: "",
+          runnerChips: [],
           rbiTag: "",
+          runsInPlay: 0,
           balls: 0,
           strikes: 0,
-          outs: 0,
+          outs: cell.situation?.outsAfter ?? 0,
           hasBso: false,
+          basesAfter: tbBases,
+          isInningOver: false,
           pitchesList: [],
-          badgeTone: "walk",
+          badgeTone: "reach",
           cellItem: item,
         };
       }
@@ -540,22 +1100,38 @@ function buildTimelineEntriesFromScorebookModels(
         "打席完了";
 
       const runnerNotes: string[] = [];
+      const runnerChips: TimelineRunnerChip[] = [];
       for (const adv of ab.advances) {
         if (adv.from === "BAT") continue;
         const fromJa = BASE_CODE_SHORT_JA[adv.from] || adv.from;
         const toJa = BASE_CODE_SHORT_JA[adv.to] || adv.to;
         if (adv.isOut) {
-          runnerNotes.push(`${adv.runnerName || "走者"} ${toJa}アウト`);
+          const t = `${adv.runnerName || "走者"} ${toJa}アウト`;
+          runnerNotes.push(t);
+          runnerChips.push({ text: t, kind: "out" });
         } else if (adv.method === "steal") {
-          runnerNotes.push(`${adv.runnerName || "走者"} ${toJa}盗塁`);
+          const t = `${adv.runnerName || "走者"} ${toJa}盗塁`;
+          runnerNotes.push(t);
+          runnerChips.push({ text: t, kind: "advance" });
         } else if (adv.to === "HP") {
-          runnerNotes.push(`${adv.runnerName || "走者"} 生還`);
+          const t = `${adv.runnerName || "走者"} 生還`;
+          runnerNotes.push(t);
+          runnerChips.push({ text: t, kind: "score" });
         } else {
-          runnerNotes.push(`${adv.runnerName || "走者"} ${fromJa}→${toJa}`);
+          const t = `${adv.runnerName || "走者"} ${fromJa}→${toJa}`;
+          runnerNotes.push(t);
+          runnerChips.push({ text: t, kind: "advance" });
         }
       }
 
-      const rbiTag = ab.rbi > 0 ? `打点${ab.rbi}` : "";
+      const runsInPlay =
+        cell.situation?.runsInPlay ?? Math.max(ab.runsInPlay || 0, ab.rbi || 0);
+      const rbiTag =
+        ab.rbi > 0
+          ? `打点${ab.rbi}`
+          : runsInPlay > 0
+          ? `得点${runsInPlay}`
+          : "";
       const isHitCode =
         ab.resultCode === "single" ||
         ab.resultCode === "double" ||
@@ -571,15 +1147,20 @@ function buildTimelineEntriesFromScorebookModels(
         pitcherName: ab.pitcherName || "",
         mainResult,
         runnerNote: runnerNotes.join(" / "),
+        runnerChips,
         rbiTag,
+        runsInPlay,
         balls: ab.balls || 0,
         strikes: Math.min(2, ab.strikes || 0),
-        outs: ab.endingOuts || 0,
-        hasBso: ab.pitches.length > 0 || ab.balls > 0 || ab.strikes > 0,
+        outs: cell.situation?.outsAfter ?? ab.endingOuts ?? 0,
+        hasBso: true,
+        basesAfter: cell.situation?.basesAfterPlay ?? { ...EMPTY_BASES_PRESENCE },
+        isInningOver: cell.situation?.isInningOver ?? (ab.endingOuts || 0) >= 3,
         pitchesList: [],
         badgeTone: classifyResultTone(
           mainResult,
-          isHitCode ? "hit" : ab.runsInPlay > 0 ? "score" : undefined
+          isHitCode ? "hit" : runsInPlay > 0 ? "score" : undefined,
+          ab.resultCode
         ),
         cellItem: item,
       };
@@ -652,10 +1233,75 @@ function attachScorebookCellsToTimelineEntries(
       return entry;
     }
 
+    const ab = matchedCell.atBat;
+    const sit = matchedCell.situation;
+    const canonicalTone = ab
+      ? classifyResultTone(entry.mainResult, undefined, ab.resultCode)
+      : entry.badgeTone;
+
+    let resolvedRunnerChips = entry.runnerChips;
+    let resolvedRunnerNote = entry.runnerNote;
+    if (resolvedRunnerChips.length === 0 && ab && ab.advances.length > 0) {
+      const fbChips: TimelineRunnerChip[] = [];
+      for (const adv of ab.advances) {
+        if (adv.from === "BAT") continue;
+        const fromJa = BASE_CODE_SHORT_JA[adv.from] || adv.from;
+        const toJa = BASE_CODE_SHORT_JA[adv.to] || adv.to;
+        if (adv.isOut) {
+          fbChips.push({
+            text: `${adv.runnerName || "走者"} ${toJa}アウト`,
+            kind: "out",
+          });
+        } else if (adv.method === "steal") {
+          fbChips.push({
+            text: `${adv.runnerName || "走者"} ${toJa}盗塁`,
+            kind: "advance",
+          });
+        } else if (adv.to === "HP") {
+          fbChips.push({
+            text: `${adv.runnerName || "走者"} 生還`,
+            kind: "score",
+          });
+        } else if (adv.from !== adv.to) {
+          fbChips.push({
+            text: `${adv.runnerName || "走者"} ${fromJa}→${toJa}`,
+            kind: "advance",
+          });
+        }
+      }
+      if (fbChips.length > 0) {
+        resolvedRunnerChips = fbChips;
+        resolvedRunnerNote = fbChips.map((c) => c.text).join(" / ");
+      }
+    }
+
+    const resolvedRuns = Math.max(
+      entry.runsInPlay,
+      sit?.runsInPlay ?? ab?.runsInPlay ?? 0
+    );
+    const resolvedRbiTag =
+      entry.rbiTag ||
+      (ab && ab.rbi > 0
+        ? `打点${ab.rbi}`
+        : resolvedRuns > 0
+        ? `得点${resolvedRuns}`
+        : "");
+
     return {
       ...entry,
       orderLabel: entry.orderLabel || String(matchedCell.battingOrder),
-      pitcherName: entry.pitcherName || matchedCell.atBat?.pitcherName || "",
+      pitcherName: entry.pitcherName || ab?.pitcherName || "",
+      runnerNote: resolvedRunnerNote,
+      runnerChips: resolvedRunnerChips,
+      rbiTag: resolvedRbiTag,
+      balls: entry.hasBso ? entry.balls : ab?.balls || 0,
+      strikes: entry.hasBso ? entry.strikes : ab?.strikes || 0,
+      outs: sit?.outsAfter ?? ab?.endingOuts ?? entry.outs,
+      hasBso: entry.hasBso || Boolean(ab),
+      basesAfter: sit?.basesAfterPlay ?? entry.basesAfter,
+      isInningOver: sit?.isInningOver ?? entry.isInningOver,
+      runsInPlay: resolvedRuns,
+      badgeTone: canonicalTone,
       cellItem: {
         cell: matchedCell,
         model: bucket.model,
@@ -876,15 +1522,19 @@ export function MatchStatsSection({
       (isDemoMatch || base.length === 0) &&
       (topScorebookModel || bottomScorebookModel)
     ) {
-      return buildTimelineEntriesFromScorebookModels(
-        topScorebookModel,
-        bottomScorebookModel
+      return enrichTimelineEntriesWithSituation(
+        buildTimelineEntriesFromScorebookModels(
+          topScorebookModel,
+          bottomScorebookModel
+        )
       );
     }
-    return attachScorebookCellsToTimelineEntries(
-      base,
-      topScorebookModel,
-      bottomScorebookModel
+    return enrichTimelineEntriesWithSituation(
+      attachScorebookCellsToTimelineEntries(
+        base,
+        topScorebookModel,
+        bottomScorebookModel
+      )
     );
   }, [
     needTimeline,
@@ -894,6 +1544,15 @@ export function MatchStatsSection({
     topScorebookModel,
     bottomScorebookModel,
   ]);
+
+  const halfInningRunsMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const entry of timelineEntries) {
+      const key = `${entry.inning}:${entry.isTop ? 1 : 0}`;
+      map.set(key, (map.get(key) || 0) + (entry.runsInPlay || 0));
+    }
+    return map;
+  }, [timelineEntries]);
 
   const timelineInnings = useMemo(
     () =>
@@ -1790,14 +2449,45 @@ export function MatchStatsSection({
               )}
             </div>
 
-            {filteredTimelineCellItems.length > 0 && onInspectScorebookCell && (
-              <div className="px-3 py-1.5 bg-muted/45 border-b border-border flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground">
-                <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
-                <span>
-                  左のスコアマスや「記号解説」をタップすると、配球記号や守備番号の意味を確認できます
+            {/* 打席結果 色分け凡例 ＆ 1マス解説案内バー（単色ソリッド） */}
+            <div className="px-3 py-2 bg-[#f8fafc] dark:bg-slate-900 border-b border-border space-y-1.5">
+              <div className="flex items-center flex-wrap gap-1 text-[9.5px] font-black leading-none">
+                <span className="text-muted-foreground mr-0.5">結果色:</span>
+                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white border border-rose-700">
+                  本塁打
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-orange-500 text-white border border-orange-600">
+                  二・三塁打
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-300 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-800">
+                  単打
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-800">
+                  四死球
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-300 dark:bg-sky-950 dark:text-sky-200 dark:border-sky-800">
+                  犠打・犠飛
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-400 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-700">
+                  失策・野選
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-300 dark:bg-indigo-950 dark:text-indigo-200 dark:border-indigo-800">
+                  三振
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700">
+                  凡打
                 </span>
               </div>
-            )}
+
+              {filteredTimelineCellItems.length > 0 && onInspectScorebookCell && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground pt-0.5">
+                  <BookOpen className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span>
+                    左のスコアマス（「記号解説」）をタップすると、配球記号や守備番号の意味を確認できます
+                  </span>
+                </div>
+              )}
+            </div>
 
             {visibleTimelineEntries.length === 0 ? (
               <div className="p-6 text-center text-xs font-bold text-muted-foreground">
@@ -1818,146 +2508,213 @@ export function MatchStatsSection({
                   );
                   const canExpand = !hasCellGuide && entry.pitchesList.length > 0;
 
-                  const badgeStyle =
-                    entry.badgeTone === "hr"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : entry.badgeTone === "hit"
-                      ? "bg-primary/12 text-primary border-primary/25"
-                      : entry.badgeTone === "walk"
-                      ? "bg-primary/10 text-primary border-primary/20"
-                      : entry.badgeTone === "sac"
-                      ? "bg-primary/10 text-primary border-primary/20"
-                      : entry.badgeTone === "score"
-                      ? "bg-primary/12 text-primary border-primary/25"
-                      : "bg-muted/50 text-muted-foreground border-border";
+                  const halfKey = `${entry.inning}:${entry.isTop ? 1 : 0}`;
+                  const halfInningRuns = halfInningRunsMap.get(halfKey) || 0;
+                  const hasRunsOnPlay =
+                    entry.runsInPlay > 0 || Boolean(entry.rbiTag);
+                  const rowStyles = getTimelineBadgeAndRowStyle(
+                    entry.badgeTone,
+                    hasRunsOnPlay
+                  );
+                  const situationLabel = formatTimelineSituationLabel(
+                    entry.outs,
+                    entry.basesAfter,
+                    entry.isInningOver
+                  );
+                  const isScoringPosition =
+                    !entry.isInningOver &&
+                    entry.outs < 3 &&
+                    (entry.basesAfter["2B"] || entry.basesAfter["3B"]);
 
                   return (
                     <React.Fragment key={entry.id}>
                       {showHalfHeader && (
                         <div
                           className={cn(
-                            "px-3 py-1.5 flex items-center justify-between text-[11px] font-black border-b border-border",
+                            "px-3 py-1.5 flex items-center justify-between gap-2 text-[11px] font-black border-b border-border border-l-4",
                             isMyOffense
-                              ? "bg-primary/[0.08] text-primary"
-                              : "bg-muted/50 text-muted-foreground"
+                              ? "border-l-primary bg-[#eef2f6] dark:bg-slate-800 text-foreground"
+                              : "border-l-slate-400 bg-[#f8fafc] dark:bg-slate-900 text-muted-foreground"
                           )}
                         >
-                          <span>
-                            {entry.inning}回{entry.isTop ? "表" : "裏"}・
-                            {isMyOffense ? myTeamName : opponentName}の攻撃
-                          </span>
-                          {isMyOffense && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/15 text-primary">
-                              自チーム
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.5 rounded text-[10px] font-black tabular-nums shrink-0",
+                                isMyOffense
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-slate-600 text-white"
+                              )}
+                            >
+                              {entry.inning}回{entry.isTop ? "表" : "裏"}
                             </span>
-                          )}
+                            <span className="truncate">
+                              {isMyOffense ? myTeamName : opponentName}の攻撃
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            {halfInningRuns > 0 && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white border border-amber-600 text-[10px] font-black tabular-nums">
+                                +{halfInningRuns}点
+                              </span>
+                            )}
+                            {isMyOffense && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-card text-primary border border-primary font-black">
+                                自チーム
+                              </span>
+                            )}
+                          </div>
                         </div>
                       )}
 
-                      <div className="px-3 py-2.5 bg-card space-y-1.5">
-                        <div className="flex items-center justify-between gap-2.5">
-                          {/* 左：1マス清書SVGサムネイル（タップで記号解説モーダルを起動） */}
+                      <div
+                        className={cn(
+                          "px-3 py-2.5 border-l-[3.5px] space-y-1.5 transition-colors",
+                          rowStyles.rowAccentClass,
+                          rowStyles.rowBgClass
+                        )}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {/* 左：1マス清書SVG＋記号解説一体型カード（タップで記号解説モーダルを起動） */}
                           {entry.cellItem && scorebookRules && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onInspectScorebookCell?.(
-                                  entry.cellItem!,
-                                  filteredTimelineCellItems
-                                )
-                              }
-                              aria-label={`${entry.inning}回${
-                                entry.isTop ? "表" : "裏"
-                              } ${entry.batterName} のスコアマス記号解説を開く`}
-                              className="group relative rounded-lg border border-slate-300 hover:border-primary bg-[#fffefb] p-0.5 shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
-                            >
-                              <ScorebookSingleCellThumbnail
-                                cell={entry.cellItem.cell}
-                                rules={scorebookRules}
-                                className="w-[62px] h-[52px]"
-                              />
-                            </button>
+                            hasCellGuide ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onInspectScorebookCell?.(
+                                    entry.cellItem!,
+                                    filteredTimelineCellItems
+                                  )
+                                }
+                                aria-label={`${entry.inning}回${
+                                  entry.isTop ? "表" : "裏"
+                                } ${entry.batterName} のスコアマス記号解説を開く`}
+                                className="group flex flex-col items-center rounded-lg border border-slate-300 hover:border-primary bg-[#fffefb] overflow-hidden shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0 w-[64px]"
+                              >
+                                <div className="p-0.5 bg-[#fffefb]">
+                                  <ScorebookSingleCellThumbnail
+                                    cell={entry.cellItem.cell}
+                                    rules={scorebookRules}
+                                    className="w-[60px] h-[50px]"
+                                  />
+                                </div>
+                                <div className="w-full py-[2.5px] bg-[#eef2f6] group-hover:bg-primary border-t border-slate-300 group-hover:border-primary flex items-center justify-center gap-0.5 text-[9px] font-black text-slate-700 group-hover:text-primary-foreground leading-none transition-colors">
+                                  <BookOpen className="w-2.5 h-2.5 shrink-0" />
+                                  <span>記号解説</span>
+                                </div>
+                              </button>
+                            ) : (
+                              <div className="rounded-lg border border-slate-300 bg-[#fffefb] p-0.5 shadow-2xs shrink-0">
+                                <ScorebookSingleCellThumbnail
+                                  cell={entry.cellItem.cell}
+                                  rules={scorebookRules}
+                                  className="w-[60px] h-[50px]"
+                                />
+                              </div>
+                            )
                           )}
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {entry.orderLabel && (
-                                <span className="w-5 h-5 rounded-md bg-muted text-foreground font-mono tabular-nums text-[10px] font-black inline-flex items-center justify-center shrink-0">
-                                  {entry.orderLabel}
-                                </span>
-                              )}
-                              <span className="text-xs font-black text-foreground truncate">
-                                {entry.batterName}
-                              </span>
-                              {entry.pitcherName && (
-                                <span className="text-[10px] font-bold text-muted-foreground truncate">
-                                  vs {entry.pitcherName}
-                                </span>
-                              )}
-                            </div>
-
-                            {(entry.rbiTag || entry.runnerNote) && (
-                              <div className="mt-1 flex items-center flex-wrap gap-1">
-                                {entry.rbiTag && (
-                                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/25 text-[10px] font-black">
-                                    {entry.rbiTag}
+                          {/* 右：打者・結果バッジ ＆ 3つのひし形進塁状態・BSO丸記号バー */}
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            {/* 上段：打順・打者名 vs 投手名 ｜ 結果カラーバッジ */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                {entry.orderLabel && (
+                                  <span className="w-5 h-5 rounded-md bg-slate-800 dark:bg-slate-700 text-white font-mono tabular-nums text-[10px] font-black inline-flex items-center justify-center shrink-0">
+                                    {entry.orderLabel}
                                   </span>
                                 )}
-                                {entry.runnerNote && (
-                                  <span className="text-[10px] font-bold text-muted-foreground leading-snug">
-                                    {entry.runnerNote}
+                                <span className="text-xs font-black text-foreground truncate">
+                                  {entry.batterName}
+                                </span>
+                                {entry.pitcherName && (
+                                  <span className="text-[10px] font-bold text-muted-foreground truncate">
+                                    vs {entry.pitcherName}
                                   </span>
                                 )}
                               </div>
-                            )}
-                          </div>
 
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span
-                              className={cn(
-                                "inline-flex items-center px-2 py-0.5 rounded-lg border text-[11px] font-black leading-tight",
-                                badgeStyle
-                              )}
-                            >
-                              {entry.mainResult}
-                            </span>
-
-                            <div className="flex items-center gap-1.5 text-[10px] font-mono tabular-nums font-bold text-muted-foreground">
-                              {entry.hasBso && (
-                                <span>
-                                  B{entry.balls}-S{entry.strikes}
-                                </span>
-                              )}
-                              {hasCellGuide && entry.cellItem && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onInspectScorebookCell?.(
-                                      entry.cellItem!,
-                                      filteredTimelineCellItems
-                                    )
-                                  }
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-primary/10 hover:bg-primary/18 text-primary border border-primary/30 font-sans font-black cursor-pointer active:scale-95 transition-all"
-                                >
-                                  <BookOpen className="w-3 h-3 shrink-0" />
-                                  <span>記号解説</span>
-                                </button>
-                              )}
-                              {canExpand && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExpandPitchLog(entry.id)}
-                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground font-black cursor-pointer"
-                                >
-                                  <span>{entry.pitchesList.length}球</span>
-                                  {isExpanded ? (
-                                    <ChevronUp className="w-3 h-3" />
-                                  ) : (
-                                    <ChevronDown className="w-3 h-3" />
-                                  )}
-                                </button>
-                              )}
+                              <span
+                                className={cn(
+                                  "inline-flex items-center px-2 py-0.5 rounded-lg border text-[11px] font-black leading-tight shrink-0",
+                                  rowStyles.badgeClass
+                                )}
+                              >
+                                {entry.mainResult}
+                              </span>
                             </div>
+
+                            {/* 中段：3つのひし形（進塁状態）＋死数・塁状況テキスト ｜ BSO記号インジケーター */}
+                            <div className="rounded-lg bg-[#eef2f6] dark:bg-slate-800 border border-[#cbd5e1] dark:border-slate-700 px-2 py-1 flex items-center justify-between gap-x-2 gap-y-1 flex-wrap">
+                              <div className="inline-flex items-center gap-1.5 min-w-0">
+                                <TimelineThreeBaseDiamond
+                                  bases={entry.basesAfter}
+                                  isInningOver={entry.isInningOver}
+                                />
+                                <span
+                                  className={cn(
+                                    "text-[10px] font-black leading-none whitespace-nowrap",
+                                    entry.isInningOver || entry.outs >= 3
+                                      ? "text-slate-500 dark:text-slate-400"
+                                      : isScoringPosition
+                                      ? "text-amber-800 dark:text-amber-300"
+                                      : "text-slate-700 dark:text-slate-200"
+                                  )}
+                                >
+                                  {situationLabel}
+                                </span>
+                              </div>
+
+                              <div className="inline-flex items-center gap-1.5 shrink-0 ml-auto">
+                                <TimelineBsoSymbolBar
+                                  balls={entry.balls}
+                                  strikes={entry.strikes}
+                                  outs={entry.outs}
+                                  hasPitchCount={entry.hasBso}
+                                />
+                                {canExpand && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleExpandPitchLog(entry.id)}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-card hover:bg-muted border border-border text-[10px] font-mono tabular-nums text-foreground font-black cursor-pointer"
+                                  >
+                                    <span>{entry.pitchesList.length}球</span>
+                                    {isExpanded ? (
+                                      <ChevronUp className="w-3 h-3" />
+                                    ) : (
+                                      <ChevronDown className="w-3 h-3" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 下段：打点・得点ゴールドバッジ ＆ 走者進塁・生還・走塁死チップ */}
+                            {(entry.rbiTag || entry.runnerChips.length > 0) && (
+                              <div className="flex items-center flex-wrap gap-1 pt-0.5">
+                                {entry.rbiTag && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white border border-amber-600 text-[10px] font-black leading-tight shrink-0">
+                                    {entry.rbiTag}
+                                  </span>
+                                )}
+                                {entry.runnerChips.map((chip, cIdx) => (
+                                  <span
+                                    key={`${entry.id}-rc-${cIdx}`}
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded border text-[10px] font-bold leading-tight",
+                                      chip.kind === "score"
+                                        ? "bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:border-amber-700 font-black"
+                                        : chip.kind === "out"
+                                        ? "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-800"
+                                        : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+                                    )}
+                                  >
+                                    {chip.text}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -1966,7 +2723,7 @@ export function MatchStatsSection({
                             {entry.pitchesList.map((pLine, pIdx) => (
                               <span
                                 key={`${entry.id}-pt-${pIdx}`}
-                                className="px-2 py-0.5 rounded-md bg-muted/50 border border-border text-[10px] font-bold text-foreground font-mono"
+                                className="px-2 py-0.5 rounded-md bg-[#eef2f6] dark:bg-slate-800 border border-border text-[10px] font-bold text-foreground font-mono"
                               >
                                 {pLine}
                               </span>
@@ -1983,7 +2740,7 @@ export function MatchStatsSection({
             {/* 折りたたみ解除ボタン */}
             {selectedTimelineInning === "all" &&
               filteredTimelineEntries.length > 8 && (
-                <div className="p-2.5 bg-muted/35 border-t border-border">
+                <div className="p-2.5 bg-[#eef2f6] dark:bg-slate-900 border-t border-border">
                   <button
                     type="button"
                     onClick={() => setShowAllTimeline((prev) => !prev)}
