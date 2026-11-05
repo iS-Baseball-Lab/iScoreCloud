@@ -1,5 +1,5 @@
 // filepath: src/lib/liff/demo-lineup.ts
-import type { Match } from "@/types/match";
+import type { Match, MatchDayOps } from "@/types/match";
 import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
 
 export interface LineupPositionDef {
@@ -124,6 +124,7 @@ export interface DemoMatchCardItem {
   opponentInningScores?: number[];
   hasLineup?: boolean;
   hasScorebook?: boolean;
+  matchDayOps?: MatchDayOps | null;
 }
 
 export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
@@ -311,6 +312,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     opponentInningScores: [],
     hasLineup: false,
     hasScorebook: false,
+    matchDayOps: DEMO_MATCH_MAP["demo-match-3"]?.matchDayOps ?? null,
   },
   {
     id: "demo-match-1",
@@ -330,6 +332,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
     hasLineup: true,
     hasScorebook: true,
+    matchDayOps: DEMO_MATCH_MAP["demo-match-1"]?.matchDayOps ?? null,
   },
   {
     id: "demo-match-2",
@@ -349,6 +352,7 @@ export const DEMO_MATCH_CARDS: DemoMatchCardItem[] = [
     opponentInningScores: [1, 0, 2, 0, 1, 1, 0],
     hasLineup: true,
     hasScorebook: true,
+    matchDayOps: DEMO_MATCH_MAP["demo-match-2"]?.matchDayOps ?? null,
   },
 ];
 
@@ -411,6 +415,7 @@ export function getDemoMatchById(matchId: string): Match | null {
 
 export function getHydratedDemoMatchCards(baseList?: DemoMatchCardItem[]): DemoMatchCardItem[] {
   const customMatches = loadCustomDemoMatches();
+  const customById = new Map(customMatches.map((m) => [m.id, m]));
   const base = baseList && baseList.length > 0 ? baseList : DEMO_MATCH_CARDS;
   const existingIds = new Set(base.map((m) => m.id));
 
@@ -436,12 +441,22 @@ export function getHydratedDemoMatchCards(baseList?: DemoMatchCardItem[]): DemoM
       opponentInningScores: Array.isArray(m.opponentInningScores)
         ? m.opponentInningScores.filter((v): v is number => typeof v === "number")
         : [],
+      matchDayOps: m.matchDayOps ?? null,
     }));
 
   return [...customCards, ...base].map((m) => {
     const demoPayload = loadDemoMatchLineups(m.id);
     const hasSavedStarters = demoPayload.myLineup.some((s) => Boolean(s.playerId || s.name));
-    return { ...m, hasLineup: hasSavedStarters };
+    const customOverride = customById.get(m.id);
+    return {
+      ...m,
+      hasLineup: hasSavedStarters,
+      matchDayOps:
+        customOverride?.matchDayOps ??
+        m.matchDayOps ??
+        DEMO_MATCH_MAP[m.id]?.matchDayOps ??
+        null,
+    };
   });
 }
 

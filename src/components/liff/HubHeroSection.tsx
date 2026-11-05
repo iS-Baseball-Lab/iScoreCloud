@@ -527,7 +527,11 @@ export function HubHeroSection({
           <div className="flex items-center justify-between px-1 text-xs">
             <span className="font-extrabold text-muted-foreground flex items-center gap-1.5">
               <Trophy className="w-3.5 h-3.5 text-primary" />
-              <span>直近の試合結果</span>
+              <span>
+                {recentMatch && recentMatch.status === "scheduled"
+                  ? "予定の試合・役割担当"
+                  : "直近の試合結果"}
+              </span>
             </span>
             <Link
               href="/liff/matches"

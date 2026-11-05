@@ -890,6 +890,11 @@ function MatchesContent() {
           saveCustomDemoMatch(updatedDemo);
           invalidateLiffApiCache();
           setMatch(updatedDemo);
+          setMatchesList((prev) =>
+            prev.map((item) =>
+              item.id === match.id ? { ...item, matchDayOps: nextOps } : item
+            )
+          );
           setOpsEditorState((prev) => ({ ...prev, isOpen: false }));
           toast.success("当日のしおり・役割担当を保存しました（デモ）");
           return;
@@ -907,6 +912,11 @@ function MatchesContent() {
 
         invalidateLiffApiCache();
         setMatch((prev) => (prev ? { ...prev, matchDayOps: nextOps } : prev));
+        setMatchesList((prev) =>
+          prev.map((item) =>
+            item.id === match.id ? { ...item, matchDayOps: nextOps } : item
+          )
+        );
         setOpsEditorState((prev) => ({ ...prev, isOpen: false }));
         toast.success("当日のしおり・役割担当を保存しました");
       } catch (err) {

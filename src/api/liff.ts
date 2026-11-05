@@ -34,12 +34,13 @@ import {
   teamGroupMembers,
 } from "@/db/schema";
 import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
-import type {
-  LiffAdultMemberOption,
-  LiffMatchOpsContextResponse,
-  LiffMatchScheduleCarpoolCar,
-  LiffMatchScheduleSyncInfo,
-  LiffMyMatchIdentity,
+import {
+  parseMatchDayOpsJson,
+  type LiffAdultMemberOption,
+  type LiffMatchOpsContextResponse,
+  type LiffMatchScheduleCarpoolCar,
+  type LiffMatchScheduleSyncInfo,
+  type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
 import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
 import {
@@ -556,6 +557,15 @@ const DEMO_MATCHES = [
     opponentInningScores: [0, 1, 0, 0, 2, 1, 0],
     hasLineup: true,
     hasScorebook: true,
+    matchDayOps: {
+      staffRoles: [
+        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁審" },
+        { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
+        { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"] },
+        { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"] },
+        { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏" },
+      ],
+    },
   },
   {
     id: "demo-match-2",
@@ -575,6 +585,7 @@ const DEMO_MATCHES = [
     opponentInningScores: [1, 0, 2, 0, 1, 1, 0],
     hasLineup: true,
     hasScorebook: true,
+    matchDayOps: null,
   },
   {
     id: "demo-match-3",
@@ -594,6 +605,21 @@ const DEMO_MATCHES = [
     opponentInningScores: [],
     hasLineup: false,
     hasScorebook: false,
+    matchDayOps: {
+      gatherTime: "07:45 集合 / 08:00 出発",
+      gatherPlace: "桜本小学校 正門前（乗り合い出発）",
+      uniform: "公式戦ユニフォーム",
+      meal: "lunch_and_snack",
+      staffRoles: [
+        { roleKey: "plate_umpire", roleLabel: "球審", assignees: ["田中 パパ"], note: "本部派遣と交代制" },
+        { roleKey: "base_umpire", roleLabel: "塁審", assignees: ["小西 父", "中島 父"], note: "1塁・3塁（審判服着用）" },
+        { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
+        { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"], note: "ベンチ横カウント操作" },
+        { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
+        { roleKey: "buzzer", roleLabel: "ブザー", assignees: ["山田 母"], note: "放送室ブザー操作" },
+        { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
+      ],
+    },
   },
 ];
 
@@ -1116,6 +1142,7 @@ app.get("/hub", async (c) => {
           myErrors: matches.myErrors,
           opponentErrors: matches.opponentErrors,
           myLineup: matches.myLineup,
+          matchDayOps: matches.matchDayOps,
         })
         .from(matches)
         .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -1276,7 +1303,7 @@ app.get("/hub", async (c) => {
         const parsed = typeof m.myLineup === "string" ? JSON.parse(m.myLineup) : m.myLineup;
         hasLineup = Array.isArray(parsed) && parsed.some((item: { playerId?: string }) => Boolean(item?.playerId));
       } catch {}
-      const { myLineup: _omittedLineup, ...rest } = m;
+      const { myLineup: _omittedLineup, matchDayOps: rawMatchDayOps, ...rest } = m;
       return {
         ...rest,
         hasLineup,
@@ -1284,6 +1311,7 @@ app.get("/hub", async (c) => {
         tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
         opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
+        matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
       };
     });
 
@@ -1393,6 +1421,7 @@ app.get("/matches", async (c) => {
         myErrors: matches.myErrors,
         opponentErrors: matches.opponentErrors,
         myLineup: matches.myLineup,
+        matchDayOps: matches.matchDayOps,
       })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -1448,7 +1477,7 @@ app.get("/matches", async (c) => {
         hasLineup = Array.isArray(parsedLineup) && parsedLineup.some((item: { playerId?: string }) => Boolean(item?.playerId));
       } catch {}
 
-      const { myLineup: _omittedLineup, ...rest } = m;
+      const { myLineup: _omittedLineup, matchDayOps: rawMatchDayOps, ...rest } = m;
 
       return {
         ...rest,
@@ -1457,6 +1486,7 @@ app.get("/matches", async (c) => {
         tournamentName: m.tournamentName || (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
         myInningScores: myInnings,
         opponentInningScores: opponentInnings,
+        matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
       };
     });
 
@@ -6294,6 +6324,7 @@ app.get("/matches", async (c) => {
         opponentHits: matches.opponentHits,
         myErrors: matches.myErrors,
         opponentErrors: matches.opponentErrors,
+        matchDayOps: matches.matchDayOps,
       })
       .from(matches)
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
@@ -6302,10 +6333,11 @@ app.get("/matches", async (c) => {
       .orderBy(desc(matches.date), desc(matches.createdAt))
       .all();
 
-    const formattedMatches = matchesList.map(m => ({
+    const formattedMatches = matchesList.map(({ matchDayOps: rawMatchDayOps, ...m }) => ({
       ...m,
       myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
       opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
+      matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
     }));
 
     return c.json({
