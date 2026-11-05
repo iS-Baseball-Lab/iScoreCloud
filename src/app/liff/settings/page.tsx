@@ -113,7 +113,7 @@ export default function LiffSettingsPage() {
     <div className="flex flex-col flex-1">
       <LiffHeader
         shareData={{
-          title: "アプリ設定 - iScore for LINEミニアプリ",
+          title: "アプリ設定 - iScoreCloud for LINEミニアプリ",
           text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
         }}
       />
@@ -129,7 +129,7 @@ export default function LiffSettingsPage() {
           }
           showBack
           shareData={{
-            title: "アプリ設定 - iScore for LINEミニアプリ",
+            title: "アプリ設定 - iScoreCloud for LINEミニアプリ",
             text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
           }}
         />
@@ -387,7 +387,7 @@ export default function LiffSettingsPage() {
 
             <div className="pt-2 border-t border-border flex items-center justify-between text-xs">
               <span className="font-bold text-muted-foreground">アプリバージョン</span>
-              <span className="font-black text-foreground">iScore for LINEミニアプリ v2.6.0</span>
+              <span className="font-black text-foreground">iScoreCloud for LINEミニアプリ v2.6.0</span>
             </div>
           </div>
         </section>

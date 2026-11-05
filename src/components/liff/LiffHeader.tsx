@@ -118,7 +118,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
       <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
-        {/* 🌟 1. 左側: ロゴ & ブランド (iScore for LINEミニアプリ) */}
+        {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud for LINEミニアプリ) */}
         <Link
           href="/liff"
           className="flex items-center gap-2 shrink-0 group outline-hidden"
@@ -126,12 +126,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         >
           <img
             src="/liff-logo.webp"
-            alt="iScore Logo"
+            alt="iScoreCloud Logo"
             className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain group-hover:scale-105 transition-transform duration-300"
           />
           <div className="flex flex-col justify-center">
-            <h1 className="text-base sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
-              iScore
+            <h1 className="text-[15px] sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
+              iScore<span className="text-primary">Cloud</span>
             </h1>
             <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
               for LINEミニアプリ
@@ -145,7 +145,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 max-w-[200px] min-[400px]:max-w-[230px] sm:max-w-[290px] outline-hidden select-none ${
+                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${
                   isDemo
                     ? "bg-amber-50 dark:bg-slate-900 border-amber-500"
                     : "bg-muted border-border"

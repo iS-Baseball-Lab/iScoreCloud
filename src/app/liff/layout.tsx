@@ -4,8 +4,8 @@ import { LiffProvider } from "@/components/liff/LiffProvider";
 import { LiffBottomNav } from "@/components/liff/LiffBottomNav";
 
 export const metadata = {
-  title: "iScore for LINEミニアプリ",
-  description: "LINEで出欠回答・配車表・予定確認・試合動画がサクサク確認できる草野球・学童野球チーム向けミニアプリ「iScore for LINEミニアプリ」",
+  title: "iScoreCloud for LINEミニアプリ",
+  description: "LINEで出欠回答・配車表・予定確認・試合動画がサクサク確認できる草野球・学童野球チーム向けミニアプリ「iScoreCloud for LINEミニアプリ」",
 };
 
 export default function LiffLayout({

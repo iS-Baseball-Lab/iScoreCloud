@@ -11,7 +11,7 @@ import { TeamProvider } from "@/contexts/TeamContext"; // 💡 追加
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "iScore",
+  title: "iScoreCloud",
   description: "Next-gen baseball scoring and analytics platform.",
   icons: {
     icon: "/logo.png",

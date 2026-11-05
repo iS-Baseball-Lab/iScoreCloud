@@ -1,6 +1,6 @@
 {
-  "name": "iScore",
-  "short_name": "iScore",
+  "name": "iScoreCloud",
+  "short_name": "iScoreCloud",
   "description": "次世代野球スコア記録アプリ",
   "start_url": "/",
   "display": "standalone",
