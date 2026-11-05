@@ -266,7 +266,7 @@ export function MatchDayGuideAndRolesSection({
               <EmptyState
                 icon={ClipboardList}
                 title="当日の集合・審判/スコア担当が未設定です"
-                description="集合時刻・ユニフォーム・弁当や、球審/塁審・スコアラー・BSO・LINE速報の担当を1タップで共有できます"
+                description="集合時刻・ユニフォーム・弁当や、球審/塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を1タップで共有できます"
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -413,7 +413,7 @@ export function MatchDayGuideAndRolesSection({
                     className="w-full rounded-xl bg-muted/40 hover:bg-muted/70 border border-dashed border-border p-3 text-center transition-colors cursor-pointer"
                   >
                     <p className="text-xs font-black text-foreground">
-                      球審・塁審・スコアラー・BSO・LINE速報の担当を登録
+                      球審・塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
                     </p>
                     <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
                       タップして保護者メンバーから1タップ選択できます

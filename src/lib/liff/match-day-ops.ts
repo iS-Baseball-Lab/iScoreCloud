@@ -46,6 +46,12 @@ export const DEFAULT_MATCH_STAFF_ROLES: readonly MatchStaffRolePreset[] = [
     notePlaceholder: "例: グループLINE実況",
   },
   {
+    roleKey: "buzzer",
+    roleLabel: "ブザー",
+    shortHint: "本部・放送室ブザー係",
+    notePlaceholder: "例: 本部席・放送室ブザー操作",
+  },
+  {
     roleKey: "video_camera",
     roleLabel: "動画撮影",
     shortHint: "YouTube用カメラ",
@@ -226,13 +232,32 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
   };
 }
 
+const ROLE_PRESET_ORDER_BY_KEY = new Map<string, number>(
+  DEFAULT_MATCH_STAFF_ROLES.map((r, idx) => [r.roleKey, idx])
+);
+const ROLE_PRESET_ORDER_BY_LABEL = new Map<string, number>(
+  DEFAULT_MATCH_STAFF_ROLES.map((r, idx) => [r.roleLabel, idx])
+);
+
 export function getFilledStaffRoles(
   ops: MatchDayOps | null | undefined
 ): MatchStaffRoleAssignment[] {
   if (!ops?.staffRoles) return [];
-  return ops.staffRoles.filter(
-    (r) => r.roleLabel.trim().length > 0 && (r.assignees.length > 0 || Boolean(r.note?.trim()))
-  );
+  return ops.staffRoles
+    .filter(
+      (r) =>
+        r.roleLabel.trim().length > 0 &&
+        (r.assignees.length > 0 || Boolean(r.note?.trim()))
+    )
+    .map((r, originalIdx) => {
+      const rank =
+        ROLE_PRESET_ORDER_BY_KEY.get(r.roleKey) ??
+        ROLE_PRESET_ORDER_BY_LABEL.get(r.roleLabel.trim()) ??
+        1000 + originalIdx;
+      return { role: r, rank };
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.role);
 }
 
 export function resolveEffectiveMealLabel(

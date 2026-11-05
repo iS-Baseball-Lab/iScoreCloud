@@ -246,6 +246,7 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 ママ"], note: "公式本部席" },
         { roleKey: "bso_board", roleLabel: "BSO・得点板", assignees: ["高橋 父"], note: "ベンチ横カウント操作" },
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
+        { roleKey: "buzzer", roleLabel: "ブザー", assignees: ["山田 母"], note: "放送室ブザー操作" },
         { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
       ],
     },

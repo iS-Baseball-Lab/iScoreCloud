@@ -2519,7 +2519,7 @@ function MatchesContent() {
                               当日のしおり・審判/スコア担当・配車メモを編集
                             </p>
                             <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
-                              球審/塁審・スコアラー・BSO・LINE速報担当、集合・弁当・道具車を設定
+                              球審/塁審・スコアラー・BSO・LINE速報・ブザー・動画撮影担当、集合・弁当・道具車を設定
                             </p>
                           </div>
                         </div>
