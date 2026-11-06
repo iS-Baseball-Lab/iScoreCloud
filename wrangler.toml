@@ -1,6 +1,6 @@
 name = "iscorecloud"
 main = "src/worker.ts"
-compatibility_date = "2025-10-08"
+compatibility_date = "2026-11-04"
 compatibility_flags = ["nodejs_compat"]
 
 [assets]
