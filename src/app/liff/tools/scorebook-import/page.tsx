@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
@@ -40,8 +41,15 @@ import {
   Step1MatchAndImages,
   type SheetImageState,
 } from "./_components/Step1MatchAndImages";
-import { Step2StructureCheck } from "./_components/Step2StructureCheck";
-import { Step3PinpointReview } from "./_components/Step3PinpointReview";
+
+const Step2StructureCheck = dynamic(
+  () => import("./_components/Step2StructureCheck").then((m) => m.Step2StructureCheck),
+  { ssr: false }
+);
+const Step3PinpointReview = dynamic(
+  () => import("./_components/Step3PinpointReview").then((m) => m.Step3PinpointReview),
+  { ssr: false }
+);
 import {
   formatElapsedSeconds,
   formatTotalElapsedSeconds,
@@ -73,10 +81,12 @@ import {
   Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  DeletePersonalStatsModal,
-  type DeletePersonalStatsOptions,
-} from "@/components/matches/DeletePersonalStatsModal";
+import type { DeletePersonalStatsOptions } from "@/components/matches/DeletePersonalStatsModal";
+
+const DeletePersonalStatsModal = dynamic(
+  () => import("@/components/matches/DeletePersonalStatsModal").then((m) => m.DeletePersonalStatsModal),
+  { ssr: false }
+);
 
 type WizardStep = 1 | 2 | 3 | 4;
 
@@ -3393,7 +3403,7 @@ export default function LiffScorebookImportPage() {
           </>
         )}
 
-        {selectedMatch && (
+        {selectedMatch && showDeleteSavedModal && (
           <DeletePersonalStatsModal
             isOpen={showDeleteSavedModal}
             matchId={selectedMatch.id}

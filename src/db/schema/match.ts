@@ -119,6 +119,7 @@ export const matches = sqliteTable("matches", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_matches_team_id").on(table.teamId),
+  teamDateIdx: index("idx_matches_team_date").on(table.teamId, table.date),
   tournamentIdx: index("idx_matches_tournament_id").on(table.tournamentId),
   dateIdx: index("idx_matches_date").on(table.date),
 }));

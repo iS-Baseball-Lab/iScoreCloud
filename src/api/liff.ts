@@ -1871,35 +1871,35 @@ app.get("/schedule", async (c) => {
         })()
       : Promise.resolve(null);
 
-    const [eventList, teamVenues, teamMemberList, teamPlayerConditionRows, sessionUser] = await Promise.all([
-      db
-        .select()
-        .from(events)
-        .where(eq(events.teamId, teamId))
-        .orderBy(asc(events.startAt))
-        .all(),
-      db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all(),
-      db
-        .select({
-          id: teamMembers.id,
-          userId: teamMembers.userId,
-          name: teamMembers.name,
-          memberType: teamMembers.memberType,
-          status: teamMembers.status,
-        })
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, teamId))
-        .all(),
-      db
-        .select({
-          id: players.id,
-          conditionStatus: players.conditionStatus,
-        })
-        .from(players)
-        .where(eq(players.teamId, teamId))
-        .all(),
-      sessionPromise,
-    ]);
+    const [[eventList, teamVenues, teamMemberList, teamPlayerConditionRows], sessionUser] =
+      await Promise.all([
+        db.batch([
+          db
+            .select()
+            .from(events)
+            .where(eq(events.teamId, teamId))
+            .orderBy(asc(events.startAt)),
+          db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+          db
+            .select({
+              id: teamMembers.id,
+              userId: teamMembers.userId,
+              name: teamMembers.name,
+              memberType: teamMembers.memberType,
+              status: teamMembers.status,
+            })
+            .from(teamMembers)
+            .where(eq(teamMembers.teamId, teamId)),
+          db
+            .select({
+              id: players.id,
+              conditionStatus: players.conditionStatus,
+            })
+            .from(players)
+            .where(eq(players.teamId, teamId)),
+        ]),
+        sessionPromise,
+      ]);
 
     const onLeavePlayerIds = new Set(
       teamPlayerConditionRows
@@ -2364,41 +2364,38 @@ app.get("/attendance-matrix", async (c) => {
 
     const [
       sessionUser,
-      teamRecord,
-      allTeamMembersRaw,
-      relations,
-      allPlayersRaw,
-      allEvents,
+      [teamRows, allTeamMembersRaw, relations, allPlayersRaw, allEvents],
     ] = await Promise.all([
       sessionPromise,
-      db
-        .select({
-          createdBy: teams.createdBy,
-          organizationId: teams.organizationId,
-          memberSortOrder: teams.memberSortOrder,
-          attendanceStatusConfig: teams.attendanceStatusConfig,
-          memberSubLabels: teams.memberSubLabels,
-        })
-        .from(teams)
-        .where(eq(teams.id, teamId))
-        .get(),
-      db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
-      db
-        .select({
-          parentId: parentChildRelations.parentId,
-          childId: parentChildRelations.childId,
-        })
-        .from(parentChildRelations)
-        .where(eq(parentChildRelations.teamId, teamId))
-        .all(),
-      db.select().from(players).where(eq(players.teamId, teamId)).all(),
-      db
-        .select()
-        .from(events)
-        .where(eq(events.teamId, teamId))
-        .orderBy(asc(events.startAt))
-        .all(),
+      db.batch([
+        db
+          .select({
+            createdBy: teams.createdBy,
+            organizationId: teams.organizationId,
+            memberSortOrder: teams.memberSortOrder,
+            attendanceStatusConfig: teams.attendanceStatusConfig,
+            memberSubLabels: teams.memberSubLabels,
+          })
+          .from(teams)
+          .where(eq(teams.id, teamId))
+          .limit(1),
+        db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)),
+        db
+          .select({
+            parentId: parentChildRelations.parentId,
+            childId: parentChildRelations.childId,
+          })
+          .from(parentChildRelations)
+          .where(eq(parentChildRelations.teamId, teamId)),
+        db.select().from(players).where(eq(players.teamId, teamId)),
+        db
+          .select()
+          .from(events)
+          .where(eq(events.teamId, teamId))
+          .orderBy(asc(events.startAt)),
+      ]),
     ]);
+    const teamRecord = teamRows[0];
 
     const authUserId = sessionUser?.id;
     const authUserName = sessionUser?.name;
@@ -5026,18 +5023,16 @@ app.get("/stats", async (c) => {
     if (finishedIds.length > 0) {
       const idChunks = chunkIds(finishedIds, 50);
       for (const batch of idChunks) {
-        const [abRows, advRows, plRows, luRows, snapRows] = await Promise.all([
+        const [abRows, advRows, plRows, luRows, snapRows] = await db.batch([
           db
             .select()
             .from(atBats)
             .where(inArray(atBats.matchId, batch))
-            .orderBy(asc(atBats.inning), asc(atBats.createdAt))
-            .all(),
+            .orderBy(asc(atBats.inning), asc(atBats.createdAt)),
           db
             .select()
             .from(baseAdvances)
-            .where(inArray(baseAdvances.matchId, batch))
-            .all(),
+            .where(inArray(baseAdvances.matchId, batch)),
           db
             .select({
               atBatId: playLogs.atBatId,
@@ -5045,21 +5040,18 @@ app.get("/stats", async (c) => {
               description: playLogs.description,
             })
             .from(playLogs)
-            .where(inArray(playLogs.matchId, batch))
-            .all(),
+            .where(inArray(playLogs.matchId, batch)),
           db
             .select({
               matchId: matchLineups.matchId,
               playerId: matchLineups.playerId,
             })
             .from(matchLineups)
-            .where(inArray(matchLineups.matchId, batch))
-            .all(),
+            .where(inArray(matchLineups.matchId, batch)),
           db
             .select()
             .from(matchScorebookSnapshots)
-            .where(inArray(matchScorebookSnapshots.matchId, batch))
-            .all(),
+            .where(inArray(matchScorebookSnapshots.matchId, batch)),
         ]);
         allAtBats.push(...abRows);
         allAdvances.push(...advRows);

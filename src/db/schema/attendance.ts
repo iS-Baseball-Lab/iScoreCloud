@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, uniqueIndex } from "drizzle-orm/sqlite-core";
+// filepath: src/db/schema/attendance.ts
+import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 import { user } from "./auth";
 import { teams, players, teamMembers } from "./team";
 import { memberCars } from "./carpool";
@@ -22,7 +23,9 @@ export const events = sqliteTable("events", {
   needsSnack: integer("needs_snack", { mode: "boolean" }).default(false), // 🍌 補食（捕食）要否
   activityGroups: text("activity_groups"),                                 // 👥 複数活動グループ（JSON: [{ id, name, time, location, eventType, dutyGroup, carInfo }]）
   status: text("status").$type<"scheduled" | "rainout">().default("scheduled"), // 📅 イベント全体のステータス (雨天中止など)
-});
+}, (table) => ({
+  teamStartAtIdx: index("idx_events_team_start_at").on(table.teamId, table.startAt),
+}));
 
 export const attendances = sqliteTable("attendances", {
   id: text("id").primaryKey(),
@@ -40,5 +43,7 @@ export const attendances = sqliteTable("attendances", {
 }, (table) => ({
   eventPlayerUniqueIdx: uniqueIndex("idx_event_player_uniq").on(table.eventId, table.playerId),
   eventMemberUniqueIdx: uniqueIndex("idx_event_member_uniq").on(table.eventId, table.memberId),
+  playerIdx: index("idx_attendances_player_id").on(table.playerId),
+  memberIdx: index("idx_attendances_member_id").on(table.memberId),
 }));
 

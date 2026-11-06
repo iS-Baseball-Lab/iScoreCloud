@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -13,9 +14,13 @@ import {
   CarpoolConvoyLiveMap,
   type ConvoyCarItem,
 } from "@/components/liff/CarpoolConvoyLiveMap";
-import { SimpleCarpoolEditorModal } from "@/components/liff/SimpleCarpoolEditorModal";
 import type { ConvoyAvailableEventOption } from "@/types/carpool-convoy";
 import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays, Radio, X, Pencil, Plus } from "lucide-react";
+
+const SimpleCarpoolEditorModal = dynamic(
+  () => import("@/components/liff/SimpleCarpoolEditorModal").then((m) => m.SimpleCarpoolEditorModal),
+  { ssr: false }
+);
 
 const TEST_CONVOY_CARS: ConvoyCarItem[] = [
   {
@@ -637,29 +642,31 @@ function LiffCarpoolContent() {
       </div>
 
       {/* 簡易配車エディタモーダル（createPortal + z-[9999]） */}
-      <SimpleCarpoolEditorModal
-        isOpen={isEditorOpen}
-        teamId={currentTeam?.id || "demo-team"}
-        initialEventId={editorInitialEventId}
-        onClose={() => {
-          setIsEditorOpen(false);
-          if (openEditorParam) {
-            const cleanUrl = eventIdParam
-              ? `/liff/carpool?eventId=${encodeURIComponent(eventIdParam)}`
+      {isEditorOpen && (
+        <SimpleCarpoolEditorModal
+          isOpen={isEditorOpen}
+          teamId={currentTeam?.id || "demo-team"}
+          initialEventId={editorInitialEventId}
+          onClose={() => {
+            setIsEditorOpen(false);
+            if (openEditorParam) {
+              const cleanUrl = eventIdParam
+                ? `/liff/carpool?eventId=${encodeURIComponent(eventIdParam)}`
+                : "/liff/carpool";
+              router.replace(cleanUrl);
+            }
+          }}
+          onSaved={(savedEventId) => {
+            setIsEditorOpen(false);
+            setIsTestConvoyMode(false);
+            const nextUrl = savedEventId
+              ? `/liff/carpool?eventId=${encodeURIComponent(savedEventId)}`
               : "/liff/carpool";
-            router.replace(cleanUrl);
-          }
-        }}
-        onSaved={(savedEventId) => {
-          setIsEditorOpen(false);
-          setIsTestConvoyMode(false);
-          const nextUrl = savedEventId
-            ? `/liff/carpool?eventId=${encodeURIComponent(savedEventId)}`
-            : "/liff/carpool";
-          router.replace(nextUrl);
-          void loadCarpool(savedEventId || "", true);
-        }}
-      />
+            router.replace(nextUrl);
+            void loadCarpool(savedEventId || "", true);
+          }}
+        />
+      )}
     </div>
   );
 }

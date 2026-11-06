@@ -75,9 +75,9 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 
 ## 【パフォーマンス・爆速化規約（超重要）】
 1. DDLロックの完全排除：API（特にGETリクエスト）で毎回 `ALTER TABLE` / `CREATE TABLE` 書き込みクエリを直列実行することを厳禁とする。スキーマ補完が必要な場合は `PRAGMA table_info` / `sqlite_master` の単一バッチ読取＋Isolateメモリキャッシュで判定し、既存環境での書き込みDDLをゼロに保つこと。
-2. N+1クエリの根絶と並列化：ループ内でのD1クエリ発行を禁止し、`inArray` による一括取得、`GROUP BY` / `DISTINCT` による転送行削減、独立クエリの `Promise.all` 並列化を徹底する。
-3. クライアント即時表示（1フレーム目同期SWRキャッシュ初期化 ＆ Contextメモ化）：同一APIの多重呼び出しを排除（In-flight deduplication）し、主要LIFF画面では必ず `useState(() => peekLiffApiCache(...))` で初回レンダーの1フレーム目からキャッシュ済みデータを同期復元すること（既に表示データがある状態で `setIsLoading(true)` に戻してスピナー点滅・DOM再マウントを起こすことは厳禁）。また、`LiffProvider` の Context value は必ず `useMemo` でメモ化し、`usePathname()` 変化によるアプリ全体の連鎖再レンダリングや不要なセッション再取得を防ぎつつ、カスタムボトムナビ枠を含む主要APIを `requestIdleCallback` でアイドル時に先読みすること。データ更新（POST/PUT/PATCH/DELETE）時は関連キャッシュを即時破棄する。
-4. Next.js 16 Windows 静的エクスポート RSC セグメント平坦化（404プリフェッチ根絶）：Windows環境での `next build`（`output: "export"`）はバックスラッシュ区切りの影響で `out/**/__next.*/.../__PAGE__.txt` が階層ディレクトリ出力され、クライアントルーターの `<Link>` プリフェッチ（`__next.<segments>.__PAGE__.txt`）が404になるため、必ず `npm run build` 末尾の `scripts/fix-next-export-segments.mjs` でドット区切りファイルへフラット展開し、`src/worker.ts` のエッジフォールバックと併用して全ルートのプリフェッチ `200 OK`（体感0ms遷移）を維持すること。
+2. N+1クエリの根絶・`db.batch()` 一括実行・複合インデックス：ループ内でのD1クエリ発行を禁止し、`inArray` による一括取得、`GROUP BY` / `DISTINCT` による転送行削減、および複数テーブル読取の `db.batch([...])`（D1単一RPC往復化）と複合インデックス（`(team_id, start_at)` / `(team_id, date)` 等）を徹底する。
+3. クライアント即時表示（1フレーム目同期SWRキャッシュ初期化・Contextメモ化・`next/dynamic` 分割）：同一APIの多重呼び出しを排除（In-flight deduplication）し、主要LIFF画面では必ず `useState(() => peekLiffApiCache(...))` で初回レンダーの1フレーム目からキャッシュ済みデータを同期復元すること（既に表示データがある状態で `setIsLoading(true)` に戻してスピナー点滅・DOM再マウントを起こすことは厳禁）。また、`LiffProvider` の Context value は必ず `useMemo` でメモ化し、`next.config.ts` の `reactCompiler: true` ＆ `optimizePackageImports`、および大型モーダル・清書SVGシート等の `next/dynamic(..., { ssr: false })` 条件付きマウントを徹底して初期JSバンドルを最小化すること。データ更新（POST/PUT/PATCH/DELETE）時は関連キャッシュを即時破棄する。
+4. Next.js 16 Windows 静的エクスポート RSC セグメント平坦化 ＆ エッジ直配信（`run_worker_first`）：Windows環境での `next build`（`output: "export"`）はバックスラッシュ区切りの影響で `out/**/__next.*/.../__PAGE__.txt` が階層ディレクトリ出力され、クライアントルーターの `<Link>` プリフェッチ（`__next.<segments>.__PAGE__.txt`）が404になるため、必ず `npm run build` 末尾の `scripts/fix-next-export-segments.mjs` でドット区切りファイルへフラット展開し、`public/_headers` と `wrangler.toml` の `run_worker_first = ["/api/*"]` によって静的アセットのCDNエッジ直配信（0ホップ）とAPIのHono直ルーティングを維持すること。
 
 ## 【コーディング方針（超重要）】
 1. コードの先頭に必ず `// filepath: ...` の形式でソースのパスを入れること。

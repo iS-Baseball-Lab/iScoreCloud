@@ -3,10 +3,10 @@
 
 import React, { useState, useEffect, Suspense, useCallback, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { YouTubePlayer } from "@/components/liff/YouTubePlayer";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match, type MatchDayOps } from "@/types/match";
 import {
@@ -88,33 +88,54 @@ import {
 import {
   MatchCarpoolSummarySection,
   MatchDayGuideAndRolesSection,
-  MatchDayOpsEditorModal,
   shouldShowMatchCarpoolCard,
   type MatchDayOpsEditorTab,
 } from "@/components/liff/MatchDayOpsSection";
-import {
-  MatchStatsSection,
-  type LiffBatterStatItem,
-  type LiffBoxscoreAtBatItem,
-  type LiffMatchGameDetails,
-  type LiffPitcherStatItem,
-  type LiffRawPlayLogItem,
+import type {
+  LiffBatterStatItem,
+  LiffBoxscoreAtBatItem,
+  LiffMatchGameDetails,
+  LiffPitcherStatItem,
+  LiffRawPlayLogItem,
 } from "@/components/liff/MatchStatsSection";
-import { MatchScorebookSection } from "@/components/liff/MatchScorebookSection";
-import { ScorebookCellGuideModal } from "@/components/liff/ScorebookCellGuideModal";
 import type { InspectedScorebookCellItem } from "@/lib/liff/scorebook-cell-guide";
 import type { ScorebookMatchHeaderMeta } from "@/lib/liff/scorebook-renderer-model";
 import { useMatchScorebookBundle } from "@/lib/liff/use-match-scorebook-bundle";
 import { getDemoMatchStatsBundle } from "@/lib/liff/demo-match-stats";
-import {
-  DeletePersonalStatsModal,
-  type DeletePersonalStatsOptions,
-} from "@/components/matches/DeletePersonalStatsModal";
-import { DeleteMatchModal } from "@/components/liff/DeleteMatchModal";
+import type { DeletePersonalStatsOptions } from "@/components/matches/DeletePersonalStatsModal";
 import {
   clearScorebookDraft,
   peekScorebookDraftMeta,
 } from "@/lib/liff/scorebook-draft";
+
+const YouTubePlayer = dynamic(
+  () => import("@/components/liff/YouTubePlayer").then((m) => m.YouTubePlayer),
+  { ssr: false }
+);
+const MatchScorebookSection = dynamic(
+  () => import("@/components/liff/MatchScorebookSection").then((m) => m.MatchScorebookSection),
+  { ssr: false }
+);
+const MatchStatsSection = dynamic(
+  () => import("@/components/liff/MatchStatsSection").then((m) => m.MatchStatsSection),
+  { ssr: false }
+);
+const ScorebookCellGuideModal = dynamic(
+  () => import("@/components/liff/ScorebookCellGuideModal").then((m) => m.ScorebookCellGuideModal),
+  { ssr: false }
+);
+const MatchDayOpsEditorModal = dynamic(
+  () => import("@/components/liff/MatchDayOpsSection").then((m) => m.MatchDayOpsEditorModal),
+  { ssr: false }
+);
+const DeletePersonalStatsModal = dynamic(
+  () => import("@/components/matches/DeletePersonalStatsModal").then((m) => m.DeletePersonalStatsModal),
+  { ssr: false }
+);
+const DeleteMatchModal = dynamic(
+  () => import("@/components/liff/DeleteMatchModal").then((m) => m.DeleteMatchModal),
+  { ssr: false }
+);
 
 // ━━━ APIレスポンス型定義 (any排除) ━━━
 interface DeletePersonalStatsApiResponse {
@@ -2861,54 +2882,62 @@ function MatchesContent() {
             </div>
           </section>
 
-          <DeletePersonalStatsModal
-            isOpen={showDeleteStatsModal}
-            matchId={match.id}
-            opponentName={match.opponent}
-            matchDateText={formattedDateTime || match.date}
-            scoreSummaryText={
-              isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
-            }
-            isDeleting={isDeletingPersonalStats}
-            onCancel={() => setShowDeleteStatsModal(false)}
-            onConfirm={(options) => void handleDeletePersonalStats(options)}
-          />
+          {showDeleteStatsModal && (
+            <DeletePersonalStatsModal
+              isOpen={showDeleteStatsModal}
+              matchId={match.id}
+              opponentName={match.opponent}
+              matchDateText={formattedDateTime || match.date}
+              scoreSummaryText={
+                isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
+              }
+              isDeleting={isDeletingPersonalStats}
+              onCancel={() => setShowDeleteStatsModal(false)}
+              onConfirm={(options) => void handleDeletePersonalStats(options)}
+            />
+          )}
 
-          <DeleteMatchModal
-            isOpen={showDeleteMatchModal}
-            matchId={match.id}
-            opponentName={match.opponent}
-            matchDateText={formattedDateTime || match.date}
-            scoreSummaryText={
-              isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
-            }
-            hasPersonalStatsData={hasPersonalStatsData && !isDemo && !isDemoMatchId(match.id)}
-            isDeleting={isDeletingMatch}
-            onCancel={() => setShowDeleteMatchModal(false)}
-            onConfirm={() => void handleDeleteMatch()}
-          />
+          {showDeleteMatchModal && (
+            <DeleteMatchModal
+              isOpen={showDeleteMatchModal}
+              matchId={match.id}
+              opponentName={match.opponent}
+              matchDateText={formattedDateTime || match.date}
+              scoreSummaryText={
+                isFutureOrScheduled ? undefined : `${match.myScore}-${match.opponentScore}`
+              }
+              hasPersonalStatsData={hasPersonalStatsData && !isDemo && !isDemoMatchId(match.id)}
+              isDeleting={isDeletingMatch}
+              onCancel={() => setShowDeleteMatchModal(false)}
+              onConfirm={() => void handleDeleteMatch()}
+            />
+          )}
 
-          <ScorebookCellGuideModal
-            activeItem={inspectedCellModalState?.activeItem ?? null}
-            navigationItems={inspectedCellModalState?.navigationItems ?? []}
-            rules={scorebookBundle.effectiveRules}
-            onSelectItem={handleSelectInspectedCell}
-            onClose={handleCloseInspectedCell}
-          />
+          {inspectedCellModalState?.activeItem && (
+            <ScorebookCellGuideModal
+              activeItem={inspectedCellModalState.activeItem}
+              navigationItems={inspectedCellModalState.navigationItems}
+              rules={scorebookBundle.effectiveRules}
+              onSelectItem={handleSelectInspectedCell}
+              onClose={handleCloseInspectedCell}
+            />
+          )}
 
-          <MatchDayOpsEditorModal
-            isOpen={opsEditorState.isOpen}
-            initialTab={opsEditorState.initialTab}
-            matchId={match.id}
-            opponentName={match.opponent}
-            ops={match.matchDayOps}
-            adultMembers={opsAdultMembers}
-            scheduleSync={opsScheduleSync}
-            venueParkingInfo={match.venueParkingInfo}
-            isSaving={isSavingMatchOps}
-            onClose={handleCloseOpsEditor}
-            onSave={handleSaveMatchDayOps}
-          />
+          {opsEditorState.isOpen && (
+            <MatchDayOpsEditorModal
+              isOpen={opsEditorState.isOpen}
+              initialTab={opsEditorState.initialTab}
+              matchId={match.id}
+              opponentName={match.opponent}
+              ops={match.matchDayOps}
+              adultMembers={opsAdultMembers}
+              scheduleSync={opsScheduleSync}
+              venueParkingInfo={match.venueParkingInfo}
+              isSaving={isSavingMatchOps}
+              onClose={handleCloseOpsEditor}
+              onSave={handleSaveMatchDayOps}
+            />
+          )}
 
           <div className="h-8 w-full shrink-0" aria-hidden="true" />
         </div>

@@ -30,7 +30,6 @@ import {
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/score-settings";
 import { DEFAULT_PRACTICE_MATCH_LABEL } from "@/lib/liff/scorebook-symbol-rules";
-import { authClient } from "@/lib/auth-client";
 
 export const DEMO_TEAM_DEFAULT_LOGO_URL = "/demo-team-logo.svg";
 const DEMO_TEAM_LOGO_CLEARED_SENTINEL = "__NONE__";
@@ -220,7 +219,9 @@ export function LiffProvider({
   });
   const [isLoadingTeam, setIsLoadingTeam] = useState<boolean>(() => currentTeam === null);
   const teamsRef = useRef<LiffTeamItem[]>(teams);
-  teamsRef.current = teams;
+  useEffect(() => {
+    teamsRef.current = teams;
+  }, [teams]);
   const hasExplicitTeamSelectionRef = useRef<boolean>(false);
   const prevPathnameRef = useRef<string | null>(null);
 
@@ -532,8 +533,8 @@ export function LiffProvider({
     if (!document.cookie.includes("better-auth")) return;
 
     let cancelled = false;
-    void authClient
-      .getSession()
+    void import("@/lib/auth-client")
+      .then(({ authClient }) => authClient.getSession())
       .then((res) => {
         if (cancelled) return;
         const sessionUser = res?.data?.user;
@@ -576,6 +577,7 @@ export function LiffProvider({
       }
     } else {
       try {
+        const { authClient } = await import("@/lib/auth-client");
         await authClient.signIn.social({
           provider: "line",
           callbackURL: typeof window !== "undefined" ? window.location.href : "/liff",

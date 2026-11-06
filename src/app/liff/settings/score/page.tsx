@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   BookOpen,
   Camera,
@@ -25,9 +26,19 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
-import { ScorebookSymbolChartSheetModal } from "@/components/liff/ScorebookSymbolChartSheetModal";
 import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRulesSettingsSection";
+
+const ScorebookCameraModal = dynamic(
+  () => import("@/components/liff/ScorebookCameraModal").then((m) => m.ScorebookCameraModal),
+  { ssr: false }
+);
+const ScorebookSymbolChartSheetModal = dynamic(
+  () =>
+    import("@/components/liff/ScorebookSymbolChartSheetModal").then(
+      (m) => m.ScorebookSymbolChartSheetModal
+    ),
+  { ssr: false }
+);
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
@@ -638,21 +649,25 @@ export default function LiffScoreSettingsPage() {
 
   return (
     <div className="flex flex-col flex-1">
-      <ScorebookCameraModal
-        isOpen={isCameraModalOpen}
-        title="スコア記号早見表を撮影"
-        hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
-        onClose={() => setIsCameraModalOpen(false)}
-        onCapture={(file) => handleSelectLegendFile(file)}
-      />
+      {isCameraModalOpen && (
+        <ScorebookCameraModal
+          isOpen={isCameraModalOpen}
+          title="スコア記号早見表を撮影"
+          hintText="記載例・記号早見表のページ全体が枠に入るよう撮影してください"
+          onClose={() => setIsCameraModalOpen(false)}
+          onCapture={(file) => handleSelectLegendFile(file)}
+        />
+      )}
 
-      <ScorebookSymbolChartSheetModal
-        isOpen={isChartGeneratorOpen}
-        onClose={() => setIsChartGeneratorOpen(false)}
-        teamName={effectiveScoreDisplayTeamName}
-        rules={activeSymbolRules}
-        onRegisterLegendToCloud={handleSaveGeneratedLegendToCloud}
-      />
+      {isChartGeneratorOpen && (
+        <ScorebookSymbolChartSheetModal
+          isOpen={isChartGeneratorOpen}
+          onClose={() => setIsChartGeneratorOpen(false)}
+          teamName={effectiveScoreDisplayTeamName}
+          rules={activeSymbolRules}
+          onRegisterLegendToCloud={handleSaveGeneratedLegendToCloud}
+        />
+      )}
 
       <LiffHeader />
 
