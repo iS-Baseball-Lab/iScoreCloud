@@ -45,6 +45,7 @@ import {
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
+  compareHalfInningOrder,
   createDefaultEmptyLineup,
   createInitialLiveReportDocument,
   deriveScoreboardShortName,
@@ -52,6 +53,7 @@ import {
   formatLiveReportText,
   hydrateLiveReportFromLegacyLogsAndScores,
   hydrateLiveReportFromScorebookSnapshot,
+  mergeLiveReportDocuments,
   normalizeReportPositionCode,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
@@ -119,6 +121,9 @@ interface MatchBundleApiResponse {
 interface DraftApiResponse {
   success: boolean;
   error?: string;
+  unchanged?: boolean;
+  merged?: boolean;
+  report?: LiveReportV2Document;
   cloudDraft?: MatchBundlePayload["cloudDraft"];
   updatedAt?: number;
   updatedByName?: string | null;
@@ -197,6 +202,13 @@ function LiffNewsGeneratorContent() {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHydratingRef = useRef<boolean>(true);
+  const docRef = useRef<LiveReportV2Document>(doc);
+  const baseDocRef = useRef<LiveReportV2Document | null>(null);
+  const baseUpdatedAtRef = useRef<number | null>(null);
+  const hasPendingLocalSaveRef = useRef<boolean>(false);
+  const isPushingRef = useRef<boolean>(false);
+  const queuedPushRef = useRef<boolean>(false);
+  const isPollingRef = useRef<boolean>(false);
 
   const selectedMatch = useMemo(
     () => matches.find((m) => m.id === selectedMatchKey) || null,
@@ -207,6 +219,14 @@ function LiffNewsGeneratorContent() {
     () => getDraftIdForSelection(resolvedTeamId, selectedMatchKey),
     [resolvedTeamId, selectedMatchKey]
   );
+
+  const activeDraftIdRef = useRef<string>(activeDraftId);
+  useEffect(() => {
+    activeDraftIdRef.current = activeDraftId;
+  }, [activeDraftId]);
+  useEffect(() => {
+    docRef.current = doc;
+  }, [doc]);
 
   // 指定試合＋バンドルから初期 LiveReportV2Document を組み立てる
   const buildDocumentFromMatchAndBundle = useCallback(
@@ -443,18 +463,24 @@ function LiffNewsGeneratorContent() {
           : null;
 
         if (!cancelled) {
+          const initialDemoDoc =
+            localParsed ||
+            buildDocumentFromMatchAndBundle(
+              targetMatch,
+              bundle,
+              savedReporter
+            );
+          baseDocRef.current = null;
+          baseUpdatedAtRef.current = null;
+          hasPendingLocalSaveRef.current = false;
+          queuedPushRef.current = false;
+          activeDraftIdRef.current = draftId;
+          docRef.current = initialDemoDoc;
           setMatches(demoMatches);
           setRosterPlayers(demoRoster);
           setSelectedMatchKey(initialKey);
           setActiveBundle(bundle);
-          setDoc(
-            localParsed ||
-              buildDocumentFromMatchAndBundle(
-                targetMatch,
-                bundle,
-                savedReporter
-              )
-          );
+          setDoc(initialDemoDoc);
           setIsLoadingContext(false);
           isHydratingRef.current = false;
         }
@@ -463,6 +489,11 @@ function LiffNewsGeneratorContent() {
 
       // B. 実チームDBモード
       try {
+        baseDocRef.current = null;
+        baseUpdatedAtRef.current = null;
+        hasPendingLocalSaveRef.current = false;
+        queuedPushRef.current = false;
+
         const savedSel =
           typeof window !== "undefined"
             ? localStorage.getItem(getLocalActiveSelectionKey(resolvedTeamId)) ||
@@ -524,6 +555,8 @@ function LiffNewsGeneratorContent() {
         setActiveBundle(bundle);
 
         const draftId = getDraftIdForSelection(resolvedTeamId, resolvedKey);
+        activeDraftIdRef.current = draftId;
+
         const cloudDraft =
           resolvedKey === FREE_MATCH_KEY
             ? json.freeCloudDraft || null
@@ -552,15 +585,33 @@ function LiffNewsGeneratorContent() {
           fetchedMatches.find((m) => m.id === resolvedKey) || null;
 
         if (cloudDraft) {
+          baseDocRef.current = cloudDraft.report;
+          baseUpdatedAtRef.current = cloudDraft.updatedAt;
+          docRef.current = cloudDraft.report;
           setDoc(cloudDraft.report);
           setLastSyncedAt(cloudDraft.updatedAt);
           setLastSyncedBy(cloudDraft.updatedByName);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              getLocalDraftStorageKey(resolvedTeamId, draftId),
+              JSON.stringify(cloudDraft.report)
+            );
+          }
         } else if (localParsed) {
+          baseDocRef.current = null;
+          baseUpdatedAtRef.current = null;
+          docRef.current = localParsed;
           setDoc(localParsed);
         } else {
-          setDoc(
-            buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter)
+          const built = buildDocumentFromMatchAndBundle(
+            targetMatch,
+            bundle,
+            savedReporter
           );
+          baseDocRef.current = null;
+          baseUpdatedAtRef.current = null;
+          docRef.current = built;
+          setDoc(built);
         }
       } catch (err) {
         if (!cancelled) {
@@ -590,7 +641,17 @@ function LiffNewsGeneratorContent() {
   // 2. 試合セレクタ手動切替ハンドラ
   const handleSelectMatchKey = async (nextKey: string) => {
     if (nextKey === selectedMatchKey) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
     isHydratingRef.current = true;
+    hasPendingLocalSaveRef.current = false;
+    queuedPushRef.current = false;
+    baseDocRef.current = null;
+    baseUpdatedAtRef.current = null;
+
     setSelectedMatchKey(nextKey);
     setManualEditedText(null);
     setShowResetConfirm(false);
@@ -602,11 +663,12 @@ function LiffNewsGeneratorContent() {
     const savedReporter =
       typeof window !== "undefined"
         ? localStorage.getItem(getLocalReporterStorageKey(resolvedTeamId)) ||
-          doc.reporterNames
-        : doc.reporterNames;
+          docRef.current.reporterNames
+        : docRef.current.reporterNames;
 
     const targetMatch = matches.find((m) => m.id === nextKey) || null;
     const draftId = getDraftIdForSelection(resolvedTeamId, nextKey);
+    activeDraftIdRef.current = draftId;
 
     // ローカル保存があればまず即時反映（体感0ms）
     const localRaw =
@@ -631,16 +693,18 @@ function LiffNewsGeneratorContent() {
         nextKey !== FREE_MATCH_KEY
           ? buildDemoBundle(nextKey, targetMatch)
           : null;
-      setActiveBundle(bundle);
-      setDoc(
+      const nextDemoDoc =
         localParsed ||
-          buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter)
-      );
+        buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter);
+      setActiveBundle(bundle);
+      docRef.current = nextDemoDoc;
+      setDoc(nextDemoDoc);
       isHydratingRef.current = false;
       return;
     }
 
     if (localParsed) {
+      docRef.current = localParsed;
       setDoc(localParsed);
     }
 
@@ -655,14 +719,29 @@ function LiffNewsGeneratorContent() {
           { cache: "no-store" }
         );
         const dJson = (await dRes.json()) as DraftApiResponse;
+        if (activeDraftIdRef.current !== draftId) return;
+
         if (dJson.cloudDraft) {
+          baseDocRef.current = dJson.cloudDraft.report;
+          baseUpdatedAtRef.current = dJson.cloudDraft.updatedAt;
+          docRef.current = dJson.cloudDraft.report;
           setDoc(dJson.cloudDraft.report);
           setLastSyncedAt(dJson.cloudDraft.updatedAt);
           setLastSyncedBy(dJson.cloudDraft.updatedByName);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              getLocalDraftStorageKey(resolvedTeamId, draftId),
+              JSON.stringify(dJson.cloudDraft.report)
+            );
+          }
         } else if (!localParsed) {
-          setDoc(
-            buildDocumentFromMatchAndBundle(null, null, savedReporter)
+          const built = buildDocumentFromMatchAndBundle(
+            null,
+            null,
+            savedReporter
           );
+          docRef.current = built;
+          setDoc(built);
           setLastSyncedAt(null);
           setLastSyncedBy(null);
         }
@@ -674,17 +753,32 @@ function LiffNewsGeneratorContent() {
           { cache: "no-store" }
         );
         const bJson = (await bRes.json()) as MatchBundleApiResponse;
+        if (activeDraftIdRef.current !== draftId) return;
+
         const bundle = bJson.matchBundle || null;
         setActiveBundle(bundle);
 
         if (bundle?.cloudDraft) {
+          baseDocRef.current = bundle.cloudDraft.report;
+          baseUpdatedAtRef.current = bundle.cloudDraft.updatedAt;
+          docRef.current = bundle.cloudDraft.report;
           setDoc(bundle.cloudDraft.report);
           setLastSyncedAt(bundle.cloudDraft.updatedAt);
           setLastSyncedBy(bundle.cloudDraft.updatedByName);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              getLocalDraftStorageKey(resolvedTeamId, draftId),
+              JSON.stringify(bundle.cloudDraft.report)
+            );
+          }
         } else if (!localParsed) {
-          setDoc(
-            buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter)
+          const built = buildDocumentFromMatchAndBundle(
+            targetMatch,
+            bundle,
+            savedReporter
           );
+          docRef.current = built;
+          setDoc(built);
           setLastSyncedAt(null);
           setLastSyncedBy(null);
         }
@@ -692,44 +786,131 @@ function LiffNewsGeneratorContent() {
     } catch (err) {
       console.error(err);
     } finally {
-      setIsSyncingCloud(false);
-      isHydratingRef.current = false;
+      if (activeDraftIdRef.current === draftId) {
+        setIsSyncingCloud(false);
+        isHydratingRef.current = false;
+      }
     }
   };
 
-  // 3. 端末自動保存 ＆ デバウンス付きクラウド下書き同期
+  // 3. 端末自動保存 ＆ 3-Way共同編集マージ付きクラウド同期（方式B）
   const pushDraftToCloud = useCallback(
-    async (targetDoc: LiveReportV2Document, silent = true) => {
+    async (options?: {
+      silent?: boolean;
+      forceOverwrite?: boolean;
+      preferKeepalive?: boolean;
+    }) => {
+      const silent = options?.silent ?? true;
+      const forceOverwrite = options?.forceOverwrite ?? false;
+      const preferKeepalive = options?.preferKeepalive ?? false;
+
       if (resolvedTeamId === "demo-team") {
+        hasPendingLocalSaveRef.current = false;
         setLastSyncedAt(Date.now());
         return;
       }
 
+      if (isPushingRef.current) {
+        queuedPushRef.current = true;
+        return;
+      }
+
+      const requestDraftId = activeDraftIdRef.current;
+      const requestMatchId =
+        selectedMatchKey !== FREE_MATCH_KEY ? selectedMatchKey : null;
+      const snapshotSent = docRef.current;
+      const baseSent = baseDocRef.current;
+      const baseTsSent = baseUpdatedAtRef.current;
+
+      isPushingRef.current = true;
       try {
         setIsSyncingCloud(true);
         const updaterName =
-          targetDoc.reporterNames.trim() || profile?.displayName || null;
+          profile?.displayName?.trim() ||
+          snapshotSent.reporterNames.trim() ||
+          null;
+
+        const payloadStr = JSON.stringify({
+          teamId: resolvedTeamId,
+          draftId: requestDraftId,
+          matchId: requestMatchId,
+          report: snapshotSent,
+          baseUpdatedAt: baseTsSent,
+          baseReport: baseSent,
+          forceOverwrite,
+          updatedByName: updaterName,
+        });
+
+        // ブラウザの keepalive 64KiB 制限を超える場合は通常 fetch にフォールバック
+        const useKeepalive = preferKeepalive && payloadStr.length < 56000;
 
         const res = await fetch("/api/liff/news-generator/draft", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamId: resolvedTeamId,
-            draftId: activeDraftId,
-            matchId:
-              selectedMatchKey !== FREE_MATCH_KEY ? selectedMatchKey : null,
-            report: targetDoc,
-            updatedByName: updaterName,
-          }),
+          keepalive: useKeepalive,
+          body: payloadStr,
         });
         const json = (await res.json()) as DraftApiResponse;
+        if (activeDraftIdRef.current !== requestDraftId) {
+          return;
+        }
+
         if (res.ok && json.success) {
-          setLastSyncedAt(json.updatedAt || Date.now());
+          const serverDoc =
+            (json.report
+              ? sanitizeLiveReportDocument(json.report, scoreTeamName)
+              : null) || snapshotSent;
+          const nextUpdatedAt = json.updatedAt || Date.now();
+
+          baseDocRef.current = serverDoc;
+          baseUpdatedAtRef.current = nextUpdatedAt;
+          setLastSyncedAt(nextUpdatedAt);
           setLastSyncedBy(json.updatedByName ?? updaterName);
-          if (selectedMatchKey !== FREE_MATCH_KEY) {
+
+          if (docRef.current === snapshotSent) {
+            hasPendingLocalSaveRef.current = false;
+            if (json.merged && json.report) {
+              const reconciled = mergeLiveReportDocuments({
+                base: baseSent,
+                remote: serverDoc,
+                local: snapshotSent,
+                clientSideCursorFollow: true,
+              });
+              docRef.current = reconciled;
+              setDoc(reconciled);
+              if (typeof window !== "undefined") {
+                localStorage.setItem(
+                  getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
+                  JSON.stringify(reconciled)
+                );
+              }
+            }
+          } else {
+            // PUT送信中にさらにローカル操作があった場合は最新サーバー状態へ3-Wayリベースして再送
+            hasPendingLocalSaveRef.current = true;
+            queuedPushRef.current = true;
+            if (json.merged && json.report) {
+              const rebased = mergeLiveReportDocuments({
+                base: snapshotSent,
+                remote: serverDoc,
+                local: docRef.current,
+                clientSideCursorFollow: true,
+              });
+              docRef.current = rebased;
+              setDoc(rebased);
+              if (typeof window !== "undefined") {
+                localStorage.setItem(
+                  getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
+                  JSON.stringify(rebased)
+                );
+              }
+            }
+          }
+
+          if (requestMatchId) {
             setMatches((prev) =>
               prev.map((m) =>
-                m.id === selectedMatchKey ? { ...m, hasCloudDraft: true } : m
+                m.id === requestMatchId ? { ...m, hasCloudDraft: true } : m
               )
             );
           }
@@ -743,16 +924,46 @@ function LiffNewsGeneratorContent() {
           toast.error("クラウド保存に失敗しました（端末内には保存済です）");
         }
       } finally {
+        isPushingRef.current = false;
         setIsSyncingCloud(false);
+        if (
+          queuedPushRef.current &&
+          activeDraftIdRef.current === requestDraftId
+        ) {
+          queuedPushRef.current = false;
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+            void pushDraftToCloud({ silent: true });
+          }, 250);
+        }
       }
     },
-    [resolvedTeamId, activeDraftId, selectedMatchKey, profile?.displayName]
+    [resolvedTeamId, selectedMatchKey, profile?.displayName, scoreTeamName]
+  );
+
+  const flushPendingSaveNow = useCallback(
+    (preferKeepalive = false) => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (hasPendingLocalSaveRef.current && !isHydratingRef.current) {
+        void pushDraftToCloud({
+          silent: true,
+          preferKeepalive,
+        });
+      }
+    },
+    [pushDraftToCloud]
   );
 
   const handleUpdateDoc = useCallback(
     (updater: (prev: LiveReportV2Document) => LiveReportV2Document) => {
       setDoc((prev) => {
         const next = updater(prev);
+        docRef.current = next;
+
         if (typeof window !== "undefined") {
           localStorage.setItem(
             getLocalDraftStorageKey(resolvedTeamId, activeDraftId),
@@ -767,10 +978,12 @@ function LiffNewsGeneratorContent() {
         }
 
         if (!isHydratingRef.current) {
+          hasPendingLocalSaveRef.current = true;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            void pushDraftToCloud(next, true);
-          }, 900);
+            saveTimerRef.current = null;
+            void pushDraftToCloud({ silent: true });
+          }, 650);
         }
         return next;
       });
@@ -784,48 +997,199 @@ function LiffNewsGeneratorContent() {
     };
   }, []);
 
-  // 4. クラウドから最新状態を引き継ぐ（石塚さん ➔ 瀧さん の途中交代用）
+  // 4. クラウドから最新状態を同期（自動バックグラウンド同期 ＆ 手動［最新同期］共通）
+  const pullLatestFromCloud = useCallback(
+    async (silent: boolean) => {
+      if (resolvedTeamId === "demo-team") {
+        if (!silent) {
+          toast.info("デモチームは現在の端末内で自動保持されています");
+        }
+        return;
+      }
+
+      if (
+        isHydratingRef.current ||
+        isPushingRef.current ||
+        isPollingRef.current
+      ) {
+        return;
+      }
+      // デバウンス送信待ち中は送信側のサーバー3-Wayマージに任せて競合を防ぐ
+      if (silent && saveTimerRef.current !== null) {
+        return;
+      }
+
+      const requestDraftId = activeDraftIdRef.current;
+      const knownTs = silent ? baseUpdatedAtRef.current || 0 : 0;
+
+      isPollingRef.current = true;
+      if (!silent) {
+        setIsSyncingCloud(true);
+      }
+
+      try {
+        const res = await fetch(
+          `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
+            resolvedTeamId
+          )}&draftId=${encodeURIComponent(requestDraftId)}${
+            knownTs > 0 ? `&sinceUpdatedAt=${knownTs}` : ""
+          }`,
+          { cache: "no-store" }
+        );
+        const json = (await res.json()) as DraftApiResponse;
+
+        if (
+          activeDraftIdRef.current !== requestDraftId ||
+          isHydratingRef.current ||
+          isPushingRef.current
+        ) {
+          return;
+        }
+
+        if (!res.ok || !json.success) {
+          if (!silent) {
+            throw new Error(json.error || "最新データの取得に失敗しました");
+          }
+          return;
+        }
+
+        if (json.unchanged) {
+          return;
+        }
+
+        if (json.cloudDraft) {
+          if (
+            silent &&
+            baseUpdatedAtRef.current !== null &&
+            json.cloudDraft.updatedAt <= baseUpdatedAtRef.current
+          ) {
+            return;
+          }
+
+          const prevBase = baseDocRef.current;
+          const remoteDoc = json.cloudDraft.report;
+          let nextDoc: LiveReportV2Document;
+
+          if (hasPendingLocalSaveRef.current) {
+            nextDoc = mergeLiveReportDocuments({
+              base: prevBase,
+              remote: remoteDoc,
+              local: docRef.current,
+              clientSideCursorFollow: silent,
+            });
+          } else if (silent && prevBase) {
+            const localWasAtBase =
+              docRef.current.activeInning === prevBase.activeInning &&
+              docRef.current.activeIsBottom === prevBase.activeIsBottom;
+            const remoteAdvanced =
+              compareHalfInningOrder(
+                remoteDoc.activeInning,
+                remoteDoc.activeIsBottom,
+                prevBase.activeInning,
+                prevBase.activeIsBottom
+              ) > 0;
+
+            if (localWasAtBase && remoteAdvanced) {
+              nextDoc = remoteDoc;
+            } else if (!localWasAtBase) {
+              nextDoc = {
+                ...remoteDoc,
+                activeInning: docRef.current.activeInning,
+                activeIsBottom: docRef.current.activeIsBottom,
+              };
+            } else {
+              nextDoc = remoteDoc;
+            }
+          } else {
+            nextDoc = remoteDoc;
+          }
+
+          baseDocRef.current = remoteDoc;
+          baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
+          docRef.current = nextDoc;
+          setDoc(nextDoc);
+          if (!silent) {
+            setManualEditedText(null);
+          }
+          setLastSyncedAt(json.cloudDraft.updatedAt);
+          setLastSyncedBy(json.cloudDraft.updatedByName);
+
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
+              JSON.stringify(nextDoc)
+            );
+          }
+          if (!silent) {
+            toast.success("クラウドから最新の速報データを同期しました！");
+          }
+        } else {
+          if (
+            baseUpdatedAtRef.current !== null &&
+            !hasPendingLocalSaveRef.current
+          ) {
+            baseDocRef.current = null;
+            baseUpdatedAtRef.current = null;
+            setLastSyncedAt(null);
+            setLastSyncedBy(null);
+          }
+          if (!silent) {
+            toast.info("まだクラウド上に他メンバーの下書きはありません");
+          }
+        }
+      } catch (err) {
+        if (!silent) {
+          console.error(err);
+          toast.error("クラウド同期に失敗しました");
+        }
+      } finally {
+        isPollingRef.current = false;
+        if (!silent) {
+          setIsSyncingCloud(false);
+        }
+      }
+    },
+    [resolvedTeamId]
+  );
+
   const handlePullLatestCloudDraft = async () => {
-    if (resolvedTeamId === "demo-team") {
-      toast.info("デモチームは現在の端末内で自動保持されています");
+    flushPendingSaveNow(false);
+    await pullLatestFromCloud(false);
+  };
+
+  // バックグラウンド自動同期（4.5秒間隔の軽量ポーリング ＋ LINE往復時の即時フラッシュ＆復帰同期）
+  useEffect(() => {
+    if (resolvedTeamId === "demo-team" || typeof window === "undefined") {
       return;
     }
 
-    try {
-      setIsSyncingCloud(true);
-      const res = await fetch(
-        `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
-          resolvedTeamId
-        )}&draftId=${encodeURIComponent(activeDraftId)}`,
-        { cache: "no-store" }
-      );
-      const json = (await res.json()) as DraftApiResponse;
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || "最新データの取得に失敗しました");
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void pullLatestFromCloud(true);
       }
+    }, 4500);
 
-      if (json.cloudDraft) {
-        setDoc(json.cloudDraft.report);
-        setManualEditedText(null);
-        setLastSyncedAt(json.cloudDraft.updatedAt);
-        setLastSyncedBy(json.cloudDraft.updatedByName);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            getLocalDraftStorageKey(resolvedTeamId, activeDraftId),
-            JSON.stringify(json.cloudDraft.report)
-          );
-        }
-        toast.success("クラウドから最新の速報データを同期しました！");
-      } else {
-        toast.info("まだクラウド上に他メンバーの下書きはありません");
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPendingSaveNow(true);
+      } else if (document.visibilityState === "visible") {
+        void pullLatestFromCloud(true);
       }
-    } catch (err) {
-      console.error(err);
-      toast.error("クラウド同期に失敗しました");
-    } finally {
-      setIsSyncingCloud(false);
-    }
-  };
+    };
+
+    const handleWindowFocus = () => {
+      void pullLatestFromCloud(true);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [resolvedTeamId, pullLatestFromCloud, flushPendingSaveNow]);
 
   // 5. 登録済みスタメン・記録済みスコアブックの再取込
   const handleReloadMatchLineup = () => {
@@ -856,32 +1220,55 @@ function LiffNewsGeneratorContent() {
 
   const handleImportFromSavedScorebook = () => {
     if (!activeBundle) return;
-    handleUpdateDoc((prev) => {
-      if (activeBundle.scorebookSnapshot) {
-        return hydrateLiveReportFromScorebookSnapshot({
-          baseDoc: prev,
-          topStructure: activeBundle.scorebookSnapshot.topStructure,
-          bottomStructure: activeBundle.scorebookSnapshot.bottomStructure,
-          topAtBats: activeBundle.scorebookSnapshot.topAtBats,
-          bottomAtBats: activeBundle.scorebookSnapshot.bottomAtBats,
-          matchStatus: selectedMatch?.status,
-        });
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    setDoc((prev) => {
+      const imported = activeBundle.scorebookSnapshot
+        ? hydrateLiveReportFromScorebookSnapshot({
+            baseDoc: prev,
+            topStructure: activeBundle.scorebookSnapshot.topStructure,
+            bottomStructure: activeBundle.scorebookSnapshot.bottomStructure,
+            topAtBats: activeBundle.scorebookSnapshot.topAtBats,
+            bottomAtBats: activeBundle.scorebookSnapshot.bottomAtBats,
+            matchStatus: selectedMatch?.status,
+          })
+        : hydrateLiveReportFromLegacyLogsAndScores({
+            baseDoc: prev,
+            playLogs: activeBundle.playLogs,
+            myInningScores: selectedMatch?.myInningScores || [],
+            opponentInningScores: selectedMatch?.opponentInningScores || [],
+            matchStatus: selectedMatch?.status,
+          });
+
+      docRef.current = imported;
+      hasPendingLocalSaveRef.current = true;
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          getLocalDraftStorageKey(resolvedTeamId, activeDraftId),
+          JSON.stringify(imported)
+        );
       }
-      return hydrateLiveReportFromLegacyLogsAndScores({
-        baseDoc: prev,
-        playLogs: activeBundle.playLogs,
-        myInningScores: selectedMatch?.myInningScores || [],
-        opponentInningScores: selectedMatch?.opponentInningScores || [],
-        matchStatus: selectedMatch?.status,
-      });
+      return imported;
     });
+
+    void pushDraftToCloud({ silent: true, forceOverwrite: true });
     setManualEditedText(null);
     toast.success("記録済みスコアデータから全イニング経過を生成しました！");
   };
 
   // 6. この試合の速報データを初期化リセット
   const handleConfirmResetReport = async () => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    hasPendingLocalSaveRef.current = false;
+    queuedPushRef.current = false;
+    baseDocRef.current = null;
+    baseUpdatedAtRef.current = null;
 
     if (typeof window !== "undefined") {
       localStorage.removeItem(
@@ -923,11 +1310,11 @@ function LiffNewsGeneratorContent() {
           reporterNames:
             selectedMatch.lineLiveAssignees.length > 0
               ? selectedMatch.lineLiveAssignees.join("、")
-              : doc.reporterNames,
+              : docRef.current.reporterNames,
         })
       : createInitialLiveReportDocument({
           myTeamName: scoreTeamName,
-          reporterNames: doc.reporterNames,
+          reporterNames: docRef.current.reporterNames,
         });
 
     if (activeBundle && activeBundle.lineup.length > 0) {
@@ -954,6 +1341,7 @@ function LiffNewsGeneratorContent() {
       freshDoc.lineup = createDefaultEmptyLineup(9);
     }
 
+    docRef.current = freshDoc;
     setDoc(freshDoc);
     setManualEditedText(null);
     setLastSyncedAt(null);
@@ -972,6 +1360,7 @@ function LiffNewsGeneratorContent() {
     manualEditedText !== null ? manualEditedText : autoGeneratedText;
 
   const handleCopyText = async () => {
+    flushPendingSaveNow(true);
     try {
       await navigator.clipboard.writeText(displayedText);
       setCopied(true);
@@ -984,6 +1373,7 @@ function LiffNewsGeneratorContent() {
 
   const handleShareLine = () => {
     if (!displayedText.trim()) return;
+    flushPendingSaveNow(true);
     const shareUrl = `https://line.me/R/share?text=${encodeURIComponent(
       displayedText
     )}`;
@@ -1032,20 +1422,22 @@ function LiffNewsGeneratorContent() {
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300">
                 <Cloud className="w-3 h-3 text-emerald-400" />
-                {isSyncingCloud
-                  ? "同期中..."
+                {resolvedTeamId === "demo-team"
+                  ? "デモ端末保持"
+                  : isSyncingCloud
+                  ? "自動同期中..."
                   : lastSyncedAt
-                  ? `保存済 ${formatSyncTimeLabel(lastSyncedAt)}${
+                  ? `共同編集・同期済 ${formatSyncTimeLabel(lastSyncedAt)}${
                       lastSyncedBy ? ` (${lastSyncedBy})` : ""
                     }`
-                  : "端末自動保持"}
+                  : "共同編集ON・自動保存"}
               </span>
               <button
                 type="button"
                 onClick={handlePullLatestCloudDraft}
                 disabled={isSyncingCloud}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[10px] font-black cursor-pointer active:scale-95"
-                title="他の速報担当者が入力した最新データを読み込みます"
+                title="他の速報担当者が入力した最新データを今すぐ手動でも取得します（通常は自動でバックグラウンド同期されます）"
               >
                 <RefreshCw
                   className={cn("w-3 h-3 text-sky-400", isSyncingCloud && "animate-spin")}
@@ -1102,7 +1494,7 @@ function LiffNewsGeneratorContent() {
                 </button>
               ) : (
                 <span className="text-[10.5px] font-bold text-muted-foreground">
-                  LINE貼り付けで画面を閉じても自動保存・途中引き継ぎ可能です
+                  複数メンバーの同時入力に対応（自動マージ・LINE往復時も自動保存）
                 </span>
               )}
 

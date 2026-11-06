@@ -5,6 +5,7 @@ import type {
   LiveReportChainedPlay,
   LiveReportHalfInning,
   LiveReportLineupSlot,
+  LiveReportLineupSubRecord,
   LiveReportOutputMode,
   LiveReportPlayEntry,
   LiveReportSubType,
@@ -283,7 +284,7 @@ export function createInitialLiveReportDocument(params?: {
 // 3. アクティブ打順・守備解決（途中交代反映）
 // =========================================================
 
-function compareHalfInningOrder(
+export function compareHalfInningOrder(
   aInning: number,
   aIsBottom: boolean,
   bInning: number,
@@ -2112,4 +2113,956 @@ export function sanitizeLiveReportDocument(
       typeof obj.reporterNames === "string" ? obj.reporterNames : "",
   };
 }
+
+// =========================================================
+// 8. 3-Way 共同編集マージエンジン（方式B：ロック不要・先祖返り防止）
+// =========================================================
+
+function isSameRunnersArray(
+  a: ReadonlyArray<LiveReportBaseNum>,
+  b: ReadonlyArray<LiveReportBaseNum>
+): boolean {
+  const na = normalizeRunnersList(a);
+  const nb = normalizeRunnersList(b);
+  if (na.length !== nb.length) return false;
+  for (let i = 0; i < na.length; i++) {
+    if (na[i] !== nb[i]) return false;
+  }
+  return true;
+}
+
+function isSameChainedPlay(
+  a: LiveReportChainedPlay,
+  b: LiveReportChainedPlay
+): boolean {
+  return (
+    a.id === b.id &&
+    a.playText === b.playText &&
+    a.outsAfter === b.outsAfter &&
+    a.runsScored === b.runsScored &&
+    isSameRunnersArray(a.runnersAfter, b.runnersAfter)
+  );
+}
+
+function isSamePlayEntry(
+  a: LiveReportPlayEntry,
+  b: LiveReportPlayEntry
+): boolean {
+  if (
+    a.id !== b.id ||
+    a.entryType !== b.entryType ||
+    a.battingOrder !== b.battingOrder ||
+    a.batterName !== b.batterName ||
+    a.playText !== b.playText ||
+    a.reactionText !== b.reactionText ||
+    a.outsAfter !== b.outsAfter ||
+    a.runsScored !== b.runsScored ||
+    a.eventText !== b.eventText ||
+    !isSameRunnersArray(a.runnersAfter, b.runnersAfter) ||
+    a.chainedPlays.length !== b.chainedPlays.length
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.chainedPlays.length; i++) {
+    if (!isSameChainedPlay(a.chainedPlays[i], b.chainedPlays[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isSameSubRecord(
+  a: LiveReportLineupSubRecord,
+  b: LiveReportLineupSubRecord
+): boolean {
+  return (
+    a.id === b.id &&
+    a.inning === b.inning &&
+    a.isBottom === b.isBottom &&
+    a.subType === b.subType &&
+    a.oldName === b.oldName &&
+    a.newName === b.newName &&
+    a.newPosition === b.newPosition &&
+    a.playerId === b.playerId
+  );
+}
+
+function isSameLineupSlot(
+  a: LiveReportLineupSlot,
+  b: LiveReportLineupSlot
+): boolean {
+  if (
+    a.order !== b.order ||
+    a.position !== b.position ||
+    a.playerId !== b.playerId ||
+    a.playerName !== b.playerName ||
+    a.substitutions.length !== b.substitutions.length
+  ) {
+    return false;
+  }
+  for (let i = 0; i < a.substitutions.length; i++) {
+    if (!isSameSubRecord(a.substitutions[i], b.substitutions[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function pickScalar3Way<T>(
+  baseVal: T | undefined,
+  remoteVal: T,
+  localVal: T,
+  hasBase: boolean
+): T {
+  if (hasBase && baseVal !== undefined) {
+    return localVal !== baseVal ? localVal : remoteVal;
+  }
+  if (typeof remoteVal === "string" && typeof localVal === "string") {
+    if (!remoteVal.trim() && localVal.trim()) {
+      return localVal;
+    }
+    return remoteVal;
+  }
+  return remoteVal;
+}
+
+function mergeReporterNames3Way(
+  baseVal: string | undefined,
+  remoteVal: string,
+  localVal: string,
+  hasBase: boolean
+): string {
+  const splitNames = (raw: string): string[] =>
+    raw
+      .split(/[、,，／/\s]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  if (hasBase && baseVal !== undefined) {
+    const rChanged = remoteVal.trim() !== baseVal.trim();
+    const lChanged = localVal.trim() !== baseVal.trim();
+    if (lChanged && !rChanged) return localVal;
+    if (!lChanged && rChanged) return remoteVal;
+    if (lChanged && rChanged) {
+      if (!localVal.trim()) return "";
+      if (!remoteVal.trim()) return localVal;
+      const merged = Array.from(
+        new Set([...splitNames(remoteVal), ...splitNames(localVal)])
+      );
+      return merged.join("、");
+    }
+    return remoteVal;
+  }
+
+  if (!remoteVal.trim()) return localVal;
+  if (!localVal.trim()) return remoteVal;
+  if (remoteVal.trim() === localVal.trim()) return remoteVal;
+  const merged = Array.from(
+    new Set([...splitNames(remoteVal), ...splitNames(localVal)])
+  );
+  return merged.join("、");
+}
+
+function mergeSlotSubstitutions(
+  baseSubs: ReadonlyArray<LiveReportLineupSubRecord> | null,
+  remoteSubs: ReadonlyArray<LiveReportLineupSubRecord>,
+  localSubs: ReadonlyArray<LiveReportLineupSubRecord>
+): LiveReportLineupSubRecord[] {
+  const bMap = new Map((baseSubs || []).map((s) => [s.id, s]));
+  const rMap = new Map(remoteSubs.map((s) => [s.id, s]));
+  const lMap = new Map(localSubs.map((s) => [s.id, s]));
+
+  const merged: LiveReportLineupSubRecord[] = [];
+  const remoteNewFingerprints = new Set<string>();
+
+  const toFingerprint = (s: LiveReportLineupSubRecord): string =>
+    `${s.inning}-${s.isBottom ? "B" : "T"}-${s.subType}-${s.newName.trim()}-${s.newPosition}`;
+
+  for (const rSub of remoteSubs) {
+    const bSub = bMap.get(rSub.id);
+    const lSub = lMap.get(rSub.id);
+    if (bSub && !lSub) {
+      // ローカル側で削除された交代レコード（リモート未変更なら削除を反映）
+      if (isSameSubRecord(bSub, rSub)) continue;
+      merged.push(rSub);
+    } else if (bSub && lSub) {
+      merged.push(isSameSubRecord(bSub, lSub) ? rSub : lSub);
+    } else if (!bSub && lSub) {
+      merged.push(lSub);
+    } else {
+      merged.push(rSub);
+      remoteNewFingerprints.add(toFingerprint(rSub));
+    }
+  }
+
+  for (const lSub of localSubs) {
+    if (bMap.has(lSub.id) || rMap.has(lSub.id)) continue;
+    if (remoteNewFingerprints.has(toFingerprint(lSub))) continue;
+    merged.push(lSub);
+  }
+
+  return merged.sort((a, b) =>
+    compareHalfInningOrder(a.inning, a.isBottom, b.inning, b.isBottom)
+  );
+}
+
+function mergeLineupSlots3Way(
+  baseLineup: ReadonlyArray<LiveReportLineupSlot> | null,
+  remoteLineup: ReadonlyArray<LiveReportLineupSlot>,
+  localLineup: ReadonlyArray<LiveReportLineupSlot>,
+  hasBase: boolean
+): LiveReportLineupSlot[] {
+  const bMap = new Map((baseLineup || []).map((s) => [s.order, s]));
+  const rMap = new Map(remoteLineup.map((s) => [s.order, s]));
+  const lMap = new Map(localLineup.map((s) => [s.order, s]));
+
+  const orderSet = new Set<number>();
+  for (const s of remoteLineup) orderSet.add(s.order);
+  for (const s of localLineup) orderSet.add(s.order);
+  for (let ord = 1; ord <= 9; ord++) orderSet.add(ord);
+
+  const sortedOrders = Array.from(orderSet).sort((a, b) => a - b);
+  const result: LiveReportLineupSlot[] = [];
+
+  for (const order of sortedOrders) {
+    const bSlot = bMap.get(order);
+    const rSlot = rMap.get(order);
+    const lSlot = lMap.get(order);
+
+    // 10番以降（DH/全員打ち追加枠）の削除伝播
+    if (order > 9 && hasBase) {
+      if (bSlot && !lSlot && rSlot && isSameLineupSlot(bSlot, rSlot)) {
+        continue;
+      }
+      if (bSlot && !rSlot && lSlot && isSameLineupSlot(bSlot, lSlot)) {
+        continue;
+      }
+    }
+
+    const fallbackPos = String(order <= 9 ? order : "D");
+    let position = rSlot?.position ?? lSlot?.position ?? fallbackPos;
+    let playerName = rSlot?.playerName ?? lSlot?.playerName ?? "";
+    let playerId = rSlot?.playerId ?? lSlot?.playerId ?? null;
+
+    if (hasBase && bSlot) {
+      if (lSlot && lSlot.position !== bSlot.position) {
+        position = lSlot.position;
+      }
+      const localChangedName = lSlot !== undefined && lSlot.playerName !== bSlot.playerName;
+      const localChangedId = lSlot !== undefined && lSlot.playerId !== bSlot.playerId;
+      if (localChangedName || localChangedId) {
+        playerName = lSlot?.playerName ?? "";
+        playerId = lSlot?.playerId ?? null;
+      }
+    } else if (!rSlot?.playerName.trim() && lSlot?.playerName.trim()) {
+      position = lSlot.position;
+      playerName = lSlot.playerName;
+      playerId = lSlot.playerId;
+    }
+
+    const substitutions = mergeSlotSubstitutions(
+      bSlot?.substitutions ?? null,
+      rSlot?.substitutions ?? [],
+      lSlot?.substitutions ?? []
+    );
+
+    result.push({
+      order,
+      position,
+      playerId,
+      playerName,
+      substitutions,
+    });
+  }
+
+  return result.length > 0 ? result : createDefaultEmptyLineup(9);
+}
+
+function mergeChainedPlays3Way(
+  baseChains: ReadonlyArray<LiveReportChainedPlay> | null,
+  remoteChains: ReadonlyArray<LiveReportChainedPlay>,
+  localChains: ReadonlyArray<LiveReportChainedPlay>
+): LiveReportChainedPlay[] {
+  const bMap = new Map((baseChains || []).map((c) => [c.id, c]));
+  const rMap = new Map(remoteChains.map((c) => [c.id, c]));
+  const lMap = new Map(localChains.map((c) => [c.id, c]));
+
+  const merged: LiveReportChainedPlay[] = [];
+  const remoteNewKeys = new Set<string>();
+  const toKey = (c: LiveReportChainedPlay) =>
+    `${c.playText.trim()}__${c.outsAfter}__${c.runsScored}`;
+
+  for (const rChain of remoteChains) {
+    const bChain = bMap.get(rChain.id);
+    const lChain = lMap.get(rChain.id);
+    if (bChain && !lChain) {
+      if (isSameChainedPlay(bChain, rChain)) continue;
+      merged.push(rChain);
+    } else if (bChain && lChain) {
+      merged.push(isSameChainedPlay(bChain, lChain) ? rChain : lChain);
+    } else if (!bChain && lChain) {
+      merged.push(lChain);
+    } else {
+      merged.push(rChain);
+      remoteNewKeys.add(toKey(rChain));
+    }
+  }
+
+  for (const lChain of localChains) {
+    if (bMap.has(lChain.id) || rMap.has(lChain.id)) continue;
+    if (remoteNewKeys.has(toKey(lChain))) continue;
+    merged.push(lChain);
+  }
+
+  return merged;
+}
+
+function mergeReactionText3Way(
+  baseText: string | undefined,
+  remoteText: string,
+  localText: string,
+  hasBase: boolean
+): string {
+  if (hasBase && baseText !== undefined) {
+    const rChanged = remoteText !== baseText;
+    const lChanged = localText !== baseText;
+    if (lChanged && !rChanged) return localText;
+    if (!lChanged && rChanged) return remoteText;
+    if (lChanged && rChanged) {
+      if (!localText.trim()) return "";
+      if (!remoteText.trim()) return localText;
+      if (localText.includes(remoteText)) return localText;
+      if (remoteText.includes(localText)) return remoteText;
+      return localText;
+    }
+    return remoteText;
+  }
+  if (!remoteText.trim()) return localText;
+  if (!localText.trim()) return remoteText;
+  if (localText.includes(remoteText)) return localText;
+  if (remoteText.includes(localText)) return remoteText;
+  return remoteText;
+}
+
+function mergeExistingPlayEntry3Way(
+  baseEnt: LiveReportPlayEntry | null,
+  remoteEnt: LiveReportPlayEntry,
+  localEnt: LiveReportPlayEntry
+): LiveReportPlayEntry {
+  const hasBase = baseEnt !== null;
+
+  const localChangedSituation = hasBase
+    ? localEnt.outsAfter !== baseEnt.outsAfter ||
+      localEnt.runsScored !== baseEnt.runsScored ||
+      !isSameRunnersArray(localEnt.runnersAfter, baseEnt.runnersAfter)
+    : false;
+
+  const outsAfter = localChangedSituation
+    ? localEnt.outsAfter
+    : remoteEnt.outsAfter;
+  const runnersAfter = localChangedSituation
+    ? normalizeRunnersList(localEnt.runnersAfter)
+    : normalizeRunnersList(remoteEnt.runnersAfter);
+  const runsScored = localChangedSituation
+    ? localEnt.runsScored
+    : remoteEnt.runsScored;
+
+  return {
+    id: remoteEnt.id,
+    entryType: pickScalar3Way(
+      baseEnt?.entryType,
+      remoteEnt.entryType,
+      localEnt.entryType,
+      hasBase
+    ),
+    battingOrder: pickScalar3Way(
+      baseEnt?.battingOrder,
+      remoteEnt.battingOrder,
+      localEnt.battingOrder,
+      hasBase
+    ),
+    batterName: pickScalar3Way(
+      baseEnt?.batterName,
+      remoteEnt.batterName,
+      localEnt.batterName,
+      hasBase
+    ),
+    playText: pickScalar3Way(
+      baseEnt?.playText,
+      remoteEnt.playText,
+      localEnt.playText,
+      hasBase
+    ),
+    reactionText: mergeReactionText3Way(
+      baseEnt?.reactionText,
+      remoteEnt.reactionText,
+      localEnt.reactionText,
+      hasBase
+    ),
+    outsAfter,
+    runnersAfter,
+    runsScored,
+    chainedPlays: mergeChainedPlays3Way(
+      baseEnt?.chainedPlays ?? null,
+      remoteEnt.chainedPlays,
+      localEnt.chainedPlays
+    ),
+    eventText: pickScalar3Way(
+      baseEnt?.eventText,
+      remoteEnt.eventText,
+      localEnt.eventText,
+      hasBase
+    ),
+  };
+}
+
+function collapseSimultaneousSameBatterEntry(
+  remoteNewEnt: LiveReportPlayEntry,
+  localNewEnt: LiveReportPlayEntry
+): LiveReportPlayEntry {
+  let mergedReaction = localNewEnt.reactionText || remoteNewEnt.reactionText;
+  if (remoteNewEnt.reactionText && localNewEnt.reactionText) {
+    if (localNewEnt.reactionText.includes(remoteNewEnt.reactionText)) {
+      mergedReaction = localNewEnt.reactionText;
+    } else if (remoteNewEnt.reactionText.includes(localNewEnt.reactionText)) {
+      mergedReaction = remoteNewEnt.reactionText;
+    } else {
+      mergedReaction = `${remoteNewEnt.reactionText}${localNewEnt.reactionText}`;
+    }
+  }
+
+  return {
+    ...remoteNewEnt,
+    batterName: localNewEnt.batterName || remoteNewEnt.batterName,
+    playText: localNewEnt.playText || remoteNewEnt.playText,
+    reactionText: mergedReaction,
+    outsAfter: localNewEnt.outsAfter,
+    runnersAfter: normalizeRunnersList(localNewEnt.runnersAfter),
+    runsScored: localNewEnt.runsScored,
+    chainedPlays: mergeChainedPlays3Way(
+      [],
+      remoteNewEnt.chainedPlays,
+      localNewEnt.chainedPlays
+    ),
+  };
+}
+
+function mergeHalfInnings3Way(
+  baseHalves: ReadonlyArray<LiveReportHalfInning> | null,
+  remoteHalves: ReadonlyArray<LiveReportHalfInning>,
+  localHalves: ReadonlyArray<LiveReportHalfInning>,
+  lineupLength: number,
+  hasBase: boolean
+): LiveReportHalfInning[] {
+  const toHalfKey = (inning: number, isBottom: boolean) =>
+    `${inning}-${isBottom ? "B" : "T"}`;
+
+  const bMap = new Map(
+    (baseHalves || []).map((h) => [toHalfKey(h.inning, h.isBottom), h])
+  );
+  const rMap = new Map(
+    remoteHalves.map((h) => [toHalfKey(h.inning, h.isBottom), h])
+  );
+  const lMap = new Map(
+    localHalves.map((h) => [toHalfKey(h.inning, h.isBottom), h])
+  );
+
+  const halfCoords = new Map<string, { inning: number; isBottom: boolean }>();
+  for (const h of remoteHalves) {
+    halfCoords.set(toHalfKey(h.inning, h.isBottom), {
+      inning: h.inning,
+      isBottom: h.isBottom,
+    });
+  }
+  for (const h of localHalves) {
+    halfCoords.set(toHalfKey(h.inning, h.isBottom), {
+      inning: h.inning,
+      isBottom: h.isBottom,
+    });
+  }
+
+  const sortedHalfSpecs = Array.from(halfCoords.entries())
+    .map(([key, coord]) => ({ key, ...coord }))
+    .sort((a, b) =>
+      compareHalfInningOrder(a.inning, a.isBottom, b.inning, b.isBottom)
+    );
+
+  const mergedHalves: LiveReportHalfInning[] = [];
+  const sameOrderWindow = Math.max(9, lineupLength);
+
+  for (const spec of sortedHalfSpecs) {
+    const bHalf = bMap.get(spec.key) ?? null;
+    const rHalf = rMap.get(spec.key) ?? null;
+    const lHalf = lMap.get(spec.key) ?? null;
+
+    let manualRunsOverride: number | null = null;
+    if (hasBase) {
+      const bOverride = bHalf?.manualRunsOverride ?? null;
+      const rOverride = rHalf?.manualRunsOverride ?? null;
+      const lOverride = lHalf?.manualRunsOverride ?? null;
+      manualRunsOverride = lOverride !== bOverride ? lOverride : rOverride;
+    } else {
+      manualRunsOverride =
+        rHalf?.manualRunsOverride ?? lHalf?.manualRunsOverride ?? null;
+    }
+
+    const bEntries = bHalf?.entries ?? [];
+    const rEntries = rHalf?.entries ?? [];
+    const lEntries = lHalf?.entries ?? [];
+
+    const bEntMap = new Map(bEntries.map((e) => [e.id, e]));
+    const rEntMap = new Map(rEntries.map((e) => [e.id, e]));
+    const lEntMap = new Map(lEntries.map((e) => [e.id, e]));
+
+    const mergedEntries: LiveReportPlayEntry[] = [];
+    const unconsumedRemoteNewIds = new Set<string>();
+
+    // Step 1: リモート側の打席・イベント順序をベースに構築
+    for (const rEnt of rEntries) {
+      const bEnt = bEntMap.get(rEnt.id) ?? null;
+      const lEnt = lEntMap.get(rEnt.id) ?? null;
+
+      if (bEnt && !lEnt) {
+        // ローカルで明示削除された行（リモート未編集なら削除を確定）
+        if (isSamePlayEntry(bEnt, rEnt)) {
+          continue;
+        }
+        mergedEntries.push(rEnt);
+      } else if (lEnt) {
+        mergedEntries.push(mergeExistingPlayEntry3Way(bEnt, rEnt, lEnt));
+      } else {
+        mergedEntries.push(rEnt);
+        unconsumedRemoteNewIds.add(rEnt.id);
+      }
+    }
+
+    // Step 2: ローカル側で新規追加された行をマージ（同一打者の同時二重タップは1打席に統合）
+    for (let lIdx = 0; lIdx < lEntries.length; lIdx++) {
+      const lEnt = lEntries[lIdx];
+      if (bEntMap.has(lEnt.id) || rEntMap.has(lEnt.id)) continue;
+
+      if (lEnt.entryType === "batter") {
+        let collapsedIndex = -1;
+        let battersSeenFromEnd = 0;
+
+        for (let mIdx = mergedEntries.length - 1; mIdx >= 0; mIdx--) {
+          const candidate = mergedEntries[mIdx];
+          if (candidate.entryType !== "batter") continue;
+          if (battersSeenFromEnd >= sameOrderWindow) break;
+
+          if (
+            unconsumedRemoteNewIds.has(candidate.id) &&
+            candidate.battingOrder === lEnt.battingOrder
+          ) {
+            collapsedIndex = mIdx;
+            break;
+          }
+          battersSeenFromEnd += 1;
+        }
+
+        if (collapsedIndex >= 0) {
+          const target = mergedEntries[collapsedIndex];
+          mergedEntries[collapsedIndex] = collapseSimultaneousSameBatterEntry(
+            target,
+            lEnt
+          );
+          unconsumedRemoteNewIds.delete(target.id);
+        } else {
+          mergedEntries.push(lEnt);
+        }
+      } else {
+        // 選手交代・自由メモ行の重複排除＆直前行アンカー挿入
+        const duplicateEvent = mergedEntries.some(
+          (m) =>
+            unconsumedRemoteNewIds.has(m.id) &&
+            m.entryType === lEnt.entryType &&
+            m.eventText.trim() === lEnt.eventText.trim()
+        );
+        if (duplicateEvent) continue;
+
+        let insertAt = mergedEntries.length;
+        for (let prevIdx = lIdx - 1; prevIdx >= 0; prevIdx--) {
+          const anchorId = lEntries[prevIdx].id;
+          const foundIdx = mergedEntries.findIndex((m) => m.id === anchorId);
+          if (foundIdx >= 0) {
+            insertAt = foundIdx + 1;
+            break;
+          }
+        }
+        if (lIdx === 0 && lEntries.length > 1) {
+          const nextId = lEntries[1].id;
+          const foundNextIdx = mergedEntries.findIndex((m) => m.id === nextId);
+          if (foundNextIdx >= 0) {
+            insertAt = foundNextIdx;
+          }
+        }
+        mergedEntries.splice(insertAt, 0, lEnt);
+      }
+    }
+
+    if (mergedEntries.length > 0 || manualRunsOverride !== null) {
+      mergedHalves.push({
+        inning: spec.inning,
+        isBottom: spec.isBottom,
+        entries: mergedEntries,
+        manualRunsOverride,
+      });
+    }
+  }
+
+  return mergedHalves;
+}
+
+function getLastBatterSnapshotForSide(
+  halfInnings: ReadonlyArray<LiveReportHalfInning>,
+  battingOrder: "first" | "second",
+  isMySide: boolean
+): { entryId: string; battingOrder: number } | null {
+  const sorted = [...halfInnings].sort((a, b) =>
+    compareHalfInningOrder(a.inning, a.isBottom, b.inning, b.isBottom)
+  );
+  let last: { entryId: string; battingOrder: number } | null = null;
+  for (const half of sorted) {
+    if (isMyTeamBattingHalf(battingOrder, half.isBottom) !== isMySide) {
+      continue;
+    }
+    for (const ent of half.entries) {
+      if (ent.entryType === "batter") {
+        last = { entryId: ent.id, battingOrder: ent.battingOrder };
+      }
+    }
+  }
+  return last;
+}
+
+function getFrontlinePlayedHalf(
+  halfInnings: ReadonlyArray<LiveReportHalfInning>
+): { inning: number; isBottom: boolean } | null {
+  let latest: { inning: number; isBottom: boolean } | null = null;
+  for (const h of halfInnings) {
+    if (h.entries.length === 0 && h.manualRunsOverride === null) continue;
+    if (
+      !latest ||
+      compareHalfInningOrder(h.inning, h.isBottom, latest.inning, latest.isBottom) > 0
+    ) {
+      latest = { inning: h.inning, isBottom: h.isBottom };
+    }
+  }
+  return latest;
+}
+
+export interface MergeLiveReportDocumentsParams {
+  base: LiveReportV2Document | null;
+  remote: LiveReportV2Document;
+  local: LiveReportV2Document;
+  /**
+   * クライアント側のバックグラウンド同期用：
+   * ローカルユーザーが過去イニングを閲覧・編集中に別イニングへ強制ジャンプするのを防ぎ、
+   * リモートがベースより先の回へ前進し、かつローカルがベースと同じ回にいた場合のみ自動追従させる。
+   */
+  clientSideCursorFollow?: boolean;
+}
+
+export function mergeLiveReportDocuments({
+  base,
+  remote,
+  local,
+  clientSideCursorFollow = false,
+}: MergeLiveReportDocumentsParams): LiveReportV2Document {
+  const hasBase = base !== null;
+
+  const mergedBattingOrder = pickScalar3Way(
+    base?.battingOrder,
+    remote.battingOrder,
+    local.battingOrder,
+    hasBase
+  );
+
+  const mergedLineup = mergeLineupSlots3Way(
+    base?.lineup ?? null,
+    remote.lineup,
+    local.lineup,
+    hasBase
+  );
+
+  const mergedHalfInnings = mergeHalfInnings3Way(
+    base?.halfInnings ?? null,
+    remote.halfInnings,
+    local.halfInnings,
+    mergedLineup.length,
+    hasBase
+  );
+
+  // 次打者カーソル（nextMyOrder / nextOpponentOrder）の再計算と手動シフト保護
+  const limitMy = Math.max(9, mergedLineup.length);
+  const mergedLastMy = getLastBatterSnapshotForSide(
+    mergedHalfInnings,
+    mergedBattingOrder,
+    true
+  );
+  const baseLastMy = base
+    ? getLastBatterSnapshotForSide(base.halfInnings, base.battingOrder, true)
+    : null;
+  const localLastMy = getLastBatterSnapshotForSide(
+    local.halfInnings,
+    local.battingOrder,
+    true
+  );
+  const expectedLocalNextMy = localLastMy
+    ? (localLastMy.battingOrder % Math.max(9, local.lineup.length)) + 1
+    : 1;
+  const localManuallyShiftedMy =
+    hasBase &&
+    base !== null &&
+    local.nextMyOrder !== base.nextMyOrder &&
+    local.nextMyOrder !== expectedLocalNextMy;
+
+  let nextMyOrder: number;
+  if (localManuallyShiftedMy && mergedLastMy?.entryId === localLastMy?.entryId) {
+    nextMyOrder = local.nextMyOrder;
+  } else if (mergedLastMy && mergedLastMy.entryId !== baseLastMy?.entryId) {
+    nextMyOrder = (mergedLastMy.battingOrder % limitMy) + 1;
+  } else {
+    nextMyOrder = pickScalar3Way(
+      base?.nextMyOrder,
+      remote.nextMyOrder,
+      local.nextMyOrder,
+      hasBase
+    );
+  }
+
+  const mergedLastOpp = getLastBatterSnapshotForSide(
+    mergedHalfInnings,
+    mergedBattingOrder,
+    false
+  );
+  const baseLastOpp = base
+    ? getLastBatterSnapshotForSide(base.halfInnings, base.battingOrder, false)
+    : null;
+  const localLastOpp = getLastBatterSnapshotForSide(
+    local.halfInnings,
+    local.battingOrder,
+    false
+  );
+  const expectedLocalNextOpp = localLastOpp
+    ? (localLastOpp.battingOrder % 9) + 1
+    : 1;
+  const localManuallyShiftedOpp =
+    hasBase &&
+    base !== null &&
+    local.nextOpponentOrder !== base.nextOpponentOrder &&
+    local.nextOpponentOrder !== expectedLocalNextOpp;
+
+  let nextOpponentOrder: number;
+  if (
+    localManuallyShiftedOpp &&
+    mergedLastOpp?.entryId === localLastOpp?.entryId
+  ) {
+    nextOpponentOrder = local.nextOpponentOrder;
+  } else if (mergedLastOpp && mergedLastOpp.entryId !== baseLastOpp?.entryId) {
+    nextOpponentOrder = (mergedLastOpp.battingOrder % 9) + 1;
+  } else {
+    nextOpponentOrder = pickScalar3Way(
+      base?.nextOpponentOrder,
+      remote.nextOpponentOrder,
+      local.nextOpponentOrder,
+      hasBase
+    );
+  }
+
+  // アクティブイニング（activeInning / activeIsBottom）の決定
+  let activeInning = remote.activeInning;
+  let activeIsBottom = remote.activeIsBottom;
+
+  if (clientSideCursorFollow && base) {
+    const remoteAdvancedFromBase =
+      compareHalfInningOrder(
+        remote.activeInning,
+        remote.activeIsBottom,
+        base.activeInning,
+        base.activeIsBottom
+      ) > 0;
+    const localStayedAtBase =
+      local.activeInning === base.activeInning &&
+      local.activeIsBottom === base.activeIsBottom;
+
+    if (remoteAdvancedFromBase && localStayedAtBase) {
+      activeInning = remote.activeInning;
+      activeIsBottom = remote.activeIsBottom;
+    } else {
+      activeInning = local.activeInning;
+      activeIsBottom = local.activeIsBottom;
+    }
+  } else if (hasBase && base) {
+    const rChanged =
+      remote.activeInning !== base.activeInning ||
+      remote.activeIsBottom !== base.activeIsBottom;
+    const lChanged =
+      local.activeInning !== base.activeInning ||
+      local.activeIsBottom !== base.activeIsBottom;
+
+    if (lChanged && !rChanged) {
+      const frontline = getFrontlinePlayedHalf(mergedHalfInnings);
+      // 既に後ろのイニングに打席記録がある場合、サブ担当者の過去イニング閲覧でクラウド上の最前線カーソルを巻き戻さない
+      if (
+        frontline &&
+        compareHalfInningOrder(
+          local.activeInning,
+          local.activeIsBottom,
+          frontline.inning,
+          frontline.isBottom
+        ) < 0 &&
+        compareHalfInningOrder(
+          remote.activeInning,
+          remote.activeIsBottom,
+          frontline.inning,
+          frontline.isBottom
+        ) >= 0
+      ) {
+        activeInning = remote.activeInning;
+        activeIsBottom = remote.activeIsBottom;
+      } else {
+        activeInning = local.activeInning;
+        activeIsBottom = local.activeIsBottom;
+      }
+    } else if (!lChanged && rChanged) {
+      activeInning = remote.activeInning;
+      activeIsBottom = remote.activeIsBottom;
+    } else if (lChanged && rChanged) {
+      if (
+        compareHalfInningOrder(
+          local.activeInning,
+          local.activeIsBottom,
+          remote.activeInning,
+          remote.activeIsBottom
+        ) >= 0
+      ) {
+        activeInning = local.activeInning;
+        activeIsBottom = local.activeIsBottom;
+      } else {
+        activeInning = remote.activeInning;
+        activeIsBottom = remote.activeIsBottom;
+      }
+    }
+  } else {
+    if (
+      compareHalfInningOrder(
+        local.activeInning,
+        local.activeIsBottom,
+        remote.activeInning,
+        remote.activeIsBottom
+      ) > 0
+    ) {
+      activeInning = local.activeInning;
+      activeIsBottom = local.activeIsBottom;
+    }
+  }
+
+  const isGameFinished = hasBase
+    ? pickScalar3Way(
+        base?.isGameFinished,
+        remote.isGameFinished,
+        local.isGameFinished,
+        true
+      )
+    : remote.isGameFinished || local.isGameFinished;
+
+  return {
+    version: 2,
+    matchId: local.matchId ?? remote.matchId ?? null,
+    dateText: pickScalar3Way(
+      base?.dateText,
+      remote.dateText,
+      local.dateText,
+      hasBase
+    ),
+    tournamentText: pickScalar3Way(
+      base?.tournamentText,
+      remote.tournamentText,
+      local.tournamentText,
+      hasBase
+    ),
+    opponentName: pickScalar3Way(
+      base?.opponentName,
+      remote.opponentName,
+      local.opponentName,
+      hasBase
+    ),
+    venueName: pickScalar3Way(
+      base?.venueName,
+      remote.venueName,
+      local.venueName,
+      hasBase
+    ),
+    startTime: pickScalar3Way(
+      base?.startTime,
+      remote.startTime,
+      local.startTime,
+      hasBase
+    ),
+    endTime: pickScalar3Way(
+      base?.endTime,
+      remote.endTime,
+      local.endTime,
+      hasBase
+    ),
+    battingOrder: mergedBattingOrder,
+    regulationInnings: pickScalar3Way(
+      base?.regulationInnings,
+      remote.regulationInnings,
+      local.regulationInnings,
+      hasBase
+    ),
+    firstTeamShortName: pickScalar3Way(
+      base?.firstTeamShortName,
+      remote.firstTeamShortName,
+      local.firstTeamShortName,
+      hasBase
+    ),
+    secondTeamShortName: pickScalar3Way(
+      base?.secondTeamShortName,
+      remote.secondTeamShortName,
+      local.secondTeamShortName,
+      hasBase
+    ),
+    showSurnameOnly: pickScalar3Way(
+      base?.showSurnameOnly,
+      remote.showSurnameOnly,
+      local.showSurnameOnly,
+      hasBase
+    ),
+    appendSubsToTopLineup: pickScalar3Way(
+      base?.appendSubsToTopLineup,
+      remote.appendSubsToTopLineup,
+      local.appendSubsToTopLineup,
+      hasBase
+    ),
+    showWalkoffX: pickScalar3Way(
+      base?.showWalkoffX,
+      remote.showWalkoffX,
+      local.showWalkoffX,
+      hasBase
+    ),
+    lineup: mergedLineup,
+    halfInnings: mergedHalfInnings,
+    activeInning: Math.max(1, activeInning),
+    activeIsBottom,
+    nextMyOrder,
+    nextOpponentOrder,
+    isGameFinished,
+    closingComment: pickScalar3Way(
+      base?.closingComment,
+      remote.closingComment,
+      local.closingComment,
+      hasBase
+    ),
+    reporterNames: mergeReporterNames3Way(
+      base?.reporterNames,
+      remote.reporterNames,
+      local.reporterNames,
+      hasBase
+    ),
+  };
+}
+
 

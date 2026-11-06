@@ -12,6 +12,7 @@ import {
   extractScoreTeamNameModeFromJson,
 } from "@/lib/liff/scorebook-symbol-rules";
 import {
+  mergeLiveReportDocuments,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
@@ -524,17 +525,55 @@ liffNewsGeneratorRouter.get("/match-bundle", async (c) => {
   }
 });
 
-// 3. クラウド下書き単体取得（担当者引き継ぎ・再読込用）
+// 3. クラウド下書き単体取得（担当者引き継ぎ・バックグラウンド共同編集ポーリング用）
 liffNewsGeneratorRouter.get("/draft", async (c) => {
   try {
     const teamId = (c.req.query("teamId") || "").trim();
     const draftId = (c.req.query("draftId") || "").trim();
+    const sinceUpdatedAtRaw = Number(c.req.query("sinceUpdatedAt") || "0");
+    const sinceUpdatedAt =
+      Number.isFinite(sinceUpdatedAtRaw) && sinceUpdatedAtRaw > 0
+        ? sinceUpdatedAtRaw
+        : 0;
+
     if (!teamId || !draftId || teamId === "demo-team") {
       return c.json({ success: true, cloudDraft: null });
     }
 
     await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
+
+    // 軽量バージョンチェック（未変更時は reportJson を読み込まず即座に返却）
+    if (sinceUpdatedAt > 0) {
+      const metaRow = await db
+        .select({
+          id: matchLiveReports.id,
+          updatedByName: matchLiveReports.updatedByName,
+          updatedAt: matchLiveReports.updatedAt,
+        })
+        .from(matchLiveReports)
+        .where(
+          and(
+            eq(matchLiveReports.id, draftId),
+            eq(matchLiveReports.teamId, teamId)
+          )
+        )
+        .get();
+
+      if (!metaRow) {
+        return c.json({ success: true, cloudDraft: null });
+      }
+
+      if (metaRow.updatedAt <= sinceUpdatedAt) {
+        return c.json({
+          success: true,
+          unchanged: true,
+          updatedAt: metaRow.updatedAt,
+          updatedByName: metaRow.updatedByName ?? null,
+        });
+      }
+    }
+
     const row = await db
       .select()
       .from(matchLiveReports)
@@ -559,6 +598,7 @@ liffNewsGeneratorRouter.get("/draft", async (c) => {
 
     return c.json({
       success: true,
+      unchanged: false,
       cloudDraft: {
         draftId: row.id,
         report: parsed,
@@ -575,12 +615,15 @@ liffNewsGeneratorRouter.get("/draft", async (c) => {
   }
 });
 
-// 4. クラウド下書き保存（自動同期・手動同期共通）
+// 4. クラウド下書き保存（3-Way自動マージ付き共同編集保存）
 interface SaveDraftRequestBody {
   teamId?: string;
   draftId?: string;
   matchId?: string | null;
   report?: unknown;
+  baseUpdatedAt?: number | null;
+  baseReport?: unknown;
+  forceOverwrite?: boolean;
   updatedByName?: string | null;
 }
 
@@ -595,6 +638,7 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
     if (teamId === "demo-team") {
       return c.json({
         success: true,
+        merged: false,
         updatedAt: Date.now(),
         updatedByName: body.updatedByName || null,
       });
@@ -607,7 +651,50 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
-    const now = Date.now();
+
+    const existingRow = await db
+      .select()
+      .from(matchLiveReports)
+      .where(
+        and(
+          eq(matchLiveReports.id, draftId),
+          eq(matchLiveReports.teamId, teamId)
+        )
+      )
+      .get();
+
+    let finalDoc: LiveReportV2Document = sanitized;
+    let merged = false;
+
+    if (existingRow && existingRow.reportJson && !body.forceOverwrite) {
+      const clientBaseTs =
+        typeof body.baseUpdatedAt === "number" && Number.isFinite(body.baseUpdatedAt)
+          ? body.baseUpdatedAt
+          : null;
+
+      if (clientBaseTs === null || existingRow.updatedAt !== clientBaseTs) {
+        const remoteDoc = sanitizeLiveReportDocument(
+          safeParseJson<unknown>(existingRow.reportJson, null)
+        );
+        const baseDoc = body.baseReport
+          ? sanitizeLiveReportDocument(body.baseReport)
+          : null;
+
+        if (remoteDoc) {
+          finalDoc = mergeLiveReportDocuments({
+            base: baseDoc,
+            remote: remoteDoc,
+            local: sanitized,
+            clientSideCursorFollow: false,
+          });
+          merged = true;
+        }
+      }
+    }
+
+    const now = existingRow
+      ? Math.max(Date.now(), existingRow.updatedAt + 1)
+      : Date.now();
     const matchIdVal =
       body.matchId && body.matchId.trim().length > 0
         ? body.matchId.trim()
@@ -616,7 +703,7 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
       body.updatedByName && body.updatedByName.trim().length > 0
         ? body.updatedByName.trim()
         : null;
-    const reportJsonStr = JSON.stringify(sanitized);
+    const reportJsonStr = JSON.stringify(finalDoc);
 
     await db
       .insert(matchLiveReports)
@@ -641,6 +728,8 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
 
     return c.json({
       success: true,
+      merged,
+      report: finalDoc,
       updatedAt: now,
       updatedByName: updatedBy,
     });
