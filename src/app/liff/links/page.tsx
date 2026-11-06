@@ -33,11 +33,30 @@ import {
   Check,
   Flame,
   BookmarkCheck,
-  Instagram,
   Play,
   Upload,
   Image as ImageIcon,
 } from "lucide-react";
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+      <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+    </svg>
+  );
+}
 
 interface LinkItem {
   id: string;
@@ -327,12 +346,16 @@ export default function LiffLinksPage() {
     }
   };
 
-  const categories = [
+  const categories: Array<{
+    id: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
     { id: "all", label: "すべて", icon: BookmarkCheck },
     { id: "league", label: "連盟・協会", icon: Globe },
     { id: "tournament", label: "大会・速報", icon: Trophy },
     { id: "weather", label: "天気・暑さ", icon: Sun },
-    { id: "sns", label: "公式SNS", icon: Instagram },
+    { id: "sns", label: "公式SNS", icon: InstagramIcon },
     { id: "grounds", label: "施設予約", icon: MapPin },
     { id: "partner", label: "提携店", icon: ShoppingBag },
     { id: "other", label: "その他", icon: Link2 },
@@ -347,7 +370,7 @@ export default function LiffLinksPage() {
       case "weather":
         return <Sun className="w-4 h-4" />;
       case "sns":
-        return <Instagram className="w-4 h-4" />;
+        return <InstagramIcon className="w-4 h-4" />;
       case "grounds":
         return <MapPin className="w-4 h-4" />;
       case "partner":
@@ -378,7 +401,7 @@ export default function LiffLinksPage() {
     }
     if (lowerUrl.includes("instagram.com")) {
       return {
-        icon: <Instagram className="w-4 h-4" />,
+        icon: <InstagramIcon className="w-4 h-4" />,
         iconBoxClass: "bg-[#E1306C]/12 text-[#E1306C]",
         buttonClass: "bg-[#E1306C] hover:bg-[#C1275C] text-white",
         buttonLabel: "Instagram",
