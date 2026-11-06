@@ -8,6 +8,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   CarpoolConvoyLiveMap,
   type ConvoyCarItem,
@@ -95,9 +96,24 @@ function LiffCarpoolContent() {
   const searchParams = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || "";
   const openEditorParam = searchParams.get("openEditor") === "1";
+
+  const initialCachedCarpool = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const evQ = eventIdParam ? `&eventId=${encodeURIComponent(eventIdParam)}` : "";
+    return peekLiffApiCache<{ success: boolean; carpool?: CarpoolData }>(
+      `/api/liff/carpool?teamId=${encodeURIComponent(tid)}${evQ}`
+    );
+  }, [currentTeam?.id, eventIdParam]);
+
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
-  const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(
+    () => initialCachedCarpool?.carpool ?? null
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedCarpool);
   const [isTestConvoyMode, setIsTestConvoyMode] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialEventId, setEditorInitialEventId] = useState<string | undefined>(undefined);
@@ -116,14 +132,24 @@ function LiffCarpoolContent() {
 
   const loadCarpool = useCallback(async (overrideEventId?: string, bypassCache?: boolean) => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
       const targetEvId = overrideEventId !== undefined ? overrideEventId : eventIdParam;
       const eventQuery = targetEvId
         ? `&eventId=${encodeURIComponent(targetEvId)}`
         : "";
+      const url = `/api/liff/carpool?teamId=${encodeURIComponent(teamId)}${eventQuery}`;
+      const syncCached = !bypassCache
+        ? peekLiffApiCache<{ success: boolean; carpool?: CarpoolData }>(url)
+        : null;
+      if (syncCached) {
+        setCarpoolInfo(syncCached.carpool ?? null);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
       const res = await fetch(
-        `/api/liff/carpool?teamId=${encodeURIComponent(teamId)}${eventQuery}`,
+        url,
         bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
       );
       if (res.ok) {

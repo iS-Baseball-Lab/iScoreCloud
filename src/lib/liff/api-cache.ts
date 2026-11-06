@@ -421,7 +421,7 @@ export function installLiffFastFetchCache(): void {
 }
 
 /**
- * アイドル時に主要画面の API データを段階的プリフェッチし、初回タブ切替すら体感 0ms にする
+ * アイドル時に主要画面（＋ボトムナビのカスタム割当画面）の API データを段階的プリフェッチし、初回タブ切替すら体感 0ms にする
  */
 export function prefetchLiffCoreEndpoints(params: {
   teamId: string;
@@ -430,32 +430,89 @@ export function prefetchLiffCoreEndpoints(params: {
 }): void {
   if (typeof window === "undefined" || !params.teamId) return;
 
+  const tid = params.teamId;
   const uid = params.userId && params.userId !== "cached-user" ? params.userId : "";
-  const uName = encodeURIComponent(params.userName || "");
-  const cachedMemberId = localStorage.getItem(`iscore_member_id_${params.teamId}`) || "";
+  const rawName = params.userName || "";
+  const cachedMemberId = localStorage.getItem(`iscore_member_id_${tid}`) || "";
 
-  const urls = [
-    `/api/liff/schedule?teamId=${params.teamId}&userId=${uid}&userName=${uName}`,
-    `/api/liff/matches?teamId=${params.teamId}`,
-  ];
+  const schedParams = new URLSearchParams({
+    teamId: tid,
+    userId: uid,
+    userName: rawName,
+  });
+  if (cachedMemberId) schedParams.set("memberId", cachedMemberId);
 
-  // 出欠マトリクスはユーザーID確定後（またはデモ時）のみプリフェッチし、未認証状態の誤キャッシュを防止
-  if (uid || params.teamId === "demo-team") {
+  const urlSet = new Set<string>([
+    `/api/liff/schedule?${schedParams.toString()}`,
+    `/api/liff/matches?teamId=${encodeURIComponent(tid)}`,
+  ]);
+
+  // 活動予定ページ・出欠一覧表の即時表示用（ユーザーID確定後またはデモ時のみ）
+  if (uid || tid === "demo-team") {
+    urlSet.add(
+      `/api/liff/my-family?teamId=${encodeURIComponent(tid)}&userId=${encodeURIComponent(uid)}&userName=${encodeURIComponent(rawName)}`
+    );
     const matrixQs = new URLSearchParams({
-      teamId: params.teamId,
+      teamId: tid,
       userId: uid,
-      userName: params.userName || "",
+      userName: rawName,
     });
     if (cachedMemberId) matrixQs.set("memberId", cachedMemberId);
-    urls.push(`/api/liff/attendance-matrix?${matrixQs.toString()}`);
+    urlSet.add(`/api/liff/attendance-matrix?${matrixQs.toString()}`);
   }
 
-  urls.forEach((url, index) => {
+  // ボトムナビの中央3枠にカスタム設定されている画面のAPIも自動プリフェッチ対象に含める
+  try {
+    const rawNav = localStorage.getItem("iscore-liff-bottom-nav-v1");
+    if (rawNav) {
+      const parsedNav = JSON.parse(rawNav) as {
+        leftId?: string;
+        centerId?: string;
+        rightId?: string;
+      };
+      const customSlotIds = [parsedNav.leftId, parsedNav.centerId, parsedNav.rightId];
+      for (const slotId of customSlotIds) {
+        if (slotId === "carpool") {
+          urlSet.add(`/api/liff/carpool?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "stats") {
+          urlSet.add(`/api/liff/stats?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "players") {
+          const pQs = new URLSearchParams({ teamId: tid });
+          if (uid) pQs.set("userId", uid);
+          if (rawName) pQs.set("userName", rawName);
+          urlSet.add(`/api/liff/players?${pQs.toString()}`);
+        } else if (slotId === "grounds") {
+          urlSet.add(`/api/liff/grounds?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "rules") {
+          urlSet.add(`/api/liff/rules?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "documents") {
+          urlSet.add(`/api/liff/documents?teamId=${encodeURIComponent(tid)}`);
+        }
+      }
+    }
+  } catch {
+    // ignore storage parse errors
+  }
+
+  const scheduleIdle = (fn: () => void, delayMs: number) => {
     setTimeout(() => {
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(
+          fn,
+          { timeout: 1500 }
+        );
+      } else {
+        fn();
+      }
+    }, delayMs);
+  };
+
+  Array.from(urlSet).forEach((url, index) => {
+    scheduleIdle(() => {
       const key = normalizeCacheKey(url) || url;
       if (!readFromCache(key) && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
         void fetchLiffJsonFresh(key).catch(() => {});
       }
-    }, 450 + index * 250);
+    }, 350 + index * 220);
   });
 }

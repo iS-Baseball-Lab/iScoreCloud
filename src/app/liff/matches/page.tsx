@@ -15,7 +15,7 @@ import {
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import { buildLiffHubUrl, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Users,
   Shield,
@@ -374,9 +374,42 @@ function MatchesContent() {
     setInspectedCellModalState(null);
   }, []);
 
-  // 試合一覧用ステート
-  const [matchesList, setMatchesList] = useState<MatchCardData[]>([]);
-  const [isListLoading, setIsListLoading] = useState(true);
+  // 試合一覧用ステート（キャッシュがあれば1フレーム目から0ms同期ハイドレーション）
+  const initialCachedMatchesList = useMemo<MatchCardData[] | null>(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const direct = peekLiffApiCache<LiffMatchesApiResponse>(
+      `/api/liff/matches?teamId=${encodeURIComponent(tid)}`
+    );
+    if (Array.isArray(direct?.matches)) {
+      return isDemoTeamId(tid)
+        ? getHydratedDemoMatchCards(direct.matches)
+        : direct.matches;
+    }
+    const uid =
+      profile?.userId ||
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+    const hubCached = peekLiffApiCache<{ matches?: MatchCardData[] }>(
+      buildLiffHubUrl({ teamId: tid, userId: uid, userName: uName })
+    );
+    if (Array.isArray(hubCached?.matches) && hubCached.matches.length > 0) {
+      return hubCached.matches;
+    }
+    return null;
+  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+
+  const [matchesList, setMatchesList] = useState<MatchCardData[]>(
+    () => initialCachedMatchesList ?? []
+  );
+  const [isListLoading, setIsListLoading] = useState<boolean>(
+    () => initialCachedMatchesList === null
+  );
   const [filter, setFilter] = useState<"all" | "scheduled" | "video" | "official">("all");
   const [scorebookFilter, setScorebookFilter] = useState<
     "all" | "imported" | "unimported"
@@ -532,9 +565,56 @@ function MatchesContent() {
 
     async function loadMatch() {
       try {
-        setIsDetailLoading(true);
-        setIsStatsLoading(true);
         setDetailError(null);
+
+        // ⚡ 同期キャッシュがあればスピナーを出さずに0ms即時反映しつつ裏で再検証
+        if (!isDemoMatchId(targetMatchId)) {
+          const cachedDetail = peekLiffApiCache<MatchDetailApiResponse>(
+            `/api/matches/${encodeURIComponent(targetMatchId)}`
+          );
+          if (cachedDetail?.match) {
+            setMatch(cachedDetail.match);
+            setPrevMatch(
+              cachedDetail.prevMatch ??
+                (cachedDetail.prevMatchId
+                  ? { id: cachedDetail.prevMatchId, opponent: "前の試合", date: "" }
+                  : null)
+            );
+            setNextMatch(
+              cachedDetail.nextMatch ??
+                (cachedDetail.nextMatchId
+                  ? { id: cachedDetail.nextMatchId, opponent: "次の試合", date: "" }
+                  : null)
+            );
+            setMatchPosition(
+              typeof cachedDetail.matchOrderNumber === "number" &&
+                typeof cachedDetail.totalMatches === "number" &&
+                cachedDetail.totalMatches > 0
+                ? { current: cachedDetail.matchOrderNumber, total: cachedDetail.totalMatches }
+                : null
+            );
+            setIsDetailLoading(false);
+          } else {
+            setIsDetailLoading(true);
+          }
+
+          const cachedStats = peekLiffApiCache<MatchStatsApiResponse>(
+            `/api/matches/${encodeURIComponent(targetMatchId)}/stats`
+          );
+          if (cachedStats?.success) {
+            setMatchStats(Array.isArray(cachedStats.stats) ? cachedStats.stats : []);
+            setPitcherStats(
+              Array.isArray(cachedStats.pitcherStats) ? cachedStats.pitcherStats : []
+            );
+            setGameDetails(cachedStats.gameDetails ?? null);
+            setIsStatsLoading(false);
+          } else {
+            setIsStatsLoading(true);
+          }
+        } else {
+          setIsDetailLoading(true);
+          setIsStatsLoading(true);
+        }
 
         // 🅰️ デモ試合IDの場合のみデモデータを参照（実試合UUIDがデモ扱いされる誤判定を完全防止）
         if (isDemoMatchId(targetMatchId)) {
@@ -735,10 +815,9 @@ function MatchesContent() {
       (storedTeamId && (storedTeamId !== "demo-team" || storedIsDemo) ? storedTeamId : null);
 
     try {
-      setIsListLoading(true);
-
       // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から実チームIDを解決
       if (!resolvedTeamId) {
+        setIsListLoading(true);
         try {
           const hubRes = await fetch("/api/liff/hub", { cache: "no-store" });
           if (hubRes.ok) {
@@ -756,6 +835,18 @@ function MatchesContent() {
       }
 
       const effectiveListTeamId = resolvedTeamId || "demo-team";
+      const listUrl = `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`;
+      const syncCachedList = peekLiffApiCache<LiffMatchesApiResponse>(listUrl);
+      if (Array.isArray(syncCachedList?.matches)) {
+        setMatchesList(
+          isDemoTeamId(effectiveListTeamId)
+            ? getHydratedDemoMatchCards(syncCachedList.matches)
+            : syncCachedList.matches
+        );
+        setIsListLoading(false);
+      } else {
+        setIsListLoading(true);
+      }
 
       if (isDemoTeamId(effectiveListTeamId)) {
         try {

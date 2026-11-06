@@ -76,7 +76,8 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 ## 【パフォーマンス・爆速化規約（超重要）】
 1. DDLロックの完全排除：API（特にGETリクエスト）で毎回 `ALTER TABLE` / `CREATE TABLE` 書き込みクエリを直列実行することを厳禁とする。スキーマ補完が必要な場合は `PRAGMA table_info` / `sqlite_master` の単一バッチ読取＋Isolateメモリキャッシュで判定し、既存環境での書き込みDDLをゼロに保つこと。
 2. N+1クエリの根絶と並列化：ループ内でのD1クエリ発行を禁止し、`inArray` による一括取得、`GROUP BY` / `DISTINCT` による転送行削減、独立クエリの `Promise.all` 並列化を徹底する。
-3. クライアント即時表示（SWRキャッシュ ＆ 重複フェッチ排除）：同一APIの多重呼び出しを排除（In-flight deduplication）し、キャッシュ済みデータがある画面遷移ではローディングスケルトンを出さず即座（0ms）に描画した上でバックグラウンド再検証（Stale-While-Revalidate）を行うこと。データ更新（POST/PUT/PATCH/DELETE）時は関連キャッシュを即時破棄する。
+3. クライアント即時表示（1フレーム目同期SWRキャッシュ初期化 ＆ Contextメモ化）：同一APIの多重呼び出しを排除（In-flight deduplication）し、主要LIFF画面では必ず `useState(() => peekLiffApiCache(...))` で初回レンダーの1フレーム目からキャッシュ済みデータを同期復元すること（既に表示データがある状態で `setIsLoading(true)` に戻してスピナー点滅・DOM再マウントを起こすことは厳禁）。また、`LiffProvider` の Context value は必ず `useMemo` でメモ化し、`usePathname()` 変化によるアプリ全体の連鎖再レンダリングや不要なセッション再取得を防ぎつつ、カスタムボトムナビ枠を含む主要APIを `requestIdleCallback` でアイドル時に先読みすること。データ更新（POST/PUT/PATCH/DELETE）時は関連キャッシュを即時破棄する。
+4. Next.js 16 Windows 静的エクスポート RSC セグメント平坦化（404プリフェッチ根絶）：Windows環境での `next build`（`output: "export"`）はバックスラッシュ区切りの影響で `out/**/__next.*/.../__PAGE__.txt` が階層ディレクトリ出力され、クライアントルーターの `<Link>` プリフェッチ（`__next.<segments>.__PAGE__.txt`）が404になるため、必ず `npm run build` 末尾の `scripts/fix-next-export-segments.mjs` でドット区切りファイルへフラット展開し、`src/worker.ts` のエッジフォールバックと併用して全ルートのプリフェッチ `200 OK`（体感0ms遷移）を維持すること。
 
 ## 【コーディング方針（超重要）】
 1. コードの先頭に必ず `// filepath: ...` の形式でソースのパスを入れること。

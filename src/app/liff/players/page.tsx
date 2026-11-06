@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
@@ -307,11 +308,42 @@ function cleanUniformNumber(raw: string | null | undefined): string {
 export default function LiffPlayersDirectoryPage() {
   const { currentTeam, profile, isDemo: providerDemo } = useLiff();
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
-  const [canManagePlayers, setCanManagePlayers] = useState<boolean>(false);
-  const [teamInfo, setTeamInfo] = useState<DirectoryTeamInfo | null>(null);
-  const [players, setPlayers] = useState<DirectoryPlayer[]>([]);
+  const initialCachedPlayers = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const uid =
+      profile?.userId ||
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+    const query = new URLSearchParams({ teamId: tid });
+    if (uid && uid !== "cached-user") query.set("userId", uid);
+    if (uName) query.set("userName", uName);
+    return (
+      peekLiffApiCache<PlayersDirectoryResponse>(`/api/liff/players?${query.toString()}`) ||
+      peekLiffApiCache<PlayersDirectoryResponse>(`/api/liff/players?teamId=${encodeURIComponent(tid)}`)
+    );
+  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedPlayers?.success);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => Boolean(initialCachedPlayers?.isDemo));
+  const [canManagePlayers, setCanManagePlayers] = useState<boolean>(() =>
+    Boolean(initialCachedPlayers?.canManagePlayers || initialCachedPlayers?.isDemo)
+  );
+  const [teamInfo, setTeamInfo] = useState<DirectoryTeamInfo | null>(
+    () => initialCachedPlayers?.team ?? null
+  );
+  const [players, setPlayers] = useState<DirectoryPlayer[]>(() =>
+    (initialCachedPlayers?.players || []).map((p) => ({
+      ...p,
+      conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
+      conditionNote: p.conditionNote ?? null,
+    }))
+  );
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>("すべて");
@@ -365,7 +397,6 @@ export default function LiffPlayersDirectoryPage() {
   );
 
   const loadPlayers = useCallback(async () => {
-    setIsLoading(true);
     try {
       const tid =
         currentTeam?.id ||
@@ -381,10 +412,18 @@ export default function LiffPlayersDirectoryPage() {
         (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
 
       const query = new URLSearchParams({ teamId: tid });
-      if (uid) query.set("userId", uid);
+      if (uid && uid !== "cached-user") query.set("userId", uid);
       if (uName) query.set("userName", uName);
+      const url = `/api/liff/players?${query.toString()}`;
 
-      const res = await fetch(`/api/liff/players?${query.toString()}`);
+      const syncCached = peekLiffApiCache<PlayersDirectoryResponse>(url);
+      if (syncCached?.success) {
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
+      const res = await fetch(url);
       if (res.ok) {
         const data = (await res.json()) as PlayersDirectoryResponse;
         if (data.success) {

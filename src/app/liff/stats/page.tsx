@@ -10,6 +10,7 @@ import {
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { cn } from "@/lib/utils";
 import {
@@ -244,28 +245,54 @@ export default function LiffStatsPage() {
     "all" | "imported" | "unimported"
   >("all");
   const [batterSort, setBatterSort] = useState<BatterSortKey>("hits");
-  const [seasonYear, setSeasonYear] = useState<number>(() => new Date().getFullYear());
+  const initialCachedStats = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    return peekLiffApiCache<LiffStatsApiResponse>(
+      `/api/liff/stats?teamId=${encodeURIComponent(tid)}`
+    );
+  }, [currentTeam?.id]);
+
+  const [seasonYear, setSeasonYear] = useState<number>(
+    () => initialCachedStats?.team?.year || new Date().getFullYear()
+  );
   const [sectionsByFilter, setSectionsByFilter] = useState<
     Record<StatsFilterKey, StatsSectionData>
-  >({
-    all: EMPTY_SECTION,
-    official: EMPTY_SECTION,
-    exchange: EMPTY_SECTION,
-    practice: EMPTY_SECTION,
-  });
-  const [matchesList, setMatchesList] = useState<StatsMatchItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  >(() =>
+    initialCachedStats?.sectionsByFilter ?? {
+      all: EMPTY_SECTION,
+      official: EMPTY_SECTION,
+      exchange: EMPTY_SECTION,
+      practice: EMPTY_SECTION,
+    }
+  );
+  const [matchesList, setMatchesList] = useState<StatsMatchItem[]>(
+    () => (Array.isArray(initialCachedStats?.matches) ? initialCachedStats.matches : [])
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedStats);
 
   const loadStats = useCallback(async () => {
     if (isLoadingTeam && !currentTeam?.id) return;
     try {
-      setIsLoading(true);
       const teamId =
         currentTeam?.id ||
         (typeof window !== "undefined"
           ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
           : "demo-team");
-      const res = await fetch(`/api/liff/stats?teamId=${encodeURIComponent(teamId)}`);
+      const url = `/api/liff/stats?teamId=${encodeURIComponent(teamId)}`;
+      const syncCached = peekLiffApiCache<LiffStatsApiResponse>(url);
+      if (syncCached) {
+        if (syncCached.team?.year) setSeasonYear(syncCached.team.year);
+        if (syncCached.sectionsByFilter) setSectionsByFilter(syncCached.sectionsByFilter);
+        if (Array.isArray(syncCached.matches)) setMatchesList(syncCached.matches);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+      const res = await fetch(url);
       if (res.ok) {
         const data = (await res.json()) as LiffStatsApiResponse;
         if (data.team?.year) {

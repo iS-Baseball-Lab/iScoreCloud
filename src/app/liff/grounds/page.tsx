@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   MapPin,
   Navigation,
@@ -55,8 +56,23 @@ const CATEGORIES = [
 
 export default function LiffGroundsPage() {
   const { currentTeam } = useLiff();
-  const [venues, setVenues] = useState<VenueInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedGrounds = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    return peekLiffApiCache<{ success: boolean; venues?: VenueInfo[] }>(
+      `/api/liff/grounds?teamId=${tid}`
+    );
+  }, [currentTeam?.id]);
+
+  const [venues, setVenues] = useState<VenueInfo[]>(
+    () => initialCachedGrounds?.venues ?? []
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !initialCachedGrounds?.venues
+  );
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -85,9 +101,16 @@ export default function LiffGroundsPage() {
 
   const loadGrounds = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
-      const res = await fetch(`/api/liff/grounds?teamId=${teamId}`);
+      const url = `/api/liff/grounds?teamId=${teamId}`;
+      const cached = peekLiffApiCache<{ success: boolean; venues?: VenueInfo[] }>(url);
+      if (cached?.venues) {
+        setVenues(cached.venues);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+      const res = await fetch(url);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; venues?: VenueInfo[] };
         if (data.venues && data.venues.length > 0) {

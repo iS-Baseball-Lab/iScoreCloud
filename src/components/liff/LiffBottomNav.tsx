@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLiff } from "./LiffProvider";
@@ -682,16 +683,18 @@ export function LiffBottomNav() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📑 「その他」タップ時の全メニュー一覧ボトムシート
+          📑 「その他」タップ時の全メニュー一覧ボトムシート（Portal化してDOM階層を分離）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isOtherMenuOpen && (
-        <div className="fixed inset-0 z-40 flex justify-center items-end bg-slate-950/60 animate-in fade-in duration-200">
-          <div 
-            className="absolute inset-0"
-            onClick={() => setIsOtherMenuOpen(false)}
-          />
+      {isOtherMenuOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9990] flex justify-center items-end bg-slate-950/60">
+            <div 
+              className="absolute inset-0"
+              onClick={() => setIsOtherMenuOpen(false)}
+            />
 
-          <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl px-5 pb-36 pt-0 space-y-4 relative z-10 animate-in slide-in-from-bottom duration-200 max-h-[85vh] overflow-y-auto">
+            <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl px-5 pb-[max(env(safe-area-inset-bottom),24px)] pt-0 space-y-4 relative z-10 max-h-[88dvh] overflow-y-auto">
             {/* 🏷️ スティッキーヘッダー (A-3 Dark Solid Header Cap) & 3分割カテゴリタブ */}
             <div className="sticky top-0 -mx-5 bg-background z-10 border-b border-border">
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 rounded-t-2xl flex items-center justify-between">
@@ -853,7 +856,8 @@ export function LiffBottomNav() {
               </Link>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffProvider.tsx
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { Liff } from "@line/liff";
 import { LiffUserProfile, initLiff, getLiffProfile } from "@/lib/liff/liff-client";
@@ -526,35 +526,45 @@ export function LiffProvider({
     }
   }, [profile?.userId, loadTeams]);
 
-  const { data: authSession } = authClient.useSession();
-
-  // 本家Web版（Better-Auth）のセッションが存在する場合、プロファイルに自動反映
+  // 本家Web版（Better-Auth）のセッションCookieが存在する場合のみ、初回マウント時に1回だけ軽量反映（ルート遷移ごとの /api/auth/get-session ポーリング・再レンダーを完全排除）
   useEffect(() => {
-    if (authSession?.user?.id && authSession?.user?.name) {
-      const userProf: LiffUserProfile = {
-        userId: authSession.user.id,
-        displayName: authSession.user.name,
-        pictureUrl: authSession.user.image || undefined,
-      };
-      if (!isInClient || !localStorage.getItem("iscore_user_id")) {
-        localStorage.setItem("iscore_user_name", authSession.user.name);
-        localStorage.setItem("iscore_user_id", authSession.user.id);
-        if (authSession.user.image) {
-          localStorage.setItem("iscore_user_avatar", authSession.user.image);
+    if (typeof document === "undefined") return;
+    if (!document.cookie.includes("better-auth")) return;
+
+    let cancelled = false;
+    void authClient
+      .getSession()
+      .then((res) => {
+        if (cancelled) return;
+        const sessionUser = res?.data?.user;
+        if (!sessionUser?.id || !sessionUser?.name) return;
+
+        const userProf: LiffUserProfile = {
+          userId: sessionUser.id,
+          displayName: sessionUser.name,
+          pictureUrl: sessionUser.image || undefined,
+        };
+        if (!localStorage.getItem("iscore_user_id")) {
+          localStorage.setItem("iscore_user_name", sessionUser.name);
+          localStorage.setItem("iscore_user_id", sessionUser.id);
+          if (sessionUser.image) {
+            localStorage.setItem("iscore_user_avatar", sessionUser.image);
+          }
         }
-      }
-      setProfile((prev) => {
-        if (!prev || !prev.userId || prev.userId === "cached-user") {
-          return userProf;
-        }
-        if (!isInClient && prev.userId !== userProf.userId) {
-          return userProf;
-        }
-        return prev;
-      });
-      setIsLoggedIn(true);
-    }
-  }, [authSession, isInClient]);
+        setProfile((prev) => {
+          if (!prev || !prev.userId || prev.userId === "cached-user") {
+            return userProf;
+          }
+          return prev;
+        });
+        setIsLoggedIn(true);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ログイン処理ハンドラー (LIFFとBetter-Authソーシャルログインのハイブリッド)
   const handleLogin = useCallback(async () => {
@@ -627,27 +637,47 @@ export function LiffProvider({
     };
   }, [liffId]);
 
+  const contextValue = useMemo<LiffContextType>(
+    () => ({
+      liff,
+      isReady,
+      isInClient,
+      isLoggedIn,
+      isMock,
+      reason,
+      profile,
+      error,
+      login: handleLogin,
+      teams,
+      currentTeam,
+      selectTeam,
+      isLoadingTeam,
+      isDemo,
+      refreshTeams,
+      updateCurrentTeamLogo,
+    }),
+    [
+      liff,
+      isReady,
+      isInClient,
+      isLoggedIn,
+      isMock,
+      reason,
+      profile,
+      error,
+      handleLogin,
+      teams,
+      currentTeam,
+      selectTeam,
+      isLoadingTeam,
+      isDemo,
+      refreshTeams,
+      updateCurrentTeamLogo,
+    ]
+  );
+
   return (
-    <LiffContext.Provider
-      value={{
-        liff,
-        isReady,
-        isInClient,
-        isLoggedIn,
-        isMock,
-        reason,
-        profile,
-        error,
-        login: handleLogin,
-        teams,
-        currentTeam,
-        selectTeam,
-        isLoadingTeam,
-        isDemo,
-        refreshTeams,
-        updateCurrentTeamLogo,
-      }}
-    >
+    <LiffContext.Provider value={contextValue}>
       {children}
     </LiffContext.Provider>
   );

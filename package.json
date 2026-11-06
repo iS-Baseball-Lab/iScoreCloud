@@ -60,7 +60,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "next build --webpack && node scripts/fix-next-export-segments.mjs",
     "start": "next start",
     "lint": "next lint",
     "check": "npm run build && node node_modules/.bin/tsc",

@@ -381,22 +381,69 @@ function SortableMemberRow({
 export default function AttendanceMatrixBoardPage() {
   const { profile, currentTeam, isDemo } = useLiff();
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [events, setEvents] = useState<EventItem[]>([]);
+  const initialCachedMatrix = useMemo<AttendanceMatrixApiResponse | null>(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const rawUid =
+      profile?.userId ||
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const effectiveUid = rawUid === "cached-user" ? "" : rawUid;
+    const effectiveName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+    const cachedMemberId = localStorage.getItem(`iscore_member_id_${tid}`) || "";
+    const params = new URLSearchParams({
+      teamId: tid,
+      userId: effectiveUid,
+      userName: effectiveName,
+    });
+    if (cachedMemberId) params.set("memberId", cachedMemberId);
+    const hit = peekLiffApiCache<AttendanceMatrixApiResponse>(
+      `/api/liff/attendance-matrix?${params.toString()}`
+    );
+    if (!hit?.success) return null;
+    const hasId = Boolean(
+      hit.myInfo?.memberId ||
+        (hit.myInfo?.memberIds && hit.myInfo.memberIds.length > 0) ||
+        (hit.myInfo?.playerIds && hit.myInfo.playerIds.length > 0) ||
+        hit.isDemo
+    );
+    return hasId ? hit : null;
+  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedMatrix);
+  const [events, setEvents] = useState<EventItem[]>(
+    () => initialCachedMatrix?.events ?? []
+  );
   const [groups, setGroups] = useState<{
     players: MemberPerson[];
     parents: MemberPerson[];
     mothers: MemberPerson[];
     fathers: MemberPerson[];
     staff: MemberPerson[];
-  }>({
-    players: [],
-    parents: [],
-    mothers: [],
-    fathers: [],
-    staff: [],
+  }>(() => {
+    const g = initialCachedMatrix?.groups;
+    if (!g) {
+      return { players: [], parents: [], mothers: [], fathers: [], staff: [] };
+    }
+    const mothers = g.mothers || [];
+    const fathers = g.fathers || [];
+    return {
+      players: (g.players || []).filter(
+        (p) => normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave"
+      ),
+      parents: g.parents || [...mothers, ...fathers],
+      mothers,
+      fathers,
+      staff: g.staff || [],
+    };
   });
-  const [matrix, setMatrix] = useState<Record<string, Record<string, { status: AttendanceMarkType; comment: string }>>>({});
+  const [matrix, setMatrix] = useState<
+    Record<string, Record<string, { status: AttendanceMarkType; comment: string }>>
+  >(() => initialCachedMatrix?.matrix ?? {});
   const [myInfo, setMyInfo] = useState<{
     memberId: string | null;
     memberIds: string[];
@@ -404,17 +451,41 @@ export default function AttendanceMatrixBoardPage() {
     isITAdmin: boolean;
     isManager: boolean;
     name: string;
-  }>({
-    memberId: null,
-    memberIds: [],
-    playerIds: [],
-    isITAdmin: false,
-    isManager: false,
-    name: "",
+  }>(() => {
+    const mi = initialCachedMatrix?.myInfo;
+    if (!mi) {
+      return {
+        memberId: null,
+        memberIds: [],
+        playerIds: [],
+        isITAdmin: false,
+        isManager: false,
+        name: "",
+      };
+    }
+    const resolvedMemberId = mi.memberId || null;
+    return {
+      memberId: resolvedMemberId,
+      memberIds: Array.isArray(mi.memberIds)
+        ? mi.memberIds
+        : resolvedMemberId
+        ? [resolvedMemberId]
+        : [],
+      playerIds: mi.playerIds || [],
+      isITAdmin: Boolean(mi.isITAdmin),
+      isManager: Boolean(mi.isManager),
+      name: mi.name || "",
+    };
   });
 
   // UI状態
-  const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType | null>(null);
+  const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType | null>(() => {
+    const gt = initialCachedMatrix?.myInfo?.groupType;
+    if (gt === "father" || gt === "mother" || gt === "staff" || gt === "player") {
+      return gt;
+    }
+    return initialCachedMatrix ? "father" : null;
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [isManagerOverrideMode, setIsManagerOverrideMode] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");

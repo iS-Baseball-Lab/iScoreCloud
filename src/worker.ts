@@ -85,7 +85,34 @@ export default {
       return app.fetch(request, env, ctx)
     }
 
-    const assetRes = await env.ASSETS.fetch(request)
+    let assetRes = await env.ASSETS.fetch(request)
+
+    // 🛡️ セーフティネット: Windows ビルドの Next.js RSC セグメント（/__next.a.b.__PAGE__.txt）が万一 404 の場合、スラッシュ階層側へフォールバック
+    if (
+      assetRes.status === 404 &&
+      request.method === 'GET' &&
+      url.pathname.includes('/__next.') &&
+      url.pathname.endsWith('.txt')
+    ) {
+      const lastSlash = url.pathname.lastIndexOf('/__next.')
+      if (lastSlash >= 0) {
+        const prefix = url.pathname.slice(0, lastSlash)
+        const segFile = url.pathname.slice(lastSlash + 1) // __next.liff.schedule.__PAGE__.txt
+        const withoutExt = segFile.slice(0, -4) // __next.liff.schedule.__PAGE__
+        const firstDotAfterNext = withoutExt.indexOf('.', '__next.'.length)
+        if (firstDotAfterNext > 0) {
+          const head = withoutExt.slice(0, firstDotAfterNext) // __next.liff
+          const rest = withoutExt.slice(firstDotAfterNext + 1).replace(/\./g, '/') // schedule/__PAGE__
+          const fallbackUrl = new URL(request.url)
+          fallbackUrl.pathname = `${prefix}/${head}/${rest}.txt`
+          const retryRes = await env.ASSETS.fetch(new Request(fallbackUrl.toString(), request))
+          if (retryRes.ok) {
+            assetRes = retryRes
+          }
+        }
+      }
+    }
+
     if (url.pathname.startsWith('/_next/static/')) {
       const headers = new Headers(assetRes.headers)
       headers.set('Cache-Control', 'public, max-age=31536000, immutable')
@@ -97,7 +124,7 @@ export default {
     }
 
     const contentType = assetRes.headers.get('content-type') || ''
-    if (contentType.includes('text/html')) {
+    if (contentType.includes('text/html') || url.pathname.endsWith('.txt')) {
       const headers = new Headers(assetRes.headers)
       headers.set('Cache-Control', 'public, max-age=0, must-revalidate')
       return new Response(assetRes.body, {

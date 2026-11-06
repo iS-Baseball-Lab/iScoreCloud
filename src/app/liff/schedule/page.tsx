@@ -7,6 +7,7 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import { cn } from "@/lib/utils";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
@@ -200,7 +201,53 @@ export default function LiffSchedulePage() {
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [showPastDates, setShowPastDates] = useState<boolean>(false);
-  const [events, setEvents] = useState<ScheduleEvent[]>([]);
+  const initialCachedSchedule = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const rawUid =
+      profile?.userId ||
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const uid = rawUid === "cached-user" ? "" : rawUid;
+    const uName = profile?.displayName || localStorage.getItem("iscore_user_name") || "";
+    const cachedMid = localStorage.getItem(`iscore_member_id_${tid}`) || "";
+    const schedParams = new URLSearchParams({
+      teamId: tid,
+      userId: uid,
+      userName: uName,
+    });
+    if (cachedMid) schedParams.set("memberId", cachedMid);
+    const hit = peekLiffApiCache<{ success: boolean; events?: ScheduleEvent[] }>(
+      `/api/liff/schedule?${schedParams.toString()}`
+    );
+    if (!hit?.events) return null;
+    return hit.events.map((ev) => {
+      const isAmOff = ev.hasAm === false || ev.amType === "off";
+      return {
+        ...ev,
+        hasAm: !isAmOff,
+        amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
+        needsLunch:
+          ev.needsLunch === true ||
+          (ev.needsLunch as unknown) === 1 ||
+          (ev.needsLunch as unknown) === "1" ||
+          (ev.needsLunch as unknown) === "true",
+        needsSnack:
+          ev.needsSnack === true ||
+          (ev.needsSnack as unknown) === 1 ||
+          (ev.needsSnack as unknown) === "1" ||
+          (ev.needsSnack as unknown) === "true",
+      };
+    });
+  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+
+  const [events, setEvents] = useState<ScheduleEvent[]>(
+    () => initialCachedSchedule ?? []
+  );
 
   // 本日の日付文字列 (YYYY-MM-DD)
   const todayStr = useMemo(() => {
@@ -210,7 +257,9 @@ export default function LiffSchedulePage() {
     const d = String(now.getDate()).padStart(2, "0");
     return y + "-" + m + "-" + d;
   }, []);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => initialCachedSchedule === null
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -508,7 +557,6 @@ export default function LiffSchedulePage() {
 
   const loadSchedule = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") || "demo-team" : "demo-team");
       const rawUserId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
       const userId = rawUserId === "cached-user" ? "" : rawUserId;
@@ -520,7 +568,14 @@ export default function LiffSchedulePage() {
         userName: uName,
       });
       if (cachedMid) schedParams.set("memberId", cachedMid);
-      const res = await fetch(`/api/liff/schedule?${schedParams.toString()}`);
+      const url = `/api/liff/schedule?${schedParams.toString()}`;
+      const syncCached = peekLiffApiCache<{ success: boolean; events?: ScheduleEvent[] }>(url);
+      if (syncCached?.events) {
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
         if (data.events) {
