@@ -53,6 +53,15 @@ const VALID_STATUSES = new Set<ConvoyVehicleStatus>([
   "arrived",
 ]);
 
+const TEST_CONVOY_EVENT_ID = "convoy-test";
+const TEST_CARPOOL_IDS = new Set([
+  "test-cp-1",
+  "test-cp-2",
+  "test-cp-3",
+  "test-cp-4",
+  "test-cp-5",
+]);
+
 function normalizeDirection(raw: string | null | undefined): ConvoyDirection {
   return raw === "return" ? "return" : "outbound";
 }
@@ -307,7 +316,7 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         .leftJoin(organizations, eq(teams.organizationId, organizations.id))
         .where(eq(teams.id, teamId))
         .get(),
-      eventIdParam
+      eventIdParam && eventIdParam !== TEST_CONVOY_EVENT_ID
         ? db
             .select()
             .from(events)
@@ -411,7 +420,9 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
       sessionUser?.name?.trim() ||
       null;
 
-    if (!targetEvent) {
+    const isTestConvoy = eventIdParam === TEST_CONVOY_EVENT_ID;
+
+    if (!targetEvent && !isTestConvoy) {
       const emptyRes: ConvoySnapshotResponse = {
         success: true,
         isDemo: false,
@@ -428,6 +439,95 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         states: {},
       };
       return c.json(emptyRes);
+    }
+
+    // 🧪 配車ジェネレータ未作成時でも実チーム設定・実機GPS・複数スマホ同時テストが可能な5台テスト隊列モード
+    if (isTestConvoy) {
+      const testLiveRows = await db
+        .select()
+        .from(carpoolLiveLocations)
+        .where(
+          and(
+            eq(carpoolLiveLocations.teamId, teamId),
+            eq(carpoolLiveLocations.eventId, TEST_CONVOY_EVENT_ID),
+            eq(carpoolLiveLocations.direction, direction)
+          )
+        )
+        .all();
+
+      const fallbackStadiumVenue =
+        allVenues.find((v) => v.category === "stadium") || allVenues[0] || null;
+      const fallbackHomeVenue =
+        (teamRow.homeGround
+          ? allVenues.find(
+              (v) =>
+                v.name.trim().toLowerCase() ===
+                teamRow.homeGround!.trim().toLowerCase()
+            ) || null
+          : null) || null;
+
+      const [stadiumTarget, gatherTarget] = await Promise.all([
+        resolveTargetLocationFromVenueOrText(
+          fallbackStadiumVenue?.name ||
+            targetEvent?.location ||
+            "目的地グラウンド",
+          fallbackStadiumVenue
+        ),
+        resolveTargetLocationFromVenueOrText(
+          teamRow.homeGround?.trim() || "集合場所",
+          fallbackHomeVenue
+        ),
+      ]);
+
+      const destination =
+        direction === "outbound" ? stadiumTarget : gatherTarget;
+      const gatherPoint =
+        direction === "outbound" ? gatherTarget : stadiumTarget;
+
+      const states: Record<string, ConvoyVehicleLiveState> = {};
+      for (const row of testLiveRows) {
+        if (!TEST_CARPOOL_IDS.has(row.carpoolId)) continue;
+        if (now - row.updatedAt > LIVE_LOCATION_TTL_MS) continue;
+
+        const status = normalizeStatus(row.status);
+        const isSharing = Boolean(row.isSharing) && status !== "arrived";
+        const exposeCoords = isSharing || status === "arrived";
+
+        states[row.carpoolId] = {
+          carpoolId: row.carpoolId,
+          direction,
+          isSharing,
+          status,
+          latitude: exposeCoords ? row.latitude ?? null : null,
+          longitude: exposeCoords ? row.longitude ?? null : null,
+          heading: isSharing ? row.heading ?? null : null,
+          speedKmh: isSharing ? row.speedKmh ?? null : null,
+          accuracyM: exposeCoords ? row.accuracyM ?? null : null,
+          senderName: row.senderName || null,
+          updatedAt: row.updatedAt,
+        };
+      }
+
+      const testResponse: ConvoySnapshotResponse = {
+        success: true,
+        isDemo: false,
+        eventId: TEST_CONVOY_EVENT_ID,
+        direction,
+        serverTime: now,
+        googleMapsApiKey: effectiveMapsKey,
+        googleMapsKeySource: mapsKeySource,
+        canConfigureMapsKey,
+        myAssignedCarpoolId: "test-cp-1",
+        myDisplayName,
+        destination,
+        gatherPoint,
+        states,
+      };
+      return c.json(testResponse);
+    }
+
+    if (!targetEvent) {
+      return c.json({ success: false, error: "Event not found" }, 404);
     }
 
     const eventDateKey = toJstDateKey(new Date(targetEvent.startAt));
@@ -660,25 +760,35 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
     await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
 
-    const rowId = `${carpoolId}:${direction}`;
+    const isTestConvoy =
+      eventId === TEST_CONVOY_EVENT_ID && TEST_CARPOOL_IDS.has(carpoolId);
+    const rowId = isTestConvoy
+      ? `${teamId}:${carpoolId}:${direction}`
+      : `${carpoolId}:${direction}`;
 
-    // イベント＆配車枠が指定チームに属していることを厳密に検証
+    // イベント＆配車枠が指定チームに属していることを厳密に検証（テスト隊列モード時はチーム実在確認）
     const [carpoolCheck, existingRow] = await Promise.all([
-      db
-        .select({
-          carpoolId: eventCarpools.id,
-          eventTeamId: events.teamId,
-        })
-        .from(eventCarpools)
-        .innerJoin(events, eq(eventCarpools.eventId, events.id))
-        .where(
-          and(
-            eq(eventCarpools.id, carpoolId),
-            eq(eventCarpools.eventId, eventId),
-            eq(events.teamId, teamId)
-          )
-        )
-        .get(),
+      isTestConvoy
+        ? db
+            .select({ id: teams.id })
+            .from(teams)
+            .where(eq(teams.id, teamId))
+            .get()
+        : db
+            .select({
+              carpoolId: eventCarpools.id,
+              eventTeamId: events.teamId,
+            })
+            .from(eventCarpools)
+            .innerJoin(events, eq(eventCarpools.eventId, events.id))
+            .where(
+              and(
+                eq(eventCarpools.id, carpoolId),
+                eq(eventCarpools.eventId, eventId),
+                eq(events.teamId, teamId)
+              )
+            )
+            .get(),
       db
         .select()
         .from(carpoolLiveLocations)

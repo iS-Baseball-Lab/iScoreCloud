@@ -13,7 +13,56 @@ import {
   type ConvoyCarItem,
 } from "@/components/liff/CarpoolConvoyLiveMap";
 import type { ConvoyAvailableEventOption } from "@/types/carpool-convoy";
-import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays } from "lucide-react";
+import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays, Radio, X } from "lucide-react";
+
+const TEST_CONVOY_CARS: ConvoyCarItem[] = [
+  {
+    carpoolId: "test-cp-1",
+    carNumber: 1,
+    driverName: "1号車（テスト）",
+    carModel: "テスト車両1",
+    plate: "テスト",
+    capacity: 4,
+    passengers: [],
+    isCargo: true,
+  },
+  {
+    carpoolId: "test-cp-2",
+    carNumber: 2,
+    driverName: "2号車（テスト）",
+    carModel: "テスト車両2",
+    plate: "テスト",
+    capacity: 5,
+    passengers: [],
+  },
+  {
+    carpoolId: "test-cp-3",
+    carNumber: 3,
+    driverName: "3号車（テスト）",
+    carModel: "テスト車両3",
+    plate: "テスト",
+    capacity: 5,
+    passengers: [],
+  },
+  {
+    carpoolId: "test-cp-4",
+    carNumber: 4,
+    driverName: "4号車（テスト）",
+    carModel: "テスト車両4",
+    plate: "テスト",
+    capacity: 5,
+    passengers: [],
+  },
+  {
+    carpoolId: "test-cp-5",
+    carNumber: 5,
+    driverName: "5号車（テスト）",
+    carModel: "テスト車両5",
+    plate: "テスト",
+    capacity: 4,
+    passengers: [],
+  },
+];
 
 interface CarAssignment {
   carpoolId?: string;
@@ -47,6 +96,11 @@ function LiffCarpoolContent() {
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
   const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTestConvoyMode, setIsTestConvoyMode] = useState(false);
+
+  useEffect(() => {
+    setIsTestConvoyMode(false);
+  }, [currentTeam?.id]);
 
   const loadCarpool = useCallback(async () => {
     try {
@@ -123,23 +177,113 @@ function LiffCarpoolContent() {
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <span className="text-xs font-bold">配車表を読み込み中...</span>
           </div>
-        ) : !carpoolInfo || cars.length === 0 ? (
-          /* 空ステート */
+        ) : (!carpoolInfo || cars.length === 0) && !isTestConvoyMode ? (
+          /* 空ステート ＋ 隊列ライブマップ実機テスト起動カード */
           <div className="space-y-3">
             <EmptyState
               icon={Car}
               title="配車表はまだ作成されていません"
-              description="出欠の車出し回答をもとに、遠征の配車割り当てを自動作成できます"
+              description="配車ジェネレーター未作成の間も、下のテストモードから1〜5号車の隊列ライブマップ（Googleマップ・実機GPS共有）をお試しいただけます"
             />
+
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+                <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[11px] font-black">
+                  🧪 実機テスト対応
+                </span>
+                <span className="text-xs font-black text-slate-200">
+                  1号車〜5号車 テスト隊列
+                </span>
+              </div>
+              <div className="p-4 space-y-3 text-xs">
+                <p className="font-bold text-muted-foreground leading-relaxed">
+                  配車データが未登録でも、このチームのまま<strong className="text-foreground">Google Maps APIキーの設定・渋滞表示・スマホGPSでの位置共有・複数端末での同時追跡</strong>をすぐに試せます。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsTestConvoyMode(true)}
+                  className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                >
+                  <Radio className="w-4 h-4 shrink-0" />
+                  <span>1〜5号車のテスト隊列でライブマップを試す</span>
+                </button>
+              </div>
+            </section>
+
             <Link
               href="/liff/tools/carpool-generator"
-              className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+              className="w-full h-10 px-4 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
             >
-              <Sparkles className="w-4 h-4 shrink-0" />
-              <span>自動配車ジェネレーターを開く</span>
+              <Sparkles className="w-4 h-4 shrink-0 text-teal-600" />
+              <span>配車ジェネレーター（検討メモ）を見る</span>
             </Link>
           </div>
-        ) : (
+        ) : isTestConvoyMode ? (
+          /* 🧪 1〜5号車 テスト隊列モード */
+          <div className="space-y-3.5">
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[11px] font-black shrink-0">
+                    🧪 テスト隊列モード
+                  </span>
+                  <span className="text-xs font-black text-white truncate">
+                    1号車〜5号車 位置共有テスト
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsTestConvoyMode(false)}
+                  className="h-7 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px] font-black flex items-center gap-1 cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>終了</span>
+                </button>
+              </div>
+              <div className="p-3.5 text-xs font-bold text-muted-foreground leading-relaxed">
+                実際のチーム環境で <strong className="text-foreground">Googleマップ有効化（APIキー登録）</strong> や <strong className="text-foreground">位置共有ON・状況スタンプ</strong> を試せます。別スマホのメンバーと同時に開いて別々の号車を選べば、複数台の同時追跡もテストできます！
+              </div>
+            </section>
+
+            <div className="flex gap-1 bg-muted p-1 rounded-2xl border border-border">
+              <button
+                type="button"
+                onClick={() => setDirection("outbound")}
+                className={`flex-1 py-2 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  direction === "outbound"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                }`}
+              >
+                <Car className={`w-3.5 h-3.5 shrink-0 ${direction === "outbound" ? "text-primary" : "text-muted-foreground"}`} />
+                <span>行き便 (集合場所 ➔ 球場)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection("return")}
+                className={`flex-1 py-2 px-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  direction === "return"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                }`}
+              >
+                <Car className={`w-3.5 h-3.5 shrink-0 ${direction === "return" ? "text-primary" : "text-muted-foreground"}`} />
+                <span>帰り便 (球場 ➔ 解散場所)</span>
+              </button>
+            </div>
+
+            <CarpoolConvoyLiveMap
+              teamId={currentTeam?.id || "demo-team"}
+              eventId="convoy-test"
+              direction={direction}
+              destinationText={carpoolInfo?.destination || "目的地グラウンド"}
+              gatherLocationText={carpoolInfo?.gatherLocation || "集合場所"}
+              cars={TEST_CONVOY_CARS}
+              userId={profile?.userId}
+              userName={profile?.displayName}
+            />
+          </div>
+        ) : !carpoolInfo ? null : (
           <>
             {/* 複数の配車登録済みイベントがある場合のワンタップ切替バー */}
             {availableEvents.length > 1 && (
