@@ -591,11 +591,11 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               <span className="text-[10px] font-bold text-muted-foreground pl-0.5">
                 {footerStatusLabel}
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center justify-end gap-1.5 ml-auto">
                 {!isRainout && (
                   <Link
                     href={`/liff/matches/lineup?id=${match.id}`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                   >
                     <Users className="w-3.5 h-3.5" />
                     <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
@@ -603,7 +603,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 )}
                 <Link
                   href={`/liff/matches?id=${match.id}`}
-                  className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                  className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                 >
                   {isScheduledMatch ? (
                     <>
@@ -1051,45 +1051,47 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   </div>
                 )}
 
-                {/* フッターアクション：スタメン登録 ＆ 詳細ページへの遷移 */}
+                {/* フッターアクション：左に速報作成、右にスタメン登録 ＆ しおり/スコア詳細 */}
                 <div
-                  className="p-2 bg-muted/60 border-t border-border flex items-center justify-between gap-2 flex-wrap"
+                  className="p-2 bg-muted/60 border-t border-border flex items-center justify-between gap-1.5 flex-wrap"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <span className="text-[10px] font-bold text-muted-foreground pl-1">
-                    {footerStatusLabel}
-                  </span>
-                  <div className="flex items-center gap-1.5">
+                  {!isRainout ? (
+                    <Link
+                      href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
+                      className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-card border border-border text-foreground hover:border-primary/40 hover:bg-muted/50 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
+                    >
+                      <Megaphone className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>速報作成</span>
+                    </Link>
+                  ) : (
+                    <span className="text-[10px] font-bold text-muted-foreground pl-1">
+                      {footerStatusLabel}
+                    </span>
+                  )}
+
+                  <div className="flex items-center justify-end gap-1.5 ml-auto">
                     {!isRainout && (
-                      <>
-                        <Link
-                          href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-foreground hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                        >
-                          <Megaphone className="w-3.5 h-3.5 text-primary" />
-                          <span>速報作成</span>
-                        </Link>
-                        <Link
-                          href={`/liff/matches/lineup?id=${match.id}`}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs"
-                        >
-                          <Users className="w-3.5 h-3.5" />
-                          <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
-                        </Link>
-                      </>
+                      <Link
+                        href={`/liff/matches/lineup?id=${match.id}`}
+                        className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
+                      >
+                        <Users className="w-3.5 h-3.5 shrink-0" />
+                        <span>{match.hasLineup ? "スタメン編集" : "スタメン登録"}</span>
+                      </Link>
                     )}
                     <Link
                       href={`/liff/matches?id=${match.id}`}
-                      className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs"
+                      className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                     >
                       {isScheduledMatch ? (
                         <>
-                          <ClipboardList className="w-3.5 h-3.5" />
+                          <ClipboardList className="w-3.5 h-3.5 shrink-0" />
                           <span>しおり・詳細</span>
                         </>
                       ) : (
                         <>
-                          <FileText className="w-3.5 h-3.5" />
+                          <FileText className="w-3.5 h-3.5 shrink-0" />
                           <span>スコア・詳細</span>
                         </>
                       )}
