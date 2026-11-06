@@ -12,8 +12,9 @@ import {
   CarpoolConvoyLiveMap,
   type ConvoyCarItem,
 } from "@/components/liff/CarpoolConvoyLiveMap";
+import { SimpleCarpoolEditorModal } from "@/components/liff/SimpleCarpoolEditorModal";
 import type { ConvoyAvailableEventOption } from "@/types/carpool-convoy";
-import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays, Radio, X } from "lucide-react";
+import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays, Radio, X, Pencil, Plus } from "lucide-react";
 
 const TEST_CONVOY_CARS: ConvoyCarItem[] = [
   {
@@ -93,24 +94,37 @@ function LiffCarpoolContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || "";
+  const openEditorParam = searchParams.get("openEditor") === "1";
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
   const [carpoolInfo, setCarpoolInfo] = useState<CarpoolData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isTestConvoyMode, setIsTestConvoyMode] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorInitialEventId, setEditorInitialEventId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setIsTestConvoyMode(false);
+    setIsEditorOpen(false);
   }, [currentTeam?.id]);
 
-  const loadCarpool = useCallback(async () => {
+  useEffect(() => {
+    if (openEditorParam) {
+      setEditorInitialEventId(eventIdParam || undefined);
+      setIsEditorOpen(true);
+    }
+  }, [openEditorParam, eventIdParam]);
+
+  const loadCarpool = useCallback(async (overrideEventId?: string, bypassCache?: boolean) => {
     try {
       setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
-      const eventQuery = eventIdParam
-        ? `&eventId=${encodeURIComponent(eventIdParam)}`
+      const targetEvId = overrideEventId !== undefined ? overrideEventId : eventIdParam;
+      const eventQuery = targetEvId
+        ? `&eventId=${encodeURIComponent(targetEvId)}`
         : "";
       const res = await fetch(
-        `/api/liff/carpool?teamId=${encodeURIComponent(teamId)}${eventQuery}`
+        `/api/liff/carpool?teamId=${encodeURIComponent(teamId)}${eventQuery}`,
+        bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
       );
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; carpool?: CarpoolData };
@@ -128,7 +142,7 @@ function LiffCarpoolContent() {
   }, [currentTeam?.id, eventIdParam]);
 
   useEffect(() => {
-    loadCarpool();
+    void loadCarpool();
   }, [loadCarpool]);
 
   const cars = carpoolInfo?.cars || [];
@@ -165,6 +179,28 @@ function LiffCarpoolContent() {
             </span>
           }
           showBack
+          rightElement={
+            <button
+              type="button"
+              onClick={() => {
+                setEditorInitialEventId(carpoolInfo?.eventId || eventIdParam || undefined);
+                setIsEditorOpen(true);
+              }}
+              className="h-9 px-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer"
+            >
+              {cars.length > 0 ? (
+                <>
+                  <Pencil className="w-3.5 h-3.5 shrink-0" />
+                  <span>簡易配車</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span>配車作成</span>
+                </>
+              )}
+            </button>
+          }
           shareData={{
             title: `【配車表】${carpoolInfo?.date || ""} ${carpoolInfo?.eventTitle || ""}`,
             text: `集合: ${carpoolInfo?.gatherTime || ""} @ ${carpoolInfo?.gatherLocation || ""}\n乗車人数: 計${totalPassengers}名`,
@@ -178,17 +214,45 @@ function LiffCarpoolContent() {
             <span className="text-xs font-bold">配車表を読み込み中...</span>
           </div>
         ) : (!carpoolInfo || cars.length === 0) && !isTestConvoyMode ? (
-          /* 空ステート ＋ 隊列ライブマップ実機テスト起動カード */
+          /* 空ステート ＋ 簡易配車作成 ＆ 隊列ライブマップ実機テスト起動カード */
           <div className="space-y-3">
             <EmptyState
               icon={Car}
               title="配車表はまだ作成されていません"
-              description="配車ジェネレーター未作成の間も、下のテストモードから1〜5号車の隊列ライブマップ（Googleマップ・実機GPS共有）をお試しいただけます"
+              description="下の「簡易配車を作成する」から、1号車〜N号車の運転手・乗車メンバーをすぐに登録して隊列ライブマップと連携できます"
             />
 
+            {/* 🚗 簡易配車 作成カード（メインCTA） */}
             <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
               <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
                 <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[11px] font-black">
+                  🚗 かんたん登録
+                </span>
+                <span className="text-xs font-black text-slate-200">
+                  1号車〜N号車 簡易配車エディタ
+                </span>
+              </div>
+              <div className="p-4 space-y-3 text-xs">
+                <p className="font-bold text-muted-foreground leading-relaxed">
+                  予定を選んで（未登録ならその場で新規作成OK）、<strong className="text-foreground">各号車の運転手・定員・道具車・乗車メンバー（空席への自動セット対応）</strong>をスマホでサクッと作成できます。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorInitialEventId(eventIdParam || undefined);
+                    setIsEditorOpen(true);
+                  }}
+                  className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span>簡易配車を作成する（1号車〜登録）</span>
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 flex items-center justify-between gap-2">
+                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-950 text-[11px] font-black">
                   🧪 実機テスト対応
                 </span>
                 <span className="text-xs font-black text-slate-200">
@@ -197,14 +261,14 @@ function LiffCarpoolContent() {
               </div>
               <div className="p-4 space-y-3 text-xs">
                 <p className="font-bold text-muted-foreground leading-relaxed">
-                  配車データが未登録でも、このチームのまま<strong className="text-foreground">Google Maps APIキーの設定・渋滞表示・スマホGPSでの位置共有・複数端末での同時追跡</strong>をすぐに試せます。
+                  配車データを登録する前でも、<strong className="text-foreground">Google Maps APIキーの設定・渋滞表示・スマホGPSでの位置共有・複数端末での同時追跡</strong>をお試しいただけます。
                 </p>
                 <button
                   type="button"
                   onClick={() => setIsTestConvoyMode(true)}
-                  className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  className="w-full h-10 px-4 rounded-xl border border-border bg-muted hover:bg-muted/80 text-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
                 >
-                  <Radio className="w-4 h-4 shrink-0" />
+                  <Radio className="w-4 h-4 shrink-0 text-teal-600" />
                   <span>1〜5号車のテスト隊列でライブマップを試す</span>
                 </button>
               </div>
@@ -320,14 +384,28 @@ function LiffCarpoolContent() {
 
             {/* 集合概要カード（A-3 上帯ダークキャップ × 純白ボディ） */}
             <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[11px] font-black">
-                🚗 配車情報
-              </span>
-              <span className="text-xs font-black text-slate-200 tabular-nums">
-                乗車 {totalPassengers} 名 / {carpoolInfo.cars.length} 台
-              </span>
+          <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-teal-500 text-slate-950 text-[11px] font-black">
+                  🚗 配車情報
+                </span>
+                <span className="text-xs font-black text-slate-200 tabular-nums">
+                  乗車 {totalPassengers} 名 / {carpoolInfo.cars.length} 台
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEditorInitialEventId(carpoolInfo.eventId || eventIdParam || undefined);
+                  setIsEditorOpen(true);
+                }}
+                className="h-7 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-teal-300 border border-slate-700 text-[11px] font-black flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Pencil className="w-3 h-3" />
+                <span>配車を編集</span>
+              </button>
             </div>
 
             <h2 className="text-base font-black text-white tracking-tight">
@@ -529,8 +607,33 @@ function LiffCarpoolContent() {
           </>
         )}
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
+
+      {/* 簡易配車エディタモーダル（createPortal + z-[9999]） */}
+      <SimpleCarpoolEditorModal
+        isOpen={isEditorOpen}
+        teamId={currentTeam?.id || "demo-team"}
+        initialEventId={editorInitialEventId}
+        onClose={() => {
+          setIsEditorOpen(false);
+          if (openEditorParam) {
+            const cleanUrl = eventIdParam
+              ? `/liff/carpool?eventId=${encodeURIComponent(eventIdParam)}`
+              : "/liff/carpool";
+            router.replace(cleanUrl);
+          }
+        }}
+        onSaved={(savedEventId) => {
+          setIsEditorOpen(false);
+          setIsTestConvoyMode(false);
+          const nextUrl = savedEventId
+            ? `/liff/carpool?eventId=${encodeURIComponent(savedEventId)}`
+            : "/liff/carpool";
+          router.replace(nextUrl);
+          void loadCarpool(savedEventId || "", true);
+        }}
+      />
     </div>
   );
 }
