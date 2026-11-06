@@ -33,6 +33,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { QuickMenuSettingsSection } from "@/components/liff/QuickMenuSettingsSection";
+import { BottomNavSettingsSection } from "@/components/liff/BottomNavSettingsSection";
 import { useDensity, type Density } from "@/components/providers/density-provider";
 import {
   LIFF_COLOR_THEMES,
@@ -114,14 +115,14 @@ export default function LiffSettingsPage() {
       <LiffHeader
         shareData={{
           title: "アプリ設定 - iScoreCloud for LINEミニアプリ",
-          text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
+          text: "クイックメニュー・ボトムナビ・カラーテーマ・表示サイズのカスタマイズ設定",
         }}
       />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="アプリ設定"
-          subtitle="クイックメニュー・カラー・デザイン・表示サイズ"
+          subtitle="クイックメニュー・ボトムナビ・カラー・表示サイズ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
@@ -130,7 +131,7 @@ export default function LiffSettingsPage() {
           showBack
           shareData={{
             title: "アプリ設定 - iScoreCloud for LINEミニアプリ",
-            text: "クイックメニュー・カラーテーマ・デザインスタイル・表示サイズのカスタマイズ設定",
+            text: "クイックメニュー・ボトムナビ・カラーテーマ・表示サイズのカスタマイズ設定",
           }}
         />
 
@@ -158,7 +159,10 @@ export default function LiffSettingsPage() {
         {/* ━━━ セクション 1: 🚀 クイックメニュー設定 ━━━ */}
         <QuickMenuSettingsSection />
 
-        {/* ━━━ セクション 2: 🎨 表示・デザイン設定 ━━━ */}
+        {/* ━━━ セクション 2: 📱 ボトムナビ設定 ━━━ */}
+        <BottomNavSettingsSection />
+
+        {/* ━━━ セクション 3: 🎨 表示・デザイン設定 ━━━ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
           <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center gap-2">
             <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">

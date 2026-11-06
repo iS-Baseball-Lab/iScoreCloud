@@ -6,6 +6,17 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLiff } from "./LiffProvider";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
+import {
+  DEFAULT_BOTTOM_NAV_CONFIG,
+  LIFF_BOTTOM_NAV_CHANGE_EVENT,
+  LIFF_BOTTOM_NAV_STORAGE_KEY,
+  getBottomNavLabel,
+  getDefaultBottomNavConfig,
+  getSavedBottomNavConfig,
+  isBottomNavItemActive,
+  resolveBottomNavSlotItem,
+  type BottomNavConfig,
+} from "@/lib/liff/bottom-nav-settings";
 import { 
   Home, 
   Trophy, 
@@ -266,7 +277,7 @@ const MENU_ITEMS: MenuItem[] = [
   },
   {
     title: "アプリ設定",
-    subtitle: "クイックメニュー・カラー・表示設定",
+    subtitle: "メニュー・ボトムナビ・カラー設定",
     href: "/liff/settings",
     icon: Settings,
     colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
@@ -314,6 +325,29 @@ export function LiffBottomNav() {
   const { currentTeam } = useLiff();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule");
+  const [navConfig, setNavConfig] = useState<BottomNavConfig>(() =>
+    getDefaultBottomNavConfig()
+  );
+
+  useEffect(() => {
+    const syncNav = () => {
+      setNavConfig(getSavedBottomNavConfig());
+    };
+    syncNav();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === LIFF_BOTTOM_NAV_STORAGE_KEY) {
+        syncNav();
+      }
+    };
+
+    window.addEventListener(LIFF_BOTTOM_NAV_CHANGE_EVENT, syncNav);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(LIFF_BOTTOM_NAV_CHANGE_EVENT, syncNav);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     setIsOtherMenuOpen(false);
@@ -340,136 +374,306 @@ export function LiffBottomNav() {
     return MENU_ITEMS.filter((item) => item.category === selectedCategory);
   }, [selectedCategory]);
 
+  const leftSlotItem = useMemo(
+    () =>
+      resolveBottomNavSlotItem(
+        navConfig.leftId,
+        DEFAULT_BOTTOM_NAV_CONFIG.leftId
+      ),
+    [navConfig.leftId]
+  );
+  const centerSlotItem = useMemo(
+    () =>
+      resolveBottomNavSlotItem(
+        navConfig.centerId,
+        DEFAULT_BOTTOM_NAV_CONFIG.centerId
+      ),
+    [navConfig.centerId]
+  );
+  const rightSlotItem = useMemo(
+    () =>
+      resolveBottomNavSlotItem(
+        navConfig.rightId,
+        DEFAULT_BOTTOM_NAV_CONFIG.rightId
+      ),
+    [navConfig.rightId]
+  );
+
+  const LeftIcon = leftSlotItem.icon;
+  const CenterIcon = centerSlotItem.icon;
+  const RightIcon = rightSlotItem.icon;
+
+  const leftLabel = getBottomNavLabel(leftSlotItem.id);
+  const centerLabel = getBottomNavLabel(centerSlotItem.id);
+  const rightLabel = getBottomNavLabel(rightSlotItem.id);
+
   const isHome = pathname === "/liff";
-  const isSchedule = pathname === "/liff/schedule" || pathname === "/liff/schedule/admin";
-  const isMatches = pathname?.startsWith("/liff/matches");
-  const isBoard = pathname?.startsWith("/liff/schedule/board");
-  const isOther = isOtherMenuOpen || (!isHome && !isSchedule && !isMatches && !isBoard);
+  const isLeftActive = isBottomNavItemActive(leftSlotItem.id, pathname);
+  const isCenterActive = isBottomNavItemActive(centerSlotItem.id, pathname);
+  const isRightActive = isBottomNavItemActive(rightSlotItem.id, pathname);
+  const isOther =
+    isOtherMenuOpen ||
+    (!isHome && !isLeftActive && !isCenterActive && !isRightActive);
+  const isArchStyle = navConfig.style === "arch";
 
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
         <div className="w-full max-w-lg pointer-events-auto relative">
-          
-          {/* 🌟 完全なめらか連続曲線・適度なクッキリ影・絶妙な青丸位置のボトムナビ */}
-          <div className="relative w-full h-[68px] select-none">
-            
-            {/* SVG背景: 継ぎ目のない一体型ベジェ曲線 */}
-            <svg
-              viewBox="0 -26 375 94"
-              preserveAspectRatio="none"
-              className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)] pointer-events-none"
-              fill="none"
-            >
-              <path
-                d="M 0,16 
-                   L 126,16 
-                   C 152,16 162,-14 187.5,-14 
-                   C 213,-14 223,16 249,16 
-                   L 375,16 
-                   L 375,68 
-                   L 0,68 Z"
-                className="fill-card"
-              />
-              <path
-                d="M 0,16 
-                   L 126,16 
-                   C 152,16 162,-14 187.5,-14 
-                   C 213,-14 223,16 249,16 
-                   L 375,16"
-                className="stroke-border"
-                strokeWidth="1.2"
+          {isArchStyle ? (
+            /* 🌟 標準モード: 連続ベジェ曲線アーチ ＋ 中央プライマリー円形ボタン */
+            <div className="relative w-full h-[68px] select-none">
+              <svg
+                viewBox="0 -26 375 94"
+                preserveAspectRatio="none"
+                className="absolute -top-[26px] inset-x-0 w-full h-[94px] overflow-visible filter drop-shadow-[0_-3px_8px_rgba(0,0,0,0.10)] pointer-events-none"
                 fill="none"
-              />
-            </svg>
-
-            {/* 🌟 中央: プライマリーカラーの円形試合情報ボタン（カラーテーマ完全連動） */}
-            <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
-              <Link
-                href="/liff/matches"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center shadow-lg active:scale-95 transition-all text-primary-foreground bg-primary shadow-primary/35 ${
-                  isMatches && !isOtherMenuOpen 
-                    ? "ring-3 ring-primary/30 scale-105" 
-                    : "hover:brightness-110"
-                }`}
-                title="試合情報"
               >
-                <Video className="w-6 h-6 -mb-0.5" />
-                <span className="text-[10px] font-black tracking-tighter leading-none mt-1">
-                  試合情報
-                </span>
-              </Link>
+                <path
+                  d="M 0,16 
+                     L 126,16 
+                     C 152,16 162,-14 187.5,-14 
+                     C 213,-14 223,16 249,16 
+                     L 375,16 
+                     L 375,68 
+                     L 0,68 Z"
+                  className="fill-card"
+                />
+                <path
+                  d="M 0,16 
+                     L 126,16 
+                     C 152,16 162,-14 187.5,-14 
+                     C 213,-14 223,16 249,16 
+                     L 375,16"
+                  className="stroke-border"
+                  strokeWidth="1.2"
+                  fill="none"
+                />
+              </svg>
+
+              {/* 🌟 中央: カスタマイズ対応の円形メインボタン */}
+              <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
+                <Link
+                  href={centerSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center px-1 shadow-lg active:scale-95 transition-all text-primary-foreground bg-primary shadow-primary/35 ${
+                    isCenterActive && !isOtherMenuOpen
+                      ? "ring-3 ring-primary/30 scale-105"
+                      : "hover:brightness-110"
+                  }`}
+                  title={centerSlotItem.label}
+                >
+                  <CenterIcon className="w-6 h-6 -mb-0.5 shrink-0" />
+                  <span className="text-[10px] font-black tracking-tighter leading-none mt-1 truncate max-w-[60px]">
+                    {centerLabel}
+                  </span>
+                </Link>
+              </div>
+
+              {/* ナビゲーションメニューアイテム（5分割グリッド） */}
+              <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
+                {/* ① 🏠 ホーム（固定） */}
+                <Link
+                  href="/liff"
+                  onClick={(e) =>
+                    handleLiffRootLinkClick(e, router, pathname, () =>
+                      setIsOtherMenuOpen(false)
+                    )
+                  }
+                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
+                    isHome && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <Home
+                    className={`w-5 h-5 transition-transform ${
+                      isHome && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[10px] leading-none tracking-tight">
+                    ホーム
+                  </span>
+                </Link>
+
+                {/* ② 左カスタム枠 */}
+                <Link
+                  href={leftSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
+                    isLeftActive && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <LeftIcon
+                    className={`w-5 h-5 transition-transform ${
+                      isLeftActive && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[9.5px] leading-none tracking-tight truncate max-w-full">
+                    {leftLabel}
+                  </span>
+                </Link>
+
+                {/* ③ 中央プレースホルダー */}
+                <div className="pointer-events-none" />
+
+                {/* ④ 右カスタム枠 */}
+                <Link
+                  href={rightSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
+                    isRightActive && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <RightIcon
+                    className={`w-5 h-5 transition-transform ${
+                      isRightActive && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[9.5px] leading-none tracking-tight truncate max-w-full">
+                    {rightLabel}
+                  </span>
+                </Link>
+
+                {/* ⑤ ⋯ メニュー（固定） */}
+                <button
+                  type="button"
+                  onClick={() => setIsOtherMenuOpen((prev) => !prev)}
+                  className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 cursor-pointer ${
+                    isOtherMenuOpen || isOther
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <Menu
+                    className={`w-5 h-5 transition-transform ${
+                      isOtherMenuOpen ? "rotate-90 scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[10px] leading-none tracking-tight">
+                    メニュー
+                  </span>
+                </button>
+              </div>
             </div>
+          ) : (
+            /* 🌟 フラットモード: 突起なしのソリッド5分割バー */
+            <div className="relative w-full h-[60px] bg-card border-t border-border shadow-[0_-3px_8px_rgba(0,0,0,0.08)] select-none">
+              <div className="grid grid-cols-5 h-full items-center px-1">
+                {/* ① 🏠 ホーム（固定） */}
+                <Link
+                  href="/liff"
+                  onClick={(e) =>
+                    handleLiffRootLinkClick(e, router, pathname, () =>
+                      setIsOtherMenuOpen(false)
+                    )
+                  }
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
+                    isHome && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <Home
+                    className={`w-5 h-5 transition-transform ${
+                      isHome && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[10px] leading-none tracking-tight">
+                    ホーム
+                  </span>
+                </Link>
 
-            {/* ナビゲーションメニューアイテム（5分割グリッド） */}
-            <div className="relative z-10 grid grid-cols-5 h-full items-end pb-2 px-1">
-              
-              {/* ① 🏠 ホーム */}
-              <Link
-                href="/liff"
-                onClick={(e) =>
-                  handleLiffRootLinkClick(e, router, pathname, () =>
-                    setIsOtherMenuOpen(false)
-                  )
-                }
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isHome && !isOtherMenuOpen
-                    ? "text-primary font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold"
-                }`}
-              >
-                <Home className={`w-5 h-5 transition-transform ${isHome && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">ホーム</span>
-              </Link>
+                {/* ② 左カスタム枠 */}
+                <Link
+                  href={leftSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
+                    isLeftActive && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <LeftIcon
+                    className={`w-5 h-5 transition-transform ${
+                      isLeftActive && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[9.5px] leading-none tracking-tight truncate max-w-full">
+                    {leftLabel}
+                  </span>
+                </Link>
 
-              {/* ② 📅 活動予定 */}
-              <Link
-                href="/liff/schedule"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isSchedule && !isOtherMenuOpen
-                    ? "text-primary font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold"
-                }`}
-              >
-                <Calendar className={`w-5 h-5 transition-transform ${isSchedule && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">活動予定</span>
-              </Link>
+                {/* ③ 中央カスタム枠（フラット時は上端アクセント付き） */}
+                <Link
+                  href={centerSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`relative flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
+                    isCenterActive && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-foreground hover:text-primary font-black"
+                  }`}
+                >
+                  <span
+                    className={`w-8 h-6 rounded-lg flex items-center justify-center ${
+                      isCenterActive && !isOtherMenuOpen
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-primary/12 text-primary"
+                    }`}
+                  >
+                    <CenterIcon className="w-4 h-4" />
+                  </span>
+                  <span className="text-[9.5px] leading-none tracking-tight truncate max-w-full">
+                    {centerLabel}
+                  </span>
+                </Link>
 
-              {/* ③ 中央プレースホルダー */}
-              <div className="pointer-events-none" />
+                {/* ④ 右カスタム枠 */}
+                <Link
+                  href={rightSlotItem.href}
+                  onClick={() => setIsOtherMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
+                    isRightActive && !isOtherMenuOpen
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <RightIcon
+                    className={`w-5 h-5 transition-transform ${
+                      isRightActive && !isOtherMenuOpen ? "scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[9.5px] leading-none tracking-tight truncate max-w-full">
+                    {rightLabel}
+                  </span>
+                </Link>
 
-              {/* ④ 📋 出欠一覧表 */}
-              <Link
-                href="/liff/schedule/board"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isBoard && !isOtherMenuOpen
-                    ? "text-primary font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold"
-                }`}
-              >
-                <ClipboardCheck className={`w-5 h-5 transition-transform ${isBoard && !isOtherMenuOpen ? "scale-110" : ""}`} />
-                <span className="text-[9.5px] leading-none tracking-tight">出欠一覧表</span>
-              </Link>
-
-              {/* ⑤ ⋯ メニュー */}
-              <button
-                type="button"
-                onClick={() => setIsOtherMenuOpen((prev) => !prev)}
-                className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
-                  isOtherMenuOpen || isOther
-                    ? "text-primary font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold"
-                }`}
-              >
-                <Menu className={`w-5 h-5 transition-transform ${isOtherMenuOpen ? "rotate-90 scale-110" : ""}`} />
-                <span className="text-[10px] leading-none tracking-tight">メニュー</span>
-              </button>
-
+                {/* ⑤ ⋯ メニュー（固定） */}
+                <button
+                  type="button"
+                  onClick={() => setIsOtherMenuOpen((prev) => !prev)}
+                  className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 cursor-pointer ${
+                    isOtherMenuOpen || isOther
+                      ? "text-primary font-black"
+                      : "text-muted-foreground hover:text-foreground font-bold"
+                  }`}
+                >
+                  <Menu
+                    className={`w-5 h-5 transition-transform ${
+                      isOtherMenuOpen ? "rotate-90 scale-110" : ""
+                    }`}
+                  />
+                  <span className="text-[10px] leading-none tracking-tight">
+                    メニュー
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* iPhone セーフエリア下部背景 */}
           <div className="h-[max(env(safe-area-inset-bottom),8px)] bg-card" />
