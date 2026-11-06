@@ -59,6 +59,7 @@ export const MatchService = {
       liveOpponentInningScores: matches.liveOpponentInningScores,
       liveStatus: matches.liveStatus,
       lockedByUserName: matches.lockedByUserName,
+      matchDayOps: matches.matchDayOps,
       venueAddress: venues.address,
       venueMapUrl: venues.mapUrl,
     })
@@ -106,6 +107,7 @@ export const MatchService = {
       liveMyInningScores: JSON.parse(r.liveMyInningScores ?? "[]") as number[],
       liveOpponentInningScores: JSON.parse(r.liveOpponentInningScores ?? "[]") as number[],
       liveStatus: r.liveStatus as "none" | "draft" | "completed",
+      matchDayOps: parseMatchDayOpsJson(r.matchDayOps),
     }));
   },
 

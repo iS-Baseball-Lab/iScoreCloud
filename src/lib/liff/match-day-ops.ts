@@ -69,10 +69,10 @@ export const MEAL_OPTION_ITEMS: readonly MealOptionMeta[] = [
   { value: "none", label: "未設定（日程設定に連動）", shortLabel: "未設定" },
   {
     value: "lunch_and_snack",
-    label: "お弁当 ＋ 捕食（軽食）持参",
+    label: "弁当 ＋ 捕食（軽食）持参",
     shortLabel: "弁当＋捕食持参",
   },
-  { value: "lunch_only", label: "お弁当持参", shortLabel: "お弁当持参" },
+  { value: "lunch_only", label: "弁当持参", shortLabel: "弁当持参" },
   { value: "snack_only", label: "捕食（おにぎり等）のみ", shortLabel: "捕食のみ持参" },
   { value: "no_meal", label: "昼食不要（半日）", shortLabel: "昼食不要" },
 ] as const;
@@ -309,19 +309,19 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
   if (!raw) return {};
   let obj: Record<string, unknown> | null = null;
 
-  if (typeof raw === "string") {
-    const trimmed = raw.trim();
+  let candidate: unknown = raw;
+  for (let depth = 0; depth < 2 && typeof candidate === "string"; depth++) {
+    const trimmed = candidate.trim();
     if (!trimmed || trimmed === "{}" || trimmed === "null") return {};
     try {
-      const parsed = JSON.parse(trimmed) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        obj = parsed as Record<string, unknown>;
-      }
+      candidate = JSON.parse(trimmed) as unknown;
     } catch {
       return {};
     }
-  } else if (typeof raw === "object" && !Array.isArray(raw)) {
-    obj = raw as Record<string, unknown>;
+  }
+
+  if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+    obj = candidate as Record<string, unknown>;
   }
 
   if (!obj) return {};
@@ -344,9 +344,15 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
         ? rec.assignees
             .map((a) => (typeof a === "string" ? a.trim() : ""))
             .filter((a) => a.length > 0)
+        : typeof rec.assignees === "string"
+        ? rec.assignees
+            .split(/[/／、,，]+/)
+            .map((a) => a.trim())
+            .filter((a) => a.length > 0)
         : [];
       const note = typeof rec.note === "string" ? rec.note.trim() : "";
-      if (roleLabel && (assignees.length > 0 || note.length > 0)) {
+      const isPreset = isPresetStaffRole(roleKey, roleLabel);
+      if (roleLabel && (!isPreset || assignees.length > 0 || note.length > 0)) {
         parsedStaffRoles.push({
           roleKey: roleKey || `custom_${parsedStaffRoles.length + 1}`,
           roleLabel,
@@ -514,7 +520,7 @@ export function resolveEffectiveMealLabel(
   }
   if (scheduleSync) {
     if (scheduleSync.needsLunch && scheduleSync.needsSnack) return "弁当＋捕食持参";
-    if (scheduleSync.needsLunch) return "お弁当持参";
+    if (scheduleSync.needsLunch) return "弁当持参";
     if (scheduleSync.needsSnack) return "捕食のみ持参";
   }
   return "";

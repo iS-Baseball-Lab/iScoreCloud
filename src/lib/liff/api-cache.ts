@@ -46,6 +46,8 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/my-family",
 ];
 
+export const LIFF_CACHE_INVALIDATED_EVENT = "iscore:liff-cache-invalidated";
+
 const memoryCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, Promise<unknown>>();
 const inflightRawRequests = new Map<string, Promise<RawFetchSnapshot>>();
@@ -53,6 +55,12 @@ const inflightRawRequests = new Map<string, Promise<RawFetchSnapshot>>();
 let nativeFetchRef: typeof fetch | null = null;
 let isGlobalFastFetchInstalled = false;
 let hasPurgedLegacyCache = false;
+let cacheMutationEpoch = 0;
+let lastCacheInvalidatedAt = 0;
+
+export function getLastLiffCacheInvalidatedAt(): number {
+  return lastCacheInvalidatedAt;
+}
 
 function purgeLegacySessionCache(): void {
   if (hasPurgedLegacyCache || typeof window === "undefined") return;
@@ -298,6 +306,7 @@ export async function fetchLiffJsonFresh<T>(url: string): Promise<T> {
     return existing as Promise<T>;
   }
 
+  const startEpoch = cacheMutationEpoch;
   const baseFetch = getNativeFetch();
   const reqPromise = (async () => {
     try {
@@ -306,7 +315,9 @@ export async function fetchLiffJsonFresh<T>(url: string): Promise<T> {
         throw new Error(`HTTP ${res.status}`);
       }
       const json = (await res.json()) as T;
-      writeToCache(key, json);
+      if (startEpoch === cacheMutationEpoch) {
+        writeToCache(key, json);
+      }
       return json;
     } finally {
       inflightRequests.delete(key);
@@ -353,6 +364,11 @@ export async function fetchLiffJsonSWR<T>(
  * キャッシュを無効化する（POST / PUT / PATCH / DELETE 実行時に自動または明示呼び出し）
  */
 export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
+  cacheMutationEpoch += 1;
+  lastCacheInvalidatedAt = Date.now();
+  inflightRequests.clear();
+  inflightRawRequests.clear();
+
   if (!prefixOrSubstring) {
     memoryCache.clear();
     if (typeof window !== "undefined") {
@@ -370,6 +386,9 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
           if (k && k.startsWith(PERSISTENT_CACHE_PREFIX)) lKeys.push(k);
         }
         for (const k of lKeys) localStorage.removeItem(k);
+      } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent(LIFF_CACHE_INVALIDATED_EVENT));
       } catch {}
     }
     return;
@@ -400,6 +419,9 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
         }
       }
       for (const k of lKeys) localStorage.removeItem(k);
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent(LIFF_CACHE_INVALIDATED_EVENT));
     } catch {}
   }
 }
@@ -481,13 +503,18 @@ export function installLiffFastFetchCache(): void {
     // キャッシュミスまたは90秒超の古いスナップショット時：同一 URL への同時リクエストを 1 本に統合して最新取得
     let pending = inflightRawRequests.get(cacheKey);
     if (!pending) {
+      const startEpoch = cacheMutationEpoch;
       pending = (async () => {
         try {
           const res = await baseFetch(input, init);
           const contentType = res.headers.get("content-type") || "";
           const bodyText = await res.text();
 
-          if (res.ok && contentType.includes("application/json")) {
+          if (
+            res.ok &&
+            contentType.includes("application/json") &&
+            startEpoch === cacheMutationEpoch
+          ) {
             try {
               const parsed = JSON.parse(bodyText) as unknown;
               writeToCache(cacheKey, parsed);
@@ -632,19 +659,15 @@ export function warmupLiffMatchDetail(
     "";
   const rawName = localStorage.getItem("iscore_user_name") || "";
 
-  triggerWarmupUrl(
-    `/api/liff/matches/${encodeURIComponent(matchId)}?teamId=${encodeURIComponent(tid)}`
-  );
+  triggerWarmupUrl(`/api/matches/${encodeURIComponent(matchId)}`);
 
   if (isScheduledMatch) {
     const opsQs = new URLSearchParams({ teamId: tid });
     if (uid) opsQs.set("userId", uid);
     if (rawName) opsQs.set("userName", rawName);
-    triggerWarmupUrl(
-      `/api/liff/matches/${encodeURIComponent(matchId)}/ops-context?${opsQs.toString()}`
-    );
+    triggerWarmupUrl(`/api/liff/match-ops-context?${opsQs.toString()}`);
   } else {
-    triggerWarmupUrl(`/api/liff/matches/${encodeURIComponent(matchId)}/stats`);
+    triggerWarmupUrl(`/api/matches/${encodeURIComponent(matchId)}/stats`);
     triggerWarmupUrl(
       `/api/liff/scorebook/match-bundle?matchId=${encodeURIComponent(matchId)}&teamId=${encodeURIComponent(tid)}`
     );

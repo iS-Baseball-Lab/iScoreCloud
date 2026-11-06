@@ -1,7 +1,7 @@
 // filepath: src/components/liff/MatchDayOpsSection.tsx
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -840,12 +840,22 @@ export function MatchDayOpsEditorModal({
   const [roleRows, setRoleRows] = useState<EditableStaffRoleRow[]>([]);
   const [expandedRoleKey, setExpandedRoleKey] = useState<string>("umpire");
   const [showFathersFirstOnly, setShowFathersFirstOnly] = useState<boolean>(false);
-  const [customAssigneeInput, setCustomAssigneeInput] = useState<string>("");
+  const [customAssigneeInputs, setCustomAssigneeInputs] = useState<Record<string, string>>({});
   const [newCustomRoleLabel, setNewCustomRoleLabel] = useState<string>("");
+  const initializedSessionKeyRef = useRef<string | null>(null);
 
-  // モーダルオープン時または対象試合変更時にフォーム値を同期
+  // モーダルオープン時または対象試合変更時にのみフォーム値を初期化（編集中に裏でopsが再検証されても入力中の状態を上書きしない）
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      initializedSessionKeyRef.current = null;
+      return;
+    }
+    const sessionKey = `${matchId}:${initialTab}`;
+    if (initializedSessionKeyRef.current === sessionKey) {
+      return;
+    }
+    initializedSessionKeyRef.current = sessionKey;
+
     setActiveTab(initialTab);
     setGatherTime(ops?.gatherTime || "");
     setGatherPlace(ops?.gatherPlace || "");
@@ -898,7 +908,7 @@ export function MatchDayOpsEditorModal({
 
     setRoleRows(mergedRows);
     setExpandedRoleKey(mergedRows[0]?.roleKey || "umpire");
-    setCustomAssigneeInput("");
+    setCustomAssigneeInputs({});
     setNewCustomRoleLabel("");
   }, [isOpen, initialTab, matchId, ops]);
 
@@ -942,17 +952,29 @@ export function MatchDayOpsEditorModal({
     );
   };
 
+  const parseFreeTextAssignees = (rawText: string): string[] =>
+    rawText
+      .split(/[/／、,，]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
   const handleAddCustomAssignee = (roleKey: string) => {
-    const clean = customAssigneeInput.trim();
-    if (!clean) return;
+    const rawText = customAssigneeInputs[roleKey] || "";
+    const tokens = parseFreeTextAssignees(rawText);
+    if (tokens.length === 0) return;
     setRoleRows((prev) =>
       prev.map((row) => {
         if (row.roleKey !== roleKey) return row;
-        if (row.assignees.includes(clean)) return row;
-        return { ...row, assignees: [...row.assignees, clean] };
+        const merged = [...row.assignees];
+        for (const name of tokens) {
+          if (!merged.includes(name)) {
+            merged.push(name);
+          }
+        }
+        return { ...row, assignees: merged };
       })
     );
-    setCustomAssigneeInput("");
+    setCustomAssigneeInputs((prev) => ({ ...prev, [roleKey]: "" }));
   };
 
   const handleUpdateRoleNote = (roleKey: string, noteVal: string) => {
@@ -972,6 +994,11 @@ export function MatchDayOpsEditorModal({
   const handleRemoveCustomRole = (roleKey: string) => {
     setRoleRows((prev) => prev.filter((row) => row.roleKey !== roleKey));
     setExpandedRoleKey((prev) => (prev === roleKey ? "" : prev));
+    setCustomAssigneeInputs((prev) => {
+      const next = { ...prev };
+      delete next[roleKey];
+      return next;
+    });
   };
 
   const handleAddCustomRole = () => {
@@ -995,7 +1022,35 @@ export function MatchDayOpsEditorModal({
   };
 
   const handleSubmit = async () => {
-    const hasBlankCustomLabel = roleRows.some(
+    // 自由入力欄や新規枠入力欄に「追加」ボタンを押さずに入力したまま「保存する」を押した場合も自動確定して取りこぼしを防止
+    const committedRows: EditableStaffRoleRow[] = roleRows.map((row) => {
+      const pendingTokens = parseFreeTextAssignees(
+        customAssigneeInputs[row.roleKey] || ""
+      );
+      if (pendingTokens.length === 0) return row;
+      const merged = [...row.assignees];
+      for (const name of pendingTokens) {
+        if (!merged.includes(name)) {
+          merged.push(name);
+        }
+      }
+      return { ...row, assignees: merged };
+    });
+
+    const pendingNewRoleLabel = newCustomRoleLabel.trim();
+    if (pendingNewRoleLabel) {
+      committedRows.push({
+        roleKey: `custom_${Date.now()}`,
+        roleLabel: pendingNewRoleLabel,
+        shortHint: "追加担当",
+        notePlaceholder: "補足メモ（任意）",
+        assignees: [],
+        note: "",
+        isCustom: true,
+      });
+    }
+
+    const hasBlankCustomLabel = committedRows.some(
       (r) => r.isCustom && r.roleLabel.trim().length === 0
     );
     if (hasBlankCustomLabel) {
@@ -1004,7 +1059,7 @@ export function MatchDayOpsEditorModal({
       return;
     }
 
-    const cleanedRoles: MatchStaffRoleAssignment[] = roleRows
+    const cleanedRoles: MatchStaffRoleAssignment[] = committedRows
       .filter((r) => {
         const cleanLabel = r.roleLabel.trim();
         if (!cleanLabel) return false;
@@ -1303,10 +1358,19 @@ export function MatchDayOpsEditorModal({
                           <div className="flex gap-1.5">
                             <input
                               type="text"
-                              value={customAssigneeInput}
+                              value={customAssigneeInputs[row.roleKey] || ""}
                               onChange={(e) =>
-                                setCustomAssigneeInput(e.target.value)
+                                setCustomAssigneeInputs((prev) => ({
+                                  ...prev,
+                                  [row.roleKey]: e.target.value,
+                                }))
                               }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                                  e.preventDefault();
+                                  handleAddCustomAssignee(row.roleKey);
+                                }
+                              }}
                               placeholder="自由入力で追加（例: 連盟派遣 / 小西父）"
                               className="flex-1 h-9 px-3 rounded-xl border border-border bg-background text-xs font-bold text-foreground"
                             />

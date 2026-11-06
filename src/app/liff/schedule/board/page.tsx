@@ -8,7 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
+import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   PLAYER_CONDITION_META,
   loadDemoPlayerConditionOverrides,
@@ -1307,6 +1307,7 @@ function AttendanceMatrixBoardContent() {
         const data = (await res.json().catch(() => ({}))) as MatrixSaveApiResponse;
         throw new Error(data.error || "更新に失敗しました");
       }
+      invalidateLiffApiCache();
       toast.success(`${person.name} さんの出欠を更新しました`);
       setEditingCell(null);
     } catch (err: unknown) {
@@ -2153,165 +2154,302 @@ function AttendanceMatrixBoardContent() {
           createPortal(
             <>
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            ✏️ セルタップ時の出欠変更モーダル (ボトムナビと重ならない中央フロート配置)
+            ✏️ セルタップ時の出欠変更モーダル (ステータス＋メモを1回で同時登録)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        {editingCell && (
-          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-150">
-            <div
-              className="absolute inset-0"
-              onClick={() => !isSavingCell && setEditingCell(null)}
-            />
+        {editingCell && (() => {
+          const personGroup: SortGroupKey =
+            editingCell.person.groupType === "father"
+              ? "father"
+              : editingCell.person.groupType === "mother"
+              ? "mother"
+              : editingCell.person.groupType === "staff"
+              ? "staff"
+              : "player";
+          const groupSettings =
+            groupStatusConfig[personGroup] || DEFAULT_GROUP_STATUS_CONFIG[personGroup];
+          const groupSettingsMap = new Map(groupSettings.map((s) => [s.id, s]));
+          const selectedBaseStatus =
+            ATTENDANCE_STATUSES[editingCell.currentStatus] || ATTENDANCE_STATUSES.pending;
+          const selectedSetting = groupSettingsMap.get(editingCell.currentStatus);
+          const selectedButtonLabel =
+            selectedSetting?.label || selectedBaseStatus.shortLabel || selectedBaseStatus.label;
+          const quickCommentChips =
+            personGroup === "player"
+              ? ["遅刻参加", "早退", "午前のみ", "午後のみ", "別メニュー", "学校行事", "体調不良"]
+              : ["車出し可", "午前のみ", "午後のみ", "遅刻参加", "早退", "当番交代済", "仕事"];
 
-            <div className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
-              {/* モーダルヘッダー */}
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <span className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0 mt-0.5">
-                    <ClipboardCheck className="w-4 h-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-sm font-black text-white">
-                        {editingCell.person.name} さんの出欠登録
-                      </h3>
-                      {editingCell.person.subText && (
-                        <span className="text-[10px] text-slate-200 font-bold px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
-                          {editingCell.person.subText}
-                        </span>
-                      )}
-                      {editingCell.person.groupType === "player" &&
-                        normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
-                          "active" && (
-                          <span
-                            className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
-                              PLAYER_CONDITION_META[
-                                normalizePlayerConditionStatus(editingCell.person.conditionStatus)
-                              ].solidBadgeClass
-                            }`}
-                          >
-                            {
-                              PLAYER_CONDITION_META[
-                                normalizePlayerConditionStatus(editingCell.person.conditionStatus)
-                              ].badgeText
-                            }
+          return (
+            <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150">
+              <div
+                className="absolute inset-0"
+                onClick={() => !isSavingCell && setEditingCell(null)}
+              />
+
+              <div
+                className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[88dvh] sm:max-h-[88vh]"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* モーダルヘッダー */}
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <span className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0 mt-0.5">
+                      <ClipboardCheck className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-black text-white">
+                          {editingCell.person.name} さんの出欠登録
+                        </h3>
+                        {editingCell.person.subText && (
+                          <span className="text-[10px] text-slate-200 font-bold px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700">
+                            {editingCell.person.subText}
                           </span>
                         )}
+                        {editingCell.person.groupType === "player" &&
+                          normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
+                            "active" && (
+                            <span
+                              className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                                PLAYER_CONDITION_META[
+                                  normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                                ].solidBadgeClass
+                              }`}
+                            >
+                              {
+                                PLAYER_CONDITION_META[
+                                  normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                                ].badgeText
+                              }
+                            </span>
+                          )}
+                      </div>
+                      <p className="text-xs text-slate-300 font-bold mt-0.5">
+                        📅 {editingCell.eventDate} : {editingCell.eventTitle}
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-300 font-bold mt-0.5">
-                      📅 {editingCell.eventDate} : {editingCell.eventTitle}
-                    </p>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={isSavingCell}
+                    onClick={() => setEditingCell(null)}
+                    className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  disabled={isSavingCell}
-                  onClick={() => setEditingCell(null)}
-                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+                <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
+                  {editingCell.person.groupType === "player" &&
+                    normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
+                      "active" && (
+                      <div
+                        className={`p-2.5 rounded-xl text-[11px] font-bold leading-relaxed ${
+                          PLAYER_CONDITION_META[
+                            normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+                          ].bannerClass
+                        }`}
+                      >
+                        {normalizePlayerConditionStatus(editingCell.person.conditionStatus) ===
+                        "rehab"
+                          ? "🩹 リハビリ・調整中：試合出場はお休み中ですが、別メニュー練習・ベンチ帯同・配車同乗などの出欠予定を登録できます。"
+                          : "⚠️ 一部制限あり：一部プレー制限を設けて活動参加中です。必要に応じてメモ欄にも補足をご記入ください。"}
+                      </div>
+                    )}
 
-              <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
-                {editingCell.person.groupType === "player" &&
-                  normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
-                    "active" && (
-                    <div
-                      className={`p-2.5 rounded-xl text-[11px] font-bold leading-relaxed ${
-                        PLAYER_CONDITION_META[
-                          normalizePlayerConditionStatus(editingCell.person.conditionStatus)
-                        ].bannerClass
-                      }`}
-                    >
-                      {normalizePlayerConditionStatus(editingCell.person.conditionStatus) ===
-                      "rehab"
-                        ? "🩹 リハビリ・調整中：試合出場はお休み中ですが、別メニュー練習・ベンチ帯同・配車同乗などの出欠予定を登録できます。"
-                        : "⚠️ 一部制限あり：一部プレー制限を設けて活動参加中です。必要に応じてメモ欄にも補足をご記入ください。"}
+                  {/* 1. ステータス選択ボタン一覧（タップで選択状態に切替・コメントも続けて入力可能） */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs font-black text-foreground">
+                        ① 出欠ステータスを選択
+                      </label>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        選択後そのままメモも入力できます
+                      </span>
                     </div>
-                  )}
+                    <div className="grid grid-cols-2 gap-2">
+                      {(Object.keys(ATTENDANCE_STATUSES) as AttendanceMarkType[])
+                        .filter((key) => {
+                          if (key === "pending") return true;
+                          const setting = groupSettingsMap.get(key);
+                          return setting ? setting.enabled || editingCell.currentStatus === key : true;
+                        })
+                        .map((key) => {
+                          const baseItem = ATTENDANCE_STATUSES[key];
+                          const setting = groupSettingsMap.get(key);
+                          const customLabel = setting?.label || baseItem.label;
+                          const isSelected = editingCell.currentStatus === key;
 
-                {/* ステータス選択ボタン一覧 (グループ別設定に準拠) */}
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-foreground">
-                    出欠ステータスを選択:
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(() => {
-                      const personGroup: SortGroupKey = 
-                        editingCell.person.groupType === "father" ? "father" :
-                        editingCell.person.groupType === "mother" ? "mother" :
-                        editingCell.person.groupType === "staff" ? "staff" : "player";
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() =>
+                                setEditingCell((prev) =>
+                                  prev ? { ...prev, currentStatus: key } : null
+                                )
+                              }
+                              disabled={isSavingCell}
+                              className={`relative flex items-center justify-between gap-2 p-2.5 rounded-2xl text-left transition-all active:scale-95 cursor-pointer ${
+                                isSelected
+                                  ? "border-2 border-primary bg-primary/10 text-primary font-black shadow-xs"
+                                  : "border border-border bg-card text-foreground hover:bg-muted"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${baseItem.badgeClass}`}
+                                >
+                                  {baseItem.mark}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-black truncate">{customLabel}</p>
+                                  <p className="text-[9px] text-muted-foreground truncate">
+                                    {baseItem.shortLabel}
+                                  </p>
+                                </div>
+                              </div>
+                              {isSelected && (
+                                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                                  <Check className="w-3 h-3 stroke-[3]" />
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
 
-                      const groupSettings = groupStatusConfig[personGroup] || DEFAULT_GROUP_STATUS_CONFIG[personGroup];
-                      const groupSettingsMap = new Map(groupSettings.map(s => [s.id, s]));
+                  {/* 2. メモ・備考入力欄（ワンタップ定型チップ＋自由入力） */}
+                  <div className="space-y-2 pt-1 border-t border-border">
+                    <label className="text-xs font-black text-foreground flex items-center justify-between gap-2">
+                      <span>② コメント・備考（任意）</span>
+                      <span className="text-[10px] text-muted-foreground font-bold">
+                        例: 11時早退、車出し3名可、遅刻など
+                      </span>
+                    </label>
 
-                      return (Object.keys(ATTENDANCE_STATUSES) as AttendanceMarkType[]).filter(key => {
-                        if (key === "pending") return true;
-                        const setting = groupSettingsMap.get(key);
-                        return setting ? (setting.enabled || editingCell.currentStatus === key) : true;
-                      }).map((key) => {
-                        const baseItem = ATTENDANCE_STATUSES[key];
-                        const setting = groupSettingsMap.get(key);
-                        const customLabel = setting?.label || baseItem.label;
-                        const isSelected = editingCell.currentStatus === key;
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={editingCell.comment}
+                        onChange={(e) =>
+                          setEditingCell((prev) =>
+                            prev ? { ...prev, comment: e.target.value } : null
+                          )
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.nativeEvent.isComposing && !isSavingCell) {
+                            e.preventDefault();
+                            void handleSaveCell(
+                              editingCell.currentStatus,
+                              editingCell.comment.trim()
+                            );
+                          }
+                        }}
+                        placeholder="早退や車出し可など..."
+                        className="w-full pl-3 pr-8 py-2.5 text-xs font-bold rounded-xl bg-muted/35 border border-border focus:outline-none focus:border-primary text-foreground placeholder:text-muted-foreground"
+                      />
+                      {editingCell.comment && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditingCell((prev) => (prev ? { ...prev, comment: "" } : null))
+                          }
+                          className="absolute right-2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                          aria-label="コメントをクリア"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
 
+                    {/* ワンタップ定型チップ */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {quickCommentChips.map((chip) => {
+                        const tokens = editingCell.comment
+                          .split("・")
+                          .map((t) => t.trim())
+                          .filter(Boolean);
+                        const isActiveChip = tokens.includes(chip);
                         return (
                           <button
-                            key={key}
+                            key={chip}
                             type="button"
-                            onClick={() => handleSaveCell(key, editingCell.comment)}
                             disabled={isSavingCell}
-                            className={`flex items-center gap-2 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${
-                              isSelected
-                                ? "border-primary bg-primary/10 text-primary font-black shadow-xs"
-                                : "border-border bg-card text-foreground hover:bg-muted"
+                            onClick={() => {
+                              setEditingCell((prev) => {
+                                if (!prev) return null;
+                                const cur = prev.comment.trim();
+                                if (!cur) return { ...prev, comment: chip };
+                                const parts = cur
+                                  .split("・")
+                                  .map((t) => t.trim())
+                                  .filter(Boolean);
+                                if (parts.includes(chip)) {
+                                  return {
+                                    ...prev,
+                                    comment: parts.filter((t) => t !== chip).join("・"),
+                                  };
+                                }
+                                return { ...prev, comment: `${cur}・${chip}` };
+                              });
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black border transition-all active:scale-95 cursor-pointer ${
+                              isActiveChip
+                                ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
+                                : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted"
                             }`}
                           >
-                            <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${baseItem.badgeClass}`}>
-                              {baseItem.mark}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-black truncate">{customLabel}</p>
-                              <p className="text-[9px] text-muted-foreground truncate">{baseItem.shortLabel}</p>
-                            </div>
+                            {isActiveChip ? `✓ ${chip}` : `＋ ${chip}`}
                           </button>
                         );
-                      });
-                    })()}
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                {/* メモ・備考入力欄 */}
-                <div className="space-y-1.5 pt-1">
-                  <label className="text-xs font-black text-foreground flex items-center justify-between">
-                    <span>メモ・備考（任意）:</span>
-                    <span className="text-[10px] text-muted-foreground font-normal">
-                      例: 11時早退、車出し3名可、遅刻など
-                    </span>
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={editingCell.comment}
-                      onChange={(e) => setEditingCell(prev => prev ? { ...prev, comment: e.target.value } : null)}
-                      placeholder="早退や車出し可など..."
-                      className="flex-1 px-3 py-2 text-xs rounded-xl bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground"
-                    />
-                    <button
-                      type="button"
-                      disabled={isSavingCell}
-                      onClick={() => handleSaveCell(editingCell.currentStatus, editingCell.comment)}
-                      className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all shrink-0"
-                    >
-                      {isSavingCell ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "メモ保存"}
-                    </button>
-                  </div>
+                {/* モーダルフッター（Safe Area対応・1タップ一括保存） */}
+                <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2.5 shrink-0">
+                  <button
+                    type="button"
+                    disabled={isSavingCell}
+                    onClick={() => setEditingCell(null)}
+                    className="py-2.5 px-4 rounded-xl text-xs font-bold border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    キャンセル
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSavingCell}
+                    onClick={() =>
+                      void handleSaveCell(
+                        editingCell.currentStatus,
+                        editingCell.comment.trim()
+                      )
+                    }
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingCell ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        <span>登録中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4 shrink-0" />
+                        <span className="truncate">
+                          「{selectedBaseStatus.mark} {selectedButtonLabel}」で登録する
+                        </span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             💬 コメント・連絡事項閲覧モーダル (閲覧専用・権限なし時用)
@@ -2468,7 +2606,7 @@ function AttendanceMatrixBoardContent() {
                   <p className="text-[9.5px] font-bold text-muted-foreground">よく使う定型文・タグ:</p>
                   <div className="flex flex-wrap gap-1">
                     {[
-                      "持ち物: お弁当・水筒多め",
+                      "持ち物: 弁当・水筒多め",
                       "雨天時は7時までにLINE連絡",
                       "白ユニフォーム着用",
                       "現地8:30集合",
@@ -2502,7 +2640,7 @@ function AttendanceMatrixBoardContent() {
                     rows={3}
                     value={editingDayNote.description}
                     onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, description: e.target.value } : null)}
-                    placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分とお弁当..."
+                    placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分と弁当..."
                     className="w-full px-3 py-2 text-xs rounded-xl bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
                   />
                 </div>

@@ -8,7 +8,13 @@ import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
-import { buildLiffHubUrl, fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  LIFF_CACHE_INVALIDATED_EVENT,
+  buildLiffHubUrl,
+  fetchLiffJsonSWR,
+  getLastLiffCacheInvalidatedAt,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
 import {
   normalizeGroupStatusSummaryConfig,
   type GroupStatusConfigSummary,
@@ -79,6 +85,7 @@ export default function LiffHubPage() {
   const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const hasLoadedRef = useRef<boolean>(Boolean(initialCached));
+  const lastAppliedAtRef = useRef<number>(initialCached ? Date.now() : 0);
   const prevTeamIdRef = useRef<string | undefined>(currentTeam?.id);
 
   // LINEプロフィール取得時の名前反映
@@ -94,6 +101,7 @@ export default function LiffHubPage() {
     setMatches(Array.isArray(data.matches) ? data.matches : []);
     setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
     hasLoadedRef.current = true;
+    lastAppliedAtRef.current = Date.now();
     setIsLoading(false);
   }, []);
 
@@ -166,8 +174,40 @@ export default function LiffHubPage() {
       }
     }
     prevTeamIdRef.current = currentId;
-    void loadHubData(currentId, false);
+    const needsForce = getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current;
+    void loadHubData(currentId, needsForce);
   }, [currentTeam?.id, loadHubData, profile?.displayName, profile?.userId]);
+
+  // 試合詳細・予定編集・出欠登録など下層画面で保存して「戻る」で復帰した際も即時最新データを反映
+  useEffect(() => {
+    const handleInvalidated = () => {
+      void loadHubData(currentTeam?.id, true);
+    };
+    const handleBackOrShow = () => {
+      if (getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current) {
+        void loadHubData(currentTeam?.id, true);
+      }
+    };
+    const handleVisibility = () => {
+      if (
+        document.visibilityState === "visible" &&
+        getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current
+      ) {
+        void loadHubData(currentTeam?.id, true);
+      }
+    };
+
+    window.addEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
+    window.addEventListener("popstate", handleBackOrShow);
+    window.addEventListener("pageshow", handleBackOrShow);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
+      window.removeEventListener("popstate", handleBackOrShow);
+      window.removeEventListener("pageshow", handleBackOrShow);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [currentTeam?.id, loadHubData]);
 
   const teamName = currentTeam?.name || "チーム";
 

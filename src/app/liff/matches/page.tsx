@@ -15,7 +15,12 @@ import {
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
-import { buildLiffHubUrl, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  LIFF_CACHE_INVALIDATED_EVENT,
+  buildLiffHubUrl,
+  invalidateLiffApiCache,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
 import {
   Users,
   Shield,
@@ -917,6 +922,17 @@ function MatchesContent() {
   useEffect(() => {
     loadMatchesList();
   }, [loadMatchesList]);
+
+  useEffect(() => {
+    if (matchId) return;
+    const handleInvalidated = () => {
+      void loadMatchesList();
+    };
+    window.addEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
+    return () => {
+      window.removeEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
+    };
+  }, [matchId, loadMatchesList]);
 
   // スタメン・控え・欠席の派生リスト計算
   const filledStarters = useMemo(

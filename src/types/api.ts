@@ -195,6 +195,7 @@ export interface MatchRow {
   venueAddress?: string | null;
   venueMapUrl?: string | null;
   hasScorebook?: boolean;
+  matchDayOps?: MatchDayOps | null;
 }
 
 /**

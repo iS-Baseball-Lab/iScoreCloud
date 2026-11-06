@@ -977,7 +977,7 @@ export function MonthlySchedulePlanner({
                             </div>
 
                             <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground flex-wrap">
-                              {/* お弁当トグル */}
+                              {/* 弁当トグル */}
                               <button
                                 type="button"
                                 onClick={() => handleToggleLunch(it.dateStr)}
@@ -989,7 +989,7 @@ export function MonthlySchedulePlanner({
                                 )}
                               >
                                 <span>🍙</span>
-                                <span>{it.needsLunch ? "お弁当：要" : "弁当なし"}</span>
+                                <span>{it.needsLunch ? "弁当：要" : "弁当なし"}</span>
                               </button>
 
                               {/* 📍 場所（一覧選択・自由入力ピッカー） */}
@@ -1022,7 +1022,7 @@ export function MonthlySchedulePlanner({
                           <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border overflow-x-auto scrollbar-none">
                             <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
                               <span>📋</span>
-                              <span>当番:</span>
+                              <span>当番班:</span>
                             </span>
 
                             {["1班", "2班", "3班", "4班", "なし"].map((dg) => {

@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Calendar, MapPin, Car, Utensils, CheckCircle2, XCircle, HelpCircle, Clock, ChevronRight } from "lucide-react";
+import { Calendar, MapPin, Car, Utensils, CheckCircle2, XCircle, HelpCircle, Clock, ChevronRight, ClipboardList } from "lucide-react";
 
 interface HubHeroCardProps {
   teamName?: string;
@@ -13,9 +13,9 @@ interface HubHeroCardProps {
     time: string;
     location: string;
     eventType: "match" | "practice" | "meeting" | "camp";
-    dutyGroup?: string; // お当番班
+    dutyGroup?: string; // 当番班
     carInfo?: string;   // 行き/帰りの配車
-    needsLunch?: boolean; // お弁当要否
+    needsLunch?: boolean; // 弁当要否
   } | null;
 }
 
@@ -58,10 +58,18 @@ export function HubHeroCard({
           </span>
         </div>
 
-        {/* メイン予定タイトル */}
-        <h2 className="text-base font-black text-white tracking-tight line-clamp-2">
-          {event.title}
-        </h2>
+        {/* メイン予定タイトル ＆ 当番班バッジ */}
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-base font-black text-white tracking-tight truncate min-w-0 flex-1">
+            {event.title}
+          </h2>
+          {event.dutyGroup && event.dutyGroup !== "なし" && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-amber-300 border border-amber-400/50 text-[10.5px] font-black shrink-0">
+              <ClipboardList className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>当番班: {event.dutyGroup}</span>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="p-4 pt-3 space-y-3.5">
@@ -78,7 +86,7 @@ export function HubHeroCard({
           </div>
         </div>
 
-        {/* 連絡事項：配車・お当番・お弁当インフォメーション */}
+        {/* 連絡事項：配車・弁当インフォメーション */}
         <div className="p-3 rounded-2xl bg-muted border border-border space-y-2.5 text-xs">
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold">
@@ -92,10 +100,10 @@ export function HubHeroCard({
             <div className="flex items-center gap-1.5 font-bold">
               <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
               <div className="min-w-0">
-                <span className="text-[10px] text-muted-foreground block">お弁当</span>
+                <span className="text-[10px] text-muted-foreground block">弁当</span>
                 {event.needsLunch ? (
                   <span className="inline-block px-2 py-0.5 rounded-md bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 text-[10.5px] font-black truncate">
-                    🍙 お弁当：要
+                    🍙 弁当：要
                   </span>
                 ) : (
                   <span className="text-muted-foreground truncate block">不要 (半日)</span>
@@ -103,15 +111,6 @@ export function HubHeroCard({
               </div>
             </div>
           </div>
-
-          {event.dutyGroup && (
-            <div className="p-2 rounded-xl bg-card border border-border border-l-4 border-l-amber-500 flex items-center justify-between text-[11px] font-bold shadow-2xs">
-              <span className="text-foreground font-black">お当番</span>
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">
-                📋 {event.dutyGroup}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* ワンタップ出欠回答エリア */}

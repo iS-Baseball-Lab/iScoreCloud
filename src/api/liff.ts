@@ -1588,7 +1588,9 @@ app.get("/hub", async (c) => {
       const pmEndHHMM = extractRawTimeHHMM(ev.pmEndAt);
 
       const amTime = hasPm
-        ? (endHHMM && pmStartHHMM && endHHMM <= pmStartHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`)
+        ? (endHHMM && (pmEndHHMM || (pmStartHHMM && endHHMM <= pmStartHHMM))
+            ? `${startHHMM}〜${endHHMM}`
+            : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`)
         : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`);
 
       const pmTime = hasPm
@@ -1621,7 +1623,7 @@ app.get("/hub", async (c) => {
         hasPm,
         targetGroup: extractedTarget,
         eventType: ev.eventType || "practice",
-        dutyGroup: ev.dutyGroup || "1班",
+        dutyGroup: ev.dutyGroup || undefined,
         carInfo,
         needsLunch: toBoolean(ev.needsLunch, hasPm || isMatch),
         needsSnack: toBoolean(ev.needsSnack, false),
@@ -2185,7 +2187,7 @@ app.get("/schedule", async (c) => {
       const pmEndStr = extractRawTimeHHMM(ev.pmEndAt);
 
       const resolvedAmEndStr =
-        hasPm && rawEndStr && pmStartStr && rawEndStr > pmStartStr
+        hasPm && !pmEndStr && rawEndStr && pmStartStr && rawEndStr > pmStartStr
           ? schedDefaultTimes.amEnd
           : rawEndStr;
 
