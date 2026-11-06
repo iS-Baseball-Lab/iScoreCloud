@@ -1,7 +1,7 @@
 // filepath: src/contexts/TeamContext.tsx
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 
 export interface Team {
   id: string;
@@ -31,6 +31,11 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
 
   // 💡 マウント時に localStorage から復元 ＆ サーバーから最新情報を同期
   useEffect(() => {
+    // 🌟 LIFF 画面（/liff 配下）では LiffProvider が全チーム状態を担うため、ルート再レンダーを起こさないよう即終了
+    if (window.location.pathname.startsWith("/liff")) {
+      return;
+    }
+
     const savedId = localStorage.getItem(STORAGE_KEY);
     const savedName = localStorage.getItem(NAME_STORAGE_KEY);
     const savedCategory = localStorage.getItem(CATEGORY_STORAGE_KEY) || undefined;
@@ -48,9 +53,7 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     }
     setIsLoading(false);
 
-    // 🌟 LIFF 画面（/liff 配下）では LiffProvider がチーム同期を担うため不要な /api/teams フェッチをスキップ
-    const isLiffRoute = window.location.pathname.startsWith("/liff");
-    if (savedId && !isLiffRoute) {
+    if (savedId) {
       fetch("/api/teams", { cache: "no-store" })
         .then((res) => (res.ok ? res.json() : null))
         .then((data: unknown) => {
@@ -99,8 +102,13 @@ export function TeamProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem(LEGEND_STORAGE_KEY, team.scorebookLegendUrl || "");
   }, []);
 
+  const contextValue = useMemo(
+    () => ({ currentTeam, selectTeam, isLoading }),
+    [currentTeam, selectTeam, isLoading]
+  );
+
   return (
-    <TeamContext.Provider value={{ currentTeam, selectTeam, isLoading }}>
+    <TeamContext.Provider value={contextValue}>
       {children}
     </TeamContext.Provider>
   );

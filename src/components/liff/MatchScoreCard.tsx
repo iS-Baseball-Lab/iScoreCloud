@@ -1,8 +1,10 @@
 // filepath: src/components/liff/MatchScoreCard.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { warmupLiffMatchDetail } from "@/lib/liff/api-cache";
 import { format, differenceInSeconds, intervalToDuration } from "date-fns";
 import { ja } from "date-fns/locale";
 import { 
@@ -216,12 +218,22 @@ function MatchCountdown({ date }: { date: string }) {
 }
 
 export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false, isLoading = false }: MatchScoreCardProps) {
-  const { profile } = useLiff();
+  const router = useRouter();
+  const { profile, currentTeam } = useLiff();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
   const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
   const [isThumbLoaded, setIsThumbLoaded] = useState(false);
   const practiceMatchLabel = usePracticeMatchLabel();
+
+  const handleDetailPointerDown = useCallback(
+    (scheduledFlag: boolean) => {
+      if (!match?.id) return;
+      router.prefetch("/liff/matches");
+      warmupLiffMatchDetail(match.id, scheduledFlag, currentTeam?.id);
+    },
+    [currentTeam?.id, match?.id, router]
+  );
 
   // SKILL.md 規約5: 対象試合変更時やカード折りたたみ時に手動追加役割の展開状態もリセット
   useEffect(() => {
@@ -595,6 +607,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 {!isRainout && (
                   <Link
                     href={`/liff/matches/lineup?id=${match.id}`}
+                    onPointerDown={() => router.prefetch("/liff/matches/lineup")}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                   >
                     <Users className="w-3.5 h-3.5" />
@@ -603,6 +616,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 )}
                 <Link
                   href={`/liff/matches?id=${match.id}`}
+                  onPointerDown={() => handleDetailPointerDown(isScheduledMatch)}
                   className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                 >
                   {isScheduledMatch ? (
@@ -1074,6 +1088,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                     {!isRainout && (
                       <Link
                         href={`/liff/matches/lineup?id=${match.id}`}
+                        onPointerDown={() => router.prefetch("/liff/matches/lineup")}
                         className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-card border border-border text-primary hover:border-primary/40 hover:bg-muted/50 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                       >
                         <Users className="w-3.5 h-3.5 shrink-0" />
@@ -1082,6 +1097,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                     )}
                     <Link
                       href={`/liff/matches?id=${match.id}`}
+                      onPointerDown={() => handleDetailPointerDown(isScheduledMatch)}
                       className="inline-flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                     >
                       {isScheduledMatch ? (

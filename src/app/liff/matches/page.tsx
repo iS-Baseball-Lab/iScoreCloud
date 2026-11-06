@@ -3158,12 +3158,20 @@ function MatchesContent() {
           </div>
         ) : (
           <div className="space-y-3.5">
-            {filteredMatches.map((m) => (
-              <MatchScoreCard
+            {filteredMatches.map((m, idx) => (
+              <div
                 key={m.id}
-                match={m}
-                teamName={scoreTeamName}
-              />
+                className={
+                  idx >= 4
+                    ? "[content-visibility:auto] [contain-intrinsic-size:auto_240px]"
+                    : undefined
+                }
+              >
+                <MatchScoreCard
+                  match={m}
+                  teamName={scoreTeamName}
+                />
+              </div>
             ))}
           </div>
         )}

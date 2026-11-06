@@ -10,9 +10,14 @@ import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { buildLiffHubUrl, fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { UserPlus, ShieldCheck } from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
-import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
+
+const JoinTeamModal = dynamic(
+  () => import("@/components/liff/JoinTeamModal").then((m) => m.JoinTeamModal),
+  { ssr: false }
+);
 
 interface HubDataResponse {
   success: boolean;
@@ -246,15 +251,17 @@ export default function LiffHubPage() {
       </div>
 
       {/* チーム参加申請モーダル */}
-      <JoinTeamModal
-        isOpen={isJoinModalOpen}
-        onClose={() => setIsJoinModalOpen(false)}
-        onSuccess={() => {
-          setIsJoinModalOpen(false);
-          void refreshTeams();
-          void loadHubData(currentTeam?.id, true);
-        }}
-      />
+      {isJoinModalOpen && (
+        <JoinTeamModal
+          isOpen={isJoinModalOpen}
+          onClose={() => setIsJoinModalOpen(false)}
+          onSuccess={() => {
+            setIsJoinModalOpen(false);
+            void refreshTeams();
+            void loadHubData(currentTeam?.id, true);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -3,9 +3,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   FileText,
   Search,
@@ -26,7 +28,10 @@ import {
   Download,
   FileSpreadsheet,
 } from "lucide-react";
-import { PdfCanvasViewer } from "@/components/common/PdfCanvasViewer";
+const PdfCanvasViewer = dynamic(
+  () => import("@/components/common/PdfCanvasViewer").then((m) => m.PdfCanvasViewer),
+  { ssr: false }
+);
 
 interface TeamDocument {
   id: string;
@@ -71,8 +76,19 @@ function getExternalBrowserUrl(url: string | null | undefined): string {
 
 export default function LiffDocumentsPage() {
   const { currentTeam, profile } = useLiff();
-  const [documents, setDocuments] = useState<TeamDocument[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedDocs = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+    return peekLiffApiCache<{ success: boolean; documents?: TeamDocument[] }>(
+      `/api/liff/documents?teamId=${tid}`
+    );
+  }, [currentTeam?.id]);
+
+  const [documents, setDocuments] = useState<TeamDocument[]>(
+    () => initialCachedDocs?.documents ?? []
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedDocs);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
   const [selectedFileType, setSelectedFileType] = useState<string>("all");
@@ -116,8 +132,16 @@ export default function LiffDocumentsPage() {
 
   const loadDocuments = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
+      const cached = peekLiffApiCache<{ success: boolean; documents?: TeamDocument[] }>(
+        `/api/liff/documents?teamId=${teamId}`
+      );
+      if (cached?.documents) {
+        setDocuments(cached.documents);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
       const res = await fetch(`/api/liff/documents?teamId=${teamId}`);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; documents?: TeamDocument[] };

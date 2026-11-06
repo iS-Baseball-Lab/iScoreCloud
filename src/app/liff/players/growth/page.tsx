@@ -3,6 +3,7 @@
 
 import React, { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   TrendingUp,
@@ -24,8 +25,13 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
+
+const PlayerPhotoCaptureModal = dynamic(
+  () => import("@/components/liff/PlayerPhotoCaptureModal").then((m) => m.PlayerPhotoCaptureModal),
+  { ssr: false }
+);
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -749,9 +755,23 @@ function PlayerGrowthContent() {
 
   const queryPlayerId = searchParams.get("id");
 
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const initialCachedGrowth = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+    const pidParam = queryPlayerId
+      ? `&playerId=${encodeURIComponent(queryPlayerId)}`
+      : "";
+    return peekLiffApiCache<PlayerGrowthResponse>(
+      `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`
+    );
+  }, [currentTeam?.id, queryPlayerId]);
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedGrowth);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [growthData, setGrowthData] = useState<PlayerGrowthResponse | null>(null);
+  const [growthData, setGrowthData] = useState<PlayerGrowthResponse | null>(
+    () => initialCachedGrowth
+  );
 
   const [filter, setFilter] = useState<GrowthFilterKey>("all");
   const [logSortOrder, setLogSortOrder] = useState<"desc" | "asc">("desc");
@@ -796,7 +816,6 @@ function PlayerGrowthContent() {
   );
 
   const loadGrowth = useCallback(async () => {
-    setIsLoading(true);
     setErrorMsg(null);
     try {
       const tid =
@@ -808,10 +827,15 @@ function PlayerGrowthContent() {
       const pidParam = queryPlayerId
         ? `&playerId=${encodeURIComponent(queryPlayerId)}`
         : "";
-      const res = await fetch(
-        `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`,
-        { cache: "no-store" }
-      );
+      const url = `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`;
+      const cached = peekLiffApiCache<PlayerGrowthResponse>(url);
+      if (cached?.success) {
+        setGrowthData(cached);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+      const res = await fetch(url);
       const json = (await res.json()) as PlayerGrowthResponse;
       if (!res.ok || !json.success) {
         setErrorMsg(json.error || "成長データの取得に失敗しました");
@@ -1933,7 +1957,7 @@ function PlayerGrowthContent() {
         )}
       </div>
 
-      {player && (
+      {player && isPhotoModalOpen && (
         <PlayerPhotoCaptureModal
           isOpen={isPhotoModalOpen}
           teamId={activeTeamId}

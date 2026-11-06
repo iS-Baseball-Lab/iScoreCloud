@@ -3,9 +3,11 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   AlertTriangle,
   ChevronDown,
@@ -36,7 +38,10 @@ import {
   Eye,
   Download,
 } from "lucide-react";
-import { PdfCanvasViewer } from "@/components/common/PdfCanvasViewer";
+const PdfCanvasViewer = dynamic(
+  () => import("@/components/common/PdfCanvasViewer").then((m) => m.PdfCanvasViewer),
+  { ssr: false }
+);
 
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
@@ -83,8 +88,17 @@ interface RuleItem {
 
 export default function LiffRulesPage() {
   const { currentTeam, profile } = useLiff();
-  const [rules, setRules] = useState<RuleItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedRules = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+    return peekLiffApiCache<{ success: boolean; rules?: RuleItem[] }>(
+      `/api/liff/rules?teamId=${tid}`
+    );
+  }, [currentTeam?.id]);
+
+  const [rules, setRules] = useState<RuleItem[]>(() => initialCachedRules?.rules ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedRules);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -132,8 +146,16 @@ export default function LiffRulesPage() {
 
   const loadRules = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
+      const cached = peekLiffApiCache<{ success: boolean; rules?: RuleItem[] }>(
+        `/api/liff/rules?teamId=${teamId}`
+      );
+      if (cached?.rules) {
+        setRules(cached.rules);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
       const res = await fetch(`/api/liff/rules?teamId=${teamId}`);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; rules?: RuleItem[] };

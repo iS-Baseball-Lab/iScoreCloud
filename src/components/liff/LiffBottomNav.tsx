@@ -1,12 +1,13 @@
 // filepath: src/components/liff/LiffBottomNav.tsx
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLiff } from "./LiffProvider";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
+import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import {
   DEFAULT_BOTTOM_NAV_CONFIG,
   LIFF_BOTTOM_NAV_CHANGE_EVENT,
@@ -320,19 +321,31 @@ const MENU_ITEMS: MenuItem[] = [
   },
 ];
 
+let hydratedBottomNavConfig: BottomNavConfig | null = null;
+
 export function LiffBottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { currentTeam } = useLiff();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule");
-  const [navConfig, setNavConfig] = useState<BottomNavConfig>(() =>
-    getDefaultBottomNavConfig()
+  const [navConfig, setNavConfig] = useState<BottomNavConfig>(
+    () => hydratedBottomNavConfig ?? getDefaultBottomNavConfig()
+  );
+
+  const handlePointerWarmup = useCallback(
+    (href: string) => {
+      router.prefetch(href);
+      warmupLiffEndpointForHref(href, currentTeam?.id);
+    },
+    [currentTeam?.id, router]
   );
 
   useEffect(() => {
     const syncNav = () => {
-      setNavConfig(getSavedBottomNavConfig());
+      const saved = getSavedBottomNavConfig();
+      hydratedBottomNavConfig = saved;
+      setNavConfig(saved);
     };
     syncNav();
 
@@ -456,6 +469,7 @@ export function LiffBottomNav() {
               <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 z-20">
                 <Link
                   href={centerSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(centerSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center px-1 shadow-lg active:scale-95 transition-all text-primary-foreground bg-primary shadow-primary/35 ${
                     isCenterActive && !isOtherMenuOpen
@@ -476,6 +490,7 @@ export function LiffBottomNav() {
                 {/* ① 🏠 ホーム（固定） */}
                 <Link
                   href="/liff"
+                  onPointerDown={() => handlePointerWarmup("/liff")}
                   onClick={(e) =>
                     handleLiffRootLinkClick(e, router, pathname, () =>
                       setIsOtherMenuOpen(false)
@@ -500,6 +515,7 @@ export function LiffBottomNav() {
                 {/* ② 左カスタム枠 */}
                 <Link
                   href={leftSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(leftSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
                     isLeftActive && !isOtherMenuOpen
@@ -523,6 +539,7 @@ export function LiffBottomNav() {
                 {/* ④ 右カスタム枠 */}
                 <Link
                   href={rightSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(rightSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
                     isRightActive && !isOtherMenuOpen
@@ -568,6 +585,7 @@ export function LiffBottomNav() {
                 {/* ① 🏠 ホーム（固定） */}
                 <Link
                   href="/liff"
+                  onPointerDown={() => handlePointerWarmup("/liff")}
                   onClick={(e) =>
                     handleLiffRootLinkClick(e, router, pathname, () =>
                       setIsOtherMenuOpen(false)
@@ -592,6 +610,7 @@ export function LiffBottomNav() {
                 {/* ② 左カスタム枠 */}
                 <Link
                   href={leftSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(leftSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isLeftActive && !isOtherMenuOpen
@@ -612,6 +631,7 @@ export function LiffBottomNav() {
                 {/* ③ 中央カスタム枠（フラット時は上端アクセント付き） */}
                 <Link
                   href={centerSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(centerSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`relative flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isCenterActive && !isOtherMenuOpen
@@ -636,6 +656,7 @@ export function LiffBottomNav() {
                 {/* ④ 右カスタム枠 */}
                 <Link
                   href={rightSlotItem.href}
+                  onPointerDown={() => handlePointerWarmup(rightSlotItem.href)}
                   onClick={() => setIsOtherMenuOpen(false)}
                   className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isRightActive && !isOtherMenuOpen
@@ -773,6 +794,7 @@ export function LiffBottomNav() {
                             <Link
                               key={item.href}
                               href={item.href}
+                              onPointerDown={() => handlePointerWarmup(item.href)}
                               onClick={() => setIsOtherMenuOpen(false)}
                               className={`flex items-center gap-3 p-3 rounded-2xl border border-border bg-card shadow-xs ${item.hoverBorderClass ?? "hover:border-primary/40"} transition-all group active:scale-95 ${
                                 isFullWidth ? "col-span-2" : ""
@@ -810,6 +832,7 @@ export function LiffBottomNav() {
                     <Link
                       key={item.href}
                       href={item.href}
+                      onPointerDown={() => handlePointerWarmup(item.href)}
                       onClick={() => setIsOtherMenuOpen(false)}
                       className={`flex items-center gap-3 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
                         isFullWidth ? "col-span-2" : ""

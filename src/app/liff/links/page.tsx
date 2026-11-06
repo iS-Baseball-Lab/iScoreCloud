@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Link2,
   ExternalLink,
@@ -50,8 +51,17 @@ interface LinkItem {
 
 export default function LiffLinksPage() {
   const { currentTeam, profile } = useLiff();
-  const [links, setLinks] = useState<LinkItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedLinks = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+    return peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
+      `/api/liff/links?teamId=${tid}`
+    );
+  }, [currentTeam?.id]);
+
+  const [links, setLinks] = useState<LinkItem[]>(() => initialCachedLinks?.links ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedLinks);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -91,8 +101,16 @@ export default function LiffLinksPage() {
 
   const loadLinks = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
+      const cached = peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
+        `/api/liff/links?teamId=${teamId}`
+      );
+      if (cached?.links) {
+        setLinks(cached.links);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
       const res = await fetch(`/api/liff/links?teamId=${teamId}`);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; links?: LinkItem[] };

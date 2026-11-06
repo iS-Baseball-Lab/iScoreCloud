@@ -1223,7 +1223,9 @@ export default function LiffSchedulePage() {
               return (
                 <div
                   key={ev.id}
-                  className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all"
+                  className={`rounded-2xl border border-border bg-card shadow-xs overflow-hidden transition-all ${
+                    idx >= 4 ? "[content-visibility:auto] [contain-intrinsic-size:auto_280px]" : ""
+                  }`}
                 >
                   {/* A-3 上帯ダークキャップ（日程・曜日・区分・対象・編集ボタン・タイトル） */}
                   <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary space-y-1">

@@ -53,7 +53,7 @@ export default function RootLayout({
               <Toaster
                 position="top-center"
                 toastOptions={{
-                  className: "rounded-2xl border-border bg-background/80 backdrop-blur-md font-bold shadow-none",
+                  className: "rounded-2xl border-border bg-card text-foreground font-bold shadow-xs",
                 }}
               />
 

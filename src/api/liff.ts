@@ -1351,28 +1351,24 @@ app.get("/hub", async (c) => {
         ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
         : targetTeam.name;
 
-    // ⚡ イベント・メンバー・球場・直近10試合の4クエリを完全並列取得
-    const [allEventsList, teamMemberList, teamVenues, matchesList] = await Promise.all([
+    // ⚡ イベント・メンバー・球場・直近10試合の4クエリを D1 db.batch() で単一往復取得
+    const [allEventsList, teamMemberList, teamVenues, matchesList] = await db.batch([
       db
         .select()
         .from(events)
         .where(eq(events.teamId, teamId))
-        .orderBy(asc(events.startAt))
-        .all(),
-      candidateIdsArray.length > 0 || cleanName
-        ? db
-            .select({
-              id: teamMembers.id,
-              userId: teamMembers.userId,
-              name: teamMembers.name,
-              memberType: teamMembers.memberType,
-              status: teamMembers.status,
-            })
-            .from(teamMembers)
-            .where(eq(teamMembers.teamId, teamId))
-            .all()
-        : Promise.resolve([]),
-      db.select({ name: venues.name, shortName: venues.shortName }).from(venues).all(),
+        .orderBy(asc(events.startAt)),
+      db
+        .select({
+          id: teamMembers.id,
+          userId: teamMembers.userId,
+          name: teamMembers.name,
+          memberType: teamMembers.memberType,
+          status: teamMembers.status,
+        })
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId)),
+      db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
       db
         .select({
           id: matches.id,
@@ -1405,8 +1401,7 @@ app.get("/hub", async (c) => {
         .leftJoin(venues, eq(matches.venueId, venues.id))
         .where(eq(matches.teamId, teamId))
         .orderBy(desc(matches.date), desc(matches.createdAt))
-        .limit(10)
-        .all(),
+        .limit(10),
     ]);
 
     // ログインユーザーの memberId をメモリ上で即時解決
@@ -9154,73 +9149,77 @@ app.get("/players", async (c) => {
   }
 
   try {
-    const [teamRow, rawPlayers, battingQueryRes, pitchingQueryRes] = await Promise.all([
-      db
-        .select({
-          id: teams.id,
-          name: teams.name,
-          year: teams.year,
-          managerName: teams.managerName,
-          captainId: teams.captainId,
-          createdBy: teams.createdBy,
-          organizationId: teams.organizationId,
-          orgName: organizations.name,
-          logoImageUrl: organizations.logoImageUrl,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .where(eq(teams.id, teamId))
-        .get(),
-      db
-        .select({
-          id: players.id,
-          name: players.name,
-          nameKana: players.nameKana,
-          uniformNumber: players.uniformNumber,
-          nickname: players.nickname,
-          primaryPosition: players.primaryPosition,
-          subPositions: players.subPositions,
-          throws: players.throws,
-          bats: players.bats,
-          height: players.height,
-          weight: players.weight,
-          profileImageUrl: players.profileImageUrl,
-          notes: players.notes,
-          conditionStatus: players.conditionStatus,
-          conditionNote: players.conditionNote,
-          isActive: players.isActive,
-          joinedAt: players.joinedAt,
-        })
-        .from(players)
-        .where(eq(players.teamId, teamId))
-        .all(),
-      c.env.DB.prepare(`
-        SELECT
-          ab.batter_id AS playerId,
-          COUNT(ab.result) AS pa,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR','groundout','flyout','double_play','strikeout','K','SO','error','E','fc','FC') THEN 1 ELSE 0 END) AS ab,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hits,
-          SUM(CASE WHEN ab.result IN ('home_run','HR') THEN 1 ELSE 0 END) AS hr,
-          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
-        FROM at_bats ab
-        JOIN matches m ON ab.match_id = m.id
-        WHERE m.team_id = ? AND m.status = 'finished' AND ab.batter_id IS NOT NULL
-        GROUP BY ab.batter_id
-      `).bind(teamId).all().catch(() => ({ results: [] })),
-      c.env.DB.prepare(`
-        SELECT
-          ab.pitcher_id AS playerId,
-          COUNT(ab.result) AS battersFaced,
-          SUM(CASE WHEN ab.result IN ('groundout','flyout','strikeout','K','SO','sac_bunt','sac_fly') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) AS outs,
-          SUM(CASE WHEN ab.result IN ('strikeout','K','SO') THEN 1 ELSE 0 END) AS strikeouts,
-          SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hitsAllowed,
-          SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
-        FROM at_bats ab
-        JOIN matches m ON ab.match_id = m.id
-        WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
-        GROUP BY ab.pitcher_id
-      `).bind(teamId).all().catch(() => ({ results: [] })),
+    const [[teamRows, rawPlayers], [battingQueryRes, pitchingQueryRes]] = await Promise.all([
+      db.batch([
+        db
+          .select({
+            id: teams.id,
+            name: teams.name,
+            year: teams.year,
+            managerName: teams.managerName,
+            captainId: teams.captainId,
+            createdBy: teams.createdBy,
+            organizationId: teams.organizationId,
+            orgName: organizations.name,
+            logoImageUrl: organizations.logoImageUrl,
+          })
+          .from(teams)
+          .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+          .where(eq(teams.id, teamId))
+          .limit(1),
+        db
+          .select({
+            id: players.id,
+            name: players.name,
+            nameKana: players.nameKana,
+            uniformNumber: players.uniformNumber,
+            nickname: players.nickname,
+            primaryPosition: players.primaryPosition,
+            subPositions: players.subPositions,
+            throws: players.throws,
+            bats: players.bats,
+            height: players.height,
+            weight: players.weight,
+            profileImageUrl: players.profileImageUrl,
+            notes: players.notes,
+            conditionStatus: players.conditionStatus,
+            conditionNote: players.conditionNote,
+            isActive: players.isActive,
+            joinedAt: players.joinedAt,
+          })
+          .from(players)
+          .where(eq(players.teamId, teamId)),
+      ]),
+      c.env.DB.batch([
+        c.env.DB.prepare(`
+          SELECT
+            ab.batter_id AS playerId,
+            COUNT(ab.result) AS pa,
+            SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR','groundout','flyout','double_play','strikeout','K','SO','error','E','fc','FC') THEN 1 ELSE 0 END) AS ab,
+            SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hits,
+            SUM(CASE WHEN ab.result IN ('home_run','HR') THEN 1 ELSE 0 END) AS hr,
+            SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+          FROM at_bats ab
+          JOIN matches m ON ab.match_id = m.id
+          WHERE m.team_id = ? AND m.status = 'finished' AND ab.batter_id IS NOT NULL
+          GROUP BY ab.batter_id
+        `).bind(teamId),
+        c.env.DB.prepare(`
+          SELECT
+            ab.pitcher_id AS playerId,
+            COUNT(ab.result) AS battersFaced,
+            SUM(CASE WHEN ab.result IN ('groundout','flyout','strikeout','K','SO','sac_bunt','sac_fly') THEN 1 WHEN ab.result = 'double_play' THEN 2 ELSE 0 END) AS outs,
+            SUM(CASE WHEN ab.result IN ('strikeout','K','SO') THEN 1 ELSE 0 END) AS strikeouts,
+            SUM(CASE WHEN ab.result IN ('single','1B','double','2B','triple','3B','home_run','HR') THEN 1 ELSE 0 END) AS hitsAllowed,
+            SUM(CASE WHEN ab.result IN ('walk','BB','HBP','hit_by_pitch') THEN 1 ELSE 0 END) AS walks
+          FROM at_bats ab
+          JOIN matches m ON ab.match_id = m.id
+          WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
+          GROUP BY ab.pitcher_id
+        `).bind(teamId),
+      ]).catch(() => [{ results: [] }, { results: [] }]),
     ]);
+    const teamRow = teamRows[0];
 
     if (!teamRow) {
       return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);

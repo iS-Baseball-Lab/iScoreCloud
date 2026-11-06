@@ -1,10 +1,11 @@
 // filepath: src/lib/liff/api-cache.ts
 
 /**
- * ⚡ LIFF 爆速表示エンジン（Stale-While-Revalidate + リクエスト重複排除 + sessionStorage 永続化）
- * - 画面遷移時、メモリまたは sessionStorage にキャッシュがあれば **0ms で即時返却** しスピナーをゼロにする。
+ * ⚡ LIFF 爆速表示エンジン（3層SWRキャッシュ: L1 Memory + L2 sessionStorage + L3 localStorage 永続スナップショット）
+ * - 画面遷移時はもちろん、LINEミニアプリを一度閉じて開き直したコールド起動時でも **1フレーム目（0ms）で即時返却** しスピナーをゼロにする。
+ * - 指が触れた瞬間（`onPointerDown`）の先行プリフェッチ（`warmupLiffEndpointForHref` / `warmupLiffMatchDetail`）に対応。
  * - 同一URLへの同時フェッチ（LiffProvider と各ページの重複呼び出し等）を 1 本の通信に統合する。
- * - POST / PUT / PATCH / DELETE 実行時は自動でキャッシュを即時破棄し、更新結果を確実に反映する。
+ * - POST / PUT / PATCH / DELETE 実行時は自動で L1/L2/L3 全キャッシュを即時破棄し、更新結果を確実に反映する。
  */
 
 interface CacheEntry<T = unknown> {
@@ -21,8 +22,29 @@ interface RawFetchSnapshot {
 
 const LEGACY_SESSION_CACHE_PREFIX = "iscore_swr_v1:";
 const SESSION_CACHE_PREFIX = "iscore_swr_v2:";
+const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v1:";
 const DEFAULT_FRESH_MS = 15_000; // 15秒以内は完全フレッシュ扱い
-const MAX_STALE_MS = 10 * 60_000; // 10分以内は即座に描画しつつ裏で再検証
+const FAST_RETURN_STALE_MS = 90_000; // 90秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
+const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
+const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットは24時間保持（コールド起動0ms描画用）
+const MAX_PERSISTENT_ENTRIES = 22;
+const MAX_PERSISTENT_BYTES = 120_000;
+
+const PERSISTENT_ELIGIBLE_PREFIXES = [
+  "/api/liff/hub",
+  "/api/liff/schedule",
+  "/api/liff/matches",
+  "/api/liff/carpool",
+  "/api/liff/stats",
+  "/api/liff/players",
+  "/api/liff/grounds",
+  "/api/liff/rules",
+  "/api/liff/documents",
+  "/api/liff/faqs",
+  "/api/liff/links",
+  "/api/liff/attendance-matrix",
+  "/api/liff/my-family",
+];
 
 const memoryCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, Promise<unknown>>();
@@ -45,6 +67,41 @@ function purgeLegacySessionCache(): void {
     }
     for (const k of obsoleteKeys) {
       sessionStorage.removeItem(k);
+    }
+  } catch {
+    // ignore storage access errors
+  }
+}
+
+function isPersistentEligibleKey(key: string): boolean {
+  return PERSISTENT_ELIGIBLE_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+function prunePersistentCacheIfNeeded(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const entries: Array<{ storageKey: string; updatedAt: number }> = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(PERSISTENT_CACHE_PREFIX)) continue;
+      let updatedAt = 0;
+      try {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { updatedAt?: number };
+          updatedAt = typeof parsed.updatedAt === "number" ? parsed.updatedAt : 0;
+        }
+      } catch {
+        updatedAt = 0;
+      }
+      entries.push({ storageKey: k, updatedAt });
+    }
+
+    if (entries.length <= MAX_PERSISTENT_ENTRIES) return;
+    entries.sort((a, b) => a.updatedAt - b.updatedAt);
+    const removeCount = entries.length - MAX_PERSISTENT_ENTRIES;
+    for (let i = 0; i < removeCount; i++) {
+      localStorage.removeItem(entries[i].storageKey);
     }
   } catch {
     // ignore storage access errors
@@ -118,10 +175,12 @@ function normalizeCacheKey(rawUrl: string): string | null {
   }
 }
 
-function readFromCache<T>(key: string): CacheEntry<T> | null {
+function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> | null {
+  const now = Date.now();
   const mem = memoryCache.get(key);
   if (mem) {
-    if (Date.now() - mem.updatedAt <= MAX_STALE_MS) {
+    const maxAge = allowPersistentL3 && isPersistentEligibleKey(key) ? MAX_PERSISTENT_STALE_MS : MAX_STALE_MS;
+    if (now - mem.updatedAt <= maxAge) {
       return mem as CacheEntry<T>;
     }
     memoryCache.delete(key);
@@ -132,11 +191,7 @@ function readFromCache<T>(key: string): CacheEntry<T> | null {
       const raw = sessionStorage.getItem(SESSION_CACHE_PREFIX + key);
       if (raw) {
         const parsed = JSON.parse(raw) as CacheEntry<T>;
-        if (
-          parsed &&
-          typeof parsed.updatedAt === "number" &&
-          Date.now() - parsed.updatedAt <= MAX_STALE_MS
-        ) {
+        if (parsed && typeof parsed.updatedAt === "number" && now - parsed.updatedAt <= MAX_STALE_MS) {
           memoryCache.set(key, parsed);
           return parsed;
         }
@@ -144,6 +199,26 @@ function readFromCache<T>(key: string): CacheEntry<T> | null {
       }
     } catch {
       // ignore storage quota / parse errors
+    }
+
+    if (allowPersistentL3 && isPersistentEligibleKey(key)) {
+      try {
+        const rawL3 = localStorage.getItem(PERSISTENT_CACHE_PREFIX + key);
+        if (rawL3) {
+          const parsedL3 = JSON.parse(rawL3) as CacheEntry<T>;
+          if (
+            parsedL3 &&
+            typeof parsedL3.updatedAt === "number" &&
+            now - parsedL3.updatedAt <= MAX_PERSISTENT_STALE_MS
+          ) {
+            memoryCache.set(key, parsedL3);
+            return parsedL3;
+          }
+          localStorage.removeItem(PERSISTENT_CACHE_PREFIX + key);
+        }
+      } catch {
+        // ignore storage quota / parse errors
+      }
     }
   }
 
@@ -157,6 +232,7 @@ function writeToCache<T>(key: string, data: T): void {
     if (typeof window !== "undefined") {
       try {
         sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
+        localStorage.removeItem(PERSISTENT_CACHE_PREFIX + key);
       } catch {}
     }
     return;
@@ -171,6 +247,15 @@ function writeToCache<T>(key: string, data: T): void {
       // 250KB超の巨大レスポンスはメモリキャッシュのみに保持し sessionStorage 圧迫を防ぐ
       if (serialized.length < 250_000) {
         sessionStorage.setItem(SESSION_CACHE_PREFIX + key, serialized);
+      }
+      // 主要画面の軽量レスポンス（120KB以下）は L3 localStorage にも保存し、次回LINE起動時の 0ms 表示を実現
+      if (isPersistentEligibleKey(key) && serialized.length <= MAX_PERSISTENT_BYTES) {
+        try {
+          localStorage.setItem(PERSISTENT_CACHE_PREFIX + key, serialized);
+          prunePersistentCacheIfNeeded();
+        } catch {
+          prunePersistentCacheIfNeeded();
+        }
       }
     } catch {
       // ignore storage quota errors
@@ -195,11 +280,11 @@ export function buildLiffHubUrl(params: {
 }
 
 /**
- * 同期的にキャッシュ済みデータを取得する（初期 state への 0ms ハイドレーション用）
+ * 同期的にキャッシュ済みデータを取得する（初期 state への 0ms ハイドレーション用・L3 永続層も含む）
  */
 export function peekLiffApiCache<T>(url: string): T | null {
   const key = normalizeCacheKey(url) || url;
-  const entry = readFromCache<T>(key);
+  const entry = readFromCache<T>(key, true);
   return entry ? entry.data : null;
 }
 
@@ -247,7 +332,7 @@ export async function fetchLiffJsonSWR<T>(
   const freshMs = options?.freshMs ?? DEFAULT_FRESH_MS;
 
   if (!options?.forceRefresh) {
-    const cached = readFromCache<T>(key);
+    const cached = readFromCache<T>(key, true);
     if (cached) {
       const age = Date.now() - cached.updatedAt;
       if (age > freshMs) {
@@ -272,16 +357,19 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
     memoryCache.clear();
     if (typeof window !== "undefined") {
       try {
-        const keysToRemove: string[] = [];
+        const sKeys: string[] = [];
         for (let i = 0; i < sessionStorage.length; i++) {
           const k = sessionStorage.key(i);
-          if (k && k.startsWith(SESSION_CACHE_PREFIX)) {
-            keysToRemove.push(k);
-          }
+          if (k && k.startsWith(SESSION_CACHE_PREFIX)) sKeys.push(k);
         }
-        for (const k of keysToRemove) {
-          sessionStorage.removeItem(k);
+        for (const k of sKeys) sessionStorage.removeItem(k);
+
+        const lKeys: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(PERSISTENT_CACHE_PREFIX)) lKeys.push(k);
         }
+        for (const k of lKeys) localStorage.removeItem(k);
       } catch {}
     }
     return;
@@ -295,24 +383,32 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
 
   if (typeof window !== "undefined") {
     try {
-      const keysToRemove: string[] = [];
+      const sKeys: string[] = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
         if (k && k.startsWith(SESSION_CACHE_PREFIX) && k.includes(prefixOrSubstring)) {
-          keysToRemove.push(k);
+          sKeys.push(k);
         }
       }
-      for (const k of keysToRemove) {
-        sessionStorage.removeItem(k);
+      for (const k of sKeys) sessionStorage.removeItem(k);
+
+      const lKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(PERSISTENT_CACHE_PREFIX) && k.includes(prefixOrSubstring)) {
+          lKeys.push(k);
+        }
       }
+      for (const k of lKeys) localStorage.removeItem(k);
     } catch {}
   }
 }
 
 /**
  * 🚀 全LIFFページの `fetch('/api/...')` を自動的に SWR 即時応答＋同時リクエスト統合化するアクセラレータ
- * - 各ページ個別の `{ cache: "no-store" }` 指定があっても、メモリ/セッションキャッシュがあれば 0ms で即返却し裏で最新化
- * - POST / PUT / PATCH / DELETE 通信が発生した瞬間に全キャッシュを自動破棄するため古いデータが残らない
+ * - 90秒以内のキャッシュは `window.fetch` でも 0ms で即返却し、15秒超なら裏で静かに再検証する。
+ * - 90秒超の L3 永続キャッシュは 1フレーム目の `peekLiffApiCache` で既に画面描画済みのため、`window.fetch` では最新データを取得して画面へ自動反映する。
+ * - POST / PUT / PATCH / DELETE 通信が発生した瞬間に L1/L2/L3 全キャッシュを自動破棄するため古いデータが残らない。
  */
 export function installLiffFastFetchCache(): void {
   if (typeof window === "undefined" || isGlobalFastFetchInstalled) return;
@@ -363,24 +459,26 @@ export function installLiffFastFetchCache(): void {
       } catch {}
     }
 
-    // GET リクエスト：キャッシュヒット時は 0ms で Response を即返却し、古ければ裏で再検証
-    const cached = !bypassCache ? readFromCache<unknown>(cacheKey) : null;
+    // GET リクエスト：直近90秒以内のキャッシュは 0ms で Response を即返却（15秒超なら裏で再検証）
+    const cached = !bypassCache ? readFromCache<unknown>(cacheKey, false) : null;
     if (cached) {
       const age = Date.now() - cached.updatedAt;
-      if (age > DEFAULT_FRESH_MS) {
-        void fetchLiffJsonFresh(cacheKey).catch(() => {});
+      if (age <= FAST_RETURN_STALE_MS) {
+        if (age > DEFAULT_FRESH_MS) {
+          void fetchLiffJsonFresh(cacheKey).catch(() => {});
+        }
+        return new Response(JSON.stringify(cached.data), {
+          status: 200,
+          statusText: "OK",
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-iScore-SWR": "HIT",
+          },
+        });
       }
-      return new Response(JSON.stringify(cached.data), {
-        status: 200,
-        statusText: "OK",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          "X-iScore-SWR": "HIT",
-        },
-      });
     }
 
-    // キャッシュミス時：同一 URL への同時リクエストを 1 本に統合
+    // キャッシュミスまたは90秒超の古いスナップショット時：同一 URL への同時リクエストを 1 本に統合して最新取得
     let pending = inflightRawRequests.get(cacheKey);
     if (!pending) {
       pending = (async () => {
@@ -418,6 +516,139 @@ export function installLiffFastFetchCache(): void {
       },
     });
   };
+}
+
+function triggerWarmupUrl(url: string): void {
+  const key = normalizeCacheKey(url) || url;
+  const existing = readFromCache(key, false);
+  if (existing && Date.now() - existing.updatedAt <= DEFAULT_FRESH_MS) {
+    return;
+  }
+  if (!inflightRequests.has(key) && !inflightRawRequests.has(key)) {
+    void fetchLiffJsonFresh(key).catch(() => {});
+  }
+}
+
+/**
+ * ⚡ 指が触れた瞬間（`onPointerDown`）に遷移先ルートに対応する API を100ms先回りプリフェッチする
+ */
+export function warmupLiffEndpointForHref(
+  href: string,
+  teamIdOverride?: string | null
+): void {
+  if (typeof window === "undefined" || !href) return;
+  const cleanPath = href.split("#")[0].split("?")[0];
+  const tid =
+    teamIdOverride ||
+    localStorage.getItem("iscore_selectedTeamId") ||
+    "demo-team";
+  const uid =
+    localStorage.getItem("iscore_user_id") ||
+    localStorage.getItem("iscore_userId") ||
+    "";
+  const rawName = localStorage.getItem("iscore_user_name") || "";
+  const cachedMemberId = localStorage.getItem(`iscore_member_id_${tid}`) || "";
+
+  if (cleanPath === "/liff") {
+    triggerWarmupUrl(buildLiffHubUrl({ teamId: tid, userId: uid, userName: rawName }));
+    return;
+  }
+  if (cleanPath === "/liff/schedule") {
+    const qs = new URLSearchParams({ teamId: tid, userId: uid, userName: rawName });
+    if (cachedMemberId) qs.set("memberId", cachedMemberId);
+    triggerWarmupUrl(`/api/liff/schedule?${qs.toString()}`);
+    return;
+  }
+  if (cleanPath === "/liff/schedule/board") {
+    const qs = new URLSearchParams({ teamId: tid, userId: uid, userName: rawName });
+    if (cachedMemberId) qs.set("memberId", cachedMemberId);
+    triggerWarmupUrl(`/api/liff/attendance-matrix?${qs.toString()}`);
+    return;
+  }
+  if (cleanPath === "/liff/matches") {
+    triggerWarmupUrl(`/api/liff/matches?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/carpool") {
+    triggerWarmupUrl(`/api/liff/carpool?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/stats") {
+    triggerWarmupUrl(`/api/liff/stats?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/players") {
+    const pQs = new URLSearchParams({ teamId: tid });
+    if (uid) pQs.set("userId", uid);
+    if (rawName) pQs.set("userName", rawName);
+    triggerWarmupUrl(`/api/liff/players?${pQs.toString()}`);
+    return;
+  }
+  if (cleanPath === "/liff/players/growth") {
+    triggerWarmupUrl(`/api/liff/players/growth?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/grounds") {
+    triggerWarmupUrl(`/api/liff/grounds?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/rules") {
+    triggerWarmupUrl(`/api/liff/rules?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/documents") {
+    triggerWarmupUrl(`/api/liff/documents?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/faq") {
+    triggerWarmupUrl(`/api/liff/faqs?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/links") {
+    triggerWarmupUrl(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
+  }
+}
+
+/**
+ * ⚡ 試合カードの「しおり・詳細 / スコア・詳細」ボタンに指が触れた瞬間に試合詳細API群を先行フェッチする
+ */
+export function warmupLiffMatchDetail(
+  matchId: string,
+  isScheduledMatch: boolean,
+  teamIdOverride?: string | null
+): void {
+  if (typeof window === "undefined" || !matchId || matchId.startsWith("demo-match-")) {
+    return;
+  }
+  const tid =
+    teamIdOverride ||
+    localStorage.getItem("iscore_selectedTeamId") ||
+    "";
+  if (!tid || tid === "demo-team") return;
+
+  const uid =
+    localStorage.getItem("iscore_user_id") ||
+    localStorage.getItem("iscore_userId") ||
+    "";
+  const rawName = localStorage.getItem("iscore_user_name") || "";
+
+  triggerWarmupUrl(
+    `/api/liff/matches/${encodeURIComponent(matchId)}?teamId=${encodeURIComponent(tid)}`
+  );
+
+  if (isScheduledMatch) {
+    const opsQs = new URLSearchParams({ teamId: tid });
+    if (uid) opsQs.set("userId", uid);
+    if (rawName) opsQs.set("userName", rawName);
+    triggerWarmupUrl(
+      `/api/liff/matches/${encodeURIComponent(matchId)}/ops-context?${opsQs.toString()}`
+    );
+  } else {
+    triggerWarmupUrl(`/api/liff/matches/${encodeURIComponent(matchId)}/stats`);
+    triggerWarmupUrl(
+      `/api/liff/scorebook/match-bundle?matchId=${encodeURIComponent(matchId)}&teamId=${encodeURIComponent(tid)}`
+    );
+  }
 }
 
 /**
@@ -510,7 +741,8 @@ export function prefetchLiffCoreEndpoints(params: {
   Array.from(urlSet).forEach((url, index) => {
     scheduleIdle(() => {
       const key = normalizeCacheKey(url) || url;
-      if (!readFromCache(key) && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
+      const existing = readFromCache(key, false);
+      if (!existing && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
         void fetchLiffJsonFresh(key).catch(() => {});
       }
     }, 350 + index * 220);

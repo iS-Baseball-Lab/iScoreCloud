@@ -1,10 +1,13 @@
 // filepath: src/components/liff/HubQuickNav.tsx
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LayoutGrid, SlidersHorizontal, Plus } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { useLiff } from "@/components/liff/LiffProvider";
+import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import {
   LIFF_QUICK_MENU_CHANGE_EVENT,
   LIFF_QUICK_MENU_STORAGE_KEY,
@@ -15,14 +18,28 @@ import {
   type QuickMenuConfig,
 } from "@/lib/liff/quick-menu-settings";
 
+let hydratedQuickMenuConfig: QuickMenuConfig | null = null;
+
 export function HubQuickNav() {
-  const [config, setConfig] = useState<QuickMenuConfig>(() =>
-    getDefaultQuickMenuConfig(),
+  const router = useRouter();
+  const { currentTeam } = useLiff();
+  const [config, setConfig] = useState<QuickMenuConfig>(
+    () => hydratedQuickMenuConfig ?? getDefaultQuickMenuConfig(),
+  );
+
+  const handlePointerWarmup = useCallback(
+    (href: string) => {
+      router.prefetch(href);
+      warmupLiffEndpointForHref(href, currentTeam?.id);
+    },
+    [currentTeam?.id, router],
   );
 
   useEffect(() => {
     const sync = () => {
-      setConfig(getSavedQuickMenuConfig());
+      const saved = getSavedQuickMenuConfig();
+      hydratedQuickMenuConfig = saved;
+      setConfig(saved);
     };
     sync();
 
@@ -87,6 +104,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
+                onPointerDown={() => handlePointerWarmup(item.href)}
                 className={`relative overflow-hidden flex flex-col items-center justify-center text-center p-3 pt-3.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group gap-1.5`}
               >
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
@@ -118,6 +136,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
+                onPointerDown={() => handlePointerWarmup(item.href)}
                 className={`relative overflow-hidden flex items-center gap-2.5 p-3 pt-3.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
@@ -147,6 +166,7 @@ export function HubQuickNav() {
               <Link
                 key={item.id}
                 href={item.href}
+                onPointerDown={() => handlePointerWarmup(item.href)}
                 className={`relative overflow-hidden flex flex-col justify-between p-4 pt-4.5 rounded-2xl border border-border bg-card shadow-xs ${tone.hoverBorderClass} transition-all active:scale-[0.98] group`}
               >
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />

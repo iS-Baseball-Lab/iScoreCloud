@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   HelpCircle,
   ChevronDown,
@@ -33,8 +34,17 @@ interface FaqItem {
 
 export default function LiffFaqPage() {
   const { currentTeam, profile } = useLiff();
-  const [faqs, setFaqs] = useState<FaqItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const initialCachedFaqs = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+    return peekLiffApiCache<{ success: boolean; faqs?: FaqItem[] }>(
+      `/api/liff/faqs?teamId=${tid}`
+    );
+  }, [currentTeam?.id]);
+
+  const [faqs, setFaqs] = useState<FaqItem[]>(() => initialCachedFaqs?.faqs ?? []);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedFaqs);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -64,8 +74,16 @@ export default function LiffFaqPage() {
 
   const loadFaqs = useCallback(async () => {
     try {
-      setIsLoading(true);
       const teamId = currentTeam?.id || "demo-team";
+      const cached = peekLiffApiCache<{ success: boolean; faqs?: FaqItem[] }>(
+        `/api/liff/faqs?teamId=${teamId}`
+      );
+      if (cached?.faqs) {
+        setFaqs(cached.faqs);
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
       const res = await fetch(`/api/liff/faqs?teamId=${teamId}`);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; faqs?: FaqItem[] };
