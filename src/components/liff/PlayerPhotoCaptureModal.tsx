@@ -22,6 +22,10 @@ import {
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  LiffSelect,
+  type LiffSelectBadgeTone,
+} from "@/components/liff/LiffSelect";
 
 export interface PhotoTargetPlayer {
   id: string;
@@ -621,20 +625,32 @@ export function PlayerPhotoCaptureModal({
                 <ChevronLeft className="w-4 h-4" />
               </button>
 
-              <select
+              <LiffSelect
                 value={activePlayer.id}
                 disabled={isSaving}
-                onChange={(e) => switchTargetPlayer(e.target.value)}
-                aria-label="撮影する選手を選択"
-                className="flex-1 h-8 px-2.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-black text-white focus:outline-hidden focus:ring-2 focus:ring-primary/50 truncate"
-              >
-                {rosterPlayers.map((rp) => (
-                  <option key={rp.id} value={rp.id}>
-                    {rp.profileImageUrl ? "📷 " : "○ "}#{cleanUniform(rp.uniformNumber)}{" "}
-                    {rp.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => switchTargetPlayer(val)}
+                options={rosterPlayers.map((rp) => ({
+                  value: rp.id,
+                  label: `${rp.profileImageUrl ? "📷 " : "○ "}#${cleanUniform(
+                    rp.uniformNumber
+                  )} ${rp.name}`,
+                  badge: rp.profileImageUrl ? "登録済" : "未撮影",
+                  badgeTone: (rp.profileImageUrl
+                    ? "emerald"
+                    : "slate") as LiffSelectBadgeTone,
+                  keywords: `${rp.uniformNumber || ""} ${rp.name} ${
+                    rp.primaryPosition || ""
+                  }`,
+                }))}
+                title="撮影する選手を選択"
+                subtitle="連続して他の選手の写真も撮影・登録できます"
+                ariaLabel="撮影する選手を選択"
+                variant="dark"
+                size="xs"
+                searchable={true}
+                searchPlaceholder="選手名・背番号で検索..."
+                className="flex-1 min-w-0 h-8 px-2.5 rounded-xl"
+              />
 
               <button
                 type="button"

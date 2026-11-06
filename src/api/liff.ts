@@ -49,7 +49,18 @@ import {
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns } from "@/lib/db-helper";
+import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
+import {
+  classifyTeamAttendanceRosters,
+  computeEventGroupAttendance,
+  DEMO_GROUP_ATTEND_COUNT_LIST,
+  normalizeGroupStatusSummaryConfig,
+} from "@/lib/liff/group-attendance";
+import {
+  DEFAULT_TEAM_SCHEDULE_TIMES,
+  extractRawTimeHHMM,
+  normalizeTeamScheduleDefaultTimes,
+} from "@/lib/liff/schedule-default-times";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   extractPracticeMatchLabelFromJson,
@@ -787,6 +798,8 @@ const DEMO_NEXT_EVENT = {
   dutyGroup: "B班 (鍵・救急)",
   carInfo: "配車 4台 / 18名乗車",
   needsLunch: true,
+  attendCount: { present: 26, absent: 4, pending: 2 },
+  groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
 };
 
 const DEMO_MATCHES = [
@@ -1191,6 +1204,9 @@ app.post("/join", async (c) => {
 app.get("/hub", async (c) => {
   await ensureEventColumns(c.env.DB);
   await ensureMatchLineupColumns(c.env.DB);
+  await ensurePlayerProfileColumns(c.env.DB);
+  await ensureStatusConfigColumn(c.env.DB);
+  await ensureScheduleDefaultTimesColumn(c.env.DB);
   const db = drizzle(c.env.DB);
   const requestedTeamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -1222,6 +1238,8 @@ app.get("/hub", async (c) => {
         orgName: organizations.name,
         logoImageUrl: organizations.logoImageUrl,
         scorebookSymbolRules: teams.scorebookSymbolRules,
+        attendanceStatusConfig: teams.attendanceStatusConfig,
+        scheduleDefaultTimes: teams.scheduleDefaultTimes,
       })
       .from(teams)
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -1310,6 +1328,8 @@ app.get("/hub", async (c) => {
         team: DEMO_TEAM,
         teams: teamList,
         nextEvent: DEMO_NEXT_EVENT,
+        attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
+        scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
       });
     }
@@ -1341,6 +1361,8 @@ app.get("/hub", async (c) => {
         team: DEMO_TEAM,
         teams: teamList,
         nextEvent: DEMO_NEXT_EVENT,
+        attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
+        scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
       });
     }
@@ -1351,8 +1373,8 @@ app.get("/hub", async (c) => {
         ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
         : targetTeam.name;
 
-    // ⚡ イベント・メンバー・球場・直近10試合の4クエリを D1 db.batch() で単一往復取得
-    const [allEventsList, teamMemberList, teamVenues, matchesList] = await db.batch([
+    // ⚡ イベント・メンバー・選手・親子関係・球場・直近10試合の6クエリを D1 db.batch() で単一往復取得
+    const [allEventsList, teamMemberList, teamPlayerRows, teamRelationsRows, teamVenues, matchesList] = await db.batch([
       db
         .select()
         .from(events)
@@ -1364,10 +1386,28 @@ app.get("/hub", async (c) => {
           userId: teamMembers.userId,
           name: teamMembers.name,
           memberType: teamMembers.memberType,
+          role: teamMembers.role,
+          subRoles: teamMembers.subRoles,
           status: teamMembers.status,
         })
         .from(teamMembers)
         .where(eq(teamMembers.teamId, teamId)),
+      db
+        .select({
+          id: players.id,
+          userId: players.userId,
+          isActive: players.isActive,
+          conditionStatus: players.conditionStatus,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId)),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          childId: parentChildRelations.childId,
+        })
+        .from(parentChildRelations)
+        .where(eq(parentChildRelations.teamId, teamId)),
       db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
       db
         .select({
@@ -1407,10 +1447,10 @@ app.get("/hub", async (c) => {
     // ログインユーザーの memberId をメモリ上で即時解決
     const userAttendances: Record<string, string> = {};
     let currentMemberId: string | null = null;
+    const hubCandidateSet = new Set(candidateIdsArray);
 
     if (candidateIdsArray.length > 0) {
-      const candidateSet = new Set(candidateIdsArray);
-      const matchedMembers = teamMemberList.filter((m) => m.userId && candidateSet.has(m.userId));
+      const matchedMembers = teamMemberList.filter((m) => m.userId && hubCandidateSet.has(m.userId));
       const canonical = matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
       if (canonical) currentMemberId = canonical.id;
     }
@@ -1420,28 +1460,31 @@ app.get("/hub", async (c) => {
       if (matched) currentMemberId = matched.id;
     }
 
-    const attConditions = [];
-    if (candidateIdsArray.length > 0) {
-      attConditions.push(inArray(attendances.userId, candidateIdsArray));
-    }
-    if (currentMemberId) {
-      attConditions.push(eq(attendances.memberId, currentMemberId));
+    const hubEventIds = allEventsList.map((ev) => ev.id);
+    const hubAttChunks: string[][] = [];
+    for (let i = 0; i < hubEventIds.length; i += 80) {
+      hubAttChunks.push(hubEventIds.slice(i, i + 80));
     }
 
     const hubMatchIds = matchesList.map((m) => m.id);
 
-    // ⚡ 出欠ステータス取得・at_bats 存在確認・予定試合の配車連携を完全並列取得
-    const [atts, abRows, hubScheduleSyncMap] = await Promise.all([
-      attConditions.length > 0
-        ? db
+    // ⚡ 全イベント出欠一括取得・at_bats 存在確認・予定試合の配車連携を完全並列取得
+    const [hubAttChunkResults, abRows, hubScheduleSyncMap] = await Promise.all([
+      Promise.all(
+        hubAttChunks.map((chunk) =>
+          db
             .select({
               eventId: attendances.eventId,
               status: attendances.status,
+              userId: attendances.userId,
+              memberId: attendances.memberId,
+              playerId: attendances.playerId,
             })
             .from(attendances)
-            .where(or(...attConditions))
+            .where(inArray(attendances.eventId, chunk))
             .all()
-        : Promise.resolve([]),
+        )
+      ),
       hubMatchIds.length > 0
         ? db
             .selectDistinct({ matchId: atBats.matchId })
@@ -1452,9 +1495,47 @@ app.get("/hub", async (c) => {
       buildScheduledMatchCarpoolSyncMap(db, teamId, matchesList, allEventsList),
     ]);
 
-    for (const a of atts) {
-      if (a.eventId && a.status) {
-        userAttendances[a.eventId] = a.status;
+    const hubStatusConfig = normalizeGroupStatusSummaryConfig(targetTeam.attendanceStatusConfig);
+    const hubTeamScheduleDefaults = normalizeTeamScheduleDefaultTimes(targetTeam.scheduleDefaultTimes);
+    const hubRosters = classifyTeamAttendanceRosters({
+      players: teamPlayerRows,
+      teamMembers: teamMemberList,
+      relations: teamRelationsRows,
+    });
+    const hubOnLeavePlayerIds = new Set(
+      teamPlayerRows
+        .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave")
+        .map((p) => p.id)
+    );
+
+    const hubAttendancesByEvent = new Map<
+      string,
+      Array<{
+        status: string | null;
+        userId: string | null;
+        memberId: string | null;
+        playerId: string | null;
+      }>
+    >();
+
+    for (const rows of hubAttChunkResults) {
+      for (const a of rows) {
+        if (!a.eventId) continue;
+        if (a.playerId && hubOnLeavePlayerIds.has(a.playerId)) continue;
+        let bucket = hubAttendancesByEvent.get(a.eventId);
+        if (!bucket) {
+          bucket = [];
+          hubAttendancesByEvent.set(a.eventId, bucket);
+        }
+        bucket.push(a);
+
+        if (
+          a.status &&
+          ((currentMemberId && a.memberId === currentMemberId) ||
+            (a.userId && hubCandidateSet.has(a.userId)))
+        ) {
+          userAttendances[a.eventId] = a.status;
+        }
       }
     }
 
@@ -1500,18 +1581,18 @@ app.get("/hub", async (c) => {
 
       const hasPm = !!ev.pmStartAt || !!displayPmLocation;
 
-      // 時間の安全抽出
-      const startHHMM = extractTime(ev.startAt) || "08:00";
-      const endHHMM = extractTime(ev.endAt);
-      const pmStartHHMM = extractTime(ev.pmStartAt);
-      const pmEndHHMM = extractTime(ev.pmEndAt);
+      // 時間の安全抽出（UTC/JSTずれ防止）
+      const startHHMM = extractRawTimeHHMM(ev.startAt) || hubTeamScheduleDefaults.amStart;
+      const endHHMM = extractRawTimeHHMM(ev.endAt);
+      const pmStartHHMM = extractRawTimeHHMM(ev.pmStartAt);
+      const pmEndHHMM = extractRawTimeHHMM(ev.pmEndAt);
 
       const amTime = hasPm
-        ? (endHHMM && pmStartHHMM && endHHMM <= pmStartHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜12:00`)
-        : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜12:00`);
+        ? (endHHMM && pmStartHHMM && endHHMM <= pmStartHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`)
+        : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`);
 
       const pmTime = hasPm
-        ? `${pmStartHHMM || "13:00"}〜${pmEndHHMM || endHHMM || "17:00"}`
+        ? `${pmStartHHMM || hubTeamScheduleDefaults.summerPmStart}〜${pmEndHHMM || endHHMM || hubTeamScheduleDefaults.summerPmEnd}`
         : "";
 
       // 🚗 練習の場合は配車なし（試合または明示的な配車のみ）
@@ -1520,6 +1601,8 @@ app.get("/hub", async (c) => {
 
       // 🎯 対象チーム・グループ（Aチーム/Bチーム/試合組/練習組/全体など）
       const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+      const evAttRows = hubAttendancesByEvent.get(ev.id) || [];
+      const groupAtt = computeEventGroupAttendance(hubRosters, evAttRows);
 
       return {
         id: ev.id,
@@ -1544,6 +1627,8 @@ app.get("/hub", async (c) => {
         needsSnack: toBoolean(ev.needsSnack, false),
         memo: ev.description || "",
         myStatus: (userAttendances[ev.id] as any) || "pending",
+        attendCount: groupAtt.attendCount,
+        groupAttendCount: groupAtt.groupAttendCount,
       };
     });
 
@@ -1592,6 +1677,8 @@ app.get("/hub", async (c) => {
       teams: teamList,
       nextEvent,
       events: formattedEventsList,
+      attendanceStatusConfig: hubStatusConfig,
+      scheduleDefaultTimes: hubTeamScheduleDefaults,
       matches: formattedMatches,
     });
   } catch (error: any) {
@@ -1768,6 +1855,8 @@ app.get("/matches", async (c) => {
 app.get("/schedule", async (c) => {
   await ensureEventColumns(c.env.DB);
   await ensurePlayerProfileColumns(c.env.DB);
+  await ensureStatusConfigColumn(c.env.DB);
+  await ensureScheduleDefaultTimesColumn(c.env.DB);
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
@@ -1778,6 +1867,8 @@ app.get("/schedule", async (c) => {
       return c.json({
         success: true,
         isDemo: true,
+        attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
+        scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         events: [
           {
             id: "demo-ev-1",
@@ -1816,21 +1907,23 @@ app.get("/schedule", async (c) => {
               "demo-grp-1": 10,
               "demo-grp-2": 6,
             },
-            attendCount: { present: 16, absent: 2, pending: 1 },
+            attendCount: { present: 26, absent: 4, pending: 2 },
+            groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
           },
           {
             id: "demo-ev-2",
             title: "全日 強化守備・走塁練習",
             date: "9月5日(土)",
             dateStr: "2026-09-05",
-            time: "09:00 〜 16:30",
+            time: "08:00〜12:00 / 12:00〜18:00",
             location: "桜本小学校 グラウンド",
             eventType: "practice",
             dutyGroup: "C班 (グラウンド整備)",
             needsLunch: true,
             needsSnack: false,
             myStatus: "pending",
-            attendCount: { present: 11, absent: 3, pending: 3 },
+            attendCount: { present: 20, absent: 5, pending: 7 },
+            groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[1],
           },
           {
             id: "demo-ev-3",
@@ -1844,13 +1937,14 @@ app.get("/schedule", async (c) => {
             needsLunch: true,
             needsSnack: false,
             myStatus: "pending",
-            attendCount: { present: 12, absent: 1, pending: 4 },
+            attendCount: { present: 19, absent: 2, pending: 11 },
+            groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[2],
           },
         ],
       });
     }
 
-    // ⚡ イベント一覧・球場一覧・チームメンバー・セッションを並列取得
+    // ⚡ イベント一覧・球場一覧・チームメンバー・選手・親子関係・チーム設定・セッションを単一バッチ並列取得
     const cookieHeader = c.req.header("cookie") || "";
     const sessionPromise = cookieHeader.includes("better-auth")
       ? (async () => {
@@ -1866,38 +1960,79 @@ app.get("/schedule", async (c) => {
         })()
       : Promise.resolve(null);
 
-    const [[eventList, teamVenues, teamMemberList, teamPlayerConditionRows], sessionUser] =
-      await Promise.all([
-        db.batch([
-          db
-            .select()
-            .from(events)
-            .where(eq(events.teamId, teamId))
-            .orderBy(asc(events.startAt)),
-          db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
-          db
-            .select({
-              id: teamMembers.id,
-              userId: teamMembers.userId,
-              name: teamMembers.name,
-              memberType: teamMembers.memberType,
-              status: teamMembers.status,
-            })
-            .from(teamMembers)
-            .where(eq(teamMembers.teamId, teamId)),
-          db
-            .select({
-              id: players.id,
-              conditionStatus: players.conditionStatus,
-            })
-            .from(players)
-            .where(eq(players.teamId, teamId)),
-        ]),
-        sessionPromise,
-      ]);
+    const [
+      [
+        eventList,
+        teamVenues,
+        teamMemberList,
+        teamPlayerRows,
+        teamRelationsRows,
+        teamConfigRows,
+      ],
+      sessionUser,
+    ] = await Promise.all([
+      db.batch([
+        db
+          .select()
+          .from(events)
+          .where(eq(events.teamId, teamId))
+          .orderBy(asc(events.startAt)),
+        db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+        db
+          .select({
+            id: teamMembers.id,
+            userId: teamMembers.userId,
+            name: teamMembers.name,
+            memberType: teamMembers.memberType,
+            role: teamMembers.role,
+            subRoles: teamMembers.subRoles,
+            status: teamMembers.status,
+          })
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId)),
+        db
+          .select({
+            id: players.id,
+            userId: players.userId,
+            isActive: players.isActive,
+            conditionStatus: players.conditionStatus,
+          })
+          .from(players)
+          .where(eq(players.teamId, teamId)),
+        db
+          .select({
+            parentId: parentChildRelations.parentId,
+            childId: parentChildRelations.childId,
+          })
+          .from(parentChildRelations)
+          .where(eq(parentChildRelations.teamId, teamId)),
+        db
+          .select({
+            attendanceStatusConfig: teams.attendanceStatusConfig,
+            scheduleDefaultTimes: teams.scheduleDefaultTimes,
+          })
+          .from(teams)
+          .where(eq(teams.id, teamId))
+          .limit(1),
+      ]),
+      sessionPromise,
+    ]);
+
+    const teamConfigRow = teamConfigRows[0];
+    const schedStatusConfig = normalizeGroupStatusSummaryConfig(
+      teamConfigRow?.attendanceStatusConfig
+    );
+    const schedDefaultTimes = normalizeTeamScheduleDefaultTimes(
+      teamConfigRow?.scheduleDefaultTimes
+    );
+    const schedRosters = classifyTeamAttendanceRosters({
+      players: teamPlayerRows,
+      teamMembers: teamMemberList,
+      relations: teamRelationsRows,
+    });
 
     const onLeavePlayerIds = new Set(
-      teamPlayerConditionRows
+      teamPlayerRows
         .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave")
         .map((p) => p.id)
     );
@@ -1989,141 +2124,141 @@ app.get("/schedule", async (c) => {
     // 各イベントの出欠集計（メモリ上で O(N) 計算、DB クエリ 0 回）
     const formattedEvents = eventList.map((ev) => {
       const attList = attendancesByEventId.get(ev.id) || [];
+      const groupAtt = computeEventGroupAttendance(schedRosters, attList);
 
-        const dutyCount = attList.filter((a) => a.status === "duty").length;
-        const helpCount = attList.filter((a) => a.status === "help" || a.status === "present").length;
-        const setupCount = attList.filter((a) => a.status === "setup" || a.status === "late" || a.status === "partial").length;
-        const gameCount = attList.filter((a) => a.status === "game").length;
-        const absentCount = attList.filter((a) => a.status === "absent").length;
-        const pendingCount = attList.filter((a) => a.status === "pending" || !a.status).length;
-        const presentCount = dutyCount + helpCount + setupCount + gameCount;
+      let myStatus: string = "pending";
+      let mySelectedGroupId: string | null = null;
+      if (schedCandidateIds.length > 0 || schedMemberIdsSet.size > 0) {
+        const myAtt = attList.find(
+          (a) =>
+            (a.memberId && schedMemberIdsSet.has(a.memberId)) ||
+            (a.userId && schedCandidateIds.includes(a.userId))
+        );
+        if (myAtt?.status) {
+          myStatus = myAtt.status;
+          mySelectedGroupId = myAtt.selectedGroupId || null;
+        }
+      }
 
-        let myStatus: string = "pending";
-        let mySelectedGroupId: string | null = null;
-        if (schedCandidateIds.length > 0 || schedMemberIdsSet.size > 0) {
-          const myAtt = attList.find(
-            (a) =>
-              (a.memberId && schedMemberIdsSet.has(a.memberId)) ||
-              (a.userId && schedCandidateIds.includes(a.userId))
-          );
-          if (myAtt?.status) {
-            myStatus = myAtt.status;
-            mySelectedGroupId = myAtt.selectedGroupId || null;
+      // 活動グループ（JSON）のパース
+      let parsedGroups: Array<{
+        id: string;
+        name: string;
+        time?: string;
+        location?: string;
+        eventType?: "match" | "practice" | "meeting" | "camp";
+        dutyGroup?: string;
+        carInfo?: string;
+      }> = [];
+
+      if (ev.activityGroups) {
+        try {
+          parsedGroups = typeof ev.activityGroups === "string" ? JSON.parse(ev.activityGroups) : ev.activityGroups;
+        } catch {}
+      }
+
+      // グループ別出席集計の計算
+      const groupCounts: Record<string, number> = {};
+      for (const att of attList) {
+        if (att.status === "present" || att.status === "late" || att.status === "partial") {
+          const gid = att.selectedGroupId;
+          if (gid) {
+            groupCounts[gid] = (groupCounts[gid] || 0) + 1;
           }
         }
+      }
 
-        // 活動グループ（JSON）のパース
-        let parsedGroups: Array<{
-          id: string;
-          name: string;
-          time?: string;
-          location?: string;
-          eventType?: "match" | "practice" | "meeting" | "camp";
-          dutyGroup?: string;
-          carInfo?: string;
-        }> = [];
+      const startDate = new Date(ev.startAt);
+      const y = startDate.getUTCFullYear();
+      const m = String(startDate.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(startDate.getUTCDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${d}`;
+      const wStr = ["日", "月", "火", "水", "木", "金", "土"][startDate.getUTCDay()];
 
-        if (ev.activityGroups) {
-          try {
-            parsedGroups = typeof ev.activityGroups === "string" ? JSON.parse(ev.activityGroups) : ev.activityGroups;
-          } catch {}
-        }
+      const isAmOff = ev.amType === "off";
+      const hasAm = !isAmOff;
+      const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
 
-        // グループ別出席集計の計算
-        const groupCounts: Record<string, number> = {};
-        for (const att of attList) {
-          if (att.status === "present" || att.status === "late" || att.status === "partial") {
-            const gid = (att as any).selectedGroupId;
-            if (gid) {
-              groupCounts[gid] = (groupCounts[gid] || 0) + 1;
-            }
-          }
-        }
+      const startTimeStr = extractRawTimeHHMM(ev.startAt) || schedDefaultTimes.amStart;
+      const rawEndStr = extractRawTimeHHMM(ev.endAt);
+      const pmStartStr = extractRawTimeHHMM(ev.pmStartAt);
+      const pmEndStr = extractRawTimeHHMM(ev.pmEndAt);
 
-        const startDate = new Date(ev.startAt);
-        const y = startDate.getFullYear();
-        const m = String(startDate.getMonth() + 1).padStart(2, "0");
-        const d = String(startDate.getDate()).padStart(2, "0");
-        const dateStr = `${y}-${m}-${d}`;
-        const wStr = ["日", "月", "火", "水", "木", "金", "土"][startDate.getDay()];
+      const resolvedAmEndStr =
+        hasPm && rawEndStr && pmStartStr && rawEndStr > pmStartStr
+          ? schedDefaultTimes.amEnd
+          : rawEndStr;
 
-        const isAmOff = ev.amType === "off";
-        const hasAm = !isAmOff;
+      const formattedAmTime = isAmOff
+        ? ""
+        : resolvedAmEndStr
+        ? `${startTimeStr}〜${resolvedAmEndStr}`
+        : `${startTimeStr} 集合`;
 
-        const startTimeStr = startDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-        const endTimeStr = ev.endAt ? new Date(ev.endAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
-        const formattedAmTime = isAmOff ? "" : (endTimeStr ? `${startTimeStr} 〜 ${endTimeStr}` : `${startTimeStr} 集合`);
+      let pmTime = "";
+      if (hasPm && pmStartStr) {
+        const effectivePmEnd = pmEndStr || rawEndStr || "";
+        pmTime = effectivePmEnd ? `${pmStartStr}〜${effectivePmEnd}` : `${pmStartStr}〜`;
+      }
 
-        const hasPm = (!!ev.pmStartAt || !!ev.pmLocation);
-        let pmTime = "";
-        if (ev.pmStartAt) {
-          const pmStartDate = new Date(ev.pmStartAt);
-          const pmStartStr = pmStartDate.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-          const pmEndStr = ev.pmEndAt ? new Date(ev.pmEndAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) : "";
-          pmTime = pmEndStr ? `${pmStartStr}〜${pmEndStr}` : `${pmStartStr}〜`;
-        }
+      const rawLocation = ev.location || "グラウンド";
+      const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
+      const rawPmLocation = ev.pmLocation || rawLocation;
+      const displayPmLocation = venueMap.get(rawPmLocation.trim()) || rawPmLocation;
 
-        const rawLocation = ev.location || "グラウンド";
-        const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
-        const rawPmLocation = ev.pmLocation || rawLocation;
-        const displayPmLocation = venueMap.get(rawPmLocation.trim()) || rawPmLocation;
+      const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+      const isMatch = ev.eventType === "match" || ev.amType === "match";
 
-        const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
-        const isMatch = ev.eventType === "match" || ev.amType === "match";
+      let overallTime = formattedAmTime;
+      if (isAmOff && hasPm && pmTime) {
+        overallTime = pmTime;
+      } else if (hasAm && hasPm && pmTime) {
+        overallTime = `${formattedAmTime} / ${pmTime}`;
+      } else if (!overallTime) {
+        overallTime = "時間調整中";
+      }
 
-        let overallTime = formattedAmTime;
-        if (isAmOff && hasPm && pmTime) {
-          overallTime = pmTime;
-        } else if (hasAm && hasPm && pmTime) {
-          overallTime = `${formattedAmTime} / ${pmTime}`;
-        } else if (!overallTime) {
-          overallTime = "時間調整中";
-        }
-
-        return {
-          id: ev.id,
-          title: ev.title,
-          targetGroup: extractedTarget,
-          date: `${startDate.getMonth() + 1}/${startDate.getDate()}(${wStr})`,
-          dateStr,
-          time: overallTime,
-          startAt: ev.startAt,
-          endAt: ev.endAt,
-          location: isAmOff ? displayPmLocation : displayLocation,
-          rawLocation,
-          hasAm,
-          amTime: formattedAmTime,
-          amLocation: isAmOff ? "" : displayLocation,
-          pmTime,
-          pmLocation: displayPmLocation,
-          hasPm,
-          eventType: ev.eventType || "practice",
-          amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
-          pmType: hasPm ? (ev.eventType || "practice") : "off",
-          dutyGroup: ev.dutyGroup || undefined,
-          needsLunch: toBoolean(ev.needsLunch, isMatch || hasPm),
-          needsSnack: toBoolean(ev.needsSnack, false),
-          memo: ev.description || "",
-          carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
-          activityGroups: parsedGroups.length > 0 ? parsedGroups : undefined,
-          groupCounts,
-          myStatus,
-          mySelectedGroupId,
-          attendCount: {
-            present: presentCount,
-            absent: absentCount,
-            pending: pendingCount,
-            duty: dutyCount,
-            help: helpCount,
-            setup: setupCount,
-            game: gameCount,
-          },
-        };
-      });
+      return {
+        id: ev.id,
+        title: ev.title,
+        targetGroup: extractedTarget,
+        date: `${Number(m)}/${Number(d)}(${wStr})`,
+        dateStr,
+        time: overallTime,
+        startAt: ev.startAt,
+        endAt: ev.endAt,
+        pmStartAt: ev.pmStartAt,
+        pmEndAt: ev.pmEndAt,
+        location: isAmOff ? displayPmLocation : displayLocation,
+        rawLocation,
+        hasAm,
+        amTime: formattedAmTime,
+        amLocation: isAmOff ? "" : displayLocation,
+        pmTime,
+        pmLocation: displayPmLocation,
+        hasPm,
+        eventType: ev.eventType || "practice",
+        amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
+        pmType: hasPm ? (ev.eventType || "practice") : "off",
+        dutyGroup: ev.dutyGroup || undefined,
+        needsLunch: toBoolean(ev.needsLunch, isMatch || hasPm),
+        needsSnack: toBoolean(ev.needsSnack, false),
+        memo: ev.description || "",
+        carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
+        activityGroups: parsedGroups.length > 0 ? parsedGroups : undefined,
+        groupCounts,
+        myStatus,
+        mySelectedGroupId,
+        attendCount: groupAtt.attendCount,
+        groupAttendCount: groupAtt.groupAttendCount,
+      };
+    });
 
     return c.json({
       success: true,
       isDemo: false,
+      attendanceStatusConfig: schedStatusConfig,
+      scheduleDefaultTimes: schedDefaultTimes,
       events: formattedEvents,
     });
   } catch (error: any) {
@@ -3113,6 +3248,81 @@ app.post("/attendance-matrix/sub-labels", async (c) => {
   } catch (err: any) {
     console.error("Failed to save member sub labels:", err);
     return c.json({ success: false, error: err?.message || "サブラベルの保存に失敗しました" }, 500);
+  }
+});
+
+/**
+ * ⏰ チームの予定スケジューラー初期時間設定（午前・午後／季節・対象月別）取得・保存API
+ * GET  /api/liff/schedule-default-times?teamId=xxx
+ * POST /api/liff/schedule-default-times
+ */
+app.get("/schedule-default-times", async (c) => {
+  await ensureScheduleDefaultTimesColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = c.req.query("teamId");
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
+      });
+    }
+
+    const row = await db
+      .select({ scheduleDefaultTimes: teams.scheduleDefaultTimes })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      scheduleDefaultTimes: normalizeTeamScheduleDefaultTimes(row?.scheduleDefaultTimes),
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "初期時間設定の取得に失敗しました";
+    return c.json({ success: false, error: msg }, 500);
+  }
+});
+
+app.post("/schedule-default-times", async (c) => {
+  await ensureScheduleDefaultTimesColumn(c.env.DB);
+  const db = drizzle(c.env.DB);
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      scheduleDefaultTimes?: unknown;
+    };
+    const teamId = body.teamId?.trim();
+    if (!teamId) {
+      return c.json({ success: false, error: "teamId is required" }, 400);
+    }
+
+    const normalized = normalizeTeamScheduleDefaultTimes(body.scheduleDefaultTimes);
+
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        scheduleDefaultTimes: normalized,
+      });
+    }
+
+    await db
+      .update(teams)
+      .set({ scheduleDefaultTimes: JSON.stringify(normalized) })
+      .where(eq(teams.id, teamId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      scheduleDefaultTimes: normalized,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "初期時間設定の保存に失敗しました";
+    return c.json({ success: false, error: msg }, 500);
   }
 });
 

@@ -5,6 +5,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -31,6 +35,16 @@ interface FaqItem {
   scope: "organization" | "team";
   scopeLabel: string;
 }
+
+const FAQ_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "rain", label: "雨天・中止判断" },
+  { value: "duty", label: "当番・配車" },
+  { value: "equipment", label: "用具・持ち物" },
+  { value: "trip", label: "遠征・合宿" },
+  { value: "cost", label: "部費・保険" },
+  { value: "manner", label: "観戦マナー" },
+  { value: "general", label: "その他・全般" },
+];
 
 export default function LiffFaqPage() {
   const { currentTeam, profile } = useLiff();
@@ -577,19 +591,15 @@ export default function LiffFaqPage() {
                   {/* カテゴリ選択 */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <select
+                    <LiffSelect
                       value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="rain">雨天・中止判断</option>
-                      <option value="duty">当番・配車</option>
-                      <option value="equipment">用具・持ち物</option>
-                      <option value="trip">遠征・合宿</option>
-                      <option value="cost">部費・保険</option>
-                      <option value="manner">観戦マナー</option>
-                      <option value="general">その他・全般</option>
-                    </select>
+                      onChange={setNewCategory}
+                      options={FAQ_CATEGORY_OPTIONS}
+                      title="Q&Aカテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full bg-background"
+                    />
                   </div>
 
                   {/* 質問（Q） */}
@@ -729,19 +739,15 @@ export default function LiffFaqPage() {
                   {/* カテゴリ選択 */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <select
+                    <LiffSelect
                       value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="rain">雨天・中止判断</option>
-                      <option value="duty">当番・配車</option>
-                      <option value="equipment">用具・持ち物</option>
-                      <option value="trip">遠征・合宿</option>
-                      <option value="cost">部費・保険</option>
-                      <option value="manner">観戦マナー</option>
-                      <option value="general">その他・全般</option>
-                    </select>
+                      onChange={setEditCategory}
+                      options={FAQ_CATEGORY_OPTIONS}
+                      title="Q&Aカテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full bg-background"
+                    />
                   </div>
 
                   {/* 質問（Q） */}

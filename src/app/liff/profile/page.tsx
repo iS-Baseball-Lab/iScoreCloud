@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -1097,17 +1098,19 @@ export default function LiffProfilePage() {
                           <label className="text-[11px] font-black text-foreground block">
                             乗車定員（運転手除く）
                           </label>
-                          <select
-                            value={carCapacity}
-                            onChange={(e) => setCarCapacity(Number(e.target.value))}
-                            className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                          >
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-                              <option key={n} value={n}>
-                                {n}名（運転手除く）
-                              </option>
-                            ))}
-                          </select>
+                          <LiffSelect
+                            value={String(carCapacity)}
+                            onChange={(val) => setCarCapacity(Number(val))}
+                            options={[1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
+                              value: String(n),
+                              label: `${n}名（運転手除く）`,
+                            }))}
+                            title="乗車定員（運転手除く）"
+                            subtitle="運転手を除いて同乗できる人数を選択してください"
+                            accent="teal"
+                            searchable={false}
+                            className="w-full"
+                          />
                         </div>
 
                         <div className="space-y-1">

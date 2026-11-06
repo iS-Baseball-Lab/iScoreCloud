@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import { TeamSymbolRulesSettingsSection } from "@/components/liff/TeamSymbolRulesSettingsSection";
 
 const ScorebookCameraModal = dynamic(
@@ -806,43 +807,51 @@ export default function LiffScoreSettingsPage() {
                 <label className="text-[11px] font-black text-foreground block">
                   規定イニング初期値
                 </label>
-                <select
-                  value={scoreSettings.defaultInnings}
-                  onChange={(e) =>
+                <LiffSelect
+                  value={String(scoreSettings.defaultInnings)}
+                  onChange={(val) =>
                     updateLocalSetting(
                       "defaultInnings",
-                      Number(e.target.value),
+                      Number(val),
                       "規定イニング初期値"
                     )
                   }
-                  className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
-                >
-                  <option value={5}>5回制（低学年等）</option>
-                  <option value={6}>6回制（学童等）</option>
-                  <option value={7}>7回制（中学・草野球）</option>
-                  <option value={9}>9回制</option>
-                </select>
+                  options={[
+                    { value: "5", label: "5回制（低学年等）" },
+                    { value: "6", label: "6回制（学童等）" },
+                    { value: "7", label: "7回制（中学・草野球）" },
+                    { value: "9", label: "9回制" },
+                  ]}
+                  title="規定イニング初期値"
+                  accent="slate"
+                  searchable={false}
+                  className="w-full bg-muted/35"
+                />
               </div>
 
               <div className="space-y-1">
                 <label className="text-[11px] font-black text-foreground block">
                   新規試合の初期種別
                 </label>
-                <select
+                <LiffSelect
                   value={scoreSettings.defaultMatchType}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     updateLocalSetting(
                       "defaultMatchType",
-                      e.target.value as ScoreDefaultMatchType,
+                      val as ScoreDefaultMatchType,
                       "新規試合の初期種別"
                     )
                   }
-                  className="w-full h-10 px-2.5 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:border-primary cursor-pointer"
-                >
-                  <option value="practice">{practiceMatchLabel}</option>
-                  <option value="official">公式戦</option>
-                  <option value="exchange">交流戦</option>
-                </select>
+                  options={[
+                    { value: "practice", label: practiceMatchLabel },
+                    { value: "official", label: "公式戦" },
+                    { value: "exchange", label: "交流戦" },
+                  ]}
+                  title="新規試合の初期種別"
+                  accent="slate"
+                  searchable={false}
+                  className="w-full bg-muted/35"
+                />
               </div>
             </div>
 

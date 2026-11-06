@@ -6,6 +6,10 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -46,6 +50,17 @@ interface TeamDocument {
   scope: "organization" | "team";
   scopeLabel: string;
 }
+
+const DOCUMENT_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "rules", label: "規約・会則" },
+  { value: "match", label: "大会・試合" },
+  { value: "manual", label: "配車・当番" },
+  { value: "equipment", label: "用具・服装" },
+  { value: "trip", label: "遠征・合宿" },
+  { value: "insurance", label: "保険・安全" },
+  { value: "form", label: "届出書類" },
+  { value: "other", label: "その他" },
+];
 
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
@@ -1046,20 +1061,15 @@ export default function LiffDocumentsPage() {
                   {/* カテゴリ */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <select
+                    <LiffSelect
                       value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="rules">規約・会則</option>
-                      <option value="match">大会・試合</option>
-                      <option value="manual">配車・当番</option>
-                      <option value="equipment">用具・服装</option>
-                      <option value="trip">遠征・合宿</option>
-                      <option value="insurance">保険・安全</option>
-                      <option value="form">届出書類</option>
-                      <option value="other">その他</option>
-                    </select>
+                      onChange={setNewCategory}
+                      options={DOCUMENT_CATEGORY_OPTIONS}
+                      title="資料カテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full bg-background"
+                    />
                   </div>
 
                   {/* 説明・メモ */}
@@ -1229,20 +1239,15 @@ export default function LiffDocumentsPage() {
                   {/* カテゴリ */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <select
+                    <LiffSelect
                       value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                    >
-                      <option value="rules">規約・会則</option>
-                      <option value="match">大会・試合</option>
-                      <option value="manual">配車・当番</option>
-                      <option value="equipment">用具・服装</option>
-                      <option value="trip">遠征・合宿</option>
-                      <option value="insurance">保険・安全</option>
-                      <option value="form">届出書類</option>
-                      <option value="other">その他</option>
-                    </select>
+                      onChange={setEditCategory}
+                      options={DOCUMENT_CATEGORY_OPTIONS}
+                      title="資料カテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full bg-background"
+                    />
                   </div>
 
                   {/* ファイルの変更オプション */}

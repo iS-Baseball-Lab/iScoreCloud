@@ -34,6 +34,10 @@ import {
   type OccupiedBaseKey,
   type PrecedingRunnerSummary,
 } from "@/lib/liff/scorebook-runners";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 
 interface MiniBaseDiamondProps {
   bases: BaseRunnerMap;
@@ -1096,10 +1100,9 @@ export function AtBatModalRunnerEditor({
                     </div>
 
                     {isMyTeamBatting && roster.length > 0 && (
-                      <select
+                      <LiffSelect
                         value={prSelectedRosterId}
-                        onChange={(e) => {
-                          const pid = e.target.value;
+                        onChange={(pid) => {
                           setPrSelectedRosterId(pid);
                           const matched = roster.find((r) => r.id === pid);
                           if (matched) {
@@ -1107,30 +1110,47 @@ export function AtBatModalRunnerEditor({
                             setPrCustomUniform(matched.uniformNumber || "");
                           }
                         }}
-                        className="w-full h-9 px-2.5 rounded-lg bg-card border border-border text-xs font-bold text-foreground"
-                      >
-                        <option value="">
-                          登録メンバーから選択（または下に直接入力）
-                        </option>
-                        {benchRosterPlayers.length > 0 && (
-                          <optgroup label="控え・未出場メンバー（推奨）">
-                            {benchRosterPlayers.map((rp) => (
-                              <option key={rp.id} value={rp.id}>
-                                #{rp.uniformNumber} {rp.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                        {activeRosterPlayers.length > 0 && (
-                          <optgroup label="出場中メンバー（臨時代走等）">
-                            {activeRosterPlayers.map((rp) => (
-                              <option key={rp.id} value={rp.id}>
-                                #{rp.uniformNumber} {rp.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-                      </select>
+                        title="代走・臨時代走の選手を選択"
+                        subtitle="控えメンバーまたは臨時代走の出場中メンバーを選択できます"
+                        searchable={true}
+                        searchPlaceholder="背番号・選手名で検索..."
+                        size="sm"
+                        className="w-full"
+                        ariaLabel="代走・臨時代走の選手を選択"
+                        options={[
+                          {
+                            value: "",
+                            label:
+                              "登録メンバーから選択（または下に直接入力）",
+                          },
+                          ...benchRosterPlayers.map(
+                            (rp): LiffSelectOption => ({
+                              value: rp.id,
+                              label: `#${rp.uniformNumber} ${rp.name}`,
+                              group: "控え・未出場メンバー（推奨）",
+                              sublabel: rp.primaryPosition
+                                ? `主守備: ${rp.primaryPosition}`
+                                : undefined,
+                              keywords: `${rp.uniformNumber} ${rp.name} ${
+                                rp.nameKana || ""
+                              }`,
+                            })
+                          ),
+                          ...activeRosterPlayers.map(
+                            (rp): LiffSelectOption => ({
+                              value: rp.id,
+                              label: `#${rp.uniformNumber} ${rp.name}`,
+                              group: "出場中メンバー（臨時代走等）",
+                              sublabel: rp.primaryPosition
+                                ? `主守備: ${rp.primaryPosition}`
+                                : undefined,
+                              keywords: `${rp.uniformNumber} ${rp.name} ${
+                                rp.nameKana || ""
+                              }`,
+                            })
+                          ),
+                        ]}
+                      />
                     )}
 
                     <div className="grid grid-cols-12 gap-1.5">
@@ -1732,7 +1752,9 @@ export function AtBatModalRunnerEditor({
               const matchedBatter = batters.find(
                 (b) => b.name && b.name === adv.runnerName
               );
-              const selectValue = matchedBatter ? matchedBatter.name : "__custom__";
+              const selectValue = matchedBatter
+                ? `order:${matchedBatter.battingOrder}`
+                : "__custom__";
 
               return (
                 <div
@@ -1742,33 +1764,42 @@ export function AtBatModalRunnerEditor({
                   {/* 1段目: 走者選択（打順メンバーからワンタップ選択可）＋ セーフ/アウト切替 ＋ 削除 */}
                   <div className="flex items-center gap-1.5">
                     {batters.length > 0 ? (
-                      <select
+                      <LiffSelect
                         value={selectValue}
-                        onChange={(e) => {
-                          const val = e.target.value;
+                        onChange={(val) => {
                           if (val === "__custom__") return;
+                          const pickedOrder = Number(val.replace("order:", ""));
+                          const picked = batters.find(
+                            (b) => b.battingOrder === pickedOrder
+                          );
+                          if (!picked) return;
                           handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
                             ...cur,
-                            runnerName: val,
+                            runnerName: picked.name,
                           }));
                         }}
-                        aria-label="走者を選択"
-                        className="h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground min-w-0 flex-1"
-                      >
-                        <option value="__custom__">
-                          {adv.runnerName
-                            ? `走者: ${adv.runnerName}`
-                            : "走者を選択..."}
-                        </option>
-                        {batters.map((b) => (
-                          <option
-                            key={`runner-opt-${b.battingOrder}`}
-                            value={b.name}
-                          >
-                            {b.battingOrder}番: {b.name || `#${b.uniformNumber}`}
-                          </option>
-                        ))}
-                      </select>
+                        title="走者を選択"
+                        size="xs"
+                        searchable={false}
+                        className="min-w-0 flex-1"
+                        ariaLabel="走者を選択"
+                        options={[
+                          {
+                            value: "__custom__",
+                            label: adv.runnerName
+                              ? `走者: ${adv.runnerName}`
+                              : "走者を選択...",
+                          },
+                          ...batters.map(
+                            (b): LiffSelectOption => ({
+                              value: `order:${b.battingOrder}`,
+                              label: `${b.battingOrder}番: ${
+                                b.name || `#${b.uniformNumber}`
+                              }`,
+                            })
+                          ),
+                        ]}
+                      />
                     ) : null}
 
                     {(batters.length === 0 || selectValue === "__custom__") && (
@@ -1816,44 +1847,52 @@ export function AtBatModalRunnerEditor({
 
                   {/* 2段目: 元塁 ➔ 先塁 ＋ 進塁理由 */}
                   <div className="grid grid-cols-12 gap-1 items-center">
-                    <select
+                    <LiffSelect
                       value={adv.from}
-                      onChange={(e) =>
+                      onChange={(val) =>
                         handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
                           ...cur,
-                          from: e.target.value as "BAT" | "1B" | "2B" | "3B",
+                          from: val as "BAT" | "1B" | "2B" | "3B",
                         }))
                       }
-                      aria-label="進塁元の塁"
-                      className="col-span-3 h-8 px-1 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                    >
-                      <option value="3B">3塁から</option>
-                      <option value="2B">2塁から</option>
-                      <option value="1B">1塁から</option>
-                      <option value="BAT">打者走者</option>
-                    </select>
+                      title="進塁元の塁を選択"
+                      size="xs"
+                      searchable={false}
+                      className="col-span-3 w-full"
+                      ariaLabel="進塁元の塁"
+                      options={[
+                        { value: "3B", label: "3塁から" },
+                        { value: "2B", label: "2塁から" },
+                        { value: "1B", label: "1塁から" },
+                        { value: "BAT", label: "打者走者" },
+                      ]}
+                    />
 
-                    <select
+                    <LiffSelect
                       value={adv.to}
-                      onChange={(e) =>
+                      onChange={(val) =>
                         handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
                           ...cur,
-                          to: e.target.value as "1B" | "2B" | "3B" | "HP",
+                          to: val as "1B" | "2B" | "3B" | "HP",
                         }))
                       }
-                      aria-label="進塁先の塁"
-                      className="col-span-3 h-8 px-1 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                    >
-                      <option value="HP">→本塁</option>
-                      <option value="3B">→3塁</option>
-                      <option value="2B">→2塁</option>
-                      <option value="1B">→1塁</option>
-                    </select>
+                      title="進塁先の塁を選択"
+                      size="xs"
+                      searchable={false}
+                      className="col-span-3 w-full"
+                      ariaLabel="進塁先の塁"
+                      options={[
+                        { value: "HP", label: "→本塁" },
+                        { value: "3B", label: "→3塁" },
+                        { value: "2B", label: "→2塁" },
+                        { value: "1B", label: "→1塁" },
+                      ]}
+                    />
 
-                    <select
+                    <LiffSelect
                       value={adv.method}
-                      onChange={(e) => {
-                        const m = e.target.value as AdvanceMethodCode;
+                      onChange={(val) => {
+                        const m = val as AdvanceMethodCode;
                         const forceOutMethod =
                           m === "caught_stealing" ||
                           m === "pickoff_out" ||
@@ -1879,17 +1918,18 @@ export function AtBatModalRunnerEditor({
                             : cur.isOut,
                         }));
                       }}
-                      aria-label="進塁・アウト理由"
-                      className="col-span-6 h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                    >
-                      {(
+                      title="進塁・アウト理由を選択"
+                      size="xs"
+                      searchable={false}
+                      className="col-span-6 w-full"
+                      ariaLabel="進塁・アウト理由"
+                      options={(
                         Object.keys(ADVANCE_METHOD_LABELS) as AdvanceMethodCode[]
-                      ).map((k) => (
-                        <option key={k} value={k}>
-                          {ADVANCE_METHOD_LABELS[k]}
-                        </option>
-                      ))}
-                    </select>
+                      ).map((k) => ({
+                        value: k,
+                        label: ADVANCE_METHOD_LABELS[k],
+                      }))}
+                    />
                   </div>
                 </div>
               );

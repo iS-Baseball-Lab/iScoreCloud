@@ -43,6 +43,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "member_sub_labels", ddl: "ALTER TABLE teams ADD COLUMN member_sub_labels text" },
     { name: "scorebook_legend_url", ddl: "ALTER TABLE teams ADD COLUMN scorebook_legend_url text" },
     { name: "scorebook_symbol_rules", ddl: "ALTER TABLE teams ADD COLUMN scorebook_symbol_rules text" },
+    { name: "schedule_default_times", ddl: "ALTER TABLE teams ADD COLUMN schedule_default_times text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },
@@ -299,5 +300,9 @@ export async function ensureVenuesColumns(d1?: D1Database | null): Promise<void>
 }
 
 export async function ensureLiveReportsTable(d1?: D1Database | null): Promise<void> {
+  await ensureAllSchemasOnce(d1);
+}
+
+export async function ensureScheduleDefaultTimesColumn(d1?: D1Database | null): Promise<void> {
   await ensureAllSchemasOnce(d1);
 }

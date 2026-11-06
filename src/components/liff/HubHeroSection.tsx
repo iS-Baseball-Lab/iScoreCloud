@@ -30,12 +30,57 @@ import {
 import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { MatchScoreCard, MatchScoreCardSkeleton } from "@/components/liff/MatchScoreCard";
+import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  DEMO_GROUP_ATTEND_COUNT_LIST,
+  type EventGroupAttendanceMap,
+  type GroupAttendanceCounts,
+  type GroupStatusConfigSummary,
+} from "@/lib/liff/group-attendance";
 import {
   PLAYER_CONDITION_META,
   loadDemoPlayerConditionOverrides,
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+
+export interface HubEventInputItem {
+  id: string;
+  title?: string;
+  date?: string;
+  dateStr?: string;
+  startAt?: string;
+  endAt?: string;
+  pmStartAt?: string | null;
+  pmEndAt?: string | null;
+  hasPm?: boolean;
+  eventType?: string;
+  amType?: string;
+  amTime?: string;
+  amLocation?: string;
+  pmType?: string;
+  pmTime?: string;
+  pmLocation?: string | null;
+  location?: string;
+  targetGroup?: string;
+  dutyGroup?: string;
+  carInfo?: string;
+  needsLunch?: boolean | number | string;
+  needsSnack?: boolean | number | string;
+  memo?: string;
+  description?: string;
+  myStatus?: "present" | "absent" | "pending" | "late";
+  activityGroups?: Array<{
+    id: string;
+    name: string;
+    time?: string;
+    location?: string;
+    eventType?: string;
+  }>;
+  attendCount?: Partial<GroupAttendanceCounts> | null;
+  groupAttendCount?: EventGroupAttendanceMap | null;
+}
 
 interface FamilyChildItem {
   id: string;
@@ -70,9 +115,11 @@ interface HubHeroSectionProps {
     carInfo?: string;   // 行き/帰りの配車
     needsLunch?: boolean; // お弁当要否
   } | null;
-  eventsList?: any[];
+  eventsList?: HubEventInputItem[];
   latestMatch?: MatchCardData | null;
   isLoading?: boolean;
+  attendanceStatusConfig?: GroupStatusConfigSummary;
+  onRefreshHub?: () => void;
 }
 
 export function HubHeroSection({
@@ -80,10 +127,12 @@ export function HubHeroSection({
   isDemo = false,
   userId,
   userName,
-  nextEvent,
+  nextEvent: _nextEvent,
   eventsList = [],
   latestMatch,
   isLoading = false,
+  attendanceStatusConfig,
+  onRefreshHub,
 }: HubHeroSectionProps) {
   const [activeTab, setActiveTab] = useState<"score" | "next">("score");
 
@@ -199,27 +248,30 @@ export function HubHeroSection({
     }
   }, [eventsList]);
 
-  const getEventAttendance = (id: string) => {
+  const getEventAttendance = (id: string): "present" | "absent" | "pending" | "late" => {
     if (attendanceMap[id] && attendanceMap[id] !== "pending") {
       return attendanceMap[id];
     }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_my_att_${id}`);
-      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
-        return cached as any;
+      if (cached === "present" || cached === "absent" || cached === "late") {
+        return cached;
       }
     }
     return attendanceMap[id] || "pending";
   };
 
-  const getChildAttendance = (eventId: string, childId: string) => {
+  const getChildAttendance = (
+    eventId: string,
+    childId: string
+  ): "present" | "absent" | "pending" | "late" => {
     if (childAttendanceMap[eventId]?.[childId] && childAttendanceMap[eventId][childId] !== "pending") {
       return childAttendanceMap[eventId][childId];
     }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_child_att_${eventId}_${childId}`);
-      if (cached && (cached === "present" || cached === "absent" || cached === "late")) {
-        return cached as any;
+      if (cached === "present" || cached === "absent" || cached === "late") {
+        return cached;
       }
     }
     return childAttendanceMap[eventId]?.[childId] || "pending";
@@ -237,7 +289,7 @@ export function HubHeroSection({
       const uid = typeof window !== "undefined" 
         ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") 
         : "";
-      await fetch("/api/liff/attendance", {
+      const res = await fetch("/api/liff/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,6 +300,10 @@ export function HubHeroSection({
           hasCar: carStatusMap[id] === "can_drive",
         }),
       });
+      if (res.ok) {
+        invalidateLiffApiCache();
+        onRefreshHub?.();
+      }
     } catch (e) {
       console.error(e);
     }
@@ -266,7 +322,7 @@ export function HubHeroSection({
       localStorage.setItem(`iscore_child_att_${eventId}_${childId}`, status);
     }
     try {
-      await fetch("/api/liff/attendance", {
+      const res = await fetch("/api/liff/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -275,6 +331,10 @@ export function HubHeroSection({
           status,
         }),
       });
+      if (res.ok) {
+        invalidateLiffApiCache();
+        onRefreshHub?.();
+      }
     } catch (e) {
       console.error(e);
     }
@@ -313,28 +373,25 @@ export function HubHeroSection({
     const friStr = `${friDate.getMonth() + 1}/${friDate.getDate()}`;
     const periodLabel = `${satStr}(土)〜${friStr}(金)`;
 
-    const extractTime = (val: any) => {
+    const extractTime = (val: unknown): string | null => {
       if (!val) return null;
       if (typeof val === "string") {
         const match = val.match(/T?(\d{2}):(\d{2})/);
         if (match) return `${match[1]}:${match[2]}`;
       }
-      try {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) {
-          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-        }
-      } catch {}
+      if (val instanceof Date && !isNaN(val.getTime())) {
+        return `${String(val.getHours()).padStart(2, "0")}:${String(val.getMinutes()).padStart(2, "0")}`;
+      }
       return null;
     };
 
     if (eventsList && eventsList.length > 0) {
       const filtered = eventsList.filter(ev => {
-        const d = new Date(ev.startAt || ev.dateStr);
+        const d = new Date(ev.startAt || ev.dateStr || "");
         return d >= satDate && d <= friDate;
       });
 
-      const mapEventData = (ev: any) => {
+      const mapEventData = (ev: HubEventInputItem) => {
         const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
         
         // 午前時間の算出
@@ -351,8 +408,8 @@ export function HubHeroSection({
         // 午後時間の算出
         let pmTime = ev.pmTime;
         if (!pmTime && hasPm) {
-          const pmSHHMM = extractTime(ev.pmStartAt) || "13:00";
-          const pmEHHMM = extractTime(ev.pmEndAt) || extractTime(ev.endAt) || "17:00";
+          const pmSHHMM = extractTime(ev.pmStartAt) || "12:00";
+          const pmEHHMM = extractTime(ev.pmEndAt) || extractTime(ev.endAt) || "18:00";
           pmTime = `${pmSHHMM}〜${pmEHHMM}`;
         }
 
@@ -368,10 +425,20 @@ export function HubHeroSection({
           carInfo = ev.carInfo;
         }
 
+        const fallbackDateObj = new Date(ev.startAt || ev.dateStr || "");
+        const resolvedDateStr =
+          ev.dateStr ||
+          (typeof ev.startAt === "string" && ev.startAt.length >= 10
+            ? ev.startAt.slice(0, 10)
+            : undefined);
+
         return {
           id: ev.id,
           title: ev.title || "活動予定",
-          date: ev.date || `${new Date(ev.startAt || ev.dateStr).getMonth() + 1}/${new Date(ev.startAt || ev.dateStr).getDate()}(${["日", "月", "火", "水", "木", "金", "土"][new Date(ev.startAt || ev.dateStr).getDay()]})`,
+          dateStr: resolvedDateStr,
+          date:
+            ev.date ||
+            `${fallbackDateObj.getMonth() + 1}/${fallbackDateObj.getDate()}(${["日", "月", "火", "水", "木", "金", "土"][fallbackDateObj.getDay()]})`,
           hasPm,
           eventType: (ev.amType || ev.eventType || "practice") as "match" | "practice" | "camp" | "off",
           time: amTime,
@@ -380,7 +447,7 @@ export function HubHeroSection({
           amTime,
           amLocation,
           pmType: (ev.pmType || (hasPm ? (ev.eventType || "practice") : "off")) as "match" | "practice" | "camp" | "off",
-          pmTime: hasPm ? (pmTime || "13:00〜17:00") : "",
+          pmTime: hasPm ? (pmTime || "12:00〜18:00") : "",
           pmLocation: hasPm ? (pmLocation || amLocation) : "",
           targetGroup: ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体"),
           dutyGroup: ev.dutyGroup || "1班",
@@ -389,6 +456,8 @@ export function HubHeroSection({
           needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
           memo: ev.memo || ev.description || "",
           activityGroups: (ev.activityGroups && Array.isArray(ev.activityGroups)) ? ev.activityGroups : undefined,
+          attendCount: ev.attendCount ?? null,
+          groupAttendCount: ev.groupAttendCount ?? null,
         };
       };
 
@@ -412,10 +481,15 @@ export function HubHeroSection({
     }
 
     // デモチームの場合のみデフォルト活動を表示
+    const satIso = `${satDate.getFullYear()}-${String(satDate.getMonth() + 1).padStart(2, "0")}-${String(satDate.getDate()).padStart(2, "0")}`;
+    const sunDateObj = new Date(satDate.getTime() + 86400000);
+    const sunIso = `${sunDateObj.getFullYear()}-${String(sunDateObj.getMonth() + 1).padStart(2, "0")}-${String(sunDateObj.getDate()).padStart(2, "0")}`;
+
     const defaultEvents = [
       {
         id: "ev-sat-1",
         title: "秋季大会 2回戦 vs レッドソックス",
+        dateStr: satIso,
         date: `${satStr}(土)`,
         hasPm: false,
         eventType: "match" as const,
@@ -434,20 +508,23 @@ export function HubHeroSection({
         needsSnack: true,
         memo: "ユニフォーム正装・スパイク着用。雨天時は7:00にLINE連絡します。",
         activityGroups: undefined as Array<{ id: string; name: string; time?: string; location?: string; eventType?: string }> | undefined,
+        attendCount: { present: 15, absent: 3, pending: 0, total: 18 },
+        groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
       },
       {
         id: "ev-sun-2",
         title: "全日通常練習 & 守備連携・走塁強化",
-        date: `${new Date(satDate.getTime() + 86400000).getMonth() + 1}/${new Date(satDate.getTime() + 86400000).getDate()}(日)`,
+        dateStr: sunIso,
+        date: `${sunDateObj.getMonth() + 1}/${sunDateObj.getDate()}(日)`,
         hasPm: true,
         eventType: "practice" as const,
-        time: "08:00〜17:00",
+        time: "08:00〜16:00",
         location: "大師河原第3G",
         amType: "practice" as const,
         amTime: "08:00〜12:00",
         amLocation: "大師河原第3G",
         pmType: "practice" as const,
-        pmTime: "13:00〜17:00",
+        pmTime: "12:00〜16:00",
         pmLocation: "大師河原第3G",
         targetGroup: "全体",
         dutyGroup: "2班",
@@ -456,6 +533,8 @@ export function HubHeroSection({
         needsSnack: false,
         memo: "水分補給のドリンク多めに持参してください。",
         activityGroups: undefined as Array<{ id: string; name: string; time?: string; location?: string; eventType?: string }> | undefined,
+        attendCount: { present: 13, absent: 3, pending: 2, total: 18 },
+        groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[1],
       },
     ];
 
@@ -545,7 +624,7 @@ export function HubHeroSection({
           {isLoading ? (
             <MatchScoreCardSkeleton hasVideo={true} />
           ) : recentMatch ? (
-            <MatchScoreCard match={recentMatch as any} teamName={teamName} initialExpanded={true} />
+            <MatchScoreCard match={recentMatch as MatchCardData} teamName={teamName} initialExpanded={true} />
           ) : (
             <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
               <Trophy className="w-8 h-8 text-muted-foreground/40 mx-auto" />
@@ -986,8 +1065,16 @@ export function HubHeroSection({
                         </div>
                       </div>
 
-                      {/* 🌟 出欠回答エリア (アコーディオン化・デフォルト閉じ) */}
+                      {/* 🌟 グループ別出欠サマリー ＆ 出欠回答エリア (アコーディオン化・デフォルト閉じ) */}
                       <div className="pt-2 border-t border-border/60 space-y-2">
+                        <EventGroupAttendanceSummary
+                          compact
+                          groupAttendCount={ev.groupAttendCount}
+                          attendCount={ev.attendCount}
+                          statusConfig={attendanceStatusConfig}
+                          dateStr={ev.dateStr}
+                        />
+
                         {/* アコーディオントグルボタン */}
                         <button
                           type="button"

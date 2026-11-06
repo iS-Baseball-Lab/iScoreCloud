@@ -28,6 +28,11 @@ import { cn } from "@/lib/utils";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
+  LiffSelect,
+  type LiffSelectBadgeTone,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
+import {
   LiffToolSubNav,
   LiffToolOtherLinks,
 } from "@/components/liff/LiffToolSubNav";
@@ -1385,6 +1390,81 @@ function LiffNewsGeneratorContent() {
       (activeBundle.scorebookSnapshot || activeBundle.playLogs.length > 0)
   );
 
+  const matchSelectOptions = useMemo<LiffSelectOption[]>(() => {
+    const bucketOrder: Record<string, number> = {
+      live: 0,
+      scheduled: 1,
+      finished: 2,
+    };
+    const orderedMatches = [...matches].sort(
+      (a, b) => (bucketOrder[a.status] ?? 3) - (bucketOrder[b.status] ?? 3)
+    );
+
+    const items: LiffSelectOption[] = orderedMatches.map((m) => {
+      const dateDisp = formatJapaneseMatchDateLabel(m.date);
+      const venueDisp = m.venueShortName || m.venueName || "";
+      const tournDisp =
+        m.tournamentName && !isGenericMatchTournamentName(m.tournamentName)
+          ? m.tournamentName
+          : m.matchType === "practice"
+          ? practiceMatchLabel
+          : m.tournamentName || "";
+
+      let badge = "中止";
+      let badgeTone: LiffSelectBadgeTone = "slate";
+      let group = "中止・その他";
+
+      if (m.status === "live") {
+        badge = m.hasCloudDraft ? "試合中・速報あり" : "試合中";
+        badgeTone = "rose";
+        group = "試合中";
+      } else if (m.status === "scheduled") {
+        badge = m.hasCloudDraft ? "予定・速報記録あり" : "予定";
+        badgeTone = "teal";
+        group = "予定の試合";
+      } else if (m.status === "finished") {
+        badge = `終了 ${m.myScore}-${m.opponentScore}${
+          m.hasCloudDraft ? " ☁️" : ""
+        }`;
+        badgeTone = "primary";
+        group = "終了した試合";
+      }
+
+      const subParts = [
+        tournDisp,
+        venueDisp ? `@${venueDisp}` : "",
+        m.hasCloudDraft
+          ? "☁️速報記録あり"
+          : m.hasScorebook
+          ? "📖スコア記録あり"
+          : "",
+      ].filter(Boolean);
+
+      return {
+        value: m.id,
+        label: `${dateDisp} 対${m.opponent}`,
+        sublabel: subParts.length > 0 ? subParts.join(" ・ ") : undefined,
+        badge,
+        badgeTone,
+        group,
+        keywords: `${m.opponent} ${m.date} ${dateDisp} ${venueDisp} ${tournDisp}`,
+      };
+    });
+
+    items.push({
+      value: FREE_MATCH_KEY,
+      label: "＋ 試合データなしで新規手入力（フリー作成）",
+      sublabel:
+        "試合予定を登録せずに、その場で対戦相手・会場・スタメンを入力して作成します",
+      badge: "フリー作成",
+      badgeTone: "amber",
+      group: "フリー作成",
+      keywords: "フリー 新規 手入力 自由作成",
+    });
+
+    return items;
+  }, [matches, practiceMatchLabel]);
+
   return (
     <div className="flex flex-col flex-1">
       <LiffHeader />
@@ -1451,34 +1531,17 @@ function LiffNewsGeneratorContent() {
             {isLoadingContext ? (
               <div className="h-10 rounded-xl bg-muted animate-pulse" />
             ) : (
-              <select
+              <LiffSelect
                 value={selectedMatchKey}
-                onChange={(e) => void handleSelectMatchKey(e.target.value)}
-                className="w-full h-11 rounded-xl border border-border bg-muted/45 px-3 text-xs font-black text-foreground outline-none focus:border-primary"
-              >
-                {matches.map((m) => {
-                  const stLabel =
-                    m.status === "live"
-                      ? "【試合中】"
-                      : m.status === "scheduled"
-                      ? "【予定】"
-                      : m.status === "finished"
-                      ? `【終了 ${m.myScore}-${m.opponentScore}】`
-                      : "【中止】";
-                  const dateDisp = formatJapaneseMatchDateLabel(m.date);
-                  const draftMark = m.hasCloudDraft ? " ☁️速報記録あり" : "";
-                  return (
-                    <option key={m.id} value={m.id}>
-                      {stLabel} {dateDisp} 対{m.opponent}
-                      {m.venueShortName ? ` @${m.venueShortName}` : ""}
-                      {draftMark}
-                    </option>
-                  );
-                })}
-                <option value={FREE_MATCH_KEY}>
-                  ＋ 試合データなしで新規手入力（フリー作成）
-                </option>
-              </select>
+                onChange={(val) => void handleSelectMatchKey(val)}
+                options={matchSelectOptions}
+                title="対象の試合を選択"
+                subtitle="予定・終了試合との連携、またはフリー作成を選べます"
+                searchable={true}
+                searchPlaceholder="対戦相手・日付・会場名で検索..."
+                size="md"
+                className="w-full"
+              />
             )}
 
             {/* 記録済みスコア一括取込 ＆ リセットボタン */}

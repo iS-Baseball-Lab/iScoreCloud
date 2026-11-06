@@ -5,6 +5,10 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  LiffSelect,
+  type LiffSelectBadgeTone,
+} from "@/components/liff/LiffSelect";
 import type {
   SimpleCarpoolContextResponse,
   SimpleCarpoolDriverCandidate,
@@ -637,21 +641,36 @@ export function SimpleCarpoolEditorModal({
                       <label className="block text-[11px] font-black text-muted-foreground">
                         配車を設定する予定
                       </label>
-                      <select
+                      <LiffSelect
                         value={selectedEventId}
-                        onChange={(e) => handleSwitchEvent(e.target.value)}
-                        className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-black"
-                      >
-                        {ctx.events.map((ev) => (
-                          <option key={ev.id} value={ev.id}>
-                            {ev.dateLabel} {ev.timeLabel}〜 {ev.title}
-                            {ev.carCount > 0 ? `（登録済:${ev.carCount}台）` : ""}
-                          </option>
-                        ))}
-                        <option value="__new__">
-                          ＋ 新しい遠征・配車日程を作成する
-                        </option>
-                      </select>
+                        onChange={(val) => handleSwitchEvent(val)}
+                        options={[
+                          ...ctx.events.map((ev) => ({
+                            value: ev.id,
+                            label: `${ev.dateLabel} ${ev.timeLabel}〜 ${ev.title}`,
+                            badge:
+                              ev.carCount > 0
+                                ? `登録済:${ev.carCount}台`
+                                : undefined,
+                            badgeTone: "teal" as const,
+                            group: "登録済みのチーム予定",
+                          })),
+                          {
+                            value: "__new__",
+                            label: "＋ 新しい遠征・配車日程を作成する",
+                            sublabel:
+                              "予定表にない日程をその場で作成して配車を設定します",
+                            badge: "新規作成",
+                            badgeTone: "amber" as const,
+                            group: "新規作成",
+                          },
+                        ]}
+                        title="配車を設定する予定を選択"
+                        accent="teal"
+                        searchable={true}
+                        searchPlaceholder="日付・予定タイトルで検索..."
+                        className="w-full bg-background"
+                      />
                     </div>
                   ) : (
                     <div className="space-y-2.5 p-2.5 rounded-xl bg-muted/60 border border-border">
@@ -862,40 +881,65 @@ export function SimpleCarpoolEditorModal({
                           <label className="block text-[11px] font-black text-muted-foreground">
                             運転手
                           </label>
-                          <select
+                          <LiffSelect
                             value={slot.driverMemberId}
-                            onChange={(e) =>
-                              handleDriverChange(slot.localKey, e.target.value)
+                            onChange={(val) =>
+                              handleDriverChange(slot.localKey, val)
                             }
-                            className="w-full h-9 px-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-black"
-                          >
-                            {(ctx?.drivers || []).map((d) => {
-                              const assignedNum =
-                                assignmentLookup.driverCarNumByMemberId.get(
-                                  d.memberId
+                            options={[
+                              ...(ctx?.drivers || []).map((d) => {
+                                const assignedNum =
+                                  assignmentLookup.driverCarNumByMemberId.get(
+                                    d.memberId
+                                  );
+                                const lockedOther = Boolean(
+                                  assignedNum && assignedNum !== carNumber
                                 );
-                              const lockedOther = Boolean(
-                                assignedNum && assignedNum !== carNumber
-                              );
-                              const carHint = d.cars[0]
-                                ? ` [${d.cars[0].name}・${d.cars[0].capacity}席]`
-                                : "";
-                              return (
-                                <option
-                                  key={d.memberId}
-                                  value={d.memberId}
-                                  disabled={lockedOther}
-                                >
-                                  {d.hasCarOffer ? "🚗 " : ""}
-                                  {d.name} ({d.roleLabel}){carHint}
-                                  {lockedOther ? ` — ${assignedNum}号車で選択中` : ""}
-                                </option>
-                              );
-                            })}
-                            <option value="__custom__">
-                              ＋ 運転手名を手入力する
-                            </option>
-                          </select>
+                                const carSummary = d.cars[0]
+                                  ? `${d.cars[0].name}・${d.cars[0].capacity}席${
+                                      d.cars[0].isCargo ? "（道具車）" : ""
+                                    }`
+                                  : undefined;
+                                return {
+                                  value: d.memberId,
+                                  label: `${d.hasCarOffer ? "🚗 " : ""}${
+                                    d.name
+                                  } (${d.roleLabel})`,
+                                  badge: lockedOther
+                                    ? `${assignedNum}号車で選択中`
+                                    : d.hasCarOffer
+                                    ? "車出しOK"
+                                    : undefined,
+                                  badgeTone: (lockedOther
+                                    ? "slate"
+                                    : "teal") as LiffSelectBadgeTone,
+                                  sublabel: lockedOther
+                                    ? `他の号車（${assignedNum}号車）で割当済のため選択できません${
+                                        carSummary ? ` / ${carSummary}` : ""
+                                      }`
+                                    : carSummary,
+                                  disabled: lockedOther,
+                                  keywords: `${d.name} ${d.roleLabel} ${
+                                    carSummary || ""
+                                  }`,
+                                };
+                              }),
+                              {
+                                value: "__custom__",
+                                label: "＋ 運転手名を手入力する",
+                                sublabel:
+                                  "名簿にない保護者・スタッフの氏名と車両を手動で入力します",
+                                badge: "手入力",
+                                badgeTone: "amber" as const,
+                              },
+                            ]}
+                            title={`${carNumber}号車の運転手を選択`}
+                            accent="teal"
+                            size="sm"
+                            searchable={true}
+                            searchPlaceholder="運転手名・車両名で検索..."
+                            className="w-full h-9 bg-background"
+                          />
 
                           {slot.driverMemberId === "__custom__" && (
                             <input
@@ -924,10 +968,10 @@ export function SimpleCarpoolEditorModal({
                               車両名（任意）
                             </label>
                             {selectedDriver && selectedDriver.cars.length > 1 ? (
-                              <select
+                              <LiffSelect
                                 value={slot.carId || ""}
-                                onChange={(e) => {
-                                  const nextCarId = e.target.value || null;
+                                onChange={(val) => {
+                                  const nextCarId = val || null;
                                   const foundCar = selectedDriver.cars.find(
                                     (mc) => mc.carId === nextCarId
                                   );
@@ -949,14 +993,21 @@ export function SimpleCarpoolEditorModal({
                                     )
                                   );
                                 }}
-                                className="w-full h-9 px-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
-                              >
-                                {selectedDriver.cars.map((mc) => (
-                                  <option key={mc.carId} value={mc.carId}>
-                                    {mc.name}（定員{mc.capacity}）
-                                  </option>
-                                ))}
-                              </select>
+                                options={selectedDriver.cars.map((mc) => ({
+                                  value: mc.carId,
+                                  label: `${mc.name}（定員${mc.capacity}）`,
+                                  badge: mc.isCargo ? "道具車" : undefined,
+                                  badgeTone: "amber" as const,
+                                  sublabel: mc.numberPlate
+                                    ? `ナンバー: ${mc.numberPlate}`
+                                    : undefined,
+                                }))}
+                                title={`${selectedDriver.name}の車両を選択`}
+                                accent="teal"
+                                size="sm"
+                                searchable={false}
+                                className="w-full h-9 bg-background"
+                              />
                             ) : (
                               <input
                                 type="text"

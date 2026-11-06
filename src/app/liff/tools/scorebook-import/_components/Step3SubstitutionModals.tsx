@@ -27,6 +27,10 @@ import {
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
 import type { PinchRunnerApplyParams } from "./RunnerSituationPanel";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 
 export type BatterChangeMode = "PH" | "DEF" | "STARTER" | "SINGLE_AB";
 export type PitcherChangeMode = "FROM_HERE" | "SINGLE_AB";
@@ -970,10 +974,9 @@ export function AtBatPlayerSubstitutionPanel({
               </div>
 
               {structure.isMyTeamBatting && roster.length > 0 && (
-                <select
+                <LiffSelect
                   value={batterRosterId}
-                  onChange={(e) => {
-                    const pid = e.target.value;
+                  onChange={(pid) => {
                     setBatterRosterId(pid);
                     const matched = roster.find((p) => p.id === pid);
                     if (matched) {
@@ -984,30 +987,45 @@ export function AtBatPlayerSubstitutionPanel({
                       }
                     }
                   }}
-                  className="w-full h-9 px-2.5 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
-                >
-                  <option value="">
-                    登録メンバーから選択（または下に直接入力）
-                  </option>
-                  {benchBatters.length > 0 && (
-                    <optgroup label="控え・未出場メンバー（推奨）">
-                      {benchBatters.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          #{p.uniformNumber} {p.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {activeBatters.length > 0 && (
-                    <optgroup label="出場中メンバー">
-                      {activeBatters.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          #{p.uniformNumber} {p.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                  title={`${atBat.battingOrder}番の交代・変更選手を選択`}
+                  searchable={true}
+                  searchPlaceholder="背番号・選手名で検索..."
+                  size="sm"
+                  className="w-full bg-muted"
+                  ariaLabel="登録メンバーから打者を選択"
+                  options={[
+                    {
+                      value: "",
+                      label: "登録メンバーから選択（または下に直接入力）",
+                    },
+                    ...benchBatters.map(
+                      (p): LiffSelectOption => ({
+                        value: p.id,
+                        label: `#${p.uniformNumber} ${p.name}`,
+                        group: "控え・未出場メンバー（推奨）",
+                        sublabel: p.primaryPosition
+                          ? `主守備: ${p.primaryPosition}`
+                          : undefined,
+                        keywords: `${p.uniformNumber} ${p.name} ${
+                          p.nameKana || ""
+                        }`,
+                      })
+                    ),
+                    ...activeBatters.map(
+                      (p): LiffSelectOption => ({
+                        value: p.id,
+                        label: `#${p.uniformNumber} ${p.name}`,
+                        group: "出場中メンバー",
+                        sublabel: p.primaryPosition
+                          ? `主守備: ${p.primaryPosition}`
+                          : undefined,
+                        keywords: `${p.uniformNumber} ${p.name} ${
+                          p.nameKana || ""
+                        }`,
+                      })
+                    ),
+                  ]}
+                />
               )}
 
               <div className="grid grid-cols-12 gap-1.5">
@@ -1036,19 +1054,17 @@ export function AtBatPlayerSubstitutionPanel({
                   placeholder="交代後の打者名を入力"
                   className="col-span-5 h-9 px-2.5 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
                 />
-                <select
+                <LiffSelect
                   value={batterPos}
-                  onChange={(e) => setBatterPos(e.target.value)}
-                  aria-label="守備位置"
+                  onChange={(val) => setBatterPos(val)}
+                  title="守備位置を選択"
+                  size="sm"
+                  searchable={false}
                   disabled={batterMode === "PH" || batterMode === "SINGLE_AB"}
-                  className="col-span-4 h-9 px-1.5 rounded-xl bg-muted border border-border text-[11px] font-black text-foreground disabled:opacity-45"
-                >
-                  {POSITION_OPTIONS.map((po) => (
-                    <option key={po.value} value={po.value}>
-                      {po.label}
-                    </option>
-                  ))}
-                </select>
+                  className="col-span-4 w-full bg-muted"
+                  ariaLabel="守備位置"
+                  options={POSITION_OPTIONS}
+                />
               </div>
 
               <div className="flex items-center justify-between gap-2 pt-0.5">
@@ -1136,10 +1152,9 @@ export function AtBatPlayerSubstitutionPanel({
               )}
 
               {!structure.isMyTeamBatting && roster.length > 0 && (
-                <select
+                <LiffSelect
                   value={pitcherRosterId}
-                  onChange={(e) => {
-                    const pid = e.target.value;
+                  onChange={(pid) => {
                     setPitcherRosterId(pid);
                     const matched = roster.find((p) => p.id === pid);
                     if (matched) {
@@ -1147,30 +1162,45 @@ export function AtBatPlayerSubstitutionPanel({
                       setPitcherUniform(matched.uniformNumber || "");
                     }
                   }}
-                  className="w-full h-9 px-2.5 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
-                >
-                  <option value="">
-                    自チーム登録メンバーから投手を選択
-                  </option>
-                  {benchPitchers.length > 0 && (
-                    <optgroup label="未登板メンバー（推奨）">
-                      {benchPitchers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          #{p.uniformNumber} {p.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {activePitchers.length > 0 && (
-                    <optgroup label="登板済メンバー">
-                      {activePitchers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          #{p.uniformNumber} {p.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+                  title="自チーム登録メンバーから投手を選択"
+                  searchable={true}
+                  searchPlaceholder="背番号・選手名で検索..."
+                  size="sm"
+                  className="w-full bg-muted"
+                  ariaLabel="自チーム登録メンバーから投手を選択"
+                  options={[
+                    {
+                      value: "",
+                      label: "自チーム登録メンバーから投手を選択",
+                    },
+                    ...benchPitchers.map(
+                      (p): LiffSelectOption => ({
+                        value: p.id,
+                        label: `#${p.uniformNumber} ${p.name}`,
+                        group: "未登板メンバー（推奨）",
+                        sublabel: p.primaryPosition
+                          ? `主守備: ${p.primaryPosition}`
+                          : undefined,
+                        keywords: `${p.uniformNumber} ${p.name} ${
+                          p.nameKana || ""
+                        }`,
+                      })
+                    ),
+                    ...activePitchers.map(
+                      (p): LiffSelectOption => ({
+                        value: p.id,
+                        label: `#${p.uniformNumber} ${p.name}`,
+                        group: "登板済メンバー",
+                        sublabel: p.primaryPosition
+                          ? `主守備: ${p.primaryPosition}`
+                          : undefined,
+                        keywords: `${p.uniformNumber} ${p.name} ${
+                          p.nameKana || ""
+                        }`,
+                      })
+                    ),
+                  ]}
+                />
               )}
 
               <div className="grid grid-cols-12 gap-1.5">
@@ -1449,11 +1479,15 @@ export function Step3QuickSubstitutionModal({
                             className="p-2 rounded-xl bg-card border border-border flex items-center justify-between gap-2"
                           >
                             <div className="flex items-center gap-1.5 flex-wrap min-w-0 text-[11px] font-black text-foreground">
-                              <select
-                                value={sub.inningEntered}
-                                aria-label="交代イニング"
-                                onChange={(e) => {
-                                  const nextInn = Number(e.target.value);
+                              <LiffSelect
+                                value={String(sub.inningEntered)}
+                                ariaLabel="交代イニング"
+                                title="交代イニングを変更"
+                                size="xs"
+                                searchable={false}
+                                className="bg-muted shrink-0"
+                                onChange={(val) => {
+                                  const nextInn = Number(val);
                                   const nextStruct: ScorebookSheetStructure = {
                                     ...structure,
                                     batters: structure.batters.map((b) =>
@@ -1476,14 +1510,11 @@ export function Step3QuickSubstitutionModal({
                                   };
                                   applyStructureChangeAndSync(nextStruct);
                                 }}
-                                className="h-7 px-1.5 rounded-lg bg-muted border border-border text-[10px] font-black text-foreground"
-                              >
-                                {inningOptions.map((n) => (
-                                  <option key={n} value={n}>
-                                    {n}回
-                                  </option>
-                                ))}
-                              </select>
+                                options={inningOptions.map((n) => ({
+                                  value: String(n),
+                                  label: `${n}回`,
+                                }))}
+                              />
                               <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
                                 {SUB_TYPE_LABELS[sub.subType]}
                               </span>
@@ -1520,42 +1551,47 @@ export function Step3QuickSubstitutionModal({
                     {isAddingHere && (
                       <div className="p-2.5 rounded-xl bg-card border border-primary/35 space-y-2">
                         <div className="grid grid-cols-12 gap-1.5">
-                          <select
-                            value={draftInning}
-                            onChange={(e) =>
-                              setDraftInning(Number(e.target.value))
-                            }
-                            aria-label="出場イニング"
-                            className="col-span-4 h-9 px-2 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
-                          >
-                            {inningOptions.map((n) => (
-                              <option key={n} value={n}>
-                                {n}回〜
-                              </option>
-                            ))}
-                          </select>
-                          <select
+                          <LiffSelect
+                            value={String(draftInning)}
+                            onChange={(val) => setDraftInning(Number(val))}
+                            title="出場イニングを選択"
+                            size="xs"
+                            searchable={false}
+                            className="col-span-4 w-full bg-muted"
+                            ariaLabel="出場イニング"
+                            options={inningOptions.map((n) => ({
+                              value: String(n),
+                              label: `${n}回〜`,
+                            }))}
+                          />
+                          <LiffSelect
                             value={draftSubType}
-                            onChange={(e) =>
+                            onChange={(val) =>
                               setDraftSubType(
-                                e.target.value as ScorebookSubstitution["subType"]
+                                val as ScorebookSubstitution["subType"]
                               )
                             }
-                            aria-label="交代種別"
-                            className="col-span-8 h-9 px-2 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
-                          >
-                            <option value="PH">代打 (PH)</option>
-                            <option value="PR">代走 (PR)・以降も出場</option>
-                            <option value="TR">臨時代走 (TR)・この回のみ</option>
-                            <option value="DEF">守備交代・途中出場</option>
-                          </select>
+                            title="交代種別を選択"
+                            size="xs"
+                            searchable={false}
+                            className="col-span-8 w-full bg-muted"
+                            ariaLabel="交代種別"
+                            options={[
+                              { value: "PH", label: "代打 (PH)" },
+                              { value: "PR", label: "代走 (PR)・以降も出場" },
+                              {
+                                value: "TR",
+                                label: "臨時代走 (TR)・この回のみ",
+                              },
+                              { value: "DEF", label: "守備交代・途中出場" },
+                            ]}
+                          />
                         </div>
 
                         {structure.isMyTeamBatting && roster.length > 0 && (
-                          <select
+                          <LiffSelect
                             value={draftRosterId}
-                            onChange={(e) => {
-                              const pid = e.target.value;
+                            onChange={(pid) => {
                               setDraftRosterId(pid);
                               const matched = roster.find((p) => p.id === pid);
                               if (matched) {
@@ -1566,30 +1602,46 @@ export function Step3QuickSubstitutionModal({
                                 }
                               }
                             }}
-                            className="w-full h-9 px-2.5 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
-                          >
-                            <option value="">
-                              登録メンバーから選択（または下に直接入力）
-                            </option>
-                            {benchBatters.length > 0 && (
-                              <optgroup label="控え・未出場メンバー（推奨）">
-                                {benchBatters.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    #{p.uniformNumber} {p.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            {activeBatters.length > 0 && (
-                              <optgroup label="出場中メンバー">
-                                {activeBatters.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    #{p.uniformNumber} {p.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                          </select>
+                            title={`${slot.battingOrder}番の途中交代選手を選択`}
+                            searchable={true}
+                            searchPlaceholder="背番号・選手名で検索..."
+                            size="xs"
+                            className="w-full bg-muted"
+                            ariaLabel="登録メンバーから交代選手を選択"
+                            options={[
+                              {
+                                value: "",
+                                label:
+                                  "登録メンバーから選択（または下に直接入力）",
+                              },
+                              ...benchBatters.map(
+                                (p): LiffSelectOption => ({
+                                  value: p.id,
+                                  label: `#${p.uniformNumber} ${p.name}`,
+                                  group: "控え・未出場メンバー（推奨）",
+                                  sublabel: p.primaryPosition
+                                    ? `主守備: ${p.primaryPosition}`
+                                    : undefined,
+                                  keywords: `${p.uniformNumber} ${p.name} ${
+                                    p.nameKana || ""
+                                  }`,
+                                })
+                              ),
+                              ...activeBatters.map(
+                                (p): LiffSelectOption => ({
+                                  value: p.id,
+                                  label: `#${p.uniformNumber} ${p.name}`,
+                                  group: "出場中メンバー",
+                                  sublabel: p.primaryPosition
+                                    ? `主守備: ${p.primaryPosition}`
+                                    : undefined,
+                                  keywords: `${p.uniformNumber} ${p.name} ${
+                                    p.nameKana || ""
+                                  }`,
+                                })
+                              ),
+                            ]}
+                          />
                         )}
 
                         <div className="grid grid-cols-12 gap-1.5">
@@ -1618,19 +1670,17 @@ export function Step3QuickSubstitutionModal({
                             placeholder="交代選手名を入力"
                             className="col-span-5 h-9 px-2.5 rounded-xl bg-muted border border-border text-xs font-black text-foreground"
                           />
-                          <select
+                          <LiffSelect
                             value={draftPosition}
-                            onChange={(e) => setDraftPosition(e.target.value)}
+                            onChange={(val) => setDraftPosition(val)}
+                            title="守備位置を選択"
+                            size="xs"
+                            searchable={false}
                             disabled={draftSubType !== "DEF"}
-                            aria-label="守備位置"
-                            className="col-span-4 h-9 px-1.5 rounded-xl bg-muted border border-border text-[11px] font-black text-foreground disabled:opacity-45"
-                          >
-                            {POSITION_OPTIONS.map((po) => (
-                              <option key={po.value} value={po.value}>
-                                {po.label}
-                              </option>
-                            ))}
-                          </select>
+                            className="col-span-4 w-full h-9 rounded-xl bg-muted"
+                            ariaLabel="守備位置"
+                            options={POSITION_OPTIONS}
+                          />
                         </div>
 
                         <div className="flex items-center justify-end gap-1.5">
@@ -1716,12 +1766,10 @@ export function Step3QuickSubstitutionModal({
                     </span>
 
                     {!structure.isMyTeamBatting && roster.length > 0 ? (
-                      <select
+                      <LiffSelect
                         value={pt.playerId || ""}
-                        onChange={(e) => {
-                          const found = roster.find(
-                            (p) => p.id === e.target.value
-                          );
+                        onChange={(val) => {
+                          const found = roster.find((p) => p.id === val);
                           const nextStruct: ScorebookSheetStructure = {
                             ...structure,
                             pitchers: structure.pitchers.map((item) =>
@@ -1739,19 +1787,35 @@ export function Step3QuickSubstitutionModal({
                           };
                           applyStructureChangeAndSync(nextStruct);
                         }}
-                        className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        <option value="">
-                          {pt.name
-                            ? `手入力: ${pt.name}`
-                            : "-- 自チーム投手を選択 --"}
-                        </option>
-                        {roster.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            #{p.uniformNumber} {p.name}
-                          </option>
-                        ))}
-                      </select>
+                        title={`${
+                          idx === 0 ? "先発" : `${idx + 1}番手`
+                        }投手を選択`}
+                        searchable={true}
+                        searchPlaceholder="背番号・選手名で検索..."
+                        size="sm"
+                        className="flex-1 min-w-0"
+                        ariaLabel="自チーム投手を選択"
+                        options={[
+                          {
+                            value: "",
+                            label: pt.name
+                              ? `手入力: ${pt.name}`
+                              : "-- 自チーム投手を選択 --",
+                          },
+                          ...roster.map(
+                            (p): LiffSelectOption => ({
+                              value: p.id,
+                              label: `#${p.uniformNumber} ${p.name}`,
+                              sublabel: p.primaryPosition
+                                ? `主守備: ${p.primaryPosition}`
+                                : undefined,
+                              keywords: `${p.uniformNumber} ${p.name} ${
+                                p.nameKana || ""
+                              }`,
+                            })
+                          ),
+                        ]}
+                      />
                     ) : (
                       <>
                         <input
@@ -1870,11 +1934,15 @@ export function Step3QuickSubstitutionModal({
                       担当イニング
                     </span>
                     <div className="flex items-center gap-1.5">
-                      <select
-                        value={pt.fromInning}
-                        aria-label="登板開始イニング"
-                        onChange={(e) => {
-                          const nextFrom = Number(e.target.value);
+                      <LiffSelect
+                        value={String(pt.fromInning)}
+                        ariaLabel="登板開始イニング"
+                        title="登板開始イニングを選択"
+                        size="xs"
+                        searchable={false}
+                        className="min-w-[4.25rem]"
+                        onChange={(val) => {
+                          const nextFrom = Number(val);
                           const nextPitchers = structure.pitchers.map(
                             (item, pIdx) => {
                               if (item.id === pt.id) {
@@ -1902,22 +1970,23 @@ export function Step3QuickSubstitutionModal({
                             pitchers: nextPitchers,
                           });
                         }}
-                        className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        {inningOptions.map((n) => (
-                          <option key={n} value={n}>
-                            {n}回
-                          </option>
-                        ))}
-                      </select>
+                        options={inningOptions.map((n) => ({
+                          value: String(n),
+                          label: `${n}回`,
+                        }))}
+                      />
                       <span className="text-xs font-black text-muted-foreground">
                         〜
                       </span>
-                      <select
-                        value={pt.toInning}
-                        aria-label="登板終了イニング"
-                        onChange={(e) => {
-                          const nextTo = Number(e.target.value);
+                      <LiffSelect
+                        value={String(pt.toInning)}
+                        ariaLabel="登板終了イニング"
+                        title="登板終了イニングを選択"
+                        size="xs"
+                        searchable={false}
+                        className="min-w-[4.25rem]"
+                        onChange={(val) => {
+                          const nextTo = Number(val);
                           const nextPitchers = structure.pitchers.map(
                             (item) =>
                               item.id === pt.id
@@ -1936,14 +2005,11 @@ export function Step3QuickSubstitutionModal({
                             pitchers: nextPitchers,
                           });
                         }}
-                        className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        {inningOptions.map((n) => (
-                          <option key={n} value={n}>
-                            {n}回
-                          </option>
-                        ))}
-                      </select>
+                        options={inningOptions.map((n) => ({
+                          value: String(n),
+                          label: `${n}回`,
+                        }))}
+                      />
                     </div>
                   </div>
                 </div>

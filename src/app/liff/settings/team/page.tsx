@@ -17,9 +17,12 @@ import {
   Trash2,
   Loader2,
   RotateCcw,
+  Clock,
+  CalendarDays,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import {
   DEMO_TEAM_DEFAULT_LOGO_URL,
   useLiff,
@@ -27,6 +30,18 @@ import {
 } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { saveTeamPracticeMatchLabel } from "@/lib/liff/score-settings";
+import {
+  DEFAULT_TEAM_SCHEDULE_TIMES,
+  SCHEDULE_TIME_OPTIONS,
+  buildContiguousMonths,
+  detectContiguousMonthRange,
+  formatMonthSetLabel,
+  getWinterMonths,
+  loadCachedTeamScheduleDefaultTimes,
+  normalizeTeamScheduleDefaultTimes,
+  saveCachedTeamScheduleDefaultTimes,
+  type TeamScheduleDefaultTimes,
+} from "@/lib/liff/schedule-default-times";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   PRACTICE_MATCH_LABEL_PRESETS,
@@ -45,6 +60,13 @@ interface TeamLogoApiResponse {
 
 interface SavePracticeLabelApiResponse {
   success: boolean;
+  error?: string;
+}
+
+interface ScheduleDefaultTimesApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  scheduleDefaultTimes?: unknown;
   error?: string;
 }
 
@@ -119,6 +141,19 @@ const ORGANIZATION_CATEGORIES = [
   { id: "general_hard", label: "一般硬式・大学・社会人" },
 ];
 
+const ORGANIZATION_CATEGORY_OPTIONS: LiffSelectOption[] = ORGANIZATION_CATEGORIES.map((c) => ({
+  value: c.id,
+  label: c.label,
+}));
+
+const MONTH_SELECT_OPTIONS: LiffSelectOption[] = Array.from({ length: 12 }, (_, idx) => {
+  const m = idx + 1;
+  return {
+    value: String(m),
+    label: `${m}月`,
+  };
+});
+
 const DEFAULT_TARGET_GROUPS = [
   "全体",
   "Aチーム",
@@ -149,6 +184,12 @@ export default function LiffTeamSettingsPage() {
   );
   const [newGroupInput, setNewGroupInput] = useState("");
 
+  // ⏰ 予定スケジューラーの初期時間設定（午前・午後／季節別）
+  const [scheduleTimes, setScheduleTimes] = useState<TeamScheduleDefaultTimes>(() =>
+    loadCachedTeamScheduleDefaultTimes(currentTeam?.id || "demo-team")
+  );
+  const [isSavingScheduleTimes, setIsSavingScheduleTimes] = useState(false);
+
   useEffect(() => {
     setCustomPracticeLabelInput(activePracticeLabel);
   }, [activePracticeLabel, currentTeam?.id]);
@@ -157,10 +198,31 @@ export default function LiffTeamSettingsPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const tid = currentTeam?.id || "default";
+    const tid = currentTeam?.id || "demo-team";
     const savedName = localStorage.getItem(`iscore_team_name_${tid}`);
     setTeamName(currentTeam?.name || savedName || "");
     setLogoPreviewUrl(currentTeam?.logoImageUrl || null);
+    setScheduleTimes(loadCachedTeamScheduleDefaultTimes(tid));
+
+    let cancelled = false;
+    if (tid !== "demo-team" && !currentTeam?.isDemo) {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/liff/schedule-default-times?teamId=${encodeURIComponent(tid)}`
+          );
+          if (!res.ok) return;
+          const data = (await res.json()) as ScheduleDefaultTimesApiResponse;
+          if (!cancelled && data.success && data.scheduleDefaultTimes) {
+            const normalized = normalizeTeamScheduleDefaultTimes(data.scheduleDefaultTimes);
+            setScheduleTimes(normalized);
+            saveCachedTeamScheduleDefaultTimes(tid, normalized);
+          }
+        } catch (err) {
+          console.error("Failed to fetch schedule default times:", err);
+        }
+      })();
+    }
 
     try {
       const savedGroups = localStorage.getItem(`iscore_team_target_groups_${tid}`);
@@ -186,7 +248,11 @@ export default function LiffTeamSettingsPage() {
       setTargetGroups(DEFAULT_TARGET_GROUPS);
       setCategory("gakudou");
     }
-  }, [currentTeam?.id, currentTeam?.name, currentTeam?.logoImageUrl]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTeam?.id, currentTeam?.isDemo, currentTeam?.name, currentTeam?.logoImageUrl]);
 
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -309,8 +375,67 @@ export default function LiffTeamSettingsPage() {
     }
   };
 
+  const persistScheduleDefaultTimes = async (
+    nextConfig: TeamScheduleDefaultTimes,
+    silentToast = false
+  ) => {
+    const targetTeamId = currentTeam?.id || "demo-team";
+    const normalized = normalizeTeamScheduleDefaultTimes(nextConfig);
+    setScheduleTimes(normalized);
+    saveCachedTeamScheduleDefaultTimes(targetTeamId, normalized);
+
+    setIsSavingScheduleTimes(true);
+    try {
+      const res = await fetch("/api/liff/schedule-default-times", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: targetTeamId,
+          scheduleDefaultTimes: normalized,
+        }),
+      });
+      const data = (await res.json()) as ScheduleDefaultTimesApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "初期時間設定の保存に失敗しました");
+      }
+      invalidateLiffApiCache();
+      if (!silentToast) {
+        toast.success("予定スケジューラーの初期時間を保存しました");
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "初期時間設定の保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsSavingScheduleTimes(false);
+    }
+  };
+
+  const handleToggleSummerMonth = (month: number) => {
+    setScheduleTimes((prev) => {
+      const set = new Set(prev.summerMonths);
+      if (set.has(month)) {
+        set.delete(month);
+      } else {
+        set.add(month);
+      }
+      return {
+        ...prev,
+        summerMonths: Array.from(set).sort((a, b) => a - b),
+      };
+    });
+  };
+
+  const handleResetScheduleTimes = () => {
+    const resetValue: TeamScheduleDefaultTimes = {
+      ...DEFAULT_TEAM_SCHEDULE_TIMES,
+      summerMonths: [...DEFAULT_TEAM_SCHEDULE_TIMES.summerMonths],
+    };
+    void persistScheduleDefaultTimes(resetValue, false);
+  };
+
   const handleSaveAll = () => {
-    const tid = currentTeam?.id || "default";
+    const tid = currentTeam?.id || "demo-team";
     saveSetting(`iscore_team_name_${tid}`, teamName);
     saveSetting(`iscore_team_category_${tid}`, category);
     saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
@@ -318,6 +443,7 @@ export default function LiffTeamSettingsPage() {
     if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
       void persistPracticeMatchLabel(trimmedPractice, true);
     }
+    void persistScheduleDefaultTimes(scheduleTimes, true);
     toast.success("チーム設定を保存しました");
   };
 
@@ -487,28 +613,26 @@ export default function LiffTeamSettingsPage() {
             {/* 年代・所属カテゴリ */}
             <div className="space-y-1">
               <label className="text-xs font-black text-foreground">所属カテゴリー（年代区分）</label>
-              <select
+              <LiffSelect
                 value={category}
-                onChange={(e) => {
-                  setCategory(e.target.value);
+                onChange={(nextCat) => {
+                  setCategory(nextCat);
                   // カテゴリに応じてスコア設定の規定イニング初期値を最適化
                   const nextInnings =
-                    e.target.value === "gakudou"
+                    nextCat === "gakudou"
                       ? 6
-                      : e.target.value === "high_school" ||
-                        e.target.value === "general_hard"
+                      : nextCat === "high_school" || nextCat === "general_hard"
                       ? 9
                       : 7;
                   saveSetting("iscore_setting_default_innings", String(nextInnings));
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-              >
-                {ORGANIZATION_CATEGORIES.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                options={ORGANIZATION_CATEGORY_OPTIONS}
+                title="所属カテゴリー（年代区分）を選択"
+                accent="slate"
+                size="md"
+                searchable={false}
+                className="w-full bg-muted/35"
+              />
               <p className="text-[10px] text-muted-foreground font-bold">
                 ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
               </p>
@@ -631,6 +755,309 @@ export default function LiffTeamSettingsPage() {
             </div>
           </div>
         </section>
+
+        {/* ━━━ セクション 3: ⏰ 予定スケジューラーの初期時間設定（午前・午後／季節別） ━━━ */}
+        {(() => {
+          const winterMonths = getWinterMonths(scheduleTimes.summerMonths);
+          const summerRange = detectContiguousMonthRange(scheduleTimes.summerMonths);
+          const summerLabel = formatMonthSetLabel(scheduleTimes.summerMonths);
+          const winterLabel = formatMonthSetLabel(winterMonths);
+
+          return (
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+                    <Clock className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black text-white truncate">
+                      予定スケジューラーの初期時間
+                    </h2>
+                    <p className="text-[10px] font-bold text-slate-300 truncate">
+                      活動日作成時の午前・午後（季節／月別）のデフォルト時間
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
+                  チーム共通
+                </span>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* 1. ☀️ 午前のデフォルト時間 */}
+                <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[10.5px] font-black">
+                        ☀️ 午前
+                      </span>
+                      <span>午前の活動時間（通年共通）</span>
+                    </span>
+                    <span className="text-[10.5px] font-black text-foreground tabular-nums">
+                      {scheduleTimes.amStart}〜{scheduleTimes.amEnd}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                    <LiffSelect
+                      value={scheduleTimes.amStart}
+                      onChange={(val) =>
+                        setScheduleTimes((prev) => ({ ...prev, amStart: val }))
+                      }
+                      options={SCHEDULE_TIME_OPTIONS}
+                      title="午前の開始時刻"
+                      accent="teal"
+                      size="sm"
+                      searchable={false}
+                      className="w-full"
+                    />
+                    <span className="text-xs font-black text-muted-foreground">〜</span>
+                    <LiffSelect
+                      value={scheduleTimes.amEnd}
+                      onChange={(val) =>
+                        setScheduleTimes((prev) => ({ ...prev, amEnd: val }))
+                      }
+                      options={SCHEDULE_TIME_OPTIONS}
+                      title="午前の終了時刻"
+                      accent="teal"
+                      size="sm"
+                      searchable={false}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                {/* 2. 🌙 午後のデフォルト時間（季節・対象月別） */}
+                <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/30 text-[10.5px] font-black">
+                          🌙 午後
+                        </span>
+                        <span>午後の活動時間（対象月で自動切替）</span>
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] font-bold text-muted-foreground leading-relaxed">
+                      日没時間に合わせて、通常期（夏時間）と冬時間の対象月・終了時刻を分けて設定できます。
+                    </p>
+                  </div>
+
+                  {/* 📅 対象月セレクター（範囲一括指定 ＋ 1〜12月個別トグル） */}
+                  <div className="p-3 rounded-xl bg-card border border-border space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1">
+                        <CalendarDays className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span>通常・夏時間の対象月を選択</span>
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        残りの月は自動で冬時間
+                      </span>
+                    </div>
+
+                    {/* 開始月〜終了月の範囲選択 */}
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <LiffSelect
+                        value={String(summerRange?.startMonth ?? (scheduleTimes.summerMonths[0] || 4))}
+                        onChange={(val) => {
+                          const nextStart = Number(val);
+                          const curEnd =
+                            summerRange?.endMonth ??
+                            (scheduleTimes.summerMonths[scheduleTimes.summerMonths.length - 1] || 10);
+                          setScheduleTimes((prev) => ({
+                            ...prev,
+                            summerMonths: buildContiguousMonths(nextStart, curEnd),
+                          }));
+                        }}
+                        options={MONTH_SELECT_OPTIONS}
+                        title="通常・夏時間の開始月"
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                      <span className="text-[11px] font-black text-muted-foreground">〜</span>
+                      <LiffSelect
+                        value={String(
+                          summerRange?.endMonth ??
+                            (scheduleTimes.summerMonths[scheduleTimes.summerMonths.length - 1] || 10)
+                        )}
+                        onChange={(val) => {
+                          const nextEnd = Number(val);
+                          const curStart =
+                            summerRange?.startMonth ?? (scheduleTimes.summerMonths[0] || 4);
+                          setScheduleTimes((prev) => ({
+                            ...prev,
+                            summerMonths: buildContiguousMonths(curStart, nextEnd),
+                          }));
+                        }}
+                        options={MONTH_SELECT_OPTIONS}
+                        title="通常・夏時間の終了月"
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                    </div>
+
+                    {/* 1月〜12月 個別タップ切替ピル */}
+                    <div className="grid grid-cols-6 gap-1.5 pt-0.5">
+                      {Array.from({ length: 12 }, (_, idx) => {
+                        const m = idx + 1;
+                        const isSummer = scheduleTimes.summerMonths.includes(m);
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => handleToggleSummerMonth(m)}
+                            className={cn(
+                              "py-1.5 rounded-lg text-[11px] font-black border transition-all active:scale-95 cursor-pointer tabular-nums",
+                              isSummer
+                                ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-border hover:border-teal-500/40"
+                            )}
+                            title={
+                              isSummer
+                                ? `${m}月: 通常・夏時間（タップで冬時間へ切替）`
+                                : `${m}月: 冬時間（タップで通常・夏時間へ切替）`
+                            }
+                          >
+                            {m}月
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* 区分サマリーバッジ */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px] font-black">
+                      <span className="px-2 py-0.5 rounded-md bg-teal-600 text-white">
+                        ☀️ 通常・夏時間: {summerLabel}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-slate-700 text-white">
+                        ❄️ 冬時間: {winterLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ☀️ 通常・夏時間（例: 4月〜10月）の午後時刻 */}
+                  <div className="p-3 rounded-xl bg-card border border-teal-500/35 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
+                        <span>通常・夏時間の午後（{summerLabel}）</span>
+                      </span>
+                      <span className="text-[10.5px] font-black text-teal-700 dark:text-teal-300 tabular-nums shrink-0">
+                        {scheduleTimes.summerPmStart}〜{scheduleTimes.summerPmEnd}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <LiffSelect
+                        value={scheduleTimes.summerPmStart}
+                        onChange={(val) =>
+                          setScheduleTimes((prev) => ({ ...prev, summerPmStart: val }))
+                        }
+                        options={SCHEDULE_TIME_OPTIONS}
+                        title={`通常・夏時間（${summerLabel}）の午後開始時刻`}
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                      <span className="text-xs font-black text-muted-foreground">〜</span>
+                      <LiffSelect
+                        value={scheduleTimes.summerPmEnd}
+                        onChange={(val) =>
+                          setScheduleTimes((prev) => ({ ...prev, summerPmEnd: val }))
+                        }
+                        options={SCHEDULE_TIME_OPTIONS}
+                        title={`通常・夏時間（${summerLabel}）の午後終了時刻`}
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* ❄️ 冬時間・日没短縮（例: 11月〜3月）の午後時刻 */}
+                  <div className="p-3 rounded-xl bg-card border border-slate-400/50 dark:border-slate-600 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-slate-600 shrink-0" />
+                        <span>冬時間・日没短縮の午後（{winterLabel}）</span>
+                      </span>
+                      <span className="text-[10.5px] font-black text-slate-700 dark:text-slate-300 tabular-nums shrink-0">
+                        {scheduleTimes.winterPmStart}〜{scheduleTimes.winterPmEnd}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                      <LiffSelect
+                        value={scheduleTimes.winterPmStart}
+                        onChange={(val) =>
+                          setScheduleTimes((prev) => ({ ...prev, winterPmStart: val }))
+                        }
+                        options={SCHEDULE_TIME_OPTIONS}
+                        title={`冬時間（${winterLabel}）の午後開始時刻`}
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                      <span className="text-xs font-black text-muted-foreground">〜</span>
+                      <LiffSelect
+                        value={scheduleTimes.winterPmEnd}
+                        onChange={(val) =>
+                          setScheduleTimes((prev) => ({ ...prev, winterPmEnd: val }))
+                        }
+                        options={SCHEDULE_TIME_OPTIONS}
+                        title={`冬時間（${winterLabel}）の午後終了時刻`}
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* セクション内アクションバー（初期値リセット ＆ 即時保存） */}
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={isSavingScheduleTimes}
+                    onClick={handleResetScheduleTimes}
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                    <span>初期値に戻す</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSavingScheduleTimes}
+                    onClick={() => void persistScheduleDefaultTimes(scheduleTimes, false)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingScheduleTimes ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        <span>保存中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-3.5 h-3.5 shrink-0" />
+                        <span>初期時間を保存</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
 
         {/* ━━━ セクション 4: 🏟️ 各種マスタ管理へのクイックアクセス ━━━ */}
         <section className="space-y-2.5">

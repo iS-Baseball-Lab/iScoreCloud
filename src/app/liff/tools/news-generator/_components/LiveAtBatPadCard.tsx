@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   POSITION_OPTIONS,
   buildBattedPlayCandidates,
@@ -1591,10 +1592,10 @@ export function LiveAtBatPadCard({
                       <label className="block text-xs font-black text-muted-foreground">
                         交代する打順枠（以降の打席も自動で新選手名に更新されます）
                       </label>
-                      <select
-                        value={subSlotOrder}
-                        onChange={(e) => {
-                          const ord = Number(e.target.value) || 1;
+                      <LiffSelect
+                        value={String(subSlotOrder)}
+                        onChange={(val) => {
+                          const ord = Number(val) || 1;
                           setSubSlotOrder(ord);
                           const found = activeLineup.find(
                             (s) => s.order === ord
@@ -1603,16 +1604,17 @@ export function LiveAtBatPadCard({
                             setSubNewPos(found.position);
                           }
                         }}
-                        className="w-full h-10 rounded-xl border border-border bg-card px-3 text-xs font-black text-foreground outline-none focus:border-primary"
-                      >
-                        {activeLineup.map((s) => (
-                          <option key={s.order} value={s.order}>
-                            {s.order}番（現在:{" "}
-                            {normalizeReportPositionCode(s.position)}{" "}
-                            {s.playerName || "未登録"}）
-                          </option>
-                        ))}
-                      </select>
+                        options={activeLineup.map((s) => ({
+                          value: String(s.order),
+                          label: `${s.order}番（現在: ${normalizeReportPositionCode(
+                            s.position
+                          )} ${s.playerName || "未登録"}）`,
+                        }))}
+                        title="交代する打順枠を選択"
+                        size="md"
+                        searchable={false}
+                        className="w-full"
+                      />
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
@@ -1620,18 +1622,21 @@ export function LiveAtBatPadCard({
                         <label className="block text-[11px] font-black text-muted-foreground">
                           守備位置
                         </label>
-                        <select
+                        <LiffSelect
                           value={normalizeReportPositionCode(subNewPos)}
-                          onChange={(e) => setSubNewPos(e.target.value)}
-                          className="w-full h-10 rounded-xl border border-border bg-card px-2 text-xs font-black text-foreground outline-none focus:border-primary"
-                        >
-                          {POSITION_OPTIONS.map((p) => (
-                            <option key={p.code} value={p.code}>
-                              {p.shortLabel}
-                            </option>
-                          ))}
-                          <option value="打">打</option>
-                        </select>
+                          onChange={(val) => setSubNewPos(val)}
+                          options={[
+                            ...POSITION_OPTIONS.map((p) => ({
+                              value: p.code,
+                              label: p.shortLabel,
+                            })),
+                            { value: "打", label: "打" },
+                          ]}
+                          title="交代後の守備位置を選択"
+                          size="md"
+                          searchable={false}
+                          className="w-full"
+                        />
                       </div>
 
                       <div className="col-span-2 space-y-1">
@@ -1639,26 +1644,38 @@ export function LiveAtBatPadCard({
                           交代で入る選手（名簿選択 or 手入力）
                         </label>
                         {rosterPlayers.length > 0 && (
-                          <select
+                          <LiffSelect
                             value={subPlayerId}
-                            onChange={(e) => {
-                              const pid = e.target.value;
+                            onChange={(pid) => {
                               setSubPlayerId(pid);
                               const matched = rosterPlayers.find(
                                 (r) => r.id === pid
                               );
                               if (matched) setSubNewName(matched.name);
                             }}
-                            className="w-full h-9 mb-1.5 rounded-xl border border-border bg-muted/50 px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
-                          >
-                            <option value="">チーム名簿から選ぶ...</option>
-                            {rosterPlayers.map((rp) => (
-                              <option key={rp.id} value={rp.id}>
-                                {rp.uniformNumber ? `#${rp.uniformNumber} ` : ""}
-                                {rp.name}
-                              </option>
-                            ))}
-                          </select>
+                            options={[
+                              {
+                                value: "",
+                                label: "チーム名簿から選ぶ...",
+                                sublabel: "手入力する場合は未選択のままでOKです",
+                              },
+                              ...rosterPlayers.map((rp) => ({
+                                value: rp.id,
+                                label: `${
+                                  rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
+                                }${rp.name}`,
+                                badge: rp.mainPosition || undefined,
+                                badgeTone: "slate" as const,
+                                keywords: `${rp.uniformNumber || ""} ${rp.name}`,
+                              })),
+                            ]}
+                            placeholder="チーム名簿から選ぶ..."
+                            title="交代で入る選手を選択"
+                            size="sm"
+                            searchable={true}
+                            searchPlaceholder="選手名・背番号で検索..."
+                            className="w-full h-9 mb-1.5 bg-muted/50"
+                          />
                         )}
                         <input
                           type="text"

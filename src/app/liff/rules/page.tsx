@@ -6,6 +6,10 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -42,6 +46,17 @@ const PdfCanvasViewer = dynamic(
   () => import("@/components/common/PdfCanvasViewer").then((m) => m.PdfCanvasViewer),
   { ssr: false }
 );
+
+const RULE_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "match", label: "🏆 試合・遠征" },
+  { value: "carpool", label: "🚗 配車・送迎" },
+  { value: "duty", label: "📋 当番・保護者" },
+  { value: "venue", label: "🏟️ グラウンド・観戦" },
+  { value: "equipment", label: "⚾ 用具・ユニフォーム" },
+  { value: "safety", label: "☀️ 熱中症・安全管理" },
+  { value: "emergency", label: "🌧️ 雨天・緊急連絡" },
+  { value: "general", label: "💡 その他・心得" },
+];
 
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
@@ -811,7 +826,7 @@ export default function LiffRulesPage() {
       {mounted && previewImageModalUrl && createPortal(
         <div
           onClick={() => setPreviewImageModalUrl(null)}
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200"
         >
           <div className="relative max-w-2xl max-h-[90vh] w-full flex flex-col items-center">
             <button
@@ -835,7 +850,7 @@ export default function LiffRulesPage() {
       {/* 📄 PDF全画面閲覧モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && previewPdfModal && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             className="absolute inset-0"
             onClick={() => setPreviewPdfModal(null)}
@@ -901,7 +916,7 @@ export default function LiffRulesPage() {
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
@@ -998,20 +1013,15 @@ export default function LiffRulesPage() {
                 {/* カテゴリ選択 */}
                 <div className="space-y-1.5">
                   <label className="text-muted-foreground">カテゴリ</label>
-                  <select
+                  <LiffSelect
                     value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  >
-                    <option value="match">🏆 試合・遠征</option>
-                    <option value="carpool">🚗 配車・送迎</option>
-                    <option value="duty">📋 当番・保護者</option>
-                    <option value="venue">🏟️ グラウンド・観戦</option>
-                    <option value="equipment">⚾ 用具・ユニフォーム</option>
-                    <option value="safety">☀️ 熱中症・安全管理</option>
-                    <option value="emergency">🌧️ 雨天・緊急連絡</option>
-                    <option value="general">💡 その他・心得</option>
-                  </select>
+                    onChange={setNewCategory}
+                    options={RULE_CATEGORY_OPTIONS}
+                    title="ルールカテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full"
+                  />
                 </div>
 
                 {/* タイトル */}
@@ -1211,7 +1221,7 @@ export default function LiffRulesPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingRule && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
@@ -1306,20 +1316,15 @@ export default function LiffRulesPage() {
                 {/* カテゴリ選択 */}
                 <div className="space-y-1.5">
                   <label className="text-muted-foreground">カテゴリ</label>
-                  <select
+                  <LiffSelect
                     value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  >
-                    <option value="match">🏆 試合・遠征</option>
-                    <option value="carpool">🚗 配車・送迎</option>
-                    <option value="duty">📋 当番・保護者</option>
-                    <option value="venue">🏟️ グラウンド・観戦</option>
-                    <option value="equipment">⚾ 用具・ユニフォーム</option>
-                    <option value="safety">☀️ 熱中症・安全管理</option>
-                    <option value="emergency">🌧️ 雨天・緊急連絡</option>
-                    <option value="general">💡 その他・心得</option>
-                  </select>
+                    onChange={setEditCategory}
+                    options={RULE_CATEGORY_OPTIONS}
+                    title="ルールカテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full"
+                  />
                 </div>
 
                 {/* タイトル */}

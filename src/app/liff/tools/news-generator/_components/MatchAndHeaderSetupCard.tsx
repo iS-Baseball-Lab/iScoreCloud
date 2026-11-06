@@ -17,6 +17,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   POSITION_OPTIONS,
   deriveScoreboardShortName,
@@ -401,22 +402,23 @@ export function MatchAndHeaderSetupCard({
                   <label className="block text-[10.5px] font-black text-muted-foreground">
                     規定イニング
                   </label>
-                  <select
-                    value={doc.regulationInnings}
-                    onChange={(e) =>
+                  <LiffSelect
+                    value={String(doc.regulationInnings)}
+                    onChange={(val) =>
                       onChangeDoc((p) => ({
                         ...p,
-                        regulationInnings: Number(e.target.value) || 7,
+                        regulationInnings: Number(val) || 7,
                       }))
                     }
-                    className="w-full h-9 rounded-xl border border-border bg-card px-2 text-xs font-black text-foreground outline-none focus:border-primary"
-                  >
-                    {[5, 6, 7, 9].map((n) => (
-                      <option key={n} value={n}>
-                        {n}回制
-                      </option>
-                    ))}
-                  </select>
+                    options={[5, 6, 7, 9].map((n) => ({
+                      value: String(n),
+                      label: `${n}回制`,
+                    }))}
+                    title="規定イニングを選択"
+                    size="sm"
+                    searchable={false}
+                    className="w-full h-9"
+                  />
                 </div>
               </div>
 
@@ -583,31 +585,32 @@ export function MatchAndHeaderSetupCard({
                       {slot.order}
                     </span>
 
-                    <select
+                    <LiffSelect
                       value={normalizeReportPositionCode(slot.position)}
-                      onChange={(e) => {
-                        const val = e.target.value;
+                      onChange={(val) => {
                         onChangeDoc((prev) => {
                           const next = [...prev.lineup];
                           next[index] = { ...next[index], position: val };
                           return { ...prev, lineup: next };
                         });
                       }}
-                      className="h-8 w-20 rounded-lg border border-border bg-card px-1.5 text-xs font-black text-foreground shrink-0 outline-none focus:border-primary"
-                    >
-                      {POSITION_OPTIONS.map((p) => (
-                        <option key={p.code} value={p.code}>
-                          {p.shortLabel}
-                        </option>
-                      ))}
-                      <option value="打">打</option>
-                    </select>
+                      options={[
+                        ...POSITION_OPTIONS.map((p) => ({
+                          value: p.code,
+                          label: p.shortLabel,
+                        })),
+                        { value: "打", label: "打" },
+                      ]}
+                      title={`${slot.order}番の守備位置を選択`}
+                      size="xs"
+                      searchable={false}
+                      className="h-8 w-20 shrink-0"
+                    />
 
                     {rosterPlayers.length > 0 && (
-                      <select
+                      <LiffSelect
                         value={slot.playerId || ""}
-                        onChange={(e) => {
-                          const pid = e.target.value;
+                        onChange={(pid) => {
                           const matched = rosterPlayers.find(
                             (rp) => rp.id === pid
                           );
@@ -623,16 +626,29 @@ export function MatchAndHeaderSetupCard({
                             return { ...prev, lineup: next };
                           });
                         }}
-                        className="h-8 w-28 sm:w-36 rounded-lg border border-border bg-card px-1.5 text-[11px] font-bold text-foreground shrink-0 outline-none focus:border-primary"
-                      >
-                        <option value="">名簿から選択</option>
-                        {rosterPlayers.map((rp) => (
-                          <option key={rp.id} value={rp.id}>
-                            {rp.uniformNumber ? `#${rp.uniformNumber} ` : ""}
-                            {rp.name}
-                          </option>
-                        ))}
-                      </select>
+                        options={[
+                          {
+                            value: "",
+                            label: "名簿から選択",
+                            sublabel: "手入力のままにする場合はこちら",
+                          },
+                          ...rosterPlayers.map((rp) => ({
+                            value: rp.id,
+                            label: `${
+                              rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
+                            }${rp.name}`,
+                            badge: rp.mainPosition || undefined,
+                            badgeTone: "slate" as const,
+                            keywords: `${rp.uniformNumber || ""} ${rp.name}`,
+                          })),
+                        ]}
+                        placeholder="名簿から選択"
+                        title={`${slot.order}番の選手を名簿から選択`}
+                        size="xs"
+                        searchable={true}
+                        searchPlaceholder="選手名・背番号で検索..."
+                        className="h-8 w-28 sm:w-36 shrink-0"
+                      />
                     )}
 
                     <input

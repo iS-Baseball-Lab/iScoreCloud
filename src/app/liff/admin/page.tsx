@@ -33,6 +33,10 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectBadgeTone,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import { Button } from "@/components/ui/button";
@@ -1132,21 +1136,35 @@ export default function LiffAdminDashboardPage() {
                   <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-black shrink-0">1</span>
                   <span>残す名簿データ（手動登録・マスター側）</span>
                 </label>
-                <select
+                <LiffSelect
                   value={mergeTargetMember?.memberId || ""}
-                  onChange={(e) => {
-                    const found = data?.activeMembers?.find((m) => m.memberId === e.target.value);
+                  onChange={(val) => {
+                    const found = data?.activeMembers?.find((m) => m.memberId === val);
                     setMergeTargetMember(found || null);
                   }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                >
-                  <option value="">残すメンバーを選択...</option>
-                  {data?.activeMembers?.map((m) => (
-                    <option key={m.memberId} value={m.memberId}>
-                      {m.name} {!m.userId ? "(手動登録・未連携)" : "(LINE連携済)"} {m.subLabel ? `[${m.subLabel}]` : ""}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "残すメンバーを選択..." },
+                    ...(data?.activeMembers || []).map((m) => ({
+                      value: m.memberId,
+                      label: m.name,
+                      badge: !m.userId ? "手動登録・未連携" : "LINE連携済",
+                      badgeTone: (!m.userId
+                        ? "amber"
+                        : "emerald") as LiffSelectBadgeTone,
+                      sublabel: m.subLabel || undefined,
+                      keywords: `${m.nameKana || ""} ${m.phone || ""} ${
+                        m.subLabel || ""
+                      }`,
+                    })),
+                  ]}
+                  placeholder="残すメンバーを選択..."
+                  title="残す名簿データ（マスター側）を選択"
+                  subtitle="出欠履歴・配車当番・親子関係などの過去データが引き継がれます"
+                  accent="slate"
+                  searchable={true}
+                  searchPlaceholder="氏名・かな・属性で検索..."
+                  className="w-full"
+                />
                 <p className="text-[10px] text-muted-foreground font-medium px-1">
                   ※ 出欠履歴・配車当番・子供との親子関係などの過去データが引き継がれます。
                 </p>
@@ -1158,20 +1176,36 @@ export default function LiffAdminDashboardPage() {
                   <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-[10px] font-black shrink-0">2</span>
                   <span>合流・統合するアカウント（LINE参加側）</span>
                 </label>
-                <select
+                <LiffSelect
                   value={selectedSourceMemberId}
-                  onChange={(e) => setSelectedSourceMemberId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                >
-                  <option value="">統合するアカウントを選択...</option>
-                  {data?.activeMembers
-                    ?.filter((m) => m.memberId !== mergeTargetMember?.memberId)
-                    .map((m) => (
-                      <option key={m.memberId} value={m.memberId}>
-                        {m.name} {m.userId ? "(LINE連携アカウント)" : "(手動)"} {m.phone ? `[${m.phone}]` : ""}
-                      </option>
-                    ))}
-                </select>
+                  onChange={(val) => setSelectedSourceMemberId(val)}
+                  options={[
+                    { value: "", label: "統合するアカウントを選択..." },
+                    ...(data?.activeMembers || [])
+                      .filter((m) => m.memberId !== mergeTargetMember?.memberId)
+                      .map((m) => ({
+                        value: m.memberId,
+                        label: m.name,
+                        badge: m.userId ? "LINE連携アカウント" : "手動",
+                        badgeTone: (m.userId
+                          ? "teal"
+                          : "slate") as LiffSelectBadgeTone,
+                        sublabel: m.phone
+                          ? `TEL: ${m.phone}`
+                          : m.subLabel || undefined,
+                        keywords: `${m.nameKana || ""} ${m.phone || ""} ${
+                          m.subLabel || ""
+                        }`,
+                      })),
+                  ]}
+                  placeholder="統合するアカウントを選択..."
+                  title="合流・統合するアカウントを選択"
+                  subtitle="このアカウントのログイン権限がマスター側へ合流され、重複側は削除されます"
+                  accent="slate"
+                  searchable={true}
+                  searchPlaceholder="氏名・かな・電話番号で検索..."
+                  className="w-full"
+                />
                 <p className="text-[10px] text-muted-foreground font-medium px-1">
                   ※ このアカウントのログイン権限が上記の名簿メンバーに合流され、重複側は削除されます。
                 </p>

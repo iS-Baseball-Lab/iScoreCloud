@@ -5,6 +5,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -48,6 +52,16 @@ interface LinkItem {
   isImportant?: boolean;
   imageUrl?: string | null;
 }
+
+const LINK_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "league", label: "🌐 連盟・協会公式サイト" },
+  { value: "tournament", label: "🏆 大会速報・組み合わせ表" },
+  { value: "weather", label: "☀️ 天気予報・雨雲レーダー・暑さ指数" },
+  { value: "sns", label: "📱 チーム公式SNS (Instagram/YouTube/HP)" },
+  { value: "grounds", label: "🏟️ 球場・施設予約ポータル" },
+  { value: "partner", label: "🤝 提携ショップ・スポンサー" },
+  { value: "other", label: "🔗 その他・お役立ちリンク" },
+];
 
 export default function LiffLinksPage() {
   const { currentTeam, profile } = useLiff();
@@ -707,7 +721,7 @@ export default function LiffLinksPage() {
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
@@ -804,19 +818,15 @@ export default function LiffLinksPage() {
                 {/* カテゴリ選択 */}
                 <div className="space-y-1.5">
                   <label className="text-muted-foreground">カテゴリ</label>
-                  <select
+                  <LiffSelect
                     value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  >
-                    <option value="league">🌐 連盟・協会公式サイト</option>
-                    <option value="tournament">🏆 大会速報・組み合わせ表</option>
-                    <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
-                    <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
-                    <option value="grounds">🏟️ 球場・施設予約ポータル</option>
-                    <option value="partner">🤝 提携ショップ・スポンサー</option>
-                    <option value="other">🔗 その他・お役立ちリンク</option>
-                  </select>
+                    onChange={setNewCategory}
+                    options={LINK_CATEGORY_OPTIONS}
+                    title="リンクカテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full"
+                  />
                 </div>
 
                 {/* タイトル */}
@@ -950,7 +960,7 @@ export default function LiffLinksPage() {
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && editingLink && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
@@ -1045,19 +1055,15 @@ export default function LiffLinksPage() {
                 {/* カテゴリ選択 */}
                 <div className="space-y-1.5">
                   <label className="text-muted-foreground">カテゴリ</label>
-                  <select
+                  <LiffSelect
                     value={editCategory}
-                    onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  >
-                    <option value="league">🌐 連盟・協会公式サイト</option>
-                    <option value="tournament">🏆 大会速報・組み合わせ表</option>
-                    <option value="weather">☀️ 天気予報・雨雲レーダー・暑さ指数</option>
-                    <option value="sns">📱 チーム公式SNS (Instagram/YouTube/HP)</option>
-                    <option value="grounds">🏟️ 球場・施設予約ポータル</option>
-                    <option value="partner">🤝 提携ショップ・スポンサー</option>
-                    <option value="other">🔗 その他・お役立ちリンク</option>
-                  </select>
+                    onChange={setEditCategory}
+                    options={LINK_CATEGORY_OPTIONS}
+                    title="リンクカテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full"
+                  />
                 </div>
 
                 {/* タイトル */}

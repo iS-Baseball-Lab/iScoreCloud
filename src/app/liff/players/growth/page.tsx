@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 
@@ -976,22 +977,28 @@ function PlayerGrowthContent() {
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <select
+                <LiffSelect
                   value={player.id}
-                  onChange={(e) => handleSwitchPlayer(e.target.value)}
-                  aria-label="表示する選手を選択"
-                  className="flex-1 h-9 px-3 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 truncate"
-                >
-                  {roster.map((rp) => {
+                  onChange={(val) => handleSwitchPlayer(val)}
+                  options={roster.map((rp) => {
                     const pMeta = getPosMeta(rp.primaryPosition);
-                    return (
-                      <option key={rp.id} value={rp.id}>
-                        #{cleanUniform(rp.uniformNumber)} {rp.name}（
-                        {pMeta.shortLabel}）
-                      </option>
-                    );
+                    return {
+                      value: rp.id,
+                      label: `#${cleanUniform(rp.uniformNumber)} ${rp.name}`,
+                      badge: pMeta.shortLabel,
+                      badgeTone: "primary" as const,
+                      keywords: `${rp.uniformNumber || ""} ${rp.name} ${
+                        pMeta.shortLabel
+                      }`,
+                    };
                   })}
-                </select>
+                  title="表示する選手を選択"
+                  ariaLabel="表示する選手を選択"
+                  size="sm"
+                  searchable={true}
+                  searchPlaceholder="選手名・背番号・守備位置で検索..."
+                  className="flex-1 min-w-0 h-9 bg-muted/35"
+                />
 
                 <button
                   type="button"

@@ -30,6 +30,10 @@ import {
   syncStructureBoxesFromCorners,
 } from "@/lib/liff/scorebook-grid";
 import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import {
   FourCornerFineTuner,
@@ -1428,27 +1432,39 @@ export function Step2StructureCheck({
                 </span>
 
                 {current.isMyTeamBatting && roster.length > 0 ? (
-                  <select
+                  <LiffSelect
                     value={slot.playerId || ""}
-                    onChange={(e) =>
-                      handleSelectRosterForBatter(
-                        slot.battingOrder,
-                        e.target.value
-                      )
+                    onChange={(val) =>
+                      handleSelectRosterForBatter(slot.battingOrder, val)
                     }
-                    className="flex-1 min-w-0 h-9 px-2 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                  >
-                    <option value="">
-                      {slot.name
-                        ? `未登録: ${slot.name} (#${slot.uniformNumber || "-"})`
-                        : "-- 選手を選択 --"}
-                    </option>
-                    {roster.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        #{p.uniformNumber} {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    title={`${slot.battingOrder}番打者を選択`}
+                    subtitle="登録選手と紐付けることで個人成績に正確に集計されます"
+                    searchable={true}
+                    searchPlaceholder="背番号・選手名で検索..."
+                    size="sm"
+                    className="flex-1 min-w-0"
+                    ariaLabel={`${slot.battingOrder}番打者を選択`}
+                    options={[
+                      {
+                        value: "",
+                        label: slot.name
+                          ? `未登録: ${slot.name} (#${slot.uniformNumber || "-"})`
+                          : "-- 選手を選択 --",
+                      },
+                      ...roster.map(
+                        (p): LiffSelectOption => ({
+                          value: p.id,
+                          label: `#${p.uniformNumber} ${p.name}`,
+                          sublabel: p.primaryPosition
+                            ? `主守備: ${p.primaryPosition}`
+                            : undefined,
+                          keywords: `${p.uniformNumber} ${p.name} ${
+                            p.nameKana || ""
+                          }`,
+                        })
+                      ),
+                    ]}
+                  />
                 ) : (
                   <>
                     <input
@@ -1474,19 +1490,18 @@ export function Step2StructureCheck({
                   </>
                 )}
 
-                <select
+                <LiffSelect
                   value={slot.position}
-                  onChange={(e) =>
-                    updateBatter(slot.battingOrder, { position: e.target.value })
+                  onChange={(val) =>
+                    updateBatter(slot.battingOrder, { position: val })
                   }
-                  className="w-16 h-9 px-1 rounded-xl bg-card border border-border text-[11px] font-black text-foreground shrink-0"
-                >
-                  {POSITION_OPTIONS.map((pos) => (
-                    <option key={pos.value} value={pos.value}>
-                      {pos.label}
-                    </option>
-                  ))}
-                </select>
+                  title={`${slot.battingOrder}番の守備位置を選択`}
+                  size="sm"
+                  searchable={false}
+                  className="w-20 shrink-0"
+                  ariaLabel={`${slot.battingOrder}番の守備位置`}
+                  options={POSITION_OPTIONS}
+                />
 
                 <button
                   type="button"
@@ -1534,48 +1549,66 @@ export function Step2StructureCheck({
                       className="p-2 rounded-xl bg-primary/5 border border-primary/25 space-y-1.5"
                     >
                       <div className="flex items-center gap-1.5">
-                        <select
-                          value={sub.inningEntered}
-                          onChange={(e) =>
+                        <LiffSelect
+                          value={String(sub.inningEntered)}
+                          onChange={(val) =>
                             updateSubstitution(slot.battingOrder, sub.id, {
-                              inningEntered: Number(e.target.value),
+                              inningEntered: Number(val),
                             })
                           }
-                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
-                        >
-                          {inningOptions.map((n) => (
-                            <option key={n} value={n}>
-                              {n}回〜
-                            </option>
-                          ))}
-                        </select>
+                          title="途中交代のイニングを選択"
+                          size="xs"
+                          searchable={false}
+                          className="shrink-0"
+                          ariaLabel="途中交代のイニング"
+                          options={inningOptions.map((n) => ({
+                            value: String(n),
+                            label: `${n}回〜`,
+                          }))}
+                        />
 
-                        <select
+                        <LiffSelect
                           value={sub.subType}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateSubstitution(slot.battingOrder, sub.id, {
-                              subType: e.target.value as
-                                | "PH"
-                                | "PR"
-                                | "TR"
-                                | "DEF",
+                              subType: val as "PH" | "PR" | "TR" | "DEF",
                             })
                           }
-                          className="h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-primary shrink-0"
-                        >
-                          <option value="PH">代打</option>
-                          <option value="PR">代走</option>
-                          <option value="TR">臨時代走</option>
-                          <option value="DEF">守備</option>
-                        </select>
+                          title="途中交代の種別を選択"
+                          size="xs"
+                          searchable={false}
+                          className="shrink-0"
+                          triggerTextClassName="text-primary"
+                          ariaLabel="途中交代の種別"
+                          options={[
+                            {
+                              value: "PH",
+                              label: "代打",
+                              sublabel: "打席から交代して出場",
+                            },
+                            {
+                              value: "PR",
+                              label: "代走",
+                              sublabel: "塁上から交代し以降の打順も引継",
+                            },
+                            {
+                              value: "TR",
+                              label: "臨時代走",
+                              sublabel: "このイニングの走塁のみ",
+                            },
+                            {
+                              value: "DEF",
+                              label: "守備",
+                              sublabel: "守備回から途中出場",
+                            },
+                          ]}
+                        />
 
                         {current.isMyTeamBatting && roster.length > 0 ? (
-                          <select
+                          <LiffSelect
                             value={sub.playerId || ""}
-                            onChange={(e) => {
-                              const found = roster.find(
-                                (p) => p.id === e.target.value
-                              );
+                            onChange={(val) => {
+                              const found = roster.find((p) => p.id === val);
                               if (found) {
                                 const autoPos =
                                   sub.position ||
@@ -1594,17 +1627,33 @@ export function Step2StructureCheck({
                                 });
                               }
                             }}
-                            className="flex-1 min-w-0 h-8 px-1.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                          >
-                            <option value="">
-                              {sub.name ? `未登録: ${sub.name}` : "-- 交代選手 --"}
-                            </option>
-                            {roster.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                #{p.uniformNumber} {p.name}
-                              </option>
-                            ))}
-                          </select>
+                            title={`${slot.battingOrder}番の交代選手を選択`}
+                            searchable={true}
+                            searchPlaceholder="背番号・選手名で検索..."
+                            size="xs"
+                            className="flex-1 min-w-0"
+                            ariaLabel="交代選手を選択"
+                            options={[
+                              {
+                                value: "",
+                                label: sub.name
+                                  ? `未登録: ${sub.name}`
+                                  : "-- 交代選手 --",
+                              },
+                              ...roster.map(
+                                (p): LiffSelectOption => ({
+                                  value: p.id,
+                                  label: `#${p.uniformNumber} ${p.name}`,
+                                  sublabel: p.primaryPosition
+                                    ? `主守備: ${p.primaryPosition}`
+                                    : undefined,
+                                  keywords: `${p.uniformNumber} ${p.name} ${
+                                    p.nameKana || ""
+                                  }`,
+                                })
+                              ),
+                            ]}
+                          />
                         ) : (
                           <>
                             <input
@@ -1632,25 +1681,23 @@ export function Step2StructureCheck({
                           </>
                         )}
 
-                        <select
+                        <LiffSelect
                           value={sub.position}
-                          onChange={(e) =>
+                          onChange={(val) =>
                             updateSubstitution(slot.battingOrder, sub.id, {
-                              position: e.target.value,
+                              position: val,
                             })
                           }
-                          aria-label="交代後の守備位置"
-                          className="w-16 h-8 px-1 rounded-lg bg-card border border-border text-[10px] font-black text-foreground shrink-0"
-                        >
-                          <option value="">守備 -</option>
-                          {POSITION_OPTIONS.filter((p) => p.value !== "").map(
-                            (pos) => (
-                              <option key={pos.value} value={pos.value}>
-                                {pos.label}
-                              </option>
-                            )
-                          )}
-                        </select>
+                          title="交代後の守備位置を選択"
+                          size="xs"
+                          searchable={false}
+                          className="w-[4.25rem] shrink-0"
+                          ariaLabel="交代後の守備位置"
+                          options={[
+                            { value: "", label: "守備 -" },
+                            ...POSITION_OPTIONS.filter((p) => p.value !== ""),
+                          ]}
+                        />
 
                         <button
                           type="button"
@@ -1735,10 +1782,10 @@ export function Step2StructureCheck({
                 </span>
 
                 {!current.isMyTeamBatting && roster.length > 0 ? (
-                  <select
+                  <LiffSelect
                     value={pt.playerId || ""}
-                    onChange={(e) => {
-                      const found = roster.find((p) => p.id === e.target.value);
+                    onChange={(val) => {
+                      const found = roster.find((p) => p.id === val);
                       if (found) {
                         updatePitcher(pt.id, {
                           playerId: found.id,
@@ -1749,17 +1796,33 @@ export function Step2StructureCheck({
                         updatePitcher(pt.id, { playerId: null });
                       }
                     }}
-                    className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                  >
-                    <option value="">
-                      {pt.name ? `未登録: ${pt.name}` : "-- 自チーム投手を選択 --"}
-                    </option>
-                    {roster.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        #{p.uniformNumber} {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    title={`${idx === 0 ? "先発" : `${idx + 1}番手`}投手を選択`}
+                    searchable={true}
+                    searchPlaceholder="背番号・選手名で検索..."
+                    size="sm"
+                    className="flex-1 min-w-0"
+                    ariaLabel="登板投手を選択"
+                    options={[
+                      {
+                        value: "",
+                        label: pt.name
+                          ? `未登録: ${pt.name}`
+                          : "-- 自チーム投手を選択 --",
+                      },
+                      ...roster.map(
+                        (p): LiffSelectOption => ({
+                          value: p.id,
+                          label: `#${p.uniformNumber} ${p.name}`,
+                          sublabel: p.primaryPosition
+                            ? `主守備: ${p.primaryPosition}`
+                            : undefined,
+                          keywords: `${p.uniformNumber} ${p.name} ${
+                            p.nameKana || ""
+                          }`,
+                        })
+                      ),
+                    ]}
+                  />
                 ) : (
                   <>
                     <input
@@ -1823,11 +1886,15 @@ export function Step2StructureCheck({
                   担当イニング
                 </span>
                 <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label="登板開始イニング"
-                    value={pt.fromInning}
-                    onChange={(e) => {
-                      const nextFrom = Number(e.target.value);
+                  <LiffSelect
+                    ariaLabel="登板開始イニング"
+                    title="登板開始イニングを選択"
+                    value={String(pt.fromInning)}
+                    size="sm"
+                    searchable={false}
+                    className="min-w-[4.5rem]"
+                    onChange={(val) => {
+                      const nextFrom = Number(val);
                       const nextPitchers = current.pitchers.map(
                         (item, pIdx) => {
                           if (item.id === pt.id) {
@@ -1855,35 +1922,33 @@ export function Step2StructureCheck({
                         pitchers: nextPitchers,
                       });
                     }}
-                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
-                  >
-                    {inningOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}回
-                      </option>
-                    ))}
-                  </select>
+                    options={inningOptions.map((n) => ({
+                      value: String(n),
+                      label: `${n}回`,
+                    }))}
+                  />
                   <span className="text-xs font-black text-muted-foreground">
                     〜
                   </span>
-                  <select
-                    aria-label="登板終了イニング"
-                    value={pt.toInning}
-                    onChange={(e) => {
-                      const nextTo = Number(e.target.value);
+                  <LiffSelect
+                    ariaLabel="登板終了イニング"
+                    title="登板終了イニングを選択"
+                    value={String(pt.toInning)}
+                    size="sm"
+                    searchable={false}
+                    className="min-w-[4.5rem]"
+                    onChange={(val) => {
+                      const nextTo = Number(val);
                       updatePitcher(pt.id, {
                         fromInning: Math.min(pt.fromInning, nextTo),
                         toInning: nextTo,
                       });
                     }}
-                    className="h-9 min-w-[4.5rem] px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
-                  >
-                    {inningOptions.map((n) => (
-                      <option key={n} value={n}>
-                        {n}回
-                      </option>
-                    ))}
-                  </select>
+                    options={inningOptions.map((n) => ({
+                      value: String(n),
+                      label: `${n}回`,
+                    }))}
+                  />
                 </div>
               </div>
             </div>

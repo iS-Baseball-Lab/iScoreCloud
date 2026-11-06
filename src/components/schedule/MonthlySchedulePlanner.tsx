@@ -1,7 +1,7 @@
 // filepath: src/components/schedule/MonthlySchedulePlanner.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { 
   Calendar as CalendarIcon, 
@@ -10,12 +10,27 @@ import {
   Trash2, 
   Save, 
   Sparkles, 
-  CheckCircle2, 
   Layers, 
   X,
   Check,
   RotateCw,
+  Clock,
+  Settings,
 } from "lucide-react";
+import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
+import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  extractRawTimeHHMM,
+  formatMonthSetLabel,
+  getWinterMonths,
+  loadCachedTeamScheduleDefaultTimes,
+  normalizeTeamScheduleDefaultTimes,
+  parseTimeRangeLabel,
+  resolveDefaultScheduleTimesForDate,
+  saveCachedTeamScheduleDefaultTimes,
+  type TeamScheduleDefaultTimes,
+} from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
 
 // 活動イベントデータの型
@@ -38,7 +53,55 @@ export interface ScheduleDayItem {
   needsLunch: boolean;
   needsSnack?: boolean;
   memo: string;
+  activityGroups?: unknown;
 }
+
+interface RawEventRecord {
+  id: string;
+  title?: string | null;
+  targetGroup?: string | null;
+  eventType?: "practice" | "match" | "camp" | "meeting" | string | null;
+  amType?: "practice" | "match" | "camp" | "off" | string | null;
+  pmType?: "practice" | "match" | "camp" | "off" | string | null;
+  startAt: string | Date;
+  endAt?: string | Date | null;
+  pmStartAt?: string | Date | null;
+  pmEndAt?: string | Date | null;
+  location?: string | null;
+  pmLocation?: string | null;
+  dutyGroup?: string | null;
+  needsLunch?: boolean | number | string | null;
+  needsSnack?: boolean | number | string | null;
+  description?: string | null;
+  activityGroups?: unknown;
+}
+
+interface EventsListApiResponse {
+  success: boolean;
+  data?: RawEventRecord[];
+}
+
+interface ScheduleDefaultTimesApiResponse {
+  success: boolean;
+  scheduleDefaultTimes?: unknown;
+}
+
+const EVENT_TYPE_SELECT_OPTIONS: LiffSelectOption[] = [
+  { value: "practice", label: "🏃 通常練習" },
+  { value: "match", label: "⚾ 公式戦・試合" },
+  { value: "camp", label: "🏕️ 合宿・遠征" },
+];
+
+const EXTRA_DUTY_SELECT_OPTIONS: LiffSelectOption[] = [
+  { value: "5班", label: "5班" },
+  { value: "6班", label: "6班" },
+  { value: "A班", label: "A班" },
+  { value: "B班", label: "B班" },
+  { value: "C班", label: "C班" },
+  { value: "役員当番", label: "役員当番" },
+  { value: "鍵当番", label: "鍵当番" },
+  { value: "救急当番", label: "救急当番" },
+];
 
 interface MonthlySchedulePlannerProps {
   teamId?: string;
@@ -49,16 +112,31 @@ interface MonthlySchedulePlannerProps {
 
 export function MonthlySchedulePlanner({
   teamId = "team_1",
-  teamName = "チーム",
-  isLiff = false,
+  teamName: _teamName = "チーム",
+  isLiff: _isLiff = false,
   onSaved
 }: MonthlySchedulePlannerProps) {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
   const [deletedEventIds, setDeletedEventIds] = useState<string[]>([]);
-  const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
+  const [, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const [scheduleDefaults, setScheduleDefaults] = useState<TeamScheduleDefaultTimes>(() =>
+    loadCachedTeamScheduleDefaultTimes(teamId)
+  );
+  const { grounds } = useTeamGrounds(teamId);
+
+  const recentLocations = useMemo(() => {
+    const list: string[] = [];
+    for (const it of selectedDayItems) {
+      if (it.location) list.push(it.location);
+      if (it.amLocation) list.push(it.amLocation);
+      if (it.pmLocation) list.push(it.pmLocation);
+    }
+    return list;
+  }, [selectedDayItems]);
 
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth(); // 0-indexed
@@ -80,16 +158,18 @@ export function MonthlySchedulePlanner({
     return `${m}/${d}(${w})`;
   };
 
-  // 🌟 DBから保存済みイベント一覧をロード
-  const fetchEvents = async () => {
+  // 🌟 DBから保存済みイベント一覧 ＆ チーム初期時間設定をロード
+  const fetchEvents = useCallback(async (defaultsForLoad?: TeamScheduleDefaultTimes) => {
     setIsLoadingEvents(true);
     try {
       const activeTeamId = teamId || "team_1";
+      const effectiveDefaults = defaultsForLoad || loadCachedTeamScheduleDefaultTimes(activeTeamId);
+
       const res = await fetch(`/api/events/${activeTeamId}`);
       if (res.ok) {
-        const json = await res.json() as any;
+        const json = (await res.json()) as EventsListApiResponse;
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          const loadedItems: ScheduleDayItem[] = json.data.map((ev: any) => {
+          const loadedItems: ScheduleDayItem[] = json.data.map((ev) => {
             let dateStr = "";
             if (typeof ev.startAt === "string" && ev.startAt.includes("T")) {
               dateStr = ev.startAt.split("T")[0];
@@ -102,41 +182,135 @@ export function MonthlySchedulePlanner({
             const dateObj = new Date(y, m - 1, d);
             const dayLabel = formatDayLabel(dateObj);
 
+            const dateDefaults = resolveDefaultScheduleTimesForDate(effectiveDefaults, dateStr);
+            const rawStart = extractRawTimeHHMM(ev.startAt) || dateDefaults.amStart;
+            const rawEnd = extractRawTimeHHMM(ev.endAt);
+            const rawPmStart = extractRawTimeHHMM(ev.pmStartAt);
+            const rawPmEnd = extractRawTimeHHMM(ev.pmEndAt);
+            const hasPm = Boolean(
+              ev.pmStartAt || ev.pmEndAt || (ev.pmType && ev.pmType !== "off")
+            );
+
+            const amEnd = hasPm
+              ? rawEnd && (!rawPmStart || rawEnd <= rawPmStart)
+                ? rawEnd
+                : dateDefaults.amEnd
+              : rawEnd || dateDefaults.amEnd;
+
+            const pmStart = rawPmStart || dateDefaults.pmStart;
+            const pmEnd = hasPm
+              ? rawPmEnd || (rawEnd && rawEnd > pmStart ? rawEnd : dateDefaults.pmEnd)
+              : dateDefaults.pmEnd;
+
+            const resolvedEventType = (
+              ev.eventType === "match" ||
+              ev.eventType === "camp" ||
+              ev.eventType === "meeting"
+                ? ev.eventType
+                : "practice"
+            ) as "practice" | "match" | "camp" | "meeting";
+
+            const resolvedAmType = (
+              ev.amType === "match" ||
+              ev.amType === "camp" ||
+              ev.amType === "off"
+                ? ev.amType
+                : resolvedEventType === "meeting"
+                ? "practice"
+                : resolvedEventType
+            ) as "practice" | "match" | "camp" | "off";
+
+            const resolvedPmType = (
+              ev.pmType === "match" ||
+              ev.pmType === "camp" ||
+              ev.pmType === "practice" ||
+              ev.pmType === "off"
+                ? ev.pmType
+                : hasPm
+                ? resolvedAmType === "off"
+                  ? "practice"
+                  : resolvedAmType
+                : "off"
+            ) as "practice" | "match" | "camp" | "off";
+
             return {
               id: ev.id,
               dateStr,
               dayLabel,
               title: ev.title || "活動予定",
               targetGroup: ev.targetGroup || "全体",
-              eventType: (ev.eventType as any) || "practice",
+              eventType: resolvedEventType,
               location: ev.location || "確認中",
-              amType: (ev.eventType as any) || "practice",
-              amTime: "08:00〜12:00",
+              amType: resolvedAmType,
+              amTime: `${rawStart}〜${amEnd}`,
               amLocation: ev.location || "確認中",
-              pmType: (ev.pmType as any) || (ev.pmStartAt ? "practice" : "off"),
-              pmTime: "13:00〜17:00",
+              pmType: resolvedPmType,
+              pmTime: `${pmStart}〜${pmEnd}`,
               pmLocation: ev.pmLocation || ev.location || "確認中",
               dutyGroup: ev.dutyGroup || "1班",
-              needsLunch: ev.needsLunch === true || (ev.needsLunch as any) === 1 || (ev.needsLunch as any) === "1" || (ev.needsLunch as any) === "true",
-              needsSnack: ev.needsSnack === true || (ev.needsSnack as any) === 1 || (ev.needsSnack as any) === "1" || (ev.needsSnack as any) === "true",
+              needsLunch:
+                ev.needsLunch === true ||
+                ev.needsLunch === 1 ||
+                ev.needsLunch === "1" ||
+                ev.needsLunch === "true",
+              needsSnack:
+                ev.needsSnack === true ||
+                ev.needsSnack === 1 ||
+                ev.needsSnack === "1" ||
+                ev.needsSnack === "true",
               memo: ev.description || "",
+              activityGroups: ev.activityGroups,
             };
           });
 
           setSelectedDayItems(loadedItems.sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
           return;
         }
+        setSelectedDayItems([]);
       }
     } catch (err) {
       console.error("[Fetch Events Error]:", err);
     } finally {
       setIsLoadingEvents(false);
     }
-  };
+  }, [teamId]);
 
   useEffect(() => {
-    fetchEvents();
-  }, [teamId]);
+    const activeTeamId = teamId || "team_1";
+    const cachedDefaults = loadCachedTeamScheduleDefaultTimes(activeTeamId);
+    setScheduleDefaults(cachedDefaults);
+
+    let cancelled = false;
+    void (async () => {
+      let latestDefaults = cachedDefaults;
+      if (activeTeamId !== "demo-team") {
+        try {
+          const cfgRes = await fetch(
+            `/api/liff/schedule-default-times?teamId=${encodeURIComponent(activeTeamId)}`
+          );
+          if (cfgRes.ok) {
+            const cfgJson = (await cfgRes.json()) as ScheduleDefaultTimesApiResponse;
+            if (cfgJson.success && cfgJson.scheduleDefaultTimes) {
+              latestDefaults = normalizeTeamScheduleDefaultTimes(cfgJson.scheduleDefaultTimes);
+              if (!cancelled) {
+                setScheduleDefaults(latestDefaults);
+                saveCachedTeamScheduleDefaultTimes(activeTeamId, latestDefaults);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch schedule default times in planner:", err);
+        }
+      }
+      if (!cancelled) {
+        await fetchEvents(latestDefaults);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId, fetchEvents]);
 
   // カレンダーグリッド用日付配列（42マス）
   const getCalendarDays = () => {
@@ -200,7 +374,8 @@ export function MonthlySchedulePlanner({
       }
       setSelectedDayItems(prev => prev.filter((_, idx) => idx !== existingIndex));
     } else {
-      // 追加 (ON) - デフォルトの場所は「確認中」
+      // 追加 (ON) - チーム設定の初期時間（午前・午後／月別）を自動適用
+      const resolvedTimes = resolveDefaultScheduleTimesForDate(scheduleDefaults, dateStr);
       const newItem: ScheduleDayItem = {
         id: `new_${dateStr}_${Date.now()}`,
         dateStr,
@@ -210,10 +385,10 @@ export function MonthlySchedulePlanner({
         eventType: "practice",
         location: "確認中",
         amType: "practice",
-        amTime: "08:00〜12:00",
+        amTime: resolvedTimes.amTimeLabel,
         amLocation: "確認中",
         pmType: "practice",
-        pmTime: "13:00〜17:00",
+        pmTime: resolvedTimes.pmTimeLabel,
         pmLocation: "確認中",
         dutyGroup: "1班",
         needsLunch: true,
@@ -236,8 +411,9 @@ export function MonthlySchedulePlanner({
       const dateStr = formatDateString(d);
 
       if (isWeekend && !newItems.some(it => it.dateStr === dateStr)) {
+        const resolvedTimes = resolveDefaultScheduleTimesForDate(scheduleDefaults, dateStr);
         newItems.push({
-          id: `new_${dateStr}_${Date.now()}`,
+          id: `new_${dateStr}_${Date.now()}_${day}`,
           dateStr,
           dayLabel: formatDayLabel(d),
           title: "通常練習",
@@ -245,10 +421,10 @@ export function MonthlySchedulePlanner({
           eventType: "practice",
           location: "確認中",
           amType: "practice",
-          amTime: "08:00〜12:00",
+          amTime: resolvedTimes.amTimeLabel,
           amLocation: "確認中",
           pmType: "practice",
-          pmTime: "13:00〜17:00",
+          pmTime: resolvedTimes.pmTimeLabel,
           pmLocation: "確認中",
           dutyGroup: "1班",
           needsLunch: true,
@@ -258,8 +434,14 @@ export function MonthlySchedulePlanner({
       }
     }
 
+    const sampleMonthTimes = resolveDefaultScheduleTimesForDate(
+      scheduleDefaults,
+      `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`
+    );
     setSelectedDayItems(newItems.sort((a, b) => a.dateStr.localeCompare(b.dateStr)));
-    showToast(`📅 ${currentMonth + 1}月の土日を活動日として追加しました`);
+    showToast(
+      `📅 ${currentMonth + 1}月の土日を追加しました（☀️${sampleMonthTimes.amTimeLabel} / 🌙${sampleMonthTimes.pmTimeLabel}）`
+    );
   };
 
   // 🗑️ 今月の選択をすべてクリア
@@ -342,28 +524,70 @@ export function MonthlySchedulePlanner({
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  // 📍 場所変更ハンドラー（一覧選択・自由入力）
+  const handleUpdateLocation = (dateStr: string, nextLocation: string) => {
+    const safeLoc = nextLocation.trim() || "確認中";
+    setSelectedDayItems((prev) =>
+      prev.map((item) => {
+        if (item.dateStr !== dateStr) return item;
+        const shouldSyncPm =
+          !item.pmLocation ||
+          item.pmLocation === "確認中" ||
+          item.pmLocation === item.location ||
+          item.pmLocation === item.amLocation;
+        return {
+          ...item,
+          location: safeLoc,
+          amLocation: safeLoc,
+          pmLocation: shouldSyncPm ? safeLoc : item.pmLocation,
+        };
+      })
+    );
+  };
+
   // 一括保存処理
   const handleSaveAll = async () => {
     setIsSaving(true);
     try {
       const payload = {
-        events: selectedDayItems.map(item => ({
-          id: item.id.startsWith("new_") ? undefined : item.id,
-          title: item.title || "通常練習",
-          targetGroup: item.targetGroup || "全体",
-          startAt: `${item.dateStr}T08:00:00`,
-          endAt: `${item.dateStr}T17:00:00`,
-          eventType: item.eventType || item.amType || 'practice',
-          location: item.location || "確認中",
-          dutyGroup: item.dutyGroup || "1班",
-          pmStartAt: item.pmType !== "off" ? `${item.dateStr}T13:00:00` : null,
-          pmEndAt: item.pmType !== "off" ? `${item.dateStr}T17:00:00` : null,
-          pmLocation: item.pmLocation || item.location || "確認中",
-          needsLunch: Boolean(item.needsLunch),
-          needsSnack: Boolean(item.needsSnack),
-          description: item.memo || "",
-          status: "scheduled",
-        })),
+        events: selectedDayItems.map((item) => {
+          const resolved = resolveDefaultScheduleTimesForDate(
+            scheduleDefaults,
+            item.dateStr
+          );
+          const am = parseTimeRangeLabel(
+            item.amTime,
+            resolved.amStart,
+            resolved.amEnd
+          );
+          const pm = parseTimeRangeLabel(
+            item.pmTime,
+            resolved.pmStart,
+            resolved.pmEnd
+          );
+          const hasPm = item.pmType !== "off";
+          const amLoc = item.amLocation || item.location || "確認中";
+
+          return {
+            id: item.id.startsWith("new_") ? undefined : item.id,
+            title: item.title || "通常練習",
+            targetGroup: item.targetGroup || "全体",
+            startAt: `${item.dateStr}T${am.start}:00`,
+            endAt: `${item.dateStr}T${am.end}:00`,
+            eventType: item.eventType || item.amType || "practice",
+            amType: item.amType || item.eventType || "practice",
+            location: amLoc,
+            dutyGroup: item.dutyGroup || "1班",
+            pmStartAt: hasPm ? `${item.dateStr}T${pm.start}:00` : null,
+            pmEndAt: hasPm ? `${item.dateStr}T${pm.end}:00` : null,
+            pmLocation: hasPm ? item.pmLocation || amLoc : null,
+            needsLunch: Boolean(item.needsLunch),
+            needsSnack: Boolean(item.needsSnack),
+            description: item.memo || "",
+            activityGroups: item.activityGroups,
+            status: "scheduled",
+          };
+        }),
         deletedEventIds,
       };
 
@@ -374,8 +598,9 @@ export function MonthlySchedulePlanner({
       });
 
       if (res.ok) {
+        invalidateLiffApiCache();
         setDeletedEventIds([]);
-        await fetchEvents();
+        await fetchEvents(scheduleDefaults);
         showToast("✅ 活動日を一括保存しました！予定 & 出欠表に反映されます。");
         if (onSaved) onSaved();
       } else {
@@ -464,10 +689,45 @@ export function MonthlySchedulePlanner({
           </div>
         </div>
 
-        {/* 案内テキスト */}
-        <p className="text-[11.5px] font-bold text-muted-foreground">
-          💡 カレンダーの日付をタップして<strong className="text-foreground">活動日を選択（ON/OFF）</strong>するだけで登録できます。球場・時間・当番などの詳細は「予定 & 出欠」ページからいつでも個別編集できます（球場初期値: <span className="text-primary font-black">確認中</span>）。
-        </p>
+        {/* 案内テキスト ＆ 現在の初期時間設定バー */}
+        <div className="space-y-2">
+          <p className="text-[11.5px] font-bold text-muted-foreground">
+            💡 カレンダーの日付をタップして<strong className="text-foreground">活動日を選択（ON/OFF）</strong>するだけで登録できます。場所の選択や当番割当もその場で行えます。
+          </p>
+
+          {(() => {
+            const curMonthTimes = resolveDefaultScheduleTimesForDate(
+              scheduleDefaults,
+              `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`
+            );
+            const winterMonths = getWinterMonths(scheduleDefaults.summerMonths);
+            return (
+              <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex flex-wrap items-center justify-between gap-2 text-[10.5px]">
+                <div className="flex flex-wrap items-center gap-1.5 font-black text-foreground">
+                  <Clock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span>{currentMonth + 1}月の初期時間:</span>
+                  <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
+                    ☀️ {curMonthTimes.amTimeLabel}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
+                    🌙 {curMonthTimes.pmTimeLabel}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    （夏 {formatMonthSetLabel(scheduleDefaults.summerMonths)} / 冬 {formatMonthSetLabel(winterMonths)}）
+                  </span>
+                </div>
+
+                <Link
+                  href="/liff/settings/team"
+                  className="inline-flex items-center gap-1 text-[10.5px] font-black text-teal-700 dark:text-teal-300 hover:underline shrink-0"
+                >
+                  <Settings className="w-3 h-3" />
+                  <span>時間設定を変更</span>
+                </Link>
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* 🌟 2. 月間カレンダーグリッド */}
@@ -684,22 +944,36 @@ export function MonthlySchedulePlanner({
                           </div>
 
                           {/* 予定詳細 */}
-                          <div className="min-w-0 flex-1 space-y-1">
+                          <div className="min-w-0 flex-1 space-y-1.5">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-black text-foreground">
                                 {it.title || "通常練習"}
                               </span>
 
-                              {/* 予定タイプ切替 */}
-                              <select
-                                value={it.eventType || "practice"}
-                                onChange={(e) => handleUpdateEventType(it.dateStr, e.target.value as "practice" | "match" | "camp")}
-                                className="text-[10.5px] font-bold px-2 py-0.5 rounded-lg bg-card border border-border text-foreground cursor-pointer focus:outline-hidden"
-                              >
-                                <option value="practice">🏃 通常練習</option>
-                                <option value="match">⚾ 公式戦・試合</option>
-                                <option value="camp">🏕️ 合宿・遠征</option>
-                              </select>
+                              {/* 予定タイプ切替（カスタム選択UI） */}
+                              <LiffSelect
+                                value={
+                                  it.eventType === "match" || it.eventType === "camp"
+                                    ? it.eventType
+                                    : "practice"
+                                }
+                                onChange={(val) =>
+                                  handleUpdateEventType(
+                                    it.dateStr,
+                                    val as "practice" | "match" | "camp"
+                                  )
+                                }
+                                options={EVENT_TYPE_SELECT_OPTIONS}
+                                title={`${it.dayLabel} の予定種別を選択`}
+                                accent="teal"
+                                size="xs"
+                                searchable={false}
+                              />
+
+                              <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
+                                ☀️ {it.amTime}
+                                {it.pmType !== "off" ? ` / 🌙 ${it.pmTime}` : ""}
+                              </span>
                             </div>
 
                             <div className="flex items-center gap-2 text-[10.5px] font-bold text-muted-foreground flex-wrap">
@@ -708,7 +982,7 @@ export function MonthlySchedulePlanner({
                                 type="button"
                                 onClick={() => handleToggleLunch(it.dateStr)}
                                 className={cn(
-                                  "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer",
+                                  "px-2 py-0.5 rounded-md text-[10px] font-black transition-all flex items-center gap-1 cursor-pointer shrink-0",
                                   it.needsLunch
                                     ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25"
                                     : "bg-card text-muted-foreground border border-border hover:text-foreground line-through opacity-65"
@@ -718,10 +992,17 @@ export function MonthlySchedulePlanner({
                                 <span>{it.needsLunch ? "お弁当：要" : "弁当なし"}</span>
                               </button>
 
-                              <span>•</span>
-                              <span className="truncate max-w-[140px] text-[10px]">
-                                📍 {it.location || "球場確認中"}
-                              </span>
+                              {/* 📍 場所（一覧選択・自由入力ピッカー） */}
+                              <LiffLocationPicker
+                                size="xs"
+                                value={it.location || "確認中"}
+                                onChange={(loc) => handleUpdateLocation(it.dateStr, loc || "確認中")}
+                                grounds={grounds}
+                                recentLocations={recentLocations}
+                                title={`${it.dayLabel} の活動場所を選択`}
+                                placeholder="場所を選択"
+                                className="min-w-[140px] max-w-[220px]"
+                              />
                             </div>
                           </div>
 
@@ -772,24 +1053,23 @@ export function MonthlySchedulePlanner({
                               </span>
                             )}
 
-                            <select
-                              value={["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) ? "" : it.dutyGroup}
-                              onChange={(e) => {
-                                if (e.target.value) handleUpdateDuty(it.dateStr, e.target.value);
+                            <LiffSelect
+                              value={
+                                ["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup)
+                                  ? ""
+                                  : it.dutyGroup
+                              }
+                              onChange={(val) => {
+                                if (val) handleUpdateDuty(it.dateStr, val);
                               }}
-                              className="text-[10px] font-bold px-1.5 py-1 rounded-lg bg-card border border-border text-muted-foreground hover:text-foreground cursor-pointer focus:outline-hidden shrink-0"
-                              title="その他の当番を選択"
-                            >
-                              <option value="" disabled>他</option>
-                              <option value="5班">5班</option>
-                              <option value="6班">6班</option>
-                              <option value="A班">A班</option>
-                              <option value="B班">B班</option>
-                              <option value="C班">C班</option>
-                              <option value="役員当番">役員当番</option>
-                              <option value="鍵当番">鍵当番</option>
-                              <option value="救急当番">救急当番</option>
-                            </select>
+                              options={EXTRA_DUTY_SELECT_OPTIONS}
+                              title={`${it.dayLabel} のその他の当番を選択`}
+                              accent="amber"
+                              size="xs"
+                              searchable={false}
+                              displayValueOverride="他"
+                              className="shrink-0"
+                            />
                           </div>
 
                           {/* PC時の削除ボタン */}

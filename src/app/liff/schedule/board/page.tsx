@@ -1,9 +1,10 @@
 // filepath: src/app/liff/schedule/board/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
@@ -378,8 +379,33 @@ function SortableMemberRow({
   );
 }
 
-export default function AttendanceMatrixBoardPage() {
+const VALID_GROUP_TABS: readonly GroupTabType[] = [
+  "all",
+  "player",
+  "parent",
+  "mother",
+  "father",
+  "staff",
+] as const;
+
+function parseUrlGroupTab(raw: string | null): GroupTabType | null {
+  if (!raw) return null;
+  return (VALID_GROUP_TABS as readonly string[]).includes(raw)
+    ? (raw as GroupTabType)
+    : null;
+}
+
+function parseUrlMonthParam(raw: string | null): string | null {
+  if (!raw) return null;
+  return /^\d{4}-\d{2}$/.test(raw) ? raw : null;
+}
+
+function AttendanceMatrixBoardContent() {
   const { profile, currentTeam, isDemo } = useLiff();
+  const searchParams = useSearchParams();
+  const urlGroupTab = parseUrlGroupTab(searchParams.get("group"));
+  const urlMonthParam = parseUrlMonthParam(searchParams.get("month"));
+  const hasUrlGroupParamRef = useRef<boolean>(Boolean(urlGroupTab));
 
   const initialCachedMatrix = useMemo<AttendanceMatrixApiResponse | null>(() => {
     if (typeof window === "undefined") return null;
@@ -480,6 +506,7 @@ export default function AttendanceMatrixBoardPage() {
 
   // UI状態
   const [selectedGroupTab, setSelectedGroupTab] = useState<GroupTabType | null>(() => {
+    if (urlGroupTab) return urlGroupTab;
     const gt = initialCachedMatrix?.myInfo?.groupType;
     if (gt === "father" || gt === "mother" || gt === "staff" || gt === "player") {
       return gt;
@@ -488,8 +515,18 @@ export default function AttendanceMatrixBoardPage() {
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [isManagerOverrideMode, setIsManagerOverrideMode] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => urlMonthParam || "all");
   const [showPastDates, setShowPastDates] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (urlGroupTab) {
+      hasUrlGroupParamRef.current = true;
+      setSelectedGroupTab(urlGroupTab);
+    }
+    if (urlMonthParam) {
+      setSelectedMonth(urlMonthParam);
+    }
+  }, [urlGroupTab, urlMonthParam]);
 
   // メンバー並び順状態
   const [memberSortOrder, setMemberSortOrder] = useState<MemberSortOrderMap>({});
@@ -617,7 +654,7 @@ export default function AttendanceMatrixBoardPage() {
         }
       }
 
-      if (isInitialApply) {
+      if (isInitialApply && !hasUrlGroupParamRef.current) {
         // 🌟 1. 自分が所属するグループの初期選択 (父・母・スタッフ・選手)
         const myId = data.myInfo?.memberId;
         const myIdsSet = new Set<string>(
@@ -3088,5 +3125,23 @@ export default function AttendanceMatrixBoardPage() {
           )}
       </div>
     </div>
+  );
+}
+
+export default function AttendanceMatrixBoardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col flex-1">
+          <LiffHeader />
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">出欠一覧表を読み込み中...</span>
+          </div>
+        </div>
+      }
+    >
+      <AttendanceMatrixBoardContent />
+    </Suspense>
   );
 }

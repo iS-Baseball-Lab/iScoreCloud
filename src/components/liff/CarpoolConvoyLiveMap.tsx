@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   Car,
   ChevronDown,
@@ -1768,32 +1769,42 @@ export function CarpoolConvoyLiveMap({
               {/* 発信号車セレクター ＋ 位置共有ON/OFFスイッチ */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <label
-                    htmlFor="convoy-my-car-select"
-                    className="text-xs font-black text-foreground shrink-0"
-                  >
+                  <span className="text-xs font-black text-foreground shrink-0">
                     自分の号車:
-                  </label>
-                  <select
-                    id="convoy-my-car-select"
+                  </span>
+                  <LiffSelect
                     value={myCarpoolId}
                     disabled={isBroadcasting}
-                    onChange={(e) => {
-                      const nextId = e.target.value;
+                    onChange={(nextId) => {
                       setMyCarpoolId(nextId);
                       const c = cars.find((item) => item.carpoolId === nextId);
                       if (c) setSelectedCarNumber(c.carNumber);
                     }}
-                    className="h-9 px-2.5 rounded-xl border border-border bg-card text-foreground text-xs font-black min-w-0 flex-1 disabled:opacity-60"
-                  >
-                    {cars.map((car) => (
-                      <option key={car.carpoolId} value={car.carpoolId}>
-                        {car.carNumber}号車: {car.driverName}
-                        {car.isCargo ? " (道具車)" : ""}
-                      </option>
-                    ))}
-                    <option value="">現地待機・乗車なし（閲覧のみ）</option>
-                  </select>
+                    options={[
+                      ...cars.map((car) => ({
+                        value: car.carpoolId,
+                        label: `${car.carNumber}号車: ${car.driverName}`,
+                        badge: car.isCargo ? "道具車" : undefined,
+                        badgeTone: "amber" as const,
+                        sublabel: car.carModel
+                          ? `${car.carModel}（乗車 ${car.passengers.length}/${car.capacity}名）`
+                          : `乗車 ${car.passengers.length}/${car.capacity}名`,
+                      })),
+                      {
+                        value: "",
+                        label: "現地待機・乗車なし（閲覧のみ）",
+                        sublabel:
+                          "現在地の発信は行わず、隊列マップの閲覧のみ行います",
+                      },
+                    ]}
+                    title="自分の号車を選択"
+                    subtitle="運転手・同乗者のどちらからでも号車の位置を共有できます"
+                    ariaLabel="自分の号車を選択"
+                    accent="teal"
+                    size="sm"
+                    searchable={false}
+                    className="min-w-0 flex-1 h-9"
+                  />
                 </div>
 
                 {myCarpoolId && (

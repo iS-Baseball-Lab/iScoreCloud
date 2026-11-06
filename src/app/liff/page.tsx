@@ -9,6 +9,11 @@ import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
 import { buildLiffHubUrl, fetchLiffJsonSWR, peekLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  normalizeGroupStatusSummaryConfig,
+  type GroupStatusConfigSummary,
+} from "@/lib/liff/group-attendance";
+import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { UserPlus, ShieldCheck } from "lucide-react";
@@ -29,8 +34,9 @@ interface HubDataResponse {
     homeGround?: string | null;
   };
   nextEvent?: unknown;
-  events?: unknown[];
+  events?: HubEventInputItem[];
   matches?: MatchCardData[];
+  attendanceStatusConfig?: unknown;
 }
 
 function resolveInitialHubCache(): HubDataResponse | null {
@@ -61,11 +67,14 @@ export default function LiffHubPage() {
 
   const initialCached = resolveInitialHubCache();
   const [nextEvent, setNextEvent] = useState<unknown>(initialCached?.nextEvent ?? null);
-  const [events, setEvents] = useState<unknown[]>(
+  const [events, setEvents] = useState<HubEventInputItem[]>(
     Array.isArray(initialCached?.events) ? initialCached!.events! : []
   );
   const [matches, setMatches] = useState<MatchCardData[]>(
     Array.isArray(initialCached?.matches) ? initialCached!.matches! : []
+  );
+  const [attendanceStatusConfig, setAttendanceStatusConfig] = useState<GroupStatusConfigSummary>(() =>
+    normalizeGroupStatusSummaryConfig(initialCached?.attendanceStatusConfig)
   );
   const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
@@ -83,6 +92,7 @@ export default function LiffHubPage() {
     setNextEvent(data.nextEvent ?? null);
     setEvents(Array.isArray(data.events) ? data.events : []);
     setMatches(Array.isArray(data.matches) ? data.matches : []);
+    setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
     hasLoadedRef.current = true;
     setIsLoading(false);
   }, []);
@@ -230,6 +240,8 @@ export default function LiffHubPage() {
               eventsList={events}
               latestMatch={matches[0] || null}
               isLoading={isLoading && !hasLoadedRef.current}
+              attendanceStatusConfig={attendanceStatusConfig}
+              onRefreshHub={() => void loadHubData(currentTeam?.id, true)}
             />
           </section>
         </div>

@@ -7,7 +7,22 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
+import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
+import {
+  DEFAULT_GROUP_STATUS_SUMMARY_CONFIG,
+  normalizeGroupStatusSummaryConfig,
+  type EventGroupAttendanceMap,
+  type GroupStatusConfigSummary,
+} from "@/lib/liff/group-attendance";
+import {
+  loadCachedTeamScheduleDefaultTimes,
+  normalizeTeamScheduleDefaultTimes,
+  resolveDefaultScheduleTimesForDate,
+  saveCachedTeamScheduleDefaultTimes,
+  type TeamScheduleDefaultTimes,
+} from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
@@ -114,6 +129,7 @@ export interface ScheduleEvent {
     setup?: number;
     game?: number;
   };
+  groupAttendCount?: EventGroupAttendanceMap;
 }
 
 export type AttendanceMarkType = "duty" | "help" | "setup" | "game" | "absent" | "pending" | "present" | "late" | "partial";
@@ -221,33 +237,51 @@ export default function LiffSchedulePage() {
       userName: uName,
     });
     if (cachedMid) schedParams.set("memberId", cachedMid);
-    const hit = peekLiffApiCache<{ success: boolean; events?: ScheduleEvent[] }>(
-      `/api/liff/schedule?${schedParams.toString()}`
-    );
+    const hit = peekLiffApiCache<{
+      success: boolean;
+      events?: ScheduleEvent[];
+      attendanceStatusConfig?: GroupStatusConfigSummary;
+      scheduleDefaultTimes?: TeamScheduleDefaultTimes;
+    }>(`/api/liff/schedule?${schedParams.toString()}`);
     if (!hit?.events) return null;
-    return hit.events.map((ev) => {
-      const isAmOff = ev.hasAm === false || ev.amType === "off";
-      return {
-        ...ev,
-        hasAm: !isAmOff,
-        amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
-        needsLunch:
-          ev.needsLunch === true ||
-          (ev.needsLunch as unknown) === 1 ||
-          (ev.needsLunch as unknown) === "1" ||
-          (ev.needsLunch as unknown) === "true",
-        needsSnack:
-          ev.needsSnack === true ||
-          (ev.needsSnack as unknown) === 1 ||
-          (ev.needsSnack as unknown) === "1" ||
-          (ev.needsSnack as unknown) === "true",
-      };
-    });
+    return {
+      events: hit.events.map((ev) => {
+        const isAmOff = ev.hasAm === false || ev.amType === "off";
+        return {
+          ...ev,
+          hasAm: !isAmOff,
+          amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
+          needsLunch:
+            ev.needsLunch === true ||
+            (ev.needsLunch as unknown) === 1 ||
+            (ev.needsLunch as unknown) === "1" ||
+            (ev.needsLunch as unknown) === "true",
+          needsSnack:
+            ev.needsSnack === true ||
+            (ev.needsSnack as unknown) === 1 ||
+            (ev.needsSnack as unknown) === "1" ||
+            (ev.needsSnack as unknown) === "true",
+        };
+      }),
+      attendanceStatusConfig: normalizeGroupStatusSummaryConfig(hit.attendanceStatusConfig),
+      scheduleDefaultTimes: hit.scheduleDefaultTimes
+        ? normalizeTeamScheduleDefaultTimes(hit.scheduleDefaultTimes)
+        : null,
+    };
   }, [currentTeam?.id, profile?.userId, profile?.displayName]);
 
   const [events, setEvents] = useState<ScheduleEvent[]>(
-    () => initialCachedSchedule ?? []
+    () => initialCachedSchedule?.events ?? []
   );
+  const [attendanceStatusConfig, setAttendanceStatusConfig] = useState<GroupStatusConfigSummary>(
+    () => initialCachedSchedule?.attendanceStatusConfig ?? DEFAULT_GROUP_STATUS_SUMMARY_CONFIG
+  );
+  const [scheduleDefaultTimes, setScheduleDefaultTimes] = useState<TeamScheduleDefaultTimes>(() => {
+    if (initialCachedSchedule?.scheduleDefaultTimes) {
+      return initialCachedSchedule.scheduleDefaultTimes;
+    }
+    return loadCachedTeamScheduleDefaultTimes(currentTeam?.id);
+  });
 
   // 本日の日付文字列 (YYYY-MM-DD)
   const todayStr = useMemo(() => {
@@ -298,7 +332,25 @@ export default function LiffSchedulePage() {
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
   const [activeEditGroupId, setActiveEditGroupId] = useState<string>("main");
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [venuesList, setVenuesList] = useState<Array<{ id: string; name: string; shortName?: string | null }>>([]);
+  const { grounds } = useTeamGrounds(currentTeam?.id);
+
+  // 既存の活動予定で使用されている場所候補（マスタ未登録のグラウンドも一覧から再利用可能にする）
+  const recentLocations = useMemo(() => {
+    const list: string[] = [];
+    for (const ev of events) {
+      if (ev.amLocation) list.push(ev.amLocation);
+      if (ev.pmLocation) list.push(ev.pmLocation);
+      if (ev.location) list.push(ev.location);
+      if (ev.activityGroups) {
+        for (const g of ev.activityGroups) {
+          if (g.amLocation) list.push(g.amLocation);
+          if (g.pmLocation) list.push(g.pmLocation);
+          if (g.location) list.push(g.location);
+        }
+      }
+    }
+    return list;
+  }, [events]);
 
   // 👥 各カードでアクティブなグループタブ
   const [activeGroupTabMap, setActiveGroupTabMap] = useState<Record<string, string>>({});
@@ -330,29 +382,10 @@ export default function LiffSchedulePage() {
     }));
   };
 
-  // 球場一覧の取得
+  // チーム切替時にキャッシュ済み初期時間を同期
   useEffect(() => {
-    const loadVenues = async () => {
-      try {
-        const tid = currentTeam?.id || "team_1";
-        const res = await fetch(`/api/venues?teamId=${tid}`);
-        if (res.ok) {
-          const json = await res.json() as any;
-          if (json.success && Array.isArray(json.data)) {
-            setVenuesList(json.data);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load venues:", err);
-      }
-    };
-    loadVenues();
+    setScheduleDefaultTimes(loadCachedTeamScheduleDefaultTimes(currentTeam?.id));
   }, [currentTeam?.id]);
-
-  // 略称優先の球場表示名を取得
-  const getVenueDisplayName = (v: { name: string; shortName?: string | null }) => {
-    return v.shortName && v.shortName.trim() ? v.shortName.trim() : v.name;
-  };
 
   // 👨‍👦 DBの親子関係・お子様データおよび出欠の自動取得
   const fetchFamilyData = async () => {
@@ -509,6 +542,8 @@ export default function LiffSchedulePage() {
           selectedGroupId: isAttending ? (selectedGroupId || childGroupMap[eventId]?.[childId]) : null,
         }),
       });
+      invalidateLiffApiCache();
+      void loadSchedule();
     } catch (err) {
       console.error("Failed to save child attendance:", err);
     }
@@ -550,6 +585,8 @@ export default function LiffSchedulePage() {
           selectedGroupId: isAttending ? (selectedGroupId || parentGroupMap[eventId]) : null,
         }),
       });
+      invalidateLiffApiCache();
+      void loadSchedule();
     } catch (err) {
       console.error("Failed to save attendance:", err);
     }
@@ -569,7 +606,12 @@ export default function LiffSchedulePage() {
       });
       if (cachedMid) schedParams.set("memberId", cachedMid);
       const url = `/api/liff/schedule?${schedParams.toString()}`;
-      const syncCached = peekLiffApiCache<{ success: boolean; events?: ScheduleEvent[] }>(url);
+      const syncCached = peekLiffApiCache<{
+        success: boolean;
+        events?: ScheduleEvent[];
+        attendanceStatusConfig?: GroupStatusConfigSummary;
+        scheduleDefaultTimes?: TeamScheduleDefaultTimes;
+      }>(url);
       if (syncCached?.events) {
         setIsLoading(false);
       } else {
@@ -577,7 +619,20 @@ export default function LiffSchedulePage() {
       }
       const res = await fetch(url);
       if (res.ok) {
-        const data = await res.json() as { success: boolean; events?: ScheduleEvent[] };
+        const data = (await res.json()) as {
+          success: boolean;
+          events?: ScheduleEvent[];
+          attendanceStatusConfig?: GroupStatusConfigSummary;
+          scheduleDefaultTimes?: TeamScheduleDefaultTimes;
+        };
+        if (data.attendanceStatusConfig) {
+          setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
+        }
+        if (data.scheduleDefaultTimes) {
+          const normalizedTimes = normalizeTeamScheduleDefaultTimes(data.scheduleDefaultTimes);
+          setScheduleDefaultTimes(normalizedTimes);
+          saveCachedTeamScheduleDefaultTimes(teamId, normalizedTimes);
+        }
         if (data.events) {
           const normalizedEvents = data.events.map(ev => {
             const isAmOff = ev.hasAm === false || ev.amType === "off";
@@ -585,8 +640,8 @@ export default function LiffSchedulePage() {
               ...ev,
               hasAm: !isAmOff,
               amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
-              needsLunch: ev.needsLunch === true || (ev.needsLunch as any) === 1 || (ev.needsLunch as any) === "1" || (ev.needsLunch as any) === "true",
-              needsSnack: ev.needsSnack === true || (ev.needsSnack as any) === 1 || (ev.needsSnack as any) === "1" || (ev.needsSnack as any) === "true",
+              needsLunch: ev.needsLunch === true || (ev.needsLunch as unknown) === 1 || (ev.needsLunch as unknown) === "1" || (ev.needsLunch as unknown) === "true",
+              needsSnack: ev.needsSnack === true || (ev.needsSnack as unknown) === 1 || (ev.needsSnack as unknown) === "1" || (ev.needsSnack as unknown) === "true",
             };
           });
 
@@ -631,6 +686,11 @@ export default function LiffSchedulePage() {
       let finalEvent = { ...editingEvent };
       finalEvent.title = (editingEvent.title && editingEvent.title.trim()) || "通常練習";
 
+      const defaultTimes = resolveDefaultScheduleTimesForDate(
+        scheduleDefaultTimes,
+        editingEvent.dateStr || todayStr
+      );
+
       // グループがある場合の親データ同期（2グループ以上で複数グループとして同期・保存）
       if (finalEvent.activityGroups && finalEvent.activityGroups.length > 1) {
         const firstGrp = finalEvent.activityGroups[0];
@@ -639,12 +699,12 @@ export default function LiffSchedulePage() {
         }
         finalEvent.hasAm = firstGrp.hasAm !== false && firstGrp.amType !== "off";
         finalEvent.amType = firstGrp.amType || "practice";
-        finalEvent.amTime = firstGrp.amTime || "08:00〜12:00";
+        finalEvent.amTime = firstGrp.amTime || defaultTimes.amTimeLabel;
         finalEvent.amLocation = firstGrp.amLocation || "";
 
         finalEvent.hasPm = Boolean(firstGrp.hasPm && firstGrp.pmType !== "off");
         finalEvent.pmType = firstGrp.pmType || "practice";
-        finalEvent.pmTime = firstGrp.pmTime || "13:00〜17:00";
+        finalEvent.pmTime = firstGrp.pmTime || defaultTimes.pmTimeLabel;
         finalEvent.pmLocation = firstGrp.pmLocation || firstGrp.amLocation || "";
 
         const resolvedType = finalEvent.hasAm 
@@ -656,9 +716,9 @@ export default function LiffSchedulePage() {
         if (finalEvent.hasAm && finalEvent.hasPm) {
           finalEvent.time = `${finalEvent.amTime} / ${finalEvent.pmTime}`;
         } else if (finalEvent.hasAm) {
-          finalEvent.time = finalEvent.amTime || "08:00〜12:00";
+          finalEvent.time = finalEvent.amTime || defaultTimes.amTimeLabel;
         } else if (finalEvent.hasPm) {
-          finalEvent.time = finalEvent.pmTime || "13:00〜17:00";
+          finalEvent.time = finalEvent.pmTime || defaultTimes.pmTimeLabel;
         } else {
           finalEvent.time = "時間調整中";
         }
@@ -669,11 +729,11 @@ export default function LiffSchedulePage() {
           if (singleGrp.targetGroup) finalEvent.targetGroup = singleGrp.targetGroup;
           finalEvent.hasAm = singleGrp.hasAm !== false && singleGrp.amType !== "off";
           finalEvent.amType = singleGrp.amType || "practice";
-          finalEvent.amTime = singleGrp.amTime || "08:00〜12:00";
+          finalEvent.amTime = singleGrp.amTime || defaultTimes.amTimeLabel;
           finalEvent.amLocation = singleGrp.amLocation || "";
           finalEvent.hasPm = Boolean(singleGrp.hasPm && singleGrp.pmType !== "off");
           finalEvent.pmType = singleGrp.pmType || "practice";
-          finalEvent.pmTime = singleGrp.pmTime || "13:00〜17:00";
+          finalEvent.pmTime = singleGrp.pmTime || defaultTimes.pmTimeLabel;
           finalEvent.pmLocation = singleGrp.pmLocation || "";
           finalEvent.dutyGroup = singleGrp.dutyGroup || "1班";
           finalEvent.carInfo = singleGrp.carInfo || "";
@@ -692,11 +752,11 @@ export default function LiffSchedulePage() {
         finalEvent.location = isAmActive ? (editingEvent.amLocation || editingEvent.location || "") : (editingEvent.pmLocation || "");
 
         if (isAmActive && isPmActive) {
-          finalEvent.time = `${editingEvent.amTime || "08:00〜12:00"} / ${editingEvent.pmTime || "13:00〜17:00"}`;
+          finalEvent.time = `${editingEvent.amTime || defaultTimes.amTimeLabel} / ${editingEvent.pmTime || defaultTimes.pmTimeLabel}`;
         } else if (isAmActive) {
-          finalEvent.time = editingEvent.amTime || "08:00〜12:00";
+          finalEvent.time = editingEvent.amTime || defaultTimes.amTimeLabel;
         } else if (isPmActive) {
-          finalEvent.time = editingEvent.pmTime || "13:00〜17:00";
+          finalEvent.time = editingEvent.pmTime || defaultTimes.pmTimeLabel;
         } else {
           finalEvent.time = "時間調整中";
         }
@@ -732,6 +792,7 @@ export default function LiffSchedulePage() {
         console.error("Failed to patch event");
       }
 
+      invalidateLiffApiCache();
       setEditingEvent(null);
       await loadSchedule();
     } catch (err) {
@@ -1770,50 +1831,13 @@ export default function LiffSchedulePage() {
                       )}
                     </div>
 
-                    {/* ⑤ リアルタイム出欠サマリー ＆ 3色ソリッドゲージバー */}
-                    {totalResponses > 0 && (
-                      <div className="p-3 rounded-2xl bg-card border border-border space-y-2">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <div className="flex items-center gap-2 font-black text-foreground">
-                            <Users className="w-3.5 h-3.5 text-primary shrink-0" />
-                            <span>出欠状況</span>
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black tabular-nums">
-                              参加 {ev.attendCount.present}
-                            </span>
-                            <span className="text-muted-foreground font-bold tabular-nums">
-                              未定 {ev.attendCount.pending} ・ 欠席 {ev.attendCount.absent}
-                            </span>
-                          </div>
-                          <Link
-                            href="/liff/schedule/board"
-                            className="inline-flex items-center gap-0.5 text-[11px] font-black text-primary hover:underline shrink-0 tabular-nums"
-                          >
-                            <span>参加率 {attendPct}%</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
-                          </Link>
-                        </div>
-                        <div className="flex gap-1 h-2 w-full rounded-xs overflow-hidden bg-muted">
-                          {ev.attendCount.present > 0 && (
-                            <div
-                              className="h-full rounded-xs bg-emerald-600"
-                              style={{ width: `${(ev.attendCount.present / totalResponses) * 100}%` }}
-                            />
-                          )}
-                          {ev.attendCount.pending > 0 && (
-                            <div
-                              className="h-full rounded-xs bg-amber-500"
-                              style={{ width: `${(ev.attendCount.pending / totalResponses) * 100}%` }}
-                            />
-                          )}
-                          {ev.attendCount.absent > 0 && (
-                            <div
-                              className="h-full rounded-xs bg-slate-500"
-                              style={{ width: `${(ev.attendCount.absent / totalResponses) * 100}%` }}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    )}
+                    {/* ⑤ グループ別リアルタイム出欠サマリー（選手 / 母 / 父 / スタッフ） */}
+                    <EventGroupAttendanceSummary
+                      groupAttendCount={ev.groupAttendCount}
+                      attendCount={ev.attendCount}
+                      statusConfig={attendanceStatusConfig}
+                      dateStr={ev.dateStr}
+                    />
                   </div>
                 </div>
               );
@@ -1851,18 +1875,23 @@ export default function LiffSchedulePage() {
           ? (groups.find(g => g.id === activeEditGroupId) || groups[0])
           : null;
 
+        const editDateDefaults = resolveDefaultScheduleTimesForDate(
+          scheduleDefaultTimes,
+          editingEvent.dateStr || todayStr
+        );
+
         const curHasAm = currentEditGroup
           ? (currentEditGroup.hasAm !== false && currentEditGroup.amType !== "off")
           : (editingEvent.hasAm !== false && editingEvent.amType !== "off");
         const curAmType = currentEditGroup ? (currentEditGroup.amType || "practice") : (editingEvent.amType || editingEvent.eventType || "practice");
-        const curAmTime = currentEditGroup ? (currentEditGroup.amTime || "08:00〜12:00") : (editingEvent.amTime || editingEvent.time || "08:00〜12:00");
+        const curAmTime = currentEditGroup ? (currentEditGroup.amTime || editDateDefaults.amTimeLabel) : (editingEvent.amTime || editingEvent.time || editDateDefaults.amTimeLabel);
         const curAmLocation = currentEditGroup ? (currentEditGroup.amLocation || "") : (editingEvent.amLocation || editingEvent.location || "");
         
         const curHasPm = currentEditGroup
           ? (currentEditGroup.hasPm !== undefined ? currentEditGroup.hasPm : (currentEditGroup.pmType !== "off"))
           : (editingEvent.hasPm !== undefined ? editingEvent.hasPm : true);
         const curPmType = currentEditGroup ? (currentEditGroup.pmType || "practice") : (editingEvent.pmType || "practice");
-        const curPmTime = currentEditGroup ? (currentEditGroup.pmTime || "13:00〜17:00") : (editingEvent.pmTime || "13:00〜17:00");
+        const curPmTime = currentEditGroup ? (currentEditGroup.pmTime || editDateDefaults.pmTimeLabel) : (editingEvent.pmTime || editDateDefaults.pmTimeLabel);
         const curPmLocation = currentEditGroup ? (currentEditGroup.pmLocation || currentEditGroup.amLocation || "") : (editingEvent.pmLocation || editingEvent.amLocation || "");
         const curDutyGroup = currentEditGroup ? (currentEditGroup.dutyGroup || "1班") : (editingEvent.dutyGroup || "1班");
         const curCarInfo = currentEditGroup ? (currentEditGroup.carInfo || "") : (editingEvent.carInfo || "");
@@ -2289,57 +2318,47 @@ export default function LiffSchedulePage() {
                     )}
 
                     {curHasAm ? (
-                      <div className="space-y-2">
-                        {/* 🌟 時間帯と場所の横並び配置 */}
-                        <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-2.5">
+                        {/* 🌟 時間帯と球場・場所（一覧から選択可能） */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
+                            <div className="flex items-center gap-1.5 min-h-[36px] px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curAmTime}
                                 onChange={(e) => updateCurrentActivity({ amTime: e.target.value })}
-                                placeholder="08:00〜12:00"
+                                placeholder={editDateDefaults.amTimeLabel}
                                 className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
                               />
                             </div>
                           </div>
 
                           <div>
-                            <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
-                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <input
-                                type="text"
-                                value={curAmLocation}
-                                onChange={(e) => updateCurrentActivity({ amLocation: e.target.value })}
-                                placeholder="市民球場 / 選択"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
+                            <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">球場・場所（一覧から選択）</label>
+                            <LiffLocationPicker
+                              value={curAmLocation}
+                              onChange={(loc) => updateCurrentActivity({ amLocation: loc })}
+                              grounds={grounds}
+                              recentLocations={recentLocations}
+                              title="午前の球場・活動場所を選択"
+                              placeholder="一覧から場所を選択"
+                              size="sm"
+                            />
                           </div>
                         </div>
 
                         {/* 球場クイック選択候補 */}
-                        {venuesList.length > 0 && (
-                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-0.5">
-                            <span className="text-[9px] font-bold text-muted-foreground shrink-0">候補:</span>
-                            {venuesList.slice(0, 6).map((v) => {
-                              const displayName = getVenueDisplayName(v);
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => updateCurrentActivity({ amLocation: displayName })}
-                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
-                                >
-                                  🏟️ {displayName}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <LiffLocationPicker
+                          value={curAmLocation}
+                          onChange={(loc) => updateCurrentActivity({ amLocation: loc })}
+                          grounds={grounds}
+                          recentLocations={recentLocations}
+                          title="午前の球場・活動場所を選択"
+                          showQuickChips
+                          className="[&>button]:hidden"
+                        />
                       </div>
                     ) : (
                       <p className="text-[11px] font-bold text-muted-foreground py-0.5">
@@ -2369,7 +2388,7 @@ export default function LiffSchedulePage() {
                           updateCurrentActivity({
                             hasPm: nextHasPm,
                             pmType: nextHasPm ? (curPmType === "off" ? "practice" : curPmType || "practice") : "off",
-                            pmTime: nextHasPm ? (curPmTime || "13:00〜17:00") : "",
+                            pmTime: nextHasPm ? (curPmTime || editDateDefaults.pmTimeLabel) : "",
                             pmLocation: nextHasPm ? (curPmLocation || curAmLocation || "") : "",
                           });
                         }}
@@ -2408,18 +2427,18 @@ export default function LiffSchedulePage() {
                     )}
 
                     {curHasPm && curPmType !== "off" ? (
-                      <div className="space-y-2">
-                        {/* 🌟 時間帯と場所の横並び配置 */}
-                        <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-2.5">
+                        {/* 🌟 時間帯と球場・場所（一覧から選択可能） */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                           <div>
                             <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">時間帯</label>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
+                            <div className="flex items-center gap-1.5 min-h-[36px] px-2.5 py-1.5 rounded-xl bg-card border border-border">
                               <Clock className="w-3.5 h-3.5 text-primary shrink-0" />
                               <input
                                 type="text"
                                 value={curPmTime}
                                 onChange={(e) => updateCurrentActivity({ pmTime: e.target.value })}
-                                placeholder="13:00〜17:00"
+                                placeholder={editDateDefaults.pmTimeLabel}
                                 className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
                               />
                             </div>
@@ -2427,7 +2446,7 @@ export default function LiffSchedulePage() {
 
                           <div>
                             <div className="flex items-center justify-between mb-0.5">
-                              <label className="text-[10px] font-bold text-muted-foreground block">球場・場所</label>
+                              <label className="text-[10px] font-bold text-muted-foreground block">球場・場所（一覧から選択）</label>
                               {curAmLocation && curPmLocation !== curAmLocation && (
                                 <button
                                   type="button"
@@ -2438,38 +2457,30 @@ export default function LiffSchedulePage() {
                                 </button>
                               )}
                             </div>
-                            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-card border border-border">
-                              <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <input
-                                type="text"
-                                value={curPmLocation}
-                                onChange={(e) => updateCurrentActivity({ pmLocation: e.target.value })}
-                                placeholder="球場名 / 選択"
-                                className="bg-transparent text-xs font-bold text-foreground focus:outline-hidden w-full"
-                              />
-                            </div>
+                            <LiffLocationPicker
+                              value={curPmLocation}
+                              onChange={(loc) => updateCurrentActivity({ pmLocation: loc })}
+                              grounds={grounds}
+                              recentLocations={recentLocations}
+                              sameAsAmLocation={curAmLocation || undefined}
+                              title="午後の球場・活動場所を選択"
+                              placeholder="一覧から場所を選択"
+                              size="sm"
+                            />
                           </div>
                         </div>
 
                         {/* 球場クイック選択候補 */}
-                        {venuesList.length > 0 && (
-                          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none pt-0.5">
-                            <span className="text-[9px] font-bold text-muted-foreground shrink-0">候補:</span>
-                            {venuesList.slice(0, 6).map((v) => {
-                              const displayName = getVenueDisplayName(v);
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => updateCurrentActivity({ pmLocation: displayName })}
-                                  className="px-1.5 py-0.5 rounded-md text-[9.5px] font-bold bg-card border border-border text-muted-foreground hover:text-foreground shrink-0 cursor-pointer"
-                                >
-                                  🏟️ {displayName}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        <LiffLocationPicker
+                          value={curPmLocation}
+                          onChange={(loc) => updateCurrentActivity({ pmLocation: loc })}
+                          grounds={grounds}
+                          recentLocations={recentLocations}
+                          sameAsAmLocation={curAmLocation || undefined}
+                          title="午後の球場・活動場所を選択"
+                          showQuickChips
+                          className="[&>button]:hidden"
+                        />
                       </div>
                     ) : (
                       <p className="text-[11px] font-bold text-muted-foreground py-0.5">

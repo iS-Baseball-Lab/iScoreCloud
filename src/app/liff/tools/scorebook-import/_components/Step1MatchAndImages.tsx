@@ -24,6 +24,10 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
@@ -1077,27 +1081,42 @@ export function Step1MatchAndImages({
                     </p>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <select
-                      value={selectedMatchId}
-                      onChange={(e) => onSelectMatchId(e.target.value)}
-                      className="w-full h-11 pl-3.5 pr-9 rounded-2xl bg-muted border border-border text-xs font-black text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 appearance-none cursor-pointer"
-                    >
-                      {visibleMatches.map((m) => {
-                        const orderTag =
-                          m.battingOrder === "first" ? "先攻" : "後攻";
-                        const statusPrefix = m.hasExistingAtBats
-                          ? "✅【取込済】"
-                          : "⬜【未取込】";
-                        return (
-                          <option key={m.id} value={m.id}>
-                            {statusPrefix} {m.date} vs {m.opponent}（{orderTag}）
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <Calendar className="w-4 h-4 text-muted-foreground absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
+                  <LiffSelect
+                    value={selectedMatchId}
+                    onChange={(val) => onSelectMatchId(val)}
+                    title="取り込み対象の試合を選択"
+                    subtitle="スコアブックを取り込む試合を選択してください"
+                    searchable={true}
+                    searchPlaceholder="日付・対戦相手・大会名で検索..."
+                    size="lg"
+                    className="w-full rounded-2xl bg-muted"
+                    triggerPrefix={
+                      <Calendar className="w-4 h-4 text-primary" />
+                    }
+                    ariaLabel="取り込み対象の試合を選択"
+                    options={visibleMatches.map((m): LiffSelectOption => {
+                      const orderTag =
+                        m.battingOrder === "first" ? "先攻" : "後攻";
+                      return {
+                        value: m.id,
+                        label: `${m.date} vs ${m.opponent}（${orderTag}）`,
+                        badge: m.hasExistingAtBats ? "取込済" : "未取込",
+                        badgeTone: m.hasExistingAtBats ? "emerald" : "slate",
+                        sublabel: m.tournamentName
+                          ? `${m.tournamentName}${
+                              m.hasExistingAtBats
+                                ? ` / 現在スコア ${m.myScore}-${m.opponentScore}`
+                                : ""
+                            }`
+                          : m.hasExistingAtBats
+                          ? `現在スコア: ${m.myScore} - ${m.opponentScore}`
+                          : undefined,
+                        keywords: `${m.opponent} ${m.date} ${
+                          m.tournamentName || ""
+                        } ${orderTag}`,
+                      };
+                    })}
+                  />
                 )}
               </>
             )}
@@ -1255,19 +1274,24 @@ export function Step1MatchAndImages({
                 <label className="text-[10px] font-black text-muted-foreground">
                   試合種別
                 </label>
-                <select
+                <LiffSelect
                   value={newMatchType}
-                  onChange={(e) =>
+                  onChange={(val) =>
                     setNewMatchType(
-                      e.target.value as "official" | "practice" | "exchange"
+                      val as "official" | "practice" | "exchange"
                     )
                   }
-                  className="w-full h-10 px-2.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground"
-                >
-                  <option value="practice">{practiceMatchLabel}</option>
-                  <option value="official">公式戦</option>
-                  <option value="exchange">交流戦</option>
-                </select>
+                  title="試合種別を選択"
+                  size="md"
+                  searchable={false}
+                  className="w-full"
+                  ariaLabel="試合種別"
+                  options={[
+                    { value: "practice", label: practiceMatchLabel },
+                    { value: "official", label: "公式戦" },
+                    { value: "exchange", label: "交流戦" },
+                  ]}
+                />
               </div>
 
               {newMatchType !== "practice" && (
@@ -1289,32 +1313,42 @@ export function Step1MatchAndImages({
                 <label className="text-[10px] font-black text-muted-foreground">
                   自チームの先攻・後攻
                 </label>
-                <select
+                <LiffSelect
                   value={newBattingOrder}
-                  onChange={(e) =>
-                    setNewBattingOrder(e.target.value as "first" | "second")
+                  onChange={(val) =>
+                    setNewBattingOrder(val as "first" | "second")
                   }
-                  className="w-full h-10 px-2.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground"
-                >
-                  <option value="first">自チームが先攻（表）</option>
-                  <option value="second">自チームが後攻（裏）</option>
-                </select>
+                  title="自チームの先攻・後攻を選択"
+                  size="md"
+                  searchable={false}
+                  className="w-full"
+                  ariaLabel="自チームの先攻・後攻"
+                  options={[
+                    { value: "first", label: "自チームが先攻（表）" },
+                    { value: "second", label: "自チームが後攻（裏）" },
+                  ]}
+                />
               </div>
 
               <div className="space-y-1">
                 <label className="text-[10px] font-black text-muted-foreground">
                   規定イニング
                 </label>
-                <select
-                  value={newInnings}
-                  onChange={(e) => setNewInnings(Number(e.target.value))}
-                  className="w-full h-10 px-2.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground"
-                >
-                  <option value={5}>5回制（低学年等）</option>
-                  <option value={6}>6回制（学童等）</option>
-                  <option value={7}>7回制（中学・草野球）</option>
-                  <option value={9}>9回制</option>
-                </select>
+                <LiffSelect
+                  value={String(newInnings)}
+                  onChange={(val) => setNewInnings(Number(val))}
+                  title="規定イニングを選択"
+                  size="md"
+                  searchable={false}
+                  className="w-full"
+                  ariaLabel="規定イニング"
+                  options={[
+                    { value: "5", label: "5回制（低学年等）" },
+                    { value: "6", label: "6回制（学童等）" },
+                    { value: "7", label: "7回制（中学・草野球）" },
+                    { value: "9", label: "9回制" },
+                  ]}
+                />
               </div>
             </div>
 

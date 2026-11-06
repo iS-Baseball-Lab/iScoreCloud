@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -724,8 +725,7 @@ function LiffLineupContent() {
   };
 
   // テンプレート読込
-  const handleLoadTemplate = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const templateId = e.target.value;
+  const handleLoadTemplate = (templateId: string) => {
     setSelectedTemplateId(templateId);
     if (!templateId) return;
 
@@ -1268,22 +1268,29 @@ function LiffLineupContent() {
             <div className="flex justify-between items-center">
               {activeTab === "myTeam" ? (
                 <div className="flex gap-2 w-full">
-                  <div className="relative flex-1">
-                    <FolderOpen className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-primary pointer-events-none" />
-                    <select
-                      value={selectedTemplateId}
-                      onChange={handleLoadTemplate}
-                      className="w-full h-11 rounded-2xl border border-border bg-card shadow-xs pl-9 pr-8 text-xs font-black text-foreground focus:outline-none focus:border-primary appearance-none cursor-pointer"
-                    >
-                      <option value="">テンプレート読込</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                  </div>
+                  <LiffSelect
+                    value={selectedTemplateId}
+                    onChange={handleLoadTemplate}
+                    options={[
+                      {
+                        value: "",
+                        label: "テンプレート読込",
+                        sublabel: "選択状態をクリアします",
+                      },
+                      ...templates.map((t) => ({
+                        value: t.id,
+                        label: t.name,
+                      })),
+                    ]}
+                    placeholder="テンプレート読込"
+                    title="オーダーテンプレート読込"
+                    subtitle="保存済みのスタメン構成を呼び出します"
+                    triggerPrefix={
+                      <FolderOpen className="w-4 h-4 text-primary shrink-0" />
+                    }
+                    searchable={templates.length >= 8}
+                    className="flex-1 min-w-0 h-11 rounded-2xl px-3.5 shadow-xs"
+                  />
                   <Button
                     type="button"
                     variant="outline"
@@ -1421,30 +1428,62 @@ function LiffLineupContent() {
                         </button>
                       ) : (
                         <>
-                          <select
+                          <LiffSelect
                             value={player.position}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               const list = [...opponentLineup];
-                              list[index] = { ...list[index], position: e.target.value };
+                              list[index] = { ...list[index], position: val };
                               setOpponentLineup(list);
                             }}
+                            options={[
+                              {
+                                value: "",
+                                label: "守備未設定（クリア）",
+                              },
+                              ...LINEUP_POSITIONS.map((p) => {
+                                const isTaken = disabledPos.includes(p.id);
+                                return {
+                                  value: p.id,
+                                  label: p.label,
+                                  disabled: isTaken,
+                                  badge: isTaken ? "他打順で使用中" : undefined,
+                                  badgeTone: "slate" as const,
+                                };
+                              }),
+                            ]}
+                            displayValueOverride={posDef ? posDef.label : "守備"}
+                            title={`相手 ${index + 1}番の守備位置`}
+                            searchable={false}
                             className={cn(
-                              "w-16 h-11 rounded-xl font-black text-xs appearance-none text-center shadow-2xs cursor-pointer shrink-0",
+                              "w-20 h-11 rounded-xl px-2.5 shrink-0",
                               posDef
-                                ? `${posDef.color} text-white`
-                                : "bg-muted text-foreground border border-border"
+                                ? posDef.id === "1"
+                                  ? "bg-red-500 hover:bg-red-600 border-red-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "2"
+                                  ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "3"
+                                  ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "4"
+                                  ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "5"
+                                  ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "6"
+                                  ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "7"
+                                  ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "8"
+                                  ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
+                                  : posDef.id === "9"
+                                  ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
+                                  : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
+                                : "bg-muted hover:bg-muted/80 text-foreground border-border"
                             )}
-                          >
-                            <option value="">守備</option>
-                            {LINEUP_POSITIONS.map(
-                              (p) =>
-                                !disabledPos.includes(p.id) && (
-                                  <option key={p.id} value={p.id}>
-                                    {p.label}
-                                  </option>
-                                )
-                            )}
-                          </select>
+                            triggerTextClassName={
+                              posDef
+                                ? "text-white font-black text-center flex-1"
+                                : "text-foreground font-black text-center flex-1"
+                            }
+                          />
 
                           <Input
                             placeholder="相手選手名"

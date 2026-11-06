@@ -5,6 +5,10 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -45,6 +49,21 @@ interface VenueInfo {
   parkingInfo: string;
   notes: string;
 }
+
+const VENUE_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "stadium", label: "🏆 球場・公営" },
+  { value: "home", label: "🏠 本拠地・ホーム" },
+  { value: "school", label: "🏫 学校・地域" },
+  { value: "indoor", label: "🏋️ 室内・練習場" },
+];
+
+const VENUE_SURFACE_OPTIONS: ReadonlyArray<LiffSelectOption> = [
+  { value: "土 (クレー)", label: "土 (クレー)" },
+  { value: "人工芝", label: "人工芝 (全面)" },
+  { value: "天然芝", label: "天然芝" },
+  { value: "土 (内野) / 天然芝 (外野)", label: "土 (内野) / 天然芝 (外野)" },
+  { value: "その他", label: "その他" },
+];
 
 const CATEGORIES = [
   { id: "all", label: "すべて", icon: Building2 },
@@ -581,7 +600,7 @@ export default function LiffGroundsPage() {
       {/* ➕ 新規登録 / ✏️ 編集モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200"
@@ -644,31 +663,28 @@ export default function LiffGroundsPage() {
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
                   <label className="font-black text-foreground">施設分類</label>
-                  <select
+                  <LiffSelect
                     value={formCategory}
-                    onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-bold cursor-pointer"
-                  >
-                    <option value="stadium">🏆 球場・公営</option>
-                    <option value="home">🏠 本拠地・ホーム</option>
-                    <option value="school">🏫 学校・地域</option>
-                    <option value="indoor">🏋️ 室内・練習場</option>
-                  </select>
+                    onChange={setFormCategory}
+                    options={VENUE_CATEGORY_OPTIONS}
+                    title="施設分類を選択"
+                    accent="teal"
+                    searchable={false}
+                    className="w-full rounded-2xl bg-background"
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="font-black text-foreground">グラウンド状態</label>
-                  <select
+                  <LiffSelect
                     value={formSurface}
-                    onChange={(e) => setFormSurface(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-bold cursor-pointer"
-                  >
-                    <option value="土 (クレー)">土 (クレー)</option>
-                    <option value="人工芝">人工芝 (全面)</option>
-                    <option value="天然芝">天然芝</option>
-                    <option value="土 (内野) / 天然芝 (外野)">土 (内野) / 天然芝 (外野)</option>
-                    <option value="その他">その他</option>
-                  </select>
+                    onChange={setFormSurface}
+                    options={VENUE_SURFACE_OPTIONS}
+                    title="グラウンド状態を選択"
+                    accent="teal"
+                    searchable={false}
+                    className="w-full rounded-2xl bg-background"
+                  />
                 </div>
               </div>
 
@@ -779,7 +795,7 @@ export default function LiffGroundsPage() {
       {/* 🗑️ 削除確認モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && deleteTarget && createPortal(
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
           <div
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl overflow-hidden animate-in zoom-in-95 duration-200"

@@ -94,6 +94,10 @@ import {
 } from "@/lib/liff/scorebook-image";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import {
+  LiffSelect,
+  type LiffSelectOption,
+} from "@/components/liff/LiffSelect";
+import {
   AtBatCardRunnerStrip,
   AtBatModalRunnerEditor,
   type PrecedingRunnerCellCrop,
@@ -1895,26 +1899,31 @@ export function Step3PinpointReview({
                                 </button>
                               )}
 
-                              <select
-                                value={ab.inning}
-                                onChange={(e) =>
-                                  handleMoveAtBatToInning(
-                                    ab.id,
-                                    Number(e.target.value)
-                                  )
+                              <LiffSelect
+                                value={String(ab.inning)}
+                                onChange={(val) =>
+                                  handleMoveAtBatToInning(ab.id, Number(val))
                                 }
-                                aria-label="イニング移動先を選択"
-                                className="h-6 px-1.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground cursor-pointer"
-                              >
-                                {selectableTargetInnings.map((targetInn) => (
-                                  <option key={targetInn} value={targetInn}>
-                                    {targetInn}回{isTop ? "表" : "裏"}
-                                    {targetInn === ab.inning
-                                      ? "（現在）"
-                                      : "へ移動"}
-                                  </option>
-                                ))}
-                              </select>
+                                title="イニング移動先を選択"
+                                subtitle={`${ab.battingOrder}番 ${
+                                  ab.batterName || ""
+                                } の打席を指定イニングへ移動します`}
+                                size="xs"
+                                searchable={false}
+                                ariaLabel="イニング移動先を選択"
+                                options={selectableTargetInnings.map(
+                                  (targetInn): LiffSelectOption => ({
+                                    value: String(targetInn),
+                                    label: `${targetInn}回${
+                                      isTop ? "表" : "裏"
+                                    }${
+                                      targetInn === ab.inning
+                                        ? "（現在）"
+                                        : "へ移動"
+                                    }`,
+                                  })
+                                )}
+                              />
 
                               {ab.inning < 15 && (
                                 <button
@@ -2416,23 +2425,28 @@ export function Step3PinpointReview({
                               </span>
                             </button>
 
-                            <select
-                              value={editingAtBat.inning}
-                              onChange={(e) =>
+                            <LiffSelect
+                              value={String(editingAtBat.inning)}
+                              onChange={(val) =>
                                 handleMoveAtBatToInning(
                                   editingAtBat.id,
-                                  Number(e.target.value)
+                                  Number(val)
                                 )
                               }
-                              aria-label="この打席のイニング"
-                              className="col-span-4 h-9 px-2 rounded-xl bg-card border border-primary/35 text-xs font-black text-foreground text-center cursor-pointer"
-                            >
-                              {selectableTargetInnings.map((innOpt) => (
-                                <option key={innOpt} value={innOpt}>
-                                  {innOpt}回{editingAtBat.isTop ? "表" : "裏"}
-                                </option>
-                              ))}
-                            </select>
+                              title="この打席のイニングを変更"
+                              size="sm"
+                              searchable={false}
+                              className="col-span-4 w-full border-primary/35"
+                              ariaLabel="この打席のイニング"
+                              options={selectableTargetInnings.map(
+                                (innOpt): LiffSelectOption => ({
+                                  value: String(innOpt),
+                                  label: `${innOpt}回${
+                                    editingAtBat.isTop ? "表" : "裏"
+                                  }`,
+                                })
+                              )}
+                            />
 
                             <button
                               type="button"
@@ -2453,32 +2467,34 @@ export function Step3PinpointReview({
                           {/* 打順選択 ＆ 同一イニング内の前後入替 */}
                           <div className="grid grid-cols-12 gap-1.5 items-center">
                             <div className="col-span-6">
-                              <select
-                                value={editingAtBat.battingOrder}
-                                onChange={(e) =>
+                              <LiffSelect
+                                value={String(editingAtBat.battingOrder)}
+                                onChange={(val) =>
                                   handleChangeBattingOrder(
                                     editingAtBat.id,
-                                    Number(e.target.value)
+                                    Number(val)
                                   )
                                 }
-                                aria-label="打順を変更"
-                                className="w-full h-8 px-2 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
-                              >
-                                {Array.from(
+                                title="打順を変更"
+                                size="sm"
+                                searchable={false}
+                                className="w-full"
+                                ariaLabel="打順を変更"
+                                options={Array.from(
                                   { length: maxBattingOrder },
                                   (_, i) => i + 1
-                                ).map((ord) => {
+                                ).map((ord): LiffSelectOption => {
                                   const slot = currentStructure?.batters.find(
                                     (b) => b.battingOrder === ord
                                   );
-                                  return (
-                                    <option key={ord} value={ord}>
-                                      {ord}番
-                                      {slot?.name ? `: ${slot.name}` : ""}
-                                    </option>
-                                  );
+                                  return {
+                                    value: String(ord),
+                                    label: `${ord}番${
+                                      slot?.name ? `: ${slot.name}` : ""
+                                    }`,
+                                  };
                                 })}
-                              </select>
+                              />
                             </div>
 
                             <button
@@ -2667,11 +2683,10 @@ export function Step3PinpointReview({
                                 >
                                   {isMound ? moundBadge : editRealSeq}
                                 </span>
-                                <select
+                                <LiffSelect
                                   value={pCode}
-                                  onChange={(e) => {
-                                    const nextCode = e.target
-                                      .value as CanonicalPitchResult;
+                                  onChange={(val) => {
+                                    const nextCode = val as CanonicalPitchResult;
                                     updateSingleAtBat(editingAtBat.id, (prev) => {
                                       const nextPitches = [...prev.pitches];
                                       nextPitches[pIdx] = nextCode;
@@ -2682,19 +2697,34 @@ export function Step3PinpointReview({
                                       );
                                     });
                                   }}
-                                  className={`h-7 px-2 rounded-lg border text-[11px] font-black ${meta.toneClass}`}
-                                >
-                                  {pCode === "pickoff" && (
-                                    <option value="pickoff">
-                                      {LEGACY_PICKOFF_PRESET.badgeLabel}
-                                    </option>
-                                  )}
-                                  {PITCH_RESULT_PRESETS.map((opt) => (
-                                    <option key={opt.code} value={opt.code}>
-                                      {opt.badgeLabel}
-                                    </option>
-                                  ))}
-                                </select>
+                                  title={`${
+                                    isMound ? moundBadge : `${editRealSeq}球目`
+                                  }の判定を変更`}
+                                  size="xs"
+                                  searchable={false}
+                                  className={meta.toneClass}
+                                  triggerTextClassName="text-current"
+                                  ariaLabel={`${
+                                    isMound ? moundBadge : `${editRealSeq}球目`
+                                  }の投球判定`}
+                                  options={[
+                                    ...(pCode === "pickoff"
+                                      ? [
+                                          {
+                                            value: "pickoff",
+                                            label:
+                                              LEGACY_PICKOFF_PRESET.badgeLabel,
+                                          },
+                                        ]
+                                      : []),
+                                    ...PITCH_RESULT_PRESETS.map(
+                                      (opt): LiffSelectOption => ({
+                                        value: opt.code,
+                                        label: opt.badgeLabel,
+                                      })
+                                    ),
+                                  ]}
+                                />
                               </div>
 
                               <div className="flex items-center gap-1 shrink-0">
@@ -4110,33 +4140,41 @@ export function Step3PinpointReview({
                       <span className="text-[10px] font-bold text-muted-foreground">
                         アウト
                       </span>
-                      <select
-                        value={editingAtBat.outsInPlay}
-                        aria-label="打席アウト数"
-                        onChange={(e) =>
+                      <LiffSelect
+                        value={String(editingAtBat.outsInPlay)}
+                        ariaLabel="打席アウト数"
+                        title="この打席で増えたアウト数"
+                        size="sm"
+                        searchable={false}
+                        className="w-full px-1.5 gap-1"
+                        onChange={(val) =>
                           updateSingleAtBat(editingAtBat.id, (prev) => ({
                             ...prev,
-                            outsInPlay: Number(e.target.value),
+                            outsInPlay: Number(val),
                           }))
                         }
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        <option value={0}>0死</option>
-                        <option value={1}>1死</option>
-                        <option value={2}>2死</option>
-                        <option value={3}>3死</option>
-                      </select>
+                        options={[
+                          { value: "0", label: "0死" },
+                          { value: "1", label: "1死" },
+                          { value: "2", label: "2死" },
+                          { value: "3", label: "3死" },
+                        ]}
+                      />
                     </div>
 
                     <div className="col-span-2 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
                         打席得点
                       </span>
-                      <select
-                        value={editingAtBat.runsInPlay}
-                        aria-label="この打席で入った得点"
-                        onChange={(e) => {
-                          const nextRuns = Number(e.target.value);
+                      <LiffSelect
+                        value={String(editingAtBat.runsInPlay)}
+                        ariaLabel="この打席で入った得点"
+                        title="この打席で入った得点"
+                        size="sm"
+                        searchable={false}
+                        className="w-full px-1.5 gap-1"
+                        onChange={(val) => {
+                          const nextRuns = Number(val);
                           updateSingleAtBat(editingAtBat.id, (prev) => {
                             const syncedManual =
                               syncAtBatAdvancesForManualRuns(
@@ -4152,25 +4190,26 @@ export function Step3PinpointReview({
                             };
                           });
                         }}
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        {[0, 1, 2, 3, 4].map((r) => (
-                          <option key={r} value={r}>
-                            {r}点
-                          </option>
-                        ))}
-                      </select>
+                        options={[0, 1, 2, 3, 4].map((r) => ({
+                          value: String(r),
+                          label: `${r}点`,
+                        }))}
+                      />
                     </div>
 
                     <div className="col-span-2 space-y-1">
                       <span className="text-[10px] font-bold text-muted-foreground">
                         打点
                       </span>
-                      <select
-                        value={editingAtBat.rbi}
-                        aria-label="打者の打点"
-                        onChange={(e) => {
-                          const nextRbi = Number(e.target.value);
+                      <LiffSelect
+                        value={String(editingAtBat.rbi)}
+                        ariaLabel="打者の打点"
+                        title="打者の打点を選択"
+                        size="sm"
+                        searchable={false}
+                        className="w-full px-1.5 gap-1"
+                        onChange={(val) => {
+                          const nextRbi = Number(val);
                           updateSingleAtBat(editingAtBat.id, (prev) => {
                             const targetRuns = Math.max(
                               prev.runsInPlay,
@@ -4194,14 +4233,11 @@ export function Step3PinpointReview({
                             };
                           });
                         }}
-                        className="w-full h-9 px-1 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                      >
-                        {[0, 1, 2, 3, 4].map((r) => (
-                          <option key={r} value={r}>
-                            打点{r}
-                          </option>
-                        ))}
-                      </select>
+                        options={[0, 1, 2, 3, 4].map((r) => ({
+                          value: String(r),
+                          label: `打点${r}`,
+                        }))}
+                      />
                     </div>
                   </div>
 

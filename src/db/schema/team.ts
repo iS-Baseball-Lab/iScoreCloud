@@ -1,4 +1,4 @@
-// src/db/schema/team.ts
+// filepath: src/db/schema/team.ts
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { user } from "./auth";
@@ -43,6 +43,7 @@ export const teams = sqliteTable('teams', {
   memberSortOrder: text('member_sort_order'),
   attendanceStatusConfig: text('attendance_status_config'),
   memberSubLabels: text('member_sub_labels'),
+  scheduleDefaultTimes: text('schedule_default_times'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 
