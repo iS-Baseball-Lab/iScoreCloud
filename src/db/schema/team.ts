@@ -12,6 +12,7 @@ export const organizations = sqliteTable("organizations", {
   name: text("name").notNull(), // 例: "川崎中央シニア", "東京草野球アタッカーズ"
   shortName: text("short_name"), // スコアボード表示用の略称（例: "川崎中央", "東京A"）
   logoImageUrl: text("logo_image_url"), // PDFスコアブックのヘッダーに印字するチームロゴ
+  googleMapsApiKey: text("google_maps_api_key"), // 遠征・隊列ライブマップ用の Google Maps JavaScript API キー（任意・クラブ共通）
   description: text("description"), // チームのスローガンや紹介文
   foundedYear: integer("founded_year"), // 結成された年（西暦）
   category: text("category").notNull().default('other'), // 学童、中学硬式、草野球など

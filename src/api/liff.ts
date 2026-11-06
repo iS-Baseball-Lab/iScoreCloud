@@ -3547,6 +3547,7 @@ app.get("/carpool", async (c) => {
   const eventId = c.req.query("eventId");
 
   const DEMO_CARPOOL = {
+    eventId: "demo-event-carpool",
     eventTitle: "秋季大会 2回戦 vs レッドソックス",
     date: "2026年8月30日(日)",
     gatherTime: "07:45 集合 / 08:00 出発",
@@ -3554,8 +3555,17 @@ app.get("/carpool", async (c) => {
     destination: "多摩川緑地野球場 第1駐車場",
     costShare: "1家族あたり 約 600 円 (高速・ガソリン代割り勘)",
     notes: "※道具車はボールケース・テント・救急箱を積載します。\n※各自水筒と氷の準備をお願いします。",
+    availableEvents: [
+      {
+        eventId: "demo-event-carpool",
+        title: "秋季大会 2回戦 vs レッドソックス",
+        dateLabel: "8/30(日)",
+        carCount: 3,
+      },
+    ],
     cars: [
       {
+        carpoolId: "demo-cp-1",
         carNumber: 1,
         driverName: "鈴木 パパ",
         carModel: "セレナ (白)",
@@ -3570,6 +3580,7 @@ app.get("/carpool", async (c) => {
         ],
       },
       {
+        carpoolId: "demo-cp-2",
         carNumber: 2,
         driverName: "田中 パパ (コーチ)",
         carModel: "アルファード (黒)",
@@ -3583,6 +3594,7 @@ app.get("/carpool", async (c) => {
         ],
       },
       {
+        carpoolId: "demo-cp-3",
         carNumber: 3,
         driverName: "山下 監督",
         carModel: "ハイエース (道具車)",
@@ -3606,17 +3618,82 @@ app.get("/carpool", async (c) => {
       });
     }
 
-    // 対象のイベントを取得（指定がなければ直近のイベント）
-    let targetEvent: any = null;
+    // チーム内のイベント一覧と各イベントの配車台数を並列取得し、当日〜直近予定の配車イベントを最優先で選択
+    const teamEvents = await db
+      .select()
+      .from(events)
+      .where(eq(events.teamId, teamId))
+      .orderBy(desc(events.startAt))
+      .all();
+
+    if (teamEvents.length === 0) {
+      return c.json({
+        success: true,
+        isDemo: false,
+        carpool: null,
+      });
+    }
+
+    const allEventIds = teamEvents.map((ev) => ev.id);
+    const carpoolCountRows =
+      allEventIds.length > 0
+        ? await db
+            .select({
+              eventId: eventCarpools.eventId,
+              count: sql<number>`count(*)`,
+            })
+            .from(eventCarpools)
+            .where(inArray(eventCarpools.eventId, allEventIds))
+            .groupBy(eventCarpools.eventId)
+            .all()
+        : [];
+
+    const carCountByEventId = new Map<string, number>();
+    for (const row of carpoolCountRows) {
+      carCountByEventId.set(row.eventId, Number(row.count) || 0);
+    }
+
+    const availableEvents = teamEvents
+      .filter((ev) => (carCountByEventId.get(ev.id) || 0) > 0)
+      .slice(0, 12)
+      .map((ev) => ({
+        eventId: ev.id,
+        title: ev.title,
+        dateLabel: new Date(ev.startAt).toLocaleDateString("ja-JP", {
+          month: "numeric",
+          day: "numeric",
+          weekday: "short",
+        }),
+        carCount: carCountByEventId.get(ev.id) || 0,
+      }));
+
+    let targetEvent: (typeof teamEvents)[number] | null = null;
     if (eventId) {
-      targetEvent = await db.select().from(events).where(eq(events.id, eventId)).get();
+      targetEvent = teamEvents.find((ev) => ev.id === eventId) || null;
     } else {
-      targetEvent = await db
-        .select()
-        .from(events)
-        .where(eq(events.teamId, teamId))
-        .orderBy(desc(events.startAt))
-        .get();
+      // 当日朝0:00(JST)以降の「配車ありイベント（近い順）」 -> 「当日以降の予定（近い順）」 -> 「直近過去の配車ありイベント」 -> 「最新イベント」
+      const jstNow = new Date(Date.now() + 9 * 3600_000);
+      const jstTodayStartMs =
+        Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), jstNow.getUTCDate()) -
+        9 * 3600_000;
+
+      const upcomingEventsAsc = teamEvents
+        .filter((ev) => new Date(ev.startAt).getTime() >= jstTodayStartMs)
+        .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+
+      const upcomingWithCars = upcomingEventsAsc.find(
+        (ev) => (carCountByEventId.get(ev.id) || 0) > 0
+      );
+      const pastWithCars = teamEvents.find(
+        (ev) => (carCountByEventId.get(ev.id) || 0) > 0
+      );
+
+      targetEvent =
+        upcomingWithCars ||
+        upcomingEventsAsc[0] ||
+        pastWithCars ||
+        teamEvents[0] ||
+        null;
     }
 
     if (!targetEvent) {
@@ -3627,36 +3704,48 @@ app.get("/carpool", async (c) => {
       });
     }
 
-    // 配車枠の取得
-    const carpoolsList = await db
-      .select({
-        id: eventCarpools.id,
-        driverId: eventCarpools.driverId,
-        driverName: teamMembers.name,
-        capacity: eventCarpools.capacity,
-        carType: eventCarpools.carType,
-        carName: memberCars.name,
-        carColor: memberCars.color,
-        numberPlate: memberCars.numberPlate,
-      })
-      .from(eventCarpools)
-      .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
-      .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
-      .where(eq(eventCarpools.eventId, targetEvent.id))
-      .all();
+    // 配車枠とチーム基本情報（ホームグラウンド名等）を並列取得
+    const [carpoolsList, teamRow] = await Promise.all([
+      db
+        .select({
+          id: eventCarpools.id,
+          driverId: eventCarpools.driverId,
+          driverName: teamMembers.name,
+          capacity: eventCarpools.capacity,
+          carType: eventCarpools.carType,
+          carName: memberCars.name,
+          carColor: memberCars.color,
+          numberPlate: memberCars.numberPlate,
+        })
+        .from(eventCarpools)
+        .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
+        .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
+        .where(eq(eventCarpools.eventId, targetEvent.id))
+        .all(),
+      db
+        .select({ homeGround: teams.homeGround })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+    ]);
+
+    const defaultGatherPlace =
+      teamRow?.homeGround?.trim() || targetEvent.location || "集合場所";
 
     if (carpoolsList.length === 0) {
       return c.json({
         success: true,
         isDemo: false,
         carpool: {
+          eventId: targetEvent.id,
           eventTitle: targetEvent.title,
           date: new Date(targetEvent.startAt).toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" }),
           gatherTime: `${new Date(targetEvent.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 集合`,
-          gatherLocation: targetEvent.location || "グラウンド",
+          gatherLocation: defaultGatherPlace,
           destination: targetEvent.location || "グラウンド",
           costShare: "配車割り当て調整中",
           notes: targetEvent.description || "",
+          availableEvents,
           cars: [],
         },
       });
@@ -3704,6 +3793,7 @@ app.get("/carpool", async (c) => {
       });
 
       return {
+        carpoolId: car.id,
         carNumber: index + 1,
         driverName: car.driverName || "ドライバー",
         carModel: car.carName ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}` : "登録車",
@@ -3718,13 +3808,15 @@ app.get("/carpool", async (c) => {
       success: true,
       isDemo: false,
       carpool: {
+        eventId: targetEvent.id,
         eventTitle: targetEvent.title,
         date: new Date(targetEvent.startAt).toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" }),
         gatherTime: `${new Date(targetEvent.startAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })} 集合`,
-        gatherLocation: targetEvent.location || "グラウンド",
+        gatherLocation: defaultGatherPlace,
         destination: targetEvent.location || "グラウンド",
         costShare: "1家族あたり実費割り勘",
         notes: targetEvent.description || "",
+        availableEvents,
         cars: carsWithPassengers,
       },
     });

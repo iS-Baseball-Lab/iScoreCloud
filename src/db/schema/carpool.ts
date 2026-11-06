@@ -1,5 +1,5 @@
 // filepath: src/db/schema/carpool.ts
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { teams, players, teamMembers } from "./team";
 import { events } from "./attendance";
@@ -84,4 +84,28 @@ export const eventCarpoolRiders = sqliteTable("event_carpool_riders", {
   carpoolIdx: index("idx_ec_riders_carpool_id").on(table.carpoolId),
   playerIdx: index("idx_ec_riders_player_id").on(table.playerId),
   memberIdx: index("idx_ec_riders_member_id").on(table.memberId),
+}));
+
+// ==========================================
+// 📡 遠征・隊列ライブ位置共有テーブル（1号車〜N号車 × 行き/帰り）
+// ==========================================
+export const carpoolLiveLocations = sqliteTable("carpool_live_locations", {
+  id: text("id").primaryKey(), // `${carpoolId}:${direction}`
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  eventId: text("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  carpoolId: text("carpool_id").notNull().references(() => eventCarpools.id, { onDelete: "cascade" }),
+  direction: text("direction").$type<"outbound" | "return">().notNull().default("outbound"),
+  isSharing: integer("is_sharing", { mode: "boolean" }).notNull().default(true),
+  status: text("status").$type<"moving" | "jam" | "rest" | "arrived">().notNull().default("moving"),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  heading: real("heading"),
+  speedKmh: real("speed_kmh"),
+  accuracyM: real("accuracy_m"),
+  senderUserId: text("sender_user_id"),
+  senderName: text("sender_name"),
+  updatedAt: integer("updated_at").notNull(), // epoch ms
+}, (table) => ({
+  eventDirIdx: index("idx_carpool_live_event_dir").on(table.eventId, table.direction),
+  teamIdx: index("idx_carpool_live_team_id").on(table.teamId),
 }));

@@ -20,6 +20,9 @@ let isAllSchemaVerified = false;
 let schemaVerificationPromise: Promise<void> | null = null;
 
 const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
+  organizations: [
+    { name: "google_maps_api_key", ddl: "ALTER TABLE organizations ADD COLUMN google_maps_api_key text" },
+  ],
   events: [
     { name: "needs_lunch", ddl: "ALTER TABLE events ADD COLUMN needs_lunch integer DEFAULT 0" },
     { name: "needs_snack", ddl: "ALTER TABLE events ADD COLUMN needs_snack integer DEFAULT 0" },
@@ -152,6 +155,26 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "carpool_live_locations",
+    ddl: `CREATE TABLE IF NOT EXISTS carpool_live_locations (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      event_id text NOT NULL,
+      carpool_id text NOT NULL,
+      direction text NOT NULL DEFAULT 'outbound',
+      is_sharing integer NOT NULL DEFAULT 1,
+      status text NOT NULL DEFAULT 'moving',
+      latitude real,
+      longitude real,
+      heading real,
+      speed_kmh real,
+      accuracy_m real,
+      sender_user_id text,
+      sender_name text,
+      updated_at integer NOT NULL
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -162,6 +185,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_lineup_templates_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_lineup_templates_team_id ON lineup_templates (team_id)" },
   { name: "idx_match_live_reports_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_team_id ON match_live_reports (team_id)" },
   { name: "idx_match_live_reports_match_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_match_id ON match_live_reports (match_id)" },
+  { name: "idx_carpool_live_event_dir", ddl: "CREATE INDEX IF NOT EXISTS idx_carpool_live_event_dir ON carpool_live_locations (event_id, direction)" },
+  { name: "idx_carpool_live_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_carpool_live_team_id ON carpool_live_locations (team_id)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {

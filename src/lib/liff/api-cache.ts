@@ -98,7 +98,8 @@ function shouldCacheApiPath(pathname: string): boolean {
   if (
     pathname.startsWith("/api/auth/") ||
     pathname.startsWith("/api/images/") ||
-    pathname.startsWith("/api/seed")
+    pathname.startsWith("/api/seed") ||
+    pathname.startsWith("/api/liff/carpool-convoy")
   ) {
     return false;
   }

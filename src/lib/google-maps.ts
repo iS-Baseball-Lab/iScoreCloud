@@ -267,3 +267,73 @@ export function extractDirectionsTargetFromUrl(rawUrl: string | null | undefined
   return "";
 }
 
+/**
+ * 登録された Google Map URL から緯度・経度（数値ペア）を抽出する
+ */
+export function extractLatLngFromGoogleMapsUrl(
+  rawUrl: string | null | undefined
+): { lat: number; lng: number } | null {
+  const cleaned = normalizeRawMapUrlInput(rawUrl);
+  if (!cleaned) return null;
+
+  const parsePair = (latRaw: string, lngRaw: string): { lat: number; lng: number } | null => {
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    if (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
+      return { lat, lng };
+    }
+    return null;
+  };
+
+  // 1. 厳密なピン座標 (!3d<lat>!4d<lng>) を最優先
+  const pinMatches = Array.from(cleaned.matchAll(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/g));
+  if (pinMatches.length > 0) {
+    const lastPin = pinMatches[pinMatches.length - 1];
+    const parsedPin = parsePair(lastPin[1], lastPin[2]);
+    if (parsedPin) return parsedPin;
+  }
+
+  // 2. クエリパラメータ (?q=lat,lng, ?ll=lat,lng, ?destination=lat,lng, ?center=lat,lng)
+  try {
+    const parsed = new URL(cleaned);
+    const paramKeys = ["q", "query", "ll", "sll", "destination", "daddr", "center"] as const;
+    for (const key of paramKeys) {
+      const val = (parsed.searchParams.get(key) || "").trim();
+      const coordMatch = val.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/);
+      if (coordMatch?.[1] && coordMatch?.[2]) {
+        const pair = parsePair(coordMatch[1], coordMatch[2]);
+        if (pair) return pair;
+      }
+    }
+
+    // 3. /maps/search/lat,lng 形式
+    const searchPathMatch = parsed.pathname.match(/\/maps\/search\/([^/?#]+)/i);
+    if (searchPathMatch?.[1]) {
+      const decoded = decodeURIComponent(searchPathMatch[1].replace(/\+/g, " ")).trim();
+      const coordMatch = decoded.match(/^(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)$/);
+      if (coordMatch?.[1] && coordMatch?.[2]) {
+        const pair = parsePair(coordMatch[1], coordMatch[2]);
+        if (pair) return pair;
+      }
+    }
+  } catch {
+    // ignore URL parse error
+  }
+
+  // 4. /@lat,lng ビューポート座標
+  const atCoordMatch = cleaned.match(/\/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atCoordMatch?.[1] && atCoordMatch?.[2]) {
+    const pair = parsePair(atCoordMatch[1], atCoordMatch[2]);
+    if (pair) return pair;
+  }
+
+  return null;
+}
+

@@ -27,6 +27,8 @@ export interface WorkerEnv {
   NEXT_PUBLIC_LIFF_ID?: string;
   LIFF_ID?: string;
   GEMINI_API_KEY?: string;
+  GOOGLE_MAPS_API_KEY?: string;
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?: string;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

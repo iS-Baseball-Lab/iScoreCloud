@@ -3,14 +3,20 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles } from "lucide-react";
+import {
+  CarpoolConvoyLiveMap,
+  type ConvoyCarItem,
+} from "@/components/liff/CarpoolConvoyLiveMap";
+import type { ConvoyAvailableEventOption } from "@/types/carpool-convoy";
+import { Car, Clock, MapPin, AlertCircle, Fuel, Loader2, Sparkles, CalendarDays } from "lucide-react";
 
 interface CarAssignment {
+  carpoolId?: string;
   carNumber: number;
   driverName: string;
   carModel: string;
@@ -21,6 +27,7 @@ interface CarAssignment {
 }
 
 interface CarpoolData {
+  eventId?: string;
   eventTitle: string;
   date: string;
   gatherTime: string;
@@ -28,11 +35,13 @@ interface CarpoolData {
   destination: string;
   costShare: string;
   notes: string;
+  availableEvents?: ConvoyAvailableEventOption[];
   cars: CarAssignment[];
 }
 
 function LiffCarpoolContent() {
-  const { currentTeam } = useLiff();
+  const { currentTeam, profile } = useLiff();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || "";
   const [direction, setDirection] = useState<"outbound" | "return">("outbound");
@@ -73,6 +82,19 @@ function LiffCarpoolContent() {
     (acc, car) => acc + car.passengers.length,
     0
   );
+
+  const effectiveEventId = carpoolInfo?.eventId || eventIdParam || "demo-event-carpool";
+  const convoyCars: ConvoyCarItem[] = cars.map((car) => ({
+    carpoolId: car.carpoolId || `car-${car.carNumber}`,
+    carNumber: car.carNumber,
+    driverName: car.driverName,
+    carModel: car.carModel,
+    plate: car.plate,
+    capacity: car.capacity,
+    passengers: car.passengers,
+    isCargo: car.isCargo,
+  }));
+  const availableEvents = carpoolInfo?.availableEvents || [];
 
   return (
     <div className="flex flex-col flex-1">
@@ -119,6 +141,39 @@ function LiffCarpoolContent() {
           </div>
         ) : (
           <>
+            {/* 複数の配車登録済みイベントがある場合のワンタップ切替バー */}
+            {availableEvents.length > 1 && (
+              <div className="rounded-2xl border border-border bg-card p-2.5 shadow-2xs space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-black text-muted-foreground px-1">
+                  <CalendarDays className="w-3.5 h-3.5 text-teal-600" />
+                  <span>表示する遠征・配車予定を切り替え</span>
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+                  {availableEvents.map((ev) => {
+                    const active = ev.eventId === effectiveEventId;
+                    return (
+                      <button
+                        key={ev.eventId}
+                        type="button"
+                        onClick={() =>
+                          router.replace(
+                            `/liff/carpool?eventId=${encodeURIComponent(ev.eventId)}`
+                          )
+                        }
+                        className={`px-3 py-1.5 rounded-xl border text-xs shrink-0 transition-colors cursor-pointer ${
+                          active
+                            ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                            : "bg-muted text-foreground border-border font-bold hover:bg-muted/80"
+                        }`}
+                      >
+                        {ev.dateLabel} {ev.title} ({ev.carCount}台)
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* 集合概要カード（A-3 上帯ダークキャップ × 純白ボディ） */}
             <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
           <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 space-y-1">
@@ -201,6 +256,18 @@ function LiffCarpoolContent() {
             <span>帰り便 (球場 ➔ 解散場所)</span>
           </button>
         </div>
+
+        {/* 🗺️ 遠征・隊列ライブマップ（折りたたみ／展開対応・Google Maps JS API + 渋滞表示 + 同乗者発信） */}
+        <CarpoolConvoyLiveMap
+          teamId={currentTeam?.id || "demo-team"}
+          eventId={effectiveEventId}
+          direction={direction}
+          destinationText={carpoolInfo.destination}
+          gatherLocationText={carpoolInfo.gatherLocation}
+          cars={convoyCars}
+          userId={profile?.userId}
+          userName={profile?.displayName}
+        />
 
         {/* 車両ごとの乗車割り当てカード */}
         <section className="space-y-3">
