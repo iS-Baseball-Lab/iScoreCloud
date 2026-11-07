@@ -45,6 +45,15 @@ import {
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 
+export interface HubActivityGroupItem {
+  id: string;
+  name: string;
+  time?: string;
+  location?: string;
+  eventType?: string;
+  dutyGroup?: string;
+}
+
 export interface HubEventInputItem {
   id: string;
   title?: string;
@@ -71,16 +80,35 @@ export interface HubEventInputItem {
   memo?: string;
   description?: string;
   myStatus?: "present" | "absent" | "pending" | "late";
-  activityGroups?: Array<{
-    id: string;
-    name: string;
-    time?: string;
-    location?: string;
-    eventType?: string;
-    dutyGroup?: string;
-  }>;
+  activityGroups?: HubActivityGroupItem[];
   attendCount?: Partial<GroupAttendanceCounts> | null;
   groupAttendCount?: EventGroupAttendanceMap | null;
+}
+
+interface HubWeeklyEventCardItem {
+  id: string;
+  title: string;
+  dateStr?: string;
+  date: string;
+  hasPm: boolean;
+  eventType: "match" | "practice" | "camp" | "off";
+  time: string;
+  location: string;
+  amType: "match" | "practice" | "camp" | "off";
+  amTime: string;
+  amLocation: string;
+  pmType: "match" | "practice" | "camp" | "off";
+  pmTime: string;
+  pmLocation: string;
+  targetGroup: string;
+  dutyGroup?: string;
+  carInfo: string;
+  needsLunch: boolean;
+  needsSnack: boolean;
+  memo: string;
+  activityGroups?: HubActivityGroupItem[];
+  attendCount: Partial<GroupAttendanceCounts> | null;
+  groupAttendCount: EventGroupAttendanceMap | null;
 }
 
 interface FamilyChildItem {
@@ -352,7 +380,10 @@ export function HubHeroSection({
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 📅 直近の土曜日〜金曜日の活動予定を算出 (useMemoでメモ化しチラつき防止)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const { periodLabel: weeklyPeriodLabel, events: weeklyEvents } = useMemo(() => {
+  const { periodLabel: weeklyPeriodLabel, events: weeklyEvents } = useMemo<{
+    periodLabel: string;
+    events: HubWeeklyEventCardItem[];
+  }>(() => {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0(日) - 6(土)
     
@@ -392,7 +423,7 @@ export function HubHeroSection({
         return d >= satDate && d <= friDate;
       });
 
-      const mapEventData = (ev: HubEventInputItem) => {
+      const mapEventData = (ev: HubEventInputItem): HubWeeklyEventCardItem => {
         const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
         
         // 午前時間の算出
@@ -486,20 +517,20 @@ export function HubHeroSection({
     const sunDateObj = new Date(satDate.getTime() + 86400000);
     const sunIso = `${sunDateObj.getFullYear()}-${String(sunDateObj.getMonth() + 1).padStart(2, "0")}-${String(sunDateObj.getDate()).padStart(2, "0")}`;
 
-    const defaultEvents = [
+    const defaultEvents: HubWeeklyEventCardItem[] = [
       {
         id: "ev-sat-1",
         title: "秋季大会 2回戦 vs レッドソックス",
         dateStr: satIso,
         date: `${satStr}(土)`,
         hasPm: false,
-        eventType: "match" as const,
+        eventType: "match",
         time: "08:00〜12:00",
         location: "市民第1球場",
-        amType: "match" as const,
+        amType: "match",
         amTime: "08:00〜12:00",
         amLocation: "市民第1球場",
-        pmType: "off" as const,
+        pmType: "off",
         pmTime: "",
         pmLocation: "",
         targetGroup: "Aチーム",
@@ -508,7 +539,7 @@ export function HubHeroSection({
         needsLunch: false,
         needsSnack: true,
         memo: "ユニフォーム正装・スパイク着用。雨天時は7:00にLINE連絡します。",
-        activityGroups: undefined as Array<{ id: string; name: string; time?: string; location?: string; eventType?: string; dutyGroup?: string }> | undefined,
+        activityGroups: undefined,
         attendCount: { present: 15, absent: 3, pending: 0, total: 18 },
         groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
       },
@@ -518,13 +549,13 @@ export function HubHeroSection({
         dateStr: sunIso,
         date: `${sunDateObj.getMonth() + 1}/${sunDateObj.getDate()}(日)`,
         hasPm: true,
-        eventType: "practice" as const,
+        eventType: "practice",
         time: "08:00〜16:00",
         location: "大師河原第3G",
-        amType: "practice" as const,
+        amType: "practice",
         amTime: "08:00〜12:00",
         amLocation: "大師河原第3G",
-        pmType: "practice" as const,
+        pmType: "practice",
         pmTime: "12:00〜16:00",
         pmLocation: "大師河原第3G",
         targetGroup: "全体",
@@ -533,7 +564,7 @@ export function HubHeroSection({
         needsLunch: true,
         needsSnack: false,
         memo: "水分補給のドリンク多めに持参してください。",
-        activityGroups: undefined as Array<{ id: string; name: string; time?: string; location?: string; eventType?: string; dutyGroup?: string }> | undefined,
+        activityGroups: undefined,
         attendCount: { present: 13, absent: 3, pending: 2, total: 18 },
         groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[1],
       },
