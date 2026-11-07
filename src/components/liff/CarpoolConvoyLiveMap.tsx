@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { LiffSelect } from "@/components/liff/LiffSelect";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Car,
   ChevronDown,
@@ -412,10 +413,26 @@ export function CarpoolConvoyLiveMap({
   const [googleSdkReady, setGoogleSdkReady] = useState(false);
   const [googleMapAuthFailed, setGoogleMapAuthFailed] = useState(false);
 
-  // APIキー設定モーダル（管理者・指導者向け）
+  // APIキー設定モーダル（IT管理者・監督・指導者向け）
   const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [isSavingKey, setIsSavingKey] = useState(false);
+
+  const effectiveUserId = useMemo(() => {
+    if (userId) return userId;
+    if (typeof window === "undefined") return "";
+    return (
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      ""
+    );
+  }, [userId]);
+
+  const effectiveUserName = useMemo(() => {
+    if (userName) return userName;
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("iscore_user_name") || "";
+  }, [userName]);
 
   // Google Maps インスタンス参照
   const mapDomRef = useRef<HTMLDivElement | null>(null);
@@ -459,8 +476,8 @@ export function CarpoolConvoyLiveMap({
         eventId,
         direction,
       });
-      if (userId) qs.set("userId", userId);
-      if (userName) qs.set("userName", userName);
+      if (effectiveUserId) qs.set("userId", effectiveUserId);
+      if (effectiveUserName) qs.set("userName", effectiveUserName);
 
       const res = await fetch(`/api/liff/carpool-convoy?${qs.toString()}`, {
         cache: "no-store",
@@ -494,7 +511,7 @@ export function CarpoolConvoyLiveMap({
       isPollingInFlightRef.current = false;
       setIsInitialLoading(false);
     }
-  }, [teamId, eventId, direction, userId, userName, cars]);
+  }, [teamId, eventId, direction, effectiveUserId, effectiveUserName, cars]);
 
   useEffect(() => {
     void fetchSnapshot();
@@ -600,7 +617,7 @@ export function CarpoolConvoyLiveMap({
     }) => {
       if (!opts.carpoolId || !eventId) return;
       const senderLabel =
-        snapshot?.myDisplayName || userName || "乗車メンバー";
+        snapshot?.myDisplayName || effectiveUserName || "乗車メンバー";
 
       try {
         const res = await fetch("/api/liff/carpool-convoy/location", {
@@ -619,7 +636,7 @@ export function CarpoolConvoyLiveMap({
             speedKmh: opts.coords?.speedKmh ?? null,
             accuracyM: opts.coords?.accuracyM ?? null,
             clearLocation: opts.clearLocation ?? false,
-            userId: userId || null,
+            userId: effectiveUserId || null,
             userName: senderLabel,
           }),
           keepalive: true,
@@ -1314,7 +1331,8 @@ export function CarpoolConvoyLiveMap({
         body: JSON.stringify({
           teamId,
           apiKey: apiKeyInput.trim(),
-          userId: userId || null,
+          userId: effectiveUserId || null,
+          userName: effectiveUserName || null,
         }),
       });
       const data = (await res.json()) as {
@@ -1327,6 +1345,9 @@ export function CarpoolConvoyLiveMap({
         toast.error(data.error || "APIキーの保存に失敗しました");
         return;
       }
+
+      invalidateLiffApiCache("/api/liff/carpool-convoy");
+      invalidateLiffApiCache("/api/liff/admin/dashboard");
 
       setSnapshot((prev) =>
         prev
@@ -1349,7 +1370,7 @@ export function CarpoolConvoyLiveMap({
     } finally {
       setIsSavingKey(false);
     }
-  }, [teamId, apiKeyInput, userId]);
+  }, [teamId, apiKeyInput, effectiveUserId, effectiveUserName]);
 
   // サマリー集計
   const sharingCount = enrichedCars.filter(

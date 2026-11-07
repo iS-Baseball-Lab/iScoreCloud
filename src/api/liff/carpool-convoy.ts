@@ -5,7 +5,7 @@ import { and, desc, eq, inArray, or } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import { getAuth } from "@/lib/auth";
-import { canManageTeam } from "@/lib/roles";
+import { canManageSystem, canManageTeam } from "@/lib/roles";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import {
   expandGoogleMapsShortUrl,
@@ -30,6 +30,7 @@ const {
   teams,
   teamMembers,
   players,
+  user: userTable,
   account,
   events,
   matches,
@@ -144,6 +145,250 @@ function resolveEnvGoogleMapsKey(env: WorkerEnv): string | null {
   const fromPublic = (env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim();
   if (fromPublic) return fromPublic;
   return null;
+}
+
+function parseMemberSubRoles(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+    }
+  } catch {
+    // JSON以外のカンマ区切り文字列等へのフォールバック
+  }
+  return trimmed
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function hasMapsKeyMemberPrivilege(
+  role: string | null | undefined,
+  subRolesRaw: string | null | undefined,
+  includeCoach = true
+): boolean {
+  const normalizedRole = (role || "").trim().toLowerCase();
+  const subRoles = parseMemberSubRoles(subRolesRaw);
+
+  // IT管理者 (admin) / 監督・代表 (manager) — メインロールまたは兼務 subRoles
+  if (
+    canManageSystem(normalizedRole, subRoles) ||
+    canManageTeam(normalizedRole, subRoles)
+  ) {
+    return true;
+  }
+
+  const extraAllowed = includeCoach
+    ? new Set(["owner", "it_admin", "coach"])
+    : new Set(["owner", "it_admin"]);
+
+  if (extraAllowed.has(normalizedRole)) return true;
+  return subRoles.some((sr) => extraAllowed.has(sr));
+}
+
+function isSystemAdminRoleValue(role: string | null | undefined): boolean {
+  const r = (role || "").trim().toLowerCase();
+  return r === "system_admin" || r === "admin";
+}
+
+function isOrgAdminRoleValue(role: string | null | undefined): boolean {
+  const r = (role || "").trim().toLowerCase();
+  return r === "owner" || r === "admin" || r === "manager" || r === "it_admin";
+}
+
+type TeamMemberRow = typeof teamMembers.$inferSelect;
+
+async function resolveMapsKeyAccess(params: {
+  db: ReturnType<typeof drizzle>;
+  teamRow: {
+    id: string;
+    organizationId: string | null;
+    createdBy?: string | null;
+  };
+  allMembers: TeamMemberRow[];
+  expandedIds: string[];
+  rawUserId: string;
+  rawUserName: string;
+  sessionUser: AuthUser | undefined;
+  bindUnlinkedMemberOnNameMatch?: boolean;
+}): Promise<{
+  allowed: boolean;
+  matchedMember: TeamMemberRow | null;
+}> {
+  const {
+    db,
+    teamRow,
+    allMembers,
+    expandedIds,
+    rawUserId,
+    rawUserName,
+    sessionUser,
+    bindUnlinkedMemberOnNameMatch = false,
+  } = params;
+
+  const candidateIdSet = new Set<string>(expandedIds);
+  const targetNormNames = [rawUserName, sessionUser?.name]
+    .map((n) => normalizePersonName(n))
+    .filter((n) => n.length >= 2);
+
+  // 1. userId 一致メンバーを検索（複数該当時は権限保有レコードを優先）
+  const idMatchedMembers = allMembers.filter(
+    (m) => Boolean(m.userId && candidateIdSet.has(m.userId))
+  );
+  let matchedMember: TeamMemberRow | null =
+    idMatchedMembers.find((m) =>
+      hasMapsKeyMemberPrivilege(m.role, m.subRoles, true)
+    ) ||
+    idMatchedMembers[0] ||
+    null;
+
+  // 2. 氏名一致によるフォールバック照合（LIFF初回や未紐付けのIT管理者・指導者救済）
+  if (!matchedMember && targetNormNames.length > 0) {
+    const nameMatchedMembers = allMembers.filter((m) => {
+      const norm = normalizePersonName(m.name);
+      return norm.length >= 2 && targetNormNames.includes(norm);
+    });
+    const byName =
+      nameMatchedMembers.find((m) =>
+        hasMapsKeyMemberPrivilege(m.role, m.subRoles, true)
+      ) ||
+      nameMatchedMembers[0] ||
+      null;
+
+    if (byName) {
+      matchedMember = byName;
+      const bindUid =
+        (rawUserId && !IGNORED_MOCK_USER_IDS.has(rawUserId) ? rawUserId : "") ||
+        sessionUser?.id ||
+        "";
+      if (bindUnlinkedMemberOnNameMatch && bindUid && !byName.userId) {
+        try {
+          await db
+            .update(teamMembers)
+            .set({ userId: bindUid })
+            .where(eq(teamMembers.id, byName.id));
+        } catch {
+          // ignore non-critical auto-bind error
+        }
+      }
+    }
+  }
+
+  // Fast-path 判定（追加クエリ0回で即決できるケース）
+  if (isSystemAdminRoleValue(sessionUser?.role)) {
+    return { allowed: true, matchedMember };
+  }
+  if (teamRow.createdBy && candidateIdSet.has(teamRow.createdBy)) {
+    return { allowed: true, matchedMember };
+  }
+  if (
+    matchedMember &&
+    matchedMember.status !== "pending" &&
+    hasMapsKeyMemberPrivilege(matchedMember.role, matchedMember.subRoles, true)
+  ) {
+    return { allowed: true, matchedMember };
+  }
+
+  // Secondary 判定：D1上の user.role（SYSTEM_ADMIN / admin）、organizationMembers、同一クラブ内別編成チームのIT管理者・監督権限を一括確認
+  const [dbUsers, orgMemberRows, siblingTeams] = await Promise.all([
+    expandedIds.length > 0
+      ? db
+          .select({ role: userTable.role })
+          .from(userTable)
+          .where(inArray(userTable.id, expandedIds))
+          .all()
+          .catch(() => [] as Array<{ role: string | null }>)
+      : Promise.resolve([] as Array<{ role: string | null }>),
+    teamRow.organizationId && expandedIds.length > 0
+      ? db
+          .select({ role: organizationMembers.role })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.organizationId, teamRow.organizationId),
+              inArray(organizationMembers.userId, expandedIds)
+            )
+          )
+          .all()
+          .catch(() => [] as Array<{ role: string }>)
+      : Promise.resolve([] as Array<{ role: string }>),
+    teamRow.organizationId
+      ? db
+          .select({ id: teams.id, createdBy: teams.createdBy })
+          .from(teams)
+          .where(eq(teams.organizationId, teamRow.organizationId))
+          .all()
+          .catch(() => [] as Array<{ id: string; createdBy: string }>)
+      : Promise.resolve([] as Array<{ id: string; createdBy: string }>),
+  ]);
+
+  if (dbUsers.some((u) => isSystemAdminRoleValue(u.role))) {
+    return { allowed: true, matchedMember };
+  }
+  if (orgMemberRows.some((om) => isOrgAdminRoleValue(om.role))) {
+    return { allowed: true, matchedMember };
+  }
+  if (
+    siblingTeams.some(
+      (t) => Boolean(t.createdBy && candidateIdSet.has(t.createdBy))
+    )
+  ) {
+    return { allowed: true, matchedMember };
+  }
+
+  const otherTeamIds = siblingTeams
+    .map((t) => t.id)
+    .filter((id) => id !== teamRow.id);
+
+  if (
+    otherTeamIds.length > 0 &&
+    (expandedIds.length > 0 || targetNormNames.length > 0)
+  ) {
+    const siblingMembers = await db
+      .select({
+        userId: teamMembers.userId,
+        name: teamMembers.name,
+        role: teamMembers.role,
+        subRoles: teamMembers.subRoles,
+        status: teamMembers.status,
+      })
+      .from(teamMembers)
+      .where(inArray(teamMembers.teamId, otherTeamIds))
+      .all()
+      .catch(
+        () =>
+          [] as Array<{
+            userId: string | null;
+            name: string | null;
+            role: string;
+            subRoles: string | null;
+            status: string;
+          }>
+      );
+
+    const hasSiblingAdmin = siblingMembers.some((m) => {
+      if (m.status === "pending") return false;
+      const idMatch = Boolean(m.userId && candidateIdSet.has(m.userId));
+      const norm = normalizePersonName(m.name);
+      const nameMatch =
+        norm.length >= 2 && targetNormNames.includes(norm);
+      if (!idMatch && !nameMatch) return false;
+      // 同一クラブ他編成のIT管理者 (admin) / 監督・代表 (manager) / owner はクラブ共通キーを設定可能
+      return hasMapsKeyMemberPrivilege(m.role, m.subRoles, false);
+    });
+
+    if (hasSiblingAdmin) {
+      return { allowed: true, matchedMember };
+    }
+  }
+
+  return { allowed: false, matchedMember };
 }
 
 function buildDemoSnapshot(
@@ -309,6 +554,7 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         .select({
           id: teams.id,
           organizationId: teams.organizationId,
+          createdBy: teams.createdBy,
           homeGround: teams.homeGround,
           orgGoogleMapsApiKey: organizations.googleMapsApiKey,
         })
@@ -359,60 +605,24 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
       ? "org"
       : "none";
 
-    // 本人照合 & 管理権限判定
+    // 本人照合 & 管理権限判定（IT管理者・監督・指導者・クラブ共通権限）
     const sessionUser = authSession?.user as AuthUser | undefined;
     const expandedIds = await expandCandidateUserIds(db, [
       rawUserId,
       sessionUser?.id,
     ]);
-    const candidateIdSet = new Set<string>(expandedIds);
 
-    let matchedMember =
-      allMembers.find(
-        (m) => Boolean(m.userId && candidateIdSet.has(m.userId))
-      ) || null;
-
-    if (!matchedMember && (rawUserName || sessionUser?.name)) {
-      const targetNormNames = [rawUserName, sessionUser?.name]
-        .map((n) => normalizePersonName(n))
-        .filter(Boolean);
-      if (targetNormNames.length > 0) {
-        matchedMember =
-          allMembers.find((m) =>
-            targetNormNames.includes(normalizePersonName(m.name))
-          ) || null;
-      }
-    }
-
-    let hasOrgAdminRole = false;
-    if (teamRow.organizationId && expandedIds.length > 0) {
-      const orgMemberRow = await db
-        .select({ role: organizationMembers.role })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.organizationId, teamRow.organizationId),
-            inArray(organizationMembers.userId, expandedIds)
-          )
-        )
-        .get()
-        .catch(() => null);
-      if (
-        orgMemberRow?.role === "owner" ||
-        orgMemberRow?.role === "admin" ||
-        orgMemberRow?.role === "manager"
-      ) {
-        hasOrgAdminRole = true;
-      }
-    }
-
-    const memberRole = (matchedMember?.role || "").toLowerCase();
-    const canConfigureMapsKey =
-      sessionUser?.role === "admin" ||
-      hasOrgAdminRole ||
-      canManageTeam(memberRole) ||
-      memberRole === "owner" ||
-      memberRole === "coach";
+    const { allowed: canConfigureMapsKey, matchedMember } =
+      await resolveMapsKeyAccess({
+        db,
+        teamRow,
+        allMembers,
+        expandedIds,
+        rawUserId,
+        rawUserName,
+        sessionUser,
+        bindUnlinkedMemberOnNameMatch: false,
+      });
 
     const myDisplayName =
       matchedMember?.name?.trim() ||
@@ -900,7 +1110,7 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
 
 /**
  * PUT /api/liff/carpool-convoy/maps-key
- * クラブ共通 Google Maps JavaScript API キーの保存・解除（管理者・指導者のみ）
+ * クラブ共通 Google Maps JavaScript API キーの保存・解除（IT管理者・監督・指導者）
  */
 liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
   try {
@@ -908,10 +1118,12 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
       teamId?: string;
       apiKey?: string;
       userId?: string | null;
+      userName?: string | null;
     };
     const teamId = (body.teamId || "").trim();
     const cleanedKey = (body.apiKey || "").trim();
     const rawUserId = (body.userId || "").trim();
+    const rawUserName = (body.userName || "").trim();
 
     if (!teamId || teamId === "demo-team") {
       return c.json(
@@ -939,6 +1151,7 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
         .select({
           id: teams.id,
           organizationId: teams.organizationId,
+          createdBy: teams.createdBy,
         })
         .from(teams)
         .where(eq(teams.id, teamId))
@@ -958,46 +1171,24 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
       rawUserId,
       sessionUser?.id,
     ]);
-    const candidateIdSet = new Set<string>(expandedIds);
 
-    const matchedMember =
-      allMembers.find(
-        (m) => Boolean(m.userId && candidateIdSet.has(m.userId))
-      ) || null;
-
-    let hasOrgAdminRole = false;
-    if (expandedIds.length > 0) {
-      const orgMemberRow = await db
-        .select({ role: organizationMembers.role })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.organizationId, teamRow.organizationId),
-            inArray(organizationMembers.userId, expandedIds)
-          )
-        )
-        .get()
-        .catch(() => null);
-      if (
-        orgMemberRow?.role === "owner" ||
-        orgMemberRow?.role === "admin" ||
-        orgMemberRow?.role === "manager"
-      ) {
-        hasOrgAdminRole = true;
-      }
-    }
-
-    const memberRole = (matchedMember?.role || "").toLowerCase();
-    const allowed =
-      sessionUser?.role === "admin" ||
-      hasOrgAdminRole ||
-      canManageTeam(memberRole) ||
-      memberRole === "owner" ||
-      memberRole === "coach";
+    const { allowed } = await resolveMapsKeyAccess({
+      db,
+      teamRow,
+      allMembers,
+      expandedIds,
+      rawUserId,
+      rawUserName,
+      sessionUser,
+      bindUnlinkedMemberOnNameMatch: true,
+    });
 
     if (!allowed) {
       return c.json(
-        { success: false, error: "APIキーの設定には管理者・指導者権限が必要です" },
+        {
+          success: false,
+          error: "APIキーの設定にはIT管理者・監督・指導者権限が必要です",
+        },
         403
       );
     }

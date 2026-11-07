@@ -1,10 +1,10 @@
 // filepath: src/app/liff/admin/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { 
   ShieldCheck, 
   UserCheck, 
@@ -29,7 +29,12 @@ import {
   Sparkles,
   UserPlus,
   GitMerge,
-  Loader2
+  Loader2,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Car,
+  Trash2,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -38,6 +43,7 @@ import {
   type LiffSelectBadgeTone,
 } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,6 +79,8 @@ interface AdminDashboardData {
   isDemo?: boolean;
   canManage?: boolean;
   myRole?: string;
+  googleMapsApiKey?: string | null;
+  googleMapsKeySource?: "env" | "org" | "none";
   team?: {
     id: string;
     name: string;
@@ -99,15 +107,39 @@ const ROLE_OPTIONS = [
 
 const PRESET_SUB_LABELS = ["1班", "2班", "3班", "4班", "配車", "審判", "用具", "救急"];
 
-export default function LiffAdminDashboardPage() {
+function LiffAdminDashboardContent() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { currentTeam, profile, isDemo: providerDemo, liff } = useLiff();
-  const [activeTab, setActiveTab] = useState<"requests" | "members" | "invite">("requests");
+  const initialTab = useMemo<"requests" | "members" | "invite">(() => {
+    const t = searchParams.get("tab");
+    if (t === "invite" || t === "members" || t === "requests") return t;
+    return "requests";
+  }, [searchParams]);
+  const [activeTab, setActiveTab] = useState<"requests" | "members" | "invite">(initialTab);
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [data, setData] = useState<AdminDashboardData | null>(null);
+
+  // Google Maps APIキー設定ステート（クラブ共通）
+  const [mapsApiKeyInput, setMapsApiKeyInput] = useState("");
+  const [showMapsApiKey, setShowMapsApiKey] = useState(false);
+  const [isSavingMapsKey, setIsSavingMapsKey] = useState(false);
+
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t === "invite" || t === "members" || t === "requests") {
+      setActiveTab(t);
+    }
+  }, [searchParams]);
+
+  // チーム切替時は前チームの入力値が残留しないようリセット
+  useEffect(() => {
+    setMapsApiKeyInput("");
+    setShowMapsApiKey(false);
+  }, [currentTeam?.id]);
 
   // メンバー検索・絞り込み
   const [memberSearch, setMemberSearch] = useState("");
@@ -150,6 +182,9 @@ export default function LiffAdminDashboardPage() {
         const json = (await res.json()) as AdminDashboardData;
         if (json.success) {
           setData(json);
+          setMapsApiKeyInput(
+            json.googleMapsKeySource === "org" ? json.googleMapsApiKey || "" : ""
+          );
         }
       }
     } catch (err) {
@@ -333,6 +368,87 @@ export default function LiffAdminDashboardPage() {
       );
     } finally {
       setIsMerging(false);
+    }
+  };
+
+  // ─── Google Maps APIキーの保存・解除（クラブ共通） ────────────
+  const handleSaveGoogleMapsApiKey = async (nextKeyRaw: string) => {
+    const tid =
+      currentTeam?.id ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("iscore_selectedTeamId")
+        : "") ||
+      "demo-team";
+
+    if (!tid || tid === "demo-team") {
+      toast.error("デモチームではAPIキーを保存できません");
+      return;
+    }
+
+    const uid =
+      profile?.userId ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("iscore_user_id") ||
+          localStorage.getItem("iscore_userId")
+        : "") ||
+      "";
+    const uName =
+      profile?.displayName ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("iscore_user_name")
+        : "") ||
+      "";
+
+    const trimmed = nextKeyRaw.trim();
+    setIsSavingMapsKey(true);
+    try {
+      const res = await fetch("/api/liff/carpool-convoy/maps-key", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: tid,
+          apiKey: trimmed,
+          userId: uid || null,
+          userName: uName || null,
+        }),
+      });
+      const json = (await res.json()) as {
+        success: boolean;
+        googleMapsApiKey?: string | null;
+        googleMapsKeySource?: "env" | "org" | "none";
+        error?: string;
+      };
+
+      if (!res.ok || !json.success) {
+        toast.error(json.error || "APIキーの保存に失敗しました");
+        return;
+      }
+
+      invalidateLiffApiCache("/api/liff/carpool-convoy");
+      invalidateLiffApiCache("/api/liff/admin/dashboard");
+
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              googleMapsApiKey: json.googleMapsApiKey ?? null,
+              googleMapsKeySource: json.googleMapsKeySource ?? "none",
+            }
+          : prev
+      );
+      setMapsApiKeyInput(
+        json.googleMapsKeySource === "org" ? json.googleMapsApiKey || "" : ""
+      );
+
+      toast.success(
+        trimmed
+          ? "Google Maps APIキーを保存しました！隊列マップがGoogleマップに切り替わります"
+          : "Google Maps APIキー設定を解除しました"
+      );
+    } catch {
+      toast.error("通信エラーが発生しました");
+    } finally {
+      setIsSavingMapsKey(false);
     }
   };
 
@@ -897,6 +1013,169 @@ export default function LiffAdminDashboardPage() {
                   </div>
                 </section>
 
+                {/* 🗺️ 遠征・隊列マップ連携（Google Maps APIキー設定） (A-3 Dark Solid Header Cap) */}
+                <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                  <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-slate-800 text-teal-400 border border-slate-700 flex items-center justify-center shrink-0">
+                        <KeyRound className="w-4 h-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                          隊列マップ連携（Google Maps API）
+                        </h3>
+                        <p className="text-[10px] font-bold text-slate-300 truncate">
+                          クラブ共通・渋滞情報＆航空写真の有効化
+                        </p>
+                      </div>
+                    </div>
+
+                    {data?.googleMapsKeySource === "env" ? (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-500 text-slate-950 shrink-0">
+                        システム共通適用中
+                      </span>
+                    ) : data?.googleMapsKeySource === "org" &&
+                      data?.googleMapsApiKey ? (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-teal-500 text-slate-950 shrink-0">
+                        Googleマップ有効
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 shrink-0">
+                        未設定（レーダー）
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="p-4 space-y-3 text-xs">
+                    {data?.googleMapsKeySource === "env" ? (
+                      <div className="p-3 rounded-xl bg-muted border border-border space-y-1.5">
+                        <p className="font-black text-foreground">
+                          ✅ システム環境変数（GOOGLE_MAPS_API_KEY）で一括有効化されています
+                        </p>
+                        <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                          クラブ個別のAPIキー登録は不要です。配車ページの隊列マップでそのまま渋滞レイヤー・航空写真をご利用いただけます。
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-bold text-muted-foreground leading-relaxed">
+                          Google Cloud Console で取得した{" "}
+                          <strong className="text-foreground">
+                            Maps JavaScript API
+                          </strong>{" "}
+                          キー（
+                          <code className="px-1 rounded bg-muted text-foreground">
+                            AIza...
+                          </code>
+                          ）を保存すると、配車ページの隊列マップが全員リアルタイム渋滞・航空写真対応のGoogleマップに切り替わります。
+                        </p>
+
+                        <div className="p-3 rounded-xl bg-muted border border-border space-y-1 text-[11px] font-bold text-muted-foreground">
+                          <div className="text-foreground font-black">
+                            🔒 無料枠（月10,000回）で安全に使う推奨設定
+                          </div>
+                          <div>
+                            1. 「Maps JavaScript API」と「Geocoding API」を有効化
+                          </div>
+                          <div>
+                            2. HTTPリファラ制限に{" "}
+                            <code className="px-1 rounded bg-card text-foreground">
+                              https://iscorecloud.com/*
+                            </code>{" "}
+                            を設定
+                          </div>
+                          <div>
+                            3. 1日300回の上限設定で課金リスクをゼロにできます
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-black text-foreground">
+                            Maps JavaScript API キー
+                          </label>
+                          <div className="relative flex items-center">
+                            <input
+                              type={showMapsApiKey ? "text" : "password"}
+                              value={mapsApiKeyInput}
+                              onChange={(e) => setMapsApiKeyInput(e.target.value)}
+                              placeholder="AIzaSy..."
+                              autoComplete="off"
+                              className="w-full h-10 pl-3 pr-10 rounded-xl border border-border bg-background text-foreground text-xs font-mono font-bold"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowMapsApiKey((v) => !v)}
+                              aria-label={
+                                showMapsApiKey
+                                  ? "APIキーを隠す"
+                                  : "APIキーを表示する"
+                              }
+                              className="absolute right-2 w-7 h-7 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center cursor-pointer"
+                            >
+                              {showMapsApiKey ? (
+                                <EyeOff className="w-4 h-4" />
+                              ) : (
+                                <Eye className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-0.5">
+                          {data?.googleMapsKeySource === "org" &&
+                            Boolean(data?.googleMapsApiKey) && (
+                              <button
+                                type="button"
+                                disabled={isSavingMapsKey || Boolean(data?.isDemo)}
+                                onClick={() => void handleSaveGoogleMapsApiKey("")}
+                                className="h-10 px-3 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground text-xs font-black flex items-center gap-1 cursor-pointer disabled:opacity-50 shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>解除</span>
+                              </button>
+                            )}
+
+                          <button
+                            type="button"
+                            disabled={
+                              isSavingMapsKey ||
+                              Boolean(data?.isDemo) ||
+                              !mapsApiKeyInput.trim()
+                            }
+                            onClick={() =>
+                              void handleSaveGoogleMapsApiKey(mapsApiKeyInput)
+                            }
+                            className="flex-1 h-10 px-4 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingMapsKey ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>保存中...</span>
+                              </>
+                            ) : (
+                              <>
+                                <KeyRound className="w-3.5 h-3.5" />
+                                <span>APIキーを保存する</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    <Link
+                      href="/liff/carpool"
+                      className="w-full h-10 px-3.5 rounded-xl border border-border bg-muted/40 hover:bg-muted text-foreground text-xs font-black flex items-center justify-between transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Car className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span>配車・隊列ライブマップを開く</span>
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </Link>
+                  </div>
+                </section>
+
                 {/* 🚀 管理クイックショートカット (A-3 Dark Solid Header Cap) */}
                 <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                   <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center gap-2.5">
@@ -1272,5 +1551,23 @@ export default function LiffAdminDashboardPage() {
         document.body
       )}
     </div>
+  );
+}
+
+export default function LiffAdminDashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col flex-1 bg-background text-foreground">
+          <LiffHeader />
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">IT管理コンソールを読み込み中...</span>
+          </div>
+        </div>
+      }
+    >
+      <LiffAdminDashboardContent />
+    </Suspense>
   );
 }

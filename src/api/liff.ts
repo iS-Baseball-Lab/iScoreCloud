@@ -49,7 +49,7 @@ import {
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
-import { ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
+import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
 import {
   classifyTeamAttendanceRosters,
   computeEventGroupAttendance,
@@ -68,7 +68,7 @@ import {
 } from "@/lib/liff/scorebook-symbol-rules";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
-import { canManageTeam } from "@/lib/roles";
+import { canManageSystem, canManageTeam } from "@/lib/roles";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -7639,6 +7639,10 @@ app.get("/admin/dashboard", async (c) => {
   const db = drizzle(c.env.DB);
   const teamId = c.req.query("teamId");
   const userId = c.req.query("userId");
+  const envMapsKey =
+    (c.env.GOOGLE_MAPS_API_KEY || "").trim() ||
+    (c.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim() ||
+    null;
 
   // 1. デモモードまたはチーム未指定時のフォールバック
   if (!teamId || teamId === "demo-team") {
@@ -7647,6 +7651,8 @@ app.get("/admin/dashboard", async (c) => {
       isDemo: true,
       canManage: true,
       myRole: "admin",
+      googleMapsApiKey: envMapsKey,
+      googleMapsKeySource: envMapsKey ? "env" : "none",
       team: {
         id: "demo-team",
         name: DEMO_TEAM.name,
@@ -7725,12 +7731,16 @@ app.get("/admin/dashboard", async (c) => {
   }
 
   try {
+    await ensureAllSchemasOnce(c.env.DB);
+
     // 2. チーム情報の取得
     const targetTeam = await db
       .select({
         id: teams.id,
         name: teams.name,
+        organizationId: teams.organizationId,
         orgName: organizations.name,
+        orgGoogleMapsApiKey: organizations.googleMapsApiKey,
         createdBy: teams.createdBy,
         memberSubLabels: teams.memberSubLabels,
       })
@@ -7745,34 +7755,60 @@ app.get("/admin/dashboard", async (c) => {
 
     // 3. ユーザーの所属・権限チェック
     const auth = getAuth(c.env.DB, c.env);
-    let sessionUser: any = null;
+    let sessionUser: AuthUser | null = null;
     try {
-      const session = await auth.api.getSession({ headers: c.req.raw.headers as any });
-      sessionUser = session?.user;
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      sessionUser = (session?.user as AuthUser | undefined) ?? null;
     } catch {}
 
     const userName = c.req.query("userName");
     let myRole: string = "viewer";
     let isFounder = false;
 
-    // ① セッションまたは userId による特定
-    const candidateUserIds = [userId, sessionUser?.id].filter(Boolean) as string[];
-    let myMembership: any = null;
+    // ① セッションまたは userId（LINE account連携含む）による特定
+    const rawCandidateIds = [userId, sessionUser?.id]
+      .map((v) => v?.trim())
+      .filter((v): v is string => Boolean(v && v !== "cached-user" && v !== "mock-user-12345"));
+
+    const expandedIdSet = new Set<string>(rawCandidateIds);
+    if (rawCandidateIds.length > 0) {
+      try {
+        const linkedAccounts = await db
+          .select({ userId: account.userId, accountId: account.accountId })
+          .from(account)
+          .where(
+            or(
+              inArray(account.accountId, rawCandidateIds),
+              inArray(account.userId, rawCandidateIds)
+            )
+          )
+          .all();
+        for (const row of linkedAccounts) {
+          if (row.userId) expandedIdSet.add(row.userId);
+          if (row.accountId) expandedIdSet.add(row.accountId);
+        }
+      } catch {}
+    }
+    const candidateUserIds = Array.from(expandedIdSet);
+
+    let myMembership: typeof teamMembers.$inferSelect | undefined;
 
     if (candidateUserIds.length > 0) {
-      myMembership = await db
+      const idMatches = await db
         .select()
         .from(teamMembers)
         .where(
           and(
             eq(teamMembers.teamId, teamId),
-            or(...candidateUserIds.map((uid) => eq(teamMembers.userId, uid)))
+            inArray(teamMembers.userId, candidateUserIds)
           )
         )
-        .get();
+        .all();
+      myMembership =
+        idMatches.find((m) => canManageTeam(m.role)) || idMatches[0];
     }
 
-    // ② 名前による特定（LINEの表示名、または "佐藤" などの名簿照合）
+    // ② 名前による特定（LINEの表示名などの名簿照合）
     const searchName = (userName || sessionUser?.name || "").trim();
     if (searchName) {
       const normalizedTarget = searchName.replace(/\s+/g, "");
@@ -7806,8 +7842,29 @@ app.get("/admin/dashboard", async (c) => {
       }
     }
 
+    let parsedSubRoles: string[] = [];
     if (myMembership) {
-      myRole = myMembership.role || "viewer";
+      myRole = (myMembership.role || "viewer").toLowerCase();
+      if (myMembership.subRoles) {
+        try {
+          const parsed: unknown = JSON.parse(myMembership.subRoles);
+          if (Array.isArray(parsed)) {
+            parsedSubRoles = parsed
+              .filter((s): s is string => typeof s === "string")
+              .map((s) => s.toLowerCase());
+          }
+        } catch {
+          parsedSubRoles = myMembership.subRoles
+            .split(",")
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean);
+        }
+      }
+      if (canManageSystem(myRole, parsedSubRoles)) {
+        myRole = "admin";
+      } else if (canManageTeam(myRole, parsedSubRoles) && myRole !== "admin") {
+        myRole = "manager";
+      }
     }
 
     // ③ チーム創設者チェック
@@ -7815,8 +7872,53 @@ app.get("/admin/dashboard", async (c) => {
       isFounder = true;
     }
 
-    // ④ システム管理者、または IT管理者「佐藤守」等の権限救済
-    const isSystemAdmin = sessionUser?.role === "SYSTEM_ADMIN" || sessionUser?.role === "admin";
+    // ④ システム管理者・組織管理者・IT管理者の権限チェック
+    let isSystemAdmin =
+      sessionUser?.role === "SYSTEM_ADMIN" ||
+      sessionUser?.role === "admin";
+
+    if (!isSystemAdmin && candidateUserIds.length > 0) {
+      const [dbUsers, orgMemberRows] = await Promise.all([
+        db
+          .select({ role: user.role })
+          .from(user)
+          .where(inArray(user.id, candidateUserIds))
+          .all()
+          .catch(() => [] as Array<{ role: string | null }>),
+        targetTeam.organizationId
+          ? db
+              .select({ role: organizationMembers.role })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.organizationId, targetTeam.organizationId),
+                  inArray(organizationMembers.userId, candidateUserIds)
+                )
+              )
+              .all()
+              .catch(() => [] as Array<{ role: string }>)
+          : Promise.resolve([] as Array<{ role: string }>),
+      ]);
+
+      if (
+        dbUsers.some((u) => {
+          const r = (u.role || "").toLowerCase();
+          return r === "system_admin" || r === "admin";
+        })
+      ) {
+        isSystemAdmin = true;
+        if (myRole === "viewer") myRole = "admin";
+      } else if (
+        orgMemberRows.some((om) => {
+          const r = (om.role || "").toLowerCase();
+          return r === "owner" || r === "admin" || r === "manager" || r === "it_admin";
+        })
+      ) {
+        isSystemAdmin = true;
+        if (myRole === "viewer") myRole = "admin";
+      }
+    }
+
     const isNamedAdmin =
       searchName.includes("佐藤") ||
       searchName.includes("守") ||
@@ -7827,7 +7929,19 @@ app.get("/admin/dashboard", async (c) => {
       myRole = "admin";
     }
 
-    const canManage = isFounder || isSystemAdmin || canManageTeam(myRole) || (isNamedAdmin && (myRole === "admin" || !myMembership));
+    const canManage =
+      isFounder ||
+      isSystemAdmin ||
+      canManageTeam(myRole, parsedSubRoles) ||
+      (isNamedAdmin && (myRole === "admin" || !myMembership));
+
+    const orgMapsKey = (targetTeam.orgGoogleMapsApiKey || "").trim() || null;
+    const effectiveMapsKey = envMapsKey || orgMapsKey;
+    const mapsKeySource: "env" | "org" | "none" = envMapsKey
+      ? "env"
+      : orgMapsKey
+      ? "org"
+      : "none";
 
     // 4. サブラベルパース
     let subLabelsMap: Record<string, string> = {};
@@ -7883,6 +7997,8 @@ app.get("/admin/dashboard", async (c) => {
       isDemo: false,
       canManage,
       myRole,
+      googleMapsApiKey: canManage ? effectiveMapsKey : null,
+      googleMapsKeySource: mapsKeySource,
       team: {
         id: targetTeam.id,
         name: `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim(),

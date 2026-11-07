@@ -1112,6 +1112,24 @@ export default function LiffTeamSettingsPage() {
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 shrink-0" />
             </Link>
           </div>
+
+          <Link
+            href="/liff/admin?tab=invite"
+            className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
+          >
+            <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+              <ShieldCheck className="w-5 h-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-black text-foreground truncate">
+                IT管理コンソール（参加承認・Google Maps API連携）
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                招待コード共有・メンバー役割変更・隊列マップAPIキー設定
+              </p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
+          </Link>
         </section>
 
         {/* ━━━ セクション 5: 🔔 LINE通知・連携ステータス ━━━ */}
