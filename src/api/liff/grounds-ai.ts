@@ -1,5 +1,8 @@
 // filepath: src/api/liff/grounds-ai.ts
 import { Hono } from "hono";
+import { eq } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/d1";
+import { organizations, teams, venues } from "@/db/schema";
 import type { WorkerEnv } from "@/types/api";
 
 const liffGroundsAiRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -13,9 +16,27 @@ export type GroundVenueSurface =
   | "土 (内野) / 天然芝 (外野)"
   | "その他";
 
+export type GroundAiVerifiableField =
+  | "name"
+  | "shortName"
+  | "category"
+  | "surface"
+  | "address"
+  | "mapUrl"
+  | "parkingInfo"
+  | "spikeRule"
+  | "notes";
+
 export interface GroundAiSourceLink {
   title: string;
   url: string;
+  kind: "maps" | "official" | "web";
+}
+
+export interface GroundAiAlternativeCandidate {
+  name: string;
+  area: string;
+  note?: string;
 }
 
 export interface GroundAiLookupResult {
@@ -30,6 +51,9 @@ export interface GroundAiLookupResult {
   notes: string;
   confidence: "high" | "medium" | "low";
   summaryNote: string;
+  mapsVerified: boolean;
+  verifiedFields: GroundAiVerifiableField[];
+  alternatives: GroundAiAlternativeCandidate[];
   sources: GroundAiSourceLink[];
 }
 
@@ -37,7 +61,39 @@ interface GroundAiLookupRequestBody {
   name?: string;
   areaHint?: string;
   currentCategory?: string;
+  currentAddress?: string;
+  currentShortName?: string;
   teamId?: string;
+}
+
+interface TeamRegionContext {
+  clubName: string;
+  clubCategory: string;
+  homeGround: string;
+  frequentAreas: string[];
+  mapsApiKey: string | null;
+}
+
+interface GeoAnchor {
+  latitude: number;
+  longitude: number;
+  label: string;
+}
+
+interface PlacesTextSearchResult {
+  displayName?: string;
+  formattedAddress?: string;
+  googleMapsUri?: string;
+  websiteUri?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface MapsGroundingProbeResult {
+  placeTitle?: string;
+  address?: string;
+  mapsUri?: string;
+  chunks: GeminiGroundingChunk[];
 }
 
 interface GeminiGeneratePart {
@@ -49,6 +105,11 @@ interface GeminiGroundingChunk {
   web?: {
     uri?: string;
     title?: string;
+  };
+  maps?: {
+    uri?: string;
+    title?: string;
+    placeId?: string;
   };
 }
 
@@ -69,6 +130,12 @@ interface GeminiGenerateResponse {
   };
 }
 
+interface RawAiAlternativeItem {
+  name?: unknown;
+  area?: unknown;
+  note?: unknown;
+}
+
 interface RawAiGroundPayload {
   name?: unknown;
   shortName?: unknown;
@@ -80,20 +147,43 @@ interface RawAiGroundPayload {
   notes?: unknown;
   confidence?: unknown;
   summaryNote?: unknown;
+  verifiedFields?: unknown;
+  alternatives?: unknown;
 }
 
-interface ModelAttemptSpec {
+interface WebModelAttemptSpec {
   model: string;
   useGoogleSearch: boolean;
-  thinkingZero?: boolean;
+  thinkingBudget: number | null;
   timeoutMs: number;
 }
 
-const MODEL_ATTEMPTS: ReadonlyArray<ModelAttemptSpec> = [
-  { model: "gemini-2.5-flash", useGoogleSearch: true, thinkingZero: true, timeoutMs: 11_000 },
-  { model: "gemini-flash-lite-latest", useGoogleSearch: true, timeoutMs: 9_000 },
-  { model: "gemini-2.5-flash", useGoogleSearch: false, thinkingZero: true, timeoutMs: 9_000 },
-  { model: "gemini-flash-lite-latest", useGoogleSearch: false, timeoutMs: 8_000 },
+// 実稼働が確認済みの高速モデルを最優先配置（404遅延ゼロ＋思考検証1024トークンで対岸・別施設混入を排除）
+const WEB_SEARCH_MODEL_ATTEMPTS: ReadonlyArray<WebModelAttemptSpec> = [
+  {
+    model: "gemini-2.5-flash",
+    useGoogleSearch: true,
+    thinkingBudget: 1024,
+    timeoutMs: 25_000,
+  },
+  {
+    model: "gemini-2.5-pro",
+    useGoogleSearch: true,
+    thinkingBudget: 1024,
+    timeoutMs: 26_000,
+  },
+  {
+    model: "gemini-flash-lite-latest",
+    useGoogleSearch: true,
+    thinkingBudget: null,
+    timeoutMs: 16_000,
+  },
+  {
+    model: "gemini-2.5-flash",
+    useGoogleSearch: false,
+    thinkingBudget: 512,
+    timeoutMs: 12_000,
+  },
 ];
 
 const MODEL_COOLDOWN = new Map<string, number>();
@@ -113,21 +203,57 @@ const VALID_SURFACES = new Set<GroundVenueSurface>([
   "その他",
 ]);
 
-function cleanString(val: unknown, maxLen = 300): string {
+const VALID_VERIFIABLE_FIELDS = new Set<GroundAiVerifiableField>([
+  "name",
+  "shortName",
+  "category",
+  "surface",
+  "address",
+  "mapUrl",
+  "parkingInfo",
+  "spikeRule",
+  "notes",
+]);
+
+const OFFICIAL_DOMAIN_PATTERN =
+  /(\.lg\.jp|\.go\.jp|\.ed\.jp|\.or\.jp|\.ac\.jp|park|sports|taiiku|ryokuchi|shisetsu|city\.|pref\.|town\.|ward\.)/i;
+
+function cleanString(val: unknown, maxLen = 320): string {
   if (typeof val !== "string") return "";
-  const trimmed = val.replace(/\r\n/g, "\n").trim();
+  const trimmed = val
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .trim();
   if (
     !trimmed ||
     trimmed === "不明" ||
     trimmed === "情報なし" ||
     trimmed === "未確認" ||
     trimmed === "なし（不明）" ||
+    trimmed === "記載なし" ||
+    trimmed === "公式情報なし" ||
     trimmed === "null" ||
     trimmed === "undefined"
   ) {
     return "";
   }
   return trimmed.slice(0, maxLen);
+}
+
+function normalizeAddressForDisplay(addr: string): string {
+  return addr
+    .replace(/^〒?\s*\d{3}-\d{4}\s*/, "")
+    .replace(/^日本[、,\s]*/, "")
+    .trim();
+}
+
+function stripRiverbedAmbiguousSuffix(addr: string): string {
+  return addr.replace(/(地内|地先|先|付近)$/g, "").trim();
+}
+
+function extractAreaPrefix(address: string): string {
+  const m = address.trim().match(/^(.+?[都道府県].+?[市区町村郡])/);
+  return m ? m[1] : "";
 }
 
 function normalizeCategory(
@@ -157,7 +283,7 @@ function normalizeSurface(raw: unknown): GroundVenueSurface {
   }
   const hasArtificial = /人工芝/.test(s);
   const hasNatural = /天然芝|芝/.test(s) && !hasArtificial;
-  const hasDirt = /土|クレー|黒土|真砂土/.test(s);
+  const hasDirt = /土|クレー|黒土|真砂土|アンツーカ/.test(s);
 
   if (hasDirt && hasNatural) return "土 (内野) / 天然芝 (外野)";
   if (hasArtificial) return "人工芝";
@@ -169,6 +295,58 @@ function normalizeSurface(raw: unknown): GroundVenueSurface {
 function normalizeConfidence(raw: unknown): "high" | "medium" | "low" {
   if (raw === "high" || raw === "medium" || raw === "low") return raw;
   return "medium";
+}
+
+function normalizeVerifiedFields(
+  raw: unknown,
+  hasMapsLink: boolean,
+  hasWebSources: boolean
+): GroundAiVerifiableField[] {
+  if (!hasMapsLink && !hasWebSources) {
+    return [];
+  }
+  const result = new Set<GroundAiVerifiableField>();
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (
+        typeof item === "string" &&
+        VALID_VERIFIABLE_FIELDS.has(item as GroundAiVerifiableField)
+      ) {
+        result.add(item as GroundAiVerifiableField);
+      }
+    }
+  }
+  if (hasMapsLink) {
+    result.add("name");
+    result.add("address");
+    result.add("mapUrl");
+  }
+  return Array.from(result);
+}
+
+function normalizeAlternatives(raw: unknown): GroundAiAlternativeCandidate[] {
+  if (!Array.isArray(raw)) return [];
+  const items: GroundAiAlternativeCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as RawAiAlternativeItem;
+    const name = cleanString(obj.name, 80);
+    const area = cleanString(obj.area, 50);
+    const note = cleanString(obj.note, 80);
+    if (!name) continue;
+    const dedupeKey = `${name}::${area}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    items.push({
+      name,
+      area,
+      note: note || undefined,
+    });
+    if (items.length >= 3) break;
+  }
+  return items;
 }
 
 function extractFirstJsonObject(rawText: string): RawAiGroundPayload | null {
@@ -220,89 +398,510 @@ function extractFirstJsonObject(rawText: string): RawAiGroundPayload | null {
 }
 
 function extractGroundingSources(
-  candidate: GeminiGenerateCandidate | undefined
-): GroundAiSourceLink[] {
-  const chunks = candidate?.groundingMetadata?.groundingChunks;
-  if (!Array.isArray(chunks)) return [];
-
+  webChunks: ReadonlyArray<GeminiGroundingChunk>,
+  mapsProbe: MapsGroundingProbeResult | null,
+  placesResult: PlacesTextSearchResult | null,
+  resolvedAreaPrefix: string
+): {
+  sources: GroundAiSourceLink[];
+  bestMapsUrl: string | null;
+} {
   const seenUrls = new Set<string>();
   const links: GroundAiSourceLink[] = [];
+  let bestMapsUrl: string | null = placesResult?.googleMapsUri || null;
 
-  for (const ch of chunks) {
+  if (placesResult?.googleMapsUri && /^https?:\/\//i.test(placesResult.googleMapsUri)) {
+    seenUrls.add(placesResult.googleMapsUri);
+    links.push({
+      title: `Google マップ: ${placesResult.displayName || "施設ピン"}`,
+      url: placesResult.googleMapsUri,
+      kind: "maps",
+    });
+  }
+
+  // Google Maps Grounding chunks（自治体エリアが食い違う対岸POIは除外して正確なピンを採用）
+  const mapChunks = mapsProbe?.chunks || [];
+  const mapsProbeArea = mapsProbe?.address ? extractAreaPrefix(mapsProbe.address) : "";
+  const isSameAreaAsWeb =
+    !resolvedAreaPrefix ||
+    !mapsProbeArea ||
+    resolvedAreaPrefix === mapsProbeArea ||
+    Boolean(mapsProbe?.address?.includes(resolvedAreaPrefix)) ||
+    resolvedAreaPrefix.includes(mapsProbeArea);
+
+  if (isSameAreaAsWeb) {
+    for (const ch of mapChunks) {
+      const mapsUri = typeof ch?.maps?.uri === "string" ? ch.maps.uri.trim() : "";
+      if (!mapsUri || !/^https?:\/\//i.test(mapsUri)) continue;
+      if (!bestMapsUrl) {
+        bestMapsUrl = mapsUri;
+      }
+      if (seenUrls.has(mapsUri)) continue;
+      seenUrls.add(mapsUri);
+      const mapsTitle =
+        typeof ch?.maps?.title === "string" && ch.maps.title.trim()
+          ? `Google マップ: ${ch.maps.title.trim()}`
+          : "Google マップ (施設地点)";
+      links.push({
+        title: mapsTitle.slice(0, 80),
+        url: mapsUri,
+        kind: "maps",
+      });
+      break;
+    }
+  }
+
+  if (placesResult?.websiteUri && /^https?:\/\//i.test(placesResult.websiteUri)) {
+    if (!seenUrls.has(placesResult.websiteUri)) {
+      seenUrls.add(placesResult.websiteUri);
+      let host = placesResult.websiteUri;
+      try {
+        host = new URL(placesResult.websiteUri).hostname;
+      } catch {
+        // ignore
+      }
+      links.push({
+        title: host.slice(0, 80),
+        url: placesResult.websiteUri,
+        kind: OFFICIAL_DOMAIN_PATTERN.test(host) ? "official" : "web",
+      });
+    }
+  }
+
+  // Web Search Grounding chunks（自治体・公園協会等の公式ドメインを最優先ソート＆汎用コインパSEO除外）
+  const webCandidates: GroundAiSourceLink[] = [];
+  for (const ch of webChunks) {
     const uri = typeof ch?.web?.uri === "string" ? ch.web.uri.trim() : "";
     if (!uri || !/^https?:\/\//i.test(uri) || seenUrls.has(uri)) continue;
     seenUrls.add(uri);
     const rawTitle =
       typeof ch?.web?.title === "string" && ch.web.title.trim()
         ? ch.web.title.trim()
-        : new URL(uri).hostname;
-    links.push({
+        : (() => {
+            try {
+              return new URL(uri).hostname;
+            } catch {
+              return "Web参照元";
+            }
+          })();
+
+    const isCoinParkingAggregator = /(times-info\.net|akippa\.com|toku-p\.jp|repark\.jp)/i.test(
+      `${rawTitle} ${uri}`
+    );
+    if (isCoinParkingAggregator) continue;
+
+    const isOfficial = OFFICIAL_DOMAIN_PATTERN.test(`${rawTitle} ${uri}`);
+    webCandidates.push({
       title: rawTitle.slice(0, 80),
       url: uri,
+      kind: isOfficial ? "official" : "web",
     });
-    if (links.length >= 4) break;
   }
 
-  return links;
+  webCandidates.sort((a, b) => {
+    if (a.kind === "official" && b.kind !== "official") return -1;
+    if (a.kind !== "official" && b.kind === "official") return 1;
+    return 0;
+  });
+
+  for (const wc of webCandidates) {
+    if (links.length >= 5) break;
+    links.push(wc);
+  }
+
+  return { sources: links, bestMapsUrl };
 }
 
-function buildGoogleMapsSearchUrl(name: string, address: string): string {
-  const query = address ? `${name} ${address}` : name;
+function buildGoogleMapsSearchUrl(
+  name: string,
+  address: string,
+  bestMapsUrl: string | null,
+  placesResult: PlacesTextSearchResult | null
+): string {
+  if (bestMapsUrl && /^https?:\/\//i.test(bestMapsUrl)) {
+    return bestMapsUrl;
+  }
+  if (
+    placesResult &&
+    typeof placesResult.latitude === "number" &&
+    typeof placesResult.longitude === "number"
+  ) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${name} ${placesResult.latitude},${placesResult.longitude}`
+    )}`;
+  }
+  const cleanAddr = stripRiverbedAmbiguousSuffix(address);
+  const query = cleanAddr ? `${name} ${cleanAddr}` : name;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     query.trim()
   )}`;
 }
 
-function buildLookupPrompt(inputName: string, areaHint: string, currentCategory?: string): string {
-  const areaLine = areaHint
-    ? `- 地域・市区町村のヒント: ${areaHint}`
-    : `- 地域・市区町村のヒント: 指定なし（施設名から日本国内の該当野球場・学校・スポーツ施設を特定してください）`;
-  const catLine =
-    currentCategory === "home"
-      ? `- 現在の登録分類: home（本拠地・ホーム）`
-      : "";
+async function loadTeamRegionContext(
+  env: WorkerEnv,
+  teamId?: string
+): Promise<TeamRegionContext> {
+  const emptyCtx: TeamRegionContext = {
+    clubName: "",
+    clubCategory: "",
+    homeGround: "",
+    frequentAreas: [],
+    mapsApiKey:
+      (env.GOOGLE_MAPS_API_KEY || "").trim() ||
+      (env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim() ||
+      null,
+  };
+
+  if (!teamId || teamId === "demo-team") {
+    return emptyCtx;
+  }
+
+  try {
+    const db = drizzle(env.DB);
+    const [teamRow, venueRows] = await Promise.all([
+      db
+        .select({
+          name: teams.name,
+          homeGround: teams.homeGround,
+          organizationId: teams.organizationId,
+          orgName: organizations.name,
+          orgCategory: organizations.category,
+          orgMapsKey: organizations.googleMapsApiKey,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          address: venues.address,
+        })
+        .from(venues)
+        .limit(40)
+        .all(),
+    ]);
+
+    const areaCount = new Map<string, number>();
+    for (const v of venueRows) {
+      const addr = (v.address || "").trim();
+      const areaPrefix = extractAreaPrefix(addr);
+      if (areaPrefix) {
+        areaCount.set(areaPrefix, (areaCount.get(areaPrefix) || 0) + 1);
+      }
+    }
+
+    const frequentAreas = Array.from(areaCount.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([area]) => area);
+
+    const resolvedMapsKey =
+      (env.GOOGLE_MAPS_API_KEY || "").trim() ||
+      (teamRow?.orgMapsKey || "").trim() ||
+      (env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim() ||
+      null;
+
+    return {
+      clubName: (teamRow?.orgName || teamRow?.name || "").trim(),
+      clubCategory: (teamRow?.orgCategory || "").trim(),
+      homeGround: (teamRow?.homeGround || "").trim(),
+      frequentAreas,
+      mapsApiKey: resolvedMapsKey,
+    };
+  } catch {
+    return emptyCtx;
+  }
+}
+
+/**
+ * 国土地理院（GSI）住所検索APIで地域アンカー座標を取得（APIキー不要・Google Maps Grounding の位置バイアス用）
+ */
+async function resolveJapanGeoAnchor(queryText: string): Promise<GeoAnchor | null> {
+  const q = queryText.trim();
+  if (!q) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1_800);
+  try {
+    const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const arr = (await res.json()) as Array<{
+      geometry?: { coordinates?: [number, number] };
+      properties?: { title?: string };
+    }>;
+    const first = arr?.[0];
+    const coords = first?.geometry?.coordinates;
+    if (
+      Array.isArray(coords) &&
+      coords.length >= 2 &&
+      typeof coords[0] === "number" &&
+      typeof coords[1] === "number"
+    ) {
+      return {
+        longitude: coords[0],
+        latitude: coords[1],
+        label: first?.properties?.title || q,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function queryGooglePlacesIfAvailable(
+  mapsApiKey: string | null,
+  inputName: string,
+  areaHint: string,
+  currentAddress: string,
+  frequentAreas: ReadonlyArray<string>
+): Promise<PlacesTextSearchResult | null> {
+  if (!mapsApiKey) return null;
+
+  const regionPart =
+    areaHint ||
+    extractAreaPrefix(currentAddress) ||
+    (frequentAreas.length > 0 ? frequentAreas[0] : "");
+  const textQuery = regionPart ? `${inputName} ${regionPart}` : inputName;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3_500);
+
+  try {
+    const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": mapsApiKey,
+        "X-Goog-FieldMask":
+          "places.displayName,places.formattedAddress,places.googleMapsUri,places.websiteUri,places.location",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        textQuery,
+        languageCode: "ja",
+        regionCode: "JP",
+        maxResultCount: 1,
+      }),
+    });
+
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      places?: Array<{
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        googleMapsUri?: string;
+        websiteUri?: string;
+        location?: { latitude?: number; longitude?: number };
+      }>;
+    };
+    const top = json.places?.[0];
+    if (!top) return null;
+
+    return {
+      displayName: top.displayName?.text,
+      formattedAddress: top.formattedAddress
+        ? normalizeAddressForDisplay(top.formattedAddress)
+        : undefined,
+      googleMapsUri: top.googleMapsUri,
+      websiteUri: top.websiteUri,
+      latitude: top.location?.latitude,
+      longitude: top.location?.longitude,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * 並列タスクB: Gemini Google Maps Grounding (`tools: [{ googleMaps: {} }]`) で正確なPOIリンク・番地を取得
+ * Web検索タスクと並列実行されるため追加待ち時間はゼロ。失敗してもWeb検索側を一切ブロックしない。
+ */
+async function probeGoogleMapsGrounding(params: {
+  apiKey: string;
+  inputName: string;
+  regionHintText: string;
+  geoAnchor: GeoAnchor | null;
+}): Promise<MapsGroundingProbeResult | null> {
+  const { apiKey, inputName, regionHintText, geoAnchor } = params;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 11_000);
+
+  try {
+    const mapPrompt = [
+      `日本の野球場・スポーツ施設・学校「${inputName}」${regionHintText ? `（地域ヒント: ${regionHintText}）` : ""}のGoogleマップ上の正確な施設名と所在地（都道府県〜番地）を特定し、以下のJSONのみを返してください:`,
+      '{"placeTitle": "施設名", "address": "都道府県からの所在地"}',
+    ].join("\n");
+
+    const payload: Record<string, unknown> = {
+      contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
+      tools: [{ googleMaps: {} }],
+      generationConfig: {
+        temperature: 0.05,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    };
+
+    if (geoAnchor) {
+      payload.toolConfig = {
+        retrievalConfig: {
+          latLng: {
+            latitude: geoAnchor.latitude,
+            longitude: geoAnchor.longitude,
+          },
+        },
+      };
+    }
+
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as GeminiGenerateResponse;
+    const cand = data.candidates?.[0];
+    const chunks = cand?.groundingMetadata?.groundingChunks || [];
+    const text = (cand?.content?.parts || [])
+      .filter((p) => !p.thought && typeof p.text === "string")
+      .map((p) => p.text || "")
+      .join("\n")
+      .trim();
+
+    const parsed = extractFirstJsonObject(text) as {
+      placeTitle?: unknown;
+      address?: unknown;
+    } | null;
+
+    const firstMapChunk = chunks.find(
+      (c) => typeof c?.maps?.uri === "string" && c.maps.uri.trim().length > 0
+    );
+
+    return {
+      placeTitle:
+        cleanString(parsed?.placeTitle, 100) ||
+        firstMapChunk?.maps?.title?.trim(),
+      address: parsed?.address
+        ? normalizeAddressForDisplay(cleanString(parsed.address, 140))
+        : undefined,
+      mapsUri: firstMapChunk?.maps?.uri?.trim(),
+      chunks,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildLookupPrompt(params: {
+  inputName: string;
+  areaHint: string;
+  currentCategory?: string;
+  currentAddress: string;
+  currentShortName: string;
+  teamCtx: TeamRegionContext;
+  placesHint: PlacesTextSearchResult | null;
+}): string {
+  const {
+    inputName,
+    areaHint,
+    currentCategory,
+    currentAddress,
+    currentShortName,
+    teamCtx,
+    placesHint,
+  } = params;
+
+  const contextLines: string[] = [
+    `- 入力された施設・球場名: ${inputName}`,
+  ];
+
+  if (areaHint) {
+    contextLines.push(`- ユーザー指定の地域ヒント（最優先）: ${areaHint}`);
+  }
+  if (currentAddress && currentAddress !== "住所未登録") {
+    contextLines.push(`- 現在の登録済み住所ヒント: ${currentAddress}`);
+  }
+  if (currentShortName) {
+    contextLines.push(`- 現在の登録略称: ${currentShortName}`);
+  }
+  if (currentCategory === "home") {
+    contextLines.push(`- 施設区分ヒント: 本拠地・ホームグラウンド (home)`);
+  }
+  if (teamCtx.frequentAreas.length > 0 && !areaHint && !currentAddress) {
+    contextLines.push(
+      `- チームの主な活動エリア参考（同名施設が複数ある場合の優先地域）: ${teamCtx.frequentAreas.join(" / ")}`
+    );
+  }
+  if (teamCtx.clubCategory && teamCtx.clubCategory !== "other") {
+    contextLines.push(`- チームの競技種別参考: ${teamCtx.clubCategory}`);
+  }
+  if (placesHint) {
+    contextLines.push(
+      `- Google Places 事前照合データ: 名称="${placesHint.displayName || ""}", 住所="${placesHint.formattedAddress || ""}", 公式Web="${placesHint.websiteUri || "なし"}"`
+    );
+  }
 
   return [
-    "あなたは日本の少年野球・中学硬式野球・草野球チームの運営を支援する、球場・スポーツ施設リサーチの専門家です。",
-    "Google検索を用いて、指定された野球場・グラウンド・学校・室内練習場の自治体公式ページ、公園協会案内、施設利用ガイド等を調査し、正確な施設情報をJSON形式で抽出してください。",
+    "あなたは日本の少年野球・中学硬式野球・草野球チームの遠征・施設管理を支援する、球場・スポーツ施設リサーチの専門調査官です。",
+    "Google検索を用いて、指定された野球場・河川敷グラウンド・学校校庭・室内練習場の「自治体公式ページ（.lg.jp等）」「公園緑地協会・指定管理者の利用案内」「野球連盟の球場案内」を徹底調査し、現場の指導者・保護者がそのまま使える正確な施設情報をJSONで返してください。",
     "",
-    "【調査対象の施設】",
-    `- 入力された施設・球場名: ${inputName}`,
-    areaLine,
-    catLine,
+    "【調査対象の施設・コンテキスト】",
+    ...contextLines,
     "",
-    "【厳守ルール（ハルシネーション絶対禁止）】",
-    "1. Web検索や公式情報で裏付けが取れた事実のみを記載してください。確認できない項目（特にスパイク規定や駐車場台数など）を推測・創作することは絶対に禁止です。不明な項目は必ず空文字 \"\" にしてください。",
-    "2. 同名の球場（例: 市民球場、緑地野球場など）が全国に複数あり地域ヒントが無い場合は、最も代表的または野球利用が多い施設を選び、summaryNote に「〇〇県〇〇市の施設として取得しました（別の地域の場合は地域ヒントを入力して再取得してください）」と明記してください。",
-    "3. surface は必ず次の5択のいずれか完全一致で出力してください:",
+    "【調査・検証の厳守プロトコル（精度最優先・ハルシネーション絶対禁止）】",
+    "1. 施設同一性の厳格なクロスチェック（対岸・近隣別施設との混同防止）:",
+    "   - 特に河川敷（多摩川・荒川・江戸川・鶴見川・淀川など）や大規模公園では、対岸の別自治体の球場（例: 川崎市中原区側と東京都大田区田園調布側など）や、同じ河川敷内の「硬式専用球場」と「軟式広場（第1〜第3面など）」を取り違えないよう、必ず【同一の市区町村・同一の施設名】の情報だけを統合してください。",
+    "   - 同名・類似名の別施設（対岸の球場、同公園内の軟式面/硬式面、他県の同名市民球場など）が存在する場合は、情報を混ぜずに `alternatives` 配列（最大3件）に別候補として切り出してください。",
+    "2. 駐車場情報（parkingInfo）の厳格ルール:",
+    "   - 必ず「その施設専用または所属公園・河川敷の公式駐車場」の有無・駐車場名・料金・開放時間・進入路の注意（右折進入不可、川崎側/東京側スロープ指定、車高制限等）・チーム台数制限を記載してください。",
+    "   - times-info / akippa / 特P / NAVITIME 等のコインパーキング検索サイトの無関係な周辺コインパーキング名を列挙することは【絶対禁止】です（公式に「専用駐車場なし・近隣コインパーキング利用」と案内されている場合のみ、その旨を簡潔に記載してください）。",
+    "3. スパイク規定（spikeRule）の重点検索:",
+    "   - 公式利用案内・施設規約・連盟規定から「金属（金具）スパイク禁止 / 金具スパイク可 / ポイントスパイク・トレシュー限定 / 人工芝のため金具不可 / 室内履きのみ」等の規定を検索してください。",
+    "   - 裏付けが取れた事実のみを簡潔に記載し、公式情報で確認できない場合は推測せず必ず空文字 \"\" にしてください。",
+    "4. 施設設備・諸注意メモ（notes）の実用特化（歴史・雑学の完全排除）:",
+    "   - 「かつて〇〇球団の二軍本拠地だった」「〇〇クラブの本拠地」等の歴史・雑学・Wikipedia的トリビアは一切書かないでください。",
+    "   - 野球の現場で必要な実務情報（両翼・中堅の広さ、照明有無、電光/手書きスコアボード、ベンチ屋根・観客席・日陰の有無、トイレ・水道・更衣室・自販機の有無、河川増水時や雨天翌日の利用制限、敷地内禁煙・ゴミ持ち帰り規定など）のみを端的にまとめてください。",
+    "5. surface は必ず次の5択のいずれか完全一致で出力してください:",
     '   - "土 (クレー)"',
     '   - "人工芝"',
     '   - "天然芝"',
     '   - "土 (内野) / 天然芝 (外野)"',
     '   - "その他"',
-    '4. category は "stadium"（公営球場・公園・河川敷・専用球場）, "school"（小中高大の学校グラウンド）, "indoor"（室内練習場・ドーム）, "home" のいずれか1つにしてください。',
-    "5. shortName は予定表や試合カードの小さなバッジに収まる 4〜10文字程度のわかりやすい略称にしてください。",
-    "6. 出力は説明文やマークダウンを含めず、以下のキーを持つ純粋なJSONオブジェクト1つのみを返してください:",
+    '6. category は "stadium"（公営球場・公園・河川敷・専用球場）, "school"（小中高大の学校グラウンド）, "indoor"（室内練習場・ドーム）, "home" のいずれか1つにしてください。',
+    "7. verifiedFields には、自治体・指定管理者公式情報で明確に裏付けが取れた項目キー（name, shortName, category, surface, address, parkingInfo, spikeRule, notes のうち該当するもの）を配列で列挙してください。",
+    "8. 出力は説明文やマークダウンを含めず、以下のキーを持つ純粋なJSONオブジェクト1つのみを返してください:",
     "{",
     '  "name": "正式な施設・球場名",',
-    '  "shortName": "短い略称",',
+    '  "shortName": "予定表バッジ用の4〜10文字の略称",',
     '  "category": "stadium | school | indoor | home",',
     '  "surface": "5択のいずれか",',
-    '  "address": "都道府県からの所在地（不明なら空文字）",',
-    '  "parkingInfo": "駐車場の有無・駐車場名・収容台数・料金目安など公式確認できた情報（不明なら空文字）",',
-    '  "spikeRule": "金具スパイク可否・ポイントスパイク指定・室内履き指定など公式確認できた規定（不明なら空文字）",',
-    '  "notes": "トイレ・水道・更衣室・屋根付きスタンド・自販機・禁煙等の確認できた設備や注意点（不明なら空文字）",',
+    '  "address": "郵便番号を除いた都道府県からの正確な所在地（不明なら空文字）",',
+    '  "parkingInfo": "公式駐車場の有無・料金・開放時間・進入路注意・台数制限（不明なら空文字）",',
+    '  "spikeRule": "公式確認できたスパイク・靴規定（不明なら空文字）",',
+    '  "notes": "現場運営に必要な設備・広さ・トイレ・屋根・利用制限メモ（不明なら空文字）",',
     '  "confidence": "high | medium | low",',
-    '  "summaryNote": "特定した自治体名や同名施設に関する1行補足メモ"',
+    '  "summaryNote": "特定した自治体・施設根拠の1行要約（同名他候補がある場合はその旨も簡潔に）",',
+    '  "verifiedFields": ["name", "address", "surface"],',
+    '  "alternatives": [',
+    '    { "name": "紛らわしい近隣・同名の別施設名", "area": "〇〇県〇〇市", "note": "軟式面 / 対岸の別施設 など" }',
+    "  ]",
     "}",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].join("\n");
 }
 
 /**
  * POST /api/liff/grounds/ai-lookup
- * 球場・施設名（＋地域ヒント）から Google Search Grounding 付き Gemini で施設情報を取得する
+ * 並列デュアルグラウンディング（Web公式検索 × Google Maps POI特定 × チーム活動地域コンテキスト）
  */
 liffGroundsAiRouter.post("/", async (c) => {
   let body: GroundAiLookupRequestBody;
@@ -316,6 +915,11 @@ liffGroundsAiRouter.post("/", async (c) => {
   const areaHint = typeof body.areaHint === "string" ? body.areaHint.trim() : "";
   const currentCategory =
     typeof body.currentCategory === "string" ? body.currentCategory.trim() : undefined;
+  const currentAddress =
+    typeof body.currentAddress === "string" ? body.currentAddress.trim() : "";
+  const currentShortName =
+    typeof body.currentShortName === "string" ? body.currentShortName.trim() : "";
+  const teamId = typeof body.teamId === "string" ? body.teamId.trim() : undefined;
 
   if (!inputName) {
     return c.json(
@@ -335,17 +939,53 @@ liffGroundsAiRouter.post("/", async (c) => {
     );
   }
 
-  const prompt = buildLookupPrompt(inputName, areaHint, currentCategory);
   const overallStart = Date.now();
-  const MAX_BUDGET_MS = 32_000;
+  const MAX_BUDGET_MS = 45_000;
+
+  const teamCtx = await loadTeamRegionContext(c.env, teamId);
+  const effectiveRegionHint =
+    areaHint ||
+    extractAreaPrefix(currentAddress) ||
+    (teamCtx.frequentAreas.length > 0 ? teamCtx.frequentAreas[0] : "");
+
+  // 座標アンカー（国土地理院API）と Google Places 事前照合を高速並列取得
+  const [geoAnchor, placesHint] = await Promise.all([
+    resolveJapanGeoAnchor(effectiveRegionHint || inputName),
+    queryGooglePlacesIfAvailable(
+      teamCtx.mapsApiKey,
+      inputName,
+      areaHint,
+      currentAddress,
+      teamCtx.frequentAreas
+    ),
+  ]);
+
+  const prompt = buildLookupPrompt({
+    inputName,
+    areaHint,
+    currentCategory,
+    currentAddress,
+    currentShortName,
+    teamCtx,
+    placesHint,
+  });
+
+  // 🗺️ Google Maps Grounding プローブを裏で並列起動（Web検索と完全同時進行のため待ち時間ゼロ）
+  const mapsProbePromise = probeGoogleMapsGrounding({
+    apiKey,
+    inputName,
+    regionHintText: effectiveRegionHint,
+    geoAnchor,
+  });
+
   let lastErrorMsg = "AIからの応答を取得できませんでした";
   let skipGoogleSearch = false;
 
-  for (const spec of MODEL_ATTEMPTS) {
+  for (const spec of WEB_SEARCH_MODEL_ATTEMPTS) {
     if (spec.useGoogleSearch && skipGoogleSearch) continue;
 
     const remainingMs = MAX_BUDGET_MS - (Date.now() - overallStart);
-    if (remainingMs < 3_000) break;
+    if (remainingMs < 4_500) break;
 
     const cooldownKey = `${spec.model}:${spec.useGoogleSearch ? "gs" : "plain"}`;
     const cooldownUntil = MODEL_COOLDOWN.get(cooldownKey) || 0;
@@ -359,14 +999,14 @@ liffGroundsAiRouter.post("/", async (c) => {
 
     try {
       const generationConfig: Record<string, unknown> = {
-        temperature: 0.1,
+        temperature: 0.05,
       };
       if (!spec.useGoogleSearch) {
         generationConfig.responseMimeType = "application/json";
       }
-      if (spec.thinkingZero) {
+      if (spec.thinkingBudget !== null) {
         generationConfig.thinkingConfig = {
-          thinkingBudget: 0,
+          thinkingBudget: spec.thinkingBudget,
         };
       }
 
@@ -401,7 +1041,7 @@ liffGroundsAiRouter.post("/", async (c) => {
           skipGoogleSearch = true;
         }
         lastErrorMsg = `AI検索エラー (${res.status})`;
-        console.warn(`[grounds-ai] ${spec.model} failed (${res.status}):`, errText.slice(0, 200));
+        console.warn(`[grounds-ai] ${spec.model} failed (${res.status}):`, errText.slice(0, 220));
         continue;
       }
 
@@ -420,7 +1060,15 @@ liffGroundsAiRouter.post("/", async (c) => {
         continue;
       }
 
-      const resolvedName = cleanString(extracted.name, 120) || inputName;
+      // 並列起動していた Google Maps Grounding の結果を合流
+      const mapsProbe = await mapsProbePromise;
+      const webChunks = firstCandidate?.groundingMetadata?.groundingChunks || [];
+
+      const resolvedName =
+        cleanString(extracted.name, 120) ||
+        placesHint?.displayName ||
+        mapsProbe?.placeTitle ||
+        inputName;
       const resolvedShortName =
         cleanString(extracted.shortName, 40) || resolvedName.slice(0, 10);
       const resolvedCategory = normalizeCategory(
@@ -429,13 +1077,47 @@ liffGroundsAiRouter.post("/", async (c) => {
         currentCategory
       );
       const resolvedSurface = normalizeSurface(extracted.surface);
-      const resolvedAddress = cleanString(extracted.address, 160);
-      const resolvedParking = cleanString(extracted.parkingInfo, 260);
-      const resolvedSpikeRule = cleanString(extracted.spikeRule, 200);
-      const resolvedNotes = cleanString(extracted.notes, 320);
+      const webAddress = normalizeAddressForDisplay(cleanString(extracted.address, 160));
+      const webAreaPrefix = extractAreaPrefix(webAddress);
+
+      // Web公式住所が「〜地内・地先」等で番地を持たない場合、同一市区町村のGoogle Maps番地で補完
+      const mapsAddr = mapsProbe?.address || "";
+      const mapsAreaPrefix = extractAreaPrefix(mapsAddr);
+      const canUseMapsAddress =
+        Boolean(mapsAddr) &&
+        (!webAddress ||
+          ((webAddress.endsWith("地内") || webAddress.endsWith("地先")) &&
+            webAreaPrefix &&
+            webAreaPrefix === mapsAreaPrefix));
+
+      const resolvedAddress =
+        (canUseMapsAddress ? mapsAddr : webAddress) ||
+        placesHint?.formattedAddress ||
+        mapsAddr ||
+        "";
+
+      const { sources, bestMapsUrl } = extractGroundingSources(
+        webChunks,
+        mapsProbe,
+        placesHint,
+        extractAreaPrefix(resolvedAddress)
+      );
+
+      const resolvedParking = cleanString(extracted.parkingInfo, 300);
+      const resolvedSpikeRule = cleanString(extracted.spikeRule, 220);
+      const resolvedNotes = cleanString(extracted.notes, 360);
       const resolvedConfidence = normalizeConfidence(extracted.confidence);
-      const resolvedSummary = cleanString(extracted.summaryNote, 180);
-      const sources = extractGroundingSources(firstCandidate);
+      const resolvedSummary = cleanString(extracted.summaryNote, 200);
+      const mapsVerified = Boolean(bestMapsUrl);
+      const hasWebSources = spec.useGoogleSearch && webChunks.length > 0;
+      const verifiedFields = normalizeVerifiedFields(
+        extracted.verifiedFields,
+        mapsVerified,
+        hasWebSources
+      );
+      const alternatives = normalizeAlternatives(extracted.alternatives).filter(
+        (alt) => alt.name !== resolvedName
+      );
 
       const candidateResult: GroundAiLookupResult = {
         name: resolvedName,
@@ -443,19 +1125,28 @@ liffGroundsAiRouter.post("/", async (c) => {
         category: resolvedCategory,
         surface: resolvedSurface,
         address: resolvedAddress,
-        mapUrl: buildGoogleMapsSearchUrl(resolvedName, resolvedAddress),
+        mapUrl: buildGoogleMapsSearchUrl(
+          resolvedName,
+          resolvedAddress,
+          bestMapsUrl,
+          placesHint
+        ),
         parkingInfo: resolvedParking,
         spikeRule: resolvedSpikeRule,
         notes: resolvedNotes,
         confidence: resolvedConfidence,
         summaryNote: resolvedSummary,
+        mapsVerified,
+        verifiedFields,
+        alternatives,
         sources,
       };
 
       return c.json({
         success: true,
         model: spec.model,
-        grounded: spec.useGoogleSearch && sources.length > 0,
+        grounded: hasWebSources || mapsVerified,
+        mapsGrounded: mapsVerified,
         candidate: candidateResult,
       });
     } catch (err) {
@@ -474,7 +1165,9 @@ liffGroundsAiRouter.post("/", async (c) => {
   return c.json(
     {
       success: false,
-      error: lastErrorMsg || "施設情報を取得できませんでした。施設名や地域ヒントを確認してください。",
+      error:
+        lastErrorMsg ||
+        "施設情報を取得できませんでした。施設名や地域ヒントを確認してください。",
     },
     502
   );

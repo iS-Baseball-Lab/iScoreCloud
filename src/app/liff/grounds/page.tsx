@@ -371,23 +371,41 @@ export default function LiffGroundsPage() {
     setIsModalOpen(true);
   };
 
-  // ✨ AIによる施設情報の自動検索・プレビュー生成
-  const handleAiLookup = async () => {
-    const targetName = formName.trim();
+  // ✨ AIによる施設情報の自動検索・プレビュー生成（同名・近隣候補からの1タップ再検索にも対応）
+  const handleAiLookup = async (
+    overrideName?: string,
+    overrideAreaHint?: string
+  ) => {
+    const targetName = (overrideName ?? formName).trim();
+    const resolvedAreaHint = (overrideAreaHint ?? aiAreaHint).trim();
     if (!targetName) {
       toast.error("先に「施設・球場名」を入力してからAI取得を押してください");
       return;
     }
 
+    if (overrideName !== undefined) {
+      setFormName(overrideName);
+    }
+    if (overrideAreaHint !== undefined) {
+      setAiAreaHint(overrideAreaHint);
+    }
+
     try {
       setIsAiLoading(true);
+      const isSwitchingAlternative = overrideName !== undefined;
       const res = await fetch("/api/liff/grounds/ai-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: targetName,
-          areaHint: aiAreaHint.trim() || undefined,
+          areaHint: resolvedAreaHint || undefined,
           currentCategory: formCategory,
+          currentAddress: isSwitchingAlternative
+            ? undefined
+            : formAddress.trim() || undefined,
+          currentShortName: isSwitchingAlternative
+            ? undefined
+            : formShortName.trim() || undefined,
           teamId: currentTeam?.id || "demo-team",
         }),
       });
@@ -976,10 +994,10 @@ export default function LiffGroundsPage() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-foreground">
                     <Sparkles className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                    <span>AIでWebから施設情報を自動取得</span>
+                    <span>AIで公式情報・Googleマップから自動取得</span>
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-teal-600 text-white text-[9.5px] font-black shrink-0">
-                    Google検索連携
+                    Web ＋ Map連携
                   </span>
                 </div>
 
@@ -993,14 +1011,14 @@ export default function LiffGroundsPage() {
                   />
                   <button
                     type="button"
-                    onClick={handleAiLookup}
+                    onClick={() => void handleAiLookup()}
                     disabled={isAiLoading || !formName.trim()}
                     className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
                   >
                     {isAiLoading ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                        <span>検索中...</span>
+                        <span>公式・Map調査中...</span>
                       </>
                     ) : (
                       <>
@@ -1012,7 +1030,7 @@ export default function LiffGroundsPage() {
                 </div>
 
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
-                  住所・グラウンド状態・駐車場・スパイク規定を検索し、反映する項目を選んでセットできます。
+                  自治体公式案内・Googleマップを横断検証し、住所・サーフェス・専用駐車場・スパイク規定を抽出します。
                 </p>
               </div>
 
@@ -1029,12 +1047,13 @@ export default function LiffGroundsPage() {
                 const selectedCount = availableKeys.filter(
                   (key) => aiCheckedFields[key]
                 ).length;
+                const verifiedSet = new Set(aiCandidate.verifiedFields || []);
 
                 return (
                   <div className="rounded-2xl border-2 border-teal-600 bg-card shadow-sm overflow-hidden animate-in fade-in duration-150">
                     {/* A-3 上帯ダークキャップ */}
                     <div className="bg-[#0f172a] text-slate-50 border-b-2 border-teal-500 px-3.5 py-2.5 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                         <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
                         <span className="text-xs font-black text-white truncate">
                           AI取得結果の確認・選択反映
@@ -1054,11 +1073,16 @@ export default function LiffGroundsPage() {
                             ? "確度: 中"
                             : "要確認"}
                         </span>
+                        {aiCandidate.mapsVerified && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#1A73E8] text-white text-[9.5px] font-black shrink-0">
+                            Map地点確認済
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={() => setAiCandidate(null)}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
                         title="プレビューを閉じる"
                       >
                         <X className="w-4 h-4" />
@@ -1069,6 +1093,34 @@ export default function LiffGroundsPage() {
                       {aiCandidate.summaryNote && (
                         <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-[10.5px] font-bold text-foreground leading-snug">
                           💡 {aiCandidate.summaryNote}
+                        </div>
+                      )}
+
+                      {/* 🔍 同名・近隣の別施設候補がある場合のワンタップ切替サジェスト */}
+                      {aiCandidate.alternatives && aiCandidate.alternatives.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-muted/60 border border-border space-y-1.5">
+                          <span className="text-[10px] font-black text-foreground block">
+                            🔍 同名・近隣の別施設をお探しですか？（タップで再取得）
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {aiCandidate.alternatives.map((alt) => (
+                              <button
+                                key={`${alt.name}-${alt.area}`}
+                                type="button"
+                                disabled={isAiLoading}
+                                onClick={() => void handleAiLookup(alt.name, alt.area)}
+                                className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-teal-500/10 hover:border-teal-500/40 text-left text-[10px] font-black text-foreground transition-colors cursor-pointer disabled:opacity-50"
+                              >
+                                <span>{alt.name}</span>
+                                {alt.area && (
+                                  <span className="text-muted-foreground font-bold ml-1">
+                                    （{alt.area}
+                                    {alt.note ? `・${alt.note}` : ""}）
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -1115,6 +1167,7 @@ export default function LiffGroundsPage() {
                             Boolean(editingVenue) &&
                             !isFieldEmptyOrDefault(key) &&
                             !isSameAsCurrent;
+                          const isFieldVerified = verifiedSet.has(key);
 
                           return (
                             <label
@@ -1131,9 +1184,16 @@ export default function LiffGroundsPage() {
                               />
                               <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                                  <span className="text-[11px] font-black text-foreground">
-                                    {AI_FIELD_LABELS[key]}
-                                  </span>
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] font-black text-foreground">
+                                      {AI_FIELD_LABELS[key]}
+                                    </span>
+                                    {isFieldVerified && (
+                                      <span className="px-1.5 py-0.2 rounded bg-teal-600/12 text-teal-700 dark:text-teal-300 border border-teal-600/25 text-[9px] font-black">
+                                        公式・Map確認
+                                      </span>
+                                    )}
+                                  </div>
                                   {isSameAsCurrent ? (
                                     <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border text-[9.5px] font-bold">
                                       現在と同じ
@@ -1173,25 +1233,38 @@ export default function LiffGroundsPage() {
                         </p>
                       )}
 
-                      {/* 参照元Webリンク */}
+                      {/* 参照元Web・Googleマップリンク */}
                       {aiCandidate.sources.length > 0 && (
                         <div className="space-y-1 pt-0.5">
                           <span className="text-[10px] font-black text-muted-foreground block">
-                            参照元 Web ページ（タップで確認）
+                            参照元（タップで公式ページ・地図を確認）
                           </span>
                           <div className="flex flex-wrap gap-1.5">
-                            {aiCandidate.sources.map((src) => (
-                              <a
-                                key={src.url}
-                                href={src.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-border bg-muted/50 hover:bg-muted text-[10px] font-bold text-primary max-w-full truncate"
-                              >
-                                <ExternalLink className="w-3 h-3 shrink-0" />
-                                <span className="truncate">{src.title}</span>
-                              </a>
-                            ))}
+                            {aiCandidate.sources.map((src) => {
+                              const badgeClass =
+                                src.kind === "maps"
+                                  ? "border-[#1A73E8]/35 bg-[#1A73E8]/10 text-[#1A73E8] hover:bg-[#1A73E8]/15"
+                                  : src.kind === "official"
+                                  ? "border-teal-600/30 bg-teal-600/10 text-teal-700 dark:text-teal-300 hover:bg-teal-600/15"
+                                  : "border-border bg-muted/50 text-primary hover:bg-muted";
+                              const prefixLabel =
+                                src.kind === "official" ? "🏛️ 公式: " : "";
+                              return (
+                                <a
+                                  key={src.url}
+                                  href={src.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-bold max-w-full truncate transition-colors ${badgeClass}`}
+                                >
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                  <span className="truncate">
+                                    {prefixLabel}
+                                    {src.title}
+                                  </span>
+                                </a>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1296,12 +1369,12 @@ export default function LiffGroundsPage() {
                   <Car className="w-3.5 h-3.5 text-primary" />
                   <span>駐車場ルール & 台数制限</span>
                 </label>
-                <input
-                  type="text"
+                <textarea
+                  rows={2}
                   value={formParkingInfo}
                   onChange={(e) => setFormParkingInfo(e.target.value)}
                   placeholder="例: 東駐車場を利用（有料）。チーム枠4台まで。満車の恐れあり乗り合い推奨。"
-                  className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium"
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium resize-none"
                 />
               </div>
 
