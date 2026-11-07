@@ -10,7 +10,11 @@ import {
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import type {
+  GroundAiLookupResult,
+  GroundVenueCategory,
+} from "@/api/liff/grounds-ai";
 import {
   MapPin,
   Navigation,
@@ -33,6 +37,8 @@ import {
   Pencil,
   Trash2,
   AlertCircle,
+  Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +78,60 @@ const CATEGORIES = [
   { id: "school", label: "学校・地域", icon: School },
   { id: "indoor", label: "室内・練習場", icon: Dumbbell },
 ] as const;
+
+type AiFieldKey =
+  | "name"
+  | "shortName"
+  | "category"
+  | "surface"
+  | "address"
+  | "mapUrl"
+  | "parkingInfo"
+  | "spikeRule"
+  | "notes";
+
+const AI_FIELD_LABELS: Record<AiFieldKey, string> = {
+  name: "施設・球場名",
+  shortName: "表示用の略称",
+  category: "施設分類",
+  surface: "グラウンド状態",
+  address: "所在地・住所",
+  mapUrl: "Google Map URL",
+  parkingInfo: "駐車場ルール & 台数制限",
+  spikeRule: "スパイク規定",
+  notes: "施設設備・諸注意メモ",
+};
+
+const AI_FIELD_ORDER: ReadonlyArray<AiFieldKey> = [
+  "name",
+  "shortName",
+  "category",
+  "surface",
+  "address",
+  "mapUrl",
+  "parkingInfo",
+  "spikeRule",
+  "notes",
+];
+
+const PLACEHOLDER_ADDRESS_TEXT = "住所未登録";
+const PLACEHOLDER_PARKING_TEXTS = new Set([
+  "駐車場ルールは管理者にお問い合わせください",
+  "駐車場ルールは管理者にお問い合わせください。",
+]);
+const DEFAULT_SPIKE_RULE_TEXT = "ポイントスパイクまたはトレーニングシューズ";
+
+function extractMunicipalityHint(address: string): string {
+  const trimmed = address.trim();
+  if (!trimmed || trimmed === PLACEHOLDER_ADDRESS_TEXT) return "";
+  const match = trimmed.match(/^(.+?[都道府県].+?[市区町村郡])/);
+  return match ? match[1] : "";
+}
+
+function getCategoryOptionLabel(cat: GroundVenueCategory | string): string {
+  const found = VENUE_CATEGORY_OPTIONS.find((opt) => opt.value === cat);
+  return found ? found.label : cat;
+}
 
 export default function LiffGroundsPage() {
   const { currentTeam } = useLiff();
@@ -114,6 +174,26 @@ export default function LiffGroundsPage() {
   const [formSpikeRule, setFormSpikeRule] = useState("");
   const [formNotes, setFormNotes] = useState("");
 
+  // AI自動取得・反映チェックリスト用ステート
+  const [aiAreaHint, setAiAreaHint] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiCandidate, setAiCandidate] = useState<GroundAiLookupResult | null>(
+    null
+  );
+  const [aiCheckedFields, setAiCheckedFields] = useState<
+    Record<AiFieldKey, boolean>
+  >({
+    name: false,
+    shortName: false,
+    category: false,
+    surface: false,
+    address: false,
+    mapUrl: false,
+    parkingInfo: false,
+    spikeRule: false,
+    notes: false,
+  });
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -147,6 +227,108 @@ export default function LiffGroundsPage() {
     loadGrounds();
   }, [loadGrounds]);
 
+  const getCurrentFieldValue = useCallback(
+    (key: AiFieldKey): string => {
+      switch (key) {
+        case "name":
+          return formName.trim();
+        case "shortName":
+          return formShortName.trim();
+        case "category":
+          return formCategory;
+        case "surface":
+          return formSurface.trim();
+        case "address":
+          return formAddress.trim();
+        case "mapUrl":
+          return formMapUrl.trim();
+        case "parkingInfo":
+          return formParkingInfo.trim();
+        case "spikeRule":
+          return formSpikeRule.trim();
+        case "notes":
+          return formNotes.trim();
+      }
+    },
+    [
+      formAddress,
+      formCategory,
+      formMapUrl,
+      formName,
+      formNotes,
+      formParkingInfo,
+      formShortName,
+      formSpikeRule,
+      formSurface,
+    ]
+  );
+
+  const isFieldEmptyOrDefault = useCallback(
+    (key: AiFieldKey): boolean => {
+      const cur = getCurrentFieldValue(key);
+      if (!cur) return true;
+      switch (key) {
+        case "name":
+          return false;
+        case "shortName":
+          return cur === formName.trim();
+        case "category":
+          return !editingVenue;
+        case "surface":
+          return cur === "土 (クレー)";
+        case "address":
+          return cur === PLACEHOLDER_ADDRESS_TEXT;
+        case "mapUrl":
+          return cur.startsWith("https://maps.google.com/?q=");
+        case "parkingInfo":
+          return PLACEHOLDER_PARKING_TEXTS.has(cur);
+        case "spikeRule":
+          return cur === DEFAULT_SPIKE_RULE_TEXT;
+        case "notes":
+          return false;
+      }
+    },
+    [editingVenue, formName, getCurrentFieldValue]
+  );
+
+  const buildInitialAiChecks = useCallback(
+    (
+      candidate: GroundAiLookupResult,
+      mode: "safe_empty_only" | "all_available"
+    ): Record<AiFieldKey, boolean> => {
+      const next: Record<AiFieldKey, boolean> = {
+        name: false,
+        shortName: false,
+        category: false,
+        surface: false,
+        address: false,
+        mapUrl: false,
+        parkingInfo: false,
+        spikeRule: false,
+        notes: false,
+      };
+      for (const key of AI_FIELD_ORDER) {
+        const aiVal = candidate[key]?.trim() || "";
+        if (!aiVal) {
+          next[key] = false;
+          continue;
+        }
+        const curVal = getCurrentFieldValue(key);
+        if (aiVal === curVal) {
+          next[key] = false;
+          continue;
+        }
+        if (mode === "all_available") {
+          next[key] = true;
+        } else {
+          next[key] = isFieldEmptyOrDefault(key);
+        }
+      }
+      return next;
+    },
+    [getCurrentFieldValue, isFieldEmptyOrDefault]
+  );
+
   // 新規登録モーダルを開く
   const handleOpenCreate = () => {
     setEditingVenue(null);
@@ -157,24 +339,147 @@ export default function LiffGroundsPage() {
     setFormAddress("");
     setFormMapUrl("");
     setFormParkingInfo("");
-    setFormSpikeRule("ポイントスパイクまたはトレーニングシューズ");
+    setFormSpikeRule(DEFAULT_SPIKE_RULE_TEXT);
     setFormNotes("");
+    setAiAreaHint("");
+    setAiCandidate(null);
     setIsModalOpen(true);
   };
 
   // 編集モーダルを開く
   const handleOpenEdit = (venue: VenueInfo) => {
     setEditingVenue(venue);
+    const cleanAddr =
+      venue.address && venue.address !== PLACEHOLDER_ADDRESS_TEXT
+        ? venue.address
+        : "";
+    const cleanParking =
+      venue.parkingInfo && !PLACEHOLDER_PARKING_TEXTS.has(venue.parkingInfo)
+        ? venue.parkingInfo
+        : "";
     setFormName(venue.name);
     setFormShortName(venue.shortName || "");
     setFormCategory(venue.category || "stadium");
     setFormSurface(venue.surface || "土 (クレー)");
-    setFormAddress(venue.address || "");
+    setFormAddress(cleanAddr);
     setFormMapUrl(venue.mapUrl || "");
-    setFormParkingInfo(venue.parkingInfo || "");
+    setFormParkingInfo(cleanParking);
     setFormSpikeRule(venue.spikeRule || "");
     setFormNotes(venue.notes || "");
+    setAiAreaHint(extractMunicipalityHint(cleanAddr));
+    setAiCandidate(null);
     setIsModalOpen(true);
+  };
+
+  // ✨ AIによる施設情報の自動検索・プレビュー生成
+  const handleAiLookup = async () => {
+    const targetName = formName.trim();
+    if (!targetName) {
+      toast.error("先に「施設・球場名」を入力してからAI取得を押してください");
+      return;
+    }
+
+    try {
+      setIsAiLoading(true);
+      const res = await fetch("/api/liff/grounds/ai-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: targetName,
+          areaHint: aiAreaHint.trim() || undefined,
+          currentCategory: formCategory,
+          teamId: currentTeam?.id || "demo-team",
+        }),
+      });
+
+      const data = (await res.json()) as {
+        success: boolean;
+        error?: string;
+        candidate?: GroundAiLookupResult;
+      };
+
+      if (!res.ok || !data.success || !data.candidate) {
+        throw new Error(data.error || "施設情報の取得に失敗しました");
+      }
+
+      setAiCandidate(data.candidate);
+      setAiCheckedFields(
+        buildInitialAiChecks(
+          data.candidate,
+          editingVenue ? "safe_empty_only" : "all_available"
+        )
+      );
+      toast.success("AIで施設情報を取得しました。反映する項目を確認してください");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "施設情報のAI取得に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleToggleAiField = (key: AiFieldKey) => {
+    setAiCheckedFields((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleSelectAiMode = (mode: "safe_empty_only" | "all_available") => {
+    if (!aiCandidate) return;
+    setAiCheckedFields(buildInitialAiChecks(aiCandidate, mode));
+  };
+
+  const handleApplyAiCandidate = () => {
+    if (!aiCandidate) return;
+    let appliedCount = 0;
+
+    if (aiCheckedFields.name && aiCandidate.name) {
+      setFormName(aiCandidate.name);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.shortName && aiCandidate.shortName) {
+      setFormShortName(aiCandidate.shortName);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.category && aiCandidate.category) {
+      setFormCategory(aiCandidate.category);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.surface && aiCandidate.surface) {
+      setFormSurface(aiCandidate.surface);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.address && aiCandidate.address) {
+      setFormAddress(aiCandidate.address);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.mapUrl && aiCandidate.mapUrl) {
+      setFormMapUrl(aiCandidate.mapUrl);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.parkingInfo && aiCandidate.parkingInfo) {
+      setFormParkingInfo(aiCandidate.parkingInfo);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.spikeRule && aiCandidate.spikeRule) {
+      setFormSpikeRule(aiCandidate.spikeRule);
+      appliedCount += 1;
+    }
+    if (aiCheckedFields.notes && aiCandidate.notes) {
+      setFormNotes(aiCandidate.notes);
+      appliedCount += 1;
+    }
+
+    setAiCandidate(null);
+    if (appliedCount > 0) {
+      toast.success(
+        `${appliedCount}項目をフォームにセットしました。内容を確認して保存してください`
+      );
+    } else {
+      toast.info("反映する項目が選択されていませんでした");
+    }
   };
 
   // 登録・更新の実行
@@ -208,7 +513,7 @@ export default function LiffGroundsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const data = await res.json() as { success: boolean; error?: string };
+        const data = (await res.json()) as { success: boolean; error?: string };
         if (!data.success) throw new Error(data.error || "更新に失敗しました");
 
         toast.success("球場・施設情報を更新しました");
@@ -219,17 +524,19 @@ export default function LiffGroundsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        const data = await res.json() as { success: boolean; error?: string };
+        const data = (await res.json()) as { success: boolean; error?: string };
         if (!data.success) throw new Error(data.error || "登録に失敗しました");
 
         toast.success("新しい球場・施設を登録しました");
       }
 
+      invalidateLiffApiCache();
       setIsModalOpen(false);
+      setAiCandidate(null);
       await loadGrounds();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err.message || "保存に失敗しました");
+      toast.error(err instanceof Error ? err.message : "保存に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -244,15 +551,16 @@ export default function LiffGroundsPage() {
       const res = await fetch(`/api/liff/grounds/${deleteTarget.id}`, {
         method: "DELETE",
       });
-      const data = await res.json() as { success: boolean; error?: string };
+      const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) throw new Error(data.error || "削除に失敗しました");
 
+      invalidateLiffApiCache();
       toast.success("球場・施設を削除しました");
       setDeleteTarget(null);
       await loadGrounds();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err.message || "削除に失敗しました");
+      toast.error(err instanceof Error ? err.message : "削除に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -593,17 +901,28 @@ export default function LiffGroundsPage() {
           </div>
         )}
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div
+          className="h-8 w-full shrink-0 pointer-events-none select-none"
+          aria-hidden="true"
+        />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* ➕ 新規登録 / ✏️ 編集モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {mounted && isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+        <div
+          onClick={() => {
+            if (!isSubmitting && !isAiLoading) {
+              setIsModalOpen(false);
+              setAiCandidate(null);
+            }
+          }}
+          className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200"
+        >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200"
+            className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200"
           >
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
@@ -621,14 +940,21 @@ export default function LiffGroundsPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setAiCandidate(null);
+                }}
                 className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitForm} className="p-5 overflow-y-auto space-y-3.5 text-xs">
+            <form
+              id="liff-grounds-edit-form"
+              onSubmit={handleSubmitForm}
+              className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3.5 text-xs"
+            >
               {/* 施設名 */}
               <div className="space-y-1">
                 <label className="font-black text-foreground flex items-center gap-1">
@@ -640,10 +966,259 @@ export default function LiffGroundsPage() {
                   required
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="例: 川崎市等々力球場、多摩川緑地野球場"
+                  placeholder="例: 〇〇市民球場、〇〇緑地野球場"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-bold"
                 />
               </div>
+
+              {/* ✨ Item 1: AI施設情報取得バー（地域ヒント＋1タップ取得） */}
+              <div className="rounded-2xl border border-border bg-muted/50 p-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-foreground">
+                    <Sparkles className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                    <span>AIでWebから施設情報を自動取得</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-teal-600 text-white text-[9.5px] font-black shrink-0">
+                    Google検索連携
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <input
+                    type="text"
+                    value={aiAreaHint}
+                    onChange={(e) => setAiAreaHint(e.target.value)}
+                    placeholder="地域ヒント（任意・例: 〇〇県〇〇市）"
+                    className="flex-1 px-3 py-2 rounded-xl bg-card border border-border text-[11px] font-medium placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-teal-500/40 focus:outline-hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAiLookup}
+                    disabled={isAiLoading || !formName.trim()}
+                    className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    {isAiLoading ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                        <span>検索中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        <span>AIで施設情報を取得</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                  住所・グラウンド状態・駐車場・スパイク規定を検索し、反映する項目を選んでセットできます。
+                </p>
+              </div>
+
+              {/* 🛡️ Item 2: AI取得結果プレビュー ＆ 上書き保護チェックリスト */}
+              {aiCandidate && (() => {
+                const availableKeys = AI_FIELD_ORDER.filter(
+                  (key) => Boolean(aiCandidate[key] && aiCandidate[key].trim() !== "")
+                );
+                const missingKeys = AI_FIELD_ORDER.filter(
+                  (key) =>
+                    key !== "mapUrl" &&
+                    (!aiCandidate[key] || aiCandidate[key].trim() === "")
+                );
+                const selectedCount = availableKeys.filter(
+                  (key) => aiCheckedFields[key]
+                ).length;
+
+                return (
+                  <div className="rounded-2xl border-2 border-teal-600 bg-card shadow-sm overflow-hidden animate-in fade-in duration-150">
+                    {/* A-3 上帯ダークキャップ */}
+                    <div className="bg-[#0f172a] text-slate-50 border-b-2 border-teal-500 px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+                        <span className="text-xs font-black text-white truncate">
+                          AI取得結果の確認・選択反映
+                        </span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
+                            aiCandidate.confidence === "high"
+                              ? "bg-teal-500 text-slate-950"
+                              : aiCandidate.confidence === "medium"
+                              ? "bg-amber-400 text-slate-950"
+                              : "bg-slate-700 text-slate-200"
+                          }`}
+                        >
+                          {aiCandidate.confidence === "high"
+                            ? "確度: 高"
+                            : aiCandidate.confidence === "medium"
+                            ? "確度: 中"
+                            : "要確認"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAiCandidate(null)}
+                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        title="プレビューを閉じる"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="p-3 space-y-2.5">
+                      {aiCandidate.summaryNote && (
+                        <div className="p-2 rounded-xl bg-teal-500/10 border border-teal-500/30 text-[10.5px] font-bold text-foreground leading-snug">
+                          💡 {aiCandidate.summaryNote}
+                        </div>
+                      )}
+
+                      {editingVenue && (
+                        <p className="text-[10.5px] font-bold text-muted-foreground leading-snug">
+                          既存のチーム独自ルールを守るため、初期状態では「空欄・初期値」の項目のみチェックしています。
+                        </p>
+                      )}
+
+                      {/* クイック選択切替バー */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAiMode("safe_empty_only")}
+                          className="flex-1 py-1.5 px-2.5 rounded-xl border border-border bg-muted/60 hover:bg-muted text-foreground text-[10.5px] font-black transition-colors cursor-pointer"
+                        >
+                          空欄・初期値のみ選択
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAiMode("all_available")}
+                          className="flex-1 py-1.5 px-2.5 rounded-xl border border-border bg-muted/60 hover:bg-muted text-foreground text-[10.5px] font-black transition-colors cursor-pointer"
+                        >
+                          すべて選択
+                        </button>
+                      </div>
+
+                      {/* 項目別チェックリスト */}
+                      <div className="rounded-xl border border-border divide-y divide-border overflow-hidden bg-card">
+                        {availableKeys.map((key) => {
+                          const isChecked = aiCheckedFields[key];
+                          const rawAiValue = aiCandidate[key];
+                          const displayAiValue =
+                            key === "category"
+                              ? getCategoryOptionLabel(rawAiValue)
+                              : rawAiValue;
+                          const curValue = getCurrentFieldValue(key);
+                          const displayCurValue =
+                            key === "category"
+                              ? getCategoryOptionLabel(curValue)
+                              : curValue;
+                          const isSameAsCurrent = rawAiValue.trim() === curValue;
+                          const hasCustomExisting =
+                            Boolean(editingVenue) &&
+                            !isFieldEmptyOrDefault(key) &&
+                            !isSameAsCurrent;
+
+                          return (
+                            <label
+                              key={key}
+                              className={`px-3 py-2 flex items-start gap-2.5 cursor-pointer transition-colors ${
+                                isChecked ? "bg-teal-500/[0.07]" : "bg-card hover:bg-muted/40"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleToggleAiField(key)}
+                                className="mt-0.5 w-4 h-4 rounded accent-teal-600 shrink-0 cursor-pointer"
+                              />
+                              <div className="flex-1 min-w-0 space-y-0.5">
+                                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-black text-foreground">
+                                    {AI_FIELD_LABELS[key]}
+                                  </span>
+                                  {isSameAsCurrent ? (
+                                    <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border text-[9.5px] font-bold">
+                                      現在と同じ
+                                    </span>
+                                  ) : hasCustomExisting ? (
+                                    isChecked ? (
+                                      <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black">
+                                        既存値を上書き
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.2 rounded bg-slate-800 text-slate-100 text-[9.5px] font-black">
+                                        既存入力を保護中
+                                      </span>
+                                    )
+                                  ) : null}
+                                </div>
+
+                                <p className="text-[11px] font-bold text-foreground break-all leading-snug">
+                                  {displayAiValue}
+                                </p>
+
+                                {hasCustomExisting && displayCurValue && (
+                                  <p className="text-[10px] font-medium text-muted-foreground break-all leading-snug">
+                                    現在: {displayCurValue}
+                                  </p>
+                                )}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      {missingKeys.length > 0 && (
+                        <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                          ※公式情報で確認できなかった項目（未変更）:{" "}
+                          {missingKeys.map((k) => AI_FIELD_LABELS[k]).join("・")}
+                        </p>
+                      )}
+
+                      {/* 参照元Webリンク */}
+                      {aiCandidate.sources.length > 0 && (
+                        <div className="space-y-1 pt-0.5">
+                          <span className="text-[10px] font-black text-muted-foreground block">
+                            参照元 Web ページ（タップで確認）
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {aiCandidate.sources.map((src) => (
+                              <a
+                                key={src.url}
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-border bg-muted/50 hover:bg-muted text-[10px] font-bold text-primary max-w-full truncate"
+                              >
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{src.title}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 反映実行フッター */}
+                      <div className="pt-2 border-t border-border flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAiCandidate(null)}
+                          className="px-3 py-1.5 rounded-xl border border-border bg-card hover:bg-muted text-[11px] font-bold cursor-pointer"
+                        >
+                          閉じる
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleApplyAiCandidate}
+                          disabled={selectedCount === 0}
+                          className="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          <span>選択した{selectedCount}項目をフォームにセット</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 略称 */}
               <div className="space-y-1">
@@ -654,7 +1229,7 @@ export default function LiffGroundsPage() {
                   type="text"
                   value={formShortName}
                   onChange={(e) => setFormShortName(e.target.value)}
-                  placeholder="例: 等々力球場、多摩川緑地"
+                  placeholder="例: 市民球場、〇〇緑地"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium"
                 />
               </div>
@@ -695,7 +1270,7 @@ export default function LiffGroundsPage() {
                   type="text"
                   value={formAddress}
                   onChange={(e) => setFormAddress(e.target.value)}
-                  placeholder="例: 神奈川県川崎市中原区等々力1-1"
+                  placeholder="例: 〇〇県〇〇市〇〇町1-1"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium"
                 />
               </div>
@@ -710,7 +1285,7 @@ export default function LiffGroundsPage() {
                   type="url"
                   value={formMapUrl}
                   onChange={(e) => setFormMapUrl(e.target.value)}
-                  placeholder="https://maps.google.com/?q=..."
+                  placeholder="https://www.google.com/maps/search/?api=1&query=..."
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium"
                 />
               </div>
@@ -759,33 +1334,37 @@ export default function LiffGroundsPage() {
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium resize-none"
                 />
               </div>
-
-              {/* 送信ボタンバー */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2.5 rounded-xl border border-border bg-card hover:bg-muted font-bold transition-colors cursor-pointer"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-black flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>保存中...</span>
-                    </>
-                  ) : (
-                    <span>{editingVenue ? "更新する" : "登録する"}</span>
-                  )}
-                </button>
-              </div>
             </form>
+
+            {/* 送信ボタンバー（モバイル下部シート Safe Area 完全対応） */}
+            <div className="px-4 sm:px-5 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setAiCandidate(null);
+                }}
+                disabled={isSubmitting}
+                className="px-4 py-2.5 rounded-xl border border-border bg-card hover:bg-muted text-xs font-bold transition-colors cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                form="liff-grounds-edit-form"
+                disabled={isSubmitting}
+                className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>保存中...</span>
+                  </>
+                ) : (
+                  <span>{editingVenue ? "更新する" : "登録する"}</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>,
         document.body

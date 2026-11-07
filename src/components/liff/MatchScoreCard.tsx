@@ -235,12 +235,17 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
     [currentTeam?.id, match?.id, router]
   );
 
-  // SKILL.md 規約5: 対象試合変更時やカード折りたたみ時に手動追加役割の展開状態もリセット
+  // SKILL.md 規約5: 対象試合変更時に初期展開状態を同期し、カード折りたたみ時に手動追加役割の展開状態もリセット
+  useEffect(() => {
+    setIsExpanded(initialExpanded);
+    setIsCustomRolesExpanded(false);
+  }, [match?.id, initialExpanded]);
+
   useEffect(() => {
     if (!isExpanded) {
       setIsCustomRolesExpanded(false);
     }
-  }, [isExpanded, match?.id]);
+  }, [isExpanded]);
 
   if (isLoading || !match) {
     return <MatchScoreCardSkeleton />;

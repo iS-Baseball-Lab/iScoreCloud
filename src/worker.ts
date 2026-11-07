@@ -32,6 +32,7 @@ import liffPlayerGrowthRoute from './api/liff/player-growth'
 import liffNewsGeneratorRoute from './api/liff/news-generator'
 import liffCarpoolConvoyRoute from './api/liff/carpool-convoy'
 import liffCarpoolSimpleRoute from './api/liff/carpool-simple'
+import liffGroundsAiRoute from './api/liff/grounds-ai'
 import documentsRoute from './api/documents'
 import type { WorkerEnv } from './types/api'
 
@@ -53,6 +54,7 @@ app.route('/api/liff/players/growth', liffPlayerGrowthRoute)
 app.route('/api/liff/news-generator', liffNewsGeneratorRoute)
 app.route('/api/liff/carpool-convoy', liffCarpoolConvoyRoute)
 app.route('/api/liff/carpool-simple', liffCarpoolSimpleRoute)
+app.route('/api/liff/grounds/ai-lookup', liffGroundsAiRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)
 app.route('/api/attendance', attendanceRoute)      // GET /api/attendance/:eventId
@@ -82,7 +84,18 @@ export default {
 
     // 💡 規約: API パスは Hono に、静的アセットは ASSETS (Cloudflare Workers) に振り分け
     if (url.pathname.startsWith('/api/')) {
-      return app.fetch(request, env, ctx)
+      const apiRes = await app.fetch(request, env, ctx)
+      // 画像配信以外のJSON APIはLINE内WKWebView等のHTTPディスクキャッシュ残留を防止する
+      if (!url.pathname.startsWith('/api/images/') && !apiRes.headers.has('Cache-Control')) {
+        const headers = new Headers(apiRes.headers)
+        headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+        return new Response(apiRes.body, {
+          status: apiRes.status,
+          statusText: apiRes.statusText,
+          headers,
+        })
+      }
+      return apiRes
     }
 
     let assetRes = await env.ASSETS.fetch(request)

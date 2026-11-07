@@ -532,6 +532,24 @@ const extractMatchDateKey = (raw: string | null | undefined): string => {
   return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
 };
 
+const extractEventRawIsoDateKey = (
+  val: Date | number | string | null | undefined
+): string => {
+  if (!val) return "";
+  if (typeof val === "string") {
+    const m = val.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  const ms =
+    val instanceof Date
+      ? val.getTime()
+      : typeof val === "number"
+        ? val
+        : new Date(val).getTime();
+  if (!Number.isFinite(ms)) return "";
+  return new Date(ms).toISOString().slice(0, 10);
+};
+
 const toEventJstDateKey = (
   val: Date | number | string | null | undefined
 ): string => {
@@ -563,6 +581,54 @@ const toEventJstTimeText = (
   const mi = String(jst.getUTCMinutes()).padStart(2, "0");
   if (hh === "00" && mi === "00") return null;
   return `${hh}:${mi}`;
+};
+
+const resolveEventDisplayStartTime = (
+  startAt: Date | number | string | null | undefined,
+  matchedDateKey?: string
+): string | null => {
+  if (!startAt) return null;
+  const rawDate = extractEventRawIsoDateKey(startAt);
+  const rawTime = extractRawTimeHHMM(startAt);
+  if (matchedDateKey && rawDate && rawDate !== matchedDateKey && toEventJstDateKey(startAt) === matchedDateKey) {
+    return toEventJstTimeText(startAt);
+  }
+  if (rawTime && rawTime !== "00:00") {
+    return rawTime;
+  }
+  return toEventJstTimeText(startAt);
+};
+
+const findSameDayScheduleEvent = <
+  T extends {
+    id: string;
+    startAt: Date | number | string | null;
+    eventType?: string | null;
+    amType?: string | null;
+  },
+>(
+  eventRows: ReadonlyArray<T>,
+  dateKey: string
+): T | undefined => {
+  if (!dateKey) return undefined;
+  const rawSameDay = eventRows.filter(
+    (ev) => extractEventRawIsoDateKey(ev.startAt) === dateKey
+  );
+  if (rawSameDay.length > 0) {
+    return (
+      rawSameDay.find(
+        (ev) => ev.eventType === "match" || ev.amType === "match"
+      ) || rawSameDay[0]
+    );
+  }
+  const jstSameDay = eventRows.filter(
+    (ev) => toEventJstDateKey(ev.startAt) === dateKey
+  );
+  return (
+    jstSameDay.find(
+      (ev) => ev.eventType === "match" || ev.amType === "match"
+    ) || jstSameDay[0]
+  );
 };
 
 /**
@@ -602,31 +668,25 @@ async function buildScheduledMatchCarpoolSyncMap(
   }
 
   const eventIdByMatchId = new Map<string, string>();
+  const matchedDateKeyByEventId = new Map<string, string>();
   const targetEventMap = new Map<string, (typeof teamEvents)[number]>();
 
   for (const m of candidateMatches) {
     const ops = parseMatchDayOpsJson(m.matchDayOps);
     if (ops.carpoolMode === "none") continue;
 
+    const dateKey = extractMatchDateKey(m.date);
     let targetEvent: (typeof teamEvents)[number] | undefined;
     if (ops.linkedEventId) {
       targetEvent = teamEvents.find((ev) => ev.id === ops.linkedEventId);
     }
-    if (!targetEvent) {
-      const dateKey = extractMatchDateKey(m.date);
-      if (dateKey) {
-        const sameDay = teamEvents.filter(
-          (ev) => toEventJstDateKey(ev.startAt) === dateKey
-        );
-        targetEvent =
-          sameDay.find(
-            (ev) => ev.eventType === "match" || ev.amType === "match"
-          ) || sameDay[0];
-      }
+    if (!targetEvent && dateKey) {
+      targetEvent = findSameDayScheduleEvent(teamEvents, dateKey);
     }
 
     if (targetEvent) {
       eventIdByMatchId.set(m.id, targetEvent.id);
+      if (dateKey) matchedDateKeyByEventId.set(targetEvent.id, dateKey);
       targetEventMap.set(targetEvent.id, targetEvent);
     }
   }
@@ -744,7 +804,10 @@ async function buildScheduledMatchCarpoolSyncMap(
       }
     );
 
-    const gatherTimeRaw = toEventJstTimeText(targetEvent.startAt);
+    const gatherTimeRaw = resolveEventDisplayStartTime(
+      targetEvent.startAt,
+      matchedDateKeyByEventId.get(evId)
+    );
     syncByEventId.set(evId, {
       eventId: targetEvent.id,
       title: targetEvent.title,
@@ -1373,42 +1436,47 @@ app.get("/hub", async (c) => {
         ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
         : targetTeam.name;
 
-    // ⚡ イベント・メンバー・選手・親子関係・球場・直近10試合の6クエリを D1 db.batch() で単一往復取得
-    const [allEventsList, teamMemberList, teamPlayerRows, teamRelationsRows, teamVenues, matchesList] = await db.batch([
-      db
-        .select()
-        .from(events)
-        .where(eq(events.teamId, teamId))
-        .orderBy(asc(events.startAt)),
-      db
-        .select({
-          id: teamMembers.id,
-          userId: teamMembers.userId,
-          name: teamMembers.name,
-          memberType: teamMembers.memberType,
-          role: teamMembers.role,
-          subRoles: teamMembers.subRoles,
-          status: teamMembers.status,
-        })
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, teamId)),
-      db
-        .select({
-          id: players.id,
-          userId: players.userId,
-          isActive: players.isActive,
-          conditionStatus: players.conditionStatus,
-        })
-        .from(players)
-        .where(eq(players.teamId, teamId)),
-      db
-        .select({
-          parentId: parentChildRelations.parentId,
-          childId: parentChildRelations.childId,
-        })
-        .from(parentChildRelations)
-        .where(eq(parentChildRelations.teamId, teamId)),
-      db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+    // ⚡ 単一テーブル5クエリを db.batch()、JOIN を含む直近10試合取得を .all()（D1 batch の同名カラム衝突による列ずれを完全排除）で完全並列実行
+    const [
+      [allEventsList, teamMemberList, teamPlayerRows, teamRelationsRows, teamVenues],
+      matchesList,
+    ] = await Promise.all([
+      db.batch([
+        db
+          .select()
+          .from(events)
+          .where(eq(events.teamId, teamId))
+          .orderBy(asc(events.startAt)),
+        db
+          .select({
+            id: teamMembers.id,
+            userId: teamMembers.userId,
+            name: teamMembers.name,
+            memberType: teamMembers.memberType,
+            role: teamMembers.role,
+            subRoles: teamMembers.subRoles,
+            status: teamMembers.status,
+          })
+          .from(teamMembers)
+          .where(eq(teamMembers.teamId, teamId)),
+        db
+          .select({
+            id: players.id,
+            userId: players.userId,
+            isActive: players.isActive,
+            conditionStatus: players.conditionStatus,
+          })
+          .from(players)
+          .where(eq(players.teamId, teamId)),
+        db
+          .select({
+            parentId: parentChildRelations.parentId,
+            childId: parentChildRelations.childId,
+          })
+          .from(parentChildRelations)
+          .where(eq(parentChildRelations.teamId, teamId)),
+        db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+      ]),
       db
         .select({
           id: matches.id,
@@ -1440,8 +1508,9 @@ app.get("/hub", async (c) => {
         .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
         .leftJoin(venues, eq(matches.venueId, venues.id))
         .where(eq(matches.teamId, teamId))
-        .orderBy(desc(matches.date), desc(matches.createdAt))
-        .limit(10),
+        .orderBy(desc(sql`replace(${matches.date}, '/', '-')`), desc(matches.createdAt))
+        .limit(10)
+        .all(),
     ]);
 
     // ログインユーザーの memberId をメモリ上で即時解決
@@ -1773,7 +1842,7 @@ app.get("/matches", async (c) => {
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
       .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
-      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .orderBy(desc(sql`replace(${matches.date}, '/', '-')`), desc(matches.createdAt))
       .all();
 
     const listScorebookIds = new Set<string>();
@@ -4249,10 +4318,7 @@ app.get("/match-ops-context", async (c) => {
       targetEvent = teamEvents.find((ev) => ev.id === linkedEventId);
     }
     if (!targetEvent && targetDateKey) {
-      const sameDayEvents = teamEvents.filter((ev) => toJstDateKey(ev.startAt) === targetDateKey);
-      targetEvent =
-        sameDayEvents.find((ev) => ev.eventType === "match" || ev.amType === "match") ||
-        sameDayEvents[0];
+      targetEvent = findSameDayScheduleEvent(teamEvents, targetDateKey);
     }
 
     let scheduleSync: LiffMatchScheduleSyncInfo | null = null;
@@ -4325,7 +4391,7 @@ app.get("/match-ops-context", async (c) => {
         };
       });
 
-      const gatherTimeRaw = toJstTimeText(targetEvent.startAt);
+      const gatherTimeRaw = resolveEventDisplayStartTime(targetEvent.startAt, targetDateKey);
       scheduleSync = {
         eventId: targetEvent.id,
         title: targetEvent.title,
@@ -6839,7 +6905,7 @@ app.get("/matches", async (c) => {
       .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
       .leftJoin(venues, eq(matches.venueId, venues.id))
       .where(eq(matches.teamId, teamId))
-      .orderBy(desc(matches.date), desc(matches.createdAt))
+      .orderBy(desc(sql`replace(${matches.date}, '/', '-')`), desc(matches.createdAt))
       .all();
 
     const secondScheduleSyncMap = await buildScheduledMatchCarpoolSyncMap(
@@ -9477,47 +9543,46 @@ app.get("/players", async (c) => {
   }
 
   try {
-    const [[teamRows, rawPlayers], [battingQueryRes, pitchingQueryRes]] = await Promise.all([
-      db.batch([
-        db
-          .select({
-            id: teams.id,
-            name: teams.name,
-            year: teams.year,
-            managerName: teams.managerName,
-            captainId: teams.captainId,
-            createdBy: teams.createdBy,
-            organizationId: teams.organizationId,
-            orgName: organizations.name,
-            logoImageUrl: organizations.logoImageUrl,
-          })
-          .from(teams)
-          .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-          .where(eq(teams.id, teamId))
-          .limit(1),
-        db
-          .select({
-            id: players.id,
-            name: players.name,
-            nameKana: players.nameKana,
-            uniformNumber: players.uniformNumber,
-            nickname: players.nickname,
-            primaryPosition: players.primaryPosition,
-            subPositions: players.subPositions,
-            throws: players.throws,
-            bats: players.bats,
-            height: players.height,
-            weight: players.weight,
-            profileImageUrl: players.profileImageUrl,
-            notes: players.notes,
-            conditionStatus: players.conditionStatus,
-            conditionNote: players.conditionNote,
-            isActive: players.isActive,
-            joinedAt: players.joinedAt,
-          })
-          .from(players)
-          .where(eq(players.teamId, teamId)),
-      ]),
+    const [teamRow, rawPlayers, [battingQueryRes, pitchingQueryRes]] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          name: teams.name,
+          year: teams.year,
+          managerName: teams.managerName,
+          captainId: teams.captainId,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+          orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          nickname: players.nickname,
+          primaryPosition: players.primaryPosition,
+          subPositions: players.subPositions,
+          throws: players.throws,
+          bats: players.bats,
+          height: players.height,
+          weight: players.weight,
+          profileImageUrl: players.profileImageUrl,
+          notes: players.notes,
+          conditionStatus: players.conditionStatus,
+          conditionNote: players.conditionNote,
+          isActive: players.isActive,
+          joinedAt: players.joinedAt,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
       c.env.DB.batch([
         c.env.DB.prepare(`
           SELECT
@@ -9547,7 +9612,6 @@ app.get("/players", async (c) => {
         `).bind(teamId),
       ]).catch(() => [{ results: [] }, { results: [] }]),
     ]);
-    const teamRow = teamRows[0];
 
     if (!teamRow) {
       return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);

@@ -3186,6 +3186,7 @@ function MatchesContent() {
                 <MatchScoreCard
                   match={m}
                   teamName={scoreTeamName}
+                  initialExpanded={m.status === "scheduled" || m.status === "live"}
                 />
               </div>
             ))}

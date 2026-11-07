@@ -20,9 +20,10 @@ interface RawFetchSnapshot {
   bodyText: string;
 }
 
-const LEGACY_SESSION_CACHE_PREFIX = "iscore_swr_v1:";
-const SESSION_CACHE_PREFIX = "iscore_swr_v2:";
-const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v1:";
+const LEGACY_SESSION_CACHE_PREFIXES = ["iscore_swr_v1:", "iscore_swr_v2:"] as const;
+const LEGACY_PERSISTENT_CACHE_PREFIXES = ["iscore_swr_l3_v1:"] as const;
+const SESSION_CACHE_PREFIX = "iscore_swr_v3:";
+const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v2:";
 const DEFAULT_FRESH_MS = 15_000; // 15秒以内は完全フレッシュ扱い
 const FAST_RETURN_STALE_MS = 90_000; // 90秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
 const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
@@ -66,15 +67,26 @@ function purgeLegacySessionCache(): void {
   if (hasPurgedLegacyCache || typeof window === "undefined") return;
   hasPurgedLegacyCache = true;
   try {
-    const obsoleteKeys: string[] = [];
+    const obsoleteSessionKeys: string[] = [];
     for (let i = 0; i < sessionStorage.length; i++) {
       const k = sessionStorage.key(i);
-      if (k && k.startsWith(LEGACY_SESSION_CACHE_PREFIX)) {
-        obsoleteKeys.push(k);
+      if (k && LEGACY_SESSION_CACHE_PREFIXES.some((prefix) => k.startsWith(prefix))) {
+        obsoleteSessionKeys.push(k);
       }
     }
-    for (const k of obsoleteKeys) {
+    for (const k of obsoleteSessionKeys) {
       sessionStorage.removeItem(k);
+    }
+
+    const obsoletePersistentKeys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && LEGACY_PERSISTENT_CACHE_PREFIXES.some((prefix) => k.startsWith(prefix))) {
+        obsoletePersistentKeys.push(k);
+      }
+    }
+    for (const k of obsoletePersistentKeys) {
+      localStorage.removeItem(k);
     }
   } catch {
     // ignore storage access errors
@@ -184,6 +196,7 @@ function normalizeCacheKey(rawUrl: string): string | null {
 }
 
 function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> | null {
+  purgeLegacySessionCache();
   const now = Date.now();
   const mem = memoryCache.get(key);
   if (mem) {
@@ -310,7 +323,7 @@ export async function fetchLiffJsonFresh<T>(url: string): Promise<T> {
   const baseFetch = getNativeFetch();
   const reqPromise = (async () => {
     try {
-      const res = await baseFetch(url);
+      const res = await baseFetch(url, { cache: "no-store" });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -506,7 +519,7 @@ export function installLiffFastFetchCache(): void {
       const startEpoch = cacheMutationEpoch;
       pending = (async () => {
         try {
-          const res = await baseFetch(input, init);
+          const res = await baseFetch(input, { ...init, cache: "no-store" });
           const contentType = res.headers.get("content-type") || "";
           const bodyText = await res.text();
 
