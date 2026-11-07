@@ -2364,6 +2364,7 @@ app.get("/attendance-matrix", async (c) => {
       return c.json({
         success: true,
         isDemo: true,
+        includesOnLeave: true,
         memberSubLabels: {
           "demo-p-1": "1班",
           "demo-p-2": "2班",
@@ -2805,10 +2806,9 @@ app.get("/attendance-matrix", async (c) => {
     const myMemberIds = Array.from(familyMemberIdsSet);
     const myPlayerIds = Array.from(myPlayerIdsSet);
 
-    // ⏸ 休部中 (on_leave) の選手は出欠一覧・未回答カウント・LINE連絡集計から自動除外し、
-    // 🩹 リハビリ・調整中 / ⚠️ 一部制限あり の選手は帯同・配車対象として残した上でバッジ用ステータスを付与する
+    // ⏸ 休部中 (on_leave) の選手も出欠一覧表に表示（初期順は末尾へ配置し、⏸休部バッジ＆「休」セルで明示）
+    // 🩹 リハビリ・調整中 / ⚠️ 一部制限あり と合わせて conditionStatus を付与する
     const formattedPlayers = allPlayers
-      .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave")
       .map((p) => ({
         id: p.id,
         name: p.name,
@@ -2817,11 +2817,7 @@ app.get("/attendance-matrix", async (c) => {
         groupType: "player" as const,
         conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
       }))
-      .sort((a, b) => {
-        const numA = parseInt(a.uniformNumber.replace(/\D/g, "") || "999", 10);
-        const numB = parseInt(b.uniformNumber.replace(/\D/g, "") || "999", 10);
-        return numA - numB;
-      });
+      .sort(comparePlayersByConditionAndUniform);
 
     // 4. 大人のメンバー一覧分類 (選手除外 & 承認済みアクティブのみ)
     const allTeamMembers = activeAllMembers.filter(m => m.memberType !== "player");
@@ -3040,6 +3036,7 @@ app.get("/attendance-matrix", async (c) => {
     return c.json({
       success: true,
       isDemo: false,
+      includesOnLeave: true,
       memberSortOrder,
       attendanceStatusConfig,
       memberSubLabels,

@@ -1519,7 +1519,7 @@ export default function LiffPlayersDirectoryPage() {
                       </span>
                       {condStatus === "on_leave" && (
                         <span className="text-[10px] font-black text-muted-foreground">
-                          出欠・スタメン自動除外
+                          未回答集計・スタメン自動除外
                         </span>
                       )}
                     </div>

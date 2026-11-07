@@ -98,8 +98,8 @@ export const PLAYER_CONDITION_META: Record<PlayerConditionStatus, PlayerConditio
     badgeText: "⏸ 休部中",
     compactBadgeText: "⏸ 休部中",
     publicSummary:
-      "現在一時休部中です（通算成績・成長記録はそのまま保持され、出欠回答・スタメン編成からは自動除外されます）。",
-    staffHint: "名簿末尾へ自動配置し、出欠未回答カウント・スタメン候補から自動除外",
+      "現在一時休部中です（通算成績・成長記録はそのまま保持され、未回答カウント・スタメン編成からは自動除外されます）。",
+    staffHint: "名簿・出欠一覧表の末尾へ自動配置（「休」表示）し、未回答カウント・スタメン候補から自動除外",
     notePlaceholder: "例：ご家庭・受験準備の事情により2月末まで一時休部（監督了承済）",
     solidBadgeClass: "bg-slate-600 text-white border border-slate-700",
     softBadgeClass:

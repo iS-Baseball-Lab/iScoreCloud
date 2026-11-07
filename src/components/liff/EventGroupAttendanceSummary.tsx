@@ -338,6 +338,16 @@ export function EventGroupAttendanceSummary({
               <span>未定</span>
               <span>{activeGroupData.pending}</span>
             </span>
+
+            {selectedGroup === "player" && (activeGroupData.onLeave ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black tabular-nums border bg-slate-500/12 text-slate-600 dark:text-slate-300 border-slate-500/30">
+                <span className="w-4 h-4 rounded-md bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[9px] font-black shrink-0">
+                  休
+                </span>
+                <span>休部</span>
+                <span>{activeGroupData.onLeave}</span>
+              </span>
+            )}
           </div>
         </div>
       )}

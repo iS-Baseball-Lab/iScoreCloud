@@ -1166,7 +1166,7 @@ export function HubHeroSection({
                                       </span>
                                     </div>
                                     <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
-                                      休部中のため出欠回答は不要です（出欠一覧表・未回答カウントからも自動除外されています）。
+                                      休部中のため出欠回答は不要です（出欠一覧表には「休」表示で掲載され、未回答カウントからは自動除外されています）。
                                     </p>
                                   </div>
                                 );

@@ -19,6 +19,7 @@ export interface GroupAttendanceCounts {
   help: number;
   setup: number;
   game: number;
+  onLeave?: number;
 }
 
 export interface EventGroupAttendanceMap {
@@ -395,7 +396,10 @@ export function computeEventGroupAttendance(
   }
 
   const groupAttendCount: EventGroupAttendanceMap = {
-    player: summarizeIds(rosters.playerIds, statusByEntityId),
+    player: {
+      ...summarizeIds(rosters.playerIds, statusByEntityId),
+      onLeave: rosters.onLeavePlayerIds.size,
+    },
     mother: summarizeIds(rosters.motherIds, statusByEntityId),
     father: summarizeIds(rosters.fatherIds, statusByEntityId),
     staff: summarizeIds(rosters.staffIds, statusByEntityId),

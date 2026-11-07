@@ -11,6 +11,7 @@ import { useLiff } from "@/components/liff/LiffProvider";
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   PLAYER_CONDITION_META,
+  comparePlayersByConditionAndUniform,
   loadDemoPlayerConditionOverrides,
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
@@ -243,6 +244,7 @@ interface MatrixMyInfoPayload {
 interface AttendanceMatrixApiResponse {
   success: boolean;
   isDemo?: boolean;
+  includesOnLeave?: boolean;
   error?: string;
   events?: EventItem[];
   groups?: {
@@ -455,12 +457,24 @@ function AttendanceMatrixBoardContent() {
     if (!g) {
       return { players: [], parents: [], mothers: [], fathers: [], staff: [] };
     }
+    const demoOverrides = initialCachedMatrix?.isDemo
+      ? loadDemoPlayerConditionOverrides()
+      : {};
+    const hydratedPlayers = (g.players || [])
+      .map((p) => {
+        const override = demoOverrides[p.id];
+        return {
+          ...p,
+          conditionStatus: override
+            ? override.conditionStatus
+            : normalizePlayerConditionStatus(p.conditionStatus),
+        };
+      })
+      .sort(comparePlayersByConditionAndUniform);
     const mothers = g.mothers || [];
     const fathers = g.fathers || [];
     return {
-      players: (g.players || []).filter(
-        (p) => normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave"
-      ),
+      players: hydratedPlayers,
       parents: g.parents || [...mothers, ...fathers],
       mothers,
       fathers,
@@ -614,7 +628,7 @@ function AttendanceMatrixBoardContent() {
             conditionStatus: cond,
           };
         })
-        .filter((p) => p.conditionStatus !== "on_leave");
+        .sort(comparePlayersByConditionAndUniform);
       const mothers = g.mothers || [];
       const fathers = g.fathers || [];
       const parents = g.parents || [...mothers, ...fathers];
@@ -782,6 +796,7 @@ function AttendanceMatrixBoardContent() {
           forceRefresh || Boolean(cached && !cachedHasIdentity && (effectiveUid || effectiveName));
         const data = await fetchLiffJsonSWR<AttendanceMatrixApiResponse>(endpoint, {
           forceRefresh: shouldForce,
+          freshMs: cached && !cached.includesOnLeave ? 0 : undefined,
           onRevalidate: (fresh) => {
             applyMatrixPayload(fresh, teamId, false);
           },
@@ -839,9 +854,16 @@ function AttendanceMatrixBoardContent() {
     return list;
   }, [events, selectedMonth, showPastDates, todayStr, currentMonthStr]);
 
-  // メンバー並び替えヘルパー関数
+  // メンバー並び替えヘルパー関数（カスタム並び順未登録時は在籍区分・背番号順で休部選手を末尾へ配置）
   const sortMembersByCustomOrder = useCallback((members: MemberPerson[], orderIds?: string[]) => {
-    if (!orderIds || orderIds.length === 0) return members;
+    if (!orderIds || orderIds.length === 0) {
+      return [...members].sort((a, b) => {
+        if (a.groupType === "player" && b.groupType === "player") {
+          return comparePlayersByConditionAndUniform(a, b);
+        }
+        return 0;
+      });
+    }
     const orderMap = new Map<string, number>();
     orderIds.forEach((id, idx) => orderMap.set(id, idx));
 
@@ -849,6 +871,9 @@ function AttendanceMatrixBoardContent() {
       const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
       const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
       if (idxA !== idxB) return idxA - idxB;
+      if (a.groupType === "player" && b.groupType === "player") {
+        return comparePlayersByConditionAndUniform(a, b);
+      }
       return a.name.localeCompare(b.name, "ja");
     });
   }, []);
@@ -937,15 +962,13 @@ function AttendanceMatrixBoardContent() {
     else if (orderModalGroup === "father") original = groups.fathers;
     else if (orderModalGroup === "staff") original = groups.staff;
 
-    let sorted = [...original];
+    const sorted = [...original];
     if (type === "number") {
-      sorted.sort((a, b) => {
-        const numA = parseInt(a.uniformNumber?.replace(/\D/g, "") || "999", 10);
-        const numB = parseInt(b.uniformNumber?.replace(/\D/g, "") || "999", 10);
-        return numA - numB;
-      });
+      sorted.sort(comparePlayersByConditionAndUniform);
     } else if (type === "name") {
       sorted.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+    } else if (type === "reset" && orderModalGroup === "player") {
+      sorted.sort(comparePlayersByConditionAndUniform);
     }
 
     setTempOrders(prev => ({
@@ -1719,17 +1742,32 @@ function AttendanceMatrixBoardContent() {
             {activeLegendItems.length === 0 ? (
               <span className="text-[9px] text-muted-foreground py-1 px-2">有効なステータスがありません</span>
             ) : (
-              activeLegendItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/35 border border-border text-center"
-                >
-                  <span className={`w-3.5 h-3.5 rounded-full ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
-                    {item.mark}
-                  </span>
-                  <span className="truncate text-foreground text-[9px]">{item.label}</span>
-                </div>
-              ))
+              <>
+                {activeLegendItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/35 border border-border text-center"
+                  >
+                    <span className={`w-3.5 h-3.5 rounded-full ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
+                      {item.mark}
+                    </span>
+                    <span className="truncate text-foreground text-[9px]">{item.label}</span>
+                  </div>
+                ))}
+                {(selectedGroupTab === "player" || selectedGroupTab === "all") &&
+                  groups.players.some(
+                    (p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave"
+                  ) && (
+                    <div className="flex-1 min-w-[52px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-center">
+                      <span className="w-3.5 h-3.5 rounded-full bg-slate-500 text-white flex items-center justify-center text-[8.5px] font-black shrink-0">
+                        休
+                      </span>
+                      <span className="truncate text-slate-600 dark:text-slate-300 text-[9px]">
+                        休部中
+                      </span>
+                    </div>
+                  )}
+              </>
             )}
           </div>
         </div>
@@ -1916,6 +1954,7 @@ function AttendanceMatrixBoardContent() {
                         person.groupType === "player"
                           ? normalizePlayerConditionStatus(person.conditionStatus)
                           : "active";
+                      const isOnLeave = pCond === "on_leave";
                       const pCondMeta = PLAYER_CONDITION_META[pCond];
                       return (
                         <th
@@ -1926,6 +1965,8 @@ function AttendanceMatrixBoardContent() {
                           } ${
                             isMe
                               ? "bg-primary/15 text-primary font-black"
+                              : isOnLeave
+                              ? "bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400"
                               : "bg-muted text-foreground"
                           }`}
                           title={`${person.name}${pCond !== "active" ? `（${pCondMeta.label}）` : ""}${
@@ -1936,7 +1977,9 @@ function AttendanceMatrixBoardContent() {
                             {person.uniformNumber ? (
                               <span
                                 className={`text-[8.5px] font-black px-0.5 py-0.1 rounded ${
-                                  pCond === "rehab"
+                                  isOnLeave
+                                    ? "bg-slate-500/20 text-slate-600 dark:text-slate-300"
+                                    : pCond === "rehab"
                                     ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
                                     : pCond === "restricted"
                                     ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
@@ -1961,19 +2004,31 @@ function AttendanceMatrixBoardContent() {
                             ) : (
                               <span className="text-[8.5px] font-black text-muted-foreground">保護</span>
                             )}
-                            <span className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${isMe ? "text-primary font-black" : "text-foreground"}`}>
+                            <span
+                              className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${
+                                isMe
+                                  ? "text-primary font-black"
+                                  : isOnLeave
+                                  ? "text-slate-500 dark:text-slate-400"
+                                  : "text-foreground"
+                              }`}
+                            >
                               {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
                             </span>
-                            {/* 3行目: 班・サブラベル (班バッジ風スタイル) */}
+                            {/* 3行目: 班・サブラベル または 在籍コンディションタグ */}
                             <div className="min-h-[14px] flex items-center justify-center mt-0.5">
                               {subLabel ? (
                                 <span
-                                  className="text-[8px] font-black px-1 py-0.2 rounded bg-primary/10 text-primary border border-primary/25 truncate max-w-[33px] whitespace-nowrap leading-tight"
+                                  className={`text-[8px] font-black px-1 py-0.2 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${
+                                    isOnLeave
+                                      ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600"
+                                      : "bg-primary/10 text-primary border border-primary/25"
+                                  }`}
                                   title={subLabel}
                                 >
                                   {subLabel}
                                 </span>
-                              ) : pCond !== "active" && !myInfo.isManager ? (
+                              ) : pCond !== "active" ? (
                                 <span
                                   className={`text-[7.5px] font-black px-0.5 py-0.1 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${pCondMeta.softBadgeClass}`}
                                   title={pCondMeta.label}
@@ -2099,7 +2154,14 @@ function AttendanceMatrixBoardContent() {
                         {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5) */}
                         {currentMembers.map((person) => {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
-                          const statusConfig = ATTENDANCE_STATUSES[att.status as AttendanceMarkType] || ATTENDANCE_STATUSES.pending;
+                          const isPersonOnLeave =
+                            person.groupType === "player" &&
+                            normalizePlayerConditionStatus(person.conditionStatus) === "on_leave";
+                          const isDefaultOnLeaveCell =
+                            isPersonOnLeave && (att.status === "pending" || !att.status);
+                          const statusConfig =
+                            ATTENDANCE_STATUSES[att.status as AttendanceMarkType] ||
+                            ATTENDANCE_STATUSES.pending;
                           const isEditable = canEditPerson(person.id, person.groupType);
                           const isMe =
                             person.id === myInfo.memberId ||
@@ -2110,22 +2172,43 @@ function AttendanceMatrixBoardContent() {
                             <td
                               key={person.id}
                               onClick={() => handleCellClick(ev, person)}
-                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border bg-card transition-all overflow-hidden ${
+                              title={
+                                isDefaultOnLeaveCell
+                                  ? `${person.name}（休部中）`
+                                  : undefined
+                              }
+                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border transition-all overflow-hidden ${
+                                isMe
+                                  ? "bg-primary/5"
+                                  : isPersonOnLeave
+                                  ? "bg-slate-50 dark:bg-slate-900/45"
+                                  : "bg-card"
+                              } ${
                                 isEditable
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : att.comment
                                   ? "cursor-pointer hover:bg-primary/10 active:scale-90"
                                   : "opacity-90"
-                              } ${isMe ? "bg-primary/5" : ""}`}
+                              }`}
                             >
                               <div className="relative z-0 inline-flex items-center justify-center">
-                                <span
-                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-black transition-transform ${statusConfig.badgeClass} ${
-                                    isEditable ? "group-hover:scale-105" : ""
-                                  }`}
-                                >
-                                  {statusConfig.mark}
-                                </span>
+                                {isDefaultOnLeaveCell ? (
+                                  <span
+                                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[9.5px] font-black transition-transform bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 ${
+                                      isEditable ? "group-hover:scale-105" : ""
+                                    }`}
+                                  >
+                                    休
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-black transition-transform ${statusConfig.badgeClass} ${
+                                      isEditable ? "group-hover:scale-105" : ""
+                                    }`}
+                                  >
+                                    {statusConfig.mark}
+                                  </span>
+                                )}
 
                                 {/* コメント/メモがある場合のドットインジケータ */}
                                 {att.comment && (
@@ -2157,6 +2240,11 @@ function AttendanceMatrixBoardContent() {
             ✏️ セルタップ時の出欠変更モーダル (ステータス＋メモを1回で同時登録)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {editingCell && (() => {
+          const editingPlayerCondition: PlayerConditionStatus =
+            editingCell.person.groupType === "player"
+              ? normalizePlayerConditionStatus(editingCell.person.conditionStatus)
+              : "active";
+          const isEditingOnLeavePlayer = editingPlayerCondition === "on_leave";
           const personGroup: SortGroupKey =
             editingCell.person.groupType === "father"
               ? "father"
@@ -2171,8 +2259,14 @@ function AttendanceMatrixBoardContent() {
           const selectedBaseStatus =
             ATTENDANCE_STATUSES[editingCell.currentStatus] || ATTENDANCE_STATUSES.pending;
           const selectedSetting = groupSettingsMap.get(editingCell.currentStatus);
+          const selectedButtonMark =
+            isEditingOnLeavePlayer && editingCell.currentStatus === "pending"
+              ? "休"
+              : selectedBaseStatus.mark;
           const selectedButtonLabel =
-            selectedSetting?.label || selectedBaseStatus.shortLabel || selectedBaseStatus.label;
+            isEditingOnLeavePlayer && editingCell.currentStatus === "pending"
+              ? "休部中（回答なし）"
+              : selectedSetting?.label || selectedBaseStatus.shortLabel || selectedBaseStatus.label;
           const quickCommentChips =
             personGroup === "player"
               ? ["遅刻参加", "早退", "午前のみ", "午後のみ", "別メニュー", "学校行事", "体調不良"]
@@ -2241,17 +2335,15 @@ function AttendanceMatrixBoardContent() {
 
                 <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
                   {editingCell.person.groupType === "player" &&
-                    normalizePlayerConditionStatus(editingCell.person.conditionStatus) !==
-                      "active" && (
+                    editingPlayerCondition !== "active" && (
                       <div
                         className={`p-2.5 rounded-xl text-[11px] font-bold leading-relaxed ${
-                          PLAYER_CONDITION_META[
-                            normalizePlayerConditionStatus(editingCell.person.conditionStatus)
-                          ].bannerClass
+                          PLAYER_CONDITION_META[editingPlayerCondition].bannerClass
                         }`}
                       >
-                        {normalizePlayerConditionStatus(editingCell.person.conditionStatus) ===
-                        "rehab"
+                        {editingPlayerCondition === "on_leave"
+                          ? "⏸ 休部中：通常の出欠回答は不要（一覧表では「休」表示）ですが、見学・行事参加や復帰予定日などは個別に出欠・メモを登録できます。"
+                          : editingPlayerCondition === "rehab"
                           ? "🩹 リハビリ・調整中：試合出場はお休み中ですが、別メニュー練習・ベンチ帯同・配車同乗などの出欠予定を登録できます。"
                           : "⚠️ 一部制限あり：一部プレー制限を設けて活動参加中です。必要に応じてメモ欄にも補足をご記入ください。"}
                       </div>
@@ -2277,7 +2369,17 @@ function AttendanceMatrixBoardContent() {
                         .map((key) => {
                           const baseItem = ATTENDANCE_STATUSES[key];
                           const setting = groupSettingsMap.get(key);
-                          const customLabel = setting?.label || baseItem.label;
+                          const isLeavePendingOption = isEditingOnLeavePlayer && key === "pending";
+                          const customLabel = isLeavePendingOption
+                            ? "休部中（回答なし）"
+                            : setting?.label || baseItem.label;
+                          const customShortLabel = isLeavePendingOption
+                            ? "表に「休」と表示"
+                            : baseItem.shortLabel;
+                          const customBadgeClass = isLeavePendingOption
+                            ? "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black border border-slate-300 dark:border-slate-700"
+                            : baseItem.badgeClass;
+                          const customMark = isLeavePendingOption ? "休" : baseItem.mark;
                           const isSelected = editingCell.currentStatus === key;
 
                           return (
@@ -2298,14 +2400,14 @@ function AttendanceMatrixBoardContent() {
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <span
-                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${baseItem.badgeClass}`}
+                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${customBadgeClass}`}
                                 >
-                                  {baseItem.mark}
+                                  {customMark}
                                 </span>
                                 <div className="min-w-0">
                                   <p className="text-xs font-black truncate">{customLabel}</p>
                                   <p className="text-[9px] text-muted-foreground truncate">
-                                    {baseItem.shortLabel}
+                                    {customShortLabel}
                                   </p>
                                 </div>
                               </div>
@@ -2440,7 +2542,7 @@ function AttendanceMatrixBoardContent() {
                       <>
                         <Check className="w-4 h-4 shrink-0" />
                         <span className="truncate">
-                          「{selectedBaseStatus.mark} {selectedButtonLabel}」で登録する
+                          「{selectedButtonMark} {selectedButtonLabel}」で登録する
                         </span>
                       </>
                     )}
@@ -3029,7 +3131,7 @@ function AttendanceMatrixBoardContent() {
                           className="flex items-center justify-between gap-1.5 p-2 rounded-xl border border-border bg-card hover:border-primary/40 transition-all"
                         >
                           {/* メンバー表示（番号/区分 ＋ 氏名） */}
-                          <div className="flex items-center gap-1.5 min-w-[75px] max-w-[95px] shrink-0">
+                          <div className="flex items-center gap-1 min-w-[75px] max-w-[105px] shrink-0">
                             {person.uniformNumber ? (
                               <span className="text-[9px] font-black text-primary px-1 py-0.2 rounded bg-primary/10 shrink-0">
                                 #{person.uniformNumber}
@@ -3046,6 +3148,12 @@ function AttendanceMatrixBoardContent() {
                             <span className="text-xs font-black text-foreground truncate" title={person.name}>
                               {person.name}
                             </span>
+                            {person.groupType === "player" &&
+                              normalizePlayerConditionStatus(person.conditionStatus) === "on_leave" && (
+                                <span className="text-[8px] font-black px-1 py-0.2 rounded bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-500/30 shrink-0">
+                                  休部
+                                </span>
+                              )}
                           </div>
 
                           {/* クイック選択チップ (1班, 2班, 3班, 4班) */}
