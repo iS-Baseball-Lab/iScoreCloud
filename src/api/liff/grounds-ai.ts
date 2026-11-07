@@ -154,39 +154,87 @@ interface RawAiGroundPayload {
 interface WebModelAttemptSpec {
   model: string;
   useGoogleSearch: boolean;
-  thinkingBudget: number | null;
+  thinkingMode:
+    | { type: "budget"; budget: number }
+    | { type: "level"; level: "LOW" | "MEDIUM" }
+    | { type: "none" };
   timeoutMs: number;
 }
 
-// 実稼働が確認済みの高速モデルを最優先配置（404遅延ゼロ＋思考検証1024トークンで対岸・別施設混入を排除）
+/**
+ * マルチプール・クォータ分散フェイルオーバー構成:
+ * - 単一モデル（gemini-2.5-flash 等）の無料枠上限（20 RPD / 5 RPM 等）に達しても 429 エラーにせず、
+ *   独立した別クォータ枠（gemini-2.5-flash-lite / gemini-3系 / gemini-flash-lite-latest / gemini-2.0-flash）へ即座に自動切替する
+ * - 1モデルが 429 を返しても Google Search グラウンディング自体は止めず、別モデルで Web 検索精度を維持する
+ */
 const WEB_SEARCH_MODEL_ATTEMPTS: ReadonlyArray<WebModelAttemptSpec> = [
   {
     model: "gemini-2.5-flash",
     useGoogleSearch: true,
-    thinkingBudget: 1024,
-    timeoutMs: 25_000,
-  },
-  {
-    model: "gemini-2.5-pro",
-    useGoogleSearch: true,
-    thinkingBudget: 1024,
-    timeoutMs: 26_000,
+    thinkingMode: { type: "budget", budget: 1024 },
+    timeoutMs: 22_000,
   },
   {
     model: "gemini-flash-lite-latest",
     useGoogleSearch: true,
-    thinkingBudget: null,
+    thinkingMode: { type: "none" },
     timeoutMs: 16_000,
   },
   {
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-flash-lite",
+    useGoogleSearch: true,
+    thinkingMode: { type: "budget", budget: 1024 },
+    timeoutMs: 18_000,
+  },
+  {
+    model: "gemini-3.1-flash-lite-preview",
+    useGoogleSearch: true,
+    thinkingMode: { type: "level", level: "LOW" },
+    timeoutMs: 18_000,
+  },
+  // Google Search Grounding ツール枠が日次上限に達した場合の超高速マルチモデル安全網（Wikipedia＋国土地理院＋日本郵便照合付き）
+  {
+    model: "gemini-flash-lite-latest",
     useGoogleSearch: false,
-    thinkingBudget: 512,
+    thinkingMode: { type: "none" },
+    timeoutMs: 11_000,
+  },
+  {
+    model: "gemini-2.5-flash-lite",
+    useGoogleSearch: false,
+    thinkingMode: { type: "budget", budget: 512 },
     timeoutMs: 12_000,
+  },
+  {
+    model: "gemini-3.1-flash-lite-preview",
+    useGoogleSearch: false,
+    thinkingMode: { type: "level", level: "LOW" },
+    timeoutMs: 12_000,
+  },
+  {
+    model: "gemini-2.0-flash",
+    useGoogleSearch: false,
+    thinkingMode: { type: "none" },
+    timeoutMs: 11_000,
   },
 ];
 
 const MODEL_COOLDOWN = new Map<string, number>();
+
+interface CachedLookupResponse {
+  expiresAt: number;
+  payload: {
+    success: true;
+    model: string;
+    grounded: boolean;
+    mapsGrounded: boolean;
+    candidate: GroundAiLookupResult;
+  };
+}
+
+// 同一条件の連続検索によるクォータ消費をゼロにする20分メモリキャッシュ＋同時実行統合
+const LOOKUP_RESULT_CACHE = new Map<string, CachedLookupResponse>();
+const INFLIGHT_LOOKUPS = new Map<string, Promise<CachedLookupResponse["payload"]>>();
 
 interface HeartRailsTownPostalEntry {
   town: string;
@@ -1025,84 +1073,60 @@ async function queryGooglePlacesIfAvailable(
 }
 
 /**
- * 並列タスクB: Gemini Google Maps Grounding (`tools: [{ googleMaps: {} }]`) で正確なPOIリンク・番地を取得
- * Web検索タスクと並列実行されるため追加待ち時間はゼロ。失敗してもWeb検索側を一切ブロックしない。
+ * Google Search ツール自体がクォータ上限に達した際のフォールバック用オープン検索（Wikipedia日本語版API・キー不要）
  */
-async function probeGoogleMapsGrounding(params: {
-  apiKey: string;
-  inputName: string;
-  regionHintText: string;
-  geoAnchor: GeoAnchor | null;
-}): Promise<MapsGroundingProbeResult | null> {
-  const { apiKey, inputName, regionHintText, geoAnchor } = params;
+async function fetchOpenFacilityReferenceSnippet(
+  inputName: string,
+  regionHintText: string
+): Promise<{ snippet: string; sources: GroundAiSourceLink[] }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 11_000);
-
+  const timer = setTimeout(() => controller.abort(), 2_200);
   try {
-    const mapPrompt = [
-      `日本の野球場・スポーツ施設・学校「${inputName}」${regionHintText ? `（地域ヒント: ${regionHintText}）` : ""}のGoogleマップ上の正確な施設名と所在地（都道府県〜番地）を特定し、以下のJSONのみを返してください:`,
-      '{"placeTitle": "施設名", "address": "都道府県からの所在地"}',
-    ].join("\n");
-
-    const payload: Record<string, unknown> = {
-      contents: [{ role: "user", parts: [{ text: mapPrompt }] }],
-      tools: [{ googleMaps: {} }],
-      generationConfig: {
-        temperature: 0.05,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    };
-
-    if (geoAnchor) {
-      payload.toolConfig = {
-        retrievalConfig: {
-          latLng: {
-            latitude: geoAnchor.latitude,
-            longitude: geoAnchor.longitude,
-          },
-        },
-      };
-    }
-
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const query = regionHintText ? `${inputName} ${regionHintText}` : inputName;
+    const url = `https://ja.wikipedia.org/w/api.php?action=query&format=json&prop=extracts&exintro=1&explaintext=1&generator=search&gsrsearch=${encodeURIComponent(
+      query
+    )}&gsrlimit=2`;
+    const res = await fetch(url, {
       signal: controller.signal,
-      body: JSON.stringify(payload),
+      headers: {
+        "User-Agent": "iScoreCloud-GroundLookup/1.0",
+      },
     });
+    if (!res.ok) return { snippet: "", sources: [] };
+    const json = (await res.json()) as {
+      query?: {
+        pages?: Record<
+          string,
+          {
+            pageid?: number;
+            title?: string;
+            extract?: string;
+          }
+        >;
+      };
+    };
+    const pages = Object.values(json.query?.pages || {});
+    if (pages.length === 0) return { snippet: "", sources: [] };
 
-    if (!res.ok) return null;
-    const data = (await res.json()) as GeminiGenerateResponse;
-    const cand = data.candidates?.[0];
-    const chunks = cand?.groundingMetadata?.groundingChunks || [];
-    const text = (cand?.content?.parts || [])
-      .filter((p) => !p.thought && typeof p.text === "string")
-      .map((p) => p.text || "")
-      .join("\n")
-      .trim();
-
-    const parsed = extractFirstJsonObject(text) as {
-      placeTitle?: unknown;
-      address?: unknown;
-    } | null;
-
-    const firstMapChunk = chunks.find(
-      (c) => typeof c?.maps?.uri === "string" && c.maps.uri.trim().length > 0
-    );
-
+    const lines: string[] = [];
+    const sources: GroundAiSourceLink[] = [];
+    for (const p of pages) {
+      const title = (p.title || "").trim();
+      const extract = (p.extract || "").trim().slice(0, 450);
+      if (!title || !extract) continue;
+      lines.push(`【${title}】${extract}`);
+      sources.push({
+        title: `wikipedia.org (${title})`,
+        url: `https://ja.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+        kind: "web",
+      });
+    }
     return {
-      placeTitle:
-        cleanString(parsed?.placeTitle, 100) ||
-        firstMapChunk?.maps?.title?.trim(),
-      address: parsed?.address
-        ? normalizeAddressForDisplay(cleanString(parsed.address, 140))
-        : undefined,
-      mapsUri: firstMapChunk?.maps?.uri?.trim(),
-      chunks,
+      snippet: lines.join("\n"),
+      sources,
     };
   } catch {
-    return null;
+    return { snippet: "", sources: [] };
   } finally {
     clearTimeout(timer);
   }
@@ -1116,6 +1140,8 @@ function buildLookupPrompt(params: {
   currentShortName: string;
   teamCtx: TeamRegionContext;
   placesHint: PlacesTextSearchResult | null;
+  geoAnchor: GeoAnchor | null;
+  openSnippet?: string;
 }): string {
   const {
     inputName,
@@ -1125,6 +1151,8 @@ function buildLookupPrompt(params: {
     currentShortName,
     teamCtx,
     placesHint,
+    geoAnchor,
+    openSnippet,
   } = params;
 
   const contextLines: string[] = [
@@ -1151,10 +1179,18 @@ function buildLookupPrompt(params: {
   if (teamCtx.clubCategory && teamCtx.clubCategory !== "other") {
     contextLines.push(`- チームの競技種別参考: ${teamCtx.clubCategory}`);
   }
+  if (geoAnchor) {
+    contextLines.push(
+      `- 国土地理院 位置照合参考: ${geoAnchor.label} (${geoAnchor.latitude.toFixed(5)}, ${geoAnchor.longitude.toFixed(5)})`
+    );
+  }
   if (placesHint) {
     contextLines.push(
       `- Google Places 事前照合データ: 名称="${placesHint.displayName || ""}", 住所="${placesHint.formattedAddress || ""}", 公式Web="${placesHint.websiteUri || "なし"}"`
     );
+  }
+  if (openSnippet) {
+    contextLines.push(`- 公開リファレンス抜粋:\n${openSnippet}`);
   }
 
   return [
@@ -1254,233 +1290,369 @@ liffGroundsAiRouter.post("/", async (c) => {
     extractAreaPrefix(currentAddress) ||
     (teamCtx.frequentAreas.length > 0 ? teamCtx.frequentAreas[0] : "");
 
-  // 座標アンカー（国土地理院API）と Google Places 事前照合を高速並列取得
-  const [geoAnchor, placesHint] = await Promise.all([
-    resolveJapanGeoAnchor(effectiveRegionHint || inputName),
-    queryGooglePlacesIfAvailable(
-      teamCtx.mapsApiKey,
-      inputName,
-      areaHint,
-      currentAddress,
-      teamCtx.frequentAreas
-    ),
-  ]);
+  // 20分メモリキャッシュ ＆ 同時リクエスト統合（連続タップや再検索でのクォータ消費ゼロ化）
+  const cacheKey = [
+    teamId || "anon",
+    inputName.toLowerCase(),
+    effectiveRegionHint.toLowerCase(),
+    currentCategory || "",
+  ].join("::");
 
-  const prompt = buildLookupPrompt({
-    inputName,
-    areaHint,
-    currentCategory,
-    currentAddress,
-    currentShortName,
-    teamCtx,
-    placesHint,
-  });
+  const cachedHit = LOOKUP_RESULT_CACHE.get(cacheKey);
+  if (cachedHit && cachedHit.expiresAt > Date.now()) {
+    return c.json(cachedHit.payload);
+  }
 
-  // 🗺️ Google Maps Grounding プローブを裏で並列起動（Web検索と完全同時進行のため待ち時間ゼロ）
-  const mapsProbePromise = probeGoogleMapsGrounding({
-    apiKey,
-    inputName,
-    regionHintText: effectiveRegionHint,
-    geoAnchor,
-  });
-
-  let lastErrorMsg = "AIからの応答を取得できませんでした";
-  let skipGoogleSearch = false;
-
-  for (const spec of WEB_SEARCH_MODEL_ATTEMPTS) {
-    if (spec.useGoogleSearch && skipGoogleSearch) continue;
-
-    const remainingMs = MAX_BUDGET_MS - (Date.now() - overallStart);
-    if (remainingMs < 4_500) break;
-
-    const cooldownKey = `${spec.model}:${spec.useGoogleSearch ? "gs" : "plain"}`;
-    const cooldownUntil = MODEL_COOLDOWN.get(cooldownKey) || 0;
-    if (Date.now() < cooldownUntil) continue;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      Math.min(spec.timeoutMs, remainingMs)
-    );
-
+  const inflight = INFLIGHT_LOOKUPS.get(cacheKey);
+  if (inflight) {
     try {
-      const generationConfig: Record<string, unknown> = {
-        temperature: 0.05,
-      };
-      if (!spec.useGoogleSearch) {
-        generationConfig.responseMimeType = "application/json";
-      }
-      if (spec.thinkingBudget !== null) {
-        generationConfig.thinkingConfig = {
-          thinkingBudget: spec.thinkingBudget,
-        };
-      }
-
-      const requestPayload: Record<string, unknown> = {
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig,
-      };
-
-      if (spec.useGoogleSearch) {
-        requestPayload.tools = [{ google_search: {} }];
-      }
-
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:generateContent?key=${apiKey}`;
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify(requestPayload),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        if (res.status === 404 || res.status === 429 || res.status === 503) {
-          MODEL_COOLDOWN.set(cooldownKey, Date.now() + 45_000);
-        }
-        if (spec.useGoogleSearch && (res.status === 429 || res.status === 403)) {
-          skipGoogleSearch = true;
-        }
-        lastErrorMsg = `AI検索エラー (${res.status})`;
-        console.warn(`[grounds-ai] ${spec.model} failed (${res.status}):`, errText.slice(0, 220));
-        continue;
-      }
-
-      const data = (await res.json()) as GeminiGenerateResponse;
-      const firstCandidate = data.candidates?.[0];
-      const parts = firstCandidate?.content?.parts || [];
-      const combinedText = parts
-        .filter((p) => !p.thought && typeof p.text === "string")
-        .map((p) => p.text || "")
-        .join("\n")
-        .trim();
-
-      const extracted = extractFirstJsonObject(combinedText);
-      if (!extracted) {
-        lastErrorMsg = "AI応答の解析に失敗しました";
-        continue;
-      }
-
-      // 並列起動していた Google Maps Grounding の結果を合流
-      const mapsProbe = await mapsProbePromise;
-      const webChunks = firstCandidate?.groundingMetadata?.groundingChunks || [];
-
-      const resolvedName =
-        cleanString(extracted.name, 120) ||
-        placesHint?.displayName ||
-        mapsProbe?.placeTitle ||
-        inputName;
-      const resolvedShortName =
-        cleanString(extracted.shortName, 40) || resolvedName.slice(0, 10);
-      const resolvedCategory = normalizeCategory(
-        extracted.category,
-        resolvedName,
-        currentCategory
-      );
-      const resolvedSurface = normalizeSurface(extracted.surface);
-      const webAddress = normalizeAddressForDisplay(cleanString(extracted.address, 160));
-      const webAreaPrefix = extractAreaPrefix(webAddress);
-
-      // Web公式住所が「〜地内・地先」等で番地を持たない場合、同一市区町村のGoogle Maps番地で補完
-      const mapsAddr = mapsProbe?.address || "";
-      const mapsAreaPrefix = extractAreaPrefix(mapsAddr);
-      const canUseMapsAddress =
-        Boolean(mapsAddr) &&
-        (!webAddress ||
-          ((webAddress.endsWith("地内") || webAddress.endsWith("地先")) &&
-            webAreaPrefix &&
-            webAreaPrefix === mapsAreaPrefix));
-
-      const baseAddress =
-        (canUseMapsAddress ? mapsAddr : webAddress) ||
-        placesHint?.formattedAddress ||
-        mapsAddr ||
-        "";
-
-      const resolvedAddress = baseAddress
-        ? await enrichAddressWithPostalCode(baseAddress, placesHint)
-        : "";
-
-      const { sources, bestMapsUrl } = extractGroundingSources(
-        webChunks,
-        mapsProbe,
-        placesHint,
-        extractAreaPrefix(resolvedAddress)
-      );
-
-      const resolvedParking = cleanString(extracted.parkingInfo, 300);
-      const resolvedSpikeRule = cleanString(extracted.spikeRule, 220);
-      const resolvedNotes = cleanString(extracted.notes, 360);
-      const resolvedConfidence = normalizeConfidence(extracted.confidence);
-      const resolvedSummary = cleanString(extracted.summaryNote, 200);
-      const mapsVerified = Boolean(bestMapsUrl);
-      const hasWebSources = spec.useGoogleSearch && webChunks.length > 0;
-      const verifiedFields = normalizeVerifiedFields(
-        extracted.verifiedFields,
-        mapsVerified,
-        hasWebSources
-      );
-      const alternatives = normalizeAlternatives(extracted.alternatives).filter(
-        (alt) => alt.name !== resolvedName
-      );
-
-      const candidateResult: GroundAiLookupResult = {
-        name: resolvedName,
-        shortName: resolvedShortName,
-        category: resolvedCategory,
-        surface: resolvedSurface,
-        address: resolvedAddress,
-        mapUrl: buildGoogleMapsSearchUrl(
-          resolvedName,
-          resolvedAddress,
-          bestMapsUrl,
-          placesHint
-        ),
-        parkingInfo: resolvedParking,
-        spikeRule: resolvedSpikeRule,
-        notes: resolvedNotes,
-        confidence: resolvedConfidence,
-        summaryNote: resolvedSummary,
-        mapsVerified,
-        verifiedFields,
-        alternatives,
-        sources,
-      };
-
-      return c.json({
-        success: true,
-        model: spec.model,
-        grounded: hasWebSources || mapsVerified,
-        mapsGrounded: mapsVerified,
-        candidate: candidateResult,
-      });
-    } catch (err) {
-      const isAbort = err instanceof Error && err.name === "AbortError";
-      lastErrorMsg = isAbort
-        ? "施設情報の検索がタイムアウトしました。もう一度お試しください"
-        : err instanceof Error
-          ? err.message
-          : "施設情報の取得中にエラーが発生しました";
-      console.warn(`[grounds-ai] ${spec.model} exception:`, lastErrorMsg);
-    } finally {
-      clearTimeout(timeoutId);
+      const sharedResult = await inflight;
+      return c.json(sharedResult);
+    } catch {
+      // fall through and execute fresh attempt
     }
   }
 
-  return c.json(
-    {
-      success: false,
+  const runLookupFlow = async (): Promise<
+    | { ok: true; payload: CachedLookupResponse["payload"] }
+    | { ok: false; status: 429 | 502; error: string }
+  > => {
+    // 座標アンカー（国土地理院API）と Google Places 事前照合を高速並列取得（Geminiクォータ消費ゼロ）
+    const [geoAnchor, placesHint] = await Promise.all([
+      resolveJapanGeoAnchor(
+        effectiveRegionHint ? `${effectiveRegionHint} ${inputName}` : inputName
+      ),
+      queryGooglePlacesIfAvailable(
+        teamCtx.mapsApiKey,
+        inputName,
+        areaHint,
+        currentAddress,
+        teamCtx.frequentAreas
+      ),
+    ]);
+
+    const basePrompt = buildLookupPrompt({
+      inputName,
+      areaHint,
+      currentCategory,
+      currentAddress,
+      currentShortName,
+      teamCtx,
+      placesHint,
+      geoAnchor,
+    });
+
+    let fallbackPromptWithOpenRef: string | null = null;
+    let fallbackOpenSources: GroundAiSourceLink[] = [];
+    let skipGoogleSearchTool = false;
+    let sawRateLimit429 = false;
+    let lastErrorMsg = "AIからの応答を取得できませんでした";
+
+    const buildGenerationConfig = (
+      spec: WebModelAttemptSpec,
+      withThinking: boolean
+    ): Record<string, unknown> => {
+      const cfg: Record<string, unknown> = {
+        temperature: 0.05,
+      };
+      if (!spec.useGoogleSearch) {
+        cfg.responseMimeType = "application/json";
+      }
+      if (withThinking) {
+        if (spec.thinkingMode.type === "budget") {
+          cfg.thinkingConfig = {
+            thinkingBudget: spec.thinkingMode.budget,
+          };
+        } else if (spec.thinkingMode.type === "level") {
+          cfg.thinkingConfig = {
+            thinkingLevel: spec.thinkingMode.level,
+          };
+        }
+      }
+      return cfg;
+    };
+
+    for (const spec of WEB_SEARCH_MODEL_ATTEMPTS) {
+      if (spec.useGoogleSearch && skipGoogleSearchTool) continue;
+
+      const remainingMs = MAX_BUDGET_MS - (Date.now() - overallStart);
+      if (remainingMs < 4_000) break;
+
+      const modelDeadUntil = MODEL_COOLDOWN.get(`model:${spec.model}`) || 0;
+      const slotCooldownKey = `${spec.model}:${spec.useGoogleSearch ? "gs" : "plain"}`;
+      const slotCooldownUntil = MODEL_COOLDOWN.get(slotCooldownKey) || 0;
+      if (Date.now() < modelDeadUntil || Date.now() < slotCooldownUntil) {
+        continue;
+      }
+
+      // Google Search 無効フォールバック帯に入った場合、Wikipedia日本語版APIで事実根拠を補完（1回のみ）
+      let activePrompt = basePrompt;
+      if (!spec.useGoogleSearch) {
+        if (fallbackPromptWithOpenRef === null) {
+          const openRef = await fetchOpenFacilityReferenceSnippet(
+            inputName,
+            effectiveRegionHint
+          );
+          fallbackOpenSources = openRef.sources;
+          fallbackPromptWithOpenRef = buildLookupPrompt({
+            inputName,
+            areaHint,
+            currentCategory,
+            currentAddress,
+            currentShortName,
+            teamCtx,
+            placesHint,
+            geoAnchor,
+            openSnippet: openRef.snippet,
+          });
+        }
+        activePrompt = fallbackPromptWithOpenRef;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        Math.min(spec.timeoutMs, remainingMs)
+      );
+
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${spec.model}:generateContent?key=${apiKey}`;
+
+        const sendRequest = async (withThinking: boolean): Promise<Response> => {
+          const payload: Record<string, unknown> = {
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: activePrompt }],
+              },
+            ],
+            generationConfig: buildGenerationConfig(spec, withThinking),
+          };
+          if (spec.useGoogleSearch) {
+            payload.tools = [{ google_search: {} }];
+          }
+          return fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify(payload),
+          });
+        };
+
+        let res = await sendRequest(spec.thinkingMode.type !== "none");
+
+        // パラメータ仕様差（thinkingLevel / thinkingBudget 非対応等）で 400 の場合は思考指定を外して同モデルで即リトライ
+        if (!res.ok && res.status === 400 && spec.thinkingMode.type !== "none") {
+          const firstErr = await res.text().catch(() => "");
+          if (firstErr.toLowerCase().includes("thinking")) {
+            res = await sendRequest(false);
+          } else {
+            // google_search 非対応モデルの可能性
+            MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 10 * 60_000);
+            console.warn(
+              `[grounds-ai] ${spec.model} 400:`,
+              firstErr.slice(0, 200)
+            );
+            continue;
+          }
+        }
+
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          const lowerErr = errText.toLowerCase();
+
+          if (res.status === 404) {
+            // 存在しない・廃止モデルは30分間スキップ（以降の検索で遅延ゼロ）
+            MODEL_COOLDOWN.set(`model:${spec.model}`, Date.now() + 30 * 60_000);
+          } else if (res.status === 429) {
+            sawRateLimit429 = true;
+            const isDailyExhausted =
+              lowerErr.includes("perday") ||
+              lowerErr.includes("per_day") ||
+              lowerErr.includes("limit: 0");
+            MODEL_COOLDOWN.set(
+              slotCooldownKey,
+              Date.now() + (isDailyExhausted ? 15 * 60_000 : 40_000)
+            );
+            // プロジェクト全体の google_search ツール自体がクォータ超過している場合のみツールなし帯へジャンプ
+            if (
+              spec.useGoogleSearch &&
+              (lowerErr.includes("search_grounding") ||
+                lowerErr.includes("google_search"))
+            ) {
+              skipGoogleSearchTool = true;
+            }
+          } else if (res.status === 503) {
+            MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 30_000);
+          } else if (spec.useGoogleSearch && res.status === 403) {
+            skipGoogleSearchTool = true;
+          }
+
+          lastErrorMsg =
+            res.status === 429
+              ? "AI検索の利用上限（短時間のアクセス集中）に達しました。少し待ってから再度お試しください"
+              : `AI検索エラー (${res.status})`;
+          console.warn(
+            `[grounds-ai] ${spec.model} (${spec.useGoogleSearch ? "gs" : "plain"}) failed (${res.status}):`,
+            errText.slice(0, 220)
+          );
+          continue;
+        }
+
+        const data = (await res.json()) as GeminiGenerateResponse;
+        const firstCandidate = data.candidates?.[0];
+        const parts = firstCandidate?.content?.parts || [];
+        const combinedText = parts
+          .filter((p) => !p.thought && typeof p.text === "string")
+          .map((p) => p.text || "")
+          .join("\n")
+          .trim();
+
+        const extracted = extractFirstJsonObject(combinedText);
+        if (!extracted) {
+          lastErrorMsg = "AI応答の解析に失敗しました";
+          continue;
+        }
+
+        const webChunks =
+          firstCandidate?.groundingMetadata?.groundingChunks || [];
+
+        const resolvedName =
+          cleanString(extracted.name, 120) ||
+          placesHint?.displayName ||
+          inputName;
+        const resolvedShortName =
+          cleanString(extracted.shortName, 40) || resolvedName.slice(0, 10);
+        const resolvedCategory = normalizeCategory(
+          extracted.category,
+          resolvedName,
+          currentCategory
+        );
+        const resolvedSurface = normalizeSurface(extracted.surface);
+        const webAddress = normalizeAddressForDisplay(
+          cleanString(extracted.address, 160)
+        );
+
+        const baseAddress = webAddress || placesHint?.formattedAddress || "";
+        const resolvedAddress = baseAddress
+          ? await enrichAddressWithPostalCode(baseAddress, placesHint)
+          : "";
+
+        const { sources: extractedSources, bestMapsUrl } =
+          extractGroundingSources(
+            webChunks,
+            null,
+            placesHint,
+            extractAreaPrefix(resolvedAddress)
+          );
+        const mergedSources =
+          extractedSources.length > 0 ? extractedSources : fallbackOpenSources;
+
+        const resolvedParking = cleanString(extracted.parkingInfo, 300);
+        const resolvedSpikeRule = cleanString(extracted.spikeRule, 220);
+        const resolvedNotes = cleanString(extracted.notes, 360);
+        const resolvedConfidence = normalizeConfidence(extracted.confidence);
+        const resolvedSummary = cleanString(extracted.summaryNote, 200);
+        const mapsVerified = Boolean(bestMapsUrl);
+        const hasWebSources =
+          (spec.useGoogleSearch && webChunks.length > 0) ||
+          mergedSources.length > 0;
+        const verifiedFields = normalizeVerifiedFields(
+          extracted.verifiedFields,
+          mapsVerified,
+          hasWebSources
+        );
+        const alternatives = normalizeAlternatives(
+          extracted.alternatives
+        ).filter((alt) => alt.name !== resolvedName);
+
+        const candidateResult: GroundAiLookupResult = {
+          name: resolvedName,
+          shortName: resolvedShortName,
+          category: resolvedCategory,
+          surface: resolvedSurface,
+          address: resolvedAddress,
+          mapUrl: buildGoogleMapsSearchUrl(
+            resolvedName,
+            resolvedAddress,
+            bestMapsUrl,
+            placesHint
+          ),
+          parkingInfo: resolvedParking,
+          spikeRule: resolvedSpikeRule,
+          notes: resolvedNotes,
+          confidence: resolvedConfidence,
+          summaryNote: resolvedSummary,
+          mapsVerified,
+          verifiedFields,
+          alternatives,
+          sources: mergedSources,
+        };
+
+        const successPayload: CachedLookupResponse["payload"] = {
+          success: true,
+          model: spec.model,
+          grounded: hasWebSources || mapsVerified,
+          mapsGrounded: mapsVerified,
+          candidate: candidateResult,
+        };
+
+        if (LOOKUP_RESULT_CACHE.size >= 100) {
+          const oldest = LOOKUP_RESULT_CACHE.keys().next().value;
+          if (oldest) LOOKUP_RESULT_CACHE.delete(oldest);
+        }
+        LOOKUP_RESULT_CACHE.set(cacheKey, {
+          expiresAt: Date.now() + 20 * 60_000,
+          payload: successPayload,
+        });
+
+        return { ok: true, payload: successPayload };
+      } catch (err) {
+        const isAbort = err instanceof Error && err.name === "AbortError";
+        lastErrorMsg = isAbort
+          ? "施設情報の検索がタイムアウトしました。もう一度お試しください"
+          : err instanceof Error
+            ? err.message
+            : "施設情報の取得中にエラーが発生しました";
+        console.warn(`[grounds-ai] ${spec.model} exception:`, lastErrorMsg);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    return {
+      ok: false,
+      status: sawRateLimit429 ? 429 : 502,
       error:
         lastErrorMsg ||
-        "施設情報を取得できませんでした。施設名や地域ヒントを確認してください。",
-    },
-    502
-  );
+        "施設情報を取得できませんでした。施設名を確認して再度お試しください。",
+    };
+  };
+
+  const executionPromise = runLookupFlow();
+  const sharedPromise = executionPromise.then((res) => {
+    if (!res.ok) throw new Error(res.error);
+    return res.payload;
+  });
+  INFLIGHT_LOOKUPS.set(cacheKey, sharedPromise);
+  // 未処理reject防止
+  sharedPromise.catch(() => undefined);
+
+  try {
+    const outcome = await executionPromise;
+    if (outcome.ok) {
+      return c.json(outcome.payload);
+    }
+    return c.json(
+      {
+        success: false,
+        error: outcome.error,
+      },
+      outcome.status
+    );
+  } finally {
+    INFLIGHT_LOOKUPS.delete(cacheKey);
+  }
 });
 
 export default liffGroundsAiRouter;

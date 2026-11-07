@@ -69,6 +69,11 @@ import {
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { getAuth } from "@/lib/auth";
 import { canManageSystem, canManageTeam } from "@/lib/roles";
+import {
+  buildGoogleMapsEmbedFromUrl,
+  expandGoogleMapsShortUrl,
+  isGoogleMapsShortUrl,
+} from "@/lib/google-maps";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -4549,26 +4554,40 @@ app.get("/grounds", async (c) => {
       return { category: "stadium", categoryLabel: "球場・公営" };
     };
 
-    const formatted = venuesList.map((v) => {
-      const catInfo = inferCategory(v.name, v.shortName, v.notes, v.category);
-      return {
-        id: v.id,
-        name: v.name,
-        shortName: v.shortName || v.name,
-        category: catInfo.category,
-        categoryLabel: catInfo.categoryLabel,
-        address: v.address || "住所未登録",
-        mapUrl: v.mapUrl || `https://maps.google.com/?q=${encodeURIComponent(v.address || v.name)}`,
-        surface: v.surfaceType === "artificial_turf" || v.surfaceType === "turf"
-          ? "人工芝"
-          : v.surfaceType === "natural_turf" || v.surfaceType === "grass"
-          ? "天然芝"
-          : (v.surfaceType || "土 (クレー)"),
-        spikeRule: v.spikeRule || "ポイントスパイクまたはトレーニングシューズ",
-        parkingInfo: v.parkingInfo || "駐車場ルールは管理者にお問い合わせください",
-        notes: v.notes || "",
-      };
-    });
+    const formatted = await Promise.all(
+      venuesList.map(async (v) => {
+        const catInfo = inferCategory(v.name, v.shortName, v.notes, v.category);
+        const rawMapUrl = (v.mapUrl || "").trim();
+        let resolvedEmbedMapUrl = "";
+        if (rawMapUrl) {
+          const expanded = isGoogleMapsShortUrl(rawMapUrl)
+            ? await expandGoogleMapsShortUrl(rawMapUrl)
+            : rawMapUrl;
+          resolvedEmbedMapUrl = buildGoogleMapsEmbedFromUrl(expanded);
+        }
+        return {
+          id: v.id,
+          name: v.name,
+          shortName: v.shortName || v.name,
+          category: catInfo.category,
+          categoryLabel: catInfo.categoryLabel,
+          address: v.address || "住所未登録",
+          mapUrl:
+            rawMapUrl ||
+            `https://maps.google.com/?q=${encodeURIComponent(v.address || v.name)}`,
+          embedMapUrl: resolvedEmbedMapUrl || undefined,
+          surface:
+            v.surfaceType === "artificial_turf" || v.surfaceType === "turf"
+              ? "人工芝"
+              : v.surfaceType === "natural_turf" || v.surfaceType === "grass"
+              ? "天然芝"
+              : v.surfaceType || "土 (クレー)",
+          spikeRule: v.spikeRule || "ポイントスパイクまたはトレーニングシューズ",
+          parkingInfo: v.parkingInfo || "駐車場ルールは管理者にお問い合わせください",
+          notes: v.notes || "",
+        };
+      })
+    );
 
     return c.json({
       success: true,
