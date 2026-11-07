@@ -188,6 +188,29 @@ const WEB_SEARCH_MODEL_ATTEMPTS: ReadonlyArray<WebModelAttemptSpec> = [
 
 const MODEL_COOLDOWN = new Map<string, number>();
 
+interface HeartRailsTownPostalEntry {
+  town: string;
+  postal: string;
+}
+
+// 同一市区町村の郵便番号辞書キャッシュ（Worker Isolateメモリ保持で2回目以降 0ms）
+const TOWN_POSTAL_CACHE = new Map<string, ReadonlyArray<HeartRailsTownPostalEntry>>();
+
+const DESIGNATED_CITY_PREFIX_REGEX =
+  /^((?:札幌|仙台|さいたま|千葉|横浜|川崎|相模原|新潟|静岡|浜松|名古屋|京都|大阪|堺|神戸|岡山|広島|北九州|福岡|熊本)市.+?区)(.*)$/;
+
+const KANJI_DIGITS: ReadonlyArray<[string, string]> = [
+  ["一", "1"],
+  ["二", "2"],
+  ["三", "3"],
+  ["四", "4"],
+  ["五", "5"],
+  ["六", "6"],
+  ["七", "7"],
+  ["八", "8"],
+  ["九", "9"],
+];
+
 const VALID_CATEGORIES = new Set<GroundVenueCategory>([
   "stadium",
   "home",
@@ -240,19 +263,142 @@ function cleanString(val: unknown, maxLen = 320): string {
   return trimmed.slice(0, maxLen);
 }
 
+function toHalfWidthPostalToken(raw: string): string {
+  return raw
+    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
+    .replace(/[ー－―‐−]/g, "-");
+}
+
+function splitPostalAndAddressBody(rawAddr: string): {
+  postal: string | null;
+  body: string;
+} {
+  let working = rawAddr.trim().replace(/^日本[、,\s]*/, "").trim();
+  if (!working) return { postal: null, body: "" };
+
+  let foundPostal: string | null = null;
+
+  const leadingMatch = working.match(
+    /^〒?\s*([0-9０-９]{3})[-ー－―‐−]?([0-9０-９]{4})[、,\s]*/
+  );
+  if (leadingMatch) {
+    const p1 = toHalfWidthPostalToken(leadingMatch[1]);
+    const p2 = toHalfWidthPostalToken(leadingMatch[2]);
+    const candidate = `${p1}-${p2}`;
+    if (candidate !== "000-0000" && !candidate.endsWith("-0000")) {
+      foundPostal = candidate;
+    }
+    working = working
+      .slice(leadingMatch[0].length)
+      .replace(/^日本[、,\s]*/, "")
+      .trim();
+  }
+
+  return {
+    postal: foundPostal,
+    body: working,
+  };
+}
+
 function normalizeAddressForDisplay(addr: string): string {
-  return addr
-    .replace(/^〒?\s*\d{3}-\d{4}\s*/, "")
-    .replace(/^日本[、,\s]*/, "")
-    .trim();
+  const { postal, body } = splitPostalAndAddressBody(addr);
+  if (!body) return "";
+  return postal ? `〒${postal} ${body}` : body;
 }
 
 function stripRiverbedAmbiguousSuffix(addr: string): string {
   return addr.replace(/(地内|地先|先|付近)$/g, "").trim();
 }
 
+function parseJapanMunicipality(address: string): {
+  prefecture: string;
+  city: string;
+  remainder: string;
+} | null {
+  const { body } = splitPostalAndAddressBody(address);
+  if (!body) return null;
+
+  const prefMatch = body.match(/^(北海道|東京都|(?:京都|大阪)府|.{2,3}県)(.*)$/);
+  if (!prefMatch) return null;
+
+  const prefecture = prefMatch[1];
+  const afterPref = prefMatch[2].trim();
+  if (!afterPref) return null;
+
+  // 1. 政令指定都市（市＋区）
+  const designatedMatch = afterPref.match(DESIGNATED_CITY_PREFIX_REGEX);
+  if (designatedMatch) {
+    return {
+      prefecture,
+      city: designatedMatch[1],
+      remainder: designatedMatch[2].trim(),
+    };
+  }
+
+  // 2. 東京都特別区（23区）
+  if (prefecture === "東京都") {
+    const wardMatch = afterPref.match(/^([^市町村郡]+?区)(.*)$/);
+    if (wardMatch) {
+      return {
+        prefecture,
+        city: wardMatch[1],
+        remainder: wardMatch[2].trim(),
+      };
+    }
+  }
+
+  // 3. 市名に「郡」を含む市（郡山市・大和郡山市・小郡市・蒲郡市）
+  const specialGunCityMatch = afterPref.match(
+    /^((?:大和郡山|郡山|小郡|蒲郡)市)(.*)$/
+  );
+  if (specialGunCityMatch) {
+    return {
+      prefecture,
+      city: specialGunCityMatch[1],
+      remainder: specialGunCityMatch[2].trim(),
+    };
+  }
+
+  // 4. 一般市
+  const regularCityMatch = afterPref.match(/^([^郡]+?市)(.*)$/);
+  if (regularCityMatch) {
+    return {
+      prefecture,
+      city: regularCityMatch[1],
+      remainder: regularCityMatch[2].trim(),
+    };
+  }
+
+  // 5. 郡＋町村
+  const countyMatch = afterPref.match(/^(.+?郡.+?[町村])(.*)$/);
+  if (countyMatch) {
+    return {
+      prefecture,
+      city: countyMatch[1],
+      remainder: countyMatch[2].trim(),
+    };
+  }
+
+  // 6. その他町村フォールバック
+  const fallbackMatch = afterPref.match(/^(.+?[市町村区])(.*)$/);
+  if (fallbackMatch) {
+    return {
+      prefecture,
+      city: fallbackMatch[1],
+      remainder: fallbackMatch[2].trim(),
+    };
+  }
+
+  return null;
+}
+
 function extractAreaPrefix(address: string): string {
-  const m = address.trim().match(/^(.+?[都道府県].+?[市区町村郡])/);
+  const parsed = parseJapanMunicipality(address);
+  if (parsed) {
+    return `${parsed.prefecture}${parsed.city}`;
+  }
+  const { body } = splitPostalAndAddressBody(address);
+  const m = body.match(/^(.+?[都道府県].+?[市区町村郡])/);
   return m ? m[1] : "";
 }
 
@@ -613,11 +759,171 @@ async function loadTeamRegionContext(
   }
 }
 
+function buildTownMatchVariants(rawRemainder: string): string[] {
+  const base = stripRiverbedAmbiguousSuffix(
+    rawRemainder
+      .replace(/^[\s　]+/, "")
+      .replace(/^(?:大字|字)/, "")
+      .trim()
+  );
+  if (!base) return [];
+
+  const variants = new Set<string>([base]);
+
+  // 漢数字「一丁目」⇔ 算用数字「1丁目」の双方に対応
+  let toArabic = base;
+  let toKanji = base;
+  for (const [kanji, digit] of KANJI_DIGITS) {
+    toArabic = toArabic.replace(new RegExp(`${kanji}(?=丁目)`, "g"), digit);
+    toKanji = toKanji.replace(new RegExp(`${digit}(?=丁目)`, "g"), kanji);
+  }
+  variants.add(toArabic);
+  variants.add(toKanji);
+
+  return Array.from(variants);
+}
+
+/**
+ * 日本郵便データ準拠の町域郵便番号API（HeartRails Geo API・キー不要）で正確な7桁郵便番号を照合
+ */
+async function resolveOfficialJapanPostalCode(
+  addressOrBody: string
+): Promise<{ primaryPostal: string; candidates: string[] } | null> {
+  const parsed = parseJapanMunicipality(addressOrBody);
+  if (!parsed || !parsed.remainder) return null;
+
+  const cacheKey = `${parsed.prefecture}:${parsed.city}`;
+  let towns = TOWN_POSTAL_CACHE.get(cacheKey);
+
+  if (!towns) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2_200);
+    try {
+      const url = `https://geoapi.heartrails.com/api/json?method=getTowns&prefecture=${encodeURIComponent(
+        parsed.prefecture
+      )}&city=${encodeURIComponent(parsed.city)}`;
+      const res = await fetch(url, { signal: controller.signal });
+      if (res.ok) {
+        const json = (await res.json()) as {
+          response?: {
+            location?: Array<{
+              town?: string;
+              postal?: string;
+            }>;
+          };
+        };
+        const rawLocations = json.response?.location || [];
+        const validEntries: HeartRailsTownPostalEntry[] = [];
+        for (const loc of rawLocations) {
+          const town = typeof loc.town === "string" ? loc.town.trim() : "";
+          const postal = typeof loc.postal === "string" ? loc.postal.trim() : "";
+          if (
+            !town ||
+            town === "（その他）" ||
+            town.includes("以下に掲載がない場合") ||
+            !/^\d{7}$/.test(postal) ||
+            postal.endsWith("0000")
+          ) {
+            continue;
+          }
+          validEntries.push({
+            town,
+            postal: `${postal.slice(0, 3)}-${postal.slice(3)}`,
+          });
+        }
+        // 最長一致を優先するため町域名が長い順にソート
+        validEntries.sort((a, b) => b.town.length - a.town.length);
+        if (TOWN_POSTAL_CACHE.size >= 80) {
+          const oldestKey = TOWN_POSTAL_CACHE.keys().next().value;
+          if (oldestKey) TOWN_POSTAL_CACHE.delete(oldestKey);
+        }
+        TOWN_POSTAL_CACHE.set(cacheKey, validEntries);
+        towns = validEntries;
+      }
+    } catch {
+      // ignore network timeout and fall back to grounded postal code
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  if (!towns || towns.length === 0) return null;
+
+  const variants = buildTownMatchVariants(parsed.remainder);
+  if (variants.length === 0) return null;
+
+  let matchedTownName: string | null = null;
+  for (const entry of towns) {
+    if (variants.some((v) => v.startsWith(entry.town))) {
+      matchedTownName = entry.town;
+      break;
+    }
+  }
+
+  if (!matchedTownName) return null;
+
+  const matchingCodes = Array.from(
+    new Set(
+      towns
+        .filter((e) => e.town === matchedTownName)
+        .map((e) => e.postal)
+    )
+  );
+  if (matchingCodes.length === 0) return null;
+
+  return {
+    primaryPostal: matchingCodes[0],
+    candidates: matchingCodes,
+  };
+}
+
+async function enrichAddressWithPostalCode(
+  rawAddress: string,
+  placesHint: PlacesTextSearchResult | null
+): Promise<string> {
+  const { postal: existingPostal, body } = splitPostalAndAddressBody(rawAddress);
+  if (!body) return "";
+
+  const placesSplit = placesHint?.formattedAddress
+    ? splitPostalAndAddressBody(placesHint.formattedAddress)
+    : { postal: null, body: "" };
+  const targetArea = extractAreaPrefix(body);
+  const placesArea = placesSplit.body ? extractAreaPrefix(placesSplit.body) : "";
+  const validPlacesPostal =
+    placesSplit.postal && targetArea && targetArea === placesArea
+      ? placesSplit.postal
+      : null;
+
+  const officialLookup = await resolveOfficialJapanPostalCode(body);
+
+  let bestPostal: string | null = null;
+  if (validPlacesPostal) {
+    bestPostal = validPlacesPostal;
+  } else if (officialLookup) {
+    if (officialLookup.candidates.length === 1) {
+      // 町域に対して単一の日本郵便番号が確定している場合は公式番号を採用（AIの桁誤認を完全防止）
+      bestPostal = officialLookup.primaryPostal;
+    } else if (
+      existingPostal &&
+      officialLookup.candidates.includes(existingPostal)
+    ) {
+      bestPostal = existingPostal;
+    } else {
+      bestPostal = existingPostal || officialLookup.primaryPostal;
+    }
+  } else {
+    bestPostal = existingPostal;
+  }
+
+  return bestPostal ? `〒${bestPostal} ${body}` : body;
+}
+
 /**
  * 国土地理院（GSI）住所検索APIで地域アンカー座標を取得（APIキー不要・Google Maps Grounding の位置バイアス用）
  */
 async function resolveJapanGeoAnchor(queryText: string): Promise<GeoAnchor | null> {
-  const q = queryText.trim();
+  const stripped = splitPostalAndAddressBody(queryText).body || queryText.trim();
+  const q = stripped.trim();
   if (!q) return null;
 
   const controller = new AbortController();
@@ -885,7 +1191,7 @@ function buildLookupPrompt(params: {
     '  "shortName": "予定表バッジ用の4〜10文字の略称",',
     '  "category": "stadium | school | indoor | home",',
     '  "surface": "5択のいずれか",',
-    '  "address": "郵便番号を除いた都道府県からの正確な所在地（不明なら空文字）",',
+    '  "address": "郵便番号（〒XXX-XXXX）付きの都道府県からの正確な所在地（例: 〒000-0000 〇〇県〇〇市... / 公式に郵便番号が確認できない場合は都道府県からの所在地のみ記載し推測で番号を作らないこと）",',
     '  "parkingInfo": "公式駐車場の有無・料金・開放時間・進入路注意・台数制限（不明なら空文字）",',
     '  "spikeRule": "公式確認できたスパイク・靴規定（不明なら空文字）",',
     '  "notes": "現場運営に必要な設備・広さ・トイレ・屋根・利用制限メモ（不明なら空文字）",',
@@ -1090,11 +1396,15 @@ liffGroundsAiRouter.post("/", async (c) => {
             webAreaPrefix &&
             webAreaPrefix === mapsAreaPrefix));
 
-      const resolvedAddress =
+      const baseAddress =
         (canUseMapsAddress ? mapsAddr : webAddress) ||
         placesHint?.formattedAddress ||
         mapsAddr ||
         "";
+
+      const resolvedAddress = baseAddress
+        ? await enrichAddressWithPostalCode(baseAddress, placesHint)
+        : "";
 
       const { sources, bestMapsUrl } = extractGroundingSources(
         webChunks,

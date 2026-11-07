@@ -121,11 +121,21 @@ const PLACEHOLDER_PARKING_TEXTS = new Set([
 ]);
 const DEFAULT_SPIKE_RULE_TEXT = "ポイントスパイクまたはトレーニングシューズ";
 
-function extractMunicipalityHint(address: string): string {
-  const trimmed = address.trim();
-  if (!trimmed || trimmed === PLACEHOLDER_ADDRESS_TEXT) return "";
-  const match = trimmed.match(/^(.+?[都道府県].+?[市区町村郡])/);
-  return match ? match[1] : "";
+function stripPostalPrefix(addr: string): string {
+  return addr
+    .trim()
+    .replace(/^〒?\s*[0-9０-９]{3}[-ー－―‐−]?[0-9０-９]{4}\s*/, "")
+    .trim();
+}
+
+function isPostalCodeOnlyUpgrade(curAddr: string, aiAddr: string): boolean {
+  const curTrimmed = curAddr.trim();
+  const aiTrimmed = aiAddr.trim();
+  if (!curTrimmed || !aiTrimmed) return false;
+  const curHasPostal = /^〒?\s*[0-9０-９]{3}[-ー－―‐−]?[0-9０-９]{4}/.test(curTrimmed);
+  const aiHasPostal = /^〒\d{3}-\d{4}\s+/.test(aiTrimmed);
+  if (curHasPostal || !aiHasPostal) return false;
+  return stripPostalPrefix(curTrimmed) === stripPostalPrefix(aiTrimmed);
 }
 
 function getCategoryOptionLabel(cat: GroundVenueCategory | string): string {
@@ -175,6 +185,8 @@ export default function LiffGroundsPage() {
   const [formNotes, setFormNotes] = useState("");
 
   // AI自動取得・反映チェックリスト用ステート
+  const [aiSearchQuery, setAiSearchQuery] = useState("");
+  const [isAiQueryManuallyEdited, setIsAiQueryManuallyEdited] = useState(false);
   const [aiAreaHint, setAiAreaHint] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiCandidate, setAiCandidate] = useState<GroundAiLookupResult | null>(
@@ -320,6 +332,11 @@ export default function LiffGroundsPage() {
         }
         if (mode === "all_available") {
           next[key] = true;
+        } else if (
+          key === "address" &&
+          isPostalCodeOnlyUpgrade(curVal, aiVal)
+        ) {
+          next[key] = true;
         } else {
           next[key] = isFieldEmptyOrDefault(key);
         }
@@ -341,6 +358,8 @@ export default function LiffGroundsPage() {
     setFormParkingInfo("");
     setFormSpikeRule(DEFAULT_SPIKE_RULE_TEXT);
     setFormNotes("");
+    setAiSearchQuery("");
+    setIsAiQueryManuallyEdited(false);
     setAiAreaHint("");
     setAiCandidate(null);
     setIsModalOpen(true);
@@ -366,7 +385,9 @@ export default function LiffGroundsPage() {
     setFormParkingInfo(cleanParking);
     setFormSpikeRule(venue.spikeRule || "");
     setFormNotes(venue.notes || "");
-    setAiAreaHint(extractMunicipalityHint(cleanAddr));
+    setAiSearchQuery(venue.name);
+    setIsAiQueryManuallyEdited(false);
+    setAiAreaHint("");
     setAiCandidate(null);
     setIsModalOpen(true);
   };
@@ -376,15 +397,23 @@ export default function LiffGroundsPage() {
     overrideName?: string,
     overrideAreaHint?: string
   ) => {
-    const targetName = (overrideName ?? formName).trim();
+    const targetName = (
+      overrideName ?? (aiSearchQuery.trim() || formName.trim())
+    ).trim();
     const resolvedAreaHint = (overrideAreaHint ?? aiAreaHint).trim();
     if (!targetName) {
-      toast.error("先に「施設・球場名」を入力してからAI取得を押してください");
+      toast.error("検索する「施設・球場名」を入力してからAI取得を押してください");
       return;
     }
 
     if (overrideName !== undefined) {
-      setFormName(overrideName);
+      setAiSearchQuery(overrideName);
+      setIsAiQueryManuallyEdited(true);
+    } else if (!aiSearchQuery.trim()) {
+      setAiSearchQuery(targetName);
+    }
+    if (!formName.trim()) {
+      setFormName(targetName);
     }
     if (overrideAreaHint !== undefined) {
       setAiAreaHint(overrideAreaHint);
@@ -455,6 +484,9 @@ export default function LiffGroundsPage() {
 
     if (aiCheckedFields.name && aiCandidate.name) {
       setFormName(aiCandidate.name);
+      if (!isAiQueryManuallyEdited) {
+        setAiSearchQuery(aiCandidate.name);
+      }
       appliedCount += 1;
     }
     if (aiCheckedFields.shortName && aiCandidate.shortName) {
@@ -983,13 +1015,19 @@ export default function LiffGroundsPage() {
                   type="text"
                   required
                   value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setFormName(nextVal);
+                    if (!isAiQueryManuallyEdited) {
+                      setAiSearchQuery(nextVal);
+                    }
+                  }}
                   placeholder="例: 〇〇市民球場、〇〇緑地野球場"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-bold"
                 />
               </div>
 
-              {/* ✨ Item 1: AI施設情報取得バー（地域ヒント＋1タップ取得） */}
+              {/* ✨ Item 1: AI施設情報取得バー（施設名クエリ＋1タップ取得） */}
               <div className="rounded-2xl border border-border bg-muted/50 p-3 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-foreground">
@@ -1004,15 +1042,26 @@ export default function LiffGroundsPage() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="text"
-                    value={aiAreaHint}
-                    onChange={(e) => setAiAreaHint(e.target.value)}
-                    placeholder="地域ヒント（任意・例: 〇〇県〇〇市）"
-                    className="flex-1 px-3 py-2 rounded-xl bg-card border border-border text-[11px] font-medium placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-teal-500/40 focus:outline-hidden"
+                    value={aiSearchQuery}
+                    onChange={(e) => {
+                      setAiSearchQuery(e.target.value);
+                      setIsAiQueryManuallyEdited(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (!isAiLoading && (aiSearchQuery.trim() || formName.trim())) {
+                          void handleAiLookup();
+                        }
+                      }
+                    }}
+                    placeholder="検索する施設名（例: 〇〇市民球場、〇〇市 〇〇緑地野球場）"
+                    className="flex-1 px-3 py-2 rounded-xl bg-card border border-border text-[11px] font-bold placeholder:font-medium placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-teal-500/40 focus:outline-hidden"
                   />
                   <button
                     type="button"
                     onClick={() => void handleAiLookup()}
-                    disabled={isAiLoading || !formName.trim()}
+                    disabled={isAiLoading || (!aiSearchQuery.trim() && !formName.trim())}
                     className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
                   >
                     {isAiLoading ? (
@@ -1030,7 +1079,7 @@ export default function LiffGroundsPage() {
                 </div>
 
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
-                  自治体公式案内・Googleマップを横断検証し、住所・サーフェス・専用駐車場・スパイク規定を抽出します。
+                  施設名（必要なら自治体名も追記可）から公式案内・Googleマップを検証し、郵便番号付き住所・専用駐車場・スパイク規定を抽出します。
                 </p>
               </div>
 
@@ -1163,10 +1212,14 @@ export default function LiffGroundsPage() {
                               ? getCategoryOptionLabel(curValue)
                               : curValue;
                           const isSameAsCurrent = rawAiValue.trim() === curValue;
+                          const isPostalUpgradeOnly =
+                            key === "address" &&
+                            isPostalCodeOnlyUpgrade(curValue, rawAiValue);
                           const hasCustomExisting =
                             Boolean(editingVenue) &&
                             !isFieldEmptyOrDefault(key) &&
-                            !isSameAsCurrent;
+                            !isSameAsCurrent &&
+                            !isPostalUpgradeOnly;
                           const isFieldVerified = verifiedSet.has(key);
 
                           return (
@@ -1197,6 +1250,10 @@ export default function LiffGroundsPage() {
                                   {isSameAsCurrent ? (
                                     <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border text-[9.5px] font-bold">
                                       現在と同じ
+                                    </span>
+                                  ) : isPostalUpgradeOnly ? (
+                                    <span className="px-1.5 py-0.2 rounded bg-teal-600 text-white text-[9.5px] font-black">
+                                      郵便番号を補完
                                     </span>
                                   ) : hasCustomExisting ? (
                                     isChecked ? (
@@ -1343,7 +1400,7 @@ export default function LiffGroundsPage() {
                   type="text"
                   value={formAddress}
                   onChange={(e) => setFormAddress(e.target.value)}
-                  placeholder="例: 〇〇県〇〇市〇〇町1-1"
+                  placeholder="例: 〒000-0000 〇〇県〇〇市〇〇町1-1"
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border focus:ring-2 focus:ring-primary/40 focus:outline-hidden font-medium"
                 />
               </div>
