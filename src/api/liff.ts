@@ -70,6 +70,11 @@ import type { WorkerEnv, AuthUser } from "@/types/api";
 import { ensureAuthSchema, getAuth } from "@/lib/auth";
 import { canManageSystem, canManageTeam } from "@/lib/roles";
 import {
+  extractHeaderUserId,
+  extractHeaderUserName,
+  resolveCallerTeamAccess,
+} from "@/lib/team-access";
+import {
   buildGoogleMapsEmbedFromUrl,
   expandGoogleMapsShortUrl,
   isGoogleMapsShortUrl,
@@ -400,79 +405,15 @@ async function findAndAutoLinkMemberByUserTableName<
 }
 
 /**
- * 🌐 チーム横断での Web登録済みユーザー ↔ LINE `U...` 自動リンク補完（/my-status, /hub 初期アクセス用）
+ * 🔑 `account` テーブル経由での確定済み連携アカウントID展開
+ * ⚠️ 未承認・未招待ユーザーの他人名義混入を防ぐため、表示名によるチーム横断の推測紐付けは行わない。
  */
 async function autoLinkAndExpandCandidateUserIds(
   db: ReturnType<typeof drizzle>,
   rawIds: Array<string | null | undefined>,
-  searchNames: Array<string | null | undefined>
+  _searchNames?: Array<string | null | undefined>
 ): Promise<string[]> {
-  const initialExpanded = await expandCandidateUserIds(db, rawIds);
-
-  const queryCanonical = new Set<string>();
-  for (const s of searchNames) {
-    for (const c of buildCanonicalPersonNameSet(s)) {
-      if (c.length >= 2) queryCanonical.add(c);
-    }
-  }
-  if (queryCanonical.size === 0) return initialExpanded;
-
-  // すでにアクティブな team_members に紐づいている場合は追加クエリ不要（爆速維持）
-  if (initialExpanded.length > 0) {
-    try {
-      const existingHit = await db
-        .select({ id: teamMembers.id })
-        .from(teamMembers)
-        .where(
-          and(
-            inArray(teamMembers.userId, initialExpanded),
-            or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
-          )
-        )
-        .limit(1)
-        .get();
-      if (existingHit) return initialExpanded;
-    } catch {}
-  }
-
-  try {
-    const activeMemberUsers = await db
-      .select({
-        memberUserId: teamMembers.userId,
-        userName: user.name,
-      })
-      .from(teamMembers)
-      .innerJoin(user, eq(teamMembers.userId, user.id))
-      .where(or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`))
-      .all();
-
-    const matchedPrimaryUids = new Set<string>();
-    for (const row of activeMemberUsers) {
-      if (!row.memberUserId) continue;
-      const uNames = buildCanonicalPersonNameSet(row.userName);
-      for (const cn of uNames) {
-        if (queryCanonical.has(cn)) {
-          matchedPrimaryUids.add(row.memberUserId);
-          break;
-        }
-      }
-    }
-
-    if (matchedPrimaryUids.size === 1) {
-      const matchedPrimaryUid = Array.from(matchedPrimaryUids)[0];
-      const lineUid = rawIds
-        .map((id) => id?.trim() || "")
-        .find((id) => id.startsWith("U") && !IGNORED_MOCK_USER_IDS.has(id));
-      if (lineUid && matchedPrimaryUid !== lineUid) {
-        await ensureLineAccountLink(db, matchedPrimaryUid, lineUid);
-      }
-      return expandCandidateUserIds(db, [...rawIds, matchedPrimaryUid]);
-    }
-  } catch (err) {
-    console.warn("autoLinkAndExpandCandidateUserIds warning:", err);
-  }
-
-  return initialExpanded;
+  return expandCandidateUserIds(db, rawIds);
 }
 
 /**
@@ -976,25 +917,10 @@ app.get("/config", (c) => {
 app.get("/my-status", async (c) => {
   const db = drizzle(c.env.DB);
   const userId = c.req.query("userId");
-  const userName = c.req.query("userName");
 
   try {
-    let sessionUserId: string | undefined;
-    let sessionUserName: string | undefined;
-    try {
-      const auth = getAuth(c.env.DB, c.env);
-      const session = await auth.api
-        .getSession({ headers: c.req.raw.headers as unknown as Headers })
-        .catch(() => null);
-      sessionUserId = session?.user?.id;
-      sessionUserName = session?.user?.name || undefined;
-    } catch {}
-
-    const candidateIds = await autoLinkAndExpandCandidateUserIds(
-      db,
-      [userId, sessionUserId],
-      [userName, sessionUserName]
-    );
+    const access = await resolveCallerTeamAccess(c, [userId]);
+    const candidateIds = access.candidateUserIds;
     if (candidateIds.length === 0) {
       return c.json({
         success: true,
@@ -1004,40 +930,66 @@ app.get("/my-status", async (c) => {
       });
     }
 
-    const memberships = await db
-      .select({
-        memberId: teamMembers.id,
-        teamId: teamMembers.teamId,
-        role: teamMembers.role,
-        status: teamMembers.status,
-        teamName: teams.name,
-        managerName: teams.managerName,
-        orgName: organizations.name,
-        logoImageUrl: organizations.logoImageUrl,
-      })
-      .from(teamMembers)
-      .leftJoin(teams, eq(teamMembers.teamId, teams.id))
-      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-      .where(or(...candidateIds.map((uid) => eq(teamMembers.userId, uid))))
-      .all();
+    const [memberships, allTeamsRows] = await Promise.all([
+      db
+        .select({
+          memberId: teamMembers.id,
+          teamId: teamMembers.teamId,
+          role: teamMembers.role,
+          status: teamMembers.status,
+          teamName: teams.name,
+          managerName: teams.managerName,
+          orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+        })
+        .from(teamMembers)
+        .leftJoin(teams, eq(teamMembers.teamId, teams.id))
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(inArray(teamMembers.userId, candidateIds))
+        .all(),
+      access.isSystemAdmin || access.activeTeamIds.size > 0
+        ? db
+            .select({
+              id: teams.id,
+              name: teams.name,
+              orgName: organizations.name,
+              logoImageUrl: organizations.logoImageUrl,
+            })
+            .from(teams)
+            .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+            .all()
+        : Promise.resolve([]),
+    ]);
 
-    const activeTeams = memberships
-      .filter((m) => m.status === "active" && m.teamId)
-      .map((m) => ({
-        id: m.teamId,
+    const roleByTeamId = new Map<string, string>();
+    for (const m of memberships) {
+      if (m.status === "active" && m.teamId) {
+        roleByTeamId.set(m.teamId, m.role);
+      }
+    }
+
+    const activeTeams = allTeamsRows
+      .filter((t) => access.isSystemAdmin || access.activeTeamIds.has(t.id))
+      .map((t) => ({
+        id: t.id,
         name:
-          m.orgName && m.orgName !== m.teamName
-            ? `${m.orgName} ${m.teamName || "チーム"}`.trim()
-            : m.teamName || m.orgName || "チーム",
-        orgName: m.orgName || m.teamName || "チーム",
-        teamName: m.teamName || "チーム",
-        shortName: m.teamName || "チーム",
-        logoImageUrl: m.logoImageUrl || undefined,
-        role: m.role,
+          t.orgName && t.orgName !== t.name
+            ? `${t.orgName} ${t.name || "チーム"}`.trim()
+            : t.name || t.orgName || "チーム",
+        orgName: t.orgName || t.name || "チーム",
+        teamName: t.name || "チーム",
+        shortName: t.name || "チーム",
+        logoImageUrl: t.logoImageUrl || undefined,
+        role: roleByTeamId.get(t.id) || (access.canManageTeamId(t.id) ? "admin" : "member"),
       }));
 
     const pendingTeams = memberships
-      .filter((m) => m.status === "pending" && m.teamId)
+      .filter(
+        (m) =>
+          m.status === "pending" &&
+          m.teamId &&
+          !access.activeTeamIds.has(m.teamId)
+      )
       .map((m) => ({
         id: m.teamId,
         name:
@@ -1056,7 +1008,7 @@ app.get("/my-status", async (c) => {
       pendingTeams,
       isDemo: activeTeams.length === 0,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load user my-status:", error);
     return c.json({
       success: false,
@@ -1073,8 +1025,34 @@ app.get("/my-status", async (c) => {
 app.post("/join", async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
-    const { teamId, inviteCode, userId, userName, memberType = "parent", phone } = body;
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      inviteCode?: string;
+      userId?: string;
+      userName?: string;
+      memberType?: string;
+      phone?: string;
+    };
+    const {
+      teamId,
+      inviteCode,
+      userId: bodyUserId,
+      userName,
+      memberType = "parent",
+      phone,
+    } = body;
+
+    const access = await resolveCallerTeamAccess(c, [bodyUserId]);
+    const effectiveUserId =
+      (typeof bodyUserId === "string" && bodyUserId.trim()) ||
+      extractHeaderUserId(c) ||
+      access.sessionUser?.id ||
+      "";
+    const effectiveUserName =
+      (typeof userName === "string" && userName.trim()) ||
+      extractHeaderUserName(c) ||
+      access.sessionUser?.name ||
+      "";
 
     const code = (inviteCode || teamId || "").trim();
 
@@ -1093,138 +1071,115 @@ app.post("/join", async (c) => {
       });
     }
 
-    // 2. チーム特定ロジック（完全一致・前方一致・チーム名あいまい検索）
+    if (code.length < 6) {
+      return c.json(
+        {
+          success: false,
+          error: "正しいチーム招待コード（8文字以上）を入力してください。",
+        },
+        400
+      );
+    }
+
+    // 2. チーム特定ロジック（招待コード＝チームID完全一致、または8文字以上のUUID一意前方一致のみ許可）
     let targetTeam: { id: string; name: string } | undefined = undefined;
 
-    if (code) {
-      // ① ID完全一致
-      targetTeam = await db
+    // ① ID完全一致
+    targetTeam = await db
+      .select({ id: teams.id, name: teams.name })
+      .from(teams)
+      .where(eq(teams.id, code))
+      .get();
+
+    // ② 8文字以上のUUIDコードかつ1チームに一意特定できる場合のみ前方一致を許可（チーム名部分一致やDB先頭フォールバックは厳禁）
+    if (!targetTeam && code.length >= 8 && /^[0-9a-f-]+$/i.test(code)) {
+      const prefixMatches = await db
         .select({ id: teams.id, name: teams.name })
         .from(teams)
-        .where(eq(teams.id, code))
-        .get();
-
-      // ② ID大文字小文字無視 または 前方一致 (UUID先頭8文字など)
-      if (!targetTeam) {
-        targetTeam = await db
-          .select({ id: teams.id, name: teams.name })
-          .from(teams)
-          .where(sql`lower(${teams.id}) LIKE lower(${code + '%'})`)
-          .get();
-      }
-
-      // ③ チーム名でのあいまい検索
-      if (!targetTeam) {
-        targetTeam = await db
-          .select({ id: teams.id, name: teams.name })
-          .from(teams)
-          .where(sql`lower(${teams.name}) LIKE lower(${'%' + code + '%'})`)
-          .get();
-      }
-    }
-
-    // ④ もし指定チームが見つからず、DBにチームが1件のみ存在する場合はそのチームをフォールバック
-    if (!targetTeam) {
-      const allTeams = await db.select({ id: teams.id, name: teams.name }).from(teams).limit(2).all();
-      if (allTeams.length === 1) {
-        targetTeam = allTeams[0];
+        .where(sql`lower(${teams.id}) LIKE lower(${code + "%"})`)
+        .limit(2)
+        .all();
+      if (prefixMatches.length === 1) {
+        targetTeam = prefixMatches[0];
       }
     }
 
     if (!targetTeam) {
-      return c.json({
-        success: false,
-        error: "指定されたチームが見つかりませんでした。招待コードやチーム名をご確認ください。",
-      }, 404);
+      return c.json(
+        {
+          success: false,
+          error: "指定されたチームが見つかりませんでした。招待コードをご確認ください。",
+        },
+        404
+      );
     }
 
     const targetTeamId = targetTeam.id;
 
-    // 3. ユーザーの整合性チェック (外部キー制約違反を絶対に防止)
+    // 3. ユーザーの整合性チェック (外部キー制約違反を防止)
     let validUserId: string | null = null;
-    if (userId && typeof userId === "string" && userId.trim()) {
-      const uId = userId.trim();
+    if (
+      effectiveUserId &&
+      !IGNORED_MOCK_USER_IDS.has(effectiveUserId)
+    ) {
       try {
-        const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, uId)).get();
+        const userExists = await db
+          .select({ id: user.id })
+          .from(user)
+          .where(eq(user.id, effectiveUserId))
+          .get();
         if (userExists) {
           validUserId = userExists.id;
         } else {
-          // LINEユーザー用のレコードをuserテーブルに安全に作成
           await db.insert(user).values({
-            id: uId,
-            name: userName?.trim() || "LINEユーザー",
-            email: `${uId}@line.user`,
+            id: effectiveUserId,
+            name: effectiveUserName || "LINEユーザー",
+            email: `${effectiveUserId}@line.user`,
             emailVerified: false,
             role: "GUEST",
             createdAt: new Date(),
             updatedAt: new Date(),
           });
-          validUserId = uId;
+          validUserId = effectiveUserId;
         }
-      } catch (userInsertErr) {
-        // 万が一の重複や制約エラー時は null にフォールバック（team_members.user_id は Nullable なので安全）
+      } catch {
         validUserId = null;
       }
     }
 
-    // 4. 重複申請チェック (userId/account連携 または phone または 名前)
-    const joinCandidateIds = await expandCandidateUserIds(db, [validUserId, userId]);
-    let existing = null;
+    // 4. 確定済みアカウントID（userId / account テーブル）に基づく重複・所属チェック
+    // ⚠️ 入力された表示名や電話番号だけで未承認ユーザーを即時 active 昇格させることは絶対にしない
+    const joinCandidateIds = await expandCandidateUserIds(db, [
+      validUserId,
+      effectiveUserId,
+      access.sessionUser?.id,
+    ]);
+
+    if (access.canAccessTeam(targetTeamId)) {
+      return c.json({
+        success: true,
+        message: "すでにこのチームの承認済みメンバーとして登録されています",
+        status: "active",
+        teamId: targetTeamId,
+      });
+    }
+
+    let existingByAccount: typeof teamMembers.$inferSelect | undefined;
     if (joinCandidateIds.length > 0) {
-      existing = await db
+      existingByAccount = await db
         .select()
         .from(teamMembers)
         .where(
           and(
             eq(teamMembers.teamId, targetTeamId),
-            or(...joinCandidateIds.map((uid) => eq(teamMembers.userId, uid)))
+            inArray(teamMembers.userId, joinCandidateIds)
           )
         )
         .get();
     }
-    if (!existing && phone && phone.trim()) {
-      existing = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, targetTeamId), eq(teamMembers.phone, phone.trim())))
-        .get();
-    }
-    if (!existing && userName && userName.trim()) {
-      const cleanJoinName = userName.trim();
-      const allTargetMembers = await db
-        .select()
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, targetTeamId))
-        .all();
 
-      // Web登録済み user.name 照合 または 名簿名・家族苗字照合で既存アクティブメンバーを優先救済
-      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
-        db,
-        allTargetMembers,
-        [cleanJoinName],
-        typeof userId === "string" ? userId : null
-      );
-      const matchedByRosterName =
-        matchedByUserTable || findMatchingAdultMemberByName(allTargetMembers, [cleanJoinName]);
-
-      if (matchedByRosterName && (matchedByRosterName.status === "active" || !matchedByRosterName.status)) {
-        existing = matchedByRosterName;
-        if (validUserId && !matchedByRosterName.userId) {
-          await db
-            .update(teamMembers)
-            .set({ userId: validUserId })
-            .where(eq(teamMembers.id, matchedByRosterName.id));
-        } else if (matchedByRosterName.userId && userId && typeof userId === "string") {
-          await ensureLineAccountLink(db, matchedByRosterName.userId, userId);
-        }
-      } else {
-        existing =
-          allTargetMembers.find((m) => m.status === "pending" && m.name === cleanJoinName) || null;
-      }
-    }
-
-    if (existing) {
-      if (existing.status === "active") {
+    if (existingByAccount) {
+      if (existingByAccount.status === "active") {
         return c.json({
           success: true,
           message: "すでにこのチームのメンバーとして登録されています",
@@ -1240,16 +1195,46 @@ app.post("/join", async (c) => {
       });
     }
 
-    // 5. 参加申請の新規登録
+    // 同一名の未承認申請（pending）が既にある場合は重複レコード作成を防ぐ
+    if (effectiveUserName) {
+      const pendingSameName = await db
+        .select()
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.teamId, targetTeamId),
+            eq(teamMembers.status, "pending"),
+            eq(teamMembers.name, effectiveUserName)
+          )
+        )
+        .get();
+
+      if (pendingSameName) {
+        if (validUserId && !pendingSameName.userId) {
+          await db
+            .update(teamMembers)
+            .set({ userId: validUserId })
+            .where(eq(teamMembers.id, pendingSameName.id));
+        }
+        return c.json({
+          success: true,
+          message: "参加申請はすでに送信済みです。管理者の承認をお待ちください",
+          status: "pending",
+          teamId: targetTeamId,
+        });
+      }
+    }
+
+    // 5. 参加申請の新規登録（必ず status: "pending" で登録し、チーム管理者の承認を必須化）
     const newMemberId = `tm_${crypto.randomUUID()}`;
     await db.insert(teamMembers).values({
       id: newMemberId,
       teamId: targetTeamId,
       userId: validUserId,
-      name: userName?.trim() || "新規メンバー",
+      name: effectiveUserName || "新規メンバー",
       memberType: memberType || "parent",
       phone: phone?.trim() || null,
-      role: "parent",
+      role: "pending",
       status: "pending",
       joinedAt: new Date(),
     });
@@ -1260,17 +1245,24 @@ app.post("/join", async (c) => {
       status: "pending",
       teamId: targetTeamId,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to submit join request:", error);
-    return c.json({
-      success: false,
-      error: error?.message || "参加申請の送信に失敗しました",
-    }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "参加申請の送信に失敗しました",
+      },
+      500
+    );
   }
 });
 
 /**
  * チームHUB用総合データ取得API
+ * 🛡️ 厳格なチーム分離:
+ * - 未招待・未承認（`pending`）ユーザーには `DEMO_TEAM`（`demo-team`）のみを返却し、実在チーム名や実データは一切含めない。
+ * - 承認済みメンバーには自身が所属するチーム（＋体験デモチーム）のみを返却する。
  */
 app.get("/hub", async (c) => {
   await ensureEventColumns(c.env.DB);
@@ -1284,21 +1276,6 @@ app.get("/hub", async (c) => {
   const userName = c.req.query("userName");
 
   try {
-    // ユーザー特定（Better-Auth Cookie がある場合のみ getSession を実行） + 全チーム一覧を並列取得
-    const cookieHeader = c.req.header("cookie") || "";
-    const sessionPromise = cookieHeader.includes("better-auth")
-      ? (async () => {
-          try {
-            await ensureAuthSchema(c.env.DB);
-            const auth = getAuth(c.env.DB, c.env);
-            const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
-            return session?.user ?? null;
-          } catch {
-            return null;
-          }
-        })()
-      : Promise.resolve(null);
-
     const allTeamsPromise = db
       .select({
         id: teams.id,
@@ -1318,51 +1295,33 @@ app.get("/hub", async (c) => {
       .orderBy(desc(teams.createdAt))
       .all();
 
-    const [sessionUser, allTeams] = await Promise.all([sessionPromise, allTeamsPromise]);
+    const [access, allTeams] = await Promise.all([
+      resolveCallerTeamAccess(c, [userId]),
+      allTeamsPromise,
+    ]);
 
-    const authUserId = sessionUser?.id;
-    const authUserName = sessionUser?.name || undefined;
+    const sessionUser = access.sessionUser;
+    const candidateIdsArray = access.candidateUserIds;
+    const cleanName = (
+      userName ||
+      access.headerUserName ||
+      sessionUser?.name ||
+      ""
+    ).trim();
 
-    // 候補となるすべてのユーザーID（LINE userId + Web Better-Auth ID を account テーブル＆実名照合で展開）
-    const candidateIdsArray = await autoLinkAndExpandCandidateUserIds(
-      db,
-      [userId, authUserId],
-      [userName, authUserName]
+    // 確定済みの承認済み所属チームIDセット（表示名一致や未承認レコードは一切含めない）
+    const userTeamIds = access.isSystemAdmin
+      ? new Set(allTeams.map((t) => t.id))
+      : access.activeTeamIds;
+
+    // チームリストの生成: 承認済みの所属チームのみを抽出し、未招待・承認待ちユーザーには実在チームを一切露出させない
+    // ⚠️ 内部DBスキーマでは organizations.name (`orgName`) = チーム名、teams.name (`teamName`) = 構成名
+    const authorizedRealTeams = allTeams.filter(
+      (t) => access.isSystemAdmin || userTeamIds.has(t.id)
     );
 
-    // ユーザーが所属（承認済み）しているチームID一覧を1クエリで取得（userId または 名前一致を統合）
-    const userTeamIds = new Set<string>();
-    const cleanName = userName?.trim() || "";
-    const memberConditions = [];
-    if (candidateIdsArray.length > 0) {
-      memberConditions.push(inArray(teamMembers.userId, candidateIdsArray));
-    }
-    if (cleanName) {
-      memberConditions.push(eq(teamMembers.name, cleanName));
-    }
-    if (memberConditions.length > 0) {
-      try {
-        const memberships = await db
-          .select({ teamId: teamMembers.teamId })
-          .from(teamMembers)
-          .where(
-            and(
-              or(...memberConditions),
-              or(eq(teamMembers.status, "active"), sql`${teamMembers.status} IS NULL`)
-            )
-          )
-          .all();
-        for (const m of memberships) {
-          if (m.teamId) userTeamIds.add(m.teamId);
-        }
-      } catch {}
-    }
-
-    // チームリストの生成:
-    // ⚠️ 内部DBスキーマでは organizations.name (`orgName`) = チーム名、teams.name (`teamName`) = 構成名
-    // 所属チームを上位に表示しつつ、すべての有効なチームを選択可能にする
-    const teamList: Array<any> = allTeams
-      .map((t) => ({
+    const teamList = [
+      ...authorizedRealTeams.map((t) => ({
         id: t.id,
         name:
           t.orgName && t.orgName !== t.name
@@ -1379,16 +1338,10 @@ app.get("/hub", async (c) => {
           t.scorebookSymbolRules
         ),
         isDemo: false,
-        isMember: userTeamIds.has(t.id),
-      }))
-      .sort((a, b) => {
-        if (a.isMember && !b.isMember) return -1;
-        if (!a.isMember && b.isMember) return 1;
-        return 0;
-      });
-
-    // 体験デモチームは常時追加
-    teamList.push(DEMO_TEAM);
+        isMember: true,
+      })),
+      DEMO_TEAM,
+    ];
 
     const hubSessionUser = sessionUser?.id
       ? {
@@ -1398,7 +1351,7 @@ app.get("/hub", async (c) => {
         }
       : null;
 
-    // 🌟 0. 明示的に体験デモチームが要求された場合は、所属チームによる上書きを行わず即座にデモチームとして返却
+    // 🌟 0. 明示的に体験デモチームが要求された場合は即座にデモチームとして返却
     if (requestedTeamId === "demo-team") {
       const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
       return c.json({
@@ -1417,22 +1370,18 @@ app.get("/hub", async (c) => {
 
     let targetTeam: (typeof allTeams)[number] | null = null;
 
-    // 1. allTeams からメモリ上で即時解決（不要な再クエリを廃止）
+    // 1. リクエストされた teamId がある場合でも、必ず所属権限があるチーム（authorizedRealTeams）からのみ選択する
     if (requestedTeamId) {
-      targetTeam = allTeams.find((t) => t.id === requestedTeamId) || null;
+      targetTeam =
+        authorizedRealTeams.find((t) => t.id === requestedTeamId) || null;
     }
 
-    // 2. 指定がない場合でユーザーに所属チームがある場合は所属チームを自動選択
-    if (!targetTeam && userTeamIds.size > 0) {
-      const firstUserTeamId = Array.from(userTeamIds)[0];
-      targetTeam = allTeams.find((t) => t.id === firstUserTeamId) || null;
+    // 2. 指定がない（または権限外の旧キャッシュIDだった）場合で承認済み所属チームがある場合は先頭の所属チームを選択
+    if (!targetTeam && authorizedRealTeams.length > 0) {
+      targetTeam = authorizedRealTeams[0];
     }
 
-    // 3. それでも無ければ全チームの先頭チームを採用
-    if (!targetTeam && allTeams.length > 0) {
-      targetTeam = allTeams[0];
-    }
-
+    // 3. 所属チームが 0 件の未招待・承認待ちユーザーは、絶対に DB の他チームへフォールバックせず DEMO_TEAM を返却
     if (!targetTeam) {
       const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
       return c.json({
@@ -7850,45 +7799,23 @@ app.get("/admin/dashboard", async (c) => {
       return c.json({ success: false, error: "チームが見つかりません" }, 404);
     }
 
-    // 3. ユーザーの所属・権限チェック
-    const auth = getAuth(c.env.DB, c.env);
-    let sessionUser: AuthUser | null = null;
-    try {
-      const session = await auth.api.getSession({ headers: c.req.raw.headers });
-      sessionUser = (session?.user as AuthUser | undefined) ?? null;
-    } catch {}
-
-    const userName = c.req.query("userName");
-    let myRole: string = "viewer";
-    let isFounder = false;
-
-    // ① セッションまたは userId（LINE account連携含む）による特定
-    const rawCandidateIds = [userId, sessionUser?.id]
-      .map((v) => v?.trim())
-      .filter((v): v is string => Boolean(v && v !== "cached-user" && v !== "mock-user-12345"));
-
-    const expandedIdSet = new Set<string>(rawCandidateIds);
-    if (rawCandidateIds.length > 0) {
-      try {
-        const linkedAccounts = await db
-          .select({ userId: account.userId, accountId: account.accountId })
-          .from(account)
-          .where(
-            or(
-              inArray(account.accountId, rawCandidateIds),
-              inArray(account.userId, rawCandidateIds)
-            )
-          )
-          .all();
-        for (const row of linkedAccounts) {
-          if (row.userId) expandedIdSet.add(row.userId);
-          if (row.accountId) expandedIdSet.add(row.accountId);
-        }
-      } catch {}
+    // 3. ユーザーの所属・管理権限チェック（確定済みアカウントID・創設者・組織OWNER/ADMIN・SYSTEM_ADMINのみ）
+    // ⚠️ 特定個人名のハードコードや表示名一致による管理者昇格は厳禁
+    const access = await resolveCallerTeamAccess(c, [userId]);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "このチームへのアクセス権限がありません",
+          isForbidden: true,
+        },
+        403
+      );
     }
-    const candidateUserIds = Array.from(expandedIdSet);
 
-    let myMembership: typeof teamMembers.$inferSelect | undefined;
+    const candidateUserIds = access.candidateUserIds;
+    let myRole = "viewer";
+    let parsedSubRoles: string[] = [];
 
     if (candidateUserIds.length > 0) {
       const idMatches = await db
@@ -7897,140 +7824,52 @@ app.get("/admin/dashboard", async (c) => {
         .where(
           and(
             eq(teamMembers.teamId, teamId),
+            eq(teamMembers.status, "active"),
             inArray(teamMembers.userId, candidateUserIds)
           )
         )
         .all();
-      myMembership =
+
+      const myMembership =
         idMatches.find((m) => canManageTeam(m.role)) || idMatches[0];
-    }
 
-    // ② 名前による特定（LINEの表示名などの名簿照合）
-    const searchName = (userName || sessionUser?.name || "").trim();
-    if (searchName) {
-      const normalizedTarget = searchName.replace(/\s+/g, "");
-
-      const teamAllMembers = await db
-        .select()
-        .from(teamMembers)
-        .where(eq(teamMembers.teamId, teamId))
-        .all();
-
-      const matchedByName = teamAllMembers.find((m) => {
-        if (!m.name) return false;
-        const normalizedMember = m.name.replace(/\s+/g, "");
-        return normalizedMember.length >= 2 && normalizedMember === normalizedTarget;
-      });
-
-      if (matchedByName) {
-        if (!myMembership) {
-          myMembership = matchedByName;
-        }
-        // 未紐付けメンバーの場合は LINE userId または session userId を自動紐付け
-        const bindUid = userId || sessionUser?.id;
-        if (bindUid && !matchedByName.userId) {
+      if (myMembership) {
+        myRole = (myMembership.role || "viewer").toLowerCase();
+        if (myMembership.subRoles) {
           try {
-            await db
-              .update(teamMembers)
-              .set({ userId: bindUid })
-              .where(eq(teamMembers.id, matchedByName.id));
-          } catch {}
-        }
-      }
-    }
-
-    let parsedSubRoles: string[] = [];
-    if (myMembership) {
-      myRole = (myMembership.role || "viewer").toLowerCase();
-      if (myMembership.subRoles) {
-        try {
-          const parsed: unknown = JSON.parse(myMembership.subRoles);
-          if (Array.isArray(parsed)) {
-            parsedSubRoles = parsed
-              .filter((s): s is string => typeof s === "string")
-              .map((s) => s.toLowerCase());
+            const parsed: unknown = JSON.parse(myMembership.subRoles);
+            if (Array.isArray(parsed)) {
+              parsedSubRoles = parsed
+                .filter((s): s is string => typeof s === "string")
+                .map((s) => s.toLowerCase());
+            }
+          } catch {
+            parsedSubRoles = myMembership.subRoles
+              .split(",")
+              .map((s) => s.trim().toLowerCase())
+              .filter(Boolean);
           }
-        } catch {
-          parsedSubRoles = myMembership.subRoles
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .filter(Boolean);
+        }
+        if (canManageSystem(myRole, parsedSubRoles)) {
+          myRole = "admin";
+        } else if (canManageTeam(myRole, parsedSubRoles) && myRole !== "admin") {
+          myRole = "manager";
         }
       }
-      if (canManageSystem(myRole, parsedSubRoles)) {
-        myRole = "admin";
-      } else if (canManageTeam(myRole, parsedSubRoles) && myRole !== "admin") {
-        myRole = "manager";
-      }
     }
 
-    // ③ チーム創設者チェック
-    if (targetTeam.createdBy && candidateUserIds.includes(targetTeam.createdBy)) {
-      isFounder = true;
-    }
-
-    // ④ システム管理者・組織管理者・IT管理者の権限チェック
-    let isSystemAdmin =
-      sessionUser?.role === "SYSTEM_ADMIN" ||
-      sessionUser?.role === "admin";
-
-    if (!isSystemAdmin && candidateUserIds.length > 0) {
-      const [dbUsers, orgMemberRows] = await Promise.all([
-        db
-          .select({ role: user.role })
-          .from(user)
-          .where(inArray(user.id, candidateUserIds))
-          .all()
-          .catch(() => [] as Array<{ role: string | null }>),
-        targetTeam.organizationId
-          ? db
-              .select({ role: organizationMembers.role })
-              .from(organizationMembers)
-              .where(
-                and(
-                  eq(organizationMembers.organizationId, targetTeam.organizationId),
-                  inArray(organizationMembers.userId, candidateUserIds)
-                )
-              )
-              .all()
-              .catch(() => [] as Array<{ role: string }>)
-          : Promise.resolve([] as Array<{ role: string }>),
-      ]);
-
-      if (
-        dbUsers.some((u) => {
-          const r = (u.role || "").toLowerCase();
-          return r === "system_admin" || r === "admin";
-        })
-      ) {
-        isSystemAdmin = true;
-        if (myRole === "viewer") myRole = "admin";
-      } else if (
-        orgMemberRows.some((om) => {
-          const r = (om.role || "").toLowerCase();
-          return r === "owner" || r === "admin" || r === "manager" || r === "it_admin";
-        })
-      ) {
-        isSystemAdmin = true;
-        if (myRole === "viewer") myRole = "admin";
-      }
-    }
-
-    const isNamedAdmin =
-      searchName.includes("佐藤") ||
-      searchName.includes("守") ||
-      (sessionUser?.name || "").includes("佐藤") ||
-      (sessionUser?.name || "").includes("守");
-
-    if (isNamedAdmin && (myRole === "viewer" || !myMembership)) {
-      myRole = "admin";
-    }
-
+    const isFounder = Boolean(
+      targetTeam.createdBy && candidateUserIds.includes(targetTeam.createdBy)
+    );
     const canManage =
       isFounder ||
-      isSystemAdmin ||
-      canManageTeam(myRole, parsedSubRoles) ||
-      (isNamedAdmin && (myRole === "admin" || !myMembership));
+      access.isSystemAdmin ||
+      access.canManageTeamId(teamId) ||
+      canManageTeam(myRole, parsedSubRoles);
+
+    if (canManage && (myRole === "viewer" || myRole === "parent" || myRole === "player")) {
+      myRole = "admin";
+    }
 
     const orgMapsKey = (targetTeam.orgGoogleMapsApiKey || "").trim() || null;
     const effectiveMapsKey = envMapsKey || orgMapsKey;
@@ -8044,11 +7883,14 @@ app.get("/admin/dashboard", async (c) => {
     let subLabelsMap: Record<string, string> = {};
     try {
       if (targetTeam.memberSubLabels) {
-        subLabelsMap = JSON.parse(targetTeam.memberSubLabels);
+        subLabelsMap = JSON.parse(targetTeam.memberSubLabels) as Record<
+          string,
+          string
+        >;
       }
     } catch {}
 
-    // 5. メンバー一覧クエリ
+    // 5. メンバー一覧クエリ（連絡先・参加申請・招待コードはチーム管理権限保持者のみに開示）
     const allMembers = await db
       .select({
         memberId: teamMembers.id,
@@ -8071,7 +7913,9 @@ app.get("/admin/dashboard", async (c) => {
       .filter((m) => m.status === "pending")
       .map((m) => ({
         ...m,
-        joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : new Date().toISOString(),
+        joinedAt: m.joinedAt
+          ? new Date(m.joinedAt).toISOString()
+          : new Date().toISOString(),
       }));
 
     const activeMembers = allMembers
@@ -8095,20 +7939,20 @@ app.get("/admin/dashboard", async (c) => {
       canManage,
       myRole,
       googleMapsApiKey: canManage ? effectiveMapsKey : null,
-      googleMapsKeySource: mapsKeySource,
+      googleMapsKeySource: canManage ? mapsKeySource : "none",
       team: {
         id: targetTeam.id,
         name: `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim(),
         shortName: targetTeam.name,
-        inviteCode: targetTeam.id,
+        inviteCode: canManage ? targetTeam.id : "",
       },
       stats: {
-        pendingCount: pendingRequests.length,
+        pendingCount: canManage ? pendingRequests.length : 0,
         activeCount: activeMembers.length,
         playerCount: playersList.length,
       },
-      pendingRequests,
-      activeMembers,
+      pendingRequests: canManage ? pendingRequests : [],
+      activeMembers: canManage ? activeMembers : [],
     });
   } catch (error: any) {
     console.error("Failed to load admin dashboard:", error);
@@ -10133,7 +9977,7 @@ app.get("/tournaments", async (c) => {
   const teamId = c.req.query("teamId");
 
   try {
-    if (teamId === "demo-team") {
+    if (!teamId || teamId === "demo-team") {
       return c.json({
         success: true,
         isDemo: true,

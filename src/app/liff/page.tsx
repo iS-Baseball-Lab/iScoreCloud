@@ -307,10 +307,12 @@ export default function LiffHubPage() {
         <JoinTeamModal
           isOpen={isJoinModalOpen}
           onClose={() => setIsJoinModalOpen(false)}
-          onSuccess={() => {
-            setIsJoinModalOpen(false);
+          onSuccess={({ status }) => {
             void refreshTeams();
-            void loadHubData(currentTeam?.id, true);
+            if (status === "active") {
+              setIsJoinModalOpen(false);
+              void loadHubData(currentTeam?.id, true);
+            }
           }}
         />
       )}

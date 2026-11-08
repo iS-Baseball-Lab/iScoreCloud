@@ -1,37 +1,36 @@
-// src/api/seed.ts
+// filepath: src/api/seed.ts
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { getAuth } from '../lib/auth';
 import {
   organizations, organizationMembers, teams, teamMembers, players, matches
 } from '../db/schema';
-
+import { resolveCallerTeamAccess } from '../lib/team-access';
 import type { WorkerEnv } from '../types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.post('/', async (c) => {
-  const auth = getAuth(c.env.DB, c.env);
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any });
-  if (!session) return c.json({ error: 'Unauthorized' }, 401);
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401);
+  if (!access.isSystemAdmin) return c.json({ error: 'Forbidden' }, 403);
 
   const db = drizzle(c.env.DB);
-  const userId = session.user.id;
+  const userId = access.sessionUser.id;
 
   try {
     // ----------------------------------------------------
     // 1. クラブの作成
     // ----------------------------------------------------
-    const myOrg1_id = crypto.randomUUID(); // 川崎中央シニア
-    const myOrg2_id = crypto.randomUUID(); // 多摩川フレンズ (過去)
-    const oppOrg1_id = crypto.randomUUID(); // 横浜青葉シニア
-    const oppOrg2_id = crypto.randomUUID(); // 世田谷西シニア
+    const myOrg1_id = crypto.randomUUID();
+    const myOrg2_id = crypto.randomUUID();
+    const oppOrg1_id = crypto.randomUUID();
+    const oppOrg2_id = crypto.randomUUID();
 
     await db.insert(organizations).values([
-      { id: myOrg1_id, name: '川崎中央シニア', category: 'junior', createdAt: new Date() },
-      { id: myOrg2_id, name: '多摩川フレンズ', category: 'gakudo', createdAt: new Date() },
-      { id: oppOrg1_id, name: '横浜青葉シニア', category: 'junior', createdAt: new Date() },
-      { id: oppOrg2_id, name: '世田谷西シニア', category: 'junior', createdAt: new Date() },
+      { id: myOrg1_id, name: 'サンプル中央シニア', category: 'junior', createdAt: new Date() },
+      { id: myOrg2_id, name: 'サンプルフレンズ', category: 'gakudo', createdAt: new Date() },
+      { id: oppOrg1_id, name: '対戦相手Aシニア', category: 'junior', createdAt: new Date() },
+      { id: oppOrg2_id, name: '対戦相手Bシニア', category: 'junior', createdAt: new Date() },
     ]);
 
     await db.insert(organizationMembers).values([
@@ -44,9 +43,9 @@ app.post('/', async (c) => {
     // ----------------------------------------------------
     // 2. チームの作成
     // ----------------------------------------------------
-    const myTeam1_id = crypto.randomUUID(); // 川崎中央 1年生
-    const myTeam2_id = crypto.randomUUID(); // 多摩川 Aチーム
-    const oppTeam1_id = crypto.randomUUID(); // 横浜青葉 1年生
+    const myTeam1_id = crypto.randomUUID();
+    const myTeam2_id = crypto.randomUUID();
+    const oppTeam1_id = crypto.randomUUID();
 
     await db.insert(teams).values([
       { id: myTeam1_id, organizationId: myOrg1_id, name: '1年生チーム', year: 2026, tier: '1年生', createdBy: userId, createdAt: new Date() },
@@ -56,13 +55,12 @@ app.post('/', async (c) => {
 
     // 自分のチームにスコアラーとして所属
     await db.insert(teamMembers).values([
-      { id: crypto.randomUUID(), teamId: myTeam1_id, userId, role: 'SCORER', joinedAt: new Date() },
-      { id: crypto.randomUUID(), teamId: myTeam2_id, userId, role: 'SCORER', joinedAt: new Date() },
+      { id: crypto.randomUUID(), teamId: myTeam1_id, userId, role: 'SCORER', status: 'active', joinedAt: new Date() },
+      { id: crypto.randomUUID(), teamId: myTeam2_id, userId, role: 'SCORER', status: 'active', joinedAt: new Date() },
     ]);
 
     // ----------------------------------------------------
-    // 3. 選手データ（川崎中央シニア 1年生チーム）の作成
-    // 💡 拡張カラム（ポジションや投打）を追加してテストをリッチに！
+    // 3. 選手データの作成
     // ----------------------------------------------------
     const dummyPlayers = [
       { id: crypto.randomUUID(), teamId: myTeam1_id, name: '山田 太郎', uniformNumber: '1', primaryPosition: '1', throws: 'R', bats: 'R', createdAt: new Date() },
@@ -84,15 +82,13 @@ app.post('/', async (c) => {
       {
         id: crypto.randomUUID(),
         teamId: myTeam1_id,
-        // 💡 opponentTeamId は廃止されたため削除
-        opponent: '横浜青葉シニア',
-        // 💡 season は廃止されたため削除
+        opponent: '対戦相手Aシニア',
         date: '2026-03-10',
-        surfaceDetails: '多摩川河川敷グラウンド', // 💡 location から変更
+        surfaceDetails: '河川敷グラウンド',
         matchType: 'practice',
-        battingOrder: 'first', // 💡 'normal' を先攻の 'first' に変更
+        battingOrder: 'first',
         innings: 7,
-        status: 'finished', // 💡 'completed' を 'finished' に変更
+        status: 'finished',
         myScore: 5,
         opponentScore: 3,
         myInningScores: JSON.stringify([1, 0, 2, 0, 0, 0, 2]),

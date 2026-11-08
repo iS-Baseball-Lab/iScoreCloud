@@ -4,16 +4,21 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { UserPlus, Shield, CheckCircle2, Clock, X, AlertCircle, Loader2 } from "lucide-react";
-import { useLiff } from "./LiffProvider";
+import { EXPLICIT_DEMO_STORAGE_KEY, useLiff } from "./LiffProvider";
+
+export interface JoinTeamSuccessResult {
+  status: "pending" | "active";
+  teamId?: string;
+}
 
 interface JoinTeamModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (result: JoinTeamSuccessResult) => void;
 }
 
 export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps) {
-  const { profile, currentTeam } = useLiff();
+  const { profile } = useLiff();
   const [mounted, setMounted] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
   const [name, setName] = useState(profile?.displayName || "");
@@ -27,12 +32,19 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
     setMounted(true);
     if (typeof window !== "undefined") {
       const urlParams = new URLSearchParams(window.location.search);
-      const joinParam = urlParams.get("join") || urlParams.get("teamId") || urlParams.get("code");
-      if (joinParam) {
+      const joinParam = urlParams.get("join") || urlParams.get("code") || urlParams.get("teamId");
+      if (joinParam && joinParam !== "demo-team") {
         setInviteCode(joinParam);
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStatusResult(null);
+      setErrorMsg(null);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (profile?.displayName && !name) {
@@ -77,16 +89,19 @@ export function JoinTeamModal({ isOpen, onClose, onSuccess }: JoinTeamModalProps
         throw new Error(data.error || "チームが見つかりませんでした");
       }
 
+      const resolvedStatus: "pending" | "active" = data.status === "active" ? "active" : "pending";
       setStatusResult({
-        status: data.status || "pending",
+        status: resolvedStatus,
         message: data.message || "チーム参加申請を送信しました！",
       });
 
-      if (data.teamId) {
+      // 承認済み（active）の場合のみ選択チームを切り替え。pending の間は体験デモ（または既存の承認済みチーム）を維持する
+      if (resolvedStatus === "active" && data.teamId && data.teamId !== "demo-team") {
         localStorage.setItem("iscore_selectedTeamId", data.teamId);
+        localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
       }
 
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess({ status: resolvedStatus, teamId: data.teamId });
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error && err.message ? err.message : "参加申請に失敗しました");
     } finally {

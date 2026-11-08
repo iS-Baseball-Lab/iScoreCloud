@@ -33,6 +33,25 @@ import { DEFAULT_PRACTICE_MATCH_LABEL } from "@/lib/liff/scorebook-symbol-rules"
 
 export const DEMO_TEAM_DEFAULT_LOGO_URL = "/demo-team-logo.svg";
 const DEMO_TEAM_LOGO_CLEARED_SENTINEL = "__NONE__";
+const TEAMS_STORAGE_KEY = "iscore_teams_v2_json";
+const CURRENT_TEAM_STORAGE_KEY = "iscore_currentTeam_v2_json";
+export const EXPLICIT_DEMO_STORAGE_KEY = "iscore_explicit_demo";
+
+function purgeLegacyLeakedTeamStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("iscore_teams_json");
+    localStorage.removeItem("iscore_currentTeam_json");
+  } catch {
+    // ignore storage access errors
+  }
+}
+
+function isAllowedClientTeamItem(team: LiffTeamItem | null | undefined): team is LiffTeamItem {
+  if (!team || !team.id) return false;
+  if (team.id === "demo-team" || team.isDemo) return true;
+  return team.isMember === true;
+}
 
 function resolveDemoTeamLogoUrl(serverFallback?: string): string | undefined {
   if (typeof window !== "undefined") {
@@ -168,18 +187,21 @@ export function LiffProvider({
   const [error, setError] = useState<string | null>(null);
   const lastLoadedUserIdRef = useRef<string>("");
 
-  // チーム状態 (LocalStorageから同期的に完全なチームオブジェクトを取得)
+  // チーム状態 (LocalStorageから同期的に承認済みチームオブジェクトのみを取得・旧キャッシュは破棄)
   const [teams, setTeams] = useState<LiffTeamItem[]>(() => {
     if (typeof window !== "undefined") {
+      purgeLegacyLeakedTeamStorage();
       try {
-        const storedTeams = localStorage.getItem("iscore_teams_json");
+        const storedTeams = localStorage.getItem(TEAMS_STORAGE_KEY);
         if (storedTeams) {
           const parsed = JSON.parse(storedTeams) as LiffTeamItem[];
-          return parsed.map((t) =>
-            t.id === "demo-team" || t.isDemo
-              ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
-              : t
-          );
+          return parsed
+            .filter((t) => isAllowedClientTeamItem(t))
+            .map((t) =>
+              t.id === "demo-team" || t.isDemo
+                ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
+                : t
+            );
         }
       } catch {}
     }
@@ -195,8 +217,22 @@ export function LiffProvider({
 
   const [currentTeam, setCurrentTeam] = useState<LiffTeamItem | null>(() => {
     if (typeof window !== "undefined") {
+      purgeLegacyLeakedTeamStorage();
+      let authorizedTeamMap = new Map<string, LiffTeamItem>();
       try {
-        const storedTeamJson = localStorage.getItem("iscore_currentTeam_json");
+        const storedTeams = localStorage.getItem(TEAMS_STORAGE_KEY);
+        if (storedTeams) {
+          const parsedList = JSON.parse(storedTeams) as LiffTeamItem[];
+          authorizedTeamMap = new Map(
+            parsedList
+              .filter((t) => isAllowedClientTeamItem(t))
+              .map((t) => [t.id, t])
+          );
+        }
+      } catch {}
+
+      try {
+        const storedTeamJson = localStorage.getItem(CURRENT_TEAM_STORAGE_KEY);
         if (storedTeamJson) {
           const parsed = JSON.parse(storedTeamJson) as LiffTeamItem;
           if (parsed.id === "demo-team" || parsed.isDemo) {
@@ -205,26 +241,32 @@ export function LiffProvider({
               logoImageUrl: resolveDemoTeamLogoUrl(parsed.logoImageUrl),
             };
           }
-          return parsed;
+          if (isAllowedClientTeamItem(parsed) && authorizedTeamMap.has(parsed.id)) {
+            return parsed;
+          }
         }
       } catch {}
+
       const storedId = localStorage.getItem("iscore_selectedTeamId");
       const storedName = localStorage.getItem("iscore_selectedTeamName");
-      if (storedId) {
+      if (storedId === "demo-team") {
         return {
-          id: storedId,
-          name: storedName || "チーム",
-          orgName: storedName || "チーム",
-          teamName: storedName || "チーム",
-          shortName: storedName || "チーム",
-          logoImageUrl:
-            storedId === "demo-team" ? resolveDemoTeamLogoUrl() : undefined,
-          scoreTeamNameMode: loadTeamScoreNameDisplayMode(storedId, "organization"),
+          id: "demo-team",
+          name: storedName || "iScore ドリームス (体験デモ)",
+          orgName: "iScore ドリームス",
+          teamName: "体験デモチーム",
+          shortName: "ドリームス",
+          isDemo: true,
+          logoImageUrl: resolveDemoTeamLogoUrl(),
+          scoreTeamNameMode: loadTeamScoreNameDisplayMode("demo-team", "organization"),
           practiceMatchLabel: loadTeamPracticeMatchLabel(
-            storedId,
+            "demo-team",
             DEFAULT_PRACTICE_MATCH_LABEL
           ),
         };
+      }
+      if (storedId && authorizedTeamMap.has(storedId)) {
+        return authorizedTeamMap.get(storedId) || null;
       }
     }
     return null;
@@ -266,6 +308,7 @@ export function LiffProvider({
     if (teamId === "demo-team") {
       setIsDemo(true);
       localStorage.setItem("iscore_isDemo", "true");
+      localStorage.setItem(EXPLICIT_DEMO_STORAGE_KEY, "1");
       localStorage.setItem("iscore_selectedTeamId", "demo-team");
       const baseFound = teamsRef.current.find((t) => t.id === "demo-team") || {
         id: "demo-team",
@@ -289,22 +332,26 @@ export function LiffProvider({
       };
       setCurrentTeam(nextDemoTeam);
       localStorage.setItem("iscore_selectedTeamName", nextDemoTeam.name);
-      localStorage.setItem("iscore_currentTeam_json", JSON.stringify(nextDemoTeam));
+      localStorage.setItem(CURRENT_TEAM_STORAGE_KEY, JSON.stringify(nextDemoTeam));
       prefetchLiffCoreEndpoints({
         teamId: "demo-team",
         userId: storedUserId,
         userName: storedUserName,
       });
     } else {
+      const found = teamsRef.current.find(
+        (t) => t.id === teamId && isAllowedClientTeamItem(t)
+      );
+      if (!found) {
+        return;
+      }
       setIsDemo(false);
       localStorage.setItem("iscore_isDemo", "false");
+      localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
       localStorage.setItem("iscore_selectedTeamId", teamId);
-      const found = teamsRef.current.find((t) => t.id === teamId);
-      if (found) {
-        setCurrentTeam(found);
-        localStorage.setItem("iscore_selectedTeamName", found.name);
-        localStorage.setItem("iscore_currentTeam_json", JSON.stringify(found));
-      }
+      setCurrentTeam(found);
+      localStorage.setItem("iscore_selectedTeamName", found.name);
+      localStorage.setItem(CURRENT_TEAM_STORAGE_KEY, JSON.stringify(found));
       prefetchLiffCoreEndpoints({
         teamId,
         userId: storedUserId,
@@ -349,13 +396,23 @@ export function LiffProvider({
     setIsDemo(demoFlag);
     localStorage.setItem("iscore_isDemo", demoFlag ? "true" : "false");
 
-    const teamList = (data.teams || []).map((t) =>
-      t.id === "demo-team" || t.isDemo
-        ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
-        : t
-    );
+    // 要求した実チームIDが未承認・権限外でデモへ差し戻された場合、残留キャッシュを破棄
+    if (targetTeamId && targetTeamId !== "demo-team" && demoFlag) {
+      localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
+      invalidateLiffApiCache();
+    } else if (!demoFlag) {
+      localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
+    }
+
+    const teamList = (data.teams || [])
+      .filter((t) => isAllowedClientTeamItem(t))
+      .map((t) =>
+        t.id === "demo-team" || t.isDemo
+          ? { ...t, logoImageUrl: resolveDemoTeamLogoUrl(t.logoImageUrl) }
+          : t
+      );
     setTeams(teamList);
-    localStorage.setItem("iscore_teams_json", JSON.stringify(teamList));
+    localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(teamList));
 
     let activeTeam: LiffTeamItem | null = null;
     if (demoFlag || targetTeamId === "demo-team") {
@@ -384,17 +441,21 @@ export function LiffProvider({
     }
 
     if (!activeTeam && data.team?.id) {
-      activeTeam = {
-        id: data.team.id,
-        name: data.team.name,
-        orgName: data.team.orgName,
-        teamName: data.team.teamName,
-        shortName: data.team.shortName,
-        logoImageUrl: data.team.logoImageUrl,
-        isDemo: demoFlag,
-        scoreTeamNameMode: data.team.scoreTeamNameMode,
-        practiceMatchLabel: data.team.practiceMatchLabel,
-      };
+      const matchingListed = teamList.find((t) => t.id === data.team?.id);
+      if (matchingListed || demoFlag || data.team.id === "demo-team") {
+        activeTeam = matchingListed || {
+          id: data.team.id,
+          name: data.team.name,
+          orgName: data.team.orgName,
+          teamName: data.team.teamName,
+          shortName: data.team.shortName,
+          logoImageUrl: data.team.logoImageUrl,
+          isDemo: demoFlag,
+          isMember: !demoFlag,
+          scoreTeamNameMode: data.team.scoreTeamNameMode,
+          practiceMatchLabel: data.team.practiceMatchLabel,
+        };
+      }
     }
     if (!activeTeam && teamList.length > 0) {
       activeTeam = teamList[0];
@@ -432,7 +493,7 @@ export function LiffProvider({
         }
         return activeTeam;
       });
-      localStorage.setItem("iscore_currentTeam_json", JSON.stringify(activeTeam));
+      localStorage.setItem(CURRENT_TEAM_STORAGE_KEY, JSON.stringify(activeTeam));
       localStorage.setItem("iscore_selectedTeamId", activeTeam.id);
       localStorage.setItem("iscore_selectedTeamName", activeTeam.name);
 
@@ -451,7 +512,10 @@ export function LiffProvider({
       const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
       const urlTeamId = urlParams?.get("teamId");
       const storedTeamId = typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
-      const storedIsDemo = typeof window !== "undefined" ? localStorage.getItem("iscore_isDemo") === "true" : false;
+      const explicitDemo =
+        typeof window !== "undefined"
+          ? localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1"
+          : false;
       const storedUserId =
         typeof window !== "undefined"
           ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
@@ -464,7 +528,9 @@ export function LiffProvider({
         targetTeamId = urlTeamId;
       } else if (storedTeamId) {
         if (storedTeamId === "demo-team") {
-          if (storedIsDemo) targetTeamId = "demo-team";
+          // ユーザーが明示的に体験デモを選択した時のみ demo-team を固定維持する
+          // （初回匿名マウント時の自動デモ降格では固定せず、LIFF userId 確定後に実チームへ自動昇格させる）
+          if (explicitDemo) targetTeamId = "demo-team";
         } else {
           targetTeamId = storedTeamId;
         }
@@ -509,7 +575,7 @@ export function LiffProvider({
           logoImageUrl: normalized,
         };
         if (typeof window !== "undefined") {
-          localStorage.setItem("iscore_currentTeam_json", JSON.stringify(updated));
+          localStorage.setItem(CURRENT_TEAM_STORAGE_KEY, JSON.stringify(updated));
           if (prev.id === "demo-team" || prev.isDemo) {
             if (normalized === DEMO_TEAM_DEFAULT_LOGO_URL) {
               localStorage.removeItem("iscore_demo_team_logo");
@@ -536,7 +602,7 @@ export function LiffProvider({
           return sameTeamOrOrg ? { ...t, logoImageUrl: normalized } : t;
         });
         if (typeof window !== "undefined") {
-          localStorage.setItem("iscore_teams_json", JSON.stringify(updatedList));
+          localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(updatedList));
         }
         return updatedList;
       });

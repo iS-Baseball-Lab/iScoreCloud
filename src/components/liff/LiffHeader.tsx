@@ -121,6 +121,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
   const displayName = profile?.displayName || "メンバー";
   const userInitial = displayName.slice(0, 1).toUpperCase();
+  const visibleTeams = teams.filter(
+    (t) => Boolean(t.id === "demo-team" || t.isDemo || t.isMember)
+  );
 
   return (
     <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
@@ -197,7 +200,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 チーム切り替え
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {teams.map((t) => (
+              {visibleTeams.map((t) => (
                 <DropdownMenuItem
                   key={t.id}
                   onClick={() => {
@@ -433,10 +436,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
       <JoinTeamModal
         isOpen={isJoinModalOpen}
         onClose={() => setIsJoinModalOpen(false)}
-        onSuccess={() => {
-          setIsJoinModalOpen(false);
+        onSuccess={({ status }) => {
           void refreshTeams();
-          navigateToLiffRoot(router, pathname);
+          if (status === "active") {
+            setIsJoinModalOpen(false);
+            navigateToLiffRoot(router, pathname);
+          }
         }}
       />
     </header>

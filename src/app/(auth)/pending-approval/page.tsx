@@ -1,16 +1,14 @@
 // filepath: src/app/(auth)/pending-approval/page.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Send, Clock, ShieldQuestion, LogOut } from "lucide-react"; // 💡 LogOutアイコンを追加、ArrowLeftを削除
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
+import { Loader2, Send, Clock, ShieldQuestion, LogOut } from "lucide-react";
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 💡 型定義 (Type Safety)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 type ViewState = "input" | "pending";
 
 interface Membership {
@@ -25,6 +23,10 @@ interface AuthMeResponse {
   success: boolean;
   data?: {
     id: string;
+    name?: string;
+    image?: string;
+    role?: string;
+    systemRole?: string;
     memberships: Membership[];
   };
   error?: string;
@@ -36,36 +38,66 @@ interface JoinTeamResponse {
   error?: string;
 }
 
+function clearClientAuthAndTeamStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("iscore_auth_cache_active");
+    localStorage.removeItem("iscore_selectedTeamId");
+    localStorage.removeItem("iscore_selectedTeamName");
+    localStorage.removeItem("iscore_selectedTeamCategory");
+    localStorage.removeItem("iscore_selectedTeamLogo");
+    localStorage.removeItem("iscore_selectedTeamLegend");
+    localStorage.removeItem("iscore_teams_json");
+    localStorage.removeItem("iscore_teams_v2_json");
+    localStorage.removeItem("iscore_currentTeam_json");
+    localStorage.removeItem("iscore_currentTeam_v2_json");
+    localStorage.removeItem("iscore_user_id");
+    localStorage.removeItem("iscore_userId");
+    localStorage.removeItem("iscore_user_name");
+    localStorage.removeItem("iscore_user_avatar");
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export default function PendingApprovalPage() {
   const router = useRouter();
   const [view, setView] = useState<ViewState>("input");
   const [inviteCode, setInviteCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false); // 💡 ログアウト中のローディング状態
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isChecking, setIsChecking] = useState(false); // 💡 ステータス手動確認中のローディング
+  const [isChecking, setIsChecking] = useState(false);
 
   // ─── ステータスの確認と自動ダッシュボード遷移 ───
-  const checkStatus = async (showToast = false) => {
+  const checkStatus = useCallback(async (showToast = false) => {
     if (showToast) setIsChecking(true);
     try {
-      const res = await fetch("/api/auth/me");
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      if (res.status === 401) {
+        clearClientAuthAndTeamStorage();
+        router.replace("/login");
+        return;
+      }
       if (!res.ok) throw new Error("ネットワークエラー");
 
       const json = (await res.json()) as AuthMeResponse;
 
-      if (json.success && json.data?.memberships) {
-        const memberships = json.data.memberships;
-        const hasActive = memberships.some(m => m.status === "active");
-        const hasPending = memberships.some(m => m.status === "pending");
+      if (json.success && json.data) {
+        const isSystemAdmin =
+          json.data.systemRole === "SYSTEM_ADMIN" ||
+          json.data.role === "SYSTEM_ADMIN";
+        const memberships = json.data.memberships || [];
+        const hasActive = memberships.some((m) => m.status === "active");
+        const hasPending = memberships.some((m) => m.status === "pending");
 
-        // 🌟 承認されている場合、ログアウト不要で即座にダッシュボードへ遷移！
-        if (hasActive) {
+        // 🌟 承認されている場合、または SYSTEM_ADMIN の場合はダッシュボードへ遷移
+        if (hasActive || isSystemAdmin) {
           toast.success("チームへの参加が承認されました！ダッシュボードに遷移します。");
           if (typeof window !== "undefined") {
             localStorage.setItem("iscore_auth_cache_active", "true");
           }
-          router.replace("/");
+          router.replace("/dashboard");
           return;
         }
 
@@ -90,23 +122,20 @@ export default function PendingApprovalPage() {
       if (showToast) setIsChecking(false);
       setIsLoading(false);
     }
-  };
+  }, [router]);
 
-  // ─── 初期チェック ＆ 自動ステータス確認ポーリング（現場の利便性向上） ───
+  // ─── 初期チェック ＆ 自動ステータス確認ポーリング ───
   useEffect(() => {
-    // 初回マウント時チェック
-    checkStatus(false);
+    void checkStatus(false);
 
-    // 💡 10秒間隔のサイレント自動ポーリングで承認をリアルタイム検知！
     const interval = setInterval(() => {
-      // 承認待ち画面かつブラウザがアクティブな時のみポーリングを実行し、無駄なギガ・パケット消費を削減
       if (view === "pending" && document.visibilityState === "visible") {
-        checkStatus(false);
+        void checkStatus(false);
       }
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [view]);
+  }, [view, checkStatus]);
 
   // ─── チーム参加申請処理 ───
   const handleJoin = async (e: React.FormEvent) => {
@@ -129,9 +158,7 @@ export default function PendingApprovalPage() {
 
       toast.success(json.message || "チームへの参加申請を送信しました！");
       setView("pending");
-      // 💡 申請完了直後にステータスをもう一度バックグラウンド同期
-      checkStatus(false);
-
+      void checkStatus(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参加申請に失敗しました。");
     } finally {
@@ -139,18 +166,17 @@ export default function PendingApprovalPage() {
     }
   };
 
-  // ─── 💡 ログアウト処理 ───
+  // ─── ログアウト処理（Better-Auth セッション破棄 ＋ ローカルストレージ消去） ───
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      // 💡 i-Scoreの認証機構（Auth.js / NextAuth等）のサインアウトエンドポイントへリクエスト
-      const res = await fetch("/api/auth/signout", { method: "POST" });
-
+      const { authClient } = await import("@/lib/auth-client");
+      await authClient.signOut();
+      clearClientAuthAndTeamStorage();
       toast.success("ログアウトしました");
-      // セッションをクリアしたため、安全にログイン画面（またはトップ）へ戻す
       router.push("/login");
-    } catch (error) {
-      // 通信エラーなどのフォールバック処理として、強制的に画面を切り替えて安全を担保
+    } catch {
+      clearClientAuthAndTeamStorage();
       router.push("/login");
     } finally {
       setIsLoggingOut(false);
@@ -194,7 +220,7 @@ export default function PendingApprovalPage() {
                 <Input
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
-                  placeholder="例: 01HGW..."
+                  placeholder="例: 0a074b27-..."
                   className="h-12 text-xs sm:text-sm font-mono tracking-tight text-center rounded-[var(--radius-xl)] bg-muted/40 border-border focus:bg-background transition-colors"
                   maxLength={50}
                   required
@@ -217,7 +243,18 @@ export default function PendingApprovalPage() {
                   )}
                 </Button>
 
-                {/* 💡 不自然なダッシュボードへの導線を廃して、ログアウトボタンへ変更 */}
+                <div className="pt-2 border-t border-border space-y-2">
+                  <p className="text-[11px] font-bold text-muted-foreground text-center">
+                    招待コードを待つ間、LINEミニアプリで体験デモチームをお試しいただけます
+                  </p>
+                  <OpenLineMiniAppButton
+                    variant="banner"
+                    teamId="demo-team"
+                    teamName="体験デモチーム"
+                    compact
+                  />
+                </div>
+
                 <Button
                   type="button"
                   variant="ghost"
@@ -253,13 +290,13 @@ export default function PendingApprovalPage() {
               </h1>
               <p className="text-sm font-bold text-muted-foreground leading-relaxed">
                 チームへの参加申請を送信しました。<br />
-                承認されるまで、しばらくお待ちください。
+                管理者に承認されるまで、実チームのデータは非公開となります。
               </p>
             </div>
 
             <div className="pt-4 space-y-3">
               <Button
-                onClick={() => checkStatus(true)}
+                onClick={() => void checkStatus(true)}
                 disabled={isLoggingOut || isChecking}
                 variant="outline"
                 className="w-full h-12 rounded-[var(--radius-xl)] font-black border-border shadow-sm flex items-center justify-center gap-2"
@@ -270,7 +307,18 @@ export default function PendingApprovalPage() {
                 ステータスを更新
               </Button>
 
-              {/* 💡 待合室側も、一度離脱してやり直せるようにログアウトボタンへ変更 */}
+              <div className="pt-2 border-t border-border space-y-2 text-left">
+                <p className="text-[11px] font-bold text-muted-foreground text-center">
+                  承認待ちの間も、体験デモチームで操作感をお試しいただけます
+                </p>
+                <OpenLineMiniAppButton
+                  variant="banner"
+                  teamId="demo-team"
+                  teamName="体験デモチーム"
+                  compact
+                />
+              </div>
+
               <Button
                 type="button"
                 onClick={handleLogout}

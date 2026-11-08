@@ -373,7 +373,7 @@ liffScorebookRouter.get("/context", async (c) => {
   const requestedTeamId = (c.req.query("teamId") || "").trim();
 
   try {
-    if (requestedTeamId === "demo-team") {
+    if (!requestedTeamId || requestedTeamId === "demo-team") {
       return c.json({
         success: true,
         isDemo: true,
@@ -384,35 +384,24 @@ liffScorebookRouter.get("/context", async (c) => {
     }
 
     // ⚠️ 内部DBスキーマでは organizations.name (`orgName`) = チーム名、teams.name (`name`) = 構成名
-    const targetTeam = requestedTeamId
-      ? await db
-        .select({
-          id: teams.id,
-          name: teams.name,
-          orgName: organizations.name,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .where(eq(teams.id, requestedTeamId))
-        .get()
-      : await db
-        .select({
-          id: teams.id,
-          name: teams.name,
-          orgName: organizations.name,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .get();
+    // 🛡️ 無関係な先頭チームへのフォールバックを完全廃止（必ず指定された所属チームIDのみを参照）
+    const targetTeam = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        orgName: organizations.name,
+        scorebookLegendUrl: teams.scorebookLegendUrl,
+        scorebookSymbolRules: teams.scorebookSymbolRules,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, requestedTeamId))
+      .get();
 
     if (!targetTeam) {
       return c.json({
         success: true,
-        isDemo: !requestedTeamId,
+        isDemo: false,
         team: null,
         roster: [] as ScorebookRosterPlayer[],
         matches: [] as ScorebookMatchSummary[],
@@ -567,22 +556,18 @@ liffScorebookRouter.post("/legend", async (c) => {
       });
     }
 
-    const targetTeam = requestedTeamId
-      ? await db
-        .select({
-          id: teams.id,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-        })
-        .from(teams)
-        .where(eq(teams.id, requestedTeamId))
-        .get()
-      : await db
-        .select({
-          id: teams.id,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-        })
-        .from(teams)
-        .get();
+    if (!requestedTeamId) {
+      return c.json({ success: false, error: "対象チームIDが指定されていません" }, 400);
+    }
+
+    const targetTeam = await db
+      .select({
+        id: teams.id,
+        scorebookLegendUrl: teams.scorebookLegendUrl,
+      })
+      .from(teams)
+      .where(eq(teams.id, requestedTeamId))
+      .get();
 
     if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -743,22 +728,18 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       });
     }
 
-    const targetTeam = requestedTeamId
-      ? await db
-        .select({
-          id: teams.id,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .where(eq(teams.id, requestedTeamId))
-        .get()
-      : await db
-        .select({
-          id: teams.id,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .get();
+    if (!requestedTeamId) {
+      return c.json({ success: false, error: "対象チームIDが指定されていません" }, 400);
+    }
+
+    const targetTeam = await db
+      .select({
+        id: teams.id,
+        scorebookSymbolRules: teams.scorebookSymbolRules,
+      })
+      .from(teams)
+      .where(eq(teams.id, requestedTeamId))
+      .get();
 
     if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -859,27 +840,18 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   try {
     const body = (await c.req.json()) as ExtractTeamSymbolRulesPayload;
     const requestedTeamId = (body.teamId || "").trim();
-    const isDemoTeamRequest = requestedTeamId === "demo-team";
+    const isDemoTeamRequest = !requestedTeamId || requestedTeamId === "demo-team";
     const targetTeam = isDemoTeamRequest
       ? undefined
-      : requestedTeamId
-      ? await db
-        .select({
-          id: teams.id,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .where(eq(teams.id, requestedTeamId))
-        .get()
       : await db
-        .select({
-          id: teams.id,
-          scorebookLegendUrl: teams.scorebookLegendUrl,
-          scorebookSymbolRules: teams.scorebookSymbolRules,
-        })
-        .from(teams)
-        .get();
+          .select({
+            id: teams.id,
+            scorebookLegendUrl: teams.scorebookLegendUrl,
+            scorebookSymbolRules: teams.scorebookSymbolRules,
+          })
+          .from(teams)
+          .where(eq(teams.id, requestedTeamId))
+          .get();
 
     if (!targetTeam && !isDemoTeamRequest) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
@@ -1012,12 +984,23 @@ liffScorebookRouter.post("/create-match", async (c) => {
       return c.json({ success: false, error: "対戦相手名を入力してください" }, 400);
     }
 
-    let targetTeam = body.teamId
-      ? await db.select({ id: teams.id }).from(teams).where(eq(teams.id, body.teamId)).get()
-      : undefined;
-    if (!targetTeam) {
-      targetTeam = await db.select({ id: teams.id }).from(teams).get();
+    const requestedTeamId = (body.teamId || "").trim();
+    if (!requestedTeamId || requestedTeamId === "demo-team") {
+      return c.json(
+        {
+          success: true,
+          isDemo: true,
+          matchId: `demo-match-${Date.now()}`,
+        },
+        200
+      );
     }
+
+    const targetTeam = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.id, requestedTeamId))
+      .get();
     if (!targetTeam) {
       return c.json({ success: false, error: "チームが見つかりません" }, 404);
     }

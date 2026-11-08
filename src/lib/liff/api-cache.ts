@@ -20,10 +20,17 @@ interface RawFetchSnapshot {
   bodyText: string;
 }
 
-const LEGACY_SESSION_CACHE_PREFIXES = ["iscore_swr_v1:", "iscore_swr_v2:"] as const;
-const LEGACY_PERSISTENT_CACHE_PREFIXES = ["iscore_swr_l3_v1:"] as const;
-const SESSION_CACHE_PREFIX = "iscore_swr_v3:";
-const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v2:";
+const LEGACY_SESSION_CACHE_PREFIXES = [
+  "iscore_swr_v1:",
+  "iscore_swr_v2:",
+  "iscore_swr_v3:",
+] as const;
+const LEGACY_PERSISTENT_CACHE_PREFIXES = [
+  "iscore_swr_l3_v1:",
+  "iscore_swr_l3_v2:",
+] as const;
+const SESSION_CACHE_PREFIX = "iscore_swr_v4:";
+const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v3:";
 const DEFAULT_FRESH_MS = 15_000; // 15秒以内は完全フレッシュ扱い
 const FAST_RETURN_STALE_MS = 90_000; // 90秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
 const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
@@ -93,8 +100,94 @@ function purgeLegacySessionCache(): void {
   }
 }
 
+const IGNORED_CLIENT_USER_IDS = new Set([
+  "cached-user",
+  "mock-user-12345",
+  "undefined",
+  "null",
+]);
+
+function getActiveClientUserId(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw =
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const trimmed = raw.trim();
+    return trimmed && !IGNORED_CLIENT_USER_IDS.has(trimmed) ? trimmed : "";
+  } catch {
+    return "";
+  }
+}
+
+function getActiveClientUserName(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return (localStorage.getItem("iscore_user_name") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function extractPathFromCacheKey(key: string): string {
+  const sepIdx = key.indexOf("::");
+  return sepIdx >= 0 ? key.slice(sepIdx + 2) : key;
+}
+
+function shouldAttachClientAuthHeaders(rawUrl: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const u = new URL(rawUrl, window.location.origin);
+    if (u.origin !== window.location.origin) return false;
+    if (!u.pathname.startsWith("/api/")) return false;
+    if (
+      u.pathname.startsWith("/api/auth/") ||
+      u.pathname.startsWith("/api/images/")
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function withSameOriginApiAuthHeaders(
+  rawUrl: string,
+  input: RequestInfo | URL,
+  init?: RequestInit
+): { nextInput: RequestInfo | URL; nextInit: RequestInit | undefined } {
+  if (!shouldAttachClientAuthHeaders(rawUrl)) {
+    return { nextInput: input, nextInit: init };
+  }
+  const uid = getActiveClientUserId();
+  const uName = getActiveClientUserName();
+  if (!uid && !uName) {
+    return { nextInput: input, nextInit: init };
+  }
+  try {
+    const headers = new Headers(
+      init?.headers || (input instanceof Request ? input.headers : undefined)
+    );
+    if (uid && /^[\x20-\x7E]+$/.test(uid) && !headers.has("x-liff-user-id")) {
+      headers.set("X-Liff-User-Id", uid);
+    }
+    if (uName && !headers.has("x-liff-user-name")) {
+      headers.set("X-Liff-User-Name", encodeURIComponent(uName));
+    }
+    return {
+      nextInput: input,
+      nextInit: { ...init, headers },
+    };
+  } catch {
+    return { nextInput: input, nextInit: init };
+  }
+}
+
 function isPersistentEligibleKey(key: string): boolean {
-  return PERSISTENT_ELIGIBLE_PREFIXES.some((prefix) => key.startsWith(prefix));
+  const pathPart = extractPathFromCacheKey(key);
+  return PERSISTENT_ELIGIBLE_PREFIXES.some((prefix) => pathPart.startsWith(prefix));
 }
 
 function prunePersistentCacheIfNeeded(): void {
@@ -131,14 +224,17 @@ function prunePersistentCacheIfNeeded(): void {
 function shouldPersistResponseToCache(key: string, data: unknown): boolean {
   if (!data || typeof data !== "object") return true;
   const record = data as Record<string, unknown>;
-  if (record.success === false) return false;
+  if (record.success === false || record.isForbidden === true) return false;
+
+  const pathPart = extractPathFromCacheKey(key);
 
   // 認証ユーザー指定ありで権限（memberId / playerIds）が未解決のレスポンスはキャッシュ固定化させない（承認・統合直後の権限ロック防止）
   const hasIdentityQuery =
-    (key.includes("userId=") && !key.includes("userId=&")) ||
-    (key.includes("userName=") && !key.includes("userName=&"));
+    Boolean(getActiveClientUserId()) ||
+    (pathPart.includes("userId=") && !pathPart.includes("userId=&")) ||
+    (pathPart.includes("userName=") && !pathPart.includes("userName=&"));
 
-  if (hasIdentityQuery && key.startsWith("/api/liff/attendance-matrix")) {
+  if (hasIdentityQuery && pathPart.startsWith("/api/liff/attendance-matrix")) {
     const myInfo = record.myInfo as
       | { memberId?: string | null; memberIds?: string[]; playerIds?: string[]; isITAdmin?: boolean }
       | undefined;
@@ -151,7 +247,7 @@ function shouldPersistResponseToCache(key: string, data: unknown): boolean {
     if (!hasResolvedIdentity) return false;
   }
 
-  if (hasIdentityQuery && key.startsWith("/api/liff/my-family")) {
+  if (hasIdentityQuery && pathPart.startsWith("/api/liff/my-family")) {
     const hasMember = Boolean(record.memberId);
     const children = record.children;
     const hasChildren = Array.isArray(children) && children.length > 0;
@@ -185,11 +281,13 @@ function shouldCacheApiPath(pathname: string): boolean {
 
 function normalizeCacheKey(rawUrl: string): string | null {
   if (typeof window === "undefined") return rawUrl;
+  const cleanTarget = extractPathFromCacheKey(rawUrl);
   try {
-    const u = new URL(rawUrl, window.location.origin);
+    const u = new URL(cleanTarget, window.location.origin);
     if (u.origin !== window.location.origin) return null;
     if (!shouldCacheApiPath(u.pathname)) return null;
-    return `${u.pathname}${u.search}`;
+    const userScope = getActiveClientUserId() || "anon";
+    return `${userScope}::${u.pathname}${u.search}`;
   } catch {
     return null;
   }
@@ -312,8 +410,9 @@ export function peekLiffApiCache<T>(url: string): T | null {
 /**
  * 重複排除付きのネットワーク JSON フェッチ（成功時キャッシュ更新・常にネイティブ fetch を使用）
  */
-export async function fetchLiffJsonFresh<T>(url: string): Promise<T> {
-  const key = normalizeCacheKey(url) || url;
+export async function fetchLiffJsonFresh<T>(urlOrKey: string): Promise<T> {
+  const fetchUrl = extractPathFromCacheKey(urlOrKey);
+  const key = normalizeCacheKey(fetchUrl) || urlOrKey;
   const existing = inflightRequests.get(key);
   if (existing) {
     return existing as Promise<T>;
@@ -323,7 +422,12 @@ export async function fetchLiffJsonFresh<T>(url: string): Promise<T> {
   const baseFetch = getNativeFetch();
   const reqPromise = (async () => {
     try {
-      const res = await baseFetch(url, { cache: "no-store" });
+      const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
+        fetchUrl,
+        fetchUrl,
+        { cache: "no-store" }
+      );
+      const res = await baseFetch(nextInput, nextInit);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -465,18 +569,24 @@ export function installLiffFastFetchCache(): void {
         ? input.toString()
         : input.url;
 
+    const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
+      rawUrl,
+      input,
+      init
+    );
+
     const cacheKey = normalizeCacheKey(rawUrl);
 
-    // 対象外のURL（外部URL・認証API・画像バイナリ等）はそのままネイティブ fetch へ委譲
+    // 対象外のURL（外部URL・認証API・画像バイナリ・ポーリング専用API等）はヘッダー付与済みでそのままネイティブ fetch へ委譲
     if (!cacheKey) {
-      return baseFetch(input, init);
+      return baseFetch(nextInput, nextInit);
     }
 
     // 更新系リクエスト（POST / PUT / PATCH / DELETE）は実行直後にキャッシュを全クリアして最新状態を保証
     if (method !== "GET") {
       invalidateLiffApiCache();
       try {
-        const res = await baseFetch(input, init);
+        const res = await baseFetch(nextInput, nextInit);
         invalidateLiffApiCache();
         return res;
       } catch (err) {
@@ -519,7 +629,10 @@ export function installLiffFastFetchCache(): void {
       const startEpoch = cacheMutationEpoch;
       pending = (async () => {
         try {
-          const res = await baseFetch(input, { ...init, cache: "no-store" });
+          const res = await baseFetch(nextInput, {
+            ...nextInit,
+            cache: "no-store",
+          });
           const contentType = res.headers.get("content-type") || "";
           const bodyText = await res.text();
 

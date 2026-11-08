@@ -10,6 +10,7 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { MatchScoreCard, MatchScoreCardSkeleton, type MatchCardData } from "@/components/liff/MatchScoreCard";
 import { Match, type MatchDayOps } from "@/types/match";
 import {
+  EXPLICIT_DEMO_STORAGE_KEY,
   useLiff,
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
@@ -833,19 +834,27 @@ function MatchesContent() {
 
     const storedTeamId =
       typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
-    const storedIsDemo =
-      typeof window !== "undefined" ? localStorage.getItem("iscore_isDemo") === "true" : false;
+    const explicitDemo =
+      typeof window !== "undefined"
+        ? localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1"
+        : false;
 
     let resolvedTeamId =
       currentTeam?.id ||
-      (storedTeamId && (storedTeamId !== "demo-team" || storedIsDemo) ? storedTeamId : null);
+      (storedTeamId && (storedTeamId !== "demo-team" || explicitDemo) ? storedTeamId : null);
 
     try {
-      // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から実チームIDを解決
+      // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から承認済みチームID（または demo-team）を解決
       if (!resolvedTeamId) {
         setIsListLoading(true);
         try {
-          const hubRes = await fetch("/api/liff/hub", { cache: "no-store" });
+          const hubRes = await fetch(
+            buildLiffHubUrl({
+              userId: profile?.userId,
+              userName: profile?.displayName,
+            }),
+            { cache: "no-store" }
+          );
           if (hubRes.ok) {
             const hubData = (await hubRes.json()) as {
               isDemo?: boolean;
@@ -893,6 +902,10 @@ function MatchesContent() {
         `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`,
         { cache: "no-store" }
       );
+      if (res.status === 403) {
+        setMatchesList(getHydratedDemoMatchCards());
+        return;
+      }
       if (res.ok) {
         const data = (await res.json()) as LiffMatchesApiResponse;
         if (Array.isArray(data.matches)) {
@@ -917,7 +930,7 @@ function MatchesContent() {
     } finally {
       setIsListLoading(false);
     }
-  }, [matchId, currentTeam?.id, isLoadingTeam, isDemo]);
+  }, [matchId, currentTeam?.id, isLoadingTeam, isDemo, profile?.userId, profile?.displayName]);
 
   useEffect(() => {
     loadMatchesList();

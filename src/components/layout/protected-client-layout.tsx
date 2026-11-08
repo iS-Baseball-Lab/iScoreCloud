@@ -5,6 +5,42 @@ import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
+interface AuthMembershipItem {
+  teamId: string;
+  teamName: string;
+  role: string;
+  status: string;
+  isMainTeam: boolean;
+}
+
+interface AuthMeCheckResponse {
+  success?: boolean;
+  data?: {
+    id: string;
+    role?: string;
+    systemRole?: string;
+    memberships?: AuthMembershipItem[];
+  };
+}
+
+function clearUnauthorizedWebTeamStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("iscore_auth_cache_active");
+    localStorage.removeItem("iscore_selectedTeamId");
+    localStorage.removeItem("iscore_selectedTeamName");
+    localStorage.removeItem("iscore_selectedTeamCategory");
+    localStorage.removeItem("iscore_selectedTeamLogo");
+    localStorage.removeItem("iscore_selectedTeamLegend");
+    localStorage.removeItem("iscore_teams_json");
+    localStorage.removeItem("iscore_teams_v2_json");
+    localStorage.removeItem("iscore_currentTeam_json");
+    localStorage.removeItem("iscore_currentTeam_v2_json");
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function ProtectedClientLayout({
   children,
 }: {
@@ -12,69 +48,59 @@ export function ProtectedClientLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  
+
   // 💡 検問のステータス（最初は「確認中」なので false）
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const res = await fetch("/api/auth/me");
-        
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+
         // 💡 サーバーが明示的に未認証（401等）を返した場合はログイン画面へ
         if (res.status === 401) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("iscore_auth_cache_active");
-          }
+          clearUnauthorizedWebTeamStorage();
           router.replace("/login");
           return;
         }
 
-        const json = (await res.json()) as any;
+        const json = (await res.json()) as AuthMeCheckResponse;
 
         // 1. 未ログインならログイン画面へ弾く
         if (!json.success || !json.data) {
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("iscore_auth_cache_active");
-          }
+          clearUnauthorizedWebTeamStorage();
           router.replace("/login");
           return;
         }
 
-        // 💡 ログイン成功時にローカルへ認証キャッシュを保存（電波不良時の救済用）
-        if (typeof window !== "undefined") {
-          localStorage.setItem("iscore_auth_cache_active", "true");
-        }
-
+        const isSystemAdmin =
+          json.data.systemRole === "SYSTEM_ADMIN" ||
+          json.data.role === "SYSTEM_ADMIN";
         const memberships = json.data.memberships || [];
-        const hasActive = memberships.some((m: any) => m.status === "active");
-        const hasPending = memberships.some((m: any) => m.status === "pending");
+        const hasActive = memberships.some((m) => m.status === "active");
 
-        // 🌟 2. 承認済みのチームがなく、申請中（Pending）のチームがある場合は強制送還！
-        if (!hasActive && hasPending) {
+        // 🌟 2. 承認済みのチームがなく SYSTEM_ADMIN でもない場合は承認待ち・招待コード入力画面へ強制遷移
+        if (!hasActive && !isSystemAdmin) {
+          clearUnauthorizedWebTeamStorage();
           router.replace("/pending-approval");
           return;
         }
 
-        // 🌟 3. どのチームにも属していない（新規ユーザー）場合も入力画面へ
-        if (!hasActive && !hasPending) {
-          router.replace("/pending-approval"); 
-          return;
+        // 💡 3. 承認済みチームが確認できたユーザーのみオフライン救済キャッシュを保存し、描画を許可
+        if (typeof window !== "undefined") {
+          localStorage.setItem("iscore_auth_cache_active", "true");
         }
-
-        // 💡 4. すべての検問をクリアした人だけ、ダッシュボードの描画を許可！
         setIsAuthorized(true);
-        
       } catch (error) {
         console.error("認証チェックエラー (電波不良・オフラインの可能性あり):", error);
 
         // 💡 現場至上主義：電波不良やオフラインによる通信エラー時、
-        // 過去にログイン成功実績（localStorage）がある、またはオフライン状態であればスルーさせて入力を継続！
+        // 過去に承認済みログイン実績（localStorage）がある、またはオフライン状態であればスルーさせて入力を継続！
         if (typeof window !== "undefined") {
           const hasAuthCache = localStorage.getItem("iscore_auth_cache_active") === "true";
           const isOffline = !navigator.onLine;
 
-          if (hasAuthCache || isOffline) {
+          if (hasAuthCache && isOffline) {
             console.warn("ネットワーク切断を検知したため、オフライン・キャッシュ認証を適用して動作を継続します。");
             setIsAuthorized(true);
             return;
@@ -85,7 +111,7 @@ export function ProtectedClientLayout({
       }
     };
 
-    checkAuth();
+    void checkAuth();
   }, [router, pathname]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -34,6 +34,10 @@ import liffCarpoolConvoyRoute from './api/liff/carpool-convoy'
 import liffCarpoolSimpleRoute from './api/liff/carpool-simple'
 import liffGroundsAiRoute from './api/liff/grounds-ai'
 import documentsRoute from './api/documents'
+import {
+  createLiffTeamIsolationMiddleware,
+  createSharedApiTeamIsolationMiddleware,
+} from './lib/team-access'
 import type { WorkerEnv } from './types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
@@ -42,11 +46,45 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 app.use('*', cors({
   origin: (origin) => origin || '*',
   credentials: true,
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Liff-User-Id',
+    'X-Liff-User-Name',
+    'X-iScore-Bypass-Cache',
+  ],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   exposeHeaders: ['Content-Length'],
   maxAge: 86400,
 }))
+
+// 🛡️ チーム所属・招待承認ステータスによる厳格なアクセス隔離ガード
+app.use(
+  '/api/liff/*',
+  createLiffTeamIsolationMiddleware({
+    publicSubpaths: [
+      '/api/liff/config',
+      '/api/liff/my-status',
+      '/api/liff/join',
+      '/api/liff/hub',
+    ],
+  })
+)
+
+const sharedTeamGuard = createSharedApiTeamIsolationMiddleware()
+app.use('/api/*', async (c, next) => {
+  const pathname = new URL(c.req.url).pathname
+  if (
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/liff') ||
+    pathname.startsWith('/api/organizations') ||
+    pathname.startsWith('/api/admin') ||
+    pathname.startsWith('/api/seed')
+  ) {
+    return next()
+  }
+  return sharedTeamGuard(c, next)
+})
 
 // 💡 整理整頓された美しいルーティング
 app.route('/api/auth', authRoute)

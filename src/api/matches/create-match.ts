@@ -40,21 +40,23 @@ app.post('/create', async (c) => {
     // 💡 徹底的に null 変換するヘルパー (anyを排除しstring等の型を指定)
     const n = (val: string | undefined | null) => (val === "" || val === undefined || val === null ? null : val);
 
-    // 🌟 1. teamId の実在チェック ＆ 自動フォールバック（FOREIGN KEY constraint failed を100%回避する自己修復ロジック）
-    const requestTeamId = body.teamId || "test-team-id";
-    const existingTeam = await db.select({ id: teams.id }).from(teams).where(eq(teams.id, requestTeamId)).get();
-    
-    let finalTeamId = requestTeamId;
-    if (!existingTeam) {
-      // データベースに実在する最初のチームを取得してフォールバック
-      const firstTeam = await db.select({ id: teams.id }).from(teams).get();
-      if (firstTeam) {
-        finalTeamId = firstTeam.id;
-      } else {
-        // 万が一DBにチームが1つもない極端なケースではフォールバック値にする
-        finalTeamId = "test-team-id";
-      }
+    // 🌟 1. teamId の実在チェック（無関係な他チームへのフォールバックを完全排除）
+    const requestTeamId = (body.teamId || '').trim();
+    if (!requestTeamId || requestTeamId === 'demo-team') {
+      return c.json({ success: true, isDemo: true, matchId });
     }
+
+    const existingTeam = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.id, requestTeamId))
+      .get();
+
+    if (!existingTeam) {
+      return c.json({ success: false, error: '対象のチームが見つかりません' }, 404);
+    }
+
+    const finalTeamId = existingTeam.id;
 
     // 🌟 2. 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
     let tournamentId: string | null = null;

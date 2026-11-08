@@ -379,7 +379,7 @@ export default function LiffScorebookImportPage() {
     try {
       setIsLoadingContext(true);
       setErrorBanner(null);
-      const qTeam = currentTeam?.id || getClientQueryParam("teamId") || "";
+      const qTeam = currentTeam?.id || getClientQueryParam("teamId") || "demo-team";
       const res = await fetch(
         `/api/liff/scorebook/context?teamId=${encodeURIComponent(qTeam)}`
       );

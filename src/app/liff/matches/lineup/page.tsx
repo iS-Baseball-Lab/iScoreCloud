@@ -8,7 +8,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect } from "@/components/liff/LiffSelect";
-import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import {
+  EXPLICIT_DEMO_STORAGE_KEY,
+  useLiff,
+  usePracticeMatchLabel,
+} from "@/components/liff/LiffProvider";
+import { buildLiffHubUrl } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -213,8 +218,8 @@ function LiffLineupContent() {
     }
     if (typeof window !== "undefined") {
       const storedId = localStorage.getItem("iscore_selectedTeamId");
-      const storedIsDemo = localStorage.getItem("iscore_isDemo") === "true";
-      if (storedId && (storedId !== "demo-team" || storedIsDemo)) {
+      const explicitDemo = localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1";
+      if (storedId && (storedId !== "demo-team" || explicitDemo)) {
         return storedId;
       }
     }
@@ -264,7 +269,7 @@ function LiffLineupContent() {
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>(() => createEmptyMyLineup(9));
   const [opponentLineup, setOpponentLineup] = useState<OpponentLineupSlot[]>(() => createEmptyOpponentLineup(9));
 
-  // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から実チームIDを解決（デモ試合への誤フォールバック防止）
+  // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から承認済みチームID（または demo-team）を解決
   useEffect(() => {
     if (preferredTeamId) {
       setResolvedTeamId(preferredTeamId);
@@ -274,7 +279,13 @@ function LiffLineupContent() {
     let cancelled = false;
     async function resolveInitialTeam() {
       try {
-        const res = await fetch("/api/liff/hub", { cache: "no-store" });
+        const res = await fetch(
+          buildLiffHubUrl({
+            userId: profile?.userId,
+            userName: profile?.displayName,
+          }),
+          { cache: "no-store" }
+        );
         if (res.ok) {
           const data = (await res.json()) as { team?: { id?: string | null } };
           if (!cancelled) {
@@ -292,7 +303,7 @@ function LiffLineupContent() {
     return () => {
       cancelled = true;
     };
-  }, [preferredTeamId]);
+  }, [preferredTeamId, profile?.userId, profile?.displayName]);
 
   // ヘッダーのチームスイッチャーで別チームに切り替えられた場合は対象試合をリセット
   useEffect(() => {

@@ -1,12 +1,10 @@
-// src/api/orgs.ts
+// filepath: src/api/orgs.ts
 import { Hono } from 'hono'
-import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
 import { organizations, organizationMembers, teams } from '@/db/schema'
-import type { AuthUser } from '@/types/api'
-import { desc, eq, and } from 'drizzle-orm'
-
+import { resolveCallerTeamAccess } from '@/lib/team-access'
 import type { WorkerEnv } from '@/types/api'
+import { desc, eq, and, inArray } from 'drizzle-orm'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
@@ -14,11 +12,27 @@ const app = new Hono<{ Bindings: WorkerEnv }>()
 // 💡 1. クラブ一覧取得 (カテゴリも取得するように修正！)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.get('/', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   const db = drizzle(c.env.DB)
+  if (access.isSystemAdmin) {
+    const allOrgs = await db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        category: organizations.category,
+      })
+      .from(organizations)
+      .orderBy(desc(organizations.createdAt))
+      .all()
+    return c.json(allOrgs.map((o) => ({ ...o, myRole: 'OWNER' })))
+  }
+
+  const candidateIds = access.candidateUserIds.length > 0
+    ? access.candidateUserIds
+    : [access.sessionUser.id]
+
   const myOrgs = await db.select({
     id: organizations.id,
     name: organizations.name,
@@ -27,7 +41,7 @@ app.get('/', async (c) => {
   })
     .from(organizationMembers)
     .innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id))
-    .where(eq(organizationMembers.userId, session.user.id))
+    .where(inArray(organizationMembers.userId, candidateIds))
     .orderBy(desc(organizations.createdAt))
 
   return c.json(myOrgs)
@@ -37,14 +51,16 @@ app.get('/', async (c) => {
 // 💡 2. 新規クラブ作成 (重複チェック ＆ 外部クラブ判定！)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.post('/', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   // 💡 body から isExternal と category を受け取る
-  const body = await c.req.json()
+  const body = await c.req.json<{ name: string; isExternal?: boolean; category?: string }>()
   const { name, isExternal, category } = body
   const db = drizzle(c.env.DB)
+  const candidateIds = access.candidateUserIds.length > 0
+    ? access.candidateUserIds
+    : [access.sessionUser.id]
 
   try {
     // 💡 究極化：自分が既に同じ名前のクラブを登録していないかチェック！
@@ -55,7 +71,7 @@ app.post('/', async (c) => {
       .where(
         and(
           eq(organizations.name, name),
-          eq(organizationMembers.userId, session.user.id)
+          inArray(organizationMembers.userId, candidateIds)
         )
       ).limit(1)
 
@@ -79,7 +95,7 @@ app.post('/', async (c) => {
     await db.insert(organizationMembers).values({
       id: crypto.randomUUID(),
       organizationId: orgId,
-      userId: session.user.id,
+      userId: access.sessionUser.id,
       role: role,
       createdAt: new Date(),
     })
@@ -92,11 +108,62 @@ app.post('/', async (c) => {
 })
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 💡 3. チーム一覧取得
+// 💡 3. チーム一覧取得（所属クラブ・承認済みチームのみ返却）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.get('/:orgId/teams', async (c) => {
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
+
   const orgId = c.req.param('orgId')
   const db = drizzle(c.env.DB)
+
+  if (!access.isSystemAdmin) {
+    const candidateIds = access.candidateUserIds.length > 0
+      ? access.candidateUserIds
+      : [access.sessionUser.id]
+
+    const orgMembership = await db
+      .select({
+        role: organizationMembers.role,
+        status: organizationMembers.status,
+      })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.organizationId, orgId),
+          inArray(organizationMembers.userId, candidateIds)
+        )
+      )
+      .get()
+
+    const hasActiveOrgMembership = Boolean(
+      orgMembership && (orgMembership.status || 'active').toLowerCase() === 'active'
+    )
+
+    if (!hasActiveOrgMembership && !access.canAccessOrganization(orgId)) {
+      return c.json({ error: '権限がありません' }, 403)
+    }
+
+    const orgTeams = await db.select()
+      .from(teams)
+      .where(eq(teams.organizationId, orgId))
+      .orderBy(desc(teams.createdAt))
+
+    const roleUpper = (orgMembership?.role || '').toUpperCase()
+    const canSeeAllOrgTeams =
+      hasActiveOrgMembership &&
+      (roleUpper === 'OWNER' ||
+        roleUpper === 'ADMIN' ||
+        roleUpper === 'MANAGER' ||
+        roleUpper === 'IT_ADMIN' ||
+        roleUpper === 'OPPONENT_MANAGER')
+
+    if (canSeeAllOrgTeams) {
+      return c.json(orgTeams)
+    }
+
+    return c.json(orgTeams.filter((t) => access.canAccessTeam(t.id)))
+  }
 
   const orgTeams = await db.select()
     .from(teams)
@@ -110,26 +177,28 @@ app.get('/:orgId/teams', async (c) => {
 // 💡 4. クラブの削除
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.delete('/:orgId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   const orgId = c.req.param('orgId')
   const db = drizzle(c.env.DB)
+  const candidateIds = access.candidateUserIds.length > 0
+    ? access.candidateUserIds
+    : [access.sessionUser.id]
 
   try {
     const member = await db.select().from(organizationMembers)
-      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, session.user.id))).get()
+      .where(and(eq(organizationMembers.organizationId, orgId), inArray(organizationMembers.userId, candidateIds))).get()
 
     // 対戦相手（OPPONENT_MANAGER）も削除できるように条件追加
-    if ((session.user as AuthUser).role !== 'SYSTEM_ADMIN' && (!member || (member.role !== 'OWNER' && member.role !== 'OPPONENT_MANAGER'))) {
+    if (!access.isSystemAdmin && (!member || (member.role !== 'OWNER' && member.role !== 'OPPONENT_MANAGER'))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
     const orgTeams = await db.select({ id: teams.id }).from(teams).where(eq(teams.organizationId, orgId))
 
     for (const t of orgTeams) {
-      const teamId = t.id;
+      const teamId = t.id
       await c.env.DB.prepare(`DELETE FROM match_lineups WHERE match_id IN (SELECT id FROM matches WHERE team_id = ?)`).bind(teamId).run()
       await c.env.DB.prepare(`DELETE FROM pitches WHERE at_bat_id IN (SELECT id FROM at_bats WHERE match_id IN (SELECT id FROM matches WHERE team_id = ?))`).bind(teamId).run()
       await c.env.DB.prepare(`DELETE FROM at_bats WHERE match_id IN (SELECT id FROM matches WHERE team_id = ?)`).bind(teamId).run()
@@ -154,19 +223,21 @@ app.delete('/:orgId', async (c) => {
 // 💡 5. クラブ（組織）の更新 (カテゴリ変更に対応！)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.patch('/:orgId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   const orgId = c.req.param('orgId')
-  const body = await c.req.json()
+  const body = await c.req.json<{ name: string; category?: string }>()
   const db = drizzle(c.env.DB)
+  const candidateIds = access.candidateUserIds.length > 0
+    ? access.candidateUserIds
+    : [access.sessionUser.id]
 
   try {
     const member = await db.select().from(organizationMembers)
-      .where(and(eq(organizationMembers.organizationId, orgId), eq(organizationMembers.userId, session.user.id))).get()
+      .where(and(eq(organizationMembers.organizationId, orgId), inArray(organizationMembers.userId, candidateIds))).get()
 
-    if ((session.user as AuthUser).role !== 'SYSTEM_ADMIN' && (!member || (member.role !== 'OWNER' && member.role !== 'OPPONENT_MANAGER'))) {
+    if (!access.isSystemAdmin && (!member || (member.role !== 'OWNER' && member.role !== 'OPPONENT_MANAGER'))) {
       return c.json({ error: '権限がありません' }, 403)
     }
 

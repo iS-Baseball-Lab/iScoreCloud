@@ -3,8 +3,9 @@ import { Hono } from 'hono'
 import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
 import { teams, teamMembers, organizations } from '@/db/schema'
-import { desc, eq, and } from 'drizzle-orm'
+import { desc, eq, and, inArray } from 'drizzle-orm'
 import { canManageTeam } from '@/lib/roles'
+import { resolveCallerTeamAccess } from '@/lib/team-access'
 import type { AuthUser, WorkerEnv } from '@/types/api'
 
 // 🌟 members.ts から各ハンドラー関数をインポート
@@ -55,14 +56,13 @@ app.route('/', groupsApp) // 👥 新規マウント：親子グループ管理�
 // チーム本体の基本CRUD
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/** 所属チーム一覧取得 */
+/** 所属チーム一覧取得（承認済みメンバー・創設者・組織OWNER・SYSTEM_ADMINのみ） */
 app.get('/', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   const db = drizzle(c.env.DB)
-  const myTeams = await db.select({
+  const allTeamRows = await db.select({
     id: teams.id,
     name: teams.name,
     orgName: organizations.name,
@@ -73,18 +73,40 @@ app.get('/', async (c) => {
     year: teams.year,
     tier: teams.tier,
     teamType: teams.teamType,
-    myRole: teamMembers.role,
-    isFounder: eq(teams.createdBy, session.user.id),
+    createdBy: teams.createdBy,
     logoImageUrl: organizations.logoImageUrl,
-    scorebookLegendUrl: teams.scorebookLegendUrl
+    scorebookLegendUrl: teams.scorebookLegendUrl,
   })
-    .from(teamMembers)
-    .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+    .from(teams)
     .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-    .where(eq(teamMembers.userId, session.user.id))
     .orderBy(desc(teams.createdAt))
+    .all()
 
-  return c.json(myTeams)
+  const candidateSet = new Set(access.candidateUserIds)
+  const authorized = allTeamRows
+    .filter((t) => access.isSystemAdmin || access.activeTeamIds.has(t.id))
+    .map((t) => {
+      const grant = access.teamRoles.get(t.id)
+      const isFounder = Boolean(t.createdBy && candidateSet.has(t.createdBy))
+      return {
+        id: t.id,
+        name: t.name,
+        orgName: t.orgName,
+        description: t.description,
+        category: t.category,
+        homeGround: t.homeGround,
+        managerName: t.managerName,
+        year: t.year,
+        tier: t.tier,
+        teamType: t.teamType,
+        myRole: grant?.role || (access.canManageTeamId(t.id) ? 'manager' : 'member'),
+        isFounder,
+        logoImageUrl: t.logoImageUrl,
+        scorebookLegendUrl: t.scorebookLegendUrl,
+      }
+    })
+
+  return c.json(authorized)
 })
 
 /** 新規チーム作成 */
@@ -102,25 +124,22 @@ app.post('/', async (c) => {
       id: teamId, organizationId, name, year: year || new Date().getFullYear(),
       tier: tier || null, teamType: teamType || 'regular', createdBy: session.user.id,
     })
-    await db.insert(teamMembers).values({ id: crypto.randomUUID(), teamId, userId: session.user.id, role })
+    await db.insert(teamMembers).values({ id: crypto.randomUUID(), teamId, userId: session.user.id, role: role || 'manager', status: 'active' })
     return c.json({ success: true, teamId })
   } catch (e) { return c.json({ success: false, error: 'Failed to create team' }, 500) }
 })
 
 /** チーム基本情報の更新 */
 app.patch('/:id', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
-  const userRole = (session.user as AuthUser).role
   const teamId = c.req.param('id')
   const body = await c.req.json()
   const db = drizzle(c.env.DB)
 
   try {
-    const member = await db.select().from(teamMembers).where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    if (userRole !== 'SYSTEM_ADMIN' && (!member || !canManageTeam(member.role))) return c.json({ error: '権限がありません' }, 403)
+    if (!access.canManageTeamId(teamId)) return c.json({ error: '権限がありません' }, 403)
 
     const updatePayload: Record<string, any> = {};
     if (body.name !== undefined) updatePayload.name = body.name;
@@ -164,10 +183,10 @@ app.patch('/:id', async (c) => {
 
 /** チーム全体の完全削除（解散） */
 app.delete('/:id', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
   const teamId = c.req.param('id')
+  if (!access.canManageTeamId(teamId)) return c.json({ error: '権限がありません' }, 403)
   const db = drizzle(c.env.DB)
 
   try {

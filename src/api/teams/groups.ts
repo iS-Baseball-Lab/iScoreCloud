@@ -1,28 +1,37 @@
-// src/api/teams/groups.ts
+// filepath: src/api/teams/groups.ts
 import { Hono } from 'hono'
-import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
-import { teamGroups, teamGroupMembers, teamMembers, players } from '@/db/schema'
+import { teamGroups, teamGroupMembers, teamMembers } from '@/db/schema'
 import { and, eq } from 'drizzle-orm'
-import { canManageTeam } from '@/lib/roles'
-import type { AuthUser, WorkerEnv } from '@/types/api'
+import { resolveCallerTeamAccess } from '@/lib/team-access'
+import type { WorkerEnv } from '@/types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
+interface RawGroupMemberRow {
+  relationId: string
+  groupId: string
+  playerId: string | null
+  teamMemberId: string | null
+  role: string | null
+  systemRole: string | null
+  playerName: string | null
+  playerUniformNumber: string | null
+  otherName: string | null
+  otherMemberType: string | null
+}
+
 /** 👥 チーム内のグループ一覧取得 (所属メンバー & 役割付き) */
 app.get('/:teamId/groups', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const db = drizzle(c.env.DB)
 
   try {
-    // 自身の権限チェック (メンバーなら閲覧可)
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    if (!myMembership) return c.json({ error: '権限がありません' }, 403)
+    // 承認済みの所属メンバー・創設者・組織OWNER・SYSTEM_ADMINのみ閲覧可（pending は遮断）
+    if (!access.canAccessTeam(teamId)) return c.json({ error: '権限がありません' }, 403)
 
     // ① チームに属する全グループの取得
     const groups = await db.select().from(teamGroups)
@@ -49,45 +58,46 @@ app.get('/:teamId/groups', async (c) => {
       LEFT JOIN team_members tm ON tgm.team_member_id = tm.id
       LEFT JOIN user u ON tm.user_id = u.id
       WHERE tgm.group_id IN (SELECT id FROM team_groups WHERE team_id = ?)
-    `).bind(teamId).all()
+    `).bind(teamId).all<RawGroupMemberRow>()
 
     // ③ フロントエンドで扱いやすい形にフォーマット
-    const formattedMembers = members.map((m: any) => {
-      const isPlayer = !!m.playerId;
+    const formattedMembers = (members || []).map((m) => {
+      const isPlayer = !!m.playerId
       return {
         relationId: m.relationId,
         groupId: m.groupId,
         playerId: m.playerId,
         teamMemberId: m.teamMemberId,
-        role: m.role || "",
-        systemRole: m.systemRole || "",
-        name: isPlayer ? m.playerName : (m.otherName || "名前なし"),
-        type: isPlayer ? "player" : (m.otherMemberType || "other"),
+        role: m.role || '',
+        systemRole: m.systemRole || '',
+        name: isPlayer ? (m.playerName || '名前なし') : (m.otherName || '名前なし'),
+        type: isPlayer ? 'player' : (m.otherMemberType || 'other'),
         uniformNumber: isPlayer ? m.playerUniformNumber : null,
       }
     })
 
     return c.json({ success: true, groups, members: formattedMembers })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'グループ一覧の取得に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'グループ一覧の取得に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 新規グループ作成 (子グループとしての登録も parentId で対応) */
 app.post('/:teamId/groups', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
-  const { name, parentId, isAttendanceLinked } = await c.req.json<{ name: string; parentId?: string | null; isAttendanceLinked?: boolean }>()
+  const { name, parentId, isAttendanceLinked } = await c.req.json<{
+    name: string
+    parentId?: string | null
+    isAttendanceLinked?: boolean
+  }>()
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
@@ -101,31 +111,32 @@ app.post('/:teamId/groups', async (c) => {
       teamId,
       name: name.trim(),
       parentId: parentId || null,
-      isAttendanceLinked: !!isAttendanceLinked
+      isAttendanceLinked: !!isAttendanceLinked,
     })
 
     return c.json({ success: true, groupId: newGroupId })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'グループの作成に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'グループの作成に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 グループ更新 (名前変更・親グループ付け替え) */
 app.patch('/:teamId/groups/:groupId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
-  const { name, parentId, isAttendanceLinked } = await c.req.json<{ name?: string; parentId?: string | null; isAttendanceLinked?: boolean }>()
+  const { name, parentId, isAttendanceLinked } = await c.req.json<{
+    name?: string
+    parentId?: string | null
+    isAttendanceLinked?: boolean
+  }>()
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
@@ -138,67 +149,69 @@ app.patch('/:teamId/groups/:groupId', async (c) => {
       .set({
         name: name !== undefined ? name.trim() : undefined,
         parentId: parentId !== undefined ? parentId : undefined,
-        isAttendanceLinked: isAttendanceLinked !== undefined ? isAttendanceLinked : undefined
+        isAttendanceLinked: isAttendanceLinked !== undefined ? isAttendanceLinked : undefined,
       })
       .where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
 
     return c.json({ success: true })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'グループの更新に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'グループの更新に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 グループ削除 (配下の子やメンバー所属も cascade で自動削除) */
 app.delete('/:teamId/groups/:groupId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
     await db.delete(teamGroups).where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
     return c.json({ success: true })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'グループの削除に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'グループの削除に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 グループへメンバー所属の追加 & 役割設定 */
 app.post('/:teamId/groups/:groupId/members', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
   const { playerId, teamMemberId, role, systemRole } = await c.req.json<{
-    playerId?: string | null;
-    teamMemberId?: string | null;
-    role?: string | null;
-    systemRole?: string | null;
+    playerId?: string | null
+    teamMemberId?: string | null
+    role?: string | null
+    systemRole?: string | null
   }>()
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
     if (!playerId && !teamMemberId) {
       return c.json({ error: '所属させるメンバーが指定されていません' }, 400)
+    }
+
+    const parentGroup = await db.select({ id: teamGroups.id })
+      .from(teamGroups)
+      .where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
+      .get()
+    if (!parentGroup) {
+      return c.json({ error: '指定されたグループが見つかりません' }, 404)
     }
 
     // 重複所属の確認
@@ -220,27 +233,27 @@ app.post('/:teamId/groups/:groupId/members', async (c) => {
       playerId: playerId || null,
       teamMemberId: teamMemberId || null,
       role: role?.trim() || null,
-      systemRole: systemRole || null
+      systemRole: systemRole || null,
     })
 
-    // 💡 チームメンバーのシステムロールと連動同期 (選手以外のスタッフ・保護者のみ)
+    // 💡 チームメンバーのシステムロールと連動同期 (選手以外のスタッフ・保護者のみ、同一チーム限定)
     if (teamMemberId && systemRole) {
       await db.update(teamMembers)
         .set({ role: systemRole })
-        .where(eq(teamMembers.id, teamMemberId))
+        .where(and(eq(teamMembers.id, teamMemberId), eq(teamMembers.teamId, teamId)))
     }
 
     return c.json({ success: true, relationId })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'メンバーの追加に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'メンバーの追加に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 グループ内メンバーの役割 (role) 編集 */
 app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
@@ -249,41 +262,46 @@ app.patch('/:teamId/groups/:groupId/members/:relationId', async (c) => {
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
     }
 
+    const parentGroup = await db.select({ id: teamGroups.id })
+      .from(teamGroups)
+      .where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
+      .get()
+    if (!parentGroup) {
+      return c.json({ error: '指定されたグループが見つかりません' }, 404)
+    }
+
     await db.update(teamGroupMembers)
-      .set({ 
+      .set({
         role: role?.trim() || null,
-        systemRole: systemRole !== undefined ? (systemRole || null) : undefined
+        systemRole: systemRole !== undefined ? (systemRole || null) : undefined,
       })
       .where(and(eq(teamGroupMembers.id, relationId), eq(teamGroupMembers.groupId, groupId)))
 
-    // 💡 チームメンバーのシステムロールと連動同期
+    // 💡 チームメンバーのシステムロールと連動同期（同一チーム限定）
     if (systemRole) {
       const rel = await db.select().from(teamGroupMembers).where(eq(teamGroupMembers.id, relationId)).get()
       if (rel && rel.teamMemberId) {
         await db.update(teamMembers)
           .set({ role: systemRole })
-          .where(eq(teamMembers.id, rel.teamMemberId))
+          .where(and(eq(teamMembers.id, rel.teamMemberId), eq(teamMembers.teamId, teamId)))
       }
     }
 
     return c.json({ success: true })
-  } catch (e: any) {
-    return c.json({ success: false, error: '役割の更新に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: '役割の更新に失敗しました', details: message }, 500)
   }
 })
 
 /** 👥 グループからメンバーを除外 */
 app.delete('/:teamId/groups/:groupId/members/:relationId', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.isAuthenticated) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('teamId')
   const groupId = c.req.param('groupId')
@@ -291,19 +309,25 @@ app.delete('/:teamId/groups/:groupId/members/:relationId', async (c) => {
   const db = drizzle(c.env.DB)
 
   try {
-    const myMembership = await db.select().from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, session.user.id))).get()
-    const isAdmin = (session.user as AuthUser).role === 'SYSTEM_ADMIN' || (session.user as AuthUser).role === 'admin'
-    if (!isAdmin && (!myMembership || !canManageTeam(myMembership.role))) {
+    if (!access.canManageTeamId(teamId)) {
       return c.json({ error: '権限がありません' }, 403)
+    }
+
+    const parentGroup = await db.select({ id: teamGroups.id })
+      .from(teamGroups)
+      .where(and(eq(teamGroups.id, groupId), eq(teamGroups.teamId, teamId)))
+      .get()
+    if (!parentGroup) {
+      return c.json({ error: '指定されたグループが見つかりません' }, 404)
     }
 
     await db.delete(teamGroupMembers)
       .where(and(eq(teamGroupMembers.id, relationId), eq(teamGroupMembers.groupId, groupId)))
 
     return c.json({ success: true })
-  } catch (e: any) {
-    return c.json({ success: false, error: 'メンバーの除外に失敗しました', details: e.message }, 500)
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e)
+    return c.json({ success: false, error: 'メンバーの除外に失敗しました', details: message }, 500)
   }
 })
 

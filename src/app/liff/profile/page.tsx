@@ -1286,9 +1286,11 @@ export default function LiffProfilePage() {
       <JoinTeamModal
         isOpen={isJoinModalOpen}
         onClose={() => setIsJoinModalOpen(false)}
-        onSuccess={() => {
-          setIsJoinModalOpen(false);
-          refreshTeams();
+        onSuccess={({ status }) => {
+          void refreshTeams();
+          if (status === "active") {
+            setIsJoinModalOpen(false);
+          }
         }}
       />
     </div>
