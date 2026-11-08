@@ -1,4 +1,4 @@
-// filepath: src/app/menu/page.tsx
+// filepath: src/app/(protected)/menu/page.tsx
 "use client";
 
 import React from "react";
@@ -12,9 +12,13 @@ import {
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
 import { SectionHeader } from "@/components/layout/SectionHeader";
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
+import { useTeam } from "@/contexts/TeamContext";
 
 export default function MenuPage() {
   const router = useRouter();
+  const { currentTeam } = useTeam();
+  const { data: session } = authClient.useSession();
 
   const handleLogout = async () => {
     await authClient.signOut();
@@ -84,6 +88,16 @@ export default function MenuPage() {
         
         {/* ━━ ページヘッダー ━━ */}
         <SectionHeader title="メニュー" subtitle="MENU" showPulse={false} />
+
+        {/* ━━ LINEミニアプリ起動バナー（A-3 ソリッド規格） ━━ */}
+        <OpenLineMiniAppButton
+          variant="banner"
+          teamId={currentTeam?.id}
+          teamName={currentTeam?.name}
+          userId={session?.user?.id}
+          userName={session?.user?.name}
+          avatarUrl={session?.user?.image}
+        />
 
         {/* ━━ メニュー項目リスト ━━ */}
         <div className="space-y-6">

@@ -56,9 +56,18 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
 
   try {
     const liff = (await import("@line/liff")).default;
-    await liff.init({ 
+    const isLineClientUa = /Line\//i.test(navigator.userAgent);
+    const hasLiffOAuthParams =
+      urlParams.has("code") ||
+      urlParams.has("liff.state") ||
+      urlParams.has("liffClientId");
+    const hasWebHandoffUser = Boolean(localStorage.getItem("iscore_user_id"));
+
+    await liff.init({
       liffId: targetLiffId,
-      withLoginOnExternalBrowser: true, // 外部ブラウザでもLINEログイン自動連携
+      // Web版セッション（Google / LINE / Microsoft）から引き継いだ外部ブラウザ閲覧時は強制OAuthリダイレクトを抑止
+      withLoginOnExternalBrowser:
+        isLineClientUa || hasLiffOAuthParams || !hasWebHandoffUser,
     });
     
     // 🌟 LIFF SDKの内部初期化・セッション準備を確実に待機

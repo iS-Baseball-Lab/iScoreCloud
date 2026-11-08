@@ -1,4 +1,4 @@
-// filepath: `src/app/(protected)/dashboard/page.tsx`
+// filepath: src/app/(protected)/dashboard/page.tsx
 "use client";
 
 import React, { useEffect, useState, useMemo, useCallback } from "react";
@@ -21,6 +21,7 @@ import { MatchList } from "@/components/matches/match-list";
 import { ScoreTypeSelector } from "@/components/features/dashboard/ScoreTypeSelector";
 import { SectionHeader } from "@/components/layout/SectionHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 import { useTeam } from "@/contexts/TeamContext"; // 💡 TeamContextを使用
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
@@ -375,6 +376,14 @@ export default function DashboardPage() {
         </h1>
         
       </section>
+
+        {/* --- LINEミニアプリ クイック起動バー --- */}
+        <OpenLineMiniAppButton
+          variant="banner"
+          compact
+          teamId={currentTeam?.id}
+          teamName={currentTeam?.name}
+        />
 
         {/* --- 2. 環境ステータスボード (統合ウィジェット) --- */}
         <section className="bg-card dark:bg-zinc-900 border border-border/40 shadow-sm rounded-3xl p-6 sm:p-8 space-y-6">

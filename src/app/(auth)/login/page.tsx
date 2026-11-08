@@ -1,4 +1,4 @@
-// filepath: `src/app/(auth)/login/page.tsx`
+// filepath: src/app/(auth)/login/page.tsx
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -10,6 +10,7 @@ import { Loader2, FileText, Shield } from "lucide-react";
 import { toast } from "sonner";
 /** 💡 Better-Auth のクライアントをインポート */
 import { authClient } from "@/lib/auth-client"; 
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -143,6 +144,23 @@ export default function LoginPage() {
                 </>
               )}
             </Button>
+          </div>
+
+          <div className="pt-2 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-border" />
+              <span className="text-[11px] font-black text-muted-foreground tracking-wider">
+                または ミニアプリ版を直接開く
+              </span>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            <div className="flex justify-center">
+              <OpenLineMiniAppButton
+                variant="hero"
+                showQrTrigger
+                className="w-full [&>a]:flex-1"
+              />
+            </div>
           </div>
         </div>
       </div>

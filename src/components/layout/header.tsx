@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { UserSession, UserTeamMembership } from "@/types/auth"; // 💡 必要に応じて型をインポート
 import { TeamSwitcher } from "@/components/layout/team-switcher";
 import { UserProfileMenu } from "@/components/layout/user-profile-menu";
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 import { useTeam } from "@/contexts/TeamContext";
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
@@ -137,6 +138,16 @@ export function Header() {
               </div>
             </div>
           )}
+
+          <OpenLineMiniAppButton
+            variant="header"
+            showQrTrigger
+            teamId={currentTeam?.id}
+            teamName={currentTeam?.name}
+            userId={user?.id}
+            userName={user?.name}
+            avatarUrl={user?.avatarUrl}
+          />
 
           {/* 🌟 変換済みの memberships と activeTeam を渡す */}
           <TeamSwitcher

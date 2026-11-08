@@ -26,6 +26,8 @@ export interface WorkerEnv {
   LINE_CHANNEL_ACCESS_TOKEN: string;
   NEXT_PUBLIC_LIFF_ID?: string;
   LIFF_ID?: string;
+  NEXT_PUBLIC_LINE_MINIAPP_URL?: string;
+  LINE_MINIAPP_URL?: string;
   GEMINI_API_KEY?: string;
   GOOGLE_MAPS_API_KEY?: string;
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?: string;

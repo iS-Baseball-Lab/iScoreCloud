@@ -28,6 +28,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { FeatureCard } from "@/components/feature-card";
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 import { cn } from "@/lib/utils";
 
 type Theme = "light" | "dark" | "system";
@@ -143,7 +144,8 @@ export default function LandingPage() {
           </span>
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2.5 sm:gap-4">
+          <OpenLineMiniAppButton variant="header" showQrTrigger />
           <div className="flex items-center p-1 border border-border rounded-full bg-muted">
             <button onClick={() => handleThemeChange("light")} className={cn("p-2 rounded-full transition-all", theme === "light" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Sun className="h-5 w-5" /></button>
             <button onClick={() => handleThemeChange("system")} className={cn("p-2 rounded-full transition-all", theme === "system" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Monitor className="h-5 w-5" /></button>
@@ -163,13 +165,14 @@ export default function LandingPage() {
           </p>
         </div>
 
-        <div className="mt-16">
+        <div className="mt-16 flex flex-col items-center gap-4">
           <Link href="/login">
             <Button size="lg" className="rounded-[30px] h-20 px-12 text-2xl font-black italic gap-4 shadow-2xl shadow-primary/30 hover:scale-105 transition-all bg-primary">
               <PlayCircle className="w-10 h-10" />
               PLAY BALL
             </Button>
           </Link>
+          <OpenLineMiniAppButton variant="hero" showQrTrigger />
         </div>
 
         <div id="features" className="mt-32 w-full max-w-5xl flex flex-wrap justify-center gap-3 sm:gap-6">

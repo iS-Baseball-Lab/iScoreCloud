@@ -19,6 +19,8 @@ import {
 import { UserSession } from "@/types/auth";
 import { useDensity } from "@/components/providers/density-provider";
 import type { Density } from "@/components/providers/density-provider";
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
+import { useTeam } from "@/contexts/TeamContext";
 
 const THEMES = [
   { id: "blue", color: "#0284c7", label: "Blue" },
@@ -61,6 +63,7 @@ export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuPr
   const router = useRouter();
   const { theme, setTheme } = useTheme();
   const { density, setDensity } = useDensity();
+  const { currentTeam } = useTeam();
 
   const [activeThemeColor, setActiveThemeColor] = useState<string>("blue");
   const [activeDesign, setActiveDesign] = useState<string>("modern");
@@ -114,7 +117,7 @@ export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuPr
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-72 sm:w-80 rounded-2xl border-border/50 bg-white/95 dark:bg-background/95 backdrop-blur-xl p-2 shadow-2xl">
+      <DropdownMenuContent align="end" className="w-72 sm:w-80 rounded-2xl border-border bg-card p-2 shadow-2xl">
         {user && (
           <>
             <DropdownMenuLabel className="font-normal p-3">
@@ -127,7 +130,15 @@ export function UserProfileMenu({ user, isLoading, onLogout }: UserProfileMenuPr
           </>
         )}
 
-        <div className="p-1 space-y-1">
+        <div className="p-1 space-y-1.5">
+          <OpenLineMiniAppButton
+            variant="menu-item"
+            teamId={currentTeam?.id}
+            teamName={currentTeam?.name}
+            userId={user?.id}
+            userName={user?.name}
+            avatarUrl={user?.avatarUrl}
+          />
           <DropdownMenuItem className="cursor-pointer flex items-center justify-between rounded-xl p-3 text-sm hover:bg-muted/80 transition-colors" onClick={() => console.log('通知画面へ')}>
             <div className="flex items-center gap-3">
               <div className="relative">

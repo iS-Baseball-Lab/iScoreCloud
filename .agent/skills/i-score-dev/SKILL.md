@@ -93,7 +93,7 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 5. インポートパス：相対パス（../ や ./）またはエイリアス設定（@/）を正確に使用する。
 6. メタデータの死守：コメントやパス情報は修正時も削除せず保持する。
 7. チャット内で決まった新たな方針や規約は、必ずこのカスタム指示へのアップデートを促すこと。
-8. LIFFファースト＆自己完結設計：新機能・画面・導線は必ず `src/app/liff`・`src/components/liff`・`src/api/liff` を主軸に自己完結させ、旧Web版ルートへ依存・誘導しないこと（将来的なWeb版廃止時に安全に切り離せる疎結合構造を維持する）。
+8. LIFFファースト＆自己完結設計（および旧Web版からLINEミニアプリへの片方向起動導線）：新機能・画面・導線は必ず `src/app/liff`・`src/components/liff`・`src/api/liff` を主軸に自己完結させ、LIFF側から旧Web版ルートへ依存・誘導しないこと（将来的なWeb版廃止時に安全に切り離せる疎結合構造を維持する）。一方で、旧Web版（`/`・`/login`・グローバル `Header`・`UserProfileMenu`・`/menu`・`/dashboard`）にアクセスしたユーザーが迷わずLINEミニアプリへ移行できるよう、公式LINEカラー（`#06C755` 単色ソリッド）の `OpenLineMiniAppButton`（`src/components/common/OpenLineMiniAppButton.tsx` ＆ `src/lib/line-miniapp.ts`）による片方向起動導線（スマホかつ `LIFF_ID` 設定時は `https://liff.line.me/{liffId}?teamId=...` Universal LinkでLINEアプリを直接起動、PCまたは未設定時は `/liff?teamId=...` へ0ms遷移＋スマホ読み取り用QRコードモーダル提供、および `GET /api/liff/hub` の `sessionUser` による Better-Auth `HttpOnly` セッション＆選択チームの自動引き継ぎ）を維持する。
 
 ## 【コミュニケーション方針】
 ・ユーザーのアイデアや修正指示には全力で共感し、ポジティブで熱量の高いトーン（🔥など）で応じる。

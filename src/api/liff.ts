@@ -961,9 +961,12 @@ const DEMO_MATCHES = [
  */
 app.get("/config", (c) => {
   const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
+  const miniAppUrl =
+    c.env.NEXT_PUBLIC_LINE_MINIAPP_URL || c.env.LINE_MINIAPP_URL || "";
   return c.json({
     success: true,
-    liffId: liffId,
+    liffId,
+    miniAppUrl,
   });
 });
 
@@ -1386,12 +1389,21 @@ app.get("/hub", async (c) => {
     // 体験デモチームは常時追加
     teamList.push(DEMO_TEAM);
 
+    const hubSessionUser = sessionUser?.id
+      ? {
+          userId: sessionUser.id,
+          displayName: sessionUser.name || "メンバー",
+          pictureUrl: sessionUser.image || undefined,
+        }
+      : null;
+
     // 🌟 0. 明示的に体験デモチームが要求された場合は、所属チームによる上書きを行わず即座にデモチームとして返却
     if (requestedTeamId === "demo-team") {
       const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
       return c.json({
         success: true,
         liffId,
+        sessionUser: hubSessionUser,
         isDemo: true,
         team: DEMO_TEAM,
         teams: teamList,
@@ -1425,6 +1437,7 @@ app.get("/hub", async (c) => {
       return c.json({
         success: true,
         liffId,
+        sessionUser: hubSessionUser,
         isDemo: true,
         team: DEMO_TEAM,
         teams: teamList,
@@ -1734,6 +1747,7 @@ app.get("/hub", async (c) => {
     return c.json({
       success: true,
       liffId,
+      sessionUser: hubSessionUser,
       isDemo: false,
       team: {
         id: targetTeam.id,

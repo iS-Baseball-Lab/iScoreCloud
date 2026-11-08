@@ -67,6 +67,12 @@ export interface LiffTeamItem {
 }
 
 interface HubTeamsPayload {
+  liffId?: string;
+  sessionUser?: {
+    userId: string;
+    displayName: string;
+    pictureUrl?: string;
+  } | null;
   isDemo?: boolean;
   teams?: LiffTeamItem[];
   team?: {
@@ -135,7 +141,13 @@ export function LiffProvider({
   const [liff, setLiff] = useState<Liff | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isInClient, setIsInClient] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (typeof window !== "undefined") {
+      const uid = localStorage.getItem("iscore_user_id");
+      return Boolean(uid && uid !== "cached-user");
+    }
+    return false;
+  });
   const [isMock, setIsMock] = useState(false);
   const [reason, setReason] = useState<string | undefined>();
   const [profile, setProfile] = useState<LiffUserProfile | null>(() => {
@@ -302,6 +314,37 @@ export function LiffProvider({
   }, []);
 
   const applyHubPayload = useCallback((data: HubTeamsPayload, targetTeamId: string | null, uid: string, uName: string) => {
+    if (typeof window !== "undefined" && data.liffId) {
+      localStorage.setItem("iscore_liff_id", data.liffId);
+    }
+
+    // Better-Auth (HttpOnly Cookie) セッションがサーバー側で確認された場合、追加通信ゼロで即座にユーザー状態を同期
+    if (data.sessionUser?.userId) {
+      const webUser: LiffUserProfile = {
+        userId: data.sessionUser.userId,
+        displayName: data.sessionUser.displayName,
+        pictureUrl: data.sessionUser.pictureUrl,
+      };
+      if (typeof window !== "undefined") {
+        const existingUid = localStorage.getItem("iscore_user_id");
+        if (!existingUid || existingUid === "cached-user") {
+          localStorage.setItem("iscore_user_id", webUser.userId);
+          localStorage.setItem("iscore_user_name", webUser.displayName);
+          if (webUser.pictureUrl) {
+            localStorage.setItem("iscore_user_avatar", webUser.pictureUrl);
+          }
+        }
+      }
+      lastLoadedUserIdRef.current = webUser.userId;
+      setProfile((prev) => {
+        if (!prev || !prev.userId || prev.userId === "cached-user") {
+          return webUser;
+        }
+        return prev;
+      });
+      setIsLoggedIn(true);
+    }
+
     const demoFlag = !!data.isDemo;
     setIsDemo(demoFlag);
     localStorage.setItem("iscore_isDemo", demoFlag ? "true" : "false");

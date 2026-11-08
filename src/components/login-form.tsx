@@ -1,4 +1,4 @@
-// src/components/login-form.tsx
+// filepath: src/components/login-form.tsx
 "use client";
 
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { FcGoogle } from "react-icons/fc"; // Google公式カラーアイコン
 import { SiLine } from "react-icons/si";   // LINE公式アイコン
 
 import { signIn } from "@/lib/auth-client"; // Client SDK
+import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [loadingProvider, setLoadingProvider] = useState<"google" | "line" | null>(null);
@@ -68,6 +69,14 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
         </div>
         LINEで続ける
       </Button>
+
+      <div className="pt-2">
+        <OpenLineMiniAppButton
+          variant="hero"
+          showQrTrigger
+          className="w-full [&>a]:flex-1"
+        />
+      </div>
 
       {/* 開発者クレジット（少し控えめにデザイン調整） */}
       <footer className="mt-8 text-[10px] text-center text-muted-foreground/60 space-y-2">
