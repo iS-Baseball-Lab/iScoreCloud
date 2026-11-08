@@ -63,7 +63,6 @@ function resolveInitialHubCache(): HubDataResponse | null {
 
 export default function LiffHubPage() {
   const {
-    isReady,
     profile,
     currentTeam,
     isLoadingTeam,
@@ -72,7 +71,7 @@ export default function LiffHubPage() {
     isDemo,
     refreshTeams,
     pendingTeams,
-    pendingJoinCode,
+    shouldOpenJoinModal,
     clearPendingJoinCode,
   } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
@@ -107,13 +106,12 @@ export default function LiffHubPage() {
     }
   }, [profile?.displayName]);
 
-  // 招待URL（?join=...）からアクセスした際、参加申請モーダルを自動で開く
+  // 招待URL（?join=...）からアクセスした際、未所属・未申請ユーザーのみ参加申請モーダルを自動で開く
   useEffect(() => {
-    if (!isReady || isLoadingTeam) return;
-    if (pendingJoinCode) {
+    if (shouldOpenJoinModal) {
       setIsJoinModalOpen(true);
     }
-  }, [isReady, isLoadingTeam, pendingJoinCode]);
+  }, [shouldOpenJoinModal]);
 
   const applyHubData = useCallback((data: HubDataResponse) => {
     setNextEvent(data.nextEvent ?? null);

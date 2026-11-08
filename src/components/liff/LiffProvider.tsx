@@ -199,6 +199,7 @@ interface LiffContextType {
   // 招待コード自動引当 & 承認待ちステータス管理
   pendingTeams: LiffPendingTeamItem[];
   pendingJoinCode: string | null;
+  shouldOpenJoinModal: boolean;
   persistPendingJoinCode: (code: string) => void;
   clearPendingJoinCode: () => void;
   recordOptimisticPendingTeam: (item: LiffPendingTeamItem) => void;
@@ -222,6 +223,7 @@ const LiffContext = createContext<LiffContextType>({
   updateCurrentTeamLogo: () => {},
   pendingTeams: [],
   pendingJoinCode: null,
+  shouldOpenJoinModal: false,
   persistPendingJoinCode: () => {},
   clearPendingJoinCode: () => {},
   recordOptimisticPendingTeam: () => {},
@@ -269,6 +271,7 @@ export function LiffProvider({
   });
   const [error, setError] = useState<string | null>(null);
   const lastLoadedUserIdRef = useRef<string>("");
+  const [loadedTeamsUserId, setLoadedTeamsUserId] = useState<string | null>(null);
 
   // チーム状態 (LocalStorageから同期的に承認済みチームオブジェクトのみを取得・旧キャッシュは破棄)
   const [teams, setTeams] = useState<LiffTeamItem[]>(() => {
@@ -564,6 +567,9 @@ export function LiffProvider({
       });
       setIsLoggedIn(true);
     }
+
+    const resolvedAppliedUid = data.sessionUser?.userId || uid || "";
+    setLoadedTeamsUserId(resolvedAppliedUid);
 
     const demoFlag = !!data.isDemo;
     setIsDemo(demoFlag);
@@ -922,9 +928,43 @@ export function LiffProvider({
     }
   }, [isInClient, liff, pendingJoinCode]);
 
+  const realProfileUserId =
+    profile?.userId && profile.userId !== "cached-user" ? profile.userId : "";
+  const isTeamsSyncedForCurrentProfile =
+    !isLoadingTeam &&
+    loadedTeamsUserId !== null &&
+    (!realProfileUserId || loadedTeamsUserId === realProfileUserId);
+
+  const shouldOpenJoinModal = useMemo(() => {
+    if (!pendingJoinCode || !isReady || !isTeamsSyncedForCurrentProfile) {
+      return false;
+    }
+    const alreadyActive = teams.some(
+      (t) =>
+        !t.isDemo &&
+        t.id !== "demo-team" &&
+        t.isMember &&
+        matchesInviteCodeToTeamId(t.id, pendingJoinCode)
+    );
+    if (alreadyActive) return false;
+
+    const alreadyPending = pendingTeams.some((p) =>
+      matchesInviteCodeToTeamId(p.id, pendingJoinCode)
+    );
+    if (alreadyPending) return false;
+
+    return true;
+  }, [
+    isReady,
+    isTeamsSyncedForCurrentProfile,
+    pendingJoinCode,
+    pendingTeams,
+    teams,
+  ]);
+
   // 招待URL（?join=...）アクセス時：すでに承認済みメンバーなら該当チームへ即座に切替、すでに承認待ちなら重複モーダルを抑止
   useEffect(() => {
-    if (!pendingJoinCode || !isReady || isLoadingTeam) return;
+    if (!pendingJoinCode || !isReady || !isTeamsSyncedForCurrentProfile) return;
 
     const matchedActive = teams.find(
       (t) =>
@@ -950,8 +990,8 @@ export function LiffProvider({
   }, [
     clearPendingJoinCode,
     currentTeam?.id,
-    isLoadingTeam,
     isReady,
+    isTeamsSyncedForCurrentProfile,
     pendingJoinCode,
     pendingTeams,
     selectTeam,
@@ -1052,6 +1092,7 @@ export function LiffProvider({
       updateCurrentTeamLogo,
       pendingTeams,
       pendingJoinCode,
+      shouldOpenJoinModal,
       persistPendingJoinCode,
       clearPendingJoinCode,
       recordOptimisticPendingTeam,
@@ -1075,6 +1116,7 @@ export function LiffProvider({
       updateCurrentTeamLogo,
       pendingTeams,
       pendingJoinCode,
+      shouldOpenJoinModal,
       persistPendingJoinCode,
       clearPendingJoinCode,
       recordOptimisticPendingTeam,
