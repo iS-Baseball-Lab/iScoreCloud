@@ -11,11 +11,35 @@ import { TeamProvider } from "@/contexts/TeamContext"; // 💡 追加
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://iscorecloud.com"),
   title: "iScoreCloud",
   description: "Next-gen baseball scoring and analytics platform.",
   icons: {
-    icon: "/logo.png",
-    apple: "/apple-logo.png",
+    icon: [
+      { url: "/liff-logo.png", type: "image/png" },
+      { url: "/liff-logo.webp", type: "image/webp" },
+    ],
+    shortcut: "/liff-logo.png",
+    apple: "/channel-icon-640x640.png",
+  },
+  openGraph: {
+    title: "iScoreCloud",
+    description: "LINEで出欠回答・配車表・予定確認・試合動画・スコアブックが完結する野球チーム運営アプリ",
+    siteName: "iScoreCloud",
+    type: "website",
+    images: [
+      {
+        url: "/channel-icon-640x640.png",
+        width: 640,
+        height: 640,
+        alt: "iScoreCloud for LINEミニアプリ",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "iScoreCloud",
+    images: ["/channel-icon-640x640.png"],
   },
   manifest: "/manifest.json",
 };

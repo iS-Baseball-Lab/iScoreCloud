@@ -30,12 +30,73 @@ import {
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/score-settings";
 import { DEFAULT_PRACTICE_MATCH_LABEL } from "@/lib/liff/scorebook-symbol-rules";
+import { syncLineMiniAppConfigCache } from "@/lib/line-miniapp";
 
 export const DEMO_TEAM_DEFAULT_LOGO_URL = "/demo-team-logo.svg";
 const DEMO_TEAM_LOGO_CLEARED_SENTINEL = "__NONE__";
 const TEAMS_STORAGE_KEY = "iscore_teams_v2_json";
 const CURRENT_TEAM_STORAGE_KEY = "iscore_currentTeam_v2_json";
+const PENDING_TEAMS_STORAGE_KEY = "iscore_pending_teams_v1_json";
+const SESSION_OPTIMISTIC_PENDING_KEY = "iscore_session_pending_team_v1";
 export const EXPLICIT_DEMO_STORAGE_KEY = "iscore_explicit_demo";
+export const PENDING_JOIN_CODE_STORAGE_KEY = "iscore_pending_join_code";
+
+/**
+ * URLクエリ（`?join=...` または LIFF Universal Link 展開前の `?liff.state=%3Fjoin%3D...`）から
+ * 招待コードを安全に抽出する（LINE OAuth コールバックの `?code=...&state=...` 誤検知を完全防止）
+ */
+export function extractJoinCodeFromSearch(search: string): string | null {
+  if (!search) return null;
+  try {
+    const params = new URLSearchParams(search);
+    let candidate = params.get("join") || params.get("invite") || "";
+
+    if (!candidate) {
+      const liffState = params.get("liff.state");
+      if (liffState) {
+        const qIdx = liffState.indexOf("?");
+        const rawSubQuery =
+          qIdx >= 0
+            ? liffState.slice(qIdx)
+            : liffState.includes("join=") || liffState.includes("invite=")
+            ? `?${liffState}`
+            : "";
+        if (rawSubQuery) {
+          const stateParams = new URLSearchParams(rawSubQuery);
+          candidate =
+            stateParams.get("join") || stateParams.get("invite") || "";
+        }
+      }
+    }
+
+    if (
+      !candidate &&
+      params.get("code") &&
+      !params.has("state") &&
+      !params.has("liffClientId") &&
+      !params.has("liffRedirectUri")
+    ) {
+      candidate = params.get("code") || "";
+    }
+
+    const clean = candidate.trim();
+    if (!clean || clean === "demo-team") return null;
+    return clean;
+  } catch {
+    return null;
+  }
+}
+
+function matchesInviteCodeToTeamId(teamId: string, inviteCode: string): boolean {
+  const cleanTeamId = teamId.trim().toLowerCase();
+  const cleanCode = inviteCode.trim().toLowerCase();
+  if (!cleanTeamId || !cleanCode) return false;
+  if (cleanTeamId === cleanCode) return true;
+  if (cleanCode.length >= 8 && /^[0-9a-f-]+$/i.test(cleanCode)) {
+    return cleanTeamId.startsWith(cleanCode);
+  }
+  return false;
+}
 
 function purgeLegacyLeakedTeamStorage(): void {
   if (typeof window === "undefined") return;
@@ -85,8 +146,18 @@ export interface LiffTeamItem {
   practiceMatchLabel?: string;
 }
 
+export interface LiffPendingTeamItem {
+  id: string;
+  name: string;
+  orgName?: string;
+  teamName?: string;
+  shortName?: string;
+  logoImageUrl?: string;
+}
+
 interface HubTeamsPayload {
   liffId?: string;
+  miniAppUrl?: string;
   sessionUser?: {
     userId: string;
     displayName: string;
@@ -94,6 +165,7 @@ interface HubTeamsPayload {
   } | null;
   isDemo?: boolean;
   teams?: LiffTeamItem[];
+  pendingTeams?: LiffPendingTeamItem[];
   team?: {
     id: string | null;
     name: string;
@@ -124,6 +196,12 @@ interface LiffContextType {
   isDemo: boolean;
   refreshTeams: () => Promise<void>;
   updateCurrentTeamLogo: (logoImageUrl: string | undefined) => void;
+  // 招待コード自動引当 & 承認待ちステータス管理
+  pendingTeams: LiffPendingTeamItem[];
+  pendingJoinCode: string | null;
+  persistPendingJoinCode: (code: string) => void;
+  clearPendingJoinCode: () => void;
+  recordOptimisticPendingTeam: (item: LiffPendingTeamItem) => void;
 }
 
 const LiffContext = createContext<LiffContextType>({
@@ -142,6 +220,11 @@ const LiffContext = createContext<LiffContextType>({
   isDemo: false,
   refreshTeams: async () => {},
   updateCurrentTeamLogo: () => {},
+  pendingTeams: [],
+  pendingJoinCode: null,
+  persistPendingJoinCode: () => {},
+  clearPendingJoinCode: () => {},
+  recordOptimisticPendingTeam: () => {},
 });
 
 export function LiffProvider({
@@ -214,6 +297,93 @@ export function LiffProvider({
     }
     return false;
   });
+
+  const [pendingTeams, setPendingTeams] = useState<LiffPendingTeamItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    const merged: LiffPendingTeamItem[] = [];
+    const seen = new Set<string>();
+    try {
+      const rawStored = localStorage.getItem(PENDING_TEAMS_STORAGE_KEY);
+      if (rawStored) {
+        const parsed = JSON.parse(rawStored) as LiffPendingTeamItem[];
+        for (const item of parsed) {
+          if (item?.id && item?.name && !seen.has(item.id)) {
+            seen.add(item.id);
+            merged.push(item);
+          }
+        }
+      }
+    } catch {}
+    try {
+      const rawSession = sessionStorage.getItem(SESSION_OPTIMISTIC_PENDING_KEY);
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession) as LiffPendingTeamItem;
+        if (parsed?.id && parsed?.name && !seen.has(parsed.id)) {
+          seen.add(parsed.id);
+          merged.push(parsed);
+        }
+      }
+    } catch {}
+    return merged;
+  });
+
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const fromUrl = extractJoinCodeFromSearch(window.location.search);
+    if (fromUrl) {
+      try {
+        sessionStorage.setItem(PENDING_JOIN_CODE_STORAGE_KEY, fromUrl);
+      } catch {}
+      return fromUrl;
+    }
+    try {
+      const stored = sessionStorage.getItem(PENDING_JOIN_CODE_STORAGE_KEY);
+      return stored && stored.trim() && stored.trim() !== "demo-team"
+        ? stored.trim()
+        : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const persistPendingJoinCode = useCallback((code: string) => {
+    const clean = code.trim();
+    if (!clean || clean === "demo-team") return;
+    setPendingJoinCode(clean);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(PENDING_JOIN_CODE_STORAGE_KEY, clean);
+      } catch {}
+    }
+  }, []);
+
+  const clearPendingJoinCode = useCallback(() => {
+    setPendingJoinCode(null);
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.removeItem(PENDING_JOIN_CODE_STORAGE_KEY);
+      } catch {}
+      if (pathname === "/liff") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has("join") || params.has("invite")) {
+          router.replace("/liff", { scroll: false });
+        }
+      }
+    }
+  }, [pathname, router]);
+
+  const recordOptimisticPendingTeam = useCallback((item: LiffPendingTeamItem) => {
+    if (!item?.id || !item?.name) return;
+    if (typeof window !== "undefined") {
+      try {
+        sessionStorage.setItem(SESSION_OPTIMISTIC_PENDING_KEY, JSON.stringify(item));
+      } catch {}
+    }
+    setPendingTeams((prev) => {
+      if (prev.some((p) => p.id === item.id)) return prev;
+      return [...prev, item];
+    });
+  }, []);
 
   const [currentTeam, setCurrentTeam] = useState<LiffTeamItem | null>(() => {
     if (typeof window !== "undefined") {
@@ -361,8 +531,11 @@ export function LiffProvider({
   }, []);
 
   const applyHubPayload = useCallback((data: HubTeamsPayload, targetTeamId: string | null, uid: string, uName: string) => {
-    if (typeof window !== "undefined" && data.liffId) {
-      localStorage.setItem("iscore_liff_id", data.liffId);
+    if (typeof window !== "undefined" && (data.liffId || data.miniAppUrl)) {
+      syncLineMiniAppConfigCache({
+        liffId: data.liffId,
+        miniAppUrl: data.miniAppUrl,
+      });
     }
 
     // Better-Auth (HttpOnly Cookie) セッションがサーバー側で確認された場合、追加通信ゼロで即座にユーザー状態を同期
@@ -413,6 +586,40 @@ export function LiffProvider({
       );
     setTeams(teamList);
     localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(teamList));
+
+    const activeRealIds = new Set(
+      teamList
+        .filter((t) => !t.isDemo && t.id !== "demo-team" && t.isMember)
+        .map((t) => t.id)
+    );
+    const serverPending = Array.isArray(data.pendingTeams)
+      ? data.pendingTeams.filter((p) => p?.id && p?.name && !activeRealIds.has(p.id))
+      : [];
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          PENDING_TEAMS_STORAGE_KEY,
+          JSON.stringify(serverPending)
+        );
+      } catch {}
+      try {
+        const rawOptimistic = sessionStorage.getItem(SESSION_OPTIMISTIC_PENDING_KEY);
+        if (rawOptimistic) {
+          const parsedOpt = JSON.parse(rawOptimistic) as LiffPendingTeamItem;
+          if (
+            !parsedOpt?.id ||
+            activeRealIds.has(parsedOpt.id) ||
+            (!demoFlag && parsedOpt.id === "demo-team")
+          ) {
+            sessionStorage.removeItem(SESSION_OPTIMISTIC_PENDING_KEY);
+          } else if (!serverPending.some((p) => p.id === parsedOpt.id)) {
+            serverPending.push(parsedOpt);
+          }
+        }
+      } catch {}
+    }
+    setPendingTeams(serverPending);
 
     let activeTeam: LiffTeamItem | null = null;
     if (demoFlag || targetTeamId === "demo-team") {
@@ -676,12 +883,28 @@ export function LiffProvider({
     };
   }, []);
 
-  // ログイン処理ハンドラー (LIFFとBetter-Authソーシャルログインのハイブリッド)
+  // ログイン処理ハンドラー (LIFFとBetter-Authソーシャルログインのハイブリッド・保留中の招待コードをリダイレクト後も確実に保持)
   const handleLogin = useCallback(async () => {
+    let returnUrl = typeof window !== "undefined" ? window.location.href : "/liff";
+    if (typeof window !== "undefined") {
+      try {
+        const savedJoin =
+          pendingJoinCode ||
+          sessionStorage.getItem(PENDING_JOIN_CODE_STORAGE_KEY) ||
+          "";
+        if (savedJoin.trim() && savedJoin.trim() !== "demo-team") {
+          sessionStorage.setItem(PENDING_JOIN_CODE_STORAGE_KEY, savedJoin.trim());
+          const urlObj = new URL("/liff", window.location.origin);
+          urlObj.searchParams.set("join", savedJoin.trim());
+          returnUrl = urlObj.toString();
+        }
+      } catch {}
+    }
+
     if (isInClient && liff) {
       if (!liff.isLoggedIn()) {
         liff.login({
-          redirectUri: typeof window !== "undefined" ? window.location.href : undefined,
+          redirectUri: returnUrl,
         });
       }
     } else {
@@ -689,15 +912,51 @@ export function LiffProvider({
         const { authClient } = await import("@/lib/auth-client");
         await authClient.signIn.social({
           provider: "line",
-          callbackURL: typeof window !== "undefined" ? window.location.href : "/liff",
+          callbackURL: returnUrl,
         });
       } catch {
         if (liff) {
-          liff.login();
+          liff.login({ redirectUri: returnUrl });
         }
       }
     }
-  }, [isInClient, liff]);
+  }, [isInClient, liff, pendingJoinCode]);
+
+  // 招待URL（?join=...）アクセス時：すでに承認済みメンバーなら該当チームへ即座に切替、すでに承認待ちなら重複モーダルを抑止
+  useEffect(() => {
+    if (!pendingJoinCode || !isReady || isLoadingTeam) return;
+
+    const matchedActive = teams.find(
+      (t) =>
+        !t.isDemo &&
+        t.id !== "demo-team" &&
+        t.isMember &&
+        matchesInviteCodeToTeamId(t.id, pendingJoinCode)
+    );
+    if (matchedActive) {
+      if (currentTeam?.id !== matchedActive.id) {
+        selectTeam(matchedActive.id);
+      }
+      clearPendingJoinCode();
+      return;
+    }
+
+    const matchedPending = pendingTeams.find((p) =>
+      matchesInviteCodeToTeamId(p.id, pendingJoinCode)
+    );
+    if (matchedPending) {
+      clearPendingJoinCode();
+    }
+  }, [
+    clearPendingJoinCode,
+    currentTeam?.id,
+    isLoadingTeam,
+    isReady,
+    pendingJoinCode,
+    pendingTeams,
+    selectTeam,
+    teams,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -709,6 +968,17 @@ export function LiffProvider({
 
         setIsMock(mockMode);
         setReason(mockReason);
+
+        // `@line/liff` が `liff.state` クエリを展開した直後にも `?join=...` を再捕捉
+        if (typeof window !== "undefined") {
+          const unpackedJoin = extractJoinCodeFromSearch(window.location.search);
+          if (unpackedJoin) {
+            try {
+              sessionStorage.setItem(PENDING_JOIN_CODE_STORAGE_KEY, unpackedJoin);
+            } catch {}
+            setPendingJoinCode(unpackedJoin);
+          }
+        }
 
         if (instance) {
           setLiff(instance);
@@ -728,7 +998,21 @@ export function LiffProvider({
               setIsLoggedIn(true);
             }
           } else if (inClient) {
-            instance.login();
+            let redirectUri: string | undefined =
+              typeof window !== "undefined" ? window.location.href : undefined;
+            if (typeof window !== "undefined") {
+              try {
+                const savedJoin = sessionStorage.getItem(
+                  PENDING_JOIN_CODE_STORAGE_KEY
+                );
+                if (savedJoin && savedJoin.trim()) {
+                  const urlObj = new URL("/liff", window.location.origin);
+                  urlObj.searchParams.set("join", savedJoin.trim());
+                  redirectUri = urlObj.toString();
+                }
+              } catch {}
+            }
+            instance.login(redirectUri ? { redirectUri } : undefined);
           }
         }
         setIsReady(true);
@@ -766,6 +1050,11 @@ export function LiffProvider({
       isDemo,
       refreshTeams,
       updateCurrentTeamLogo,
+      pendingTeams,
+      pendingJoinCode,
+      persistPendingJoinCode,
+      clearPendingJoinCode,
+      recordOptimisticPendingTeam,
     }),
     [
       liff,
@@ -784,6 +1073,11 @@ export function LiffProvider({
       isDemo,
       refreshTeams,
       updateCurrentTeamLogo,
+      pendingTeams,
+      pendingJoinCode,
+      persistPendingJoinCode,
+      clearPendingJoinCode,
+      recordOptimisticPendingTeam,
     ]
   );
 

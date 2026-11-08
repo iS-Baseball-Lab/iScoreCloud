@@ -62,7 +62,19 @@ function resolveInitialHubCache(): HubDataResponse | null {
 }
 
 export default function LiffHubPage() {
-  const { profile, currentTeam, isLoadingTeam, isLoggedIn, login, isDemo, refreshTeams } = useLiff();
+  const {
+    isReady,
+    profile,
+    currentTeam,
+    isLoadingTeam,
+    isLoggedIn,
+    login,
+    isDemo,
+    refreshTeams,
+    pendingTeams,
+    pendingJoinCode,
+    clearPendingJoinCode,
+  } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -94,6 +106,14 @@ export default function LiffHubPage() {
       setUserName(profile.displayName);
     }
   }, [profile?.displayName]);
+
+  // 招待URL（?join=...）からアクセスした際、参加申請モーダルを自動で開く
+  useEffect(() => {
+    if (!isReady || isLoadingTeam) return;
+    if (pendingJoinCode) {
+      setIsJoinModalOpen(true);
+    }
+  }, [isReady, isLoadingTeam, pendingJoinCode]);
 
   const applyHubData = useCallback((data: HubDataResponse) => {
     setNextEvent(data.nextEvent ?? null);
@@ -224,10 +244,17 @@ export default function LiffHubPage() {
       {/* 🌟 上部〜ヒーローセクション */}
       <div className="pb-2">
         <div className="p-4 space-y-5">
-          {/* 🌟 デモ体験モード時の案内バナー */}
+          {/* 🌟 デモ体験モード・参加承認待ち時の案内バナー */}
           {isDemo && (
             <section>
-              <DemoBanner onOpenJoinModal={() => setIsJoinModalOpen(true)} />
+              <DemoBanner
+                onOpenJoinModal={() => setIsJoinModalOpen(true)}
+                pendingTeams={pendingTeams}
+                onRefreshStatus={async () => {
+                  await refreshTeams();
+                  await loadHubData(undefined, true);
+                }}
+              />
             </section>
           )}
 
@@ -306,12 +333,16 @@ export default function LiffHubPage() {
       {isJoinModalOpen && (
         <JoinTeamModal
           isOpen={isJoinModalOpen}
-          onClose={() => setIsJoinModalOpen(false)}
-          onSuccess={({ status }) => {
+          onClose={() => {
+            clearPendingJoinCode();
+            setIsJoinModalOpen(false);
+          }}
+          onSuccess={({ status, teamId }) => {
+            clearPendingJoinCode();
             void refreshTeams();
             if (status === "active") {
               setIsJoinModalOpen(false);
-              void loadHubData(currentTeam?.id, true);
+              void loadHubData(teamId || currentTeam?.id, true);
             }
           }}
         />

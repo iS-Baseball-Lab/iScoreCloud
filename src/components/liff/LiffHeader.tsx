@@ -69,6 +69,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
     selectTeam,
     isDemo,
     refreshTeams,
+    clearPendingJoinCode,
   } = useLiff();
   const router = useRouter();
   const pathname = usePathname();
@@ -92,9 +93,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
       const messages = [
         {
           type: "text",
-          text: `⚾ ${shareData.title}\n${shareData.text}${
-            shareData.url ? `\n\n👉 試合動画・予定の確認はこちら:\n${shareData.url}` : ""
-          }`,
+          text: `⚾ ${shareData.title}\n${shareData.text}${shareData.url ? `\n\n👉 試合動画・予定の確認はこちら:\n${shareData.url}` : ""
+            }`,
         },
       ];
       const shared = await shareTargetPicker(messages);
@@ -156,11 +156,10 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <div
-                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${
-                  isDemo
+                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${isDemo
                     ? "bg-amber-50 dark:bg-slate-900 border-amber-500"
                     : "bg-muted border-border"
-                }`}
+                  }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
               >
                 <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-border bg-card shrink-0 overflow-hidden">
@@ -183,11 +182,10 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                     {orgDisplayName}
                   </span>
                   <span
-                    className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
-                      isDemo
+                    className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${isDemo
                         ? "text-amber-600 dark:text-amber-400 font-black"
                         : "text-muted-foreground font-bold"
-                    }`}
+                      }`}
                   >
                     {teamDisplayName}
                   </span>
@@ -210,9 +208,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                       navigateToLiffRoot(router, pathname);
                     }
                   }}
-                  className={`flex items-center justify-between p-2 cursor-pointer rounded-xl font-black text-xs ${
-                    currentTeam?.id === t.id ? "bg-primary/10 text-primary" : "hover:bg-muted"
-                  }`}
+                  className={`flex items-center justify-between p-2 cursor-pointer rounded-xl font-black text-xs ${currentTeam?.id === t.id ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                    }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <Avatar className="h-7 w-7 border border-border bg-card shrink-0 overflow-hidden">
@@ -291,9 +288,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   </span>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        isLoggedIn ? "bg-[#06C755]" : "bg-amber-500"
-                      }`}
+                      className={`w-2 h-2 rounded-full shrink-0 ${isLoggedIn ? "bg-[#06C755]" : "bg-amber-500"
+                        }`}
                     />
                     <span className="text-[10px] font-bold text-muted-foreground">
                       {isLoggedIn ? "LINEミニアプリ連携中" : "LINE未連携"}
@@ -435,8 +431,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
       {/* チーム参加申請モーダル */}
       <JoinTeamModal
         isOpen={isJoinModalOpen}
-        onClose={() => setIsJoinModalOpen(false)}
+        onClose={() => {
+          clearPendingJoinCode();
+          setIsJoinModalOpen(false);
+        }}
         onSuccess={({ status }) => {
+          clearPendingJoinCode();
           void refreshTeams();
           if (status === "active") {
             setIsJoinModalOpen(false);

@@ -164,12 +164,14 @@ export function OpenLineMiniAppButton({
               {/* A-3 上帯ダークキャップ × 公式LINEグリーン下線 */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-4 py-3.5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-8 h-8 rounded-xl bg-[#06C755] text-white flex items-center justify-center shrink-0">
-                    <SiLine className="w-4 h-4" />
-                  </span>
+                  <img
+                    src="/liff-logo.webp"
+                    alt="iScoreCloud LINEミニアプリ"
+                    className="w-9 h-9 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0 shadow-xs"
+                  />
                   <div className="min-w-0">
                     <h3 className="text-sm font-black tracking-tight truncate">
-                      LINEミニアプリを開く
+                      iScoreCloud for LINEミニアプリ
                     </h3>
                     <p className="text-[10px] font-bold text-slate-300 tracking-wider uppercase">
                       OPEN IN LINE MINI APP

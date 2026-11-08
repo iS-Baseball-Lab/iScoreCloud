@@ -31,6 +31,17 @@ export interface LineMiniAppTargets {
   lineQrScannerUrl: string;
 }
 
+export interface LineMiniAppInviteTargets {
+  /** LINEトークで共有する最適招待URL（LIFF ID設定時は `https://liff.line.me/{liffId}?join=...`） */
+  primaryInviteUrl: string;
+  /** LIFF / LINEミニアプリ直起動URL（設定時のみ） */
+  externalLineUrl: string | null;
+  /** WebフォールバックURL（例: `https://iscorecloud.com/liff?join=...`） */
+  webFallbackUrl: string;
+  /** LINEミニアプリ直起動リンクになっているかどうか */
+  isDirectMiniAppUrl: boolean;
+}
+
 let cachedConfig: LineMiniAppConfig | null = null;
 let inflightConfigPromise: Promise<LineMiniAppConfig> | null = null;
 
@@ -151,6 +162,36 @@ export function persistWebToLiffHandoff(payload: WebToLiffHandoffPayload): void 
   }
 }
 
+export function syncLineMiniAppConfigCache(
+  partial: Partial<LineMiniAppConfig>
+): LineMiniAppConfig {
+  const current = getCachedLineMiniAppConfig();
+  const nextLiffId = (partial.liffId ?? current.liffId ?? "").trim();
+  const nextMiniAppUrl = (
+    partial.miniAppUrl ??
+    current.miniAppUrl ??
+    ""
+  ).trim();
+
+  if (typeof window !== "undefined") {
+    if (nextLiffId) {
+      localStorage.setItem("iscore_liff_id", nextLiffId);
+    }
+    if (nextMiniAppUrl) {
+      localStorage.setItem("iscore_line_miniapp_url", nextMiniAppUrl);
+    }
+  }
+
+  const next: LineMiniAppConfig = {
+    liffId: nextLiffId,
+    miniAppUrl: nextMiniAppUrl,
+  };
+  if (next.liffId || next.miniAppUrl) {
+    cachedConfig = next;
+  }
+  return next;
+}
+
 export function buildLineMiniAppTargets(params: {
   config: LineMiniAppConfig;
   teamId?: string | null;
@@ -185,6 +226,40 @@ export function buildLineMiniAppTargets(params: {
     shareableWebUrl,
     qrTargetUrl: externalLineUrl || shareableWebUrl,
     lineQrScannerUrl: "https://line.me/R/nv/QRCodeReader",
+  };
+}
+
+/**
+ * チーム招待コード付きの LINEミニアプリ直接参加URL を生成する
+ * - LIFF ID / ミニアプリURL 設定時: `https://liff.line.me/{liffId}?join={inviteCode}`（LINE内でタップするとLINEミニアプリが直接起動＆自動LINE認証）
+ * - 未設定時フォールバック: `{origin}/liff?join={inviteCode}`
+ */
+export function buildLineMiniAppInviteTargets(params: {
+  config: LineMiniAppConfig;
+  inviteCode: string;
+  origin?: string | null;
+}): LineMiniAppInviteTargets {
+  const cleanCode = params.inviteCode.trim();
+  const querySuffix = cleanCode ? `?join=${encodeURIComponent(cleanCode)}` : "";
+  const resolvedOrigin = (params.origin?.trim() || resolveAppOrigin()).replace(
+    /\/+$/,
+    ""
+  );
+  const webFallbackUrl = `${resolvedOrigin}/liff${querySuffix}`;
+
+  let externalLineUrl: string | null = null;
+  if (params.config.miniAppUrl) {
+    const baseMini = params.config.miniAppUrl.replace(/\/+$/, "");
+    externalLineUrl = `${baseMini}${querySuffix}`;
+  } else if (params.config.liffId) {
+    externalLineUrl = `https://liff.line.me/${params.config.liffId}${querySuffix}`;
+  }
+
+  return {
+    primaryInviteUrl: externalLineUrl || webFallbackUrl,
+    externalLineUrl,
+    webFallbackUrl,
+    isDirectMiniAppUrl: Boolean(externalLineUrl),
   };
 }
 

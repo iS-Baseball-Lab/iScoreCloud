@@ -1068,6 +1068,8 @@ app.post("/join", async (c) => {
         message: "チーム参加申請を受け付けました！管理者の承認をお待ちください。（デモ）",
         status: "pending",
         teamId: "demo-team",
+        teamName: DEMO_TEAM.name,
+        logoImageUrl: DEMO_TEAM.logoImageUrl,
       });
     }
 
@@ -1082,20 +1084,39 @@ app.post("/join", async (c) => {
     }
 
     // 2. チーム特定ロジック（招待コード＝チームID完全一致、または8文字以上のUUID一意前方一致のみ許可）
-    let targetTeam: { id: string; name: string } | undefined = undefined;
+    let targetTeam:
+      | {
+          id: string;
+          name: string;
+          orgName: string | null;
+          logoImageUrl: string | null;
+        }
+      | undefined = undefined;
 
     // ① ID完全一致
     targetTeam = await db
-      .select({ id: teams.id, name: teams.name })
+      .select({
+        id: teams.id,
+        name: teams.name,
+        orgName: organizations.name,
+        logoImageUrl: organizations.logoImageUrl,
+      })
       .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
       .where(eq(teams.id, code))
       .get();
 
     // ② 8文字以上のUUIDコードかつ1チームに一意特定できる場合のみ前方一致を許可（チーム名部分一致やDB先頭フォールバックは厳禁）
     if (!targetTeam && code.length >= 8 && /^[0-9a-f-]+$/i.test(code)) {
       const prefixMatches = await db
-        .select({ id: teams.id, name: teams.name })
+        .select({
+          id: teams.id,
+          name: teams.name,
+          orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+        })
         .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
         .where(sql`lower(${teams.id}) LIKE lower(${code + "%"})`)
         .limit(2)
         .all();
@@ -1115,6 +1136,11 @@ app.post("/join", async (c) => {
     }
 
     const targetTeamId = targetTeam.id;
+    const targetDisplayName =
+      targetTeam.orgName && targetTeam.orgName !== targetTeam.name
+        ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
+        : targetTeam.orgName || targetTeam.name;
+    const targetLogoImageUrl = targetTeam.logoImageUrl || undefined;
 
     // 3. ユーザーの整合性チェック (外部キー制約違反を防止)
     let validUserId: string | null = null;
@@ -1161,6 +1187,8 @@ app.post("/join", async (c) => {
         message: "すでにこのチームの承認済みメンバーとして登録されています",
         status: "active",
         teamId: targetTeamId,
+        teamName: targetDisplayName,
+        logoImageUrl: targetLogoImageUrl,
       });
     }
 
@@ -1185,13 +1213,17 @@ app.post("/join", async (c) => {
           message: "すでにこのチームのメンバーとして登録されています",
           status: "active",
           teamId: targetTeamId,
+          teamName: targetDisplayName,
+          logoImageUrl: targetLogoImageUrl,
         });
       }
       return c.json({
         success: true,
-        message: "参加申請はすでに送信済みです。管理者の承認をお待ちください",
+        message: `「${targetDisplayName}」への参加申請は送信済みです。管理者の承認をお待ちください。`,
         status: "pending",
         teamId: targetTeamId,
+        teamName: targetDisplayName,
+        logoImageUrl: targetLogoImageUrl,
       });
     }
 
@@ -1218,9 +1250,11 @@ app.post("/join", async (c) => {
         }
         return c.json({
           success: true,
-          message: "参加申請はすでに送信済みです。管理者の承認をお待ちください",
+          message: `「${targetDisplayName}」への参加申請は送信済みです。管理者の承認をお待ちください。`,
           status: "pending",
           teamId: targetTeamId,
+          teamName: targetDisplayName,
+          logoImageUrl: targetLogoImageUrl,
         });
       }
     }
@@ -1241,9 +1275,11 @@ app.post("/join", async (c) => {
 
     return c.json({
       success: true,
-      message: `「${targetTeam.name}」への参加申請を受け付けました！管理者の承認をお待ちください。`,
+      message: `「${targetDisplayName}」への参加申請を受け付けました！管理者の承認をお待ちください。`,
       status: "pending",
       teamId: targetTeamId,
+      teamName: targetDisplayName,
+      logoImageUrl: targetLogoImageUrl,
     });
   } catch (error: unknown) {
     console.error("Failed to submit join request:", error);
@@ -1351,16 +1387,65 @@ app.get("/hub", async (c) => {
         }
       : null;
 
+    // 本人アカウントで申請中（status = 'pending'）のチーム名・ロゴのみを取得（実データは一切含めない）
+    const allTeamsById = new Map(allTeams.map((t) => [t.id, t]));
+    const pendingTeams: Array<{
+      id: string;
+      name: string;
+      orgName: string;
+      teamName: string;
+      shortName: string;
+      logoImageUrl?: string;
+    }> = [];
+
+    if (candidateIdsArray.length > 0) {
+      const pendingRows = await db
+        .select({ teamId: teamMembers.teamId })
+        .from(teamMembers)
+        .where(
+          and(
+            eq(teamMembers.status, "pending"),
+            inArray(teamMembers.userId, candidateIdsArray)
+          )
+        )
+        .all();
+
+      const seenPendingIds = new Set<string>();
+      for (const row of pendingRows) {
+        const tid = row.teamId;
+        if (!tid || userTeamIds.has(tid) || seenPendingIds.has(tid)) continue;
+        const foundTeam = allTeamsById.get(tid);
+        if (!foundTeam) continue;
+        seenPendingIds.add(tid);
+        pendingTeams.push({
+          id: foundTeam.id,
+          name:
+            foundTeam.orgName && foundTeam.orgName !== foundTeam.name
+              ? `${foundTeam.orgName} ${foundTeam.name}`.trim()
+              : foundTeam.orgName || foundTeam.name,
+          orgName: foundTeam.orgName || foundTeam.name,
+          teamName: foundTeam.name,
+          shortName: foundTeam.shortName,
+          logoImageUrl: foundTeam.logoImageUrl || undefined,
+        });
+      }
+    }
+
+    const hubLiffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
+    const hubMiniAppUrl =
+      c.env.NEXT_PUBLIC_LINE_MINIAPP_URL || c.env.LINE_MINIAPP_URL || "";
+
     // 🌟 0. 明示的に体験デモチームが要求された場合は即座にデモチームとして返却
     if (requestedTeamId === "demo-team") {
-      const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
       return c.json({
         success: true,
-        liffId,
+        liffId: hubLiffId,
+        miniAppUrl: hubMiniAppUrl,
         sessionUser: hubSessionUser,
         isDemo: true,
         team: DEMO_TEAM,
         teams: teamList,
+        pendingTeams,
         nextEvent: DEMO_NEXT_EVENT,
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
@@ -1383,14 +1468,15 @@ app.get("/hub", async (c) => {
 
     // 3. 所属チームが 0 件の未招待・承認待ちユーザーは、絶対に DB の他チームへフォールバックせず DEMO_TEAM を返却
     if (!targetTeam) {
-      const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
       return c.json({
         success: true,
-        liffId,
+        liffId: hubLiffId,
+        miniAppUrl: hubMiniAppUrl,
         sessionUser: hubSessionUser,
         isDemo: true,
         team: DEMO_TEAM,
         teams: teamList,
+        pendingTeams,
         nextEvent: DEMO_NEXT_EVENT,
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
@@ -1692,11 +1778,10 @@ app.get("/hub", async (c) => {
       };
     });
 
-    const liffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
-
     return c.json({
       success: true,
-      liffId,
+      liffId: hubLiffId,
+      miniAppUrl: hubMiniAppUrl,
       sessionUser: hubSessionUser,
       isDemo: false,
       team: {
@@ -1715,6 +1800,7 @@ app.get("/hub", async (c) => {
         logoImageUrl: targetTeam.logoImageUrl || undefined,
       },
       teams: teamList,
+      pendingTeams,
       nextEvent,
       events: formattedEventsList,
       attendanceStatusConfig: hubStatusConfig,
@@ -7689,6 +7775,9 @@ app.get("/admin/dashboard", async (c) => {
     (c.env.GOOGLE_MAPS_API_KEY || "").trim() ||
     (c.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "").trim() ||
     null;
+  const adminLiffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";
+  const adminMiniAppUrl =
+    c.env.NEXT_PUBLIC_LINE_MINIAPP_URL || c.env.LINE_MINIAPP_URL || "";
 
   // 1. デモモードまたはチーム未指定時のフォールバック
   if (!teamId || teamId === "demo-team") {
@@ -7697,6 +7786,8 @@ app.get("/admin/dashboard", async (c) => {
       isDemo: true,
       canManage: true,
       myRole: "admin",
+      liffId: adminLiffId,
+      miniAppUrl: adminMiniAppUrl,
       googleMapsApiKey: envMapsKey,
       googleMapsKeySource: envMapsKey ? "env" : "none",
       team: {
@@ -7786,6 +7877,7 @@ app.get("/admin/dashboard", async (c) => {
         name: teams.name,
         organizationId: teams.organizationId,
         orgName: organizations.name,
+        orgLogoImageUrl: organizations.logoImageUrl,
         orgGoogleMapsApiKey: organizations.googleMapsApiKey,
         createdBy: teams.createdBy,
         memberSubLabels: teams.memberSubLabels,
@@ -7938,12 +8030,16 @@ app.get("/admin/dashboard", async (c) => {
       isDemo: false,
       canManage,
       myRole,
+      liffId: adminLiffId,
+      miniAppUrl: adminMiniAppUrl,
       googleMapsApiKey: canManage ? effectiveMapsKey : null,
       googleMapsKeySource: canManage ? mapsKeySource : "none",
       team: {
         id: targetTeam.id,
         name: `${targetTeam.orgName ? `${targetTeam.orgName} ` : ""}${targetTeam.name}`.trim(),
+        orgName: targetTeam.orgName || targetTeam.name,
         shortName: targetTeam.name,
+        logoImageUrl: targetTeam.orgLogoImageUrl || undefined,
         inviteCode: canManage ? targetTeam.id : "",
       },
       stats: {

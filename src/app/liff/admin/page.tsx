@@ -36,6 +36,7 @@ import {
   Car,
   Trash2,
 } from "lucide-react";
+import type { Liff } from "@line/liff";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
@@ -45,6 +46,13 @@ import {
 import { useLiff } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
+import {
+  buildLineMiniAppInviteTargets,
+  getCachedLineMiniAppConfig,
+  resolveLineMiniAppConfig,
+  syncLineMiniAppConfigCache,
+  type LineMiniAppConfig,
+} from "@/lib/line-miniapp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -79,12 +87,16 @@ interface AdminDashboardData {
   isDemo?: boolean;
   canManage?: boolean;
   myRole?: string;
+  liffId?: string;
+  miniAppUrl?: string;
   googleMapsApiKey?: string | null;
   googleMapsKeySource?: "env" | "org" | "none";
   team?: {
     id: string;
     name: string;
+    orgName?: string;
     shortName: string;
+    logoImageUrl?: string;
     inviteCode: string;
   };
   stats?: {
@@ -157,12 +169,23 @@ function LiffAdminDashboardContent() {
   const [selectedSourceMemberId, setSelectedSourceMemberId] = useState("");
   const [isMerging, setIsMerging] = useState(false);
 
-  // 招待コードコピーフィードバック
+  // 招待コード・招待URLコピーフィードバック & LINEミニアプリ設定
   const [isCopied, setIsCopied] = useState(false);
+  const [isUrlCopied, setIsUrlCopied] = useState(false);
+  const [miniAppConfig, setMiniAppConfig] = useState<LineMiniAppConfig>(() =>
+    getCachedLineMiniAppConfig()
+  );
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    let active = true;
+    void resolveLineMiniAppConfig().then((resolved) => {
+      if (active) setMiniAppConfig(resolved);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   // ─── ダッシュボードデータの取得 ─────────────────────
@@ -182,6 +205,14 @@ function LiffAdminDashboardContent() {
         const json = (await res.json()) as AdminDashboardData;
         if (json.success) {
           setData(json);
+          if (json.liffId || json.miniAppUrl) {
+            setMiniAppConfig(
+              syncLineMiniAppConfigCache({
+                liffId: json.liffId,
+                miniAppUrl: json.miniAppUrl,
+              })
+            );
+          }
           setMapsApiKeyInput(
             json.googleMapsKeySource === "org" ? json.googleMapsApiKey || "" : ""
           );
@@ -454,34 +485,198 @@ function LiffAdminDashboardContent() {
 
   // ─── 招待コードのコピー & LINEシェア ──────────────────
   const inviteCode = data?.team?.inviteCode || currentTeam?.id || "DEMO2026";
-  const inviteUrl = typeof window !== "undefined" ? `${window.location.origin}/liff?join=${encodeURIComponent(inviteCode)}` : "";
+  const inviteTargets = useMemo(
+    () =>
+      buildLineMiniAppInviteTargets({
+        config: miniAppConfig,
+        inviteCode,
+        origin:
+          typeof window !== "undefined" ? window.location.origin : undefined,
+      }),
+    [inviteCode, miniAppConfig]
+  );
+  const inviteUrl = inviteTargets.primaryInviteUrl;
 
   const handleCopyInvite = () => {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(inviteCode);
+      void navigator.clipboard.writeText(inviteCode);
       setIsCopied(true);
       toast.success("招待コードをコピーしました！");
       setTimeout(() => setIsCopied(false), 2000);
     }
   };
 
+  const handleCopyInviteUrl = () => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(inviteUrl);
+      setIsUrlCopied(true);
+      toast.success("参加申請URLをコピーしました！");
+      setTimeout(() => setIsUrlCopied(false), 2000);
+    }
+  };
+
   const handleShareLine = async () => {
-    const text = `【${data?.team?.name || "チーム"}】LINEミニアプリへの参加案内です！\n下記の招待コードを入力してご参加ください。\n\n🔑 招待コード: ${inviteCode}\n📲 参加URL: ${inviteUrl}`;
-    
+    const teamLabel =
+      data?.team?.name ||
+      currentTeam?.orgName ||
+      currentTeam?.name ||
+      "チーム";
+    const text = `⚾【${teamLabel}】iScoreCloud for LINEミニアプリへの参加招待です！\n下のリンクをタップすると、招待コード自動入力済みの参加申請画面が開きます。\n\n📲 1タップ参加申請URL:\n${inviteUrl}\n\n🔑 招待コード: ${inviteCode}\n※申請後、管理者の承認が完了すると予定・出欠・配車・試合データが自動解禁されます。`;
+
     try {
       if (liff && liff.isApiAvailable("shareTargetPicker")) {
-        await liff.shareTargetPicker([
+        if (inviteUrl.startsWith("https://")) {
+          try {
+            const flexMessages: Parameters<Liff["shareTargetPicker"]>[0] = [
+              {
+                type: "flex",
+                altText: `【${teamLabel}】iScoreCloud LINEミニアプリ参加招待（コード: ${inviteCode}）`.slice(
+                  0,
+                  380
+                ),
+                contents: {
+                  type: "bubble",
+                  size: "mega",
+                  header: {
+                    type: "box",
+                    layout: "horizontal",
+                    spacing: "md",
+                    alignItems: "center",
+                    backgroundColor: "#0f172a",
+                    paddingAll: "14px",
+                    contents: [
+                      {
+                        type: "image",
+                        url: "https://iscorecloud.com/liff-logo.png",
+                        size: "40px",
+                        aspectRatio: "1:1",
+                        aspectMode: "fit",
+                        flex: 0,
+                      },
+                      {
+                        type: "box",
+                        layout: "vertical",
+                        flex: 1,
+                        contents: [
+                          {
+                            type: "text",
+                            text: "iScoreCloud",
+                            weight: "bold",
+                            size: "sm",
+                            color: "#f8fafc",
+                          },
+                          {
+                            type: "text",
+                            text: "for LINEミニアプリ｜チーム招待",
+                            size: "xxs",
+                            color: "#94a3b8",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  body: {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "md",
+                    paddingAll: "16px",
+                    backgroundColor: "#ffffff",
+                    contents: [
+                      {
+                        type: "text",
+                        text: `【${teamLabel}】`,
+                        weight: "bold",
+                        size: "md",
+                        color: "#0f172a",
+                        wrap: true,
+                      },
+                      {
+                        type: "text",
+                        text: "下のボタンから参加申請画面を開けます（招待コードは自動入力されます）。管理者の承認後にチーム画面が解禁されます。",
+                        size: "xs",
+                        color: "#475569",
+                        wrap: true,
+                      },
+                      {
+                        type: "box",
+                        layout: "vertical",
+                        spacing: "xs",
+                        backgroundColor: "#f1f5f9",
+                        cornerRadius: "10px",
+                        paddingAll: "10px",
+                        contents: [
+                          {
+                            type: "text",
+                            text: "🔑 チーム招待コード",
+                            size: "xxs",
+                            weight: "bold",
+                            color: "#64748b",
+                          },
+                          {
+                            type: "text",
+                            text: inviteCode,
+                            size: "sm",
+                            weight: "bold",
+                            color: "#0f172a",
+                            wrap: true,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  footer: {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "sm",
+                    paddingAll: "14px",
+                    backgroundColor: "#ffffff",
+                    contents: [
+                      {
+                        type: "button",
+                        style: "primary",
+                        color: "#06C755",
+                        height: "sm",
+                        action: {
+                          type: "uri",
+                          label: "ミニアプリで参加申請する",
+                          uri: inviteUrl,
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            ];
+            const flexRes = await liff.shareTargetPicker(flexMessages);
+            if (flexRes) {
+              toast.success("LINEで招待カードを共有しました！");
+            }
+            return;
+          } catch {
+            // Flex送信非対応環境ではテキスト共有へ自動フォールバック
+          }
+        }
+
+        const textRes = await liff.shareTargetPicker([
           {
             type: "text",
             text,
           },
         ]);
-        toast.success("LINEで招待を共有しました");
+        if (textRes) {
+          toast.success("LINEで招待を共有しました");
+        }
       } else {
-        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
+        window.open(
+          `https://line.me/R/msg/text/?${encodeURIComponent(text)}`,
+          "_blank"
+        );
       }
-    } catch (e) {
-      window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
+    } catch {
+      window.open(
+        `https://line.me/R/msg/text/?${encodeURIComponent(text)}`,
+        "_blank"
+      );
     }
   };
 
@@ -965,51 +1160,101 @@ function LiffAdminDashboardContent() {
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "invite" && (
               <div className="space-y-4 animate-in fade-in duration-200">
-                {/* 🔑 招待コードカード (A-3 Dark Solid Header Cap) */}
+                {/* 🔑 招待コードカード (A-3 Dark Solid Header Cap + LINEミニアプリアイコン) */}
                 <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                   <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center shrink-0">
-                        <Sparkles className="w-4 h-4" />
-                      </span>
+                      <img
+                        src="/liff-logo.webp"
+                        alt="iScoreCloud LINEミニアプリ"
+                        className="w-8 h-8 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0 shadow-xs"
+                      />
                       <div className="min-w-0">
                         <h3 className="text-xs sm:text-sm font-black text-white truncate">
-                          チーム招待コード
+                          チーム招待（LINEミニアプリ）
                         </h3>
                         <p className="text-[10px] font-bold text-slate-300 truncate">
-                          LINEミニアプリへの参加案内・共有
+                          リンクから招待コード自動入力で参加申請
                         </p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shrink-0">
-                      LINEから直接参加可
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-[#06C755] text-white shrink-0">
+                      {inviteTargets.isDirectMiniAppUrl
+                        ? "ミニアプリ直起動"
+                        : "1タップ参加対応"}
                     </span>
                   </div>
 
                   <div className="p-4 space-y-3">
-                    <div className="p-3 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-2">
-                      <span className="font-mono text-sm sm:text-base font-black tracking-widest text-foreground select-all truncate">
-                        {inviteCode}
+                    {/* 招待コード */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-muted-foreground pl-0.5">
+                        🔑 チーム招待コード
                       </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleCopyInvite}
-                        className="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shrink-0 gap-1"
-                      >
-                        {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{isCopied ? "コピー済" : "コピー"}</span>
-                      </Button>
+                      <div className="p-3 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+                        <span className="font-mono text-sm sm:text-base font-black tracking-widest text-foreground select-all truncate">
+                          {inviteCode}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleCopyInvite}
+                          className="h-8 px-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 font-black text-xs shrink-0 gap-1"
+                        >
+                          {isCopied ? (
+                            <Check className="w-3.5 h-3.5" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isCopied ? "コピー済" : "コピー"}</span>
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* 1タップ招待URL */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-black text-muted-foreground pl-0.5">
+                        📲 1タップ参加申請リンク（招待コード自動セット）
+                      </span>
+                      <div className="p-2.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-bold text-muted-foreground select-all truncate">
+                          {inviteUrl}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={handleCopyInviteUrl}
+                          className="h-8 px-3 rounded-lg border-border bg-card text-foreground hover:bg-muted font-black text-xs shrink-0 gap-1"
+                        >
+                          {isUrlCopied ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                          <span>{isUrlCopied ? "URLコピー済" : "URLコピー"}</span>
+                        </Button>
+                      </div>
                     </div>
 
                     <Button
                       type="button"
                       onClick={handleShareLine}
-                      className="w-full h-10 rounded-xl bg-[#06C755] text-white hover:bg-[#05b34c] font-black text-xs gap-1.5 shadow-xs border-0"
+                      className="w-full h-11 rounded-xl bg-[#06C755] text-white hover:bg-[#05b34c] font-black text-xs gap-2 shadow-xs border-0"
                     >
                       <Share2 className="w-4 h-4" />
                       <span>LINEでメンバーを招待する</span>
                     </Button>
+
+                    {/* 参加フローのわかりやすい3ステップ案内 */}
+                    <div className="p-3 rounded-xl bg-muted/60 border border-border text-[11px] font-bold text-muted-foreground space-y-1">
+                      <p className="text-foreground font-black text-[11px]">
+                        📌 招待されたメンバー側の流れ
+                      </p>
+                      <p>
+                        ① LINEの招待リンクをタップ ➔ ② 参加申請フォームが自動で開き、名前と区分を選んで1タップ送信 ➔ ③ この画面の「参加承認」タブで承認するとチームデータが解禁されます。
+                      </p>
+                    </div>
                   </div>
                 </section>
 
