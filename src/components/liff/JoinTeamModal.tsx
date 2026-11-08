@@ -207,7 +207,7 @@ export function JoinTeamModal({
                 チーム参加申請
               </h3>
               <p className="text-[11px] font-bold text-slate-300 truncate">
-                iScoreCloud for LINEミニアプリ
+                iScoreCloud LINEミニアプリ
               </p>
             </div>
           </div>

@@ -171,7 +171,7 @@ export function OpenLineMiniAppButton({
                   />
                   <div className="min-w-0">
                     <h3 className="text-sm font-black tracking-tight truncate">
-                      iScoreCloud for LINEミニアプリ
+                      iScoreCloud LINEミニアプリ
                     </h3>
                     <p className="text-[10px] font-bold text-slate-300 tracking-wider uppercase">
                       OPEN IN LINE MINI APP

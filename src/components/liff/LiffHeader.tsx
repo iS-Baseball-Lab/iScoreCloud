@@ -128,7 +128,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
       <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
-        {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud for LINEミニアプリ) */}
+        {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud LINEミニアプリ) */}
         <Link
           href="/liff"
           onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
@@ -137,7 +137,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         >
           <img
             src="/liff-logo.webp"
-            alt="iScoreCloud Logo"
+            alt="iScoreCloud LINEミニアプリ"
             className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain group-hover:scale-105 transition-transform duration-300"
           />
           <div className="flex flex-col justify-center">
@@ -145,7 +145,7 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
               iScore<span className="text-primary">Cloud</span>
             </h1>
             <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
-              for LINEミニアプリ
+              LINEミニアプリ
             </span>
           </div>
         </Link>

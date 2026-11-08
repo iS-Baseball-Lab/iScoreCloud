@@ -32,7 +32,7 @@ export const metadata: Metadata = {
         url: "/channel-icon-640x640.png",
         width: 640,
         height: 640,
-        alt: "iScoreCloud for LINEミニアプリ",
+        alt: "iScoreCloud LINEミニアプリ",
       },
     ],
   },

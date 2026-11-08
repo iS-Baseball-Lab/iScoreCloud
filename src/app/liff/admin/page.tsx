@@ -521,7 +521,7 @@ function LiffAdminDashboardContent() {
       currentTeam?.orgName ||
       currentTeam?.name ||
       "チーム";
-    const text = `⚾【${teamLabel}】iScoreCloud for LINEミニアプリへの参加招待です！\n下のリンクをタップすると、招待コード自動入力済みの参加申請画面が開きます。\n\n📲 1タップ参加申請URL:\n${inviteUrl}\n\n🔑 招待コード: ${inviteCode}\n※申請後、管理者の承認が完了すると予定・出欠・配車・試合データが自動解禁されます。`;
+    const text = `⚾【${teamLabel}】iScoreCloud LINEミニアプリへの参加招待です！\n下のリンクをタップすると、招待コード自動入力済みの参加申請画面が開きます。\n\n📲 1タップ参加申請URL:\n${inviteUrl}\n\n🔑 招待コード: ${inviteCode}\n※申請後、管理者の承認が完了すると予定・出欠・配車・試合データが自動解禁されます。`;
 
     try {
       if (liff && liff.isApiAvailable("shareTargetPicker")) {
@@ -560,14 +560,14 @@ function LiffAdminDashboardContent() {
                         contents: [
                           {
                             type: "text",
-                            text: "iScoreCloud",
+                            text: "iScoreCloud LINEミニアプリ",
                             weight: "bold",
                             size: "sm",
                             color: "#f8fafc",
                           },
                           {
                             type: "text",
-                            text: "for LINEミニアプリ｜チーム招待",
+                            text: "チーム参加招待",
                             size: "xxs",
                             color: "#94a3b8",
                           },
