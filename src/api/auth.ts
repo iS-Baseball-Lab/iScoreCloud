@@ -1,6 +1,6 @@
 // filepath: src/api/auth.ts
 import { Hono } from 'hono'
-import { getAuth } from "@/lib/auth"
+import { ensureAuthSchema, getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
 import { eq, or, inArray } from 'drizzle-orm'
 import { teams, teamMembers, organizations } from '@/db/schema/team'
@@ -8,6 +8,11 @@ import { account, user as authUserTable } from '@/db/schema/auth'
 import type { WorkerEnv, Membership, AuthUser } from '@/types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
+
+app.use('*', async (c, next) => {
+  await ensureAuthSchema(c.env.DB)
+  await next()
+})
 
 function buildCanonicalNames(raw: string | null | undefined): Set<string> {
   const set = new Set<string>();

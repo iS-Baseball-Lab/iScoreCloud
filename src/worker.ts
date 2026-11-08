@@ -38,9 +38,10 @@ import type { WorkerEnv } from './types/api'
 
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
-// 🌟 CORSを全APIルートに適用（LINE内ブラウザ/LIFFのFailed to fetchを根絶）
+// 🌟 CORSを全APIルートに適用（Better-Auth Cookie認証とLINE内ブラウザ/LIFF双方に対応）
 app.use('*', cors({
-  origin: '*',
+  origin: (origin) => origin || '*',
+  credentials: true,
   allowHeaders: ['Content-Type', 'Authorization'],
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   exposeHeaders: ['Content-Length'],
@@ -85,8 +86,13 @@ export default {
     // 💡 規約: API パスは Hono に、静的アセットは ASSETS (Cloudflare Workers) に振り分け
     if (url.pathname.startsWith('/api/')) {
       const apiRes = await app.fetch(request, env, ctx)
-      // 画像配信以外のJSON APIはLINE内WKWebView等のHTTPディスクキャッシュ残留を防止する
-      if (!url.pathname.startsWith('/api/images/') && !apiRes.headers.has('Cache-Control')) {
+      // 認証コールバック（Set-Cookie・302リダイレクト）や画像配信は生レスポンスをそのまま返却し、通常の2xx JSON APIのみHTTPキャッシュ抑止を付与
+      if (
+        !url.pathname.startsWith('/api/images/') &&
+        !url.pathname.startsWith('/api/auth/') &&
+        apiRes.status < 300 &&
+        !apiRes.headers.has('Cache-Control')
+      ) {
         const headers = new Headers(apiRes.headers)
         headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
         return new Response(apiRes.body, {

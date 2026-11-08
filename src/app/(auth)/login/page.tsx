@@ -50,13 +50,13 @@ export default function LoginPage() {
 
   return (
     // 💡 min-h-[100dvh] と justify-between で画面全体をFlex管理
-    <div className="w-full min-h-[100dvh] flex flex-col items-center justify-between py-10 px-6">
+    <div className="w-full min-h-[100dvh] flex flex-col items-center justify-between py-6 sm:py-10 px-6">
       
       {/* 上部スペース（ロゴとボタンを画面中央に保つためのバランサー） */}
       <div className="flex-1" />
 
       {/* ⚾️ メインコンテンツ（shrink-0 で画面が小さくても潰れないように保護） */}
-      <div className="w-full max-w-[360px] space-y-16 z-10 animate-in fade-in zoom-in-95 duration-1000 shrink-0">
+      <div className="w-full max-w-[360px] space-y-10 sm:space-y-12 z-10 animate-in fade-in zoom-in-95 duration-1000 shrink-0">
         
         {/* センターロゴ */}
         <div className="flex flex-col items-center space-y-6">

@@ -1,9 +1,41 @@
-// src/lib/auth.ts
+// filepath: src/lib/auth.ts
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin } from "better-auth/plugins";
 import { drizzle } from "drizzle-orm/d1"; // D1用drizzle
 import * as schema from "@/db/schema"; // schema全体をインポート
+
+let authSchemaEnsuredD1: D1Database | null = null;
+let authSchemaPromise: Promise<void> | null = null;
+
+/**
+ * Better-Auth 1.7+ admin プラグイン必須の `session.impersonated_by` カラムを
+ * PRAGMA 読取＋Isolateキャッシュで安全に保証する（既存環境での書き込みDDLゼロ）
+ */
+export async function ensureAuthSchema(d1: D1Database): Promise<void> {
+  if (authSchemaEnsuredD1 === d1) return;
+  if (!authSchemaPromise) {
+    authSchemaPromise = (async () => {
+      try {
+        const info = await d1
+          .prepare("PRAGMA table_info(session)")
+          .all<{ name: string }>();
+        const cols = new Set((info.results || []).map((r) => r.name));
+        if (cols.size > 0 && !cols.has("impersonated_by")) {
+          await d1
+            .prepare("ALTER TABLE session ADD COLUMN impersonated_by text")
+            .run();
+        }
+        authSchemaEnsuredD1 = d1;
+      } catch (err) {
+        console.warn("[ensureAuthSchema] skipped:", err);
+      } finally {
+        authSchemaPromise = null;
+      }
+    })();
+  }
+  await authSchemaPromise;
+}
 
 /** getAuth に渡す env の最小インターフェイス（c.env と互換） */
 interface AuthEnv {

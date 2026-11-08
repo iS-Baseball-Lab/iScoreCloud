@@ -67,7 +67,7 @@ import {
   extractScoreTeamNameModeFromJson,
 } from "@/lib/liff/scorebook-symbol-rules";
 import type { WorkerEnv, AuthUser } from "@/types/api";
-import { getAuth } from "@/lib/auth";
+import { ensureAuthSchema, getAuth } from "@/lib/auth";
 import { canManageSystem, canManageTeam } from "@/lib/roles";
 import {
   buildGoogleMapsEmbedFromUrl,
@@ -1289,6 +1289,7 @@ app.get("/hub", async (c) => {
     const sessionPromise = cookieHeader.includes("better-auth")
       ? (async () => {
           try {
+            await ensureAuthSchema(c.env.DB);
             const auth = getAuth(c.env.DB, c.env);
             const session = await auth.api.getSession({ headers: c.req.raw.headers as any }).catch(() => null);
             return session?.user ?? null;
