@@ -39,6 +39,8 @@ export function DemoBanner({
             <img
               src="/liff-logo.webp"
               alt="iScoreCloud LINEミニアプリ"
+              width={24}
+              height={24}
               className="w-6 h-6 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0"
             />
             <span className="text-xs font-black text-white truncate">
@@ -61,6 +63,8 @@ export function DemoBanner({
                 <img
                   src={pt.logoImageUrl || "/liff-logo.webp"}
                   alt={pt.name}
+                  width={32}
+                  height={32}
                   className="w-8 h-8 rounded-lg bg-card border border-border object-contain shrink-0"
                 />
                 <div className="min-w-0 flex-1">
@@ -116,6 +120,8 @@ export function DemoBanner({
           <img
             src="/liff-logo.webp"
             alt="iScoreCloud LINEミニアプリ"
+            width={36}
+            height={36}
             className="w-9 h-9 rounded-[22%] border border-border bg-slate-900 object-contain shrink-0 mt-0.5 shadow-xs"
           />
           <div className="space-y-0.5">

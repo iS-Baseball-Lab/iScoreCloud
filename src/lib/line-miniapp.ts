@@ -125,9 +125,24 @@ export async function resolveLineMiniAppConfig(): Promise<LineMiniAppConfig> {
   return inflightConfigPromise;
 }
 
+/**
+ * iPad 端末（旧iPadOSの `iPad` UA および iPadOS 13+ Safari デスクトップモード `MacIntel` + タッチ液晶）かどうかを判定する
+ * ※ LINEミニアプリ（`miniapp.line.me` / `liff.line.me`）はLINE社仕様によりスマートフォン版LINE専用で iPad 非対応のため分離判定する
+ */
+export function detectIsIPadDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad/i.test(ua)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
+/**
+ * スマートフォン版LINEミニアプリを起動可能なモバイル端末（iPhone / iPod / Androidスマホ）かどうかを判定する
+ */
 export function detectIsMobileBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (detectIsIPadDevice()) return false;
+  return /iPhone|iPod|Android/i.test(navigator.userAgent);
 }
 
 /**

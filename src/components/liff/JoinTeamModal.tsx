@@ -200,6 +200,8 @@ export function JoinTeamModal({
             <img
               src="/liff-logo.webp"
               alt="iScoreCloud LINEミニアプリ"
+              width={36}
+              height={36}
               className="w-9 h-9 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0 shadow-xs"
             />
             <div className="min-w-0">

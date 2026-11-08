@@ -1,5 +1,6 @@
 // filepath: src/lib/liff/liff-client.ts
 import type { Liff } from "@line/liff";
+import { detectIsIPadDevice } from "@/lib/line-miniapp";
 
 export interface LiffUserProfile {
   userId: string;
@@ -57,17 +58,21 @@ export async function initLiff(liffId?: string): Promise<{ liff: Liff | null; is
   try {
     const liff = (await import("@line/liff")).default;
     const isLineClientUa = /Line\//i.test(navigator.userAgent);
+    const isIPadDevice = detectIsIPadDevice();
     const hasLiffOAuthParams =
       urlParams.has("code") ||
       urlParams.has("liff.state") ||
       urlParams.has("liffClientId");
     const hasWebHandoffUser = Boolean(localStorage.getItem("iscore_user_id"));
+    // iPad版LINEアプリ内ブラウザはLINEミニアプリ非対応のため、初回ロード時の強制OAuthリダイレクトを抑止して案内を表示可能にする
+    const shouldAutoLoginExternal = isIPadDevice && isLineClientUa
+      ? hasLiffOAuthParams
+      : isLineClientUa || hasLiffOAuthParams || !hasWebHandoffUser;
 
     await liff.init({
       liffId: targetLiffId,
       // Web版セッション（Google / LINE / Microsoft）から引き継いだ外部ブラウザ閲覧時は強制OAuthリダイレクトを抑止
-      withLoginOnExternalBrowser:
-        isLineClientUa || hasLiffOAuthParams || !hasWebHandoffUser,
+      withLoginOnExternalBrowser: shouldAutoLoginExternal,
     });
     
     // 🌟 LIFF SDKの内部初期化・セッション準備を確実に待機

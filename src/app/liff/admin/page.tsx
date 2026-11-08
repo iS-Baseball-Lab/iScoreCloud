@@ -1167,6 +1167,8 @@ function LiffAdminDashboardContent() {
                       <img
                         src="/liff-logo.webp"
                         alt="iScoreCloud LINEミニアプリ"
+                        width={32}
+                        height={32}
                         className="w-8 h-8 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0 shadow-xs"
                       />
                       <div className="min-w-0">

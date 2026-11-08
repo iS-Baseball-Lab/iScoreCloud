@@ -348,3 +348,14 @@
     --diamond-size: 155px;
   }
 }
+
+/* =======================================================
+   ⚾️ 11. LEGACY OS / CSS-FAILSAFE GUARD BANNER (iPadOS 15等)
+   ======================================================= */
+@layer utilities {
+  @supports (color: color-mix(in lab, red, red)) {
+    .iscore-legacy-env-guard {
+      display: none !important;
+    }
+  }
+}

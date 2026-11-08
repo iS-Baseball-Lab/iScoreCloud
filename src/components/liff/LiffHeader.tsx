@@ -138,6 +138,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           <img
             src="/liff-logo.webp"
             alt="iScoreCloud LINEミニアプリ"
+            width={36}
+            height={36}
             className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain group-hover:scale-105 transition-transform duration-300"
           />
           <div className="flex flex-col justify-center">
