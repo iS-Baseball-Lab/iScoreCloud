@@ -49,6 +49,11 @@ import {
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+import {
+  normalizeCanonicalPositionCode,
+  parsePlayerProfileDetails,
+  type PlayerProfileDetails,
+} from "@/lib/liff/player-profile-schema";
 import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
 import {
   classifyTeamAttendanceRosters,
@@ -8579,11 +8584,17 @@ app.get("/profile", async (c) => {
       },
       groups: [{ groupId: "demo-grp-1", groupName: "保護者会・2班", role: "配車サポート" }],
       players: [
-        { id: "demo-player-1", name: "山田 翔太", nameKana: "ヤマダ ショウタ", uniformNumber: "10", primaryPosition: "遊撃手" },
-        { id: "demo-player-2", name: "佐藤 健太", nameKana: "サトウ ケンタ", uniformNumber: "1", primaryPosition: "投手" },
-        { id: "demo-player-3", name: "鈴木 大輔", nameKana: "スズキ ダイスケ", uniformNumber: "2", primaryPosition: "捕手" },
-        { id: "demo-player-4", name: "高橋 陸", nameKana: "タカハシ リク", uniformNumber: "8", primaryPosition: "中堅手" },
+        { id: "demo-player-1", name: "山田 翔太", nameKana: "ヤマダ ショウタ", uniformNumber: "10", primaryPosition: "遊撃手", isSelfLinked: true, isOtherUserLinked: false },
+        { id: "demo-player-2", name: "佐藤 健太", nameKana: "サトウ ケンタ", uniformNumber: "1", primaryPosition: "投手", isSelfLinked: false, isOtherUserLinked: false },
+        { id: "demo-player-3", name: "鈴木 大輔", nameKana: "スズキ ダイスケ", uniformNumber: "2", primaryPosition: "捕手", isSelfLinked: false, isOtherUserLinked: false },
+        { id: "demo-player-4", name: "高橋 陸", nameKana: "タカハシ リク", uniformNumber: "8", primaryPosition: "中堅手", isSelfLinked: false, isOtherUserLinked: false },
       ],
+      mySelfPlayer: {
+        id: "demo-player-1",
+        name: "山田 翔太",
+        uniformNumber: "10",
+        primaryPosition: "遊撃手",
+      },
       myChildren: [
         { relationId: "demo-rel-1", childId: "demo-player-1", childName: "山田 翔太", uniformNumber: "10" },
       ],
@@ -8619,6 +8630,23 @@ app.get("/profile", async (c) => {
       }
     } catch {}
 
+    let sessionUserId: string | undefined;
+    try {
+      if (c.req.raw.headers.get("cookie")) {
+        const auth = getAuth(c.env.DB, c.env);
+        const session = await auth.api
+          .getSession({ headers: c.req.raw.headers as unknown as Headers })
+          .catch(() => null);
+        sessionUserId = session?.user?.id;
+      }
+    } catch {}
+
+    const callerCandidateIds = await expandCandidateUserIds(db, [
+      userId,
+      extractHeaderUserId(c),
+      sessionUserId,
+    ]);
+
     const member = await resolveProfileMember(c, db, {
       teamId,
       memberId,
@@ -8635,6 +8663,7 @@ app.get("/profile", async (c) => {
         nameKana: players.nameKana,
         uniformNumber: players.uniformNumber,
         primaryPosition: players.primaryPosition,
+        userId: players.userId,
         conditionStatus: players.conditionStatus,
         isActive: players.isActive,
       })
@@ -8645,14 +8674,30 @@ app.get("/profile", async (c) => {
     const activePlayers = rawPlayers
       .filter((p) => p.isActive !== false)
       .sort(comparePlayersByConditionAndUniform)
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        nameKana: p.nameKana,
-        uniformNumber: p.uniformNumber,
-        primaryPosition: p.primaryPosition,
-        conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-      }));
+      .map((p) => {
+        const isSelfLinked = Boolean(p.userId && callerCandidateIds.includes(p.userId));
+        const isOtherUserLinked = Boolean(p.userId && !isSelfLinked);
+        return {
+          id: p.id,
+          name: p.name,
+          nameKana: p.nameKana,
+          uniformNumber: p.uniformNumber,
+          primaryPosition: p.primaryPosition,
+          conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
+          isSelfLinked,
+          isOtherUserLinked,
+        };
+      });
+
+    const selfPlayerMatch = activePlayers.find((p) => p.isSelfLinked) || null;
+    const mySelfPlayer = selfPlayerMatch
+      ? {
+          id: selfPlayerMatch.id,
+          name: selfPlayerMatch.name,
+          uniformNumber: selfPlayerMatch.uniformNumber,
+          primaryPosition: selfPlayerMatch.primaryPosition || null,
+        }
+      : null;
 
     let myGroups: Array<{ groupId: string; groupName: string; role: string | null }> = [];
     let myChildren: Array<{ relationId: string; childId: string; childName: string; uniformNumber: string }> = [];
@@ -8742,6 +8787,7 @@ app.get("/profile", async (c) => {
         : null,
       groups: myGroups,
       players: activePlayers,
+      mySelfPlayer,
       myChildren,
       myCars,
     });
@@ -8968,6 +9014,258 @@ app.delete("/profile/family/:relationId", async (c) => {
 });
 
 /**
+ * ⚾ 選手本人のLINEアカウント紐付け登録 (POST /api/liff/profile/self-player)
+ * - 1アカウントにつき1チーム1選手まで紐付け可能
+ * - 既に他アカウントが紐付いている選手への上書き（なりすまし）は完全拒否
+ */
+app.post("/profile/self-player", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      playerId?: string;
+      memberId?: string;
+      userId?: string;
+      userName?: string;
+    };
+
+    const teamId = (body.teamId || "demo-team").trim();
+    const playerId = (body.playerId || "").trim();
+    if (!playerId) {
+      return c.json({ success: false, error: "紐付けるご自身の選手を選択してください" }, 400);
+    }
+
+    if (teamId === "demo-team" || playerId.startsWith("demo-")) {
+      return c.json({
+        success: true,
+        isDemo: true,
+        selfPlayer: {
+          id: playerId,
+          name: "デモ選手",
+          uniformNumber: "10",
+          primaryPosition: "SS",
+        },
+      });
+    }
+
+    let sessionUser: { id?: string; name?: string | null } | null = null;
+    try {
+      if (c.req.raw.headers.get("cookie")) {
+        const auth = getAuth(c.env.DB, c.env);
+        const session = await auth.api
+          .getSession({ headers: c.req.raw.headers as unknown as Headers })
+          .catch(() => null);
+        sessionUser = session?.user || null;
+      }
+    } catch {}
+
+    const rawUid = body.userId?.trim() || extractHeaderUserId(c);
+    const candidateIds = await expandCandidateUserIds(db, [rawUid, sessionUser?.id]);
+    if (candidateIds.length === 0) {
+      return c.json(
+        { success: false, error: "選手本人紐付けを行うにはLINE連携ログインが必要です" },
+        401
+      );
+    }
+
+    const targetPlayer = await db
+      .select({
+        id: players.id,
+        name: players.name,
+        uniformNumber: players.uniformNumber,
+        primaryPosition: players.primaryPosition,
+        userId: players.userId,
+      })
+      .from(players)
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+      .get();
+
+    if (!targetPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    if (targetPlayer.userId && !candidateIds.includes(targetPlayer.userId)) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "この選手には既に別のLINEアカウントが紐付けられています。変更が必要な場合はチームの指導者・管理者へご相談ください。",
+        },
+        409
+      );
+    }
+
+    // `user` 外部キー整合性を満たす有効な userId を確保
+    let validUserId: string | null = null;
+    const prioritizedUserIds = [
+      ...candidateIds.filter((id) => !id.startsWith("U")),
+      ...candidateIds.filter((id) => id.startsWith("U")),
+    ];
+    for (const uid of prioritizedUserIds) {
+      try {
+        const uRow = await db.select({ id: user.id }).from(user).where(eq(user.id, uid)).get();
+        if (uRow) {
+          validUserId = uRow.id;
+          break;
+        }
+      } catch {}
+    }
+
+    const preferredUid =
+      sessionUser?.id || (rawUid && !IGNORED_MOCK_USER_IDS.has(rawUid) ? rawUid : null);
+
+    if (!validUserId && preferredUid) {
+      try {
+        await db.insert(user).values({
+          id: preferredUid,
+          name: (body.userName || sessionUser?.name || targetPlayer.name || "LINEユーザー").trim(),
+          email: `${preferredUid}@line.user`,
+          emailVerified: false,
+          role: "GUEST",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        validUserId = preferredUid;
+      } catch {
+        validUserId = null;
+      }
+    }
+
+    if (!validUserId) {
+      return c.json({ success: false, error: "ユーザーアカウントの確認に失敗しました" }, 500);
+    }
+
+    // 同一チーム内で既に別選手に自分のIDが付いていれば先に解除（1人1選手保証）
+    await db
+      .update(players)
+      .set({ userId: null })
+      .where(
+        and(
+          eq(players.teamId, teamId),
+          or(...candidateIds.map((uid) => eq(players.userId, uid)))
+        )
+      );
+
+    await db
+      .update(players)
+      .set({ userId: validUserId })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      selfPlayer: {
+        id: targetPlayer.id,
+        name: targetPlayer.name,
+        uniformNumber: targetPlayer.uniformNumber,
+        primaryPosition: targetPlayer.primaryPosition || null,
+      },
+    });
+  } catch (err: unknown) {
+    console.error("Failed to link self player:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手本人紐付けに失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🔓 選手本人のLINEアカウント紐付け解除 (DELETE /api/liff/profile/self-player)
+ */
+app.delete("/profile/self-player", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+
+  try {
+    const teamId = (c.req.query("teamId") || "demo-team").trim();
+    const targetPlayerId = (c.req.query("playerId") || "").trim();
+    const queryUserId = c.req.query("userId");
+
+    if (teamId === "demo-team" || targetPlayerId.startsWith("demo-")) {
+      return c.json({ success: true, isDemo: true });
+    }
+
+    let sessionUser: { id?: string } | null = null;
+    try {
+      if (c.req.raw.headers.get("cookie")) {
+        const auth = getAuth(c.env.DB, c.env);
+        const session = await auth.api
+          .getSession({ headers: c.req.raw.headers as unknown as Headers })
+          .catch(() => null);
+        sessionUser = session?.user || null;
+      }
+    } catch {}
+
+    const candidateIds = await expandCandidateUserIds(db, [
+      queryUserId,
+      extractHeaderUserId(c),
+      sessionUser?.id,
+    ]);
+
+    if (targetPlayerId) {
+      const teamRow = await db
+        .select({
+          id: teams.id,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get();
+
+      const canManage = teamRow
+        ? await resolveCanManageTeamPlayers(c, db, {
+            teamId,
+            userId: queryUserId || extractHeaderUserId(c),
+            userName: extractHeaderUserName(c),
+            createdBy: teamRow.createdBy,
+            organizationId: teamRow.organizationId,
+          })
+        : false;
+
+      if (canManage) {
+        await db
+          .update(players)
+          .set({ userId: null })
+          .where(and(eq(players.id, targetPlayerId), eq(players.teamId, teamId)));
+        return c.json({ success: true, isDemo: false });
+      }
+    }
+
+    if (candidateIds.length === 0) {
+      return c.json({ success: false, error: "ログイン情報が見つかりません" }, 401);
+    }
+
+    await db
+      .update(players)
+      .set({ userId: null })
+      .where(
+        and(
+          eq(players.teamId, teamId),
+          or(...candidateIds.map((uid) => eq(players.userId, uid)))
+        )
+      );
+
+    return c.json({ success: true, isDemo: false });
+  } catch (err: unknown) {
+    console.error("Failed to unlink self player:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手本人紐付けの解除に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
  * 🚗 マイカー情報の登録・更新 (POST /api/liff/profile/cars)
  */
 app.post("/profile/cars", async (c) => {
@@ -9104,7 +9402,13 @@ const PLAYER_CONDITION_MANAGER_ROLES = new Set([
   "staff",
 ]);
 
-async function resolveCanManageTeamPlayers(
+interface CallerPlayerEditPermissions {
+  canManagePlayers: boolean;
+  searchUserIds: string[];
+  linkedChildIds: Set<string>;
+}
+
+async function resolveCallerPlayerEditPermissions(
   c: {
     env: WorkerEnv;
     req: { raw: Request };
@@ -9117,11 +9421,18 @@ async function resolveCanManageTeamPlayers(
     createdBy?: string | null;
     organizationId?: string | null;
   }
-): Promise<boolean> {
-  if (!params.teamId || params.teamId === "demo-team") return true;
+): Promise<CallerPlayerEditPermissions> {
+  if (!params.teamId || params.teamId === "demo-team") {
+    return {
+      canManagePlayers: true,
+      searchUserIds: [],
+      linkedChildIds: new Set<string>(),
+    };
+  }
 
   let authUserId: string | undefined;
   let authUserName: string | undefined;
+  let isSessionSysAdmin = false;
   if (c.req.raw.headers.get("cookie")) {
     try {
       const auth = getAuth(c.env.DB, c.env);
@@ -9130,7 +9441,7 @@ async function resolveCanManageTeamPlayers(
         .catch(() => null);
       const sessRole = ((session?.user as AuthUser | undefined)?.role || "").toUpperCase();
       if (sessRole === "SYSTEM_ADMIN" || sessRole === "ADMIN") {
-        return true;
+        isSessionSysAdmin = true;
       }
       authUserId = session?.user?.id;
       authUserName = session?.user?.name || undefined;
@@ -9139,37 +9450,51 @@ async function resolveCanManageTeamPlayers(
     }
   }
 
-  const searchUserIds = await expandCandidateUserIds(db, [params.userId, authUserId]);
-  if (params.createdBy && searchUserIds.includes(params.createdBy)) {
-    return true;
-  }
-
-  if (params.organizationId && searchUserIds.length > 0) {
+  const headerUid = sanitizeUserIdCandidate(c.req.raw.headers.get("x-liff-user-id"));
+  const headerUnameRaw = c.req.raw.headers.get("x-liff-user-name");
+  let headerUname = "";
+  if (headerUnameRaw) {
     try {
-      const orgRow = await db
-        .select({ role: organizationMembers.role })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.organizationId, params.organizationId),
-            or(...searchUserIds.map((uid) => eq(organizationMembers.userId, uid)))
-          )
-        )
-        .get();
-      const orgRole = (orgRow?.role || "").toUpperCase();
-      if (orgRole === "OWNER" || orgRole === "ADMIN") {
-        return true;
-      }
+      headerUname = decodeURIComponent(headerUnameRaw).trim();
     } catch {
-      // ignore
+      headerUname = headerUnameRaw.trim();
     }
   }
 
-  const allTeamMembersRaw = await db
-    .select()
-    .from(teamMembers)
-    .where(eq(teamMembers.teamId, params.teamId))
-    .all();
+  const searchUserIds = await expandCandidateUserIds(db, [
+    params.userId,
+    headerUid,
+    authUserId,
+  ]);
+
+  const [orgRow, allTeamMembersRaw, allRelations] = await Promise.all([
+    params.organizationId && searchUserIds.length > 0
+      ? db
+          .select({ role: organizationMembers.role })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.organizationId, params.organizationId),
+              or(...searchUserIds.map((uid) => eq(organizationMembers.userId, uid)))
+            )
+          )
+          .get()
+          .catch(() => undefined)
+      : Promise.resolve(undefined),
+    db
+      .select()
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, params.teamId))
+      .all(),
+    db
+      .select({
+        parentId: parentChildRelations.parentId,
+        childId: parentChildRelations.childId,
+      })
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.teamId, params.teamId))
+      .all(),
+  ]);
 
   const activeAllMembers = allTeamMembersRaw.filter(
     (m) => m.status === "active" || !m.status
@@ -9184,22 +9509,26 @@ async function resolveCanManageTeamPlayers(
     }
   }
 
-  if (matchedMembers.length === 0 && (params.userName || authUserName)) {
+  const candidateNames = [params.userName, headerUname, authUserName].filter((s) =>
+    Boolean(s?.trim())
+  );
+
+  if (matchedMembers.length === 0 && candidateNames.length > 0) {
     const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
       db,
       activeAllMembers,
-      [params.userName, authUserName],
-      params.userId
+      candidateNames,
+      params.userId || headerUid
     );
     if (matchedByUserTable) {
       matchedMembers.push(matchedByUserTable);
     }
   }
 
-  if (matchedMembers.length === 0 && (params.userName || authUserName)) {
+  if (matchedMembers.length === 0 && candidateNames.length > 0) {
     const matchedByName = findMatchingAdultMemberByName(
       activeAllMembers,
-      [params.userName, authUserName],
+      candidateNames,
       { allowAmbiguousFamilyParent: false }
     );
     if (matchedByName) {
@@ -9207,10 +9536,52 @@ async function resolveCanManageTeamPlayers(
     }
   }
 
-  return matchedMembers.some((m) => {
+  const matchedMemberIdSet = new Set(matchedMembers.map((m) => m.id));
+  const linkedChildIds = new Set<string>();
+  for (const rel of allRelations) {
+    if (rel.parentId && rel.childId && matchedMemberIdSet.has(rel.parentId)) {
+      linkedChildIds.add(rel.childId);
+    }
+  }
+
+  const orgRole = (orgRow?.role || "").toUpperCase();
+  const isOrgAdmin = orgRole === "OWNER" || orgRole === "ADMIN";
+  const isCreator = Boolean(params.createdBy && searchUserIds.includes(params.createdBy));
+  const isTeamManagerRole = matchedMembers.some((m) => {
     const r = (m.role || "").toLowerCase();
     return PLAYER_CONDITION_MANAGER_ROLES.has(r) || canManageTeam(m.role);
   });
+
+  return {
+    canManagePlayers: isSessionSysAdmin || isCreator || isOrgAdmin || isTeamManagerRole,
+    searchUserIds,
+    linkedChildIds,
+  };
+}
+
+function sanitizeUserIdCandidate(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (!trimmed || IGNORED_MOCK_USER_IDS.has(trimmed)) return "";
+  return trimmed;
+}
+
+async function resolveCanManageTeamPlayers(
+  c: {
+    env: WorkerEnv;
+    req: { raw: Request };
+  },
+  db: ReturnType<typeof drizzle>,
+  params: {
+    teamId: string;
+    userId?: string | null;
+    userName?: string | null;
+    createdBy?: string | null;
+    organizationId?: string | null;
+  }
+): Promise<boolean> {
+  const perm = await resolveCallerPlayerEditPermissions(c, db, params);
+  return perm.canManagePlayers;
 }
 
 app.get("/players", async (c) => {
@@ -9225,6 +9596,9 @@ app.get("/players", async (c) => {
       success: true,
       isDemo: true,
       canManagePlayers: true,
+      mySelfPlayerId: "demo-player-1",
+      myLinkedChildIds: [] as string[],
+      canClaimSelfPlayer: false,
       team: {
         id: DEMO_TEAM.id,
         name: DEMO_TEAM.name,
@@ -9241,9 +9615,11 @@ app.get("/players", async (c) => {
           name: "佐藤 健太",
           nameKana: "サトウ ケンタ",
           uniformNumber: "1",
+          nickname: "ケンタ",
           primaryPosition: "P",
           subPositions: ["CF", "1B"],
           registeredPrimaryPosition: "P",
+          registeredSubPositions: ["CF"],
           positionCounts: [
             { position: "P", games: 8, sharePercent: 67 },
             { position: "CF", games: 4, sharePercent: 33 },
@@ -9255,8 +9631,28 @@ app.get("/players", async (c) => {
           bats: "R",
           height: 171,
           weight: 63,
+          editableWeight: 63,
           profileImageUrl: null,
           notes: "伸びのある直球と制球力が武器の大黒柱エース。",
+          profileDetails: parsePlayerProfileDetails({
+            seasonGoal: "防御率1点台＆年間50奪三振！",
+            playStyleTags: ["control", "strikeout", "clutch"],
+            gradeOrAge: "20代後半",
+            baseballHistory: "県大会ベスト8〜草野球4年目",
+            admiredPlayer: "ダルビッシュ 有",
+            favoriteTeam: "北海道日本ハムファイターズ",
+            gloveGear: "ミズノプロ 投手用（Dブルー）",
+            batGear: "ビヨンドマックスレガシー 84cm",
+            walkUpSong: "第ゼロ感 / 10-FEET",
+            maxVelocityKmh: 132,
+            dash50mSec: "6.5",
+            longTossM: 88,
+            hideWeight: false,
+          }),
+          isSelf: false,
+          isLinkedChild: false,
+          canEditProfile: true,
+          hasLinkedUser: false,
           conditionStatus: "active" as PlayerConditionStatus,
           conditionNote: null,
           isCaptain: false,
@@ -9269,9 +9665,11 @@ app.get("/players", async (c) => {
           name: "鈴木 大輔",
           nameKana: "スズキ ダイスケ",
           uniformNumber: "2",
+          nickname: "ダイちゃん",
           primaryPosition: "C",
           subPositions: ["1B"],
           registeredPrimaryPosition: "C",
+          registeredSubPositions: ["1B", "3B"],
           positionCounts: [
             { position: "C", games: 11, sharePercent: 92 },
             { position: "1B", games: 2, sharePercent: 17 },
@@ -9282,8 +9680,28 @@ app.get("/players", async (c) => {
           bats: "R",
           height: 168,
           weight: 66,
+          editableWeight: 66,
           profileImageUrl: null,
           notes: "強肩と冷静なリードで投手陣を引っ張る扇の要。",
+          profileDetails: parsePlayerProfileDetails({
+            seasonGoal: "盗塁阻止率5割＆チーム防御率No.1！",
+            playStyleTags: ["arm", "brain", "mood"],
+            gradeOrAge: "30代",
+            baseballHistory: "野球歴15年（小4〜大学・草野球）",
+            admiredPlayer: "古田 敦也",
+            favoriteTeam: "東京ヤクルトスワローズ",
+            gloveGear: "ハタケヤマ 甲斐モデル",
+            batGear: "SSK MM23 84cm",
+            walkUpSong: "タマシイレボリューション / Superfly",
+            maxVelocityKmh: null,
+            dash50mSec: null,
+            longTossM: 82,
+            hideWeight: false,
+          }),
+          isSelf: false,
+          isLinkedChild: false,
+          canEditProfile: true,
+          hasLinkedUser: false,
           conditionStatus: "active" as PlayerConditionStatus,
           conditionNote: null,
           isCaptain: false,
@@ -9459,9 +9877,11 @@ app.get("/players", async (c) => {
           name: "山田 翔太",
           nameKana: "ヤマダ ショウタ",
           uniformNumber: "10",
+          nickname: "ショウタ",
           primaryPosition: "SS",
           subPositions: ["2B", "P"],
           registeredPrimaryPosition: "SS",
+          registeredSubPositions: ["2B", "P"],
           positionCounts: [
             { position: "SS", games: 10, sharePercent: 83 },
             { position: "2B", games: 3, sharePercent: 25 },
@@ -9473,8 +9893,28 @@ app.get("/players", async (c) => {
           bats: "R",
           height: 168,
           weight: 61,
+          editableWeight: 61,
           profileImageUrl: null,
           notes: "走攻守三拍子揃った頼れるキャプテン。ここ一番の集中力は抜群。",
+          profileDetails: parsePlayerProfileDetails({
+            seasonGoal: "打率4割＆全試合ノーエラーで優勝へ導く！",
+            playStyleTags: ["speed", "defense", "clutch"],
+            gradeOrAge: "20代後半",
+            baseballHistory: "〇〇高〜大学準硬式〜草野球5年目",
+            admiredPlayer: "源田 壮亮",
+            favoriteTeam: "埼玉西武ライオンズ",
+            gloveGear: "ZETT プロステイタス（源田モデル）",
+            batGear: "ミズノ ビヨンドマックスレガシー 83cm",
+            walkUpSong: "できっこないを やらなくちゃ / サンボマスター",
+            maxVelocityKmh: 124,
+            dash50mSec: "6.2",
+            longTossM: 85,
+            hideWeight: false,
+          }),
+          isSelf: true,
+          isLinkedChild: false,
+          canEditProfile: true,
+          hasLinkedUser: true,
           conditionStatus: "active" as PlayerConditionStatus,
           conditionNote: null,
           isCaptain: true,
@@ -9500,6 +9940,7 @@ app.get("/players", async (c) => {
           bats: "L",
           height: 173,
           weight: 64,
+          editableWeight: 64,
           profileImageUrl: null,
           notes: "キレ味鋭いスライダーで三振を奪う本格派右腕。",
           conditionStatus: "restricted" as PlayerConditionStatus,
@@ -9545,7 +9986,9 @@ app.get("/players", async (c) => {
           height: players.height,
           weight: players.weight,
           profileImageUrl: players.profileImageUrl,
+          userId: players.userId,
           notes: players.notes,
+          profileDetails: players.profileDetails,
           conditionStatus: players.conditionStatus,
           conditionNote: players.conditionNote,
           isActive: players.isActive,
@@ -9588,13 +10031,14 @@ app.get("/players", async (c) => {
       return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
     }
 
-    const canManagePlayers = await resolveCanManageTeamPlayers(c, db, {
+    const callerPerm = await resolveCallerPlayerEditPermissions(c, db, {
       teamId,
       userId,
       userName,
       createdBy: teamRow.createdBy,
       organizationId: teamRow.organizationId,
     });
+    const canManagePlayers = callerPerm.canManagePlayers;
 
     // シーズン打撃成績・投手成績のマップ構築
     interface BatterAggRow {
@@ -9716,6 +10160,10 @@ app.get("/players", async (c) => {
         }
 
         const normalizedCondition = normalizePlayerConditionStatus(p.conditionStatus);
+        const profileDetails = parsePlayerProfileDetails(p.profileDetails);
+        const isSelf = Boolean(p.userId && callerPerm.searchUserIds.includes(p.userId));
+        const isLinkedChild = callerPerm.linkedChildIds.has(p.id);
+        const canEditProfile = canManagePlayers || isSelf || isLinkedChild;
 
         return {
           id: p.id,
@@ -9728,15 +10176,22 @@ app.get("/players", async (c) => {
           registeredPrimaryPosition: posAgg
             ? posAgg.registeredPrimaryPosition
             : (p.primaryPosition || null),
+          registeredSubPositions: parsedSubs,
           positionCounts: posAgg ? posAgg.positionCounts : [],
           totalPositionGames: posAgg ? posAgg.totalPositionGames : 0,
           positionSource: posAgg ? posAgg.positionSource : "profile",
           throws: p.throws || null,
           bats: p.bats || null,
           height: p.height ?? null,
-          weight: p.weight ?? null,
+          weight: profileDetails.hideWeight ? null : (p.weight ?? null),
+          editableWeight: canEditProfile ? (p.weight ?? null) : null,
           profileImageUrl: p.profileImageUrl || null,
           notes: p.notes || null,
+          profileDetails,
+          isSelf,
+          isLinkedChild,
+          canEditProfile,
+          hasLinkedUser: Boolean(p.userId),
           conditionStatus: normalizedCondition,
           conditionNote: canManagePlayers ? p.conditionNote || null : null,
           isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
@@ -9746,10 +10201,18 @@ app.get("/players", async (c) => {
         };
       });
 
+    const mySelfPlayer = sortedPlayers.find((p) => p.isSelf) || null;
+    const myLinkedChildIds = sortedPlayers
+      .filter((p) => p.isLinkedChild)
+      .map((p) => p.id);
+
     return c.json({
       success: true,
       isDemo: false,
       canManagePlayers,
+      mySelfPlayerId: mySelfPlayer?.id || null,
+      myLinkedChildIds,
+      canClaimSelfPlayer: callerPerm.searchUserIds.length > 0 && !mySelfPlayer,
       team: {
         id: teamRow.id,
         name: `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim(),
@@ -9766,6 +10229,265 @@ app.get("/players", async (c) => {
     console.error("Failed to fetch LIFF players directory:", err);
     return c.json(
       { success: false, error: err instanceof Error ? err.message : "選手名鑑の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * ✏️ 選手名鑑プロフィール更新API (POST /players/:playerId/profile)
+ * - 選手本人（`players.userId`一致）・紐付け済み保護者（`parent_child_relations`）・指導者/管理者が更新可能
+ * - `背番号`・`正式登録名`・`主将設定` は公式スコアブック整合性保護のため指導者/管理者のみ変更可能
+ */
+app.post("/players/:playerId/profile", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      userId?: string | null;
+      userName?: string | null;
+      // 指導者・管理者限定項目
+      name?: string;
+      uniformNumber?: string;
+      isCaptain?: boolean;
+      // 本人・保護者・指導者共通項目
+      nameKana?: string | null;
+      nickname?: string | null;
+      registeredPrimaryPosition?: string | null;
+      registeredSubPositions?: string[];
+      throws?: string | null;
+      bats?: string | null;
+      height?: number | string | null;
+      weight?: number | string | null;
+      notes?: string | null;
+      profileDetails?: Partial<PlayerProfileDetails> | null;
+    };
+
+    const teamId = (body.teamId || c.req.query("teamId") || "").trim();
+
+    const cleanNameKana =
+      typeof body.nameKana === "string" && body.nameKana.trim()
+        ? body.nameKana.trim().slice(0, 50)
+        : null;
+    const cleanNickname =
+      typeof body.nickname === "string" && body.nickname.trim()
+        ? body.nickname.trim().slice(0, 24)
+        : null;
+    const cleanPrimaryPos = normalizeCanonicalPositionCode(body.registeredPrimaryPosition);
+
+    const rawSubs = Array.isArray(body.registeredSubPositions)
+      ? body.registeredSubPositions
+      : [];
+    const subSet = new Set<string>();
+    const cleanSubPositions: string[] = [];
+    for (const s of rawSubs) {
+      const code = normalizeCanonicalPositionCode(s);
+      if (code && code !== cleanPrimaryPos && !subSet.has(code)) {
+        subSet.add(code);
+        cleanSubPositions.push(code);
+        if (cleanSubPositions.length >= 5) break;
+      }
+    }
+
+    const cleanThrows =
+      body.throws === "R" || body.throws === "L" ? body.throws : null;
+    const cleanBats =
+      body.bats === "R" || body.bats === "L" || body.bats === "B"
+        ? body.bats
+        : null;
+
+    const parseBoundedInt = (
+      val: number | string | null | undefined,
+      min: number,
+      max: number
+    ): number | null => {
+      if (val === null || val === undefined || val === "") return null;
+      const num = typeof val === "number" ? val : Number(String(val).trim());
+      if (!Number.isFinite(num)) return null;
+      const rounded = Math.round(num);
+      return rounded >= min && rounded <= max ? rounded : null;
+    };
+
+    const cleanHeight = parseBoundedInt(body.height, 90, 230);
+    const cleanWeight = parseBoundedInt(body.weight, 15, 160);
+    const cleanNotes =
+      typeof body.notes === "string" && body.notes.trim()
+        ? body.notes.trim().slice(0, 200)
+        : null;
+    const cleanDetails = parsePlayerProfileDetails(body.profileDetails);
+
+    if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
+      const demoName =
+        typeof body.name === "string" && body.name.trim()
+          ? body.name.trim().slice(0, 40)
+          : undefined;
+      const demoUniform =
+        typeof body.uniformNumber === "string" && body.uniformNumber.trim()
+          ? body.uniformNumber.trim().replace(/^#/, "").slice(0, 6)
+          : undefined;
+
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+        updated: {
+          ...(demoName ? { name: demoName } : {}),
+          ...(demoUniform ? { uniformNumber: demoUniform } : {}),
+          ...(typeof body.isCaptain === "boolean" ? { isCaptain: body.isCaptain } : {}),
+          nameKana: cleanNameKana,
+          nickname: cleanNickname,
+          registeredPrimaryPosition: cleanPrimaryPos,
+          registeredSubPositions: cleanSubPositions,
+          throws: cleanThrows,
+          bats: cleanBats,
+          height: cleanHeight,
+          weight: cleanDetails.hideWeight ? null : cleanWeight,
+          editableWeight: cleanWeight,
+          notes: cleanNotes,
+          profileDetails: cleanDetails,
+        },
+      });
+    }
+
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          captainId: teams.captainId,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          teamId: players.teamId,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+          userId: players.userId,
+        })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId: body.userId || c.req.query("userId"),
+      userName: body.userName || c.req.query("userName"),
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+
+    const isSelf = Boolean(
+      existingPlayer.userId && perm.searchUserIds.includes(existingPlayer.userId)
+    );
+    const isLinkedChild = perm.linkedChildIds.has(playerId);
+
+    if (!perm.canManagePlayers && !isSelf && !isLinkedChild) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "この選手のプロフィールを編集する権限がありません（ご本人・紐付け保護者・指導者のみ編集できます）",
+        },
+        403
+      );
+    }
+
+    let nextName = existingPlayer.name;
+    let nextUniform = existingPlayer.uniformNumber;
+    let nextCaptainId = teamRow.captainId || null;
+    let shouldUpdateTeamCaptain = false;
+
+    if (perm.canManagePlayers) {
+      if (typeof body.name === "string" && body.name.trim()) {
+        nextName = body.name.trim().slice(0, 40);
+      }
+      if (typeof body.uniformNumber === "string" && body.uniformNumber.trim()) {
+        const cleanedNum = body.uniformNumber.trim().replace(/^#/, "").slice(0, 6);
+        if (cleanedNum) nextUniform = cleanedNum;
+      }
+      if (typeof body.isCaptain === "boolean") {
+        if (body.isCaptain && teamRow.captainId !== playerId) {
+          nextCaptainId = playerId;
+          shouldUpdateTeamCaptain = true;
+        } else if (!body.isCaptain && teamRow.captainId === playerId) {
+          nextCaptainId = null;
+          shouldUpdateTeamCaptain = true;
+        }
+      }
+    }
+
+    await db
+      .update(players)
+      .set({
+        name: nextName,
+        nameKana: cleanNameKana,
+        uniformNumber: nextUniform,
+        nickname: cleanNickname,
+        primaryPosition: cleanPrimaryPos,
+        subPositions: cleanSubPositions,
+        throws: cleanThrows,
+        bats: cleanBats,
+        height: cleanHeight,
+        weight: cleanWeight,
+        notes: cleanNotes,
+        profileDetails: JSON.stringify(cleanDetails),
+      })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    if (shouldUpdateTeamCaptain) {
+      await db
+        .update(teams)
+        .set({ captainId: nextCaptainId })
+        .where(eq(teams.id, teamId));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+      captainId: nextCaptainId,
+      updated: {
+        name: nextName,
+        nameKana: cleanNameKana,
+        uniformNumber: nextUniform,
+        nickname: cleanNickname,
+        registeredPrimaryPosition: cleanPrimaryPos,
+        registeredSubPositions: cleanSubPositions,
+        throws: cleanThrows,
+        bats: cleanBats,
+        height: cleanHeight,
+        weight: cleanDetails.hideWeight ? null : cleanWeight,
+        editableWeight: cleanWeight,
+        notes: cleanNotes,
+        profileDetails: cleanDetails,
+        isCaptain: nextCaptainId === playerId,
+      },
+    });
+  } catch (err: unknown) {
+    console.error("Failed to update player profile:", err);
+    return c.json(
+      {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : "選手プロフィールの保存に失敗しました",
+      },
       500
     );
   }

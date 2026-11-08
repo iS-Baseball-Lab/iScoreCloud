@@ -66,6 +66,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "profile_image_url", ddl: "ALTER TABLE players ADD COLUMN profile_image_url text" },
     { name: "condition_status", ddl: "ALTER TABLE players ADD COLUMN condition_status text DEFAULT 'active'" },
     { name: "condition_note", ddl: "ALTER TABLE players ADD COLUMN condition_note text" },
+    { name: "profile_details", ddl: "ALTER TABLE players ADD COLUMN profile_details text" },
   ],
   venues: [
     { name: "category", ddl: "ALTER TABLE venues ADD COLUMN category TEXT DEFAULT 'stadium'" },

@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import {
   UserCircle,
   Save,
@@ -19,11 +20,13 @@ import {
   UserPlus,
   Tag,
   Package,
+  IdCard,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
@@ -56,6 +59,15 @@ interface RosterPlayerItem {
   nameKana?: string | null;
   uniformNumber: string;
   primaryPosition?: string | null;
+  isSelfLinked?: boolean;
+  isOtherUserLinked?: boolean;
+}
+
+interface LinkedSelfPlayerItem {
+  id: string;
+  name: string;
+  uniformNumber: string;
+  primaryPosition?: string | null;
 }
 
 interface LinkedChildItem {
@@ -82,6 +94,7 @@ interface ProfileApiResponse {
   member: ProfileMemberInfo | null;
   groups: ProfileGroupInfo[];
   players: RosterPlayerItem[];
+  mySelfPlayer?: LinkedSelfPlayerItem | null;
   myChildren: LinkedChildItem[];
   myCars: RegisteredCarItem[];
 }
@@ -152,8 +165,11 @@ export default function LiffProfilePage() {
   const [groups, setGroups] = useState<ProfileGroupInfo[]>([]);
   const [isSavingProfile, setIsSavingProfile] = useState<boolean>(false);
 
-  // 親子紐付けステート
+  // 親子紐付け & 選手本人紐付けステート
   const [rosterPlayers, setRosterPlayers] = useState<RosterPlayerItem[]>([]);
+  const [mySelfPlayer, setMySelfPlayer] = useState<LinkedSelfPlayerItem | null>(null);
+  const [isSelfPlayerPickerOpen, setIsSelfPlayerPickerOpen] = useState<boolean>(false);
+  const [isUpdatingSelfPlayer, setIsUpdatingSelfPlayer] = useState<boolean>(false);
   const [myChildren, setMyChildren] = useState<LinkedChildItem[]>([]);
   const [isChildPickerOpen, setIsChildPickerOpen] = useState<boolean>(false);
   const [playerSearchQuery, setPlayerSearchQuery] = useState<string>("");
@@ -252,6 +268,7 @@ export default function LiffProfilePage() {
         setSubLabel("");
       }
 
+      setMySelfPlayer(data.mySelfPlayer || null);
       setMyChildren(data.myChildren || []);
       setMyCars(data.myCars || []);
     } catch (err: unknown) {
@@ -323,11 +340,125 @@ export default function LiffProfilePage() {
         localStorage.setItem("iscore_setting_user_role", memberType);
       }
 
+      invalidateLiffApiCache("/api/liff/");
       toast.success(json.message || "プロフィールを保存しました");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "プロフィールの保存に失敗しました");
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  // ─── 選手本人（マイ選手カード）の紐付け登録 ────────────
+  const handleLinkSelfPlayer = async (player: RosterPlayerItem) => {
+    if (player.isOtherUserLinked) {
+      toast.error("この選手には既に別のアカウントが紐付けられています");
+      return;
+    }
+
+    setIsUpdatingSelfPlayer(true);
+    try {
+      const uid =
+        profile?.userId ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_id") : "") ||
+        "";
+      const uName =
+        displayName.trim() ||
+        profile?.displayName ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") : "") ||
+        player.name;
+
+      const res = await fetch("/api/liff/profile/self-player", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: activeTeamId,
+          playerId: player.id,
+          memberId: memberId || undefined,
+          userId: uid || undefined,
+          userName: uName,
+        }),
+      });
+
+      const json = (await res.json()) as {
+        success: boolean;
+        isDemo?: boolean;
+        selfPlayer?: LinkedSelfPlayerItem;
+        error?: string;
+      };
+
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "選手データの紐付けに失敗しました");
+      }
+
+      const nextSelf: LinkedSelfPlayerItem = json.isDemo
+        ? {
+            id: player.id,
+            name: player.name,
+            uniformNumber: player.uniformNumber,
+            primaryPosition: player.primaryPosition || null,
+          }
+        : json.selfPlayer || {
+            id: player.id,
+            name: player.name,
+            uniformNumber: player.uniformNumber,
+            primaryPosition: player.primaryPosition || null,
+          };
+
+      setMySelfPlayer(nextSelf);
+      setRosterPlayers((prev) =>
+        prev.map((p) => ({
+          ...p,
+          isSelfLinked: p.id === player.id,
+        }))
+      );
+      setIsSelfPlayerPickerOpen(false);
+      invalidateLiffApiCache("/api/liff/");
+      toast.success(`${player.name} 選手をご自身の選手カードとして紐付けました！`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "選手データの紐付けに失敗しました");
+    } finally {
+      setIsUpdatingSelfPlayer(false);
+    }
+  };
+
+  // ─── 選手本人（マイ選手カード）の紐付け解除 ────────────
+  const handleUnlinkSelfPlayer = async () => {
+    if (!mySelfPlayer) return;
+
+    setIsUpdatingSelfPlayer(true);
+    try {
+      const uid =
+        profile?.userId ||
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_id") : "") ||
+        "";
+      const params = new URLSearchParams();
+      params.set("teamId", activeTeamId);
+      params.set("playerId", mySelfPlayer.id);
+      if (uid) params.set("userId", uid);
+
+      const res = await fetch(`/api/liff/profile/self-player?${params.toString()}`, {
+        method: "DELETE",
+      });
+      const json = (await res.json()) as { success: boolean; error?: string };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "選手データの紐付け解除に失敗しました");
+      }
+
+      const removedName = mySelfPlayer.name;
+      setMySelfPlayer(null);
+      setRosterPlayers((prev) =>
+        prev.map((p) => ({
+          ...p,
+          isSelfLinked: false,
+        }))
+      );
+      invalidateLiffApiCache("/api/liff/");
+      toast.success(`${removedName} 選手との紐付けを解除しました`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "紐付け解除に失敗しました");
+    } finally {
+      setIsUpdatingSelfPlayer(false);
     }
   };
 
@@ -389,6 +520,7 @@ export default function LiffProfilePage() {
           uniformNumber: player.uniformNumber,
         },
       ]);
+      invalidateLiffApiCache("/api/liff/");
       toast.success(`${player.name} 選手をお子様として紐付けました`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "お子様の紐付けに失敗しました");
@@ -410,6 +542,7 @@ export default function LiffProfilePage() {
       }
 
       setMyChildren((prev) => prev.filter((c) => c.relationId !== item.relationId));
+      invalidateLiffApiCache("/api/liff/");
       toast.success(`${item.childName} 選手の紐付けを解除しました`);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "紐付け解除に失敗しました");
@@ -784,7 +917,173 @@ export default function LiffProfilePage() {
               </div>
             </section>
 
-            {/* ━━━ セクション 2: 👦 お子様（選手）との親子紐付け ━━━ */}
+            {/* ━━━ セクション 2A: ⚾ マイ選手データ連携（選手本人・プレイングマネージャー向け） ━━━ */}
+            {(memberType === "player" || Boolean(mySelfPlayer)) && (
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-sky-300 border border-slate-700 flex items-center justify-center shrink-0">
+                      <IdCard className="w-4 h-4" />
+                    </span>
+                    <h2 className="text-sm font-black text-white truncate">
+                      マイ選手データ連携（選手名鑑）
+                    </h2>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-sky-200 border border-slate-700 shrink-0">
+                    本人プロフィール入力対応
+                  </span>
+                </div>
+
+                <div className="p-4 space-y-3.5">
+                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    ご自身の選手カードを紐付けると、選手名鑑の写真・目標・愛用ギア・登場曲・自己ベスト記録などをスマホからいつでも直接入力・更新できます。
+                  </p>
+
+                  {mySelfPlayer ? (
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/30 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="min-w-[42px] h-8 px-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center shrink-0">
+                            {formatUniformBadge(mySelfPlayer.uniformNumber)}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-black text-foreground truncate">
+                                {mySelfPlayer.name}
+                              </span>
+                              {mySelfPlayer.primaryPosition && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-muted-foreground shrink-0">
+                                  {mySelfPlayer.primaryPosition}
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-black shrink-0">
+                                本人連携済
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleUnlinkSelfPlayer}
+                          disabled={isUpdatingSelfPlayer}
+                          className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
+                        >
+                          {isUpdatingSelfPlayer ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <X className="w-3.5 h-3.5" />
+                          )}
+                          <span>解除</span>
+                        </button>
+                      </div>
+
+                      <Link
+                        href={`/liff/players?playerId=${encodeURIComponent(mySelfPlayer.id)}&edit=1`}
+                        className="w-full py-2.5 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>自分の選手名鑑プロフィールを入力・編集する</span>
+                      </Link>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border text-center">
+                        <p className="text-xs font-bold text-muted-foreground">
+                          まだご自身の選手カードが紐付けられていません
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsSelfPlayerPickerOpen((prev) => !prev)}
+                        className="w-full py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                      >
+                        {isSelfPlayerPickerOpen ? (
+                          <>
+                            <X className="w-4 h-4" />
+                            <span>選手一覧を閉じる</span>
+                          </>
+                        ) : (
+                          <>
+                            <IdCard className="w-4 h-4" />
+                            <span>選手名簿から自分のカードを選択する</span>
+                          </>
+                        )}
+                      </button>
+
+                      {isSelfPlayerPickerOpen && (
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={playerSearchQuery}
+                              onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                              placeholder="名前・背番号で自分を検索..."
+                              className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                            />
+                          </div>
+
+                          {filteredPlayers.length === 0 ? (
+                            <p className="text-xs font-bold text-muted-foreground text-center py-4">
+                              該当する選手が見つかりません
+                            </p>
+                          ) : (
+                            <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
+                              {filteredPlayers.map((player) => {
+                                const isOtherTaken = Boolean(player.isOtherUserLinked);
+                                return (
+                                  <button
+                                    key={player.id}
+                                    type="button"
+                                    disabled={isOtherTaken || isUpdatingSelfPlayer}
+                                    onClick={() => handleLinkSelfPlayer(player)}
+                                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                                      isOtherTaken
+                                        ? "bg-muted/60 border-border text-muted-foreground opacity-65 cursor-not-allowed"
+                                        : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
+                                        {formatUniformBadge(player.uniformNumber)}
+                                      </span>
+                                      <span className="text-xs font-black truncate">
+                                        {player.name}
+                                      </span>
+                                      {player.primaryPosition && (
+                                        <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                                          {player.primaryPosition}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
+                                      {isUpdatingSelfPlayer ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                      ) : isOtherTaken ? (
+                                        <span className="text-[10px] text-muted-foreground">
+                                          連携済
+                                        </span>
+                                      ) : (
+                                        <span className="text-primary">これを選択</span>
+                                      )}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* ━━━ セクション 2B: 👦 お子様（選手）との親子紐付け ━━━ */}
             {memberType !== "player" && (
               <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
@@ -795,13 +1094,13 @@ export default function LiffProfilePage() {
                     <h2 className="text-sm font-black text-white truncate">お子様（選手）の紐付け</h2>
                   </div>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 shrink-0">
-                    出欠・配車に自動連動
+                    出欠・配車・名鑑連動
                   </span>
                 </div>
 
                 <div className="p-4 space-y-3.5">
                   <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-                    チームの選手名簿からお子様を紐付けると、活動予定での親子出欠回答や配車表の親子同乗ルール判定にそのまま反映されます（兄弟複数登録可）。
+                    チームの選手名簿からお子様を紐付けると、活動予定での親子出欠回答・配車表の同乗ルール判定に加え、お子様の選手名鑑プロフィールや写真もスマホから直接入力できます（兄弟複数登録可）。
                   </p>
 
                   {/* 紐付け済みのお子様リスト */}
@@ -816,7 +1115,7 @@ export default function LiffProfilePage() {
                       {myChildren.map((child) => (
                         <div
                           key={child.relationId}
-                          className="flex items-center justify-between p-3 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/25"
+                          className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/25"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <span className="min-w-[40px] h-7 px-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center shrink-0">
@@ -825,24 +1124,33 @@ export default function LiffProfilePage() {
                             <span className="text-sm font-black text-foreground truncate">
                               {child.childName}
                             </span>
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border border-emerald-500/25 text-[10px] font-black shrink-0 hidden sm:inline-flex">
                               登録済
                             </span>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleUnlinkChild(child)}
-                            disabled={isUpdatingChildId === child.childId}
-                            className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
-                          >
-                            {isUpdatingChildId === child.childId ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <X className="w-3.5 h-3.5" />
-                            )}
-                            <span>解除</span>
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Link
+                              href={`/liff/players?playerId=${encodeURIComponent(child.childId)}&edit=1`}
+                              className="py-1.5 px-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black transition-all active:scale-95 flex items-center gap-1"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>名鑑入力</span>
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={() => handleUnlinkChild(child)}
+                              disabled={isUpdatingChildId === child.childId}
+                              className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1"
+                            >
+                              {isUpdatingChildId === child.childId ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <X className="w-3.5 h-3.5" />
+                              )}
+                              <span>解除</span>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>

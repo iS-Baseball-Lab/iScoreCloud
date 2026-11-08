@@ -1,9 +1,11 @@
 // filepath: src/app/liff/players/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   IdCard,
   Search,
@@ -25,16 +27,23 @@ import {
   Check,
   ShieldAlert,
   SlidersHorizontal,
+  Edit3,
+  UserCheck,
+  Music,
+  Heart,
+  Wrench,
+  Gauge,
+  GraduationCap,
+  Volume2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { peekLiffApiCache, invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { PlayerPhotoCaptureModal } from "@/components/liff/PlayerPhotoCaptureModal";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import type { SavedPlayerProfilePayload } from "@/components/liff/PlayerProfileEditModal";
 import {
   PLAYER_CONDITION_META,
   PLAYER_CONDITION_STATUS_ORDER,
@@ -44,6 +53,29 @@ import {
   saveDemoPlayerConditionOverride,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+import {
+  EMPTY_PLAYER_PROFILE_DETAILS,
+  PLAY_STYLE_TAG_MAP,
+  loadDemoPlayerProfileOverrides,
+  parsePlayerProfileDetails,
+  type PlayerProfileDetails,
+} from "@/lib/liff/player-profile-schema";
+
+const PlayerPhotoCaptureModal = dynamic(
+  () =>
+    import("@/components/liff/PlayerPhotoCaptureModal").then(
+      (m) => m.PlayerPhotoCaptureModal
+    ),
+  { ssr: false }
+);
+
+const PlayerProfileEditModal = dynamic(
+  () =>
+    import("@/components/liff/PlayerProfileEditModal").then(
+      (m) => m.PlayerProfileEditModal
+    ),
+  { ssr: false }
+);
 
 type RosterCategory = "投手" | "捕手" | "内野手" | "外野手" | "DH" | "未設定";
 type FilterCategory = "すべて" | RosterCategory | "ケア・休部";
@@ -81,6 +113,7 @@ interface DirectoryPlayer {
   primaryPosition: string | null;
   subPositions: string[];
   registeredPrimaryPosition?: string | null;
+  registeredSubPositions?: string[];
   positionCounts?: DirectoryPositionCount[];
   totalPositionGames?: number;
   positionSource?: "match_data" | "profile";
@@ -88,8 +121,14 @@ interface DirectoryPlayer {
   bats: string | null;
   height: number | null;
   weight: number | null;
+  editableWeight?: number | null;
   profileImageUrl: string | null;
   notes: string | null;
+  profileDetails?: PlayerProfileDetails;
+  isSelf?: boolean;
+  isLinkedChild?: boolean;
+  canEditProfile?: boolean;
+  hasLinkedUser?: boolean;
   conditionStatus?: PlayerConditionStatus;
   conditionNote?: string | null;
   isCaptain: boolean;
@@ -113,6 +152,9 @@ interface PlayersDirectoryResponse {
   success: boolean;
   isDemo?: boolean;
   canManagePlayers?: boolean;
+  mySelfPlayerId?: string | null;
+  myLinkedChildIds?: string[];
+  canClaimSelfPlayer?: boolean;
   error?: string;
   team?: DirectoryTeamInfo;
   players?: DirectoryPlayer[];
@@ -305,8 +347,21 @@ function cleanUniformNumber(raw: string | null | undefined): string {
   return c || "--";
 }
 
-export default function LiffPlayersDirectoryPage() {
-  const { currentTeam, profile, isDemo: providerDemo } = useLiff();
+function hydrateDirectoryPlayer(p: DirectoryPlayer): DirectoryPlayer {
+  const details = p.profileDetails
+    ? parsePlayerProfileDetails(p.profileDetails)
+    : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
+  return {
+    ...p,
+    profileDetails: details,
+    conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
+    conditionNote: p.conditionNote ?? null,
+  };
+}
+
+function LiffPlayersDirectoryContent() {
+  const { currentTeam, profile, isDemo: providerDemo, isLoggedIn, login } = useLiff();
+  const searchParams = useSearchParams();
 
   const initialCachedPlayers = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -334,15 +389,14 @@ export default function LiffPlayersDirectoryPage() {
   const [canManagePlayers, setCanManagePlayers] = useState<boolean>(() =>
     Boolean(initialCachedPlayers?.canManagePlayers || initialCachedPlayers?.isDemo)
   );
+  const [canClaimSelfPlayer, setCanClaimSelfPlayer] = useState<boolean>(() =>
+    Boolean(initialCachedPlayers?.canClaimSelfPlayer)
+  );
   const [teamInfo, setTeamInfo] = useState<DirectoryTeamInfo | null>(
     () => initialCachedPlayers?.team ?? null
   );
   const [players, setPlayers] = useState<DirectoryPlayer[]>(() =>
-    (initialCachedPlayers?.players || []).map((p) => ({
-      ...p,
-      conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-      conditionNote: p.conditionNote ?? null,
-    }))
+    (initialCachedPlayers?.players || []).map(hydrateDirectoryPlayer)
   );
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -350,6 +404,13 @@ export default function LiffPlayersDirectoryPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [photoModalPlayerId, setPhotoModalPlayerId] = useState<string | null>(null);
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+
+  // 本人紐付けボトムシート & 確認ステート
+  const [isSelfClaimModalOpen, setIsSelfClaimModalOpen] = useState<boolean>(false);
+  const [selfClaimSearch, setSelfClaimSearch] = useState<string>("");
+  const [confirmingClaimPlayerId, setConfirmingClaimPlayerId] = useState<string | null>(null);
+  const [isClaimingSelf, setIsClaimingSelf] = useState<boolean>(false);
 
   // 指導者・管理者向け：在籍・コンディション編集ステート
   const [isConditionEditorOpen, setIsConditionEditorOpen] = useState<boolean>(false);
@@ -358,23 +419,38 @@ export default function LiffPlayersDirectoryPage() {
   const [draftConditionNote, setDraftConditionNote] = useState<string>("");
   const [isSavingCondition, setIsSavingCondition] = useState<boolean>(false);
 
+  const handledDeepLinkRef = useRef<string>("");
+
   const activeTeamId =
     teamInfo?.id ||
     currentTeam?.id ||
     (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
     "demo-team";
 
+  const effectiveUserId =
+    profile?.userId ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+      : "");
+  const effectiveUserName =
+    profile?.displayName ||
+    (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+
   // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
   useEffect(() => {
     setSelectedPlayerId(null);
     setPhotoModalPlayerId(null);
+    setEditingPlayerId(null);
     setIsConditionEditorOpen(false);
+    setIsSelfClaimModalOpen(false);
+    setConfirmingClaimPlayerId(null);
   }, [currentTeam?.id]);
 
   // 詳細モーダルで別選手に切り替えた際、コンディション編集フォームを対象選手の値に同期
   useEffect(() => {
     if (!selectedPlayerId) {
       setIsConditionEditorOpen(false);
+      setConfirmingClaimPlayerId(null);
       return;
     }
     const target = players.find((p) => p.id === selectedPlayerId);
@@ -382,8 +458,39 @@ export default function LiffPlayersDirectoryPage() {
       setDraftConditionStatus(normalizePlayerConditionStatus(target.conditionStatus));
       setDraftConditionNote(target.conditionNote || "");
       setIsConditionEditorOpen(false);
+      setConfirmingClaimPlayerId(null);
     }
   }, [selectedPlayerId, players]);
+
+  // URL クエリ（?playerId=xxx&edit=1 等）からの直接編集・詳細展開
+  useEffect(() => {
+    if (players.length === 0) return;
+    const qpPlayerId = searchParams.get("playerId");
+    const qpEdit = searchParams.get("edit");
+    const sig = `${activeTeamId}:${qpPlayerId || ""}:${qpEdit || ""}`;
+    if (!qpPlayerId && !qpEdit) return;
+    if (handledDeepLinkRef.current === sig) return;
+
+    if (qpEdit === "self") {
+      const selfTarget = players.find((p) => p.isSelf);
+      if (selfTarget) {
+        handledDeepLinkRef.current = sig;
+        setEditingPlayerId(selfTarget.id);
+      }
+      return;
+    }
+
+    if (qpPlayerId) {
+      const found = players.find((p) => p.id === qpPlayerId);
+      if (found) {
+        handledDeepLinkRef.current = sig;
+        setSelectedPlayerId(found.id);
+        if (qpEdit === "1" && (found.canEditProfile || canManagePlayers)) {
+          setEditingPlayerId(found.id);
+        }
+      }
+    }
+  }, [activeTeamId, canManagePlayers, players, searchParams]);
 
   const handlePhotoUpdated = useCallback(
     (playerId: string, newProfileImageUrl: string | null) => {
@@ -392,6 +499,61 @@ export default function LiffPlayersDirectoryPage() {
           p.id === playerId ? { ...p, profileImageUrl: newProfileImageUrl } : p
         )
       );
+    },
+    []
+  );
+
+  const handleProfileSaved = useCallback(
+    (payload: SavedPlayerProfilePayload) => {
+      setPlayers((prev) => {
+        const nextList = prev.map((p) => {
+          const updatedIsCaptain =
+            payload.captainId !== undefined
+              ? payload.captainId === p.id
+              : p.id === payload.playerId && payload.updated.isCaptain !== undefined
+              ? payload.updated.isCaptain
+              : p.isCaptain;
+
+          if (p.id !== payload.playerId) {
+            return {
+              ...p,
+              isCaptain: updatedIsCaptain,
+            };
+          }
+
+          const isProfilePosMode = p.positionSource !== "match_data";
+          return {
+            ...p,
+            name: payload.updated.name || p.name,
+            nameKana: payload.updated.nameKana,
+            uniformNumber: payload.updated.uniformNumber || p.uniformNumber,
+            nickname: payload.updated.nickname,
+            registeredPrimaryPosition: payload.updated.registeredPrimaryPosition,
+            registeredSubPositions: payload.updated.registeredSubPositions,
+            primaryPosition: isProfilePosMode
+              ? payload.updated.registeredPrimaryPosition
+              : p.primaryPosition,
+            subPositions: isProfilePosMode
+              ? payload.updated.registeredSubPositions
+              : p.subPositions,
+            throws: payload.updated.throws,
+            bats: payload.updated.bats,
+            height: payload.updated.height,
+            weight: payload.updated.weight,
+            editableWeight: payload.updated.editableWeight,
+            notes: payload.updated.notes,
+            profileDetails: payload.updated.profileDetails,
+            isCaptain: updatedIsCaptain,
+          };
+        });
+        return nextList.sort(comparePlayersByConditionAndUniform);
+      });
+
+      if (payload.captainId !== undefined) {
+        setTeamInfo((prev) =>
+          prev ? { ...prev, captainId: payload.captainId ?? null } : prev
+        );
+      }
     },
     []
   );
@@ -430,24 +592,57 @@ export default function LiffPlayersDirectoryPage() {
           const demoFlag = Boolean(data.isDemo);
           setIsDemoMode(demoFlag);
           setCanManagePlayers(Boolean(data.canManagePlayers || demoFlag));
+          setCanClaimSelfPlayer(Boolean(data.canClaimSelfPlayer));
           setTeamInfo(data.team || null);
 
-          let nextPlayers = (data.players || []).map((p) => ({
-            ...p,
-            conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-            conditionNote: p.conditionNote ?? null,
-          }));
+          let nextPlayers = (data.players || []).map(hydrateDirectoryPlayer);
 
           if (demoFlag) {
-            const overrides = loadDemoPlayerConditionOverrides();
+            const condOverrides = loadDemoPlayerConditionOverrides();
+            const profOverrides = loadDemoPlayerProfileOverrides();
             nextPlayers = nextPlayers
               .map((p) => {
-                const ov = overrides[p.id];
-                if (!ov) return p;
+                const cOv = condOverrides[p.id];
+                const pOv = profOverrides[p.id];
+                const mergedDetails = pOv?.profileDetails
+                  ? parsePlayerProfileDetails(pOv.profileDetails)
+                  : p.profileDetails;
+                const isProfilePosMode = p.positionSource !== "match_data";
+
                 return {
                   ...p,
-                  conditionStatus: ov.conditionStatus,
-                  conditionNote: ov.conditionNote,
+                  ...(pOv?.name ? { name: pOv.name } : {}),
+                  ...(pOv?.nameKana !== undefined ? { nameKana: pOv.nameKana } : {}),
+                  ...(pOv?.uniformNumber ? { uniformNumber: pOv.uniformNumber } : {}),
+                  ...(pOv?.nickname !== undefined ? { nickname: pOv.nickname } : {}),
+                  ...(pOv?.registeredPrimaryPosition !== undefined
+                    ? {
+                        registeredPrimaryPosition: pOv.registeredPrimaryPosition,
+                        ...(isProfilePosMode
+                          ? { primaryPosition: pOv.registeredPrimaryPosition }
+                          : {}),
+                      }
+                    : {}),
+                  ...(pOv?.registeredSubPositions !== undefined
+                    ? {
+                        registeredSubPositions: pOv.registeredSubPositions,
+                        ...(isProfilePosMode
+                          ? { subPositions: pOv.registeredSubPositions }
+                          : {}),
+                      }
+                    : {}),
+                  ...(pOv?.throws !== undefined ? { throws: pOv.throws } : {}),
+                  ...(pOv?.bats !== undefined ? { bats: pOv.bats } : {}),
+                  ...(pOv?.height !== undefined ? { height: pOv.height } : {}),
+                  ...(pOv?.weight !== undefined ? { weight: pOv.weight } : {}),
+                  ...(pOv?.editableWeight !== undefined
+                    ? { editableWeight: pOv.editableWeight }
+                    : {}),
+                  ...(pOv?.notes !== undefined ? { notes: pOv.notes } : {}),
+                  ...(pOv?.isCaptain !== undefined ? { isCaptain: pOv.isCaptain } : {}),
+                  profileDetails: mergedDetails,
+                  conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
+                  conditionNote: cOv ? cOv.conditionNote : p.conditionNote,
                 };
               })
               .sort(comparePlayersByConditionAndUniform);
@@ -467,19 +662,84 @@ export default function LiffPlayersDirectoryPage() {
     loadPlayers();
   }, [loadPlayers]);
 
+  // 選手本人紐付け実行
+  const handleClaimSelfPlayer = useCallback(
+    async (targetPlayer: DirectoryPlayer) => {
+      if (!effectiveUserId && !isDemoMode && !providerDemo) {
+        toast.info("選手データを紐付けるにはLINEログインが必要です");
+        login();
+        return;
+      }
+
+      setIsClaimingSelf(true);
+      try {
+        const res = await fetch("/api/liff/profile/self-player", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: activeTeamId,
+            playerId: targetPlayer.id,
+            userId: effectiveUserId || undefined,
+            userName: effectiveUserName || undefined,
+          }),
+        });
+
+        const json = (await res.json()) as {
+          success?: boolean;
+          error?: string;
+        };
+
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "選手データの紐付けに失敗しました");
+          return;
+        }
+
+        invalidateLiffApiCache("/api/liff/");
+
+        setPlayers((prev) =>
+          prev.map((p) => {
+            if (p.id === targetPlayer.id) {
+              return {
+                ...p,
+                isSelf: true,
+                canEditProfile: true,
+                hasLinkedUser: true,
+                editableWeight: p.editableWeight ?? p.weight,
+              };
+            }
+            return p.isSelf ? { ...p, isSelf: false } : p;
+          })
+        );
+        setCanClaimSelfPlayer(false);
+        setIsSelfClaimModalOpen(false);
+        setConfirmingClaimPlayerId(null);
+
+        toast.success(
+          `「#${cleanUniformNumber(targetPlayer.uniformNumber)} ${targetPlayer.name}」をご自身の選手カードとして紐付けました！`
+        );
+        // 紐付け直後にそのままプロフィール入力モーダルを開く（デッドエンド防止）
+        setEditingPlayerId(targetPlayer.id);
+      } catch (err) {
+        console.error("Failed to claim self player:", err);
+        toast.error("通信エラーにより紐付けできませんでした");
+      } finally {
+        setIsClaimingSelf(false);
+      }
+    },
+    [
+      activeTeamId,
+      effectiveUserId,
+      effectiveUserName,
+      isDemoMode,
+      login,
+      providerDemo,
+    ]
+  );
+
   const handleSaveCondition = useCallback(async () => {
     if (!selectedPlayerId) return;
     setIsSavingCondition(true);
     try {
-      const uid =
-        profile?.userId ||
-        (typeof window !== "undefined"
-          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
-          : "");
-      const uName =
-        profile?.displayName ||
-        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
-
       const trimmedNote =
         draftConditionStatus === "active" && !draftConditionNote.trim()
           ? null
@@ -494,8 +754,8 @@ export default function LiffPlayersDirectoryPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             teamId: activeTeamId,
-            userId: uid || null,
-            userName: uName || null,
+            userId: effectiveUserId || null,
+            userName: effectiveUserName || null,
             conditionStatus: draftConditionStatus,
             conditionNote: trimmedNote,
           }),
@@ -549,12 +809,18 @@ export default function LiffPlayersDirectoryPage() {
     activeTeamId,
     draftConditionNote,
     draftConditionStatus,
+    effectiveUserId,
+    effectiveUserName,
     isDemoMode,
-    profile?.displayName,
-    profile?.userId,
     providerDemo,
     selectedPlayerId,
   ]);
+
+  // 自分または紐付けお子様の選手リスト
+  const myPersonalPlayers = useMemo(
+    () => players.filter((p) => p.isSelf || p.isLinkedChild),
+    [players]
+  );
 
   // 稼働メンバー数 / 休部数 / ケア・制限数
   const rosterStatusCounts = useMemo(() => {
@@ -628,16 +894,38 @@ export default function LiffPlayersDirectoryPage() {
       const subText = p.subPositions
         .map((sp) => resolvePositionMeta(sp).shortLabel.toLowerCase())
         .join(" ");
+      const details = p.profileDetails;
+      const tagsText = (details?.playStyleTags || [])
+        .map((tid) => PLAY_STYLE_TAG_MAP[tid]?.label || "")
+        .join(" ")
+        .toLowerCase();
+
       return (
         p.name.toLowerCase().includes(q) ||
         (p.nameKana || "").toLowerCase().includes(q) ||
+        (p.nickname || "").toLowerCase().includes(q) ||
         num.includes(q) ||
         meta.shortLabel.toLowerCase().includes(q) ||
         subText.includes(q) ||
-        condMeta.label.toLowerCase().includes(q)
+        condMeta.label.toLowerCase().includes(q) ||
+        tagsText.includes(q) ||
+        (details?.gradeOrAge || "").toLowerCase().includes(q) ||
+        (details?.favoriteTeam || "").toLowerCase().includes(q) ||
+        (details?.admiredPlayer || "").toLowerCase().includes(q)
       );
     });
   }, [players, selectedCategory, searchQuery]);
+
+  const selfClaimCandidates = useMemo(() => {
+    const q = selfClaimSearch.trim().toLowerCase();
+    if (!q) return players;
+    return players.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.nameKana || "").toLowerCase().includes(q) ||
+        cleanUniformNumber(p.uniformNumber).toLowerCase().includes(q)
+    );
+  }, [players, selfClaimSearch]);
 
   const hasMatchAggregatedPositions = useMemo(
     () => players.some((p) => p.positionSource === "match_data"),
@@ -656,6 +944,11 @@ export default function LiffPlayersDirectoryPage() {
     selectedIndex >= 0 && selectedIndex < filteredPlayers.length - 1
       ? filteredPlayers[selectedIndex + 1]
       : null;
+
+  const editingPlayer = useMemo(
+    () => (editingPlayerId ? players.find((p) => p.id === editingPlayerId) || null : null),
+    [editingPlayerId, players]
+  );
 
   const teamHeadline = teamInfo?.orgName || currentTeam?.orgName || currentTeam?.name || "チーム";
   const teamSubname = teamInfo?.teamName || currentTeam?.teamName || "";
@@ -723,9 +1016,7 @@ export default function LiffPlayersDirectoryPage() {
 
         {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー（A-3 上帯ダーク × 純白ボディ） ━━━ */}
         <section className="relative overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-xs">
-          {/* A-3 上段ダークソリッドキャップ */}
           <div className="relative p-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
-            {/* アスレチック斜線 & ダイヤモンド装飾（単色ソリッド） */}
             <svg
               aria-hidden="true"
               viewBox="0 0 160 160"
@@ -854,6 +1145,81 @@ export default function LiffPlayersDirectoryPage() {
           </div>
         </section>
 
+        {/* ━━━ ✏️ 本人・お子様の選手名鑑ダイレクト入力バー（デッドエンドゼロ導線） ━━━ */}
+        {players.length > 0 && myPersonalPlayers.length > 0 ? (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="h-[3px] w-full bg-primary" />
+            <div className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+                  <Edit3 className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">
+                    マイ選手カード（目標・特徴・愛用ギア）
+                  </p>
+                  <p className="text-[10.5px] font-bold text-muted-foreground truncate">
+                    自分の選手プロフィールをいつでも直接アップデートできます
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+                {myPersonalPlayers.map((mp) => (
+                  <button
+                    key={`quick-edit-${mp.id}`}
+                    type="button"
+                    onClick={() => setEditingPlayerId(mp.id)}
+                    className="px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>
+                      #{cleanUniformNumber(mp.uniformNumber)} {mp.name} を編集
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        ) : players.length > 0 && (canClaimSelfPlayer || (!isLoggedIn && !isDemoMode)) ? (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="h-[3px] w-full bg-teal-500" />
+            <div className="p-3 flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0">
+                  <UserCheck className="w-4 h-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground">
+                    自分の選手カードを紐付けて名鑑を入力しよう！
+                  </p>
+                  <p className="text-[10.5px] font-bold text-muted-foreground">
+                    目標・得意プレー・愛用ギアなどを自分で編集できます
+                  </p>
+                </div>
+              </div>
+
+              {isLoggedIn ? (
+                <button
+                  type="button"
+                  onClick={() => setIsSelfClaimModalOpen(true)}
+                  className="px-3 py-2 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer"
+                >
+                  選手を選ぶ
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={login}
+                  className="px-3 py-2 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer"
+                >
+                  LINE連携
+                </button>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         {/* ━━━ 🔍 検索・表示切替・ポジションフィルタ ━━━ */}
         <div className="space-y-2.5">
           <div className="flex items-center gap-2">
@@ -864,7 +1230,7 @@ export default function LiffPlayersDirectoryPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="背番号・選手名で検索..."
+                placeholder="背番号・名前・コール名・得意タグで検索..."
                 className="w-full pl-9 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs font-bold text-foreground shadow-xs focus:outline-hidden focus:ring-2 focus:ring-primary/40"
               />
               {searchQuery && (
@@ -983,6 +1349,10 @@ export default function LiffPlayersDirectoryPage() {
               const subLabelsShort = player.subPositions
                 .map((sp) => resolvePositionMeta(sp).shortLabel)
                 .filter(Boolean);
+              const pDetails = player.profileDetails;
+              const styleTagList = (pDetails?.playStyleTags || [])
+                .map((tid) => PLAY_STYLE_TAG_MAP[tid])
+                .filter(Boolean);
 
               return (
                 <button
@@ -992,23 +1362,24 @@ export default function LiffPlayersDirectoryPage() {
                   className={`group relative rounded-2xl border shadow-xs overflow-hidden text-left flex flex-col transition-all active:scale-[0.98] focus:outline-hidden ${
                     isOnLeave
                       ? "border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 opacity-85 hover:opacity-100"
+                      : player.isSelf || player.isLinkedChild
+                      ? "border-primary/50 bg-card hover:border-primary"
                       : "border-border bg-card hover:border-primary/50"
                   }`}
                 >
-                  {/* カテゴリ単色ソリッドバー（休部・故障時は状態カラー優先） */}
+                  {/* カテゴリ単色ソリッドバー */}
                   <div
                     className={`h-[3px] w-full ${
                       condStatus !== "active" ? condMeta.topAccentBarClass : style.barSolid
                     }`}
                   />
 
-                  {/* 上部ビジュアルステージ（単色ソリッド＋クッキリ背番号ウォーターマーク） */}
+                  {/* 上部ビジュアルステージ */}
                   <div
                     className={`relative h-28 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border ${
                       isOnLeave ? "bg-slate-200/60 dark:bg-slate-800/50" : "bg-muted/70"
                     }`}
                   >
-                    {/* 巨大ウォーターマーク背番号（グラデーションゼロ・単色高コントラスト） */}
                     <span
                       aria-hidden="true"
                       className="pointer-events-none select-none absolute right-1 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-slate-200 dark:text-slate-800 tabular-nums group-hover:scale-105 transition-transform duration-300"
@@ -1016,7 +1387,6 @@ export default function LiffPlayersDirectoryPage() {
                       {numStr}
                     </span>
 
-                    {/* 上段バッジ列: 背番号 + 主将マーク / メイン守備位置 */}
                     <div className="relative z-10 flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
                         <span
@@ -1032,6 +1402,15 @@ export default function LiffPlayersDirectoryPage() {
                             <span>C</span>
                           </span>
                         )}
+                        {player.isSelf ? (
+                          <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[9.5px] font-black shadow-2xs">
+                            本人
+                          </span>
+                        ) : player.isLinkedChild ? (
+                          <span className="px-1.5 py-0.5 rounded bg-teal-600 text-white text-[9.5px] font-black shadow-2xs">
+                            お子様
+                          </span>
+                        ) : null}
                       </div>
 
                       <span className={`px-2 py-0.5 rounded text-[10px] font-black shadow-2xs tabular-nums ${style.pillSolid}`}>
@@ -1040,7 +1419,6 @@ export default function LiffPlayersDirectoryPage() {
                       </span>
                     </div>
 
-                    {/* 下段: 選手フォト / 在籍・コンディション状態バッジ */}
                     <div className="relative z-10 flex items-end justify-between gap-1">
                       <Avatar
                         className={`h-14 w-14 border-2 border-card shadow-xs ring-2 ${
@@ -1071,6 +1449,10 @@ export default function LiffPlayersDirectoryPage() {
                         >
                           {condMeta.compactBadgeText}
                         </span>
+                      ) : pDetails?.gradeOrAge ? (
+                        <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-black text-foreground shadow-2xs">
+                          {pDetails.gradeOrAge}
+                        </span>
                       ) : (
                         <span className={`text-[10px] font-black tracking-widest uppercase ${style.codeText}`}>
                           {posMeta.code}
@@ -1079,19 +1461,41 @@ export default function LiffPlayersDirectoryPage() {
                     </div>
                   </div>
 
-                  {/* 下部ソリッド情報エリア（屋外高コントラスト） */}
+                  {/* 下部ソリッド情報エリア */}
                   <div className="p-3 bg-card flex-1 flex flex-col justify-between space-y-2">
                     <div className="min-w-0 space-y-1">
                       <div>
                         <p className="text-[9.5px] font-bold text-muted-foreground tracking-wider truncate min-h-[14px]">
-                          {player.nameKana || "PLAYER"}
+                          {player.nickname
+                            ? `コール: ${player.nickname}`
+                            : player.nameKana || "PLAYER"}
                         </p>
                         <h3 className="text-sm sm:text-[15px] font-black text-foreground tracking-tight truncate leading-snug">
                           {player.name}
                         </h3>
                       </div>
 
-                      {/* 指導者・管理者限定メモの1行プレビュー（一般保護者にはAPI層でマスク済） */}
+                      {/* 得意プレータグ（設定済みの場合に最大2つ表示） */}
+                      {styleTagList.length > 0 && (
+                        <div className="flex items-center gap-1 flex-wrap pt-0.5">
+                          {styleTagList.slice(0, 2).map((tg) => (
+                            <span
+                              key={`${player.id}-tag-${tg.id}`}
+                              className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black leading-tight"
+                            >
+                              {tg.emoji}
+                              {tg.shortLabel}
+                            </span>
+                          ))}
+                          {styleTagList.length > 2 && (
+                            <span className="text-[9px] font-black text-muted-foreground">
+                              +{styleTagList.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 指導者・管理者限定メモの1行プレビュー */}
                       {canManagePlayers && player.conditionNote && (
                         <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted border border-border text-[9.5px] font-bold text-foreground truncate">
                           <Lock className="w-2.5 h-2.5 text-muted-foreground shrink-0" />
@@ -1099,8 +1503,8 @@ export default function LiffPlayersDirectoryPage() {
                         </div>
                       )}
 
-                      {/* サブ守備位置チップ（実戦集計で複数守った場合に常時表示） */}
-                      {subLabelsShort.length > 0 && (
+                      {/* サブ守備位置チップ */}
+                      {styleTagList.length === 0 && subLabelsShort.length > 0 && (
                         <div className="flex items-center gap-1 flex-wrap pt-0.5">
                           <span className="text-[9px] font-black text-muted-foreground shrink-0">
                             サブ:
@@ -1136,7 +1540,7 @@ export default function LiffPlayersDirectoryPage() {
                         ) : null}
                       </div>
 
-                      {/* ミニ成績ハイライト ＆ 単色ソリッドゲージバー */}
+                      {/* ミニ成績ハイライト */}
                       {posMeta.category === "投手" && player.pitching ? (
                         <div className="px-2 py-1.5 rounded-xl bg-muted border border-border space-y-1">
                           <div className="flex items-center justify-between text-[10px]">
@@ -1190,6 +1594,10 @@ export default function LiffPlayersDirectoryPage() {
                             />
                           </div>
                         </div>
+                      ) : pDetails?.seasonGoal ? (
+                        <div className="px-2 py-1 rounded-xl bg-muted/60 border border-border text-[10px] font-bold text-foreground truncate">
+                          🔥 {pDetails.seasonGoal}
+                        </div>
                       ) : (
                         <div className="px-2 py-1 rounded-xl bg-muted/50 border border-border flex items-center justify-between text-[10px] text-muted-foreground font-bold">
                           <span>詳細・成長記録</span>
@@ -1218,6 +1626,10 @@ export default function LiffPlayersDirectoryPage() {
               const subLabelsShort = player.subPositions
                 .map((sp) => resolvePositionMeta(sp).shortLabel)
                 .filter(Boolean);
+              const pDetails = player.profileDetails;
+              const styleTagList = (pDetails?.playStyleTags || [])
+                .map((tid) => PLAY_STYLE_TAG_MAP[tid])
+                .filter(Boolean);
 
               return (
                 <button
@@ -1227,10 +1639,11 @@ export default function LiffPlayersDirectoryPage() {
                   className={`w-full rounded-2xl border shadow-xs overflow-hidden flex items-stretch text-left transition-all active:scale-[0.99] ${
                     isOnLeave
                       ? "border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 opacity-85 hover:opacity-100"
+                      : player.isSelf || player.isLinkedChild
+                      ? "border-primary/50 bg-card hover:border-primary"
                       : "border-border bg-card hover:border-primary/40"
                   }`}
                 >
-                  {/* ポジションカラー縦アクセントバー */}
                   <div
                     className={`w-1.5 shrink-0 ${
                       condStatus !== "active" ? condMeta.topAccentBarClass : style.barSolid
@@ -1239,7 +1652,6 @@ export default function LiffPlayersDirectoryPage() {
 
                   <div className="flex-1 p-3 flex items-center justify-between gap-3 min-w-0">
                     <div className="flex items-center gap-3 min-w-0">
-                      {/* 背番号ボックス */}
                       <div className="w-11 text-center shrink-0">
                         <span className="text-lg font-black italic tracking-tighter tabular-nums text-foreground leading-none block">
                           #{numStr}
@@ -1277,12 +1689,26 @@ export default function LiffPlayersDirectoryPage() {
                           <span className="text-sm font-black text-foreground truncate">
                             {player.name}
                           </span>
+                          {player.nickname && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-muted border border-border text-[9.5px] font-black text-muted-foreground">
+                              {player.nickname}
+                            </span>
+                          )}
                           {player.isCaptain && (
                             <span className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[9.5px] font-black flex items-center gap-0.5">
                               <Crown className="w-2.5 h-2.5 fill-current" />
                               <span>主将</span>
                             </span>
                           )}
+                          {player.isSelf ? (
+                            <span className="px-1.5 py-0.2 rounded-md bg-primary text-primary-foreground text-[9.5px] font-black">
+                              本人
+                            </span>
+                          ) : player.isLinkedChild ? (
+                            <span className="px-1.5 py-0.2 rounded-md bg-teal-600 text-white text-[9.5px] font-black">
+                              お子様
+                            </span>
+                          ) : null}
                           {condStatus !== "active" && (
                             <span
                               className={`px-2 py-0.2 rounded-md text-[10px] font-black ${condMeta.solidBadgeClass}`}
@@ -1298,7 +1724,16 @@ export default function LiffPlayersDirectoryPage() {
                             {posMeta.shortLabel}
                             {mainGames > 0 ? `(${mainGames})` : ""}
                           </span>
-                          {subLabelsShort.length > 0 && (
+                          {styleTagList.slice(0, 2).map((tg) => (
+                            <span
+                              key={`list-${player.id}-${tg.id}`}
+                              className="px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/25 text-[10px] font-black"
+                            >
+                              {tg.emoji}
+                              {tg.shortLabel}
+                            </span>
+                          ))}
+                          {styleTagList.length === 0 && subLabelsShort.length > 0 && (
                             <span className="px-1.5 py-0.2 rounded-md bg-muted/50 border border-border text-[10px] font-bold text-foreground truncate max-w-[140px]">
                               サブ:{subLabelsShort.join("・")}
                             </span>
@@ -1308,9 +1743,9 @@ export default function LiffPlayersDirectoryPage() {
                               {tbLabel}
                             </span>
                           )}
-                          {player.height && (
-                            <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
-                              {player.height}cm
+                          {pDetails?.gradeOrAge && (
+                            <span className="text-[10.5px] font-black text-muted-foreground">
+                              {pDetails.gradeOrAge}
                             </span>
                           )}
                         </div>
@@ -1352,7 +1787,7 @@ export default function LiffPlayersDirectoryPage() {
           </div>
         )}
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1370,11 +1805,64 @@ export default function LiffPlayersDirectoryPage() {
           .map((sp) => resolvePositionMeta(sp).shortLabel)
           .filter(Boolean);
 
+        const details = selectedPlayer.profileDetails
+          ? parsePlayerProfileDetails(selectedPlayer.profileDetails)
+          : EMPTY_PLAYER_PROFILE_DETAILS;
+        const styleTagItems = details.playStyleTags
+          .map((tid) => PLAY_STYLE_TAG_MAP[tid])
+          .filter(Boolean);
+
+        const regPrimaryMeta = selectedPlayer.registeredPrimaryPosition
+          ? resolvePositionMeta(selectedPlayer.registeredPrimaryPosition)
+          : null;
+        const regSubLabels = (selectedPlayer.registeredSubPositions || [])
+          .map((sp) => resolvePositionMeta(sp).shortLabel)
+          .filter(Boolean);
+        const hasRegisteredDesiredPositions =
+          Boolean(regPrimaryMeta && selectedPlayer.registeredPrimaryPosition) ||
+          regSubLabels.length > 0;
+
+        const hasPhysicalBest =
+          Boolean(details.maxVelocityKmh) ||
+          Boolean(details.dash50mSec) ||
+          Boolean(details.longTossM);
+
+        const personalRows: Array<{ label: string; value: string; icon: "edu" | "heart" | "team" | "glove" | "bat" | "music" }> = [];
+        if (details.baseballHistory) {
+          personalRows.push({ label: "球歴・野球歴", value: details.baseballHistory, icon: "edu" });
+        }
+        if (details.admiredPlayer) {
+          personalRows.push({ label: "憧れの選手", value: details.admiredPlayer, icon: "heart" });
+        }
+        if (details.favoriteTeam) {
+          personalRows.push({ label: "好きな球団", value: details.favoriteTeam, icon: "team" });
+        }
+        if (details.gloveGear) {
+          personalRows.push({ label: "愛用グラブ", value: details.gloveGear, icon: "glove" });
+        }
+        if (details.batGear) {
+          personalRows.push({ label: "愛用バット", value: details.batGear, icon: "bat" });
+        }
+        if (details.walkUpSong) {
+          personalRows.push({ label: "登場曲・テーマ曲", value: details.walkUpSong, icon: "music" });
+        }
+
+        const canEditThisPlayer = Boolean(selectedPlayer.canEditProfile || canManagePlayers);
+        const canClaimThisPlayer =
+          !canEditThisPlayer &&
+          canClaimSelfPlayer &&
+          !selectedPlayer.hasLinkedUser;
+
+        const bodySpecText = selectedPlayer.height
+          ? `${selectedPlayer.height}cm${selectedPlayer.weight ? ` / ${selectedPlayer.weight}kg` : ""}`
+          : selectedPlayer.weight
+          ? `${selectedPlayer.weight}kg`
+          : "--";
+
         if (typeof document === "undefined") return null;
 
         return createPortal(
           <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 p-3 sm:p-4 animate-in fade-in duration-150">
-            {/* 背景タップで明示的クローズ */}
             <div
               className="absolute inset-0"
               onClick={() => setSelectedPlayerId(null)}
@@ -1400,7 +1888,7 @@ export default function LiffPlayersDirectoryPage() {
                   {numStr}
                 </span>
 
-                {/* 上部バー: 前後の選手クイック切替ピル & 閉じるボタン */}
+                {/* 上部バー: 前後の選手クイック切替ピル & 編集/閉じるボタン */}
                 <div className="relative z-10 flex items-center justify-between mb-4">
                   <div className="inline-flex items-center rounded-full bg-slate-800 border border-slate-700 p-0.5 shadow-2xs">
                     <button
@@ -1426,14 +1914,27 @@ export default function LiffPlayersDirectoryPage() {
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPlayerId(null)}
-                    className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center active:scale-90 transition-all shadow-2xs"
-                    aria-label="閉じる"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {canEditThisPlayer && (
+                      <button
+                        type="button"
+                        onClick={() => setEditingPlayerId(selectedPlayer.id)}
+                        className="px-2.5 py-1.5 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        <span>名鑑編集</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlayerId(null)}
+                      className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center active:scale-90 transition-all shadow-2xs cursor-pointer"
+                      aria-label="閉じる"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* 選手メインプロフィール */}
@@ -1469,6 +1970,11 @@ export default function LiffPlayersDirectoryPage() {
                       <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-100 border border-slate-700 text-[11px] font-black">
                         {posMeta.shortLabel}
                       </span>
+                      {details.gradeOrAge && (
+                        <span className="px-2 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700 text-[10.5px] font-black">
+                          {details.gradeOrAge}
+                        </span>
+                      )}
                       {selectedPlayer.isCaptain && (
                         <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-1">
                           <Crown className="w-3 h-3 fill-current" />
@@ -1484,11 +1990,22 @@ export default function LiffPlayersDirectoryPage() {
                       )}
                     </div>
 
-                    {selectedPlayer.nameKana && (
-                      <p className="text-[10px] font-bold text-slate-300 tracking-widest">
-                        {selectedPlayer.nameKana}
-                      </p>
+                    {(selectedPlayer.nameKana || selectedPlayer.nickname) && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {selectedPlayer.nameKana && (
+                          <p className="text-[10px] font-bold text-slate-300 tracking-widest">
+                            {selectedPlayer.nameKana}
+                          </p>
+                        )}
+                        {selectedPlayer.nickname && (
+                          <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-amber-300 flex items-center gap-1">
+                            <Volume2 className="w-2.5 h-2.5" />
+                            <span>コール: {selectedPlayer.nickname}</span>
+                          </span>
+                        )}
+                      </div>
                     )}
+
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="text-xl font-black tracking-tight text-white truncate">
                         {selectedPlayer.name}
@@ -1508,7 +2025,114 @@ export default function LiffPlayersDirectoryPage() {
 
               {/* スクロール可能な詳細ボディ */}
               <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-3.5 overflow-y-auto">
-                {/* 🩹 公開ステータス案内バナー（通常以外の時に全員へ配慮ある表現で表示） */}
+                {/* ✏️ 本人・保護者・管理者向けダイレクトプロフィール編集バー */}
+                {canEditThisPlayer ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditingPlayerId(selectedPlayer.id)}
+                    className="w-full py-2.5 px-3.5 rounded-2xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-800 shadow-2xs active:scale-[0.99] transition-all flex items-center justify-between gap-2 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </span>
+                      <div className="text-left min-w-0">
+                        <span className="text-xs font-black block leading-tight">
+                          {selectedPlayer.isSelf
+                            ? "自分の選手プロフィールを入力・編集"
+                            : selectedPlayer.isLinkedChild
+                            ? "お子様の選手プロフィールを入力・編集"
+                            : "この選手の名鑑プロフィールを編集"}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-300 block leading-tight mt-0.5 truncate">
+                          目標・得意プレータグ・希望守備・愛用ギア・登場曲など
+                        </span>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[10.5px] font-black text-teal-300 shrink-0">
+                      編集する
+                    </span>
+                  </button>
+                ) : canClaimThisPlayer ? (
+                  <div className="p-3 rounded-2xl bg-muted/45 border border-border space-y-2">
+                    {confirmingClaimPlayerId === selectedPlayer.id ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-black text-foreground">
+                          「#{numStr} {selectedPlayer.name}」をご自身の選手カードとして紐付けますか？
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={isClaimingSelf}
+                            onClick={() => setConfirmingClaimPlayerId(null)}
+                            className="flex-1 py-2 rounded-xl bg-card border border-border text-xs font-black text-foreground cursor-pointer"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isClaimingSelf}
+                            onClick={() => handleClaimSelfPlayer(selectedPlayer)}
+                            className="flex-1 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center gap-1 cursor-pointer disabled:opacity-60"
+                          >
+                            {isClaimingSelf ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5" />
+                            )}
+                            <span>紐付けて入力へ</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingClaimPlayerId(selectedPlayer.id)}
+                        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <UserCheck className="w-4 h-4 text-primary shrink-0" />
+                          <span className="text-xs font-black text-foreground">
+                            ご本人の場合は紐付けて名鑑プロフィールを入力できます
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-card border border-border text-[10.5px] font-black text-primary shrink-0">
+                          本人紐付け
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* 🔥 今季の目標・意気込みバナー */}
+                {details.seasonGoal && (
+                  <div className="p-3.5 rounded-2xl bg-card border-2 border-primary/35 shadow-2xs space-y-1">
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-black text-primary uppercase tracking-wider">
+                      <Flame className="w-3.5 h-3.5 fill-current" />
+                      <span>SEASON GOAL / 今季の目標</span>
+                    </div>
+                    <p className="text-sm font-black text-foreground leading-snug">
+                      「{details.seasonGoal}」
+                    </p>
+                  </div>
+                )}
+
+                {/* ⚡ プレースタイル・得意プレータグ */}
+                {styleTagItems.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {styleTagItems.map((tag) => (
+                      <span
+                        key={`modal-tag-${tag.id}`}
+                        className="px-2.5 py-1 rounded-xl bg-primary/12 text-primary border border-primary/30 text-xs font-black flex items-center gap-1 shadow-2xs"
+                      >
+                        <span>{tag.emoji}</span>
+                        <span>{tag.label}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* 🩹 公開ステータス案内バナー */}
                 {condStatus !== "active" && (
                   <div className={`p-3 rounded-2xl space-y-2 ${condMeta.bannerClass}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -1688,28 +2312,6 @@ export default function LiffPlayersDirectoryPage() {
                   </div>
                 )}
 
-                {/* 📈 個人の成長・成績推移ページへのメインCTAボタン */}
-                <Link
-                  href={`/liff/players/growth?id=${encodeURIComponent(selectedPlayer.id)}`}
-                  onClick={() => setSelectedPlayerId(null)}
-                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.99] transition-all flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                      <TrendingUp className="w-4 h-4" />
-                    </span>
-                    <div className="text-left min-w-0">
-                      <span className="text-xs sm:text-sm font-black block leading-tight">
-                        個人の成長・成績推移を見る
-                      </span>
-                      <span className="text-[10px] font-bold opacity-90 block leading-tight mt-0.5">
-                        試合ごとの打撃・投手グラフ / 守備経験マップ
-                      </span>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-4 h-4 shrink-0" />
-                </Link>
-
                 {/* 基本スペック 4グリッド */}
                 <div className="grid grid-cols-4 gap-2 text-center">
                   <div className="p-2.5 rounded-2xl bg-muted/50 border border-border">
@@ -1732,15 +2334,111 @@ export default function LiffPlayersDirectoryPage() {
                   </div>
                   <div className="p-2.5 rounded-2xl bg-muted/50 border border-border">
                     <span className="text-[9.5px] font-bold text-muted-foreground block">体格</span>
-                    <span className="text-[11px] font-black text-foreground tabular-nums mt-0.5 block">
-                      {selectedPlayer.height
-                        ? `${selectedPlayer.height}cm`
-                        : "--"}
+                    <span className="text-[10.5px] font-black text-foreground tabular-nums mt-0.5 block truncate">
+                      {bodySpecText}
                     </span>
                   </div>
                 </div>
 
-                {/* 🧤 実戦守備位置（メイン＆サブ集計内訳） */}
+                {/* 📏 フィジカル・自己ベスト記録（1つ以上入力がある場合のみ表示） */}
+                {hasPhysicalBest && (
+                  <div className="rounded-2xl bg-muted/35 border border-border p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                      <Gauge className="w-3.5 h-3.5 text-primary" />
+                      <span>自己ベスト測定記録</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      {details.maxVelocityKmh ? (
+                        <div className="p-2 rounded-xl bg-card border border-border">
+                          <span className="text-[9.5px] font-bold text-muted-foreground block">
+                            MAX球速
+                          </span>
+                          <span className="text-sm font-black text-foreground tabular-nums">
+                            {details.maxVelocityKmh}
+                            <span className="text-[10px] font-bold text-muted-foreground ml-0.5">
+                              km/h
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
+                      {details.dash50mSec ? (
+                        <div className="p-2 rounded-xl bg-card border border-border">
+                          <span className="text-[9.5px] font-bold text-muted-foreground block">
+                            50m走
+                          </span>
+                          <span className="text-sm font-black text-foreground tabular-nums">
+                            {details.dash50mSec}
+                            <span className="text-[10px] font-bold text-muted-foreground ml-0.5">
+                              秒
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
+                      {details.longTossM ? (
+                        <div className="p-2 rounded-xl bg-card border border-border">
+                          <span className="text-[9.5px] font-bold text-muted-foreground block">
+                            遠投
+                          </span>
+                          <span className="text-sm font-black text-foreground tabular-nums">
+                            {details.longTossM}
+                            <span className="text-[10px] font-bold text-muted-foreground ml-0.5">
+                              m
+                            </span>
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+
+                {/* ⚾ パーソナル選手名鑑データ（入力済み項目のみスマート表示） */}
+                {personalRows.length > 0 && (
+                  <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-2xs">
+                    <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-2 border-primary flex items-center gap-1.5">
+                      <IdCard className="w-3.5 h-3.5 text-teal-400" />
+                      <span className="text-[11px] font-black tracking-wide">
+                        PERSONAL PROFILE / 選手名鑑データ
+                      </span>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {personalRows.map((row) => (
+                        <div
+                          key={row.label}
+                          className="px-3.5 py-2.5 flex items-start justify-between gap-3 text-xs"
+                        >
+                          <span className="font-bold text-muted-foreground flex items-center gap-1.5 shrink-0">
+                            {row.icon === "edu" && <GraduationCap className="w-3.5 h-3.5 text-primary" />}
+                            {row.icon === "heart" && <Heart className="w-3.5 h-3.5 text-rose-500" />}
+                            {row.icon === "team" && <Trophy className="w-3.5 h-3.5 text-amber-500" />}
+                            {(row.icon === "glove" || row.icon === "bat") && (
+                              <Wrench className="w-3.5 h-3.5 text-teal-600" />
+                            )}
+                            {row.icon === "music" && <Music className="w-3.5 h-3.5 text-primary" />}
+                            <span>{row.label}</span>
+                          </span>
+                          <span className="font-black text-foreground text-right break-words">
+                            {row.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 選手紹介メモ */}
+                {selectedPlayer.notes && (
+                  <div className="p-3.5 rounded-2xl bg-card border border-border border-l-4 border-l-primary shadow-2xs space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>PLAYER MESSAGE / ひとこと紹介</span>
+                    </div>
+                    <p className="text-xs font-bold text-foreground leading-relaxed">
+                      {selectedPlayer.notes}
+                    </p>
+                  </div>
+                )}
+
+                {/* 🧤 実戦守備位置（メイン＆サブ集計内訳）＋ 本人希望守備位置 */}
                 {posCounts.length > 0 ? (
                   <div className="rounded-2xl bg-muted/35 border border-border p-3.5 space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
@@ -1798,10 +2496,31 @@ export default function LiffPlayersDirectoryPage() {
                         );
                       })}
                     </div>
+
+                    {hasRegisteredDesiredPositions && (
+                      <div className="pt-2 border-t border-border flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="font-black text-muted-foreground shrink-0">
+                          本人希望・守備可:
+                        </span>
+                        {regPrimaryMeta && selectedPlayer.registeredPrimaryPosition && (
+                          <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25 font-black">
+                            メイン希望: {regPrimaryMeta.shortLabel}
+                          </span>
+                        )}
+                        {regSubLabels.map((lbl, idx) => (
+                          <span
+                            key={`reg-sub-${lbl}-${idx}`}
+                            className="px-2 py-0.5 rounded-md bg-card border border-border font-bold text-foreground"
+                          >
+                            {lbl}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : subLabels.length > 0 ? (
                   <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-muted/35 border border-border text-xs">
-                    <span className="font-bold text-muted-foreground shrink-0">サブ守備位置:</span>
+                    <span className="font-bold text-muted-foreground shrink-0">サブ・希望守備位置:</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {subLabels.map((lbl, idx) => (
                         <span
@@ -1815,18 +2534,27 @@ export default function LiffPlayersDirectoryPage() {
                   </div>
                 ) : null}
 
-                {/* 選手紹介メモ */}
-                {selectedPlayer.notes && (
-                  <div className="p-3.5 rounded-2xl bg-card border border-border border-l-4 border-l-primary shadow-2xs space-y-1">
-                    <div className="flex items-center gap-1.5 text-[11px] font-black text-primary">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>PLAYER NOTE</span>
+                {/* 📈 個人の成長・成績推移ページへのメインCTAボタン */}
+                <Link
+                  href={`/liff/players/growth?id=${encodeURIComponent(selectedPlayer.id)}`}
+                  onClick={() => setSelectedPlayerId(null)}
+                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.99] transition-all flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                      <TrendingUp className="w-4 h-4" />
+                    </span>
+                    <div className="text-left min-w-0">
+                      <span className="text-xs sm:text-sm font-black block leading-tight">
+                        個人の成長・成績推移を見る
+                      </span>
+                      <span className="text-[10px] font-bold opacity-90 block leading-tight mt-0.5">
+                        試合ごとの打撃・投手グラフ / 守備経験マップ
+                      </span>
                     </div>
-                    <p className="text-xs font-bold text-foreground leading-relaxed">
-                      {selectedPlayer.notes}
-                    </p>
                   </div>
-                )}
+                  <ChevronRight className="w-4 h-4 shrink-0" />
+                </Link>
 
                 {/* 今シーズン打撃成績 */}
                 {selectedPlayer.batting && (
@@ -1928,6 +2656,172 @@ export default function LiffPlayersDirectoryPage() {
         );
       })()}
 
+      {/* ━━━ 🙋 自分の選手カード紐付けモーダル（A-3 ソリッド規格） ━━━ */}
+      {isSelfClaimModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-slate-950/65 p-0 sm:p-4 animate-in fade-in duration-150">
+            <div
+              className="absolute inset-0"
+              onClick={() => !isClaimingSelf && setIsSelfClaimModalOpen(false)}
+            />
+            <div className="relative z-10 w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[88dvh] flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+              <div className="px-4 py-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-slate-800 border border-slate-700 text-teal-400 flex items-center justify-center shrink-0">
+                    <UserCheck className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">
+                      ご自身の選手カードを紐付け
+                    </h3>
+                    <p className="text-[10.5px] font-bold text-slate-300 truncate">
+                      紐付けるとすぐに選手名鑑プロフィールを入力できます
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSelfClaimModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={selfClaimSearch}
+                    onChange={(e) => setSelfClaimSearch(e.target.value)}
+                    placeholder="背番号・名前で検索..."
+                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-muted/45 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
+
+                <div className="space-y-1.5 max-h-[46dvh] overflow-y-auto pr-0.5">
+                  {selfClaimCandidates.map((cand) => {
+                    const num = cleanUniformNumber(cand.uniformNumber);
+                    const pMeta = resolvePositionMeta(cand.primaryPosition);
+                    const alreadyOther = Boolean(cand.hasLinkedUser && !cand.isSelf);
+                    const isConfirming = confirmingClaimPlayerId === cand.id;
+
+                    return (
+                      <div
+                        key={`claim-${cand.id}`}
+                        className={`rounded-xl border p-2.5 transition-all ${
+                          alreadyOther
+                            ? "bg-muted/35 border-border opacity-60"
+                            : isConfirming
+                            ? "bg-primary/8 border-primary"
+                            : "bg-card border-border hover:border-primary/40"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="min-w-[38px] px-1.5 py-0.5 rounded-lg bg-[#0f172a] text-white text-xs font-black tabular-nums text-center shrink-0">
+                              #{num}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs sm:text-sm font-black text-foreground truncate">
+                                {cand.name}
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground">
+                                {pMeta.shortLabel}
+                              </p>
+                            </div>
+                          </div>
+
+                          {alreadyOther ? (
+                            <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground text-[10px] font-black shrink-0">
+                              連携済
+                            </span>
+                          ) : isConfirming ? (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={isClaimingSelf}
+                                onClick={() => setConfirmingClaimPlayerId(null)}
+                                className="px-2.5 py-1 rounded-lg bg-muted border border-border text-[11px] font-bold text-foreground cursor-pointer"
+                              >
+                                戻る
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isClaimingSelf}
+                                onClick={() => handleClaimSelfPlayer(cand)}
+                                className="px-3 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-black flex items-center gap-1 cursor-pointer disabled:opacity-60"
+                              >
+                                {isClaimingSelf ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Check className="w-3 h-3" />
+                                )}
+                                <span>確定</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingClaimPlayerId(cand.id)}
+                              className="px-3 py-1.5 rounded-xl bg-primary/12 hover:bg-primary/20 text-primary border border-primary/30 text-xs font-black shrink-0 cursor-pointer"
+                            >
+                              自分を選択
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 学童・中学保護者向けの親切な案内 */}
+                <div className="p-3 rounded-xl bg-muted/45 border border-border flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-muted-foreground leading-snug">
+                    保護者の方がお子様（兄弟含む）を紐付ける場合はプロフィール設定から行えます
+                  </span>
+                  <Link
+                    href="/liff/profile"
+                    onClick={() => setIsSelfClaimModalOpen(false)}
+                    className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-black text-foreground shrink-0 hover:bg-muted"
+                  >
+                    親子紐付けへ
+                  </Link>
+                </div>
+              </div>
+
+              <div className="px-4 pt-2.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3 bg-card border-t border-border shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsSelfClaimModalOpen(false)}
+                  className="w-full py-2.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━ ✏️ 選手名鑑プロフィール編集モーダル ━━━ */}
+      {editingPlayer && (
+        <PlayerProfileEditModal
+          isOpen={Boolean(editingPlayer)}
+          teamId={activeTeamId}
+          isDemo={Boolean(isDemoMode || providerDemo || activeTeamId === "demo-team")}
+          canManagePlayers={canManagePlayers}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
+          player={editingPlayer}
+          onClose={() => setEditingPlayerId(null)}
+          onOpenPhotoCapture={(pid) => setPhotoModalPlayerId(pid)}
+          onSaved={handleProfileSaved}
+        />
+      )}
+
       {/* ━━━ 📷 選手名鑑 写真撮影・トリミング保存モーダル ━━━ */}
       {photoModalPlayerId && (
         <PlayerPhotoCaptureModal
@@ -1949,3 +2843,19 @@ export default function LiffPlayersDirectoryPage() {
   );
 }
 
+export default function LiffPlayersDirectoryPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex flex-col flex-1 p-4">
+          <div className="rounded-2xl border border-border bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
+            <Loader2 className="w-7 h-7 animate-spin text-primary" />
+            <p className="text-xs font-bold text-muted-foreground">選手名鑑を読み込み中...</p>
+          </div>
+        </div>
+      }
+    >
+      <LiffPlayersDirectoryContent />
+    </Suspense>
+  );
+}

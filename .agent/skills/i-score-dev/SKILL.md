@@ -83,7 +83,10 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 ・選手の在籍・コンディション区分（休部・長期故障・一部制限）とプライバシー設計：
   - `players.condition_status` の4区分（`active`: 通常 / `restricted`: `⚠️ 一部制限あり` / `rehab`: `🩹 リハビリ・調整中` / `on_leave`: `⏸ 休部中`）で一元管理し、過去試合・通算成績・個人成長データは絶対に削除せず保持する。
   - **画面連動ルール**：`on_leave`（休部中）は選手名鑑および出欠一覧表（`/liff/schedule/board`）の初期順末尾へ控えめなスレート調（出欠セル未登録時は `休` バッジ表示・見学や復帰時等の個別登録も可）で配置し、未回答カウント・LINE出欠集計コピー（未回答時）・スタメン候補・スコアOCR候補からは自動除外する（ホームの保護者出欠回答欄も「回答不要」表示に切り替える）。`rehab`（リハビリ・調整中）は別メニュー練習・ベンチ帯同・配車があるため出欠対象に残しつつ、オーダー編成での手動スタメン誤起用をブロックする。`restricted`（一部制限あり）は起用可能とし、打順・守備位置選択時に注意喚起バナーを表示する。
-  - **プライバシー保護（補足メモのサーバー層マスク）**：ステータスバッジはチーム全員に表示するが、家庭事情・故障部位・制限内容などの補足メモ（`players.condition_note`）は指導者・管理者ロールのみ閲覧・編集可とし、一般保護者・選手向けAPIレスポンスでは必ずサーバー層で `null` にマスクして返却すること。
+  - **プライバシー保護（補足メモ・非公開体重のサーバー層マスク）**：ステータスバッジはチーム全員に表示するが、家庭事情・故障部位・制限内容などの補足メモ（`players.condition_note`）は指導者・管理者ロールのみ閲覧・編集可とし、また体重（`players.weight`）も本人・保護者が `hideWeight: true` を設定した場合は一般閲覧者向けAPIレスポンスではサーバー層で `null` にマスク（編集権限者のみ `editableWeight` で保持）して返却すること。
+・選手名鑑の本人・保護者セルフプロフィール入力 ＆ 2階層権限保護（`/liff/players` ＆ `/liff/profile` — `PlayerProfileEditModal` ＆ `src/lib/liff/player-profile-schema.ts`）：
+  - **2階層権限モデル**：スコアブックや公式オーダーと直結する公式名簿項目（正式登録名 `name`・背番号 `uniformNumber`・キャプテン設定 `isCaptain`・在籍制限区分 `conditionStatus`）は **指導者・管理者（`canManagePlayers`）限定** でロック保護し、名鑑プロフィール項目・顔写真は **選手本人（`players.userId` 連携 `isSelf`）・紐付け保護者（`parent_child_relations` 連携 `isLinkedChild`）・指導者/管理者（代理入力）** の全員がスマホから直接入力・更新できるようにする（なりすまし防止のため既に他アカウントが紐付いた選手への `POST /api/liff/profile/self-player` 上書きは `409` で拒否し、1アカウント＝1チーム1選手を保証する）。
+  - **10種のリッチ名鑑項目 ＆ 未入力項目の自動非表示**：ふりがな・応援コール名（`nickname`）、得意プレー特徴タグ（`playStyleTags` 最大3つ選択）、希望・守備可能ポジション（`primaryPosition` / `subPositions`）・投打、学年/年代（学童〜草野球プリセット＋自由入力）＆球歴（`baseballHistory`）、今季の目標スローガン（`seasonGoal`）、憧れの選手＆好きなプロ球団（`LiffSelect`）、愛用グラブ/バット（`gloveGear` / `batGear`）、登場曲（`walkUpSong`）、身長・体重（非公開トグル `hideWeight` 付）、自己ベスト測定記録（球速 `maxVelocityKmh`・50m走 `dash50mSec`・遠投 `longTossM`）＆ひとこと紹介（`notes`）を `players.profile_details`（JSON）および既存カラムで管理し、未入力の項目は名鑑カード・詳細モーダル上で空欄枠を出さず自動非表示にしてスッキリ美しい表示を保つ。
 
 ## 【パフォーマンス・爆速化規約（超重要）】
 1. DDLロックの完全排除：API（特にGETリクエスト）で毎回 `ALTER TABLE` / `CREATE TABLE` 書き込みクエリを直列実行することを厳禁とする。スキーマ補完が必要な場合は `PRAGMA table_info` / `sqlite_master` の単一バッチ読取＋Isolateメモリキャッシュで判定し、既存環境での書き込みDDLをゼロに保つこと。
