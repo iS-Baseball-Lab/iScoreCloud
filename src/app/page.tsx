@@ -144,8 +144,7 @@ export default function LandingPage() {
           </span>
         </Link>
 
-        <div className="flex items-center gap-2.5 sm:gap-4">
-          <OpenLineMiniAppButton variant="header" showQrTrigger />
+        <div className="flex items-center gap-4">
           <div className="flex items-center p-1 border border-border rounded-full bg-muted">
             <button onClick={() => handleThemeChange("light")} className={cn("p-2 rounded-full transition-all", theme === "light" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Sun className="h-5 w-5" /></button>
             <button onClick={() => handleThemeChange("system")} className={cn("p-2 rounded-full transition-all", theme === "system" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}><Monitor className="h-5 w-5" /></button>
