@@ -48,6 +48,7 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/grounds",
   "/api/liff/rules",
   "/api/liff/documents",
+  "/api/liff/gallery",
   "/api/liff/faqs",
   "/api/liff/links",
   "/api/liff/attendance-matrix",
@@ -143,7 +144,8 @@ function shouldAttachClientAuthHeaders(rawUrl: string): boolean {
     if (!u.pathname.startsWith("/api/")) return false;
     if (
       u.pathname.startsWith("/api/auth/") ||
-      u.pathname.startsWith("/api/images/")
+      u.pathname.startsWith("/api/images/") ||
+      u.pathname.startsWith("/api/liff/gallery/media/")
     ) {
       return false;
     }
@@ -271,6 +273,9 @@ function shouldCacheApiPath(pathname: string): boolean {
   if (
     pathname.startsWith("/api/auth/") ||
     pathname.startsWith("/api/images/") ||
+    pathname.startsWith("/api/liff/gallery/media/") ||
+    (pathname.startsWith("/api/liff/gallery/") &&
+      (pathname.endsWith("/photos") || pathname.endsWith("/original"))) ||
     pathname.startsWith("/api/seed") ||
     pathname.startsWith("/api/liff/carpool-convoy")
   ) {
@@ -753,6 +758,10 @@ export function warmupLiffEndpointForHref(
     triggerWarmupUrl(`/api/liff/documents?teamId=${encodeURIComponent(tid)}`);
     return;
   }
+  if (cleanPath === "/liff/gallery") {
+    triggerWarmupUrl(`/api/liff/gallery?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
   if (cleanPath === "/liff/faq") {
     triggerWarmupUrl(`/api/liff/faqs?teamId=${encodeURIComponent(tid)}`);
     return;
@@ -867,6 +876,8 @@ export function prefetchLiffCoreEndpoints(params: {
           urlSet.add(`/api/liff/rules?teamId=${encodeURIComponent(tid)}`);
         } else if (slotId === "documents") {
           urlSet.add(`/api/liff/documents?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "gallery") {
+          urlSet.add(`/api/liff/gallery?teamId=${encodeURIComponent(tid)}`);
         }
       }
     }

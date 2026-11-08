@@ -33,6 +33,7 @@ import liffNewsGeneratorRoute from './api/liff/news-generator'
 import liffCarpoolConvoyRoute from './api/liff/carpool-convoy'
 import liffCarpoolSimpleRoute from './api/liff/carpool-simple'
 import liffGroundsAiRoute from './api/liff/grounds-ai'
+import liffGalleryRoute from './api/liff/gallery'
 import documentsRoute from './api/documents'
 import {
   createLiffTeamIsolationMiddleware,
@@ -94,6 +95,7 @@ app.route('/api/liff/news-generator', liffNewsGeneratorRoute)
 app.route('/api/liff/carpool-convoy', liffCarpoolConvoyRoute)
 app.route('/api/liff/carpool-simple', liffCarpoolSimpleRoute)
 app.route('/api/liff/grounds/ai-lookup', liffGroundsAiRoute)
+app.route('/api/liff/gallery', liffGalleryRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)
 app.route('/api/attendance', attendanceRoute)      // GET /api/attendance/:eventId
@@ -127,6 +129,7 @@ export default {
       // 認証コールバック（Set-Cookie・302リダイレクト）や画像配信は生レスポンスをそのまま返却し、通常の2xx JSON APIのみHTTPキャッシュ抑止を付与
       if (
         !url.pathname.startsWith('/api/images/') &&
+        !url.pathname.startsWith('/api/liff/gallery/media/') &&
         !url.pathname.startsWith('/api/auth/') &&
         apiRes.status < 300 &&
         !apiRes.headers.has('Cache-Control')

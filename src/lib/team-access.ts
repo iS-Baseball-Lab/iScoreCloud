@@ -574,6 +574,11 @@ export function createLiffTeamIsolationMiddleware(options?: {
     // URLパスセグメント抽出 (['api', 'liff', ...])
     const segs = fullPath.split("/").filter(Boolean);
 
+    // ギャラリー画像メディア配信（24文字暗号学的ランダムシークレット検証付き）は <img> 直読込のため通過
+    if (method === "GET" && segs[2] === "gallery" && segs[3] === "media") {
+      return next();
+    }
+
     const bodyFields = await peekJsonBodyFields(c);
     const bodyUserId = pickStringField(bodyFields, "userId");
     const access = await resolveCallerTeamAccess(

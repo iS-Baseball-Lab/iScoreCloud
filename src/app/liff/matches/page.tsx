@@ -55,6 +55,7 @@ import {
   ClipboardList,
   AlertTriangle,
   Megaphone,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -2496,17 +2497,26 @@ function MatchesContent() {
               </div>
 
               {!isRainout && (
-                <div className="px-4 py-2 bg-muted/50 border-t border-border flex items-center justify-between gap-2">
+                <div className="px-4 py-2 bg-muted/50 border-t border-border flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] font-bold text-muted-foreground truncate">
-                    1打席ごとのLINE試合速報テキスト作成・共有
+                    試合写真の共有・一括DL / LINE速報作成
                   </span>
-                  <Link
-                    href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/40 text-xs font-black text-primary shrink-0 transition-all active:scale-95 shadow-2xs"
-                  >
-                    <Megaphone className="w-3.5 h-3.5" />
-                    <span>速報ジェネレータv2</span>
-                  </Link>
+                  <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                    <Link
+                      href={`/liff/gallery?matchId=${encodeURIComponent(match.id)}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/40 text-xs font-black text-foreground hover:text-primary shrink-0 transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-primary" />
+                      <span>写真・一括DL</span>
+                    </Link>
+                    <Link
+                      href={`/liff/tools/news-generator?matchId=${encodeURIComponent(match.id)}`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/40 text-xs font-black text-primary shrink-0 transition-all active:scale-95 shadow-2xs"
+                    >
+                      <Megaphone className="w-3.5 h-3.5" />
+                      <span>速報ジェネレータv2</span>
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   BookOpen,
   Calendar,
+  Camera,
   Car,
   ClipboardCheck,
   FileText,
@@ -39,6 +40,7 @@ export type QuickMenuItemId =
   | "stats"
   | "players"
   | "player_growth"
+  | "gallery"
   | "scorebook_import"
   | "tools_index"
   | "news_generator"
@@ -250,6 +252,17 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
     category: "match_team",
     tone: "emerald",
     icon: TrendingUp,
+  },
+  {
+    id: "gallery",
+    label: "フォトギャラリー",
+    shortLabel: "写真一括DL",
+    description: "試合写真共有・選択ZIP一括保存",
+    badge: "写真",
+    href: "/liff/gallery",
+    category: "match_team",
+    tone: "sky",
+    icon: Camera,
   },
 
   // 📅 予定・送迎

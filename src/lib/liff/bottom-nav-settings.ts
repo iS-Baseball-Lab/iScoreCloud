@@ -95,6 +95,7 @@ export const BOTTOM_NAV_SHORT_LABELS: Readonly<Record<QuickMenuItemId, string>> 
   stats: "チーム成績",
   players: "選手名鑑",
   player_growth: "個人成長",
+  gallery: "ギャラリー",
   schedule: "活動予定",
   board: "出欠一覧表",
   carpool: "配車表",
