@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { 
   ShieldCheck, 
   MapPin, 
@@ -14,6 +15,7 @@ import {
   Bell,
   BookOpen,
   ImagePlus,
+  Image as ImageIcon,
   Trash2,
   Loader2,
   RotateCcw,
@@ -50,11 +52,27 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
+const TeamCoverPhotoModal = dynamic(
+  () =>
+    import("@/components/liff/TeamCoverPhotoModal").then(
+      (mod) => mod.TeamCoverPhotoModal
+    ),
+  { ssr: false }
+);
+
 interface TeamLogoApiResponse {
   success: boolean;
   isDemo?: boolean;
   teamId?: string;
   logoImageUrl?: string | null;
+  error?: string;
+}
+
+interface TeamCoverApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  teamId?: string;
+  coverImageUrl?: string | null;
   error?: string;
 }
 
@@ -163,7 +181,13 @@ const DEFAULT_TARGET_GROUPS = [
 ];
 
 export default function LiffTeamSettingsPage() {
-  const { currentTeam, refreshTeams, updateCurrentTeamLogo } = useLiff();
+  const {
+    currentTeam,
+    profile,
+    refreshTeams,
+    updateCurrentTeamLogo,
+    updateCurrentTeamCover,
+  } = useLiff();
   const activePracticeLabel = usePracticeMatchLabel();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -174,6 +198,11 @@ export default function LiffTeamSettingsPage() {
     currentTeam?.logoImageUrl || null
   );
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(
+    currentTeam?.coverImageUrl || null
+  );
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [isRemovingCover, setIsRemovingCover] = useState(false);
   const [customPracticeLabelInput, setCustomPracticeLabelInput] =
     useState<string>(activePracticeLabel);
   const [isSavingPracticeLabel, setIsSavingPracticeLabel] = useState(false);
@@ -194,6 +223,10 @@ export default function LiffTeamSettingsPage() {
     setCustomPracticeLabelInput(activePracticeLabel);
   }, [activePracticeLabel, currentTeam?.id]);
 
+  useEffect(() => {
+    setIsCoverModalOpen(false);
+  }, [currentTeam?.id]);
+
   // 初期ロード＆チーム切替時の同期（前チームの値が残らないよう未保存時は初期値へリセット）
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -202,6 +235,7 @@ export default function LiffTeamSettingsPage() {
     const savedName = localStorage.getItem(`iscore_team_name_${tid}`);
     setTeamName(currentTeam?.name || savedName || "");
     setLogoPreviewUrl(currentTeam?.logoImageUrl || null);
+    setCoverPreviewUrl(currentTeam?.coverImageUrl || null);
     setScheduleTimes(loadCachedTeamScheduleDefaultTimes(tid));
 
     let cancelled = false;
@@ -252,7 +286,13 @@ export default function LiffTeamSettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [currentTeam?.id, currentTeam?.isDemo, currentTeam?.name, currentTeam?.logoImageUrl]);
+  }, [
+    currentTeam?.id,
+    currentTeam?.isDemo,
+    currentTeam?.name,
+    currentTeam?.logoImageUrl,
+    currentTeam?.coverImageUrl,
+  ]);
 
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -325,6 +365,45 @@ export default function LiffTeamSettingsPage() {
     updateCurrentTeamLogo(DEMO_TEAM_DEFAULT_LOGO_URL);
     invalidateLiffApiCache();
     toast.success("デモチームの初期ロゴに戻しました");
+  };
+
+  const handleRemoveCover = async () => {
+    if (!coverPreviewUrl || isRemovingCover) return;
+    const targetTeamId = currentTeam?.id || "demo-team";
+    setIsRemovingCover(true);
+    try {
+      const query = new URLSearchParams();
+      if (profile?.userId) query.set("userId", profile.userId);
+      if (profile?.displayName) query.set("userName", profile.displayName);
+      const qs = query.toString() ? `?${query.toString()}` : "";
+
+      const res = await fetch(
+        `/api/liff/teams/${encodeURIComponent(targetTeamId)}/cover${qs}`,
+        {
+          method: "DELETE",
+        }
+      );
+      const data = (await res.json()) as TeamCoverApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "チームヘッダー背景画像の削除に失敗しました");
+      }
+
+      setCoverPreviewUrl(null);
+      updateCurrentTeamCover(undefined);
+      invalidateLiffApiCache();
+      if (!data.isDemo) {
+        void refreshTeams();
+      }
+      toast.success("チームヘッダー背景画像を削除しました");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "チームヘッダー背景画像の削除に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsRemovingCover(false);
+    }
   };
 
   const saveSetting = (key: string, value: string) => {
@@ -593,6 +672,103 @@ export default function LiffTeamSettingsPage() {
                           <span>初期ロゴに戻す</span>
                         </button>
                       )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* チームヘッダー背景画像（カバー写真） */}
+            <div className="space-y-2 pb-3.5 border-b border-border">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-black text-foreground">
+                  チームヘッダー背景画像（カバー写真）
+                </label>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  横ワイド 12:5 自動トリミング
+                </span>
+              </div>
+
+              <div className="rounded-xl bg-muted/40 border border-border overflow-hidden">
+                {/* 境界オーバーラップ・ミニプレビュー */}
+                <div className="relative aspect-[12/5] w-full bg-[#0f172a] border-b-[3px] border-primary overflow-hidden">
+                  {coverPreviewUrl ? (
+                    <>
+                      <img
+                        src={coverPreviewUrl}
+                        alt="チームヘッダー背景"
+                        className="w-full h-full object-cover object-center select-none pointer-events-none"
+                      />
+                      <div
+                        className="absolute inset-0 bg-slate-950/20 pointer-events-none"
+                        aria-hidden="true"
+                      />
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-400">
+                      <ImageIcon className="w-5 h-5 text-slate-500" />
+                      <span className="text-[10px] font-bold text-slate-400">
+                        背景画像 未設定（標準ダークスレート背景）
+                      </span>
+                    </div>
+                  )}
+                  <span className="absolute top-2 left-2.5 px-2 py-0.5 rounded bg-slate-900/85 border border-slate-700 text-[9px] font-black text-slate-100 tracking-wider">
+                    ROSTER HEADER PREVIEW
+                  </span>
+                </div>
+
+                <div className="p-3 pt-2 bg-card flex items-start gap-3">
+                  <div className="-mt-7 relative z-10 w-12 h-12 rounded-xl border-[3px] border-card bg-card shadow-xs flex items-center justify-center overflow-hidden shrink-0">
+                    {logoPreviewUrl ? (
+                      <img
+                        src={logoPreviewUrl}
+                        alt=""
+                        width={48}
+                        height={48}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-xs font-black text-primary select-none">
+                        {(currentTeam?.orgName || currentTeam?.name || "TM")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <p className="text-[11px] font-bold text-muted-foreground leading-snug">
+                      選手名鑑ページ上部のチーム情報ヘッダー背景に表示されます（集合写真・円陣・ホームグラウンド写真など）。
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isRemovingCover}
+                        onClick={() => setIsCoverModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                      >
+                        <ImagePlus className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {coverPreviewUrl ? "背景画像を変更" : "背景画像を設定"}
+                        </span>
+                      </button>
+
+                      {coverPreviewUrl && (
+                        <button
+                          type="button"
+                          disabled={isRemovingCover}
+                          onClick={() => void handleRemoveCover()}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                        >
+                          {isRemovingCover ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>削除</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1177,6 +1353,26 @@ export default function LiffTeamSettingsPage() {
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
+
+      {isCoverModalOpen && (
+        <TeamCoverPhotoModal
+          isOpen={isCoverModalOpen}
+          teamId={currentTeam?.id || "demo-team"}
+          teamName={currentTeam?.orgName || currentTeam?.name || "チーム"}
+          logoImageUrl={logoPreviewUrl}
+          currentCoverUrl={coverPreviewUrl}
+          userId={profile?.userId}
+          userName={profile?.displayName}
+          onClose={() => setIsCoverModalOpen(false)}
+          onCoverUpdated={(nextCoverUrl) => {
+            setCoverPreviewUrl(nextCoverUrl);
+            updateCurrentTeamCover(nextCoverUrl || undefined);
+            if (!(currentTeam?.id === "demo-team" || currentTeam?.isDemo)) {
+              void refreshTeams();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

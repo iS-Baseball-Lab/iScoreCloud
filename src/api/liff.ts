@@ -800,6 +800,7 @@ const DEMO_TEAM = {
   managerName: "山田 監督",
   homeGround: "多摩川緑地野球場 (1面)",
   logoImageUrl: DEMO_TEAM_LOGO_URL as string | undefined,
+  coverImageUrl: undefined as string | undefined,
   year: 2026,
   isDemo: true,
 };
@@ -922,6 +923,7 @@ app.get("/config", (c) => {
  * ユーザーの所属チームおよび参加申請ステータス取得API
  */
 app.get("/my-status", async (c) => {
+  await ensureAllSchemasOnce(c.env.DB);
   const db = drizzle(c.env.DB);
   const userId = c.req.query("userId");
 
@@ -961,6 +963,7 @@ app.get("/my-status", async (c) => {
               name: teams.name,
               orgName: organizations.name,
               logoImageUrl: organizations.logoImageUrl,
+              coverImageUrl: organizations.coverImageUrl,
             })
             .from(teams)
             .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -987,6 +990,7 @@ app.get("/my-status", async (c) => {
         teamName: t.name || "チーム",
         shortName: t.name || "チーム",
         logoImageUrl: t.logoImageUrl || undefined,
+        coverImageUrl: t.coverImageUrl || undefined,
         role: roleByTeamId.get(t.id) || (access.canManageTeamId(t.id) ? "admin" : "member"),
       }));
 
@@ -1329,6 +1333,7 @@ app.get("/hub", async (c) => {
         year: teams.year,
         orgName: organizations.name,
         logoImageUrl: organizations.logoImageUrl,
+        coverImageUrl: organizations.coverImageUrl,
         scorebookSymbolRules: teams.scorebookSymbolRules,
         attendanceStatusConfig: teams.attendanceStatusConfig,
         scheduleDefaultTimes: teams.scheduleDefaultTimes,
@@ -1374,6 +1379,7 @@ app.get("/hub", async (c) => {
         teamName: t.name,
         shortName: t.shortName,
         logoImageUrl: t.logoImageUrl || undefined,
+        coverImageUrl: t.coverImageUrl || undefined,
         scoreTeamNameMode: extractScoreTeamNameModeFromJson(
           t.scorebookSymbolRules
         ),
@@ -1805,6 +1811,7 @@ app.get("/hub", async (c) => {
         ),
         homeGround: targetTeam.homeGround || null,
         logoImageUrl: targetTeam.logoImageUrl || undefined,
+        coverImageUrl: targetTeam.coverImageUrl || undefined,
       },
       teams: teamList,
       pendingTeams,
@@ -9608,6 +9615,7 @@ app.get("/players", async (c) => {
         teamName: DEMO_TEAM.teamName,
         managerName: DEMO_TEAM.managerName,
         logoImageUrl: DEMO_TEAM.logoImageUrl || null,
+        coverImageUrl: DEMO_TEAM.coverImageUrl || null,
         year: DEMO_TEAM.year,
         captainId: "demo-player-1",
       },
@@ -9969,6 +9977,7 @@ app.get("/players", async (c) => {
           organizationId: teams.organizationId,
           orgName: organizations.name,
           logoImageUrl: organizations.logoImageUrl,
+          coverImageUrl: organizations.coverImageUrl,
         })
         .from(teams)
         .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -10222,6 +10231,7 @@ app.get("/players", async (c) => {
         teamName: teamRow.name,
         managerName: teamRow.managerName || null,
         logoImageUrl: teamRow.logoImageUrl || null,
+        coverImageUrl: teamRow.coverImageUrl || null,
         year: teamRow.year || 2026,
         captainId: teamRow.captainId || null,
       },
@@ -11287,6 +11297,355 @@ app.delete("/teams/:teamId/logo", async (c) => {
       {
         success: false,
         error: err instanceof Error ? err.message : "チームロゴの削除に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🏟️ チームヘッダー背景画像（カバー写真）のアップロード・更新API (POST /teams/:teamId/cover)
+ * 指導者・管理者限定で `organizations.coverImageUrl` + R2 を安全に更新する
+ */
+app.post("/teams/:teamId/cover", async (c) => {
+  await ensureAllSchemasOnce(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = (c.req.param("teamId") || "").trim();
+
+  try {
+    let file: File | null = null;
+    let userId = c.req.query("userId") || "";
+    let userName = c.req.query("userName") || "";
+    let jsonImageBase64 = "";
+    let jsonMimeType = "image/jpeg";
+    let clearFlag = false;
+
+    const contentType = (c.req.header("content-type") || "").toLowerCase();
+    if (contentType.includes("application/json")) {
+      const body = (await c.req.json()) as {
+        imageBase64?: string;
+        mimeType?: string;
+        clear?: boolean;
+        userId?: string;
+        userName?: string;
+      };
+      jsonImageBase64 = (body.imageBase64 || "").trim();
+      if (body.mimeType) jsonMimeType = body.mimeType.trim();
+      if (body.clear) clearFlag = true;
+      if (body.userId) userId = body.userId.trim();
+      if (body.userName) userName = body.userName.trim();
+    } else {
+      try {
+        const formData = await c.req.formData();
+        const rawFile = formData.get("file");
+        if (rawFile && typeof rawFile !== "string") {
+          file = rawFile as File;
+        }
+        const rawUid = formData.get("userId");
+        if (typeof rawUid === "string" && rawUid.trim()) {
+          userId = rawUid.trim();
+        }
+        const rawUname = formData.get("userName");
+        if (typeof rawUname === "string" && rawUname.trim()) {
+          userName = rawUname.trim();
+        }
+      } catch {
+        const body = await c.req.parseBody();
+        const rawFile = body["file"];
+        if (rawFile && typeof rawFile !== "string") {
+          file = rawFile as File;
+        }
+      }
+    }
+
+    const bytesToDataUrl = (bytes: Uint8Array, mime: string): string => {
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const sub = bytes.subarray(i, i + chunkSize);
+        for (let j = 0; j < sub.length; j++) {
+          binary += String.fromCharCode(sub[j]);
+        }
+      }
+      return `data:${mime};base64,${btoa(binary)}`;
+    };
+
+    if (!teamId || teamId === "demo-team") {
+      if (clearFlag) {
+        return c.json({
+          success: true,
+          isDemo: true,
+          teamId: "demo-team",
+          coverImageUrl: null,
+        });
+      }
+      if (file) {
+        const buf = await file.arrayBuffer();
+        const mime = file.type || "image/jpeg";
+        return c.json({
+          success: true,
+          isDemo: true,
+          teamId: "demo-team",
+          coverImageUrl: bytesToDataUrl(new Uint8Array(buf), mime),
+        });
+      }
+      if (!jsonImageBase64) {
+        return c.json({ success: false, error: "背景画像データがありません" }, 400);
+      }
+      const dataUrl = jsonImageBase64.startsWith("data:")
+        ? jsonImageBase64
+        : `data:${jsonMimeType};base64,${jsonImageBase64}`;
+      return c.json({
+        success: true,
+        isDemo: true,
+        teamId: "demo-team",
+        coverImageUrl: dataUrl,
+      });
+    }
+
+    const teamObj = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+        createdBy: teams.createdBy,
+        organizationId: teams.organizationId,
+        coverImageUrl: organizations.coverImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamObj) {
+      return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
+    }
+
+    const canManage = await resolveCanManageTeamPlayers(c, db, {
+      teamId,
+      userId: userId || null,
+      userName: userName || null,
+      createdBy: teamObj.createdBy,
+      organizationId: teamObj.organizationId,
+    });
+    if (!canManage) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "チームのヘッダー背景画像を変更する権限がありません（指導者・管理者のみ設定できます）",
+        },
+        403
+      );
+    }
+
+    let orgId = teamObj.organizationId;
+    if (!orgId) {
+      orgId = crypto.randomUUID();
+      await db.insert(organizations).values({
+        id: orgId,
+        name: teamObj.name,
+        category: "other",
+      });
+      await db
+        .update(teams)
+        .set({ organizationId: orgId })
+        .where(eq(teams.id, teamObj.id));
+    }
+
+    const cleanupOldCoverInR2 = async () => {
+      const prevUrl = teamObj.coverImageUrl || "";
+      if (c.env.BUCKET && prevUrl.startsWith("/api/images/teams/cover-")) {
+        const oldR2Key = prevUrl.slice("/api/images/".length);
+        await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+      }
+    };
+
+    if (clearFlag) {
+      await cleanupOldCoverInR2();
+      await db
+        .update(organizations)
+        .set({ coverImageUrl: null })
+        .where(eq(organizations.id, orgId));
+
+      return c.json({
+        success: true,
+        isDemo: false,
+        teamId: teamObj.id,
+        coverImageUrl: null,
+      });
+    }
+
+    let bytes: Uint8Array;
+    let rawMime = "image/jpeg";
+
+    if (file) {
+      const arrayBuf = await file.arrayBuffer();
+      bytes = new Uint8Array(arrayBuf);
+      rawMime = (file.type || "image/jpeg").toLowerCase();
+    } else if (jsonImageBase64) {
+      const cleanBase64 = jsonImageBase64.includes(",")
+        ? (jsonImageBase64.split(",")[1] || "").trim()
+        : jsonImageBase64;
+      const binaryStr = atob(cleanBase64);
+      bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      rawMime = jsonMimeType.toLowerCase();
+    } else {
+      return c.json({ success: false, error: "背景画像ファイルが選択されていません" }, 400);
+    }
+
+    if (bytes.byteLength === 0 || bytes.byteLength > 3_500_000) {
+      return c.json(
+        {
+          success: false,
+          error: "画像サイズが大きすぎます（3.5MB以下の画像をお選びください）",
+        },
+        400
+      );
+    }
+
+    const safeMimeType =
+      rawMime === "image/webp"
+        ? "image/webp"
+        : rawMime === "image/png"
+          ? "image/png"
+          : "image/jpeg";
+    const ext =
+      safeMimeType === "image/webp"
+        ? "webp"
+        : safeMimeType === "image/png"
+          ? "png"
+          : "jpg";
+
+    let nextCoverUrl: string;
+    if (c.env.BUCKET) {
+      const safeOrgKey = orgId.replace(/[^a-zA-Z0-9_-]/g, "");
+      const r2Key = `teams/cover-${safeOrgKey}-${Date.now()}.${ext}`;
+      const arrayBuf = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength
+      ) as ArrayBuffer;
+      await c.env.BUCKET.put(r2Key, arrayBuf, {
+        httpMetadata: { contentType: safeMimeType },
+      });
+      await cleanupOldCoverInR2();
+      nextCoverUrl = `/api/images/${r2Key}`;
+    } else {
+      nextCoverUrl = bytesToDataUrl(bytes, safeMimeType);
+    }
+
+    await db
+      .update(organizations)
+      .set({ coverImageUrl: nextCoverUrl })
+      .where(eq(organizations.id, orgId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      teamId: teamObj.id,
+      coverImageUrl: nextCoverUrl,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to upload team cover image:", err);
+    return c.json(
+      {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : "チーム背景画像の保存に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ チームヘッダー背景画像（カバー写真）の削除API (DELETE /teams/:teamId/cover)
+ */
+app.delete("/teams/:teamId/cover", async (c) => {
+  await ensureAllSchemasOnce(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const teamId = (c.req.param("teamId") || "").trim();
+  const userId = c.req.query("userId") || null;
+  const userName = c.req.query("userName") || null;
+
+  try {
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        teamId: "demo-team",
+        coverImageUrl: null,
+      });
+    }
+
+    const teamObj = await db
+      .select({
+        id: teams.id,
+        createdBy: teams.createdBy,
+        organizationId: teams.organizationId,
+        coverImageUrl: organizations.coverImageUrl,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamObj) {
+      return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
+    }
+
+    const canManage = await resolveCanManageTeamPlayers(c, db, {
+      teamId,
+      userId,
+      userName,
+      createdBy: teamObj.createdBy,
+      organizationId: teamObj.organizationId,
+    });
+    if (!canManage) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "チームのヘッダー背景画像を削除する権限がありません（指導者・管理者のみ削除できます）",
+        },
+        403
+      );
+    }
+
+    if (
+      c.env.BUCKET &&
+      teamObj.coverImageUrl?.startsWith("/api/images/teams/cover-")
+    ) {
+      const oldR2Key = teamObj.coverImageUrl.slice("/api/images/".length);
+      await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+    }
+
+    if (teamObj.organizationId) {
+      await db
+        .update(organizations)
+        .set({ coverImageUrl: null })
+        .where(eq(organizations.id, teamObj.organizationId));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      teamId: teamObj.id,
+      coverImageUrl: null,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to delete team cover image:", err);
+    return c.json(
+      {
+        success: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : "チーム背景画像の削除に失敗しました",
       },
       500
     );

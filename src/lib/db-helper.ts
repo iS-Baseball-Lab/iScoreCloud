@@ -22,6 +22,7 @@ let schemaVerificationPromise: Promise<void> | null = null;
 const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   organizations: [
     { name: "google_maps_api_key", ddl: "ALTER TABLE organizations ADD COLUMN google_maps_api_key text" },
+    { name: "cover_image_url", ddl: "ALTER TABLE organizations ADD COLUMN cover_image_url text" },
   ],
   events: [
     { name: "needs_lunch", ddl: "ALTER TABLE events ADD COLUMN needs_lunch integer DEFAULT 0" },

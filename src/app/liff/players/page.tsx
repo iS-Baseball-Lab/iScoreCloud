@@ -35,6 +35,7 @@ import {
   Gauge,
   GraduationCap,
   Volume2,
+  ImagePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -75,6 +76,14 @@ const PlayerProfileEditModal = dynamic(
   () =>
     import("@/components/liff/PlayerProfileEditModal").then(
       (m) => m.PlayerProfileEditModal
+    ),
+  { ssr: false }
+);
+
+const TeamCoverPhotoModal = dynamic(
+  () =>
+    import("@/components/liff/TeamCoverPhotoModal").then(
+      (m) => m.TeamCoverPhotoModal
     ),
   { ssr: false }
 );
@@ -146,6 +155,7 @@ interface DirectoryTeamInfo {
   teamName: string;
   managerName: string | null;
   logoImageUrl: string | null;
+  coverImageUrl?: string | null;
   year: number;
   captainId: string | null;
 }
@@ -362,7 +372,15 @@ function hydrateDirectoryPlayer(p: DirectoryPlayer): DirectoryPlayer {
 }
 
 function LiffPlayersDirectoryContent() {
-  const { currentTeam, profile, isDemo: providerDemo, isLoggedIn, login } = useLiff();
+  const {
+    currentTeam,
+    profile,
+    isDemo: providerDemo,
+    isLoggedIn,
+    login,
+    refreshTeams,
+    updateCurrentTeamCover,
+  } = useLiff();
   const searchParams = useSearchParams();
 
   const initialCachedPlayers = useMemo(() => {
@@ -410,6 +428,7 @@ function LiffPlayersDirectoryContent() {
     kind: PlayerPhotoKind;
   } | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [isTeamCoverModalOpen, setIsTeamCoverModalOpen] = useState<boolean>(false);
 
   // 本人紐付けボトムシート & 確認ステート
   const [isSelfClaimModalOpen, setIsSelfClaimModalOpen] = useState<boolean>(false);
@@ -453,6 +472,7 @@ function LiffPlayersDirectoryContent() {
     setSelectedPlayerId(null);
     setPhotoModalTarget(null);
     setEditingPlayerId(null);
+    setIsTeamCoverModalOpen(false);
     setIsConditionEditorOpen(false);
     setIsSelfClaimModalOpen(false);
     setConfirmingClaimPlayerId(null);
@@ -1018,6 +1038,9 @@ function LiffPlayersDirectoryContent() {
   const teamHeadline = teamInfo?.orgName || currentTeam?.orgName || currentTeam?.name || "チーム";
   const teamSubname = teamInfo?.teamName || currentTeam?.teamName || "";
   const effectiveTeamLogoUrl = currentTeam?.logoImageUrl || teamInfo?.logoImageUrl || null;
+  const effectiveTeamCoverUrl =
+    currentTeam?.coverImageUrl || teamInfo?.coverImageUrl || null;
+  const teamInitials = teamHeadline.replace(/\s+/g, "").slice(0, 2).toUpperCase() || "TM";
   const seasonYear = teamInfo?.year || 2026;
 
   return (
@@ -1087,96 +1110,144 @@ function LiffPlayersDirectoryContent() {
           }}
         />
 
-        {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー（A-3 上帯ダーク × 純白ボディ） ━━━ */}
+        {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー（案B：境界オーバーラップ型 × 背景カバー写真対応） ━━━ */}
         <section className="relative overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-xs">
-          <div className="relative p-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 160 160"
-              className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-slate-800"
-              fill="none"
-            >
-              <rect
-                x="80"
-                y="14"
-                width="92"
-                height="92"
-                rx="10"
-                transform="rotate(45 80 14)"
-                stroke="currentColor"
-                strokeWidth="8"
-              />
-              <circle cx="80" cy="80" r="16" stroke="currentColor" strokeWidth="6" />
-            </svg>
+          {/* 上部ワイドステージ（背景カバー写真を遮らないよう最小限の角バッジのみ配置） */}
+          <div className="relative h-36 sm:h-40 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
+            {effectiveTeamCoverUrl ? (
+              <>
+                <img
+                  src={effectiveTeamCoverUrl}
+                  alt=""
+                  decoding="async"
+                  className="pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center"
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                />
+              </>
+            ) : (
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 160 160"
+                className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-slate-800"
+                fill="none"
+              >
+                <rect
+                  x="80"
+                  y="14"
+                  width="92"
+                  height="92"
+                  rx="10"
+                  transform="rotate(45 80 14)"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                />
+                <circle cx="80" cy="80" r="16" stroke="currentColor" strokeWidth="6" />
+              </svg>
+            )}
 
-            <div className="relative z-10 flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                {effectiveTeamLogoUrl && (
-                  <div className="w-12 h-12 rounded-2xl border border-slate-700 bg-slate-900 shadow-2xs overflow-hidden flex items-center justify-center shrink-0">
-                    <img
-                      src={effectiveTeamLogoUrl}
-                      alt={teamHeadline}
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                )}
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-widest uppercase">
-                      {seasonYear} ROSTER
-                    </span>
-                    {hasMatchAggregatedPositions && (
-                      <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-black">
-                        実戦守備集計
-                      </span>
-                    )}
-                    {(isDemoMode || providerDemo) && (
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black">
-                        DEMO
-                      </span>
-                    )}
-                  </div>
-
-                  <h2 className="text-lg sm:text-xl font-black tracking-tight text-white truncate">
-                    {teamHeadline}
-                  </h2>
-
-                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300 flex-wrap">
-                    {teamSubname && teamSubname !== teamHeadline && <span>{teamSubname}</span>}
-                    {teamInfo?.managerName && (
-                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-100 text-[10px] font-bold">
-                        監督: {teamInfo.managerName}
-                      </span>
-                    )}
-                    {(rosterStatusCounts.restrictedCount > 0 ||
-                      rosterStatusCounts.rehabCount > 0) && (
-                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 text-[10px] font-black">
-                        🩹 ケア・制限 {rosterStatusCounts.restrictedCount + rosterStatusCounts.rehabCount}名
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="shrink-0 text-right bg-slate-800 border border-slate-700 rounded-2xl px-3 py-2 shadow-2xs">
-                <span className="text-[9.5px] font-bold text-slate-300 block uppercase tracking-wider">
-                  PLAYERS
+            <div className="relative z-10 flex items-start justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-widest uppercase shadow-2xs">
+                  {seasonYear} ROSTER
                 </span>
-                <span className="text-2xl font-black italic tracking-tighter tabular-nums text-white leading-none">
-                  {rosterStatusCounts.activeCount}
-                </span>
-                {rosterStatusCounts.onLeaveCount > 0 && (
-                  <span className="text-[9px] font-black text-slate-400 block tabular-nums mt-0.5">
-                    ＋休部 {rosterStatusCounts.onLeaveCount}名
+                {(isDemoMode || providerDemo) && (
+                  <span className="px-2 py-0.5 rounded bg-[#0f172a] text-slate-200 border border-slate-700 text-[10px] font-black shadow-2xs">
+                    DEMO
                   </span>
                 )}
               </div>
+
+              {canManagePlayers && (
+                <button
+                  type="button"
+                  onClick={() => setIsTeamCoverModalOpen(true)}
+                  className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-slate-100 border border-slate-700 text-[10.5px] font-black flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                >
+                  <ImagePlus className="w-3 h-3 text-teal-400 shrink-0" />
+                  <span>{effectiveTeamCoverUrl ? "背景変更" : "背景写真"}</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* ポジション別サマリーバー（タップで即絞り込み連動） */}
-          <div className="p-3.5 bg-card">
-            <div className="grid grid-cols-4 gap-1.5">
+          {/* 下部純白ボディ（チームロゴ境界オーバーラップ ＋ 整理されたチーム情報 ＋ 守備位置サマリー） */}
+          <div className="px-3.5 pb-3.5 pt-2 bg-card space-y-3">
+            {/* 境界オーバーラップ行：左にチームロゴ、右に在籍人数サマリー */}
+            <div className="relative z-20 flex items-end justify-between gap-2.5 -mt-9">
+              <div className="w-16 h-16 rounded-2xl border-[3px] border-card bg-card shadow-sm ring-2 ring-primary/20 overflow-hidden flex items-center justify-center shrink-0">
+                {effectiveTeamLogoUrl ? (
+                  <img
+                    src={effectiveTeamLogoUrl}
+                    alt={teamHeadline}
+                    width={64}
+                    height={64}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="w-full h-full bg-primary/10 text-primary flex items-center justify-center font-black text-base select-none">
+                    {teamInitials}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap justify-end pb-0.5">
+                {hasMatchAggregatedPositions && (
+                  <span className="px-2 py-1 rounded-xl bg-emerald-500/12 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-black">
+                    実戦守備集計
+                  </span>
+                )}
+                <div className="px-2.5 py-1 rounded-xl bg-muted border border-border flex items-baseline gap-1 shadow-2xs">
+                  <span className="text-[9.5px] font-black text-muted-foreground uppercase tracking-wider">
+                    PLAYERS
+                  </span>
+                  <span className="text-base font-black italic tracking-tight tabular-nums text-foreground leading-none">
+                    {rosterStatusCounts.activeCount}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground">名</span>
+                  {rosterStatusCounts.onLeaveCount > 0 && (
+                    <span className="text-[9.5px] font-black text-muted-foreground tabular-nums ml-0.5">
+                      (+休部{rosterStatusCounts.onLeaveCount})
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* チーム名称・構成・監督・コンディション集計 */}
+            <div className="space-y-1">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground leading-snug">
+                {teamHeadline}
+              </h2>
+
+              {(Boolean(teamSubname && teamSubname !== teamHeadline) ||
+                Boolean(teamInfo?.managerName) ||
+                rosterStatusCounts.restrictedCount > 0 ||
+                rosterStatusCounts.rehabCount > 0) && (
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground flex-wrap">
+                  {teamSubname && teamSubname !== teamHeadline && (
+                    <span className="text-muted-foreground font-black">{teamSubname}</span>
+                  )}
+                  {teamInfo?.managerName && (
+                    <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-foreground text-[10.5px] font-black">
+                      監督: {teamInfo.managerName}
+                    </span>
+                  )}
+                  {(rosterStatusCounts.restrictedCount > 0 ||
+                    rosterStatusCounts.rehabCount > 0) && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[10.5px] font-black">
+                      🩹 ケア・制限{" "}
+                      {rosterStatusCounts.restrictedCount + rosterStatusCounts.rehabCount}名
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ポジション別サマリーバー（タップで即絞り込み連動） */}
+            <div className="grid grid-cols-4 gap-1.5 pt-2.5 border-t border-border">
               {(["投手", "捕手", "内野手", "外野手"] as const).map((cat) => {
                 const active = selectedCategory === cat;
                 const st = CATEGORY_STYLES[cat];
@@ -1920,7 +1991,9 @@ function LiffPlayersDirectoryContent() {
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {selectedPlayer && (() => {
         const posMeta = resolvePositionMeta(selectedPlayer.primaryPosition);
+        const catStyle = CATEGORY_STYLES[posMeta.category];
         const condStatus = normalizePlayerConditionStatus(selectedPlayer.conditionStatus);
+        const isOnLeave = condStatus === "on_leave";
         const condMeta = PLAYER_CONDITION_META[condStatus];
         const numStr = cleanUniformNumber(selectedPlayer.uniformNumber);
         const tbLabel = formatThrowsBats(selectedPlayer.throws, selectedPlayer.bats) || "未設定";
@@ -1994,79 +2067,69 @@ function LiffPlayersDirectoryContent() {
             />
 
             <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[88dvh] flex flex-col animate-in zoom-in-95 duration-200">
-              {/* 選手カード A-3 上帯ダークヒーローヘッダー（背景プレー写真設定時は薄めソリッドスクリム重ね） */}
-              <div
-                className={`relative p-5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden shrink-0 ${
-                  condStatus === "on_leave"
-                    ? "border-slate-400"
-                    : condStatus === "rehab"
-                    ? "border-rose-500"
-                    : condStatus === "restricted"
-                    ? "border-amber-500"
-                    : "border-primary"
-                }`}
-              >
-                {details.actionImageUrl ? (
-                  <>
-                    <img
-                      src={details.actionImageUrl}
-                      alt=""
-                      decoding="async"
-                      className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover ${
-                        condStatus === "on_leave" ? "grayscale-[45%] opacity-75" : ""
-                      }`}
-                    />
-                    <div
+              {/* 選手詳細モーダル 固定ヘッダー（案B：境界オーバーラップ型 × 薄めソリッドスクリム） */}
+              <div className="shrink-0 bg-card border-b border-border">
+                {/* 上部ワイドステージ（プレー写真を邪魔しないよう前後送りピルと閉じるボタンのみ配置） */}
+                <div
+                  className={`relative h-36 sm:h-44 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden ${
+                    condStatus === "on_leave"
+                      ? "border-slate-400"
+                      : condStatus === "rehab"
+                      ? "border-rose-500"
+                      : condStatus === "restricted"
+                      ? "border-amber-500"
+                      : "border-primary"
+                  }`}
+                >
+                  {details.actionImageUrl ? (
+                    <>
+                      <img
+                        src={details.actionImageUrl}
+                        alt=""
+                        decoding="async"
+                        className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center ${
+                          isOnLeave ? "grayscale-[45%] opacity-75" : ""
+                        }`}
+                      />
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                      />
+                    </>
+                  ) : (
+                    <span
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 bg-slate-950/35"
-                    />
-                  </>
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none select-none absolute right-2 -bottom-5 text-[108px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
-                  >
-                    {numStr}
-                  </span>
-                )}
-
-                {/* 上部バー: 前後の選手クイック切替ピル & 編集/閉じるボタン */}
-                <div className="relative z-10 flex items-center justify-between mb-4">
-                  <div className="inline-flex items-center rounded-full bg-[#0f172a] border border-slate-700 p-0.5 shadow-2xs">
-                    <button
-                      type="button"
-                      disabled={!prevPlayer}
-                      onClick={() => prevPlayer && setSelectedPlayerId(prevPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
-                      aria-label="前の選手"
+                      className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
                     >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="px-2 text-[11px] font-black tabular-nums text-white">
-                      {selectedIndex + 1}/{filteredPlayers.length}
+                      {numStr}
                     </span>
-                    <button
-                      type="button"
-                      disabled={!nextPlayer}
-                      onClick={() => nextPlayer && setSelectedPlayerId(nextPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
-                      aria-label="次の選手"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                  )}
 
-                  <div className="flex items-center gap-1.5">
-                    {canEditThisPlayer && (
+                  {/* 最上段のみ：左に前後切替ピル、右に閉じるボタン */}
+                  <div className="relative z-10 flex items-center justify-between gap-2">
+                    <div className="inline-flex items-center rounded-full bg-[#0f172a] border border-slate-700 p-0.5 shadow-2xs">
                       <button
                         type="button"
-                        onClick={() => setEditingPlayerId(selectedPlayer.id)}
-                        className="px-2.5 py-1.5 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                        disabled={!prevPlayer}
+                        onClick={() => prevPlayer && setSelectedPlayerId(prevPlayer.id)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                        aria-label="前の選手"
                       >
-                        <Edit3 className="w-3 h-3" />
-                        <span>名鑑編集</span>
+                        <ChevronLeft className="w-4 h-4" />
                       </button>
-                    )}
+                      <span className="px-2 text-[11px] font-black tabular-nums text-white">
+                        {selectedIndex + 1}/{filteredPlayers.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!nextPlayer}
+                        onClick={() => nextPlayer && setSelectedPlayerId(nextPlayer.id)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                        aria-label="次の選手"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
 
                     <button
                       type="button"
@@ -2079,58 +2142,118 @@ function LiffPlayersDirectoryContent() {
                   </div>
                 </div>
 
-                {/* 選手メインプロフィール */}
-                <div className="relative z-10 flex items-center gap-4">
-                  {canEditThisPlayer ? (
-                    <button
-                      type="button"
-                      onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
-                      className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
-                      title="正面写真を撮影・変更"
-                    >
-                      <Avatar className="h-18 w-18 border-[3px] border-white/90 bg-[#0f172a] shadow-sm">
-                        {selectedPlayer.profileImageUrl && (
-                          <AvatarImage
-                            src={selectedPlayer.profileImageUrl}
-                            alt={selectedPlayer.name}
-                            className="object-cover"
-                          />
-                        )}
-                        <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
-                        <Camera className="w-3.5 h-3.5" />
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="relative shrink-0">
-                      <Avatar className="h-18 w-18 border-[3px] border-white/90 bg-[#0f172a] shadow-sm">
-                        {selectedPlayer.profileImageUrl && (
-                          <AvatarImage
-                            src={selectedPlayer.profileImageUrl}
-                            alt={selectedPlayer.name}
-                            className="object-cover"
-                          />
-                        )}
-                        <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
-                    </div>
-                  )}
+                {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ ＋ 操作ボタン ＋ 選手名・属性） */}
+                <div className="px-4 pb-3 pt-1.5 bg-card space-y-2">
+                  <div className="relative z-20 flex items-end justify-between gap-2 -mt-10">
+                    {canEditThisPlayer ? (
+                      <button
+                        type="button"
+                        onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                        className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
+                        title="正面写真を撮影・変更"
+                      >
+                        <Avatar
+                          className={`h-20 w-20 border-4 border-card bg-card shadow-sm ring-2 ${
+                            isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : catStyle.ring
+                          }`}
+                        >
+                          {selectedPlayer.profileImageUrl && (
+                            <AvatarImage
+                              src={selectedPlayer.profileImageUrl}
+                              alt={selectedPlayer.name}
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback
+                            className={`font-black text-2xl ${
+                              isOnLeave
+                                ? "bg-slate-500 text-white"
+                                : "bg-primary text-primary-foreground"
+                            }`}
+                          >
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                          <Camera className="w-3.5 h-3.5" />
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="relative shrink-0">
+                        <Avatar
+                          className={`h-20 w-20 border-4 border-card bg-card shadow-sm ring-2 ${
+                            isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : catStyle.ring
+                          }`}
+                        >
+                          {selectedPlayer.profileImageUrl && (
+                            <AvatarImage
+                              src={selectedPlayer.profileImageUrl}
+                              alt={selectedPlayer.name}
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback
+                            className={`font-black text-2xl ${
+                              isOnLeave
+                                ? "bg-slate-500 text-white"
+                                : "bg-primary text-primary-foreground"
+                            }`}
+                          >
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                      </div>
+                    )}
 
-                  <div className="min-w-0 flex-1 space-y-1.5">
+                    {canEditThisPlayer ? (
+                      <div className="flex items-center gap-1 flex-wrap justify-end pb-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                          className="px-2 py-1 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10.5px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Camera className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                          <span>正面</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPhotoModal(selectedPlayer.id, "action")}
+                          className="px-2 py-1 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10.5px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-500" />
+                          <span>{details.actionImageUrl ? "背景変更" : "背景写真"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingPlayerId(selectedPlayer.id)}
+                          className="px-2.5 py-1 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[10.5px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>名鑑編集</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <span
+                        className={`text-[10.5px] font-black tracking-wider uppercase pb-1 ${catStyle.codeText}`}
+                      >
+                        {posMeta.fullLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 純白カード上の整理された属性バッジ＆氏名 */}
+                  <div className="space-y-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums shadow-2xs">
+                      <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums shadow-2xs">
                         #{numStr}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded bg-[#0f172a] text-slate-100 border border-slate-700 text-[11px] font-black shadow-2xs">
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-black ${catStyle.pillSolid}`}
+                      >
                         {posMeta.shortLabel}
                       </span>
                       {details.gradeOrAge && (
-                        <span className="px-2 py-0.5 rounded bg-[#0f172a] text-teal-300 border border-slate-700 text-[10.5px] font-black shadow-2xs">
+                        <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-foreground text-[10.5px] font-black">
                           {details.gradeOrAge}
                         </span>
                       )}
@@ -2149,54 +2272,32 @@ function LiffPlayersDirectoryContent() {
                       )}
                     </div>
 
-                    {(selectedPlayer.nameKana || selectedPlayer.nickname) && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {selectedPlayer.nameKana && (
-                          <p className="text-[10px] font-bold text-slate-200 tracking-widest drop-shadow-xs">
-                            {selectedPlayer.nameKana}
-                          </p>
-                        )}
-                        {selectedPlayer.nickname && (
-                          <span className="px-1.5 py-0.2 rounded bg-[#0f172a] border border-slate-700 text-[10px] font-black text-amber-300 flex items-center gap-1 shadow-2xs">
-                            <Volume2 className="w-2.5 h-2.5" />
-                            <span>コール: {selectedPlayer.nickname}</span>
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    <h3 className="text-xl font-black tracking-tight text-white truncate drop-shadow-xs">
-                      {selectedPlayer.name}
-                    </h3>
-
-                    {canEditThisPlayer && (
-                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
-                          className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs cursor-pointer"
-                        >
-                          <Camera className="w-3 h-3 text-teal-400" />
-                          <span>正面写真</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openPhotoModal(selectedPlayer.id, "action")}
-                          className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs cursor-pointer"
-                        >
-                          <Sparkles className="w-3 h-3 text-amber-300" />
-                          <span>
-                            {details.actionImageUrl ? "背景変更" : "背景プレー写真"}
-                          </span>
-                        </button>
-                      </div>
-                    )}
+                    <div className="min-w-0">
+                      <h3 className="text-xl font-black tracking-tight text-foreground leading-snug truncate">
+                        {selectedPlayer.name}
+                      </h3>
+                      {(selectedPlayer.nameKana || selectedPlayer.nickname) && (
+                        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                          {selectedPlayer.nameKana && (
+                            <p className="text-[10.5px] font-bold text-muted-foreground tracking-wider">
+                              {selectedPlayer.nameKana}
+                            </p>
+                          )}
+                          {selectedPlayer.nickname && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/12 border border-amber-500/30 text-[10.5px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                              <Volume2 className="w-3 h-3" />
+                              <span>コール: {selectedPlayer.nickname}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* スクロール可能な詳細ボディ */}
-              <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-3.5 overflow-y-auto">
+              <div className="p-4 pb-[max(env(safe-area-inset-bottom),20px)] space-y-3.5 overflow-y-auto flex-1">
                 {/* ✏️ 本人・保護者・管理者向けダイレクトプロフィール編集バー */}
                 {canEditThisPlayer ? (
                   <button
@@ -3020,6 +3121,29 @@ function LiffPlayersDirectoryContent() {
           }))}
           onClose={() => setPhotoModalTarget(null)}
           onPhotoUpdated={handlePhotoUpdated}
+        />
+      )}
+
+      {/* ━━━ 🏟️ チームヘッダー背景画像（カバー写真）設定モーダル ━━━ */}
+      {isTeamCoverModalOpen && (
+        <TeamCoverPhotoModal
+          isOpen={isTeamCoverModalOpen}
+          teamId={activeTeamId}
+          teamName={teamHeadline}
+          logoImageUrl={effectiveTeamLogoUrl}
+          currentCoverUrl={effectiveTeamCoverUrl}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
+          onClose={() => setIsTeamCoverModalOpen(false)}
+          onCoverUpdated={(nextCoverUrl) => {
+            setTeamInfo((prev) =>
+              prev ? { ...prev, coverImageUrl: nextCoverUrl } : prev
+            );
+            updateCurrentTeamCover(nextCoverUrl || undefined);
+            if (!(isDemoMode || providerDemo || activeTeamId === "demo-team")) {
+              void refreshTeams();
+            }
+          }}
         />
       )}
     </div>
