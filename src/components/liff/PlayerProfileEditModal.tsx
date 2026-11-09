@@ -96,7 +96,7 @@ interface PlayerProfileEditModalProps {
   userName?: string | null;
   player: EditableDirectoryPlayer | null;
   onClose: () => void;
-  onOpenPhotoCapture: (playerId: string) => void;
+  onOpenPhotoCapture: (playerId: string, kind?: "portrait" | "action") => void;
   onSaved: (payload: SavedPlayerProfilePayload) => void;
 }
 
@@ -397,23 +397,38 @@ export function PlayerProfileEditModal({
         return;
       }
 
+      const resolvedUpdated: SavedPlayerProfilePayload["updated"] =
+        isDemo || json.isDemo || teamId === "demo-team"
+          ? {
+              ...json.updated,
+              profileDetails: {
+                ...json.updated.profileDetails,
+                actionImageUrl:
+                  player.profileDetails?.actionImageUrl ??
+                  json.updated.profileDetails.actionImageUrl ??
+                  null,
+              },
+            }
+          : json.updated;
+
       if (isDemo || json.isDemo || teamId === "demo-team") {
         saveDemoPlayerProfileOverride(player.id, {
-          name: json.updated.name,
-          nameKana: json.updated.nameKana,
-          uniformNumber: json.updated.uniformNumber,
-          nickname: json.updated.nickname,
-          registeredPrimaryPosition: json.updated.registeredPrimaryPosition,
-          registeredSubPositions: json.updated.registeredSubPositions,
-          throws: json.updated.throws,
-          bats: json.updated.bats,
-          height: json.updated.height,
-          weight: json.updated.weight,
-          editableWeight: json.updated.editableWeight,
-          notes: json.updated.notes,
-          isCaptain: json.updated.isCaptain,
-          joinedAt: json.updated.joinedAt,
-          profileDetails: json.updated.profileDetails,
+          name: resolvedUpdated.name,
+          nameKana: resolvedUpdated.nameKana,
+          uniformNumber: resolvedUpdated.uniformNumber,
+          nickname: resolvedUpdated.nickname,
+          registeredPrimaryPosition: resolvedUpdated.registeredPrimaryPosition,
+          registeredSubPositions: resolvedUpdated.registeredSubPositions,
+          throws: resolvedUpdated.throws,
+          bats: resolvedUpdated.bats,
+          height: resolvedUpdated.height,
+          weight: resolvedUpdated.weight,
+          editableWeight: resolvedUpdated.editableWeight,
+          notes: resolvedUpdated.notes,
+          isCaptain: resolvedUpdated.isCaptain,
+          joinedAt: resolvedUpdated.joinedAt,
+          profileImageUrl: player.profileImageUrl,
+          profileDetails: resolvedUpdated.profileDetails,
         });
       }
 
@@ -422,7 +437,7 @@ export function PlayerProfileEditModal({
       onSaved({
         playerId: player.id,
         captainId: json.captainId,
-        updated: json.updated,
+        updated: resolvedUpdated,
       });
 
       if (json.cleanedPastMatchesCount && json.cleanedPastMatchesCount > 0) {
@@ -460,9 +475,9 @@ export function PlayerProfileEditModal({
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
-              onClick={() => onOpenPhotoCapture(player.id)}
+              onClick={() => onOpenPhotoCapture(player.id, "portrait")}
               className="relative shrink-0 cursor-pointer active:scale-95 transition-transform"
-              title="顔写真を撮影・変更"
+              title="正面写真を撮影・変更"
             >
               <Avatar className="h-12 w-12 border-2 border-slate-700">
                 {player.profileImageUrl && (
@@ -509,19 +524,41 @@ export function PlayerProfileEditModal({
 
         {/* ━━━ スクロール入力ボディ ━━━ */}
         <div className="p-4 space-y-4 overflow-y-auto flex-1 bg-muted/35">
-          {/* 案内バナー（未入力項目は自動非表示で安心） */}
-          <div className="px-3.5 py-2.5 rounded-2xl bg-card border border-border flex items-center justify-between gap-2 shadow-2xs">
+          {/* 写真設定（丸枠の正面写真 ＆ カード背景のプレー写真）＋ 案内バナー */}
+          <div className="p-3 rounded-2xl bg-card border border-border space-y-2.5 shadow-2xs">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenPhotoCapture(player.id, "portrait")}
+                className="px-2.5 py-2 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                <span className="truncate">正面写真（丸枠）</span>
+                {player.profileImageUrl && (
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[9px] font-black shrink-0">
+                    済
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onOpenPhotoCapture(player.id, "action")}
+                className="px-2.5 py-2 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span className="truncate">背景プレー写真</span>
+                {player.profileDetails?.actionImageUrl && (
+                  <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[9px] font-black shrink-0">
+                    済
+                  </span>
+                )}
+              </button>
+            </div>
+
             <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
               書きたい項目だけの入力でOK！未入力の枠は名鑑上で自動的に非表示になります。
             </p>
-            <button
-              type="button"
-              onClick={() => onOpenPhotoCapture(player.id)}
-              className="px-2.5 py-1.5 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 text-[10.5px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
-            >
-              <Camera className="w-3.5 h-3.5 text-teal-400" />
-              <span>写真変更</span>
-            </button>
           </div>
 
           {/* 🔒 公式登録項目（指導者・管理者のみ編集可 / 一般選手にはロック案内） */}

@@ -44,6 +44,7 @@ import { peekLiffApiCache, invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedPlayerProfilePayload } from "@/components/liff/PlayerProfileEditModal";
+import type { PlayerPhotoKind } from "@/components/liff/PlayerPhotoCaptureModal";
 import {
   PLAYER_CONDITION_META,
   PLAYER_CONDITION_STATUS_ORDER,
@@ -58,6 +59,7 @@ import {
   PLAY_STYLE_TAG_MAP,
   loadDemoPlayerProfileOverrides,
   parsePlayerProfileDetails,
+  saveDemoPlayerProfileOverride,
   type PlayerProfileDetails,
 } from "@/lib/liff/player-profile-schema";
 
@@ -403,7 +405,10 @@ function LiffPlayersDirectoryContent() {
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>("すべて");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
-  const [photoModalPlayerId, setPhotoModalPlayerId] = useState<string | null>(null);
+  const [photoModalTarget, setPhotoModalTarget] = useState<{
+    playerId: string;
+    kind: PlayerPhotoKind;
+  } | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
 
   // 本人紐付けボトムシート & 確認ステート
@@ -436,10 +441,17 @@ function LiffPlayersDirectoryContent() {
     profile?.displayName ||
     (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
 
+  const openPhotoModal = useCallback(
+    (playerId: string, kind: PlayerPhotoKind = "portrait") => {
+      setPhotoModalTarget({ playerId, kind });
+    },
+    []
+  );
+
   // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
   useEffect(() => {
     setSelectedPlayerId(null);
-    setPhotoModalPlayerId(null);
+    setPhotoModalTarget(null);
     setEditingPlayerId(null);
     setIsConditionEditorOpen(false);
     setIsSelfClaimModalOpen(false);
@@ -493,14 +505,50 @@ function LiffPlayersDirectoryContent() {
   }, [activeTeamId, canManagePlayers, players, searchParams]);
 
   const handlePhotoUpdated = useCallback(
-    (playerId: string, newProfileImageUrl: string | null) => {
+    (
+      playerId: string,
+      newImageUrl: string | null,
+      kind: PlayerPhotoKind = "portrait"
+    ) => {
+      const isDemoFlag = Boolean(
+        isDemoMode || providerDemo || activeTeamId === "demo-team"
+      );
+
       setPlayers((prev) =>
-        prev.map((p) =>
-          p.id === playerId ? { ...p, profileImageUrl: newProfileImageUrl } : p
-        )
+        prev.map((p) => {
+          if (p.id !== playerId) return p;
+
+          if (kind === "action") {
+            const nextDetails: PlayerProfileDetails = {
+              ...(p.profileDetails || EMPTY_PLAYER_PROFILE_DETAILS),
+              actionImageUrl: newImageUrl,
+            };
+            if (isDemoFlag) {
+              saveDemoPlayerProfileOverride(playerId, {
+                profileImageUrl: p.profileImageUrl,
+                profileDetails: nextDetails,
+              });
+            }
+            return {
+              ...p,
+              profileDetails: nextDetails,
+            };
+          }
+
+          if (isDemoFlag) {
+            saveDemoPlayerProfileOverride(playerId, {
+              profileImageUrl: newImageUrl,
+              profileDetails: p.profileDetails,
+            });
+          }
+          return {
+            ...p,
+            profileImageUrl: newImageUrl,
+          };
+        })
       );
     },
-    []
+    [activeTeamId, isDemoMode, providerDemo]
   );
 
   const handleProfileSaved = useCallback(
@@ -645,6 +693,9 @@ function LiffPlayersDirectoryContent() {
                   ...(pOv?.notes !== undefined ? { notes: pOv.notes } : {}),
                   ...(pOv?.isCaptain !== undefined ? { isCaptain: pOv.isCaptain } : {}),
                   ...(pOv?.joinedAt !== undefined ? { joinedAt: pOv.joinedAt } : {}),
+                  ...(pOv?.profileImageUrl !== undefined
+                    ? { profileImageUrl: pOv.profileImageUrl }
+                    : {}),
                   profileDetails: mergedDetails,
                   conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
                   conditionNote: cOv ? cOv.conditionNote : p.conditionNote,
@@ -827,6 +878,15 @@ function LiffPlayersDirectoryContent() {
     [players]
   );
 
+  // 写真設定が可能な選手一覧（指導者・管理者はチーム全員 / 一般選手・保護者は自分・お子様のみ）
+  const editablePhotoPlayers = useMemo(
+    () =>
+      canManagePlayers
+        ? players
+        : players.filter((p) => p.canEditProfile || p.isSelf || p.isLinkedChild),
+    [canManagePlayers, players]
+  );
+
   // 稼働メンバー数 / 休部数 / ケア・制限数
   const rosterStatusCounts = useMemo(() => {
     let activeCount = 0;
@@ -982,23 +1042,31 @@ function LiffPlayersDirectoryContent() {
           rightElement={
             players.length > 0 ? (
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const firstUnshot =
-                      filteredPlayers.find((p) => !p.profileImageUrl) ||
-                      players.find((p) => !p.profileImageUrl) ||
-                      filteredPlayers[0] ||
-                      players[0];
-                    if (firstUnshot) {
-                      setPhotoModalPlayerId(firstUnshot.id);
-                    }
-                  }}
-                  className="px-2.5 py-1.5 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
-                >
-                  <Camera className="w-3.5 h-3.5 text-teal-400" />
-                  <span>写真撮影</span>
-                </button>
+                {editablePhotoPlayers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const editableIds = new Set(
+                        editablePhotoPlayers.map((p) => p.id)
+                      );
+                      const filteredEditable = filteredPlayers.filter((p) =>
+                        editableIds.has(p.id)
+                      );
+                      const firstUnshot =
+                        filteredEditable.find((p) => !p.profileImageUrl) ||
+                        editablePhotoPlayers.find((p) => !p.profileImageUrl) ||
+                        filteredEditable[0] ||
+                        editablePhotoPlayers[0];
+                      if (firstUnshot) {
+                        openPhotoModal(firstUnshot.id, "portrait");
+                      }
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-teal-400" />
+                    <span>写真撮影</span>
+                  </button>
+                )}
                 <Link
                   href={`/liff/players/growth?id=${encodeURIComponent(
                     (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
@@ -1171,17 +1239,35 @@ function LiffPlayersDirectoryContent() {
 
               <div className="flex items-center gap-1.5 flex-wrap shrink-0">
                 {myPersonalPlayers.map((mp) => (
-                  <button
-                    key={`quick-edit-${mp.id}`}
-                    type="button"
-                    onClick={() => setEditingPlayerId(mp.id)}
-                    className="px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  <div
+                    key={`quick-edit-group-${mp.id}`}
+                    className="flex items-center gap-1.5"
                   >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>
-                      #{cleanUniformNumber(mp.uniformNumber)} {mp.name} を編集
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPhotoModal(
+                          mp.id,
+                          !mp.profileImageUrl ? "portrait" : "action"
+                        )
+                      }
+                      className="px-2.5 py-2 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 text-xs font-black flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                      title="正面写真・背景プレー写真を設定"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-teal-400" />
+                      <span>写真</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPlayerId(mp.id)}
+                      className="px-3 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>
+                        #{cleanUniformNumber(mp.uniformNumber)} {mp.name} を編集
+                      </span>
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -1379,18 +1465,41 @@ function LiffPlayersDirectoryContent() {
                     }`}
                   />
 
-                  {/* 上部ビジュアルステージ */}
+                  {/* 上部ビジュアルステージ（案B：背景プレー写真 ＆ 薄めソリッドスクリム） */}
                   <div
-                    className={`relative h-28 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border ${
-                      isOnLeave ? "bg-slate-200/60 dark:bg-slate-800/50" : "bg-muted/70"
+                    className={`relative h-32 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border ${
+                      pDetails?.actionImageUrl
+                        ? "bg-slate-900"
+                        : isOnLeave
+                        ? "bg-slate-200/60 dark:bg-slate-800/50"
+                        : "bg-muted/70"
                     }`}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none select-none absolute right-1 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-slate-200 dark:text-slate-800 tabular-nums group-hover:scale-105 transition-transform duration-300"
-                    >
-                      {numStr}
-                    </span>
+                    {pDetails?.actionImageUrl ? (
+                      <>
+                        <img
+                          src={pDetails.actionImageUrl}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                            isOnLeave ? "grayscale-[45%] opacity-80" : ""
+                          }`}
+                        />
+                        {/* 薄めソリッドスクリム（グラデーション・ブラー完全不使用） */}
+                        <div
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                        />
+                      </>
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none select-none absolute right-1 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-slate-200 dark:text-slate-800 tabular-nums group-hover:scale-105 transition-transform duration-300"
+                      >
+                        {numStr}
+                      </span>
+                    )}
 
                     <div className="relative z-10 flex items-center justify-between gap-1">
                       <div className="flex items-center gap-1">
@@ -1424,30 +1533,7 @@ function LiffPlayersDirectoryContent() {
                       </span>
                     </div>
 
-                    <div className="relative z-10 flex items-end justify-between gap-1">
-                      <Avatar
-                        className={`h-14 w-14 border-2 border-card shadow-xs ring-2 ${
-                          isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : style.ring
-                        }`}
-                      >
-                        {player.profileImageUrl && (
-                          <AvatarImage
-                            src={player.profileImageUrl}
-                            alt={player.name}
-                            className="object-cover"
-                          />
-                        )}
-                        <AvatarFallback
-                          className={`font-black text-base ${
-                            isOnLeave
-                              ? "bg-slate-500 text-white"
-                              : "bg-primary text-primary-foreground"
-                          }`}
-                        >
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
-
+                    <div className="relative z-10 flex items-end justify-end gap-1">
                       {condStatus !== "active" ? (
                         <span
                           className={`px-2 py-0.5 rounded-md text-[10px] font-black shadow-2xs whitespace-nowrap ${condMeta.solidBadgeClass}`}
@@ -1458,17 +1544,51 @@ function LiffPlayersDirectoryContent() {
                         <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-black text-foreground shadow-2xs">
                           {pDetails.gradeOrAge}
                         </span>
-                      ) : (
+                      ) : !pDetails?.actionImageUrl ? (
                         <span className={`text-[10px] font-black tracking-widest uppercase ${style.codeText}`}>
                           {posMeta.code}
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </div>
 
-                  {/* 下部ソリッド情報エリア */}
-                  <div className="p-3 bg-card flex-1 flex flex-col justify-between space-y-2">
+                  {/* 下部ソリッド情報エリア（案B：丸枠正面写真 境界オーバーラップ） */}
+                  <div className="px-3 pb-3 pt-2 bg-card flex-1 flex flex-col justify-between space-y-2">
                     <div className="min-w-0 space-y-1">
+                      <div className="relative z-20 flex items-end justify-between gap-1.5 -mt-9 mb-0.5">
+                        <Avatar
+                          className={`h-14 w-14 border-[3px] border-card bg-card shadow-sm ring-2 shrink-0 ${
+                            isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : style.ring
+                          }`}
+                        >
+                          {player.profileImageUrl && (
+                            <AvatarImage
+                              src={player.profileImageUrl}
+                              alt={player.name}
+                              className="object-cover"
+                            />
+                          )}
+                          <AvatarFallback
+                            className={`font-black text-base ${
+                              isOnLeave
+                                ? "bg-slate-500 text-white"
+                                : "bg-primary text-primary-foreground"
+                            }`}
+                          >
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+
+                        {(pDetails?.actionImageUrl || pDetails?.gradeOrAge) &&
+                          condStatus === "active" && (
+                            <span
+                              className={`text-[10px] font-black tracking-widest uppercase pb-0.5 ${style.codeText}`}
+                            >
+                              {posMeta.code}
+                            </span>
+                          )}
+                      </div>
+
                       <div>
                         <p className="text-[9.5px] font-bold text-muted-foreground tracking-wider truncate min-h-[14px]">
                           {player.nickname
@@ -1874,7 +1994,7 @@ function LiffPlayersDirectoryContent() {
             />
 
             <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[88dvh] flex flex-col animate-in zoom-in-95 duration-200">
-              {/* 選手カード A-3 上帯ダークヒーローヘッダー */}
+              {/* 選手カード A-3 上帯ダークヒーローヘッダー（背景プレー写真設定時は薄めソリッドスクリム重ね） */}
               <div
                 className={`relative p-5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden shrink-0 ${
                   condStatus === "on_leave"
@@ -1886,21 +2006,38 @@ function LiffPlayersDirectoryContent() {
                     : "border-primary"
                 }`}
               >
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none select-none absolute right-2 -bottom-5 text-[108px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
-                >
-                  {numStr}
-                </span>
+                {details.actionImageUrl ? (
+                  <>
+                    <img
+                      src={details.actionImageUrl}
+                      alt=""
+                      decoding="async"
+                      className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover ${
+                        condStatus === "on_leave" ? "grayscale-[45%] opacity-75" : ""
+                      }`}
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-slate-950/35"
+                    />
+                  </>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none select-none absolute right-2 -bottom-5 text-[108px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
+                  >
+                    {numStr}
+                  </span>
+                )}
 
                 {/* 上部バー: 前後の選手クイック切替ピル & 編集/閉じるボタン */}
                 <div className="relative z-10 flex items-center justify-between mb-4">
-                  <div className="inline-flex items-center rounded-full bg-slate-800 border border-slate-700 p-0.5 shadow-2xs">
+                  <div className="inline-flex items-center rounded-full bg-[#0f172a] border border-slate-700 p-0.5 shadow-2xs">
                     <button
                       type="button"
                       disabled={!prevPlayer}
                       onClick={() => prevPlayer && setSelectedPlayerId(prevPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-700 active:scale-90 transition-all"
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
                       aria-label="前の選手"
                     >
                       <ChevronLeft className="w-4 h-4" />
@@ -1912,7 +2049,7 @@ function LiffPlayersDirectoryContent() {
                       type="button"
                       disabled={!nextPlayer}
                       onClick={() => nextPlayer && setSelectedPlayerId(nextPlayer.id)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-700 active:scale-90 transition-all"
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
                       aria-label="次の選手"
                     >
                       <ChevronRight className="w-4 h-4" />
@@ -1934,7 +2071,7 @@ function LiffPlayersDirectoryContent() {
                     <button
                       type="button"
                       onClick={() => setSelectedPlayerId(null)}
-                      className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center active:scale-90 transition-all shadow-2xs cursor-pointer"
+                      className="w-8 h-8 rounded-full bg-[#0f172a] border border-slate-700 hover:bg-slate-800 text-slate-300 hover:text-white flex items-center justify-center active:scale-90 transition-all shadow-2xs cursor-pointer"
                       aria-label="閉じる"
                     >
                       <X className="w-4 h-4" />
@@ -1944,51 +2081,68 @@ function LiffPlayersDirectoryContent() {
 
                 {/* 選手メインプロフィール */}
                 <div className="relative z-10 flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setPhotoModalPlayerId(selectedPlayer.id)}
-                    className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
-                    title="選手写真を撮影・変更"
-                  >
-                    <Avatar className="h-18 w-18 border-2 border-slate-700 shadow-xs">
-                      {selectedPlayer.profileImageUrl && (
-                        <AvatarImage
-                          src={selectedPlayer.profileImageUrl}
-                          alt={selectedPlayer.name}
-                          className="object-cover"
-                        />
-                      )}
-                      <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
-                        {initial}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
-                      <Camera className="w-3.5 h-3.5" />
-                    </span>
-                  </button>
+                  {canEditThisPlayer ? (
+                    <button
+                      type="button"
+                      onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                      className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
+                      title="正面写真を撮影・変更"
+                    >
+                      <Avatar className="h-18 w-18 border-[3px] border-white/90 bg-[#0f172a] shadow-sm">
+                        {selectedPlayer.profileImageUrl && (
+                          <AvatarImage
+                            src={selectedPlayer.profileImageUrl}
+                            alt={selectedPlayer.name}
+                            className="object-cover"
+                          />
+                        )}
+                        <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
+                          {initial}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                        <Camera className="w-3.5 h-3.5" />
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="relative shrink-0">
+                      <Avatar className="h-18 w-18 border-[3px] border-white/90 bg-[#0f172a] shadow-sm">
+                        {selectedPlayer.profileImageUrl && (
+                          <AvatarImage
+                            src={selectedPlayer.profileImageUrl}
+                            alt={selectedPlayer.name}
+                            className="object-cover"
+                          />
+                        )}
+                        <AvatarFallback className="bg-primary text-primary-foreground font-black text-2xl">
+                          {initial}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
+                  )}
 
-                  <div className="min-w-0 flex-1 space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums">
+                      <span className="px-2.5 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums shadow-2xs">
                         #{numStr}
                       </span>
-                      <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-100 border border-slate-700 text-[11px] font-black">
+                      <span className="px-2.5 py-0.5 rounded bg-[#0f172a] text-slate-100 border border-slate-700 text-[11px] font-black shadow-2xs">
                         {posMeta.shortLabel}
                       </span>
                       {details.gradeOrAge && (
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-teal-300 border border-slate-700 text-[10.5px] font-black">
+                        <span className="px-2 py-0.5 rounded bg-[#0f172a] text-teal-300 border border-slate-700 text-[10.5px] font-black shadow-2xs">
                           {details.gradeOrAge}
                         </span>
                       )}
                       {selectedPlayer.isCaptain && (
-                        <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-1">
+                        <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-1 shadow-2xs">
                           <Crown className="w-3 h-3 fill-current" />
                           <span>CAPTAIN</span>
                         </span>
                       )}
                       {condStatus !== "active" && (
                         <span
-                          className={`px-2 py-0.5 rounded text-[10.5px] font-black ${condMeta.solidBadgeClass}`}
+                          className={`px-2 py-0.5 rounded text-[10.5px] font-black shadow-2xs ${condMeta.solidBadgeClass}`}
                         >
                           {condMeta.badgeText}
                         </span>
@@ -1998,12 +2152,12 @@ function LiffPlayersDirectoryContent() {
                     {(selectedPlayer.nameKana || selectedPlayer.nickname) && (
                       <div className="flex items-center gap-2 flex-wrap">
                         {selectedPlayer.nameKana && (
-                          <p className="text-[10px] font-bold text-slate-300 tracking-widest">
+                          <p className="text-[10px] font-bold text-slate-200 tracking-widest drop-shadow-xs">
                             {selectedPlayer.nameKana}
                           </p>
                         )}
                         {selectedPlayer.nickname && (
-                          <span className="px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-amber-300 flex items-center gap-1">
+                          <span className="px-1.5 py-0.2 rounded bg-[#0f172a] border border-slate-700 text-[10px] font-black text-amber-300 flex items-center gap-1 shadow-2xs">
                             <Volume2 className="w-2.5 h-2.5" />
                             <span>コール: {selectedPlayer.nickname}</span>
                           </span>
@@ -2011,19 +2165,32 @@ function LiffPlayersDirectoryContent() {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-xl font-black tracking-tight text-white truncate">
-                        {selectedPlayer.name}
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={() => setPhotoModalPlayerId(selectedPlayer.id)}
-                        className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
-                      >
-                        <Camera className="w-3 h-3 text-teal-400" />
-                        <span>{selectedPlayer.profileImageUrl ? "写真変更" : "写真撮影"}</span>
-                      </button>
-                    </div>
+                    <h3 className="text-xl font-black tracking-tight text-white truncate drop-shadow-xs">
+                      {selectedPlayer.name}
+                    </h3>
+
+                    {canEditThisPlayer && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                          className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                        >
+                          <Camera className="w-3 h-3 text-teal-400" />
+                          <span>正面写真</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPhotoModal(selectedPlayer.id, "action")}
+                          className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 text-[10.5px] font-black text-slate-100 flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-300" />
+                          <span>
+                            {details.actionImageUrl ? "背景変更" : "背景プレー写真"}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2822,25 +2989,36 @@ function LiffPlayersDirectoryContent() {
           userName={effectiveUserName || null}
           player={editingPlayer}
           onClose={() => setEditingPlayerId(null)}
-          onOpenPhotoCapture={(pid) => setPhotoModalPlayerId(pid)}
+          onOpenPhotoCapture={(pid, kind) =>
+            openPhotoModal(pid, kind || "portrait")
+          }
           onSaved={handleProfileSaved}
         />
       )}
 
-      {/* ━━━ 📷 選手名鑑 写真撮影・トリミング保存モーダル ━━━ */}
-      {photoModalPlayerId && (
+      {/* ━━━ 📷 選手名鑑 写真撮影・トリミング保存モーダル（正面写真 / 背景プレー写真） ━━━ */}
+      {photoModalTarget && (
         <PlayerPhotoCaptureModal
-          isOpen={Boolean(photoModalPlayerId)}
+          isOpen={Boolean(photoModalTarget)}
           teamId={activeTeamId}
-          initialPlayerId={photoModalPlayerId}
-          rosterPlayers={players.map((p) => ({
+          initialPlayerId={photoModalTarget.playerId}
+          initialPhotoKind={photoModalTarget.kind}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
+          rosterPlayers={(editablePhotoPlayers.some(
+            (p) => p.id === photoModalTarget.playerId
+          )
+            ? editablePhotoPlayers
+            : players.filter((p) => p.id === photoModalTarget.playerId)
+          ).map((p) => ({
             id: p.id,
             name: p.name,
             uniformNumber: p.uniformNumber,
             primaryPosition: p.primaryPosition,
             profileImageUrl: p.profileImageUrl,
+            actionImageUrl: p.profileDetails?.actionImageUrl || null,
           }))}
-          onClose={() => setPhotoModalPlayerId(null)}
+          onClose={() => setPhotoModalTarget(null)}
           onPhotoUpdated={handlePhotoUpdated}
         />
       )}

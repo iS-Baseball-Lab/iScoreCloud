@@ -10379,6 +10379,7 @@ app.post("/players/:playerId/profile", async (c) => {
           uniformNumber: players.uniformNumber,
           userId: players.userId,
           joinedAt: players.joinedAt,
+          profileDetails: players.profileDetails,
         })
         .from(players)
         .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
@@ -10458,6 +10459,18 @@ app.post("/players/:playerId/profile", async (c) => {
       }
     }
 
+    // 写真専用APIで更新された背景プレー写真URLがプロフィール保存で消えないよう既存DB値を優先保護
+    const existingDetails = parsePlayerProfileDetails(existingPlayer.profileDetails);
+    const mergedDetails: PlayerProfileDetails = {
+      ...cleanDetails,
+      actionImageUrl:
+        body.profileDetails &&
+        Object.prototype.hasOwnProperty.call(body.profileDetails, "actionImageUrl") &&
+        body.profileDetails.actionImageUrl !== undefined
+          ? cleanDetails.actionImageUrl
+          : existingDetails.actionImageUrl,
+    };
+
     await db
       .update(players)
       .set({
@@ -10472,7 +10485,7 @@ app.post("/players/:playerId/profile", async (c) => {
         height: cleanHeight,
         weight: cleanWeight,
         notes: cleanNotes,
-        profileDetails: JSON.stringify(cleanDetails),
+        profileDetails: JSON.stringify(mergedDetails),
         joinedAt: nextJoinedDate,
       })
       .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
@@ -10510,10 +10523,10 @@ app.post("/players/:playerId/profile", async (c) => {
         throws: cleanThrows,
         bats: cleanBats,
         height: cleanHeight,
-        weight: cleanDetails.hideWeight ? null : cleanWeight,
+        weight: mergedDetails.hideWeight ? null : cleanWeight,
         editableWeight: cleanWeight,
         notes: cleanNotes,
-        profileDetails: cleanDetails,
+        profileDetails: mergedDetails,
         isCaptain: nextCaptainId === playerId,
         joinedAt: nextJoinedSeconds,
       },
@@ -10642,7 +10655,7 @@ app.post("/players/:playerId/condition", async (c) => {
 });
 
 /**
- * 📷 選手プロフィール写真の撮影・アップロード保存API (POST /players/:playerId/photo)
+ * 📷 選手プロフィール写真（正面写真 `portrait` / 背景プレー写真 `action`）の撮影・アップロード保存API (POST /players/:playerId/photo)
  */
 app.post("/players/:playerId/photo", async (c) => {
   await ensurePlayerProfileColumns(c.env.DB);
@@ -10652,6 +10665,10 @@ app.post("/players/:playerId/photo", async (c) => {
   try {
     let file: File | null = null;
     let teamId = c.req.query("teamId") || "";
+    let photoKind: "portrait" | "action" =
+      c.req.query("kind") === "action" ? "action" : "portrait";
+    let userId = c.req.query("userId") || "";
+    let userName = c.req.query("userName") || "";
 
     try {
       const formData = await c.req.formData();
@@ -10663,6 +10680,18 @@ app.post("/players/:playerId/photo", async (c) => {
       if (typeof rawTeamId === "string" && rawTeamId.trim()) {
         teamId = rawTeamId.trim();
       }
+      const rawKind = formData.get("kind");
+      if (rawKind === "action") {
+        photoKind = "action";
+      }
+      const rawUserId = formData.get("userId");
+      if (typeof rawUserId === "string" && rawUserId.trim()) {
+        userId = rawUserId.trim();
+      }
+      const rawUserName = formData.get("userName");
+      if (typeof rawUserName === "string" && rawUserName.trim()) {
+        userName = rawUserName.trim();
+      }
     } catch {
       const body = await c.req.parseBody();
       const rawFile = body["file"];
@@ -10672,6 +10701,17 @@ app.post("/players/:playerId/photo", async (c) => {
       const rawTeamId = body["teamId"];
       if (typeof rawTeamId === "string" && rawTeamId.trim()) {
         teamId = rawTeamId.trim();
+      }
+      if (body["kind"] === "action") {
+        photoKind = "action";
+      }
+      const rawUserId = body["userId"];
+      if (typeof rawUserId === "string" && rawUserId.trim()) {
+        userId = rawUserId.trim();
+      }
+      const rawUserName = body["userName"];
+      if (typeof rawUserName === "string" && rawUserName.trim()) {
+        userName = rawUserName.trim();
       }
     }
 
@@ -10697,32 +10737,80 @@ app.post("/players/:playerId/photo", async (c) => {
 
     // デモモードではDBを更新せずプレビュー用DataURLを即時返却
     if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
+      const demoDataUrl = toDataUrl();
       return c.json({
         success: true,
         isDemo: true,
         playerId,
-        profileImageUrl: toDataUrl(),
+        kind: photoKind,
+        ...(photoKind === "action"
+          ? { actionImageUrl: demoDataUrl }
+          : { profileImageUrl: demoDataUrl }),
       });
     }
 
-    const existingPlayer = await db
-      .select({
-        id: players.id,
-        teamId: players.teamId,
-        profileImageUrl: players.profileImageUrl,
-      })
-      .from(players)
-      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
-      .get();
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          teamId: players.teamId,
+          userId: players.userId,
+          profileImageUrl: players.profileImageUrl,
+          profileDetails: players.profileDetails,
+        })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
 
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
     if (!existingPlayer) {
       return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
     }
 
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId: userId || null,
+      userName: userName || null,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+    const isSelf = Boolean(
+      existingPlayer.userId && perm.searchUserIds.includes(existingPlayer.userId)
+    );
+    const isLinkedChild = perm.linkedChildIds.has(playerId);
+
+    if (!perm.canManagePlayers && !isSelf && !isLinkedChild) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "この選手の写真を変更する権限がありません（ご本人・紐付け保護者・指導者のみ設定できます）",
+        },
+        403
+      );
+    }
+
+    const existingDetails = parsePlayerProfileDetails(existingPlayer.profileDetails);
+    const prevUrl =
+      photoKind === "action"
+        ? existingDetails.actionImageUrl || ""
+        : existingPlayer.profileImageUrl || "";
+
     let imageUrl = "";
     if (c.env.BUCKET) {
       // 既存のR2選手写真がある場合は容量節約のためクリーンアップ
-      const prevUrl = existingPlayer.profileImageUrl || "";
       const prefix = "/api/images/";
       if (prevUrl.startsWith("/api/images/players/")) {
         const oldR2Key = prevUrl.slice(prefix.length);
@@ -10733,7 +10821,8 @@ app.post("/players/:playerId/photo", async (c) => {
       const safeExt = rawExt.replace(/[^a-z0-9]/g, "") || "jpg";
       const safePlayerKey = playerId.replace(/[^a-zA-Z0-9_-]/g, "");
       const safeTeamKey = teamId.replace(/[^a-zA-Z0-9_-]/g, "");
-      const objectKey = `players/${safeTeamKey}/${safePlayerKey}-${Date.now()}.${safeExt}`;
+      const suffix = photoKind === "action" ? `-action-${Date.now()}` : `-${Date.now()}`;
+      const objectKey = `players/${safeTeamKey}/${safePlayerKey}${suffix}.${safeExt}`;
 
       await c.env.BUCKET.put(objectKey, arrayBuffer, {
         httpMetadata: { contentType: mimeType },
@@ -10741,6 +10830,25 @@ app.post("/players/:playerId/photo", async (c) => {
       imageUrl = `/api/images/${objectKey}`;
     } else {
       imageUrl = toDataUrl();
+    }
+
+    if (photoKind === "action") {
+      const nextDetails: PlayerProfileDetails = {
+        ...existingDetails,
+        actionImageUrl: imageUrl,
+      };
+      await db
+        .update(players)
+        .set({ profileDetails: JSON.stringify(nextDetails) })
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+      return c.json({
+        success: true,
+        isDemo: false,
+        playerId,
+        kind: "action",
+        actionImageUrl: imageUrl,
+      });
     }
 
     await db
@@ -10752,6 +10860,7 @@ app.post("/players/:playerId/photo", async (c) => {
       success: true,
       isDemo: false,
       playerId,
+      kind: "portrait",
       profileImageUrl: imageUrl,
     });
   } catch (err: unknown) {
@@ -10767,13 +10876,17 @@ app.post("/players/:playerId/photo", async (c) => {
 });
 
 /**
- * 🗑️ 選手プロフィール写真の削除API (DELETE /players/:playerId/photo)
+ * 🗑️ 選手プロフィール写真（正面写真 `portrait` / 背景プレー写真 `action`）の削除API (DELETE /players/:playerId/photo)
  */
 app.delete("/players/:playerId/photo", async (c) => {
   await ensurePlayerProfileColumns(c.env.DB);
   const db = drizzle(c.env.DB);
   const playerId = c.req.param("playerId");
   const teamId = c.req.query("teamId") || "";
+  const photoKind: "portrait" | "action" =
+    c.req.query("kind") === "action" ? "action" : "portrait";
+  const userId = c.req.query("userId") || null;
+  const userName = c.req.query("userName") || null;
 
   try {
     if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
@@ -10781,21 +10894,90 @@ app.delete("/players/:playerId/photo", async (c) => {
         success: true,
         isDemo: true,
         playerId,
-        profileImageUrl: null,
+        kind: photoKind,
+        ...(photoKind === "action"
+          ? { actionImageUrl: null }
+          : { profileImageUrl: null }),
       });
     }
 
-    const existingPlayer = await db
-      .select({
-        id: players.id,
-        profileImageUrl: players.profileImageUrl,
-      })
-      .from(players)
-      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
-      .get();
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          userId: players.userId,
+          profileImageUrl: players.profileImageUrl,
+          profileDetails: players.profileDetails,
+        })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
 
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
     if (!existingPlayer) {
       return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId,
+      userName,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+    const isSelf = Boolean(
+      existingPlayer.userId && perm.searchUserIds.includes(existingPlayer.userId)
+    );
+    const isLinkedChild = perm.linkedChildIds.has(playerId);
+
+    if (!perm.canManagePlayers && !isSelf && !isLinkedChild) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "この選手の写真を削除する権限がありません（ご本人・紐付け保護者・指導者のみ削除できます）",
+        },
+        403
+      );
+    }
+
+    if (photoKind === "action") {
+      const existingDetails = parsePlayerProfileDetails(existingPlayer.profileDetails);
+      if (
+        c.env.BUCKET &&
+        existingDetails.actionImageUrl?.startsWith("/api/images/players/")
+      ) {
+        const oldR2Key = existingDetails.actionImageUrl.slice("/api/images/".length);
+        await c.env.BUCKET.delete(oldR2Key).catch(() => {});
+      }
+      const nextDetails: PlayerProfileDetails = {
+        ...existingDetails,
+        actionImageUrl: null,
+      };
+      await db
+        .update(players)
+        .set({ profileDetails: JSON.stringify(nextDetails) })
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+      return c.json({
+        success: true,
+        isDemo: false,
+        playerId,
+        kind: "action",
+        actionImageUrl: null,
+      });
     }
 
     if (c.env.BUCKET && existingPlayer.profileImageUrl?.startsWith("/api/images/players/")) {
@@ -10812,6 +10994,7 @@ app.delete("/players/:playerId/photo", async (c) => {
       success: true,
       isDemo: false,
       playerId,
+      kind: "portrait",
       profileImageUrl: null,
     });
   } catch (err: unknown) {

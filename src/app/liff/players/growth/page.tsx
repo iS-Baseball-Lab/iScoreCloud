@@ -794,7 +794,12 @@ function PlayerGrowthContent() {
   }, [currentTeam?.id]);
 
   const handlePhotoUpdated = useCallback(
-    (targetPlayerId: string, newProfileImageUrl: string | null) => {
+    (
+      targetPlayerId: string,
+      newProfileImageUrl: string | null,
+      kind?: "portrait" | "action"
+    ) => {
+      if (kind === "action") return;
       setGrowthData((prev) => {
         if (!prev) return prev;
         const nextRoster = prev.roster?.map((r) =>
@@ -1969,6 +1974,7 @@ function PlayerGrowthContent() {
           isOpen={isPhotoModalOpen}
           teamId={activeTeamId}
           initialPlayerId={player.id}
+          enableActionPhoto={false}
           rosterPlayers={
             roster.length > 0
               ? roster

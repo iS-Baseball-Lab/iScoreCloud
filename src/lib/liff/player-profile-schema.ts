@@ -189,6 +189,7 @@ export interface PlayerProfileDetails {
   dash50mSec: string | null;
   longTossM: number | null;
   hideWeight: boolean;
+  actionImageUrl: string | null;
 }
 
 export const EMPTY_PLAYER_PROFILE_DETAILS: PlayerProfileDetails = {
@@ -205,7 +206,21 @@ export const EMPTY_PLAYER_PROFILE_DETAILS: PlayerProfileDetails = {
   dash50mSec: null,
   longTossM: null,
   hideWeight: false,
+  actionImageUrl: null,
 };
+
+function sanitizeOptionalImageUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("/api/images/")) {
+    return trimmed.slice(0, 500);
+  }
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed.length <= 450_000 ? trimmed : null;
+  }
+  return null;
+}
 
 function sanitizeTrimmedText(raw: unknown, maxLen: number): string | null {
   if (typeof raw !== "string") return null;
@@ -286,6 +301,7 @@ export function parsePlayerProfileDetails(raw: unknown): PlayerProfileDetails {
     dash50mSec: sanitizeDash50m(obj.dash50mSec),
     longTossM: sanitizeOptionalInt(obj.longTossM, 10, 150),
     hideWeight: Boolean(obj.hideWeight),
+    actionImageUrl: sanitizeOptionalImageUrl(obj.actionImageUrl),
   };
 }
 
@@ -301,6 +317,7 @@ export interface DemoPlayerProfileOverride {
   height?: number | null;
   weight?: number | null;
   editableWeight?: number | null;
+  profileImageUrl?: string | null;
   notes?: string | null;
   isCaptain?: boolean;
   joinedAt?: number | null;
