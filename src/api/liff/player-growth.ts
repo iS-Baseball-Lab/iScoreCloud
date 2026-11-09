@@ -30,6 +30,20 @@ import {
   type ScorebookSheetStructure,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
+import {
+  comparePlayersByConditionAndUniform,
+  normalizePlayerConditionStatus,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
+import {
+  parsePlayerProfileDetails,
+  type PlayerProfileDetails,
+} from "@/lib/liff/player-profile-schema";
+import { canManageTeam } from "@/lib/roles";
+import {
+  parseSubRolesList,
+  resolveCallerTeamAccess,
+} from "@/lib/team-access";
 import type { WorkerEnv } from "@/types/api";
 
 const liffPlayerGrowthRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -38,6 +52,8 @@ const {
   teams,
   organizations,
   players,
+  teamMembers,
+  parentChildRelations,
   matches,
   tournaments,
   atBats,
@@ -45,6 +61,19 @@ const {
   playLogs,
   matchScorebookSnapshots,
 } = schema;
+
+const GROWTH_PLAYER_MANAGER_ROLES = new Set([
+  "admin",
+  "system_admin",
+  "manager",
+  "coach",
+  "scorer",
+  "staff",
+  "director",
+  "representative",
+  "it_admin",
+  "owner",
+]);
 
 function normalizeMatchType(
   raw: string | null | undefined
@@ -268,6 +297,7 @@ interface DemoPlayerSeed {
   name: string;
   nameKana: string;
   uniformNumber: string;
+  nickname?: string | null;
   primaryPosition: CanonicalDefensivePosition;
   subPositions: CanonicalDefensivePosition[];
   positionCounts: Array<{
@@ -281,6 +311,8 @@ interface DemoPlayerSeed {
   height: number;
   weight: number;
   notes: string;
+  conditionStatus?: PlayerConditionStatus;
+  profileDetails?: PlayerProfileDetails;
   isCaptain: boolean;
   isPitcher: boolean;
 }
@@ -291,6 +323,7 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     name: "佐藤 健太",
     nameKana: "サトウ ケンタ",
     uniformNumber: "1",
+    nickname: "ケンタ",
     primaryPosition: "P",
     subPositions: ["CF", "1B"],
     positionCounts: [
@@ -307,6 +340,21 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     height: 171,
     weight: 63,
     notes: "伸びのある直球と制球力が武器の大黒柱エース。後半戦に入りストライク率が大幅向上。",
+    profileDetails: parsePlayerProfileDetails({
+      seasonGoal: "防御率1点台＆年間50奪三振！",
+      playStyleTags: ["control", "strikeout", "clutch"],
+      gradeOrAge: "20代後半",
+      baseballHistory: "県大会ベスト8〜草野球4年目",
+      admiredPlayer: "ダルビッシュ 有",
+      favoriteTeam: "北海道日本ハムファイターズ",
+      gloveGear: "ミズノプロ 投手用（Dブルー）",
+      batGear: "ビヨンドマックスレガシー 84cm",
+      walkUpSong: "第ゼロ感 / 10-FEET",
+      maxVelocityKmh: 132,
+      dash50mSec: "6.5",
+      longTossM: 88,
+      hideWeight: false,
+    }),
     isCaptain: false,
     isPitcher: true,
   },
@@ -315,6 +363,7 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     name: "鈴木 大輔",
     nameKana: "スズキ ダイスケ",
     uniformNumber: "2",
+    nickname: "ダイちゃん",
     primaryPosition: "C",
     subPositions: ["1B"],
     positionCounts: [
@@ -330,6 +379,21 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     height: 168,
     weight: 66,
     notes: "強肩と冷静なリードで投手陣を引っ張る扇の要。",
+    profileDetails: parsePlayerProfileDetails({
+      seasonGoal: "盗塁阻止率5割＆チーム防御率No.1！",
+      playStyleTags: ["arm", "brain", "mood"],
+      gradeOrAge: "30代",
+      baseballHistory: "野球歴15年（小4〜大学・草野球）",
+      admiredPlayer: "古田 敦也",
+      favoriteTeam: "東京ヤクルトスワローズ",
+      gloveGear: "ハタケヤマ 甲斐モデル",
+      batGear: "SSK MM23 84cm",
+      walkUpSong: "タマシイレボリューション / Superfly",
+      maxVelocityKmh: null,
+      dash50mSec: null,
+      longTossM: 82,
+      hideWeight: false,
+    }),
     isCaptain: false,
     isPitcher: false,
   },
@@ -465,6 +529,7 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     name: "山田 翔太",
     nameKana: "ヤマダ ショウタ",
     uniformNumber: "10",
+    nickname: "ショウタ",
     primaryPosition: "SS",
     subPositions: ["2B", "P"],
     positionCounts: [
@@ -481,6 +546,21 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     height: 168,
     weight: 61,
     notes: "走攻守三拍子揃った頼れるキャプテン。秋に入り逆方向への長打と選球眼が大きく成長。",
+    profileDetails: parsePlayerProfileDetails({
+      seasonGoal: "打率4割＆全試合ノーエラーで優勝へ導く！",
+      playStyleTags: ["speed", "defense", "clutch"],
+      gradeOrAge: "20代後半",
+      baseballHistory: "〇〇高〜大学準硬式〜草野球5年目",
+      admiredPlayer: "源田 壮亮",
+      favoriteTeam: "埼玉西武ライオンズ",
+      gloveGear: "ZETT プロステイタス（源田モデル）",
+      batGear: "ミズノ ビヨンドマックスレガシー 83cm",
+      walkUpSong: "できっこないを やらなくちゃ / サンボマスター",
+      maxVelocityKmh: 124,
+      dash50mSec: "6.2",
+      longTossM: 85,
+      hideWeight: false,
+    }),
     isCaptain: true,
     isPitcher: false,
   },
@@ -501,6 +581,7 @@ const DEMO_ROSTER_SEEDS: DemoPlayerSeed[] = [
     height: 173,
     weight: 64,
     notes: "キレ味鋭いスライダーで三振を奪う本格派右腕。",
+    conditionStatus: "restricted",
     isCaptain: false,
     isPitcher: true,
   },
@@ -1009,7 +1090,22 @@ function buildDemoPlayerGrowthResponse(
     DEMO_ROSTER_SEEDS.find((p) => p.id === "demo-player-1") ||
     DEMO_ROSTER_SEEDS[0];
 
-  const roster: PlayerGrowthRosterItem[] = DEMO_ROSTER_SEEDS.map((s) => ({
+  const sortedSeeds = [...DEMO_ROSTER_SEEDS].sort((a, b) =>
+    comparePlayersByConditionAndUniform(
+      {
+        conditionStatus: a.conditionStatus || "active",
+        uniformNumber: a.uniformNumber,
+        name: a.name,
+      },
+      {
+        conditionStatus: b.conditionStatus || "active",
+        uniformNumber: b.uniformNumber,
+        name: b.name,
+      }
+    )
+  );
+
+  const roster: PlayerGrowthRosterItem[] = sortedSeeds.map((s) => ({
     id: s.id,
     name: s.name,
     nameKana: s.nameKana,
@@ -1018,6 +1114,8 @@ function buildDemoPlayerGrowthResponse(
     subPositions: s.subPositions,
     positionSource: "match_data",
     profileImageUrl: null,
+    actionImageUrl: s.profileDetails?.actionImageUrl || null,
+    conditionStatus: s.conditionStatus || "active",
     isCaptain: s.isCaptain,
   }));
 
@@ -1433,6 +1531,10 @@ function buildDemoPlayerGrowthResponse(
     sectionsByFilter[fk] = buildSectionFromGameLogs(fBat, fPit, fCount);
   }
 
+  const seedDetails = seed.profileDetails
+    ? parsePlayerProfileDetails(seed.profileDetails)
+    : parsePlayerProfileDetails(null);
+
   return {
     success: true,
     isDemo: true,
@@ -1450,13 +1552,17 @@ function buildDemoPlayerGrowthResponse(
       name: seed.name,
       nameKana: seed.nameKana,
       uniformNumber: seed.uniformNumber,
+      nickname: seed.nickname || null,
       throws: seed.throws,
       bats: seed.bats,
       height: seed.height,
-      weight: seed.weight,
+      weight: seedDetails.hideWeight ? null : seed.weight,
       profileImageUrl: null,
       notes: seed.notes,
       isCaptain: seed.isCaptain,
+      conditionStatus: seed.conditionStatus || "active",
+      profileDetails: seedDetails,
+      canEditProfile: true,
       primaryPosition: seed.primaryPosition,
       subPositions: seed.subPositions,
       registeredPrimaryPosition: seed.primaryPosition,
@@ -1481,14 +1587,25 @@ liffPlayerGrowthRouter.get("/", async (c) => {
   }
 
   try {
-    const [teamRow, rawPlayers, rawMatches] = await Promise.all([
+    const [
+      callerAccess,
+      teamRow,
+      rawPlayers,
+      rawMatches,
+      allTeamMembersRaw,
+      allRelations,
+    ] = await Promise.all([
+      resolveCallerTeamAccess(c),
       db
         .select({
           id: teams.id,
           name: teams.name,
           year: teams.year,
           captainId: teams.captainId,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
           orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
         })
         .from(teams)
         .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -1500,6 +1617,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           name: players.name,
           nameKana: players.nameKana,
           uniformNumber: players.uniformNumber,
+          nickname: players.nickname,
           primaryPosition: players.primaryPosition,
           subPositions: players.subPositions,
           throws: players.throws,
@@ -1507,7 +1625,10 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           height: players.height,
           weight: players.weight,
           profileImageUrl: players.profileImageUrl,
+          userId: players.userId,
           notes: players.notes,
+          profileDetails: players.profileDetails,
+          conditionStatus: players.conditionStatus,
           isActive: players.isActive,
         })
         .from(players)
@@ -1531,6 +1652,27 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         .where(eq(matches.teamId, teamId))
         .orderBy(asc(matches.date), asc(matches.createdAt))
         .all(),
+      db
+        .select({
+          id: teamMembers.id,
+          userId: teamMembers.userId,
+          name: teamMembers.name,
+          memberType: teamMembers.memberType,
+          role: teamMembers.role,
+          subRoles: teamMembers.subRoles,
+          status: teamMembers.status,
+        })
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId))
+        .all(),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          childId: parentChildRelations.childId,
+        })
+        .from(parentChildRelations)
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all(),
     ]);
 
     if (!teamRow) {
@@ -1546,6 +1688,58 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         404
       );
     }
+
+    const activeTeamMembers = allTeamMembersRaw.filter(
+      (m) => m.status === "active" || !m.status
+    );
+    const matchedMembers = activeTeamMembers.filter(
+      (m) => m.userId && callerAccess.candidateUserIds.includes(m.userId)
+    );
+    if (matchedMembers.length === 0) {
+      const candidateNames = [
+        c.req.query("userName"),
+        callerAccess.headerUserName,
+        callerAccess.sessionUser?.name,
+      ]
+        .map((s) => normalizePlayerNameKey(s || ""))
+        .filter(Boolean);
+      if (candidateNames.length > 0) {
+        const nameKeySet = new Set(candidateNames);
+        const adultHits = activeTeamMembers.filter((m) => {
+          const roleLower = (m.role || "").toLowerCase();
+          if (
+            m.memberType === "player" ||
+            roleLower === "player" ||
+            roleLower === "pending"
+          ) {
+            return false;
+          }
+          const cleanName = normalizePlayerNameKey(m.name || "");
+          return Boolean(cleanName && nameKeySet.has(cleanName));
+        });
+        if (adultHits.length === 1) {
+          matchedMembers.push(adultHits[0]);
+        }
+      }
+    }
+
+    const matchedMemberIdSet = new Set(matchedMembers.map((m) => m.id));
+    const linkedChildIds = new Set<string>();
+    for (const rel of allRelations) {
+      if (rel.parentId && rel.childId && matchedMemberIdSet.has(rel.parentId)) {
+        linkedChildIds.add(rel.childId);
+      }
+    }
+
+    const canManagePlayers =
+      callerAccess.canManageTeamId(teamId) ||
+      matchedMembers.some((m) => {
+        const r = (m.role || "").toLowerCase();
+        return (
+          GROWTH_PLAYER_MANAGER_ROLES.has(r) ||
+          canManageTeam(m.role, parseSubRolesList(m.subRoles))
+        );
+      });
 
     const {
       byPlayerId: aggregatedPosMap,
@@ -1565,22 +1759,20 @@ liffPlayerGrowthRouter.get("/", async (c) => {
 
     const sortedActivePlayers = rawPlayers
       .filter((p) => p.isActive !== false)
-      .sort((a, b) => {
-        const strA = (a.uniformNumber || "").trim();
-        const strB = (b.uniformNumber || "").trim();
-        const numA = parseInt(strA.replace(/[^0-9]/g, ""), 10);
-        const numB = parseInt(strB.replace(/[^0-9]/g, ""), 10);
-        if (!Number.isNaN(numA) && !Number.isNaN(numB)) {
-          if (numA !== numB) return numA - numB;
-          return strA.localeCompare(strB);
-        }
-        if (!Number.isNaN(numA)) return -1;
-        if (!Number.isNaN(numB)) return 1;
-        return (a.nameKana || a.name || "").localeCompare(
-          b.nameKana || b.name || "",
-          "ja"
-        );
-      });
+      .sort((a, b) =>
+        comparePlayersByConditionAndUniform(
+          {
+            conditionStatus: a.conditionStatus,
+            uniformNumber: a.uniformNumber,
+            name: a.nameKana || a.name,
+          },
+          {
+            conditionStatus: b.conditionStatus,
+            uniformNumber: b.uniformNumber,
+            name: b.nameKana || b.name,
+          }
+        )
+      );
 
     const targetPlayer =
       (requestedPlayerId
@@ -1592,9 +1784,18 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       sortedActivePlayers[0] ||
       rawPlayers[0];
 
+    const parsedDetailsByPlayerId = new Map<string, PlayerProfileDetails>();
+    for (const rp of rawPlayers) {
+      parsedDetailsByPlayerId.set(
+        rp.id,
+        parsePlayerProfileDetails(rp.profileDetails)
+      );
+    }
+
     const rosterList: PlayerGrowthRosterItem[] = sortedActivePlayers.map(
       (p) => {
         const agg = aggregatedPosMap.get(p.id);
+        const pDetails = parsedDetailsByPlayerId.get(p.id);
         return {
           id: p.id,
           name: p.name,
@@ -1604,6 +1805,8 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           subPositions: agg ? agg.subPositions : [],
           positionSource: agg ? agg.positionSource : "profile",
           profileImageUrl: p.profileImageUrl || null,
+          actionImageUrl: pDetails?.actionImageUrl || null,
+          conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
           isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
         };
       }
@@ -1611,6 +1814,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
 
     if (!rosterList.some((r) => r.id === targetPlayer.id)) {
       const agg = aggregatedPosMap.get(targetPlayer.id);
+      const tDetails = parsedDetailsByPlayerId.get(targetPlayer.id);
       rosterList.unshift({
         id: targetPlayer.id,
         name: targetPlayer.name,
@@ -1622,6 +1826,10 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         subPositions: agg ? agg.subPositions : [],
         positionSource: agg ? agg.positionSource : "profile",
         profileImageUrl: targetPlayer.profileImageUrl || null,
+        actionImageUrl: tDetails?.actionImageUrl || null,
+        conditionStatus: normalizePlayerConditionStatus(
+          targetPlayer.conditionStatus
+        ),
         isCaptain: Boolean(
           teamRow.captainId && teamRow.captainId === targetPlayer.id
         ),
@@ -2330,6 +2538,18 @@ liffPlayerGrowthRouter.get("/", async (c) => {
     }
 
     const posAgg = aggregatedPosMap.get(targetPlayer.id);
+    const targetDetails =
+      parsedDetailsByPlayerId.get(targetPlayer.id) ||
+      parsePlayerProfileDetails(targetPlayer.profileDetails);
+    const targetCondition = normalizePlayerConditionStatus(
+      targetPlayer.conditionStatus
+    );
+    const isSelf = Boolean(
+      targetPlayer.userId &&
+        callerAccess.candidateUserIds.includes(targetPlayer.userId)
+    );
+    const isLinkedChild = linkedChildIds.has(targetPlayer.id);
+    const canEditProfile = canManagePlayers || isSelf || isLinkedChild;
 
     const payload: PlayerGrowthResponse = {
       success: true,
@@ -2339,6 +2559,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         name: `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim(),
         orgName: teamRow.orgName || teamRow.name,
         teamName: teamRow.name,
+        logoImageUrl: teamRow.logoImageUrl || null,
         year: teamRow.year || 2026,
       },
       roster: rosterList,
@@ -2347,15 +2568,19 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         name: targetPlayer.name,
         nameKana: targetPlayer.nameKana || null,
         uniformNumber: targetPlayer.uniformNumber || "",
+        nickname: targetPlayer.nickname || null,
         throws: targetPlayer.throws || null,
         bats: targetPlayer.bats || null,
         height: targetPlayer.height ?? null,
-        weight: targetPlayer.weight ?? null,
+        weight: targetDetails.hideWeight ? null : (targetPlayer.weight ?? null),
         profileImageUrl: targetPlayer.profileImageUrl || null,
         notes: targetPlayer.notes || null,
         isCaptain: Boolean(
           teamRow.captainId && teamRow.captainId === targetPlayer.id
         ),
+        conditionStatus: targetCondition,
+        profileDetails: targetDetails,
+        canEditProfile,
         primaryPosition: posAgg
           ? posAgg.primaryPosition
           : targetPlayer.primaryPosition || null,

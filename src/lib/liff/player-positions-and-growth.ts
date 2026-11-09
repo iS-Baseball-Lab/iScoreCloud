@@ -1,5 +1,7 @@
 // filepath: src/lib/liff/player-positions-and-growth.ts
 import type { ScorebookSheetStructure } from "@/types/scorebook-v2";
+import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
+import type { PlayerProfileDetails } from "@/lib/liff/player-profile-schema";
 
 export type CanonicalDefensivePosition =
   | "P"
@@ -231,6 +233,8 @@ export interface PlayerGrowthRosterItem {
   subPositions: string[];
   positionSource: "match_data" | "profile";
   profileImageUrl: string | null;
+  actionImageUrl?: string | null;
+  conditionStatus?: PlayerConditionStatus;
   isCaptain: boolean;
 }
 
@@ -252,6 +256,7 @@ export interface PlayerGrowthResponse {
     name: string;
     nameKana: string | null;
     uniformNumber: string;
+    nickname?: string | null;
     throws: string | null;
     bats: string | null;
     height: number | null;
@@ -259,6 +264,9 @@ export interface PlayerGrowthResponse {
     profileImageUrl: string | null;
     notes: string | null;
     isCaptain: boolean;
+    conditionStatus?: PlayerConditionStatus;
+    profileDetails?: PlayerProfileDetails;
+    canEditProfile?: boolean;
     primaryPosition: string | null;
     subPositions: string[];
     registeredPrimaryPosition: string | null;

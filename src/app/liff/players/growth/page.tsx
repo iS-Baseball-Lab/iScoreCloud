@@ -22,12 +22,28 @@ import {
   IdCard,
   Loader2,
   Camera,
+  Edit3,
+  Volume2,
+  Users,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import type { PlayerPhotoKind } from "@/components/liff/PlayerPhotoCaptureModal";
+import {
+  normalizePlayerConditionStatus,
+  PLAYER_CONDITION_META,
+  loadDemoPlayerConditionOverrides,
+} from "@/lib/liff/player-condition";
+import {
+  EMPTY_PLAYER_PROFILE_DETAILS,
+  parsePlayerProfileDetails,
+  loadDemoPlayerProfileOverrides,
+  saveDemoPlayerProfileOverride,
+  type PlayerProfileDetails,
+} from "@/lib/liff/player-profile-schema";
 
 const PlayerPhotoCaptureModal = dynamic(
   () => import("@/components/liff/PlayerPhotoCaptureModal").then((m) => m.PlayerPhotoCaptureModal),
@@ -45,9 +61,12 @@ import type {
 
 interface PositionLabelMeta {
   shortLabel: string;
+  fullLabel: string;
   code: string;
   pillClass: string;
   barClass: string;
+  ringClass: string;
+  codeTextClass: string;
 }
 
 const POSITION_SHORT_LABELS: Record<
@@ -88,6 +107,8 @@ const POSITION_SHORT_LABELS: Record<
 function getGroupStyle(group: "P" | "C" | "IF" | "OF" | "DH"): {
   pillClass: string;
   barClass: string;
+  ringClass: string;
+  codeTextClass: string;
 } {
   switch (group) {
     case "P":
@@ -95,30 +116,40 @@ function getGroupStyle(group: "P" | "C" | "IF" | "OF" | "DH"): {
         pillClass:
           "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30",
         barClass: "bg-rose-500",
+        ringClass: "ring-rose-500/25",
+        codeTextClass: "text-rose-600/85 dark:text-rose-300/85",
       };
     case "C":
       return {
         pillClass:
           "bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30",
         barClass: "bg-sky-500",
+        ringClass: "ring-sky-500/25",
+        codeTextClass: "text-sky-600/85 dark:text-sky-300/85",
       };
     case "IF":
       return {
         pillClass:
           "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30",
         barClass: "bg-amber-500",
+        ringClass: "ring-amber-500/25",
+        codeTextClass: "text-amber-700/85 dark:text-amber-300/85",
       };
     case "OF":
       return {
         pillClass:
           "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30",
         barClass: "bg-emerald-500",
+        ringClass: "ring-emerald-500/25",
+        codeTextClass: "text-emerald-700/85 dark:text-emerald-300/85",
       };
     case "DH":
       return {
         pillClass:
           "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30",
         barClass: "bg-purple-500",
+        ringClass: "ring-purple-500/25",
+        codeTextClass: "text-purple-700/85 dark:text-purple-300/85",
       };
   }
 }
@@ -127,9 +158,12 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
   if (!raw) {
     return {
       shortLabel: "未設定",
+      fullLabel: "ポジション未設定",
       code: "-",
       pillClass: "bg-muted text-muted-foreground border border-border",
       barClass: "bg-muted-foreground/40",
+      ringClass: "ring-border",
+      codeTextClass: "text-muted-foreground",
     };
   }
   const clean = raw.trim();
@@ -139,32 +173,35 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
     const gs = getGroupStyle(known.group);
     return {
       shortLabel: known.shortLabel,
+      fullLabel: `${known.shortLabel} (${known.code})`,
       code: known.code,
-      pillClass: gs.pillClass,
-      barClass: gs.barClass,
+      ...gs,
     };
   }
   if (clean.includes("投")) {
     const gs = getGroupStyle("P");
-    return { shortLabel: clean, code: "P", ...gs };
+    return { shortLabel: clean, fullLabel: clean, code: "P", ...gs };
   }
   if (clean.includes("捕")) {
     const gs = getGroupStyle("C");
-    return { shortLabel: clean, code: "C", ...gs };
+    return { shortLabel: clean, fullLabel: clean, code: "C", ...gs };
   }
   if (clean.includes("一") || clean.includes("二") || clean.includes("三") || clean.includes("遊") || clean.includes("内")) {
     const gs = getGroupStyle("IF");
-    return { shortLabel: clean, code: "IF", ...gs };
+    return { shortLabel: clean, fullLabel: clean, code: "IF", ...gs };
   }
   if (clean.includes("左") || clean.includes("中") || clean.includes("右") || clean.includes("外")) {
     const gs = getGroupStyle("OF");
-    return { shortLabel: clean, code: "OF", ...gs };
+    return { shortLabel: clean, fullLabel: clean, code: "OF", ...gs };
   }
   return {
     shortLabel: clean,
+    fullLabel: clean,
     code: key,
     pillClass: "bg-muted text-muted-foreground border border-border",
     barClass: "bg-muted-foreground/40",
+    ringClass: "ring-border",
+    codeTextClass: "text-muted-foreground",
   };
 }
 
@@ -738,10 +775,90 @@ function PitchingGrowthChart({
   );
 }
 
+function applyDemoGrowthOverrides(
+  data: PlayerGrowthResponse | null
+): PlayerGrowthResponse | null {
+  if (!data?.success) return data;
+  if (!data.isDemo && data.team?.id !== "demo-team") return data;
+
+  const profileOverrides = loadDemoPlayerProfileOverrides();
+  const condOverrides = loadDemoPlayerConditionOverrides();
+
+  const nextRoster = data.roster?.map((rp) => {
+    const po = profileOverrides[rp.id];
+    const co = condOverrides[rp.id];
+    return {
+      ...rp,
+      ...(po?.name ? { name: po.name } : {}),
+      ...(po?.nameKana !== undefined ? { nameKana: po.nameKana } : {}),
+      ...(po?.uniformNumber ? { uniformNumber: po.uniformNumber } : {}),
+      ...(po?.profileImageUrl !== undefined
+        ? { profileImageUrl: po.profileImageUrl }
+        : {}),
+      ...(po?.profileDetails?.actionImageUrl !== undefined
+        ? { actionImageUrl: po.profileDetails.actionImageUrl }
+        : {}),
+      ...(typeof po?.isCaptain === "boolean" ? { isCaptain: po.isCaptain } : {}),
+      conditionStatus: co
+        ? co.conditionStatus
+        : normalizePlayerConditionStatus(rp.conditionStatus),
+    };
+  });
+
+  if (!data.player) {
+    return { ...data, roster: nextRoster };
+  }
+
+  const p = data.player;
+  const po = profileOverrides[p.id];
+  const co = condOverrides[p.id];
+  const mergedDetails: PlayerProfileDetails = po?.profileDetails
+    ? parsePlayerProfileDetails({
+        ...(p.profileDetails || EMPTY_PLAYER_PROFILE_DETAILS),
+        ...po.profileDetails,
+      })
+    : p.profileDetails
+    ? parsePlayerProfileDetails(p.profileDetails)
+    : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
+
+  const rawWeight =
+    po?.weight !== undefined
+      ? po.weight
+      : po?.editableWeight !== undefined
+      ? po.editableWeight
+      : p.weight;
+
+  return {
+    ...data,
+    roster: nextRoster,
+    player: {
+      ...p,
+      ...(po?.name ? { name: po.name } : {}),
+      ...(po?.nameKana !== undefined ? { nameKana: po.nameKana } : {}),
+      ...(po?.uniformNumber ? { uniformNumber: po.uniformNumber } : {}),
+      ...(po?.nickname !== undefined ? { nickname: po.nickname } : {}),
+      ...(po?.throws !== undefined ? { throws: po.throws } : {}),
+      ...(po?.bats !== undefined ? { bats: po.bats } : {}),
+      ...(po?.height !== undefined ? { height: po.height } : {}),
+      weight: mergedDetails.hideWeight ? null : rawWeight,
+      ...(po?.profileImageUrl !== undefined
+        ? { profileImageUrl: po.profileImageUrl }
+        : {}),
+      ...(po?.notes !== undefined ? { notes: po.notes } : {}),
+      ...(typeof po?.isCaptain === "boolean" ? { isCaptain: po.isCaptain } : {}),
+      conditionStatus: co
+        ? co.conditionStatus
+        : normalizePlayerConditionStatus(p.conditionStatus),
+      profileDetails: mergedDetails,
+      canEditProfile: true,
+    },
+  };
+}
+
 function PlayerGrowthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentTeam, isDemo: providerDemo } = useLiff();
+  const { currentTeam, profile, isDemo: providerDemo } = useLiff();
   const practiceMatchLabel = usePracticeMatchLabel();
   const matchTypeBadges = useMemo(
     () => ({
@@ -763,8 +880,10 @@ function PlayerGrowthContent() {
     const pidParam = queryPlayerId
       ? `&playerId=${encodeURIComponent(queryPlayerId)}`
       : "";
-    return peekLiffApiCache<PlayerGrowthResponse>(
-      `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`
+    return applyDemoGrowthOverrides(
+      peekLiffApiCache<PlayerGrowthResponse>(
+        `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`
+      )
     );
   }, [currentTeam?.id, queryPlayerId]);
 
@@ -778,7 +897,7 @@ function PlayerGrowthContent() {
   const [logSortOrder, setLogSortOrder] = useState<"desc" | "asc">("desc");
   const [selectedBatGameIdx, setSelectedBatGameIdx] = useState<number>(0);
   const [selectedPitchGameIdx, setSelectedPitchGameIdx] = useState<number>(0);
-  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState<boolean>(false);
+  const [photoModalKind, setPhotoModalKind] = useState<PlayerPhotoKind | null>(null);
 
   const activeTeamId =
     growthData?.team?.id ||
@@ -788,37 +907,117 @@ function PlayerGrowthContent() {
       : "") ||
     "demo-team";
 
+  const effectiveUserId =
+    profile?.userId ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_user_id") ||
+        localStorage.getItem("iscore_userId") ||
+        ""
+      : "");
+  const effectiveUserName =
+    profile?.displayName ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_user_name") || ""
+      : "");
+
   // チーム切替時に写真撮影モーダルを自動リセット（規約5遵守）
   useEffect(() => {
-    setIsPhotoModalOpen(false);
+    setPhotoModalKind(null);
   }, [currentTeam?.id]);
 
   const handlePhotoUpdated = useCallback(
     (
       targetPlayerId: string,
-      newProfileImageUrl: string | null,
-      kind?: "portrait" | "action"
+      newImageUrl: string | null,
+      kind: PlayerPhotoKind = "portrait"
     ) => {
-      if (kind === "action") return;
+      const isDemoFlag = Boolean(
+        growthData?.isDemo || providerDemo || activeTeamId === "demo-team"
+      );
+
       setGrowthData((prev) => {
         if (!prev) return prev;
+
+        if (kind === "action") {
+          const nextRoster = prev.roster?.map((r) =>
+            r.id === targetPlayerId ? { ...r, actionImageUrl: newImageUrl } : r
+          );
+          const nextPlayer =
+            prev.player && prev.player.id === targetPlayerId
+              ? (() => {
+                  const nextDetails: PlayerProfileDetails = {
+                    ...(prev.player.profileDetails ||
+                      EMPTY_PLAYER_PROFILE_DETAILS),
+                    actionImageUrl: newImageUrl,
+                  };
+                  if (isDemoFlag) {
+                    saveDemoPlayerProfileOverride(targetPlayerId, {
+                      profileImageUrl: prev.player.profileImageUrl,
+                      profileDetails: nextDetails,
+                    });
+                  }
+                  return {
+                    ...prev.player,
+                    profileDetails: nextDetails,
+                  };
+                })()
+              : prev.player;
+
+          if (isDemoFlag && (!prev.player || prev.player.id !== targetPlayerId)) {
+            const existingOverrides = loadDemoPlayerProfileOverrides();
+            const existingDetails =
+              existingOverrides[targetPlayerId]?.profileDetails ||
+              EMPTY_PLAYER_PROFILE_DETAILS;
+            saveDemoPlayerProfileOverride(targetPlayerId, {
+              profileDetails: {
+                ...existingDetails,
+                actionImageUrl: newImageUrl,
+              },
+            });
+          }
+
+          return {
+            ...prev,
+            roster: nextRoster,
+            player: nextPlayer,
+          };
+        }
+
         const nextRoster = prev.roster?.map((r) =>
-          r.id === targetPlayerId
-            ? { ...r, profileImageUrl: newProfileImageUrl }
-            : r
+          r.id === targetPlayerId ? { ...r, profileImageUrl: newImageUrl } : r
         );
         const nextPlayer =
           prev.player && prev.player.id === targetPlayerId
-            ? { ...prev.player, profileImageUrl: newProfileImageUrl }
+            ? (() => {
+                if (isDemoFlag) {
+                  saveDemoPlayerProfileOverride(targetPlayerId, {
+                    profileImageUrl: newImageUrl,
+                    profileDetails: prev.player.profileDetails,
+                  });
+                }
+                return {
+                  ...prev.player,
+                  profileImageUrl: newImageUrl,
+                };
+              })()
             : prev.player;
+
+        if (isDemoFlag && (!prev.player || prev.player.id !== targetPlayerId)) {
+          saveDemoPlayerProfileOverride(targetPlayerId, {
+            profileImageUrl: newImageUrl,
+          });
+        }
+
         return {
           ...prev,
           roster: nextRoster,
           player: nextPlayer,
         };
       });
+
+      invalidateLiffApiCache("/api/liff/players");
     },
-    []
+    [activeTeamId, growthData?.isDemo, providerDemo]
   );
 
   const loadGrowth = useCallback(async () => {
@@ -836,18 +1035,24 @@ function PlayerGrowthContent() {
       const url = `/api/liff/players/growth?teamId=${encodeURIComponent(tid)}${pidParam}`;
       const cached = peekLiffApiCache<PlayerGrowthResponse>(url);
       if (cached?.success) {
-        setGrowthData(cached);
+        setGrowthData(applyDemoGrowthOverrides(cached));
         setIsLoading(false);
       } else {
         setIsLoading(true);
       }
-      const res = await fetch(url);
+      const needsFreshProfileFields = Boolean(
+        cached?.success && cached.player && cached.player.profileDetails === undefined
+      );
+      const res = await fetch(
+        url,
+        needsFreshProfileFields ? { cache: "no-store" } : undefined
+      );
       const json = (await res.json()) as PlayerGrowthResponse;
       if (!res.ok || !json.success) {
         setErrorMsg(json.error || "成長データの取得に失敗しました");
         setGrowthData(null);
       } else {
-        setGrowthData(json);
+        setGrowthData(applyDemoGrowthOverrides(json));
       }
     } catch (err: unknown) {
       setErrorMsg(
@@ -967,59 +1172,7 @@ function PlayerGrowthContent() {
           </div>
         ) : (
           <>
-            {/* ━━━ 🔄 選手クイック切替バー（前後ボタン＋セレクター） ━━━ */}
-            {roster.length > 1 && (
-              <div className="flex items-center gap-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-xs">
-                <button
-                  type="button"
-                  disabled={!prevRosterPlayer}
-                  onClick={() =>
-                    prevRosterPlayer && handleSwitchPlayer(prevRosterPlayer.id)
-                  }
-                  className="h-9 w-9 rounded-xl border border-border bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
-                  aria-label="前の選手へ切替"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                <LiffSelect
-                  value={player.id}
-                  onChange={(val) => handleSwitchPlayer(val)}
-                  options={roster.map((rp) => {
-                    const pMeta = getPosMeta(rp.primaryPosition);
-                    return {
-                      value: rp.id,
-                      label: `#${cleanUniform(rp.uniformNumber)} ${rp.name}`,
-                      badge: pMeta.shortLabel,
-                      badgeTone: "primary" as const,
-                      keywords: `${rp.uniformNumber || ""} ${rp.name} ${
-                        pMeta.shortLabel
-                      }`,
-                    };
-                  })}
-                  title="表示する選手を選択"
-                  ariaLabel="表示する選手を選択"
-                  size="sm"
-                  searchable={true}
-                  searchPlaceholder="選手名・背番号・守備位置で検索..."
-                  className="flex-1 min-w-0 h-9 bg-muted/35"
-                />
-
-                <button
-                  type="button"
-                  disabled={!nextRosterPlayer}
-                  onClick={() =>
-                    nextRosterPlayer && handleSwitchPlayer(nextRosterPlayer.id)
-                  }
-                  className="h-9 w-9 rounded-xl border border-border bg-muted/50 hover:bg-muted disabled:opacity-35 flex items-center justify-center text-foreground active:scale-95 transition-all shrink-0"
-                  aria-label="次の選手へ切替"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-
-            {/* ━━━ 🏟️ 選手ヒーロープロフィール ＆ 実戦守備位置サマリー ━━━ */}
+            {/* ━━━ 🏟️ 選手ヒーローヘッダー（案B：選手詳細モーダル統一 境界オーバーラップ型 × 薄めソリッドスクリム） ━━━ */}
             {(() => {
               const mainMeta = getPosMeta(player.primaryPosition);
               const numStr = cleanUniform(player.uniformNumber);
@@ -1027,112 +1180,347 @@ function PlayerGrowthContent() {
               const subLabels = player.subPositions.map(
                 (sp) => getPosMeta(sp).shortLabel
               );
+              const details = player.profileDetails
+                ? parsePlayerProfileDetails(player.profileDetails)
+                : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
+              const condStatus = normalizePlayerConditionStatus(
+                player.conditionStatus
+              );
+              const condMeta = PLAYER_CONDITION_META[condStatus];
+              const isOnLeave = condStatus === "on_leave";
+              const isDemoFlag = Boolean(
+                growthData.isDemo || providerDemo || activeTeamId === "demo-team"
+              );
+              const canEditThisPlayer = Boolean(
+                player.canEditProfile || isDemoFlag
+              );
 
               return (
                 <section className="relative overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-xs">
-                  {/* A-3 上帯ダークキャップ ＋ 単色ソリッド背番号ウォーターマーク */}
-                  <div className="relative p-4 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none select-none absolute right-2 -bottom-5 text-[96px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
-                    >
-                      {numStr}
-                    </span>
-
-                    <div className="relative z-10 flex items-center gap-3.5">
-                      <button
-                        type="button"
-                        onClick={() => setIsPhotoModalOpen(true)}
-                        title="タップしてプロフィール写真を撮影・変更"
-                        className="relative shrink-0 rounded-full group active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      >
-                        <Avatar className="h-16 w-16 border-2 border-slate-700 group-hover:border-primary shadow-xs transition-colors">
-                          {player.profileImageUrl && (
-                            <AvatarImage
-                              src={player.profileImageUrl}
-                              alt={player.name}
-                              className="object-cover"
-                            />
+                  {/* 上部ワイドステージ（選手詳細モーダルと統一：プレー写真を邪魔しないよう上角ピルのみ配置） */}
+                  <div
+                    className={cn(
+                      "relative h-36 sm:h-44 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden",
+                      condStatus === "on_leave"
+                        ? "border-slate-400"
+                        : condStatus === "rehab"
+                        ? "border-rose-500"
+                        : condStatus === "restricted"
+                        ? "border-amber-500"
+                        : "border-primary"
+                    )}
+                  >
+                    {details.actionImageUrl ? (
+                      <>
+                        <img
+                          src={details.actionImageUrl}
+                          alt=""
+                          decoding="async"
+                          className={cn(
+                            "pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center",
+                            isOnLeave && "grayscale-[45%] opacity-75"
                           )}
-                          <AvatarFallback className="bg-primary text-primary-foreground font-black text-xl">
-                            {initial}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span
+                        />
+                        <div
                           aria-hidden="true"
-                          className="absolute -bottom-0.5 -right-0.5 h-6 w-6 rounded-full bg-primary text-primary-foreground border-2 border-[#0f172a] flex items-center justify-center shadow-xs"
-                        >
-                          <Camera className="w-3 h-3" />
-                        </span>
-                      </button>
+                          className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                        />
+                      </>
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
+                      >
+                        {numStr}
+                      </span>
+                    )}
 
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums">
-                            #{numStr}
+                    {/* 最上段のみ：左に前後切替ピル、右に選手検索セレクターピル */}
+                    {roster.length > 1 && (
+                      <div className="relative z-10 flex items-center justify-between gap-2">
+                        <div className="inline-flex items-center rounded-full bg-[#0f172a] border border-slate-700 p-0.5 shadow-2xs">
+                          <button
+                            type="button"
+                            disabled={!prevRosterPlayer}
+                            onClick={() =>
+                              prevRosterPlayer &&
+                              handleSwitchPlayer(prevRosterPlayer.id)
+                            }
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                            aria-label="前の選手へ切替"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <span className="px-2 text-[11px] font-black tabular-nums text-white">
+                            {(currentRosterIdx >= 0 ? currentRosterIdx : 0) + 1}/
+                            {roster.length}
                           </span>
-                          <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-100 border border-slate-700 text-[11px] font-black">
-                            メイン: {mainMeta.shortLabel}
-                          </span>
-                          {player.isCaptain && (
-                            <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-0.5">
-                              <Crown className="w-3 h-3 fill-current" />
-                              <span>主将</span>
-                            </span>
-                          )}
-                          {(growthData.isDemo || providerDemo) && (
-                            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black">
-                              DEMO
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            disabled={!nextRosterPlayer}
+                            onClick={() =>
+                              nextRosterPlayer &&
+                              handleSwitchPlayer(nextRosterPlayer.id)
+                            }
+                            className="w-7 h-7 rounded-full flex items-center justify-center text-slate-100 disabled:opacity-30 hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                            aria-label="次の選手へ切替"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
                         </div>
 
-                        {player.nameKana && (
-                          <p className="text-[10px] font-bold text-slate-300 tracking-wider truncate">
-                            {player.nameKana}
-                          </p>
-                        )}
-                        <h2 className="text-lg sm:text-xl font-black tracking-tight text-white truncate">
-                          {player.name}
-                        </h2>
+                        <LiffSelect
+                          value={player.id}
+                          onChange={(val) => handleSwitchPlayer(val)}
+                          options={roster.map((rp) => {
+                            const pMeta = getPosMeta(rp.primaryPosition);
+                            const rCond = normalizePlayerConditionStatus(
+                              rp.conditionStatus
+                            );
+                            return {
+                              value: rp.id,
+                              label: `#${cleanUniform(rp.uniformNumber)} ${rp.name}`,
+                              sublabel:
+                                rCond !== "active"
+                                  ? PLAYER_CONDITION_META[rCond].compactBadgeText
+                                  : undefined,
+                              badge: pMeta.shortLabel,
+                              badgeTone: "primary" as const,
+                              keywords: `${rp.uniformNumber || ""} ${rp.name} ${
+                                rp.nameKana || ""
+                              } ${pMeta.shortLabel}`,
+                            };
+                          })}
+                          title="表示する選手を選択"
+                          ariaLabel="表示する選手を選択"
+                          variant="dark"
+                          size="xs"
+                          searchable={true}
+                          searchPlaceholder="選手名・背番号・守備位置で検索..."
+                          displayValueOverride="選手切替"
+                          triggerPrefix={
+                            <Users className="w-3.5 h-3.5 text-slate-300" />
+                          }
+                          className="rounded-full bg-[#0f172a] hover:bg-slate-800 border-slate-700 px-3 h-[34px] shadow-2xs shrink-0"
+                        />
                       </div>
-                    </div>
+                    )}
                   </div>
 
-                  <div className="px-4 py-2.5 bg-card space-y-2">
-                    <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span>{formatThrowsBats(player.throws, player.bats)}</span>
-                        {player.height && (
-                          <span className="tabular-nums">
-                            {player.height}cm
-                            {player.weight ? ` / ${player.weight}kg` : ""}
+                  {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ ＋ 操作ボタン ＋ 選手名・属性） */}
+                  <div className="px-4 pb-3.5 pt-1.5 bg-card space-y-2.5">
+                    <div className="relative z-20 flex items-end justify-between gap-2 -mt-10">
+                      {canEditThisPlayer ? (
+                        <button
+                          type="button"
+                          onClick={() => setPhotoModalKind("portrait")}
+                          className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
+                          title="正面写真を撮影・変更"
+                        >
+                          <Avatar
+                            className={cn(
+                              "h-20 w-20 border-4 border-card bg-card shadow-sm ring-2",
+                              isOnLeave
+                                ? "ring-slate-400/40 grayscale-[35%]"
+                                : mainMeta.ringClass
+                            )}
+                          >
+                            {player.profileImageUrl && (
+                              <AvatarImage
+                                src={player.profileImageUrl}
+                                alt={player.name}
+                                className="object-cover"
+                              />
+                            )}
+                            <AvatarFallback
+                              className={cn(
+                                "font-black text-2xl",
+                                isOnLeave
+                                  ? "bg-slate-500 text-white"
+                                  : "bg-primary text-primary-foreground"
+                              )}
+                            >
+                              {initial}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                            <Camera className="w-3.5 h-3.5" />
                           </span>
-                        )}
-                      </div>
-                      {player.positionSource === "match_data" && (
-                        <span className="text-[10px] font-bold text-primary tabular-nums">
-                          実戦 {player.totalPositionGames}試合集計
+                        </button>
+                      ) : (
+                        <div className="relative shrink-0">
+                          <Avatar
+                            className={cn(
+                              "h-20 w-20 border-4 border-card bg-card shadow-sm ring-2",
+                              isOnLeave
+                                ? "ring-slate-400/40 grayscale-[35%]"
+                                : mainMeta.ringClass
+                            )}
+                          >
+                            {player.profileImageUrl && (
+                              <AvatarImage
+                                src={player.profileImageUrl}
+                                alt={player.name}
+                                className="object-cover"
+                              />
+                            )}
+                            <AvatarFallback
+                              className={cn(
+                                "font-black text-2xl",
+                                isOnLeave
+                                  ? "bg-slate-500 text-white"
+                                  : "bg-primary text-primary-foreground"
+                              )}
+                            >
+                              {initial}
+                            </AvatarFallback>
+                          </Avatar>
+                        </div>
+                      )}
+
+                      {canEditThisPlayer ? (
+                        <div className="flex items-center gap-1 flex-wrap justify-end pb-0.5">
+                          <button
+                            type="button"
+                            onClick={() => setPhotoModalKind("portrait")}
+                            className="px-2 py-1 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10.5px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Camera className="w-3 h-3 text-teal-600 dark:text-teal-400" />
+                            <span>正面</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPhotoModalKind("action")}
+                            className="px-2 py-1 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10.5px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3 text-amber-500" />
+                            <span>
+                              {details.actionImageUrl ? "背景変更" : "背景写真"}
+                            </span>
+                          </button>
+                          <Link
+                            href={`/liff/players?playerId=${encodeURIComponent(
+                              player.id
+                            )}&edit=1`}
+                            className="px-2.5 py-1 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[10.5px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-2xs"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                            <span>名鑑編集</span>
+                          </Link>
+                        </div>
+                      ) : (
+                        <span
+                          className={cn(
+                            "text-[10.5px] font-black tracking-wider uppercase pb-1",
+                            mainMeta.codeTextClass
+                          )}
+                        >
+                          {mainMeta.fullLabel}
                         </span>
                       )}
                     </div>
 
-                    {/* サブ守備位置行 */}
-                    {subLabels.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-border text-[11px]">
-                        <span className="font-bold text-muted-foreground shrink-0">
-                          サブ守備位置:
+                    {/* 純白カード上の整理された属性バッジ＆氏名（選手詳細モーダルと完全共通） */}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums shadow-2xs">
+                          #{numStr}
                         </span>
-                        {subLabels.map((lbl, idx) => (
-                          <span
-                            key={`${lbl}-${idx}`}
-                            className="px-2 py-0.5 rounded-md bg-muted/50 border border-border text-foreground font-black text-[10.5px]"
-                          >
-                            {lbl}
+                        <span
+                          className={cn(
+                            "px-2 py-0.5 rounded-md text-[11px] font-black",
+                            mainMeta.pillClass
+                          )}
+                        >
+                          {mainMeta.shortLabel}
+                        </span>
+                        {details.gradeOrAge && (
+                          <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-foreground text-[10.5px] font-black">
+                            {details.gradeOrAge}
                           </span>
-                        ))}
+                        )}
+                        {player.isCaptain && (
+                          <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black flex items-center gap-1 shadow-2xs">
+                            <Crown className="w-3 h-3 fill-current" />
+                            <span>CAPTAIN</span>
+                          </span>
+                        )}
+                        {condStatus !== "active" && (
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10.5px] font-black shadow-2xs",
+                              condMeta.solidBadgeClass
+                            )}
+                          >
+                            {condMeta.badgeText}
+                          </span>
+                        )}
+                        {isDemoFlag && (
+                          <span className="px-2 py-0.5 rounded bg-muted border border-border text-muted-foreground text-[10px] font-black">
+                            DEMO
+                          </span>
+                        )}
                       </div>
-                    )}
+
+                      <div className="min-w-0">
+                        <h2 className="text-xl font-black tracking-tight text-foreground leading-snug truncate">
+                          {player.name}
+                        </h2>
+                        {(player.nameKana || player.nickname) && (
+                          <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                            {player.nameKana && (
+                              <p className="text-[10.5px] font-bold text-muted-foreground tracking-wider">
+                                {player.nameKana}
+                              </p>
+                            )}
+                            {player.nickname && (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/12 border border-amber-500/30 text-[10.5px] font-black text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                                <Volume2 className="w-3 h-3" />
+                                <span>コール: {player.nickname}</span>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 投打・体格・実戦守備集計・サブ守備位置フッター */}
+                    <div className="pt-2 border-t border-border space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-muted-foreground flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span>
+                            {formatThrowsBats(player.throws, player.bats)}
+                          </span>
+                          {player.height && (
+                            <span className="tabular-nums">
+                              {player.height}cm
+                              {player.weight ? ` / ${player.weight}kg` : ""}
+                            </span>
+                          )}
+                        </div>
+                        {player.positionSource === "match_data" && (
+                          <span className="text-[10px] font-bold text-primary tabular-nums">
+                            実戦 {player.totalPositionGames}試合集計
+                          </span>
+                        )}
+                      </div>
+
+                      {subLabels.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                          <span className="font-bold text-muted-foreground shrink-0">
+                            サブ守備位置:
+                          </span>
+                          {subLabels.map((lbl, idx) => (
+                            <span
+                              key={`${lbl}-${idx}`}
+                              className="px-2 py-0.5 rounded-md bg-muted/50 border border-border text-foreground font-black text-[10.5px]"
+                            >
+                              {lbl}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </section>
               );
@@ -1964,20 +2352,38 @@ function PlayerGrowthContent() {
               </>
             )}
 
-            <div className="h-8 w-full shrink-0" aria-hidden="true" />
+            <div
+              className="h-8 w-full shrink-0 pointer-events-none select-none"
+              aria-hidden="true"
+            />
           </>
         )}
       </div>
 
-      {player && isPhotoModalOpen && (
+      {player && photoModalKind && (
         <PlayerPhotoCaptureModal
-          isOpen={isPhotoModalOpen}
+          isOpen={Boolean(photoModalKind)}
           teamId={activeTeamId}
           initialPlayerId={player.id}
-          enableActionPhoto={false}
+          initialPhotoKind={photoModalKind}
+          enableActionPhoto={true}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
           rosterPlayers={
             roster.length > 0
-              ? roster
+              ? roster.map((rp) => ({
+                  id: rp.id,
+                  name: rp.name,
+                  uniformNumber: rp.uniformNumber,
+                  primaryPosition: rp.primaryPosition,
+                  profileImageUrl: rp.profileImageUrl,
+                  actionImageUrl:
+                    rp.id === player.id
+                      ? player.profileDetails?.actionImageUrl ??
+                        rp.actionImageUrl ??
+                        null
+                      : rp.actionImageUrl ?? null,
+                }))
               : [
                   {
                     id: player.id,
@@ -1985,10 +2391,12 @@ function PlayerGrowthContent() {
                     uniformNumber: player.uniformNumber,
                     primaryPosition: player.primaryPosition,
                     profileImageUrl: player.profileImageUrl,
+                    actionImageUrl:
+                      player.profileDetails?.actionImageUrl ?? null,
                   },
                 ]
           }
-          onClose={() => setIsPhotoModalOpen(false)}
+          onClose={() => setPhotoModalKind(null)}
           onPhotoUpdated={handlePhotoUpdated}
         />
       )}
