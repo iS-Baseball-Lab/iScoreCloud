@@ -76,12 +76,15 @@ import {
   isDemoMatchId,
   isDemoTeamId,
   loadDemoMatchLineups,
+  resolvePlayerMatchAttendanceStatus,
   saveCustomDemoMatch,
   formatLineupShareText,
   parseSafeMatchDate,
   type AdjacentMatchSummary,
   type LineupPlayer,
+  type MatchRosterFilterContext,
   type MyLineupSlot,
+  type OpponentBenchPlayer,
   type OpponentLineupSlot,
   type PlayerMatchAttendanceMap,
 } from "@/lib/liff/demo-lineup";
@@ -187,8 +190,10 @@ interface MatchLineupsApiResponse {
   lineups?: {
     myLineup?: MyLineupSlot[];
     opponentLineup?: OpponentLineupSlot[];
+    opponentBench?: OpponentBenchPlayer[];
     myAttendance?: PlayerMatchAttendanceMap;
     mySubstitutions?: MatchSubstitutionRow[];
+    matchCreatedAt?: number | null;
   };
   error?: string;
 }
@@ -346,6 +351,8 @@ function MatchesContent() {
   } | null>(null);
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>([]);
   const [opponentLineup, setOpponentLineup] = useState<OpponentLineupSlot[]>([]);
+  const [opponentBench, setOpponentBench] = useState<OpponentBenchPlayer[]>([]);
+  const [lineupsMatchCreatedAt, setLineupsMatchCreatedAt] = useState<number | null>(null);
   const [lineupTeamTab, setLineupTeamTab] = useState<"my" | "opponent">("my");
   const [mySubstitutions, setMySubstitutions] = useState<MatchSubstitutionRow[]>([]);
   const [myAttendance, setMyAttendance] = useState<PlayerMatchAttendanceMap>({});
@@ -584,6 +591,8 @@ function MatchesContent() {
       setPlayLogs([]);
       setBoxscoreAtBats([]);
       setOpponentLineup([]);
+      setOpponentBench([]);
+      setLineupsMatchCreatedAt(null);
       setIsStatsLoading(false);
       return;
     }
@@ -667,6 +676,8 @@ function MatchesContent() {
           const demoLineups = loadDemoMatchLineups(targetMatchId);
           setMyLineup(demoLineups.myLineup || []);
           setOpponentLineup(demoLineups.opponentLineup || []);
+          setOpponentBench(demoLineups.opponentBench || []);
+          setLineupsMatchCreatedAt(null);
           setMySubstitutions([]);
           setMyAttendance(demoLineups.myAttendance || {});
           const demoBundle = getDemoMatchStatsBundle(targetMatchId, demoMatch.status);
@@ -685,6 +696,8 @@ function MatchesContent() {
         setPlayLogs([]);
         setBoxscoreAtBats([]);
         setOpponentLineup([]);
+        setOpponentBench([]);
+        setLineupsMatchCreatedAt(null);
 
         // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠 + 個人成績・打席経過 + 既知チーム選手名簿を並列取得）
         const rawKnownTeamId =
@@ -749,11 +762,23 @@ function MatchesContent() {
             if (lineupsJson.success && lineupsJson.lineups) {
               setMyLineup(lineupsJson.lineups.myLineup || []);
               setOpponentLineup(lineupsJson.lineups.opponentLineup || []);
+              setOpponentBench(
+                Array.isArray(lineupsJson.lineups.opponentBench)
+                  ? lineupsJson.lineups.opponentBench
+                  : []
+              );
+              setLineupsMatchCreatedAt(
+                typeof lineupsJson.lineups.matchCreatedAt === "number"
+                  ? lineupsJson.lineups.matchCreatedAt
+                  : null
+              );
               setMySubstitutions(lineupsJson.lineups.mySubstitutions || []);
               setMyAttendance(lineupsJson.lineups.myAttendance || {});
             } else {
               setMyLineup([]);
               setOpponentLineup([]);
+              setOpponentBench([]);
+              setLineupsMatchCreatedAt(null);
               setMySubstitutions([]);
               setMyAttendance({});
             }
@@ -965,6 +990,17 @@ function MatchesContent() {
     [opponentLineup]
   );
 
+  const filledOpponentBench = useMemo(
+    () =>
+      opponentBench.filter((slot) =>
+        Boolean(
+          (slot.name && slot.name.trim() !== "") ||
+            (slot.uniformNumber && slot.uniformNumber.trim() !== "")
+        )
+      ),
+    [opponentBench]
+  );
+
   const starterPlayerIds = useMemo(
     () => filledStarters.map((slot) => slot.playerId).filter(Boolean),
     [filledStarters]
@@ -985,14 +1021,35 @@ function MatchesContent() {
     [teamPlayers, starterPlayerIds, substitutedPlayerIds]
   );
 
+  const rosterFilterContext = useMemo<MatchRosterFilterContext>(
+    () => ({
+      matchDate: match?.date ?? null,
+      matchStatus: match?.status ?? null,
+      matchCreatedAt: match?.createdAt ?? lineupsMatchCreatedAt ?? null,
+    }),
+    [match?.date, match?.status, match?.createdAt, lineupsMatchCreatedAt]
+  );
+
+  const resolvedMyAttendance = useMemo<PlayerMatchAttendanceMap>(() => {
+    const next: PlayerMatchAttendanceMap = {};
+    remainingPlayers.forEach((p) => {
+      next[p.id] = resolvePlayerMatchAttendanceStatus(
+        p,
+        myAttendance,
+        rosterFilterContext
+      );
+    });
+    return next;
+  }, [remainingPlayers, myAttendance, rosterFilterContext]);
+
   const benchPlayers = useMemo(
-    () => remainingPlayers.filter((p) => myAttendance[p.id] !== "absent"),
-    [remainingPlayers, myAttendance]
+    () => remainingPlayers.filter((p) => resolvedMyAttendance[p.id] === "bench"),
+    [remainingPlayers, resolvedMyAttendance]
   );
 
   const absentPlayers = useMemo(
-    () => remainingPlayers.filter((p) => myAttendance[p.id] === "absent"),
-    [remainingPlayers, myAttendance]
+    () => remainingPlayers.filter((p) => resolvedMyAttendance[p.id] === "absent"),
+    [remainingPlayers, resolvedMyAttendance]
   );
 
   // 試合詳細ページ用の共有スコアブックバンドル（タイムライン1マス表示・清書シート・記号解説モーダルで共有）
@@ -1422,7 +1479,7 @@ function MatchesContent() {
             match.date,
             myLineup,
             remainingPlayers,
-            myAttendance
+            resolvedMyAttendance
           )
         : "";
 
@@ -1690,8 +1747,8 @@ function MatchesContent() {
               </div>
 
               <div className="p-3.5 space-y-3.5">
-              {/* 自チーム / 相手チーム 切り替え（相手スタメンが存在する場合のみ表示） */}
-              {filledOpponentStarters.length > 0 && (
+              {/* 自チーム / 相手チーム 切り替え（相手スタメンまたは相手控えが存在する場合のみ表示） */}
+              {(filledOpponentStarters.length > 0 || filledOpponentBench.length > 0) && (
                 <div className="grid grid-cols-2 gap-1 bg-muted p-1 rounded-2xl border border-border">
                   <button
                     type="button"
@@ -1732,78 +1789,138 @@ function MatchesContent() {
                 </div>
               )}
 
-              {lineupTeamTab === "opponent" && filledOpponentStarters.length > 0 ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-0.5">
-                    <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
-                      <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <span className="truncate">{match.opponent} スタメン</span>
-                    </span>
-                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
-                      {filledOpponentStarters.length}名
-                    </span>
-                  </div>
-
-                  <div className="rounded-xl border border-border overflow-hidden bg-card">
-                    <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
-                      <span className="text-center">ORD</span>
-                      <span className="text-center">POS</span>
-                      <span className="pl-2">PLAYER</span>
-                      <span className="pr-1 text-right">NO.</span>
+              {lineupTeamTab === "opponent" &&
+              (filledOpponentStarters.length > 0 || filledOpponentBench.length > 0) ? (
+                <div className="space-y-3.5">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                        <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+                        <span className="truncate">{match.opponent} スタメン</span>
+                      </span>
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
+                        {filledOpponentStarters.length}名
+                      </span>
                     </div>
 
-                    <div className="divide-y divide-border">
-                      {filledOpponentStarters.map((slot) => {
-                        const posInfo = getPositionBadgeInfo(slot.position);
-                        return (
-                          <div
-                            key={`opp-${slot.order}-${slot.name}-${slot.uniformNumber}`}
-                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
-                          >
-                            <div className="flex items-center justify-center">
-                              <span className="w-6 h-6 rounded-md bg-muted text-foreground font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
-                                {slot.order}
-                              </span>
-                            </div>
+                    {filledOpponentStarters.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border bg-muted/35 p-3 text-center">
+                        <p className="text-[11px] font-bold text-muted-foreground">
+                          相手スタメンは未登録です（控えメンバーのみ登録済み）
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-border overflow-hidden bg-card">
+                        <div className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center bg-muted/50 border-b border-border px-2 py-1 text-[9px] font-black text-muted-foreground font-mono tracking-wider">
+                          <span className="text-center">ORD</span>
+                          <span className="text-center">POS</span>
+                          <span className="pl-2">PLAYER</span>
+                          <span className="pr-1 text-right">NO.</span>
+                        </div>
 
-                            <div className="flex items-center justify-center">
-                              {posInfo ? (
-                                <span
-                                  className={cn(
-                                    "inline-flex items-center justify-center w-11 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
-                                    posInfo.color
-                                  )}
-                                >
-                                  {posInfo.label}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
-                                  {slot.position || "-"}
-                                </span>
-                              )}
-                            </div>
-
-                            <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
-                              {slot.name || `相手打者 ${slot.order}`}
-                            </span>
-
-                            <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
-                              {slot.uniformNumber ? (
-                                <>
-                                  <span className="text-[10px] text-muted-foreground/60 mr-0.5">
-                                    #
+                        <div className="divide-y divide-border">
+                          {filledOpponentStarters.map((slot) => {
+                            const posInfo = getPositionBadgeInfo(slot.position);
+                            return (
+                              <div
+                                key={`opp-${slot.order}-${slot.name}-${slot.uniformNumber}`}
+                                className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
+                              >
+                                <div className="flex items-center justify-center">
+                                  <span className="w-6 h-6 rounded-md bg-muted text-foreground font-mono tabular-nums text-[11px] font-black inline-flex items-center justify-center">
+                                    {slot.order}
                                   </span>
-                                  <span className="text-foreground/85">{slot.uniformNumber}</span>
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground/40">-</span>
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-center">
+                                  {posInfo ? (
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center justify-center w-11 py-0.5 rounded-md text-white font-black text-[10px] leading-tight shadow-2xs",
+                                        posInfo.color
+                                      )}
+                                    >
+                                      {posInfo.label}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center justify-center w-11 py-0.5 rounded-md bg-muted text-muted-foreground font-black text-[10px] leading-tight border border-border">
+                                      {slot.position || "-"}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                                  {slot.name || `相手打者 ${slot.order}`}
+                                </span>
+
+                                <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
+                                  {slot.uniformNumber ? (
+                                    <>
+                                      <span className="text-[10px] text-muted-foreground/60 mr-0.5">
+                                        #
+                                      </span>
+                                      <span className="text-foreground/85">{slot.uniformNumber}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground/40">-</span>
+                                  )}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* 相手チーム 控え（ベンチ入り） */}
+                  {filledOpponentBench.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between px-0.5">
+                        <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span className="truncate">{match.opponent} 控え（ベンチ入り）</span>
+                        </span>
+                        <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
+                          {filledOpponentBench.length}名
+                        </span>
+                      </div>
+
+                      <div className="rounded-xl border border-border bg-muted/35 p-2.5">
+                        <div className="flex flex-wrap gap-1.5">
+                          {filledOpponentBench.map((bp, idx) => {
+                            const posInfo = getPositionBadgeInfo(bp.position);
+                            return (
+                              <span
+                                key={bp.id || `opp-bench-${idx}-${bp.uniformNumber}-${bp.name}`}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border shadow-2xs text-[11px] font-black text-foreground",
+                                  bp.uniformNumber || posInfo ? "pl-1.5 pr-2.5" : "px-2.5"
+                                )}
+                              >
+                                {bp.uniformNumber && (
+                                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono tabular-nums text-[10px] font-black leading-none">
+                                    #{bp.uniformNumber}
+                                  </span>
+                                )}
+                                {posInfo && (
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded text-white font-black text-[9px] leading-none",
+                                      posInfo.color
+                                    )}
+                                  >
+                                    {posInfo.shortLabel}
+                                  </span>
+                                )}
+                                <span>{bp.name || "相手控え"}</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>

@@ -51,9 +51,11 @@ import {
 } from "@/lib/liff/player-condition";
 import {
   normalizeCanonicalPositionCode,
+  parseDateInputToUnixSeconds,
   parsePlayerProfileDetails,
   type PlayerProfileDetails,
 } from "@/lib/liff/player-profile-schema";
+import { cleanupPreJoinMatchAttendance } from "@/lib/player-roster-cleanup";
 import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
 import {
   classifyTeamAttendanceRosters,
@@ -10253,6 +10255,7 @@ app.post("/players/:playerId/profile", async (c) => {
       name?: string;
       uniformNumber?: string;
       isCaptain?: boolean;
+      joinedAt?: string | number | null;
       // 本人・保護者・指導者共通項目
       nameKana?: string | null;
       nickname?: string | null;
@@ -10328,6 +10331,10 @@ app.post("/players/:playerId/profile", async (c) => {
         typeof body.uniformNumber === "string" && body.uniformNumber.trim()
           ? body.uniformNumber.trim().replace(/^#/, "").slice(0, 6)
           : undefined;
+      const demoJoined =
+        body.joinedAt !== undefined
+          ? parseDateInputToUnixSeconds(body.joinedAt).unixSeconds
+          : undefined;
 
       return c.json({
         success: true,
@@ -10337,6 +10344,7 @@ app.post("/players/:playerId/profile", async (c) => {
           ...(demoName ? { name: demoName } : {}),
           ...(demoUniform ? { uniformNumber: demoUniform } : {}),
           ...(typeof body.isCaptain === "boolean" ? { isCaptain: body.isCaptain } : {}),
+          ...(demoJoined !== undefined ? { joinedAt: demoJoined } : {}),
           nameKana: cleanNameKana,
           nickname: cleanNickname,
           registeredPrimaryPosition: cleanPrimaryPos,
@@ -10370,6 +10378,7 @@ app.post("/players/:playerId/profile", async (c) => {
           name: players.name,
           uniformNumber: players.uniformNumber,
           userId: players.userId,
+          joinedAt: players.joinedAt,
         })
         .from(players)
         .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
@@ -10407,10 +10416,21 @@ app.post("/players/:playerId/profile", async (c) => {
       );
     }
 
+    const existingJoinedSeconds =
+      existingPlayer.joinedAt instanceof Date
+        ? Math.floor(existingPlayer.joinedAt.getTime() / 1000)
+        : typeof existingPlayer.joinedAt === "number"
+        ? existingPlayer.joinedAt
+        : null;
+
     let nextName = existingPlayer.name;
     let nextUniform = existingPlayer.uniformNumber;
     let nextCaptainId = teamRow.captainId || null;
     let shouldUpdateTeamCaptain = false;
+    let nextJoinedSeconds: number | null = existingJoinedSeconds;
+    let nextJoinedDate: Date | null =
+      existingJoinedSeconds !== null ? new Date(existingJoinedSeconds * 1000) : null;
+    let nextJoinedDateKey: string | null = null;
 
     if (perm.canManagePlayers) {
       if (typeof body.name === "string" && body.name.trim()) {
@@ -10429,6 +10449,13 @@ app.post("/players/:playerId/profile", async (c) => {
           shouldUpdateTeamCaptain = true;
         }
       }
+      if (body.joinedAt !== undefined) {
+        const parsedJoin = parseDateInputToUnixSeconds(body.joinedAt);
+        nextJoinedSeconds = parsedJoin.unixSeconds;
+        nextJoinedDateKey = parsedJoin.dateKey;
+        nextJoinedDate =
+          parsedJoin.unixSeconds !== null ? new Date(parsedJoin.unixSeconds * 1000) : null;
+      }
     }
 
     await db
@@ -10446,6 +10473,7 @@ app.post("/players/:playerId/profile", async (c) => {
         weight: cleanWeight,
         notes: cleanNotes,
         profileDetails: JSON.stringify(cleanDetails),
+        joinedAt: nextJoinedDate,
       })
       .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
 
@@ -10456,11 +10484,22 @@ app.post("/players/:playerId/profile", async (c) => {
         .where(eq(teams.id, teamId));
     }
 
+    let cleanedPastMatchesCount = 0;
+    if (nextJoinedDateKey) {
+      cleanedPastMatchesCount = await cleanupPreJoinMatchAttendance(
+        c.env.DB,
+        teamId,
+        playerId,
+        nextJoinedDateKey
+      );
+    }
+
     return c.json({
       success: true,
       isDemo: false,
       playerId,
       captainId: nextCaptainId,
+      cleanedPastMatchesCount,
       updated: {
         name: nextName,
         nameKana: cleanNameKana,
@@ -10476,6 +10515,7 @@ app.post("/players/:playerId/profile", async (c) => {
         notes: cleanNotes,
         profileDetails: cleanDetails,
         isCaptain: nextCaptainId === playerId,
+        joinedAt: nextJoinedSeconds,
       },
     });
   } catch (err: unknown) {

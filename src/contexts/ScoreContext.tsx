@@ -1636,7 +1636,6 @@ function getNormalizedAtBatResult(actionNote: string): string {
           body: JSON.stringify({
             myLineup: next.myLineup,
             opponentLineup: next.opponentLineup,
-            myAttendance: {}
           }),
         }).catch(err => console.error("Error syncing lineups:", err));
 

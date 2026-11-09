@@ -98,6 +98,7 @@ export const matches = sqliteTable("matches", {
   // JSON文字列でスタメンを保持（相手チームはダミーの可能性があるためJSONで完結させる）
   myLineup: text("my_lineup").default('[]'),
   opponentLineup: text("opponent_lineup").default('[]'),
+  opponentBench: text("opponent_bench").default('[]'),
   myAttendance: text("my_attendance").default('{}'),
 
   weather: text("weather"),

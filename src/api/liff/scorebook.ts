@@ -1142,6 +1142,7 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
         opponentInningScores: matches.opponentInningScores,
         myLineup: matches.myLineup,
         opponentLineup: matches.opponentLineup,
+        opponentBench: matches.opponentBench,
       })
       .from(matches)
       .where(eq(matches.id, body.matchId))
@@ -1281,11 +1282,22 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
     }
 
     const sideText = body.isTop ? "先攻（表の攻撃）" : "後攻（裏の攻撃）";
+    const parsedOpponentBench = safeParseLineupArray(match.opponentBench);
+    const opponentBenchHint =
+      parsedOpponentBench.length > 0
+        ? parsedOpponentBench
+            .filter((b) => Boolean(b.name || b.uniformNumber))
+            .map(
+              (b) =>
+                `#${b.uniformNumber || ""} ${b.name || ""}${b.position ? `(守備:${b.position})` : ""}`
+            )
+            .join(", ")
+        : "";
     const battingTeamContext = isMyTeamBatting
       ? `このシートの攻撃チームは【自チーム】です。拡大画像の手書き氏名と背番号を一字一句丁寧に読み取った上で、一致または類似する選手を以下の自チーム登録選手リストから名寄せしてください（登録リストに無い助っ人選手の場合は手書き文字をそのまま出力し、絶対に別人の名前を無理やり当てはめないでください）。\n自チーム登録選手リスト: [${rosterHint}]${myStarterHint ? `\n事前登録スタメン情報: [${myStarterHint}]` : ""
-      }\nまた、相手投手の欄（このシートの打者に対して投げた相手チームのピッチャー）は手書き文字・背番号をそのまま読み取ってください。`
+      }\nまた、相手投手の欄（このシートの打者に対して投げた相手チームのピッチャー）は手書き文字・背番号をそのまま読み取ってください。${opponentBenchHint ? `\n事前登録相手控えメンバー情報: [${opponentBenchHint}]` : ""}`
       : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は拡大画像の手書き文字・背番号を忠実に読み取ってください（絶対に自チーム登録選手の名前を打者欄に当てはめないでください！）。${myStarterHint ? `\n事前登録相手打順情報: [${myStarterHint}]` : ""
-      }\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
+      }${opponentBenchHint ? `\n事前登録相手控えメンバー情報（代打・代走・守備交代候補）: [${opponentBenchHint}]` : ""}\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
 
     const prompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・草野球/少年野球手書きスコア）の構造解析エキスパートです。
 添付された画像群（${sideText}シート）を隅々まで観察し、「シート全体の骨格情報（打順・途中交代・登板投手・イニングごとの列構造と得点）」を極めて高い精度で抽出してください。
@@ -5145,6 +5157,7 @@ liffScorebookRouter.delete("/saved", async (c) => {
     if (clearLineups) {
       matchUpdatePatch.myLineup = "[]";
       matchUpdatePatch.opponentLineup = "[]";
+      matchUpdatePatch.opponentBench = "[]";
     }
 
     if (resetMatchScore) {

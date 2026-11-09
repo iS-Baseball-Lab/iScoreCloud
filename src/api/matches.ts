@@ -277,6 +277,7 @@ app.delete("/:id/reset-logs", async (c) => {
     if (clearLineups) {
       patch.myLineup = "[]";
       patch.opponentLineup = "[]";
+      patch.opponentBench = "[]";
     }
     if (resetMatchScore) {
       patch.myScore = 0;
@@ -300,14 +301,22 @@ app.delete("/:id/reset-logs", async (c) => {
 
 app.put("/:id/lineups", async (c) => {
   try {
-    const body = await c.req.json();
+    const body = (await c.req.json()) as {
+      myLineup?: unknown[];
+      opponentLineup?: unknown[];
+      opponentBench?: unknown[];
+      myAttendance?: Record<string, unknown>;
+    };
     await ensureMatchLineupColumns(c.env.DB);
     await MatchService.saveMatchLineups(
       drizzle(c.env.DB),
       c.req.param("id"),
-      body.myLineup || [],
-      body.opponentLineup || [],
-      body.myAttendance || {}
+      Array.isArray(body.myLineup) ? body.myLineup : [],
+      Array.isArray(body.opponentLineup) ? body.opponentLineup : [],
+      body.myAttendance !== undefined && typeof body.myAttendance === "object" && body.myAttendance !== null
+        ? body.myAttendance
+        : undefined,
+      Array.isArray(body.opponentBench) ? body.opponentBench : undefined
     );
     return c.json({ success: true });
   } catch (error) {

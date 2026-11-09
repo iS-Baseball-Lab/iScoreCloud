@@ -13,7 +13,7 @@ import {
   useLiff,
   usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
-import { buildLiffHubUrl } from "@/lib/liff/api-cache";
+import { buildLiffHubUrl, invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,8 @@ import {
   UserStar,
   UserMinus,
   UserCheck,
+  Ban,
+  Trash2,
   CheckCircle2,
   FolderOpen,
   ChevronDown,
@@ -61,10 +63,15 @@ import {
   loadDemoMatchLineups,
   saveDemoMatchLineups,
   formatLineupShareText,
+  formatPlayerJoinedShortDate,
+  isPlayerJoinedAfterMatch,
+  resolvePlayerMatchAttendanceStatus,
   type LineupPlayer,
   type MyLineupSlot,
   type OpponentLineupSlot,
+  type OpponentBenchPlayer,
   type PlayerMatchAttendanceMap,
+  type MatchRosterFilterContext,
   type MatchLineupsPayload,
   type LineupTemplateItem,
 } from "@/lib/liff/demo-lineup";
@@ -87,7 +94,9 @@ interface MatchLineupsApiResponse {
   lineups?: {
     myLineup?: MyLineupSlot[];
     opponentLineup?: OpponentLineupSlot[];
+    opponentBench?: OpponentBenchPlayer[];
     myAttendance?: PlayerMatchAttendanceMap;
+    matchCreatedAt?: number | null;
   };
   error?: string;
 }
@@ -268,6 +277,7 @@ function LiffLineupContent() {
 
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>(() => createEmptyMyLineup(9));
   const [opponentLineup, setOpponentLineup] = useState<OpponentLineupSlot[]>(() => createEmptyOpponentLineup(9));
+  const [opponentBench, setOpponentBench] = useState<OpponentBenchPlayer[]>([]);
 
   // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から承認済みチームID（または demo-team）を解決
   useEffect(() => {
@@ -479,10 +489,22 @@ function LiffLineupContent() {
         setOpponentLineup(
           demoLineups.opponentLineup.length > 0 ? demoLineups.opponentLineup : createEmptyOpponentLineup(9)
         );
+        setOpponentBench(
+          Array.isArray(demoLineups.opponentBench) ? demoLineups.opponentBench : []
+        );
 
+        const demoFilterCtx: MatchRosterFilterContext = {
+          matchDate: demoMatch?.date ?? null,
+          matchStatus: demoMatch?.status ?? null,
+          matchCreatedAt: demoMatch?.createdAt ?? null,
+        };
         const initialAtt: PlayerMatchAttendanceMap = {};
         demoCandidates.forEach((p) => {
-          initialAtt[p.id] = demoLineups.myAttendance[p.id] === "absent" ? "absent" : "bench";
+          initialAtt[p.id] = resolvePlayerMatchAttendanceStatus(
+            p,
+            demoLineups.myAttendance,
+            demoFilterCtx
+          );
         });
         setAttendance(initialAtt);
         setOriginalAbsents([]);
@@ -505,6 +527,8 @@ function LiffLineupContent() {
       ]);
 
       let matchDate: string | null = null;
+      let matchStatus: string | null = null;
+      let matchCreatedAt: number | string | null = null;
       let matchTeamId = resolvedTeamId;
 
       if (matchDetailRes.ok) {
@@ -512,6 +536,8 @@ function LiffLineupContent() {
         if (matchDetailJson.success && matchDetailJson.match) {
           setCurrentMatch(matchDetailJson.match);
           matchDate = matchDetailJson.match.date;
+          matchStatus = matchDetailJson.match.status;
+          matchCreatedAt = matchDetailJson.match.createdAt ?? null;
           if (matchDetailJson.match.teamId) {
             matchTeamId = matchDetailJson.match.teamId;
             if (matchTeamId !== resolvedTeamId) {
@@ -547,11 +573,7 @@ function LiffLineupContent() {
         }
       }
 
-      const initialAttendance: PlayerMatchAttendanceMap = {};
-      activePlayers.forEach((p) => {
-        initialAttendance[p.id] = "bench";
-      });
-
+      const scheduleAbsents: string[] = [];
       if (matchDate && attendanceRes && attendanceRes.ok) {
         const attendanceJson = (await attendanceRes.json()) as TeamAttendanceApiResponse;
         if (attendanceJson.success && attendanceJson.data) {
@@ -561,23 +583,18 @@ function LiffLineupContent() {
           const matchedEvent = eventsList.find((e) => isSameCalendarDay(matchDate!, e.startAt));
           if (matchedEvent) {
             const eventAttendances = attendancesList.filter((a) => a.eventId === matchedEvent.id);
-            const absents: string[] = [];
             eventAttendances.forEach((att) => {
               if (att.playerId && att.status === "absent") {
-                initialAttendance[att.playerId] = "absent";
-                absents.push(att.playerId);
+                scheduleAbsents.push(att.playerId);
               }
             });
-            setOriginalAbsents(absents);
-          } else {
-            setOriginalAbsents([]);
           }
         }
-      } else {
-        setOriginalAbsents([]);
       }
+      setOriginalAbsents(scheduleAbsents);
 
-      // 既存スタメン・試合別出欠の復元
+      // 既存スタメン・相手控え・試合別出欠の復元
+      let savedAttendance: PlayerMatchAttendanceMap = {};
       if (lineupsRes.ok) {
         const lineupsData = (await lineupsRes.json()) as MatchLineupsApiResponse;
         if (lineupsData.success && lineupsData.lineups) {
@@ -593,19 +610,38 @@ function LiffLineupContent() {
             setOpponentLineup(createEmptyOpponentLineup(9));
           }
 
-          const savedAttendance = lineupsData.lineups.myAttendance || {};
-          Object.keys(savedAttendance).forEach((pid) => {
-            if (savedAttendance[pid] === "absent") {
-              initialAttendance[pid] = "absent";
-            } else if (savedAttendance[pid] === "bench" && !initialAttendance[pid]) {
-              initialAttendance[pid] = "bench";
-            }
-          });
+          setOpponentBench(
+            Array.isArray(lineupsData.lineups.opponentBench)
+              ? lineupsData.lineups.opponentBench
+              : []
+          );
+
+          if (matchCreatedAt === null && lineupsData.lineups.matchCreatedAt !== undefined) {
+            matchCreatedAt = lineupsData.lineups.matchCreatedAt;
+          }
+
+          savedAttendance = lineupsData.lineups.myAttendance || {};
         } else {
           setMyLineup(createEmptyMyLineup(9));
           setOpponentLineup(createEmptyOpponentLineup(9));
+          setOpponentBench([]);
         }
       }
+
+      const rosterFilterCtx: MatchRosterFilterContext = {
+        matchDate,
+        matchStatus,
+        matchCreatedAt,
+      };
+      const initialAttendance: PlayerMatchAttendanceMap = {};
+      activePlayers.forEach((p) => {
+        const resolved = resolvePlayerMatchAttendanceStatus(p, savedAttendance, rosterFilterCtx);
+        if (scheduleAbsents.includes(p.id) && resolved !== "excluded") {
+          initialAttendance[p.id] = "absent";
+        } else {
+          initialAttendance[p.id] = resolved;
+        }
+      });
 
       setAttendance(initialAttendance);
 
@@ -927,6 +963,22 @@ function LiffLineupContent() {
     }
   };
 
+  // 相手チームのベンチ（控え）追加・削除ハンドラー
+  const handleAddOpponentBench = (count = 1) => {
+    const baseTs = Date.now();
+    const added: OpponentBenchPlayer[] = Array.from({ length: count }, (_, idx) => ({
+      id: `opp-bench-${baseTs}-${idx}`,
+      uniformNumber: "",
+      name: "",
+      position: "",
+    }));
+    setOpponentBench((prev) => [...prev, ...added]);
+  };
+
+  const handleRemoveOpponentBench = (targetIndex: number) => {
+    setOpponentBench((prev) => prev.filter((_, idx) => idx !== targetIndex));
+  };
+
   // スタメン・控え・欠席の保存処理（Web版と完全互換のAPIに保存）
   const handleSaveLineups = async () => {
     if (!selectedMatchId) {
@@ -936,25 +988,60 @@ function LiffLineupContent() {
 
     setIsSaving(true);
     try {
+      const hasAnyOpponentStarterInput = opponentLineup.some(
+        (p) =>
+          Boolean(
+            (p.name && p.name.trim() !== "") ||
+              (p.position && p.position !== "") ||
+              (p.uniformNumber && p.uniformNumber.trim() !== "")
+          )
+      );
+
       const filledOpponentLineup: OpponentLineupSlot[] = opponentLineup.map((p) => {
-        const hasName = Boolean(p.name && p.name.trim() !== "");
+        const cleanName = (p.name || "").trim();
+        const cleanNum = (p.uniformNumber || "").trim().replace(/^#/, "");
+        const hasName = Boolean(cleanName);
         const hasPos = Boolean(p.position && p.position !== "");
+        if (!hasAnyOpponentStarterInput) {
+          return {
+            ...p,
+            name: "",
+            uniformNumber: "",
+            position: "",
+          };
+        }
         return {
           ...p,
-          name: hasName ? p.name : `相手打者 ${p.order}`,
+          uniformNumber: cleanNum,
+          name: hasName ? cleanName : cleanNum ? `相手選手 #${cleanNum}` : `相手打者 ${p.order}`,
           position: hasPos ? p.position : p.order <= 9 ? String(p.order) : "DH",
         };
       });
 
+      const cleanedOpponentBench: OpponentBenchPlayer[] = opponentBench
+        .map((b, idx) => ({
+          id: b.id || `opp-b-${idx + 1}`,
+          uniformNumber: (b.uniformNumber || "").trim().replace(/^#/, ""),
+          name: (b.name || "").trim(),
+          position: b.position || "",
+        }))
+        .filter((b) => Boolean(b.name || b.uniformNumber))
+        .map((b) => ({
+          ...b,
+          name: b.name || `相手控え #${b.uniformNumber}`,
+        }));
+
       const payload: MatchLineupsPayload = {
         myLineup,
         opponentLineup: filledOpponentLineup,
+        opponentBench: cleanedOpponentBench,
         myAttendance: attendance,
       };
 
       if (isDemoMatchId(selectedMatchId)) {
         saveDemoMatchLineups(selectedMatchId, payload);
         setOpponentLineup(filledOpponentLineup);
+        setOpponentBench(cleanedOpponentBench);
         toast.success("スタメン・控え・欠席を保存しました！（デモ）");
         router.push(`/liff/matches?id=${encodeURIComponent(selectedMatchId)}`);
         return;
@@ -968,7 +1055,11 @@ function LiffLineupContent() {
 
       if (!res.ok) throw new Error("Failed to save lineups");
 
+      invalidateLiffApiCache("/api/matches");
+      invalidateLiffApiCache("/api/liff/");
+
       setOpponentLineup(filledOpponentLineup);
+      setOpponentBench(cleanedOpponentBench);
       toast.success("スタメン・控え・欠席を保存しました！");
       router.push(`/liff/matches?id=${encodeURIComponent(selectedMatchId)}`);
     } catch (error) {
@@ -979,21 +1070,45 @@ function LiffLineupContent() {
     }
   };
 
+  const matchRosterCtx = useMemo<MatchRosterFilterContext>(
+    () => ({
+      matchDate: currentMatch?.date ?? null,
+      matchStatus: currentMatch?.status ?? null,
+      matchCreatedAt: currentMatch?.createdAt ?? null,
+    }),
+    [currentMatch?.date, currentMatch?.status, currentMatch?.createdAt]
+  );
+
   const startingPlayerIds = useMemo(
     () => myLineup.map((p) => p.playerId).filter(Boolean),
     [myLineup]
   );
-  const remainingPlayers = useMemo(
-    () => teamPlayers.filter((p) => !startingPlayerIds.includes(p.id)),
-    [teamPlayers, startingPlayerIds]
-  );
+  const remainingPlayers = useMemo(() => {
+    const filtered = teamPlayers.filter((p) => !startingPlayerIds.includes(p.id));
+    return [...filtered].sort((a, b) => {
+      const aPreJoined = isPlayerJoinedAfterMatch(a, matchRosterCtx) ? 1 : 0;
+      const bPreJoined = isPlayerJoinedAfterMatch(b, matchRosterCtx) ? 1 : 0;
+      return aPreJoined - bPreJoined;
+    });
+  }, [teamPlayers, startingPlayerIds, matchRosterCtx]);
   const benchCount = useMemo(
-    () => remainingPlayers.filter((p) => attendance[p.id] !== "absent").length,
+    () => remainingPlayers.filter((p) => (attendance[p.id] ?? "bench") === "bench").length,
     [remainingPlayers, attendance]
   );
   const absentCount = useMemo(
     () => remainingPlayers.filter((p) => attendance[p.id] === "absent").length,
     [remainingPlayers, attendance]
+  );
+  const excludedCount = useMemo(
+    () => remainingPlayers.filter((p) => attendance[p.id] === "excluded").length,
+    [remainingPlayers, attendance]
+  );
+  const filledOpponentBenchCount = useMemo(
+    () =>
+      opponentBench.filter((b) =>
+        Boolean((b.name && b.name.trim()) || (b.uniformNumber && b.uniformNumber.trim()))
+      ).length,
+    [opponentBench]
   );
 
   // LINE共有・コピー用テキスト生成
@@ -1497,9 +1612,24 @@ function LiffLineupContent() {
                           />
 
                           <Input
+                            placeholder="背番"
+                            maxLength={4}
+                            className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
+                            value={player.uniformNumber || ""}
+                            onChange={(e) => {
+                              const list = [...opponentLineup];
+                              list[index] = {
+                                ...list[index],
+                                uniformNumber: e.target.value.replace(/^#/, ""),
+                              };
+                              setOpponentLineup(list);
+                            }}
+                          />
+
+                          <Input
                             placeholder="相手選手名"
                             className={cn(
-                              "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0",
+                              "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
                               isCompleted ? "text-foreground" : "text-muted-foreground"
                             )}
                             value={player.name}
@@ -1547,26 +1677,37 @@ function LiffLineupContent() {
             </section>
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                👥 【セクション2】ベンチ（控え）・欠席メンバー
+                👥 【セクション2】ベンチ（控え）・欠席メンバー（自チーム / 相手チーム両対応）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            {activeTab === "myTeam" && (
+            {activeTab === "myTeam" ? (
               <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                 <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
                   <h3 className="text-xs font-black text-white flex items-center gap-1.5">
                     <Users className="w-4 h-4 text-sky-400" />
                     <span>ベンチ（控え）・欠席メンバー</span>
                   </h3>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap">
                     <span className="text-[10px] font-black bg-primary text-primary-foreground px-2 py-0.5 rounded-full tabular-nums">
                       控え: {benchCount}人
                     </span>
                     <span className="text-[10px] font-black bg-slate-800 text-slate-200 border border-slate-700 px-2 py-0.5 rounded-full tabular-nums">
                       欠席: {absentCount}人
                     </span>
+                    {excludedCount > 0 && (
+                      <span className="text-[10px] font-black bg-slate-900 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full tabular-nums">
+                        対象外: {excludedCount}人
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <div className="p-3 bg-card">
+                <div className="p-3 bg-card space-y-2">
+                {excludedCount > 0 && (
+                  <div className="px-3 py-2 rounded-xl bg-muted/50 border border-border text-[10.5px] font-bold text-muted-foreground leading-relaxed">
+                    試合日より後に入団・追加された選手は自動的に「対象外」となり、過去試合の控え・欠席一覧には表示されません（体験参加等で当日ベンチ入りしていた場合は「控え」へ切替可能です）。
+                  </div>
+                )}
+
                 {teamPlayers.length === 0 ? (
                   <EmptyState
                     icon={Users}
@@ -1584,6 +1725,9 @@ function LiffLineupContent() {
                     {remainingPlayers.map((player) => {
                       const status = attendance[player.id] || "bench";
                       const isAbsent = status === "absent";
+                      const isExcluded = status === "excluded";
+                      const isJoinedAfter = isPlayerJoinedAfterMatch(player, matchRosterCtx);
+                      const joinedShort = formatPlayerJoinedShortDate(player.joinedAt);
                       const isLockedBySchedule = originalAbsents.includes(player.id);
                       const condStatus = normalizePlayerConditionStatus(player.conditionStatus);
                       const condMeta = PLAYER_CONDITION_META[condStatus];
@@ -1592,15 +1736,19 @@ function LiffLineupContent() {
                         <div
                           key={player.id}
                           className={cn(
-                            "flex items-center justify-between p-2.5 pl-3.5 rounded-2xl border border-border shadow-xs transition-all",
-                            isAbsent ? "bg-muted/35" : "bg-card"
+                            "flex items-center justify-between p-2.5 pl-3 rounded-2xl border border-border shadow-xs transition-all gap-2",
+                            isExcluded
+                              ? "bg-muted/50 opacity-80"
+                              : isAbsent
+                              ? "bg-muted/35"
+                              : "bg-card"
                           )}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0 mr-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
                             <span
                               className={cn(
-                                "text-xs font-black min-w-[24px] text-center px-1 py-0.5 rounded-md shrink-0",
-                                isAbsent
+                                "text-xs font-black min-w-[24px] text-center px-1 py-0.5 rounded-md shrink-0 tabular-nums",
+                                isExcluded || isAbsent
                                   ? "bg-muted text-muted-foreground"
                                   : "bg-primary/10 text-primary"
                               )}
@@ -1611,14 +1759,21 @@ function LiffLineupContent() {
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
                                   className={cn(
-                                    "text-sm font-black block truncate",
+                                    "text-xs sm:text-sm font-black block truncate",
                                     isAbsent
                                       ? "text-muted-foreground line-through"
+                                      : isExcluded
+                                      ? "text-muted-foreground"
                                       : "text-foreground"
                                   )}
                                 >
                                   {player.name}
                                 </span>
+                                {isJoinedAfter && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0">
+                                    入団前{joinedShort ? ` (${joinedShort}〜)` : ""}
+                                  </span>
+                                )}
                                 {condStatus !== "active" && (
                                   <span
                                     className={cn(
@@ -1644,8 +1799,8 @@ function LiffLineupContent() {
                             </div>
                           </div>
 
-                          {/* 控え / 欠席 セグメントトグル */}
-                          <div className="flex gap-0.5 bg-muted p-1 rounded-2xl w-[142px] shrink-0 border border-border">
+                          {/* 控え / 欠席 / 対象外 3セグメントトグル */}
+                          <div className="flex gap-0.5 bg-muted p-1 rounded-2xl w-[178px] sm:w-[196px] shrink-0 border border-border">
                             <button
                               type="button"
                               onClick={() => {
@@ -1657,7 +1812,7 @@ function LiffLineupContent() {
                               }}
                               disabled={isLockedBySchedule}
                               className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
+                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
                                 status === "bench"
                                   ? "bg-card text-foreground shadow-sm border border-border font-black"
                                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
@@ -1666,7 +1821,7 @@ function LiffLineupContent() {
                             >
                               <UserCheck
                                 className={cn(
-                                  "w-3 h-3 mr-1",
+                                  "w-3 h-3 mr-0.5 shrink-0",
                                   status === "bench" ? "text-primary" : "text-muted-foreground"
                                 )}
                               />
@@ -1678,7 +1833,7 @@ function LiffLineupContent() {
                                 setAttendance((prev) => ({ ...prev, [player.id]: "absent" }))
                               }
                               className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 rounded-xl text-[11px] transition-all cursor-pointer",
+                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
                                 status === "absent"
                                   ? "bg-card text-foreground shadow-sm border border-border font-black"
                                   : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
@@ -1686,11 +1841,32 @@ function LiffLineupContent() {
                             >
                               <UserMinus
                                 className={cn(
-                                  "w-3 h-3 mr-1",
+                                  "w-3 h-3 mr-0.5 shrink-0",
                                   status === "absent" ? "text-primary" : "text-muted-foreground"
                                 )}
                               />
                               欠席
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAttendance((prev) => ({ ...prev, [player.id]: "excluded" }))
+                              }
+                              title="入団前・ベンチ外・未帯同としてこの試合から除外"
+                              className={cn(
+                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                status === "excluded"
+                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
+                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                              )}
+                            >
+                              <Ban
+                                className={cn(
+                                  "w-3 h-3 mr-0.5 shrink-0",
+                                  status === "excluded" ? "text-amber-600" : "text-muted-foreground"
+                                )}
+                              />
+                              対象外
                             </button>
                           </div>
                         </div>
@@ -1698,6 +1874,174 @@ function LiffLineupContent() {
                     })}
                   </div>
                 )}
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 flex-wrap">
+                  <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-sky-400" />
+                    <span>相手ベンチ（控え）メンバー</span>
+                  </h3>
+                  <span className="text-[10px] font-black bg-primary text-primary-foreground px-2.5 py-0.5 rounded-full tabular-nums">
+                    控え: {filledOpponentBenchCount}人
+                  </span>
+                </div>
+
+                <div className="p-3 space-y-2.5 bg-card">
+                  {opponentBench.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border bg-muted/35 p-4 text-center space-y-1.5">
+                      <p className="text-xs font-black text-foreground">
+                        相手チームの控えメンバーはまだ登録されていません
+                      </p>
+                      <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                        メンバー表交換で受け取った相手の控え選手（背番号・氏名・ポジション）を登録しておくと、試合詳細やスコア取込の交代入力でもそのまま活用できます
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {opponentBench.map((benchPlayer, bIdx) => {
+                        const posDef = LINEUP_POSITIONS.find(
+                          (p) => p.id === (benchPlayer.position || "")
+                        );
+                        const hasInput = Boolean(
+                          (benchPlayer.name && benchPlayer.name.trim()) ||
+                            (benchPlayer.uniformNumber && benchPlayer.uniformNumber.trim())
+                        );
+
+                        return (
+                          <div
+                            key={benchPlayer.id || `opp-bench-${bIdx}`}
+                            className={cn(
+                              "flex items-center gap-2 p-2 rounded-2xl bg-card shadow-xs transition-all",
+                              hasInput
+                                ? "border border-border"
+                                : "border border-dashed border-border"
+                            )}
+                          >
+                            <div className="w-7 text-center font-black text-[10px] text-muted-foreground shrink-0">
+                              控{bIdx + 1}
+                            </div>
+
+                            <LiffSelect
+                              value={benchPlayer.position || ""}
+                              onChange={(val) => {
+                                setOpponentBench((prev) => {
+                                  const next = [...prev];
+                                  next[bIdx] = { ...next[bIdx], position: val };
+                                  return next;
+                                });
+                              }}
+                              options={[
+                                {
+                                  value: "",
+                                  label: "控え（守備指定なし）",
+                                },
+                                ...LINEUP_POSITIONS.map((p) => ({
+                                  value: p.id,
+                                  label: p.label,
+                                })),
+                              ]}
+                              displayValueOverride={posDef ? posDef.label : "控え"}
+                              title={`相手控え ${bIdx + 1}人目のポジション（任意）`}
+                              searchable={false}
+                              className={cn(
+                                "w-20 h-11 rounded-xl px-2.5 shrink-0",
+                                posDef
+                                  ? posDef.id === "1"
+                                    ? "bg-red-500 hover:bg-red-600 border-red-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "2"
+                                    ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "3"
+                                    ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "4"
+                                    ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "5"
+                                    ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "6"
+                                    ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "7"
+                                    ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "8"
+                                    ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "9"
+                                    ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
+                                    : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
+                                  : "bg-muted hover:bg-muted/80 text-foreground border-border"
+                              )}
+                              triggerTextClassName={
+                                posDef
+                                  ? "text-white font-black text-center flex-1"
+                                  : "text-muted-foreground font-black text-center flex-1"
+                              }
+                            />
+
+                            <Input
+                              placeholder="背番"
+                              maxLength={4}
+                              className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
+                              value={benchPlayer.uniformNumber || ""}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/^#/, "");
+                                setOpponentBench((prev) => {
+                                  const next = [...prev];
+                                  next[bIdx] = { ...next[bIdx], uniformNumber: val };
+                                  return next;
+                                });
+                              }}
+                            />
+
+                            <Input
+                              placeholder="相手控え選手名"
+                              className={cn(
+                                "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
+                                hasInput ? "text-foreground" : "text-muted-foreground"
+                              )}
+                              value={benchPlayer.name}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setOpponentBench((prev) => {
+                                  const next = [...prev];
+                                  next[bIdx] = { ...next[bIdx], name: val };
+                                  return next;
+                                });
+                              }}
+                            />
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOpponentBench(bIdx)}
+                              className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all shrink-0 cursor-pointer"
+                              title="この控え枠を削除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleAddOpponentBench(1)}
+                      className="flex-1 h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>控え選手を追加</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => handleAddOpponentBench(5)}
+                      className="h-11 px-3.5 rounded-2xl border border-border bg-muted/50 hover:bg-muted text-foreground font-black text-xs flex items-center justify-center gap-1 active:scale-[0.98] transition-all cursor-pointer shadow-xs shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-primary" />
+                      <span>5枠追加</span>
+                    </Button>
+                  </div>
                 </div>
               </section>
             )}
@@ -1922,10 +2266,11 @@ function LiffLineupContent() {
                       return filtered.map((p) => {
                         const isAlreadySelected = disabledPlayers.includes(p.id);
                         const isAbsent = attendance[p.id] === "absent";
+                        const isExcluded = attendance[p.id] === "excluded";
                         const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
                         const condMeta = PLAYER_CONDITION_META[condStatus];
                         const isRehab = condStatus === "rehab";
-                        const isDisabled = isAlreadySelected || isAbsent || isRehab;
+                        const isDisabled = isAlreadySelected || isAbsent || isExcluded || isRehab;
                         const assignedOrder = myLineup.find(
                           (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
                         )?.order;
@@ -1975,7 +2320,12 @@ function LiffLineupContent() {
                                   欠席
                                 </span>
                               )}
-                              {!isAlreadySelected && !isAbsent && isRehab && (
+                              {!isAlreadySelected && !isAbsent && isExcluded && (
+                                <span className="text-[10px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-md">
+                                  対象外
+                                </span>
+                              )}
+                              {!isAlreadySelected && !isAbsent && !isExcluded && isRehab && (
                                 <span
                                   className={cn(
                                     "text-[10px] font-black px-2 py-0.5 rounded-md",

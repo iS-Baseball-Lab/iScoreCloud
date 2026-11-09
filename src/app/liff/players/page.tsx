@@ -544,6 +544,10 @@ function LiffPlayersDirectoryContent() {
             notes: payload.updated.notes,
             profileDetails: payload.updated.profileDetails,
             isCaptain: updatedIsCaptain,
+            joinedAt:
+              payload.updated.joinedAt !== undefined
+                ? payload.updated.joinedAt
+                : p.joinedAt,
           };
         });
         return nextList.sort(comparePlayersByConditionAndUniform);
@@ -640,6 +644,7 @@ function LiffPlayersDirectoryContent() {
                     : {}),
                   ...(pOv?.notes !== undefined ? { notes: pOv.notes } : {}),
                   ...(pOv?.isCaptain !== undefined ? { isCaptain: pOv.isCaptain } : {}),
+                  ...(pOv?.joinedAt !== undefined ? { joinedAt: pOv.joinedAt } : {}),
                   profileDetails: mergedDetails,
                   conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
                   conditionNote: cOv ? cOv.conditionNote : p.conditionNote,

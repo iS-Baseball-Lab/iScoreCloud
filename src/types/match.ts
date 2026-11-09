@@ -105,6 +105,7 @@ export interface Match {
   isWalkOff?: boolean; // 💡 サヨナラ勝ちの「x」表示用
   youtubeUrl?: string | null;
   hasScorebook?: boolean; // 💡 スコアブック（打席・個人成績データ）取込済み判定
+  createdAt?: number | string | null;
 }
 
 /** 💡 LINE Messaging API 用レスポンス型 */

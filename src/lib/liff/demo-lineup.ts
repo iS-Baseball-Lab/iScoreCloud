@@ -77,6 +77,8 @@ export interface LineupPlayer {
   isActive?: number | boolean;
   conditionStatus?: PlayerConditionStatus;
   conditionNote?: string | null;
+  joinedAt?: number | string | null;
+  createdAt?: number | string | null;
 }
 
 export interface MyLineupSlot {
@@ -94,12 +96,153 @@ export interface OpponentLineupSlot {
   uniformNumber: string;
 }
 
-export type PlayerMatchAttendanceMap = Record<string, "bench" | "absent">;
+export interface OpponentBenchPlayer {
+  id?: string;
+  name: string;
+  uniformNumber: string;
+  position?: string;
+}
+
+export type PlayerMatchAttendanceStatus = "bench" | "absent" | "excluded";
+export type PlayerMatchAttendanceMap = Record<string, PlayerMatchAttendanceStatus>;
 
 export interface MatchLineupsPayload {
   myLineup: MyLineupSlot[];
   opponentLineup: OpponentLineupSlot[];
+  opponentBench?: OpponentBenchPlayer[];
   myAttendance: PlayerMatchAttendanceMap;
+}
+
+export interface MatchRosterFilterContext {
+  matchDate?: string | null;
+  matchStatus?: string | null;
+  matchCreatedAt?: number | string | Date | null;
+}
+
+function formatDateToIsoKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function toMatchCalendarKey(dateStr: string | null | undefined): string | null {
+  const parsed = parseSafeMatchDate(dateStr);
+  return parsed ? formatDateToIsoKey(parsed) : null;
+}
+
+export function toTimestampCalendarKey(
+  val: number | string | Date | null | undefined
+): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? null : formatDateToIsoKey(val);
+  }
+  if (typeof val === "number") {
+    if (!Number.isFinite(val) || val <= 0) return null;
+    const ms = val < 10_000_000_000 ? val * 1000 : val;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : formatDateToIsoKey(d);
+  }
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const num = Number(trimmed);
+    if (!Number.isFinite(num) || num <= 0) return null;
+    const ms = num < 10_000_000_000 ? num * 1000 : num;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? null : formatDateToIsoKey(d);
+  }
+  const safeParsed = parseSafeMatchDate(trimmed);
+  if (safeParsed) return formatDateToIsoKey(safeParsed);
+  const d = new Date(trimmed);
+  return isNaN(d.getTime()) ? null : formatDateToIsoKey(d);
+}
+
+export function formatPlayerJoinedShortDate(
+  joinedAt: number | string | Date | null | undefined
+): string | null {
+  const key = toTimestampCalendarKey(joinedAt);
+  if (!key) return null;
+  const parts = key.split("-");
+  if (parts.length !== 3) return null;
+  return `${Number(parts[1])}/${Number(parts[2])}`;
+}
+
+export function isPlayerJoinedAfterMatch(
+  player: Pick<LineupPlayer, "joinedAt" | "createdAt">,
+  ctx: MatchRosterFilterContext
+): boolean {
+  const matchKey = toMatchCalendarKey(ctx.matchDate);
+  if (!matchKey) return false;
+
+  // 1. 入団日（joinedAt）が明示設定されている場合は試合日と直接比較
+  const joinedKey = toTimestampCalendarKey(player.joinedAt);
+  if (joinedKey) {
+    return joinedKey > matchKey;
+  }
+
+  // 2. 入団日未設定時：終了済み・過去日の試合に対してのみ、DB登録日（createdAt）から途中入団を自動判定
+  const todayKey = formatDateToIsoKey(new Date());
+  const isPastOrFinished =
+    ctx.matchStatus === "finished" ||
+    ctx.matchStatus === "rainout" ||
+    matchKey < todayKey;
+  if (!isPastOrFinished) return false;
+
+  const playerCreatedKey = toTimestampCalendarKey(player.createdAt);
+  if (!playerCreatedKey || playerCreatedKey <= matchKey) return false;
+
+  // 初期セットアップ後に過去試合を遡及インポートしたケース（選手登録日 <= 試合レコード作成日）は在籍中として保護し、
+  // 既に記録済みだった過去試合より後に追加登録された選手（選手登録日 > 試合日 かつ 選手登録日 > 試合レコード作成日）を入団前と判定
+  const matchCreatedKey = toTimestampCalendarKey(ctx.matchCreatedAt);
+  if (matchCreatedKey) {
+    return playerCreatedKey > matchCreatedKey;
+  }
+
+  return true;
+}
+
+export function resolvePlayerMatchAttendanceStatus(
+  player: LineupPlayer,
+  savedAttendance: Record<string, string | undefined> | null | undefined,
+  ctx: MatchRosterFilterContext
+): PlayerMatchAttendanceStatus {
+  const map = savedAttendance || {};
+  const explicit = map[player.id];
+
+  if (explicit === "excluded") return "excluded";
+  if (explicit === "absent") return "absent";
+  if (explicit === "bench") return "bench";
+
+  if (player.conditionStatus === "on_leave") {
+    return "excluded";
+  }
+
+  if (isPlayerJoinedAfterMatch(player, ctx)) {
+    return "excluded";
+  }
+
+  const matchKey = toMatchCalendarKey(ctx.matchDate);
+  const todayKey = formatDateToIsoKey(new Date());
+  const isPastOrFinished =
+    ctx.matchStatus === "finished" ||
+    (matchKey !== null && matchKey < todayKey);
+  const hasSavedSnapshot = Object.keys(map).length > 0;
+  const playerCreatedKey = toTimestampCalendarKey(player.createdAt);
+
+  if (
+    isPastOrFinished &&
+    hasSavedSnapshot &&
+    !(player.id in map) &&
+    matchKey !== null &&
+    playerCreatedKey !== null &&
+    playerCreatedKey > matchKey
+  ) {
+    return "excluded";
+  }
+
+  return "bench";
 }
 
 export interface LineupTemplateItem {
@@ -567,6 +710,7 @@ export function loadDemoMatchLineups(matchId: string): MatchLineupsPayload {
         name: "",
         uniformNumber: "",
       })),
+      opponentBench: [],
       myAttendance: {
         "demo-p-12": "absent",
       },
@@ -579,8 +723,12 @@ export function loadDemoMatchLineups(matchId: string): MatchLineupsPayload {
       order: i + 1,
       position: String(i + 1),
       name: `相手打者 ${i + 1}`,
-      uniformNumber: "",
+      uniformNumber: String(i + 1),
     })),
+    opponentBench: [
+      { id: "opp-b-1", uniformNumber: "10", name: "相手控え 1", position: "1" },
+      { id: "opp-b-2", uniformNumber: "12", name: "相手控え 2", position: "2" },
+    ],
     myAttendance: {
       "demo-p-2": "bench",
       "demo-p-11": "bench",
@@ -611,7 +759,9 @@ export function formatLineupShareText(
     return `${p.order}番 ${posText} ${numText}${p.name}`;
   });
 
-  const benchPlayers = remainingPlayers.filter((p) => attendance[p.id] !== "absent");
+  const benchPlayers = remainingPlayers.filter(
+    (p) => (attendance[p.id] ?? "bench") === "bench"
+  );
   const absentPlayers = remainingPlayers.filter((p) => attendance[p.id] === "absent");
 
   const lines: string[] = [

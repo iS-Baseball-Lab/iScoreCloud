@@ -19,6 +19,7 @@ import {
   Crown,
   Volume2,
   GraduationCap,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -32,6 +33,7 @@ import {
   GRADE_AGE_PRESETS_YOUTH,
   MAX_PLAY_STYLE_TAGS,
   PLAY_STYLE_TAGS,
+  formatUnixTimestampToDateInput,
   normalizeCanonicalPositionCode,
   parsePlayerProfileDetails,
   saveDemoPlayerProfileOverride,
@@ -58,6 +60,7 @@ export interface EditableDirectoryPlayer {
   notes: string | null;
   profileDetails?: PlayerProfileDetails;
   isCaptain: boolean;
+  joinedAt?: number | null;
   isSelf?: boolean;
   isLinkedChild?: boolean;
 }
@@ -80,6 +83,7 @@ export interface SavedPlayerProfilePayload {
     notes: string | null;
     profileDetails: PlayerProfileDetails;
     isCaptain?: boolean;
+    joinedAt?: number | null;
   };
 }
 
@@ -130,6 +134,7 @@ export function PlayerProfileEditModal({
   const [officialName, setOfficialName] = useState<string>("");
   const [uniformNumber, setUniformNumber] = useState<string>("");
   const [isCaptain, setIsCaptain] = useState<boolean>(false);
+  const [joinedDateStr, setJoinedDateStr] = useState<string>("");
 
   // 基本プロフィール
   const [nameKana, setNameKana] = useState<string>("");
@@ -175,6 +180,7 @@ export function PlayerProfileEditModal({
     setOfficialName(player.name || "");
     setUniformNumber(player.uniformNumber?.replace(/^#/, "") || "");
     setIsCaptain(Boolean(player.isCaptain));
+    setJoinedDateStr(formatUnixTimestampToDateInput(player.joinedAt));
 
     setNameKana(player.nameKana || "");
     setNickname(player.nickname || "");
@@ -359,6 +365,7 @@ export function PlayerProfileEditModal({
                   name: officialName.trim(),
                   uniformNumber: uniformNumber.trim().replace(/^#/, "") || player.uniformNumber,
                   isCaptain,
+                  joinedAt: joinedDateStr.trim() || null,
                 }
               : {}),
             nameKana: nameKana.trim() || null,
@@ -380,6 +387,7 @@ export function PlayerProfileEditModal({
         isDemo?: boolean;
         playerId?: string;
         captainId?: string | null;
+        cleanedPastMatchesCount?: number;
         updated?: SavedPlayerProfilePayload["updated"];
         error?: string;
       };
@@ -404,11 +412,12 @@ export function PlayerProfileEditModal({
           editableWeight: json.updated.editableWeight,
           notes: json.updated.notes,
           isCaptain: json.updated.isCaptain,
+          joinedAt: json.updated.joinedAt,
           profileDetails: json.updated.profileDetails,
         });
       }
 
-      invalidateLiffApiCache("/api/liff/");
+      invalidateLiffApiCache();
 
       onSaved({
         playerId: player.id,
@@ -416,7 +425,13 @@ export function PlayerProfileEditModal({
         updated: json.updated,
       });
 
-      toast.success(`${json.updated.name || player.name} 選手の名鑑プロフィールを保存しました！`);
+      if (json.cleanedPastMatchesCount && json.cleanedPastMatchesCount > 0) {
+        toast.success(
+          `${json.updated.name || player.name} 選手の名鑑を保存しました（入団前の過去試合 ${json.cleanedPastMatchesCount}件を控え対象外に更新）`
+        );
+      } else {
+        toast.success(`${json.updated.name || player.name} 選手の名鑑プロフィールを保存しました！`);
+      }
       onClose();
     } catch (err) {
       console.error("Failed to save player profile:", err);
@@ -551,6 +566,34 @@ export function PlayerProfileEditModal({
                       className="w-full px-3 py-2 rounded-xl bg-background border border-border text-xs font-black tabular-nums text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
+                </div>
+
+                {/* 入団日（途中入団選手の過去試合控え混入防止） */}
+                <div className="p-2.5 rounded-xl bg-muted/40 border border-border space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>入団日（過去試合の控え対象制御）</span>
+                    </label>
+                    {joinedDateStr && (
+                      <button
+                        type="button"
+                        onClick={() => setJoinedDateStr("")}
+                        className="px-2 py-0.5 rounded-md bg-card hover:bg-muted border border-border text-[10px] font-bold text-muted-foreground transition-colors cursor-pointer"
+                      >
+                        未設定に戻す
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    value={joinedDateStr}
+                    onChange={(e) => setJoinedDateStr(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-background border border-border text-xs font-black tabular-nums text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                  />
+                  <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                    入団日を設定すると、その日より前の過去試合では「控え（ベンチ入り）」から自動で除外されます（体験参加した試合のみ個別で「控え」に変更も可能です）。
+                  </p>
                 </div>
 
                 <button

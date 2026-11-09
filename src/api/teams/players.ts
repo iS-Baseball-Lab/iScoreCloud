@@ -6,6 +6,8 @@ import {
   normalizePlayerConditionStatus,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+import { parseDateInputToUnixSeconds } from "@/lib/liff/player-profile-schema";
+import { cleanupPreJoinMatchAttendance } from "@/lib/player-roster-cleanup";
 import { canManageTeam } from "@/lib/roles";
 import type { AuthUser, WorkerEnv } from "@/types/api";
 
@@ -242,9 +244,8 @@ app.post("/:teamId/players", async (c) => {
     conditionNote?: string | null;
   };
   const playerId = crypto.randomUUID();
-  const joinedAtSeconds = body.joinedAt
-    ? Math.floor(new Date(body.joinedAt).getTime() / 1000)
-    : null;
+  const { unixSeconds: joinedAtSeconds, dateKey: joinedDateKey } =
+    parseDateInputToUnixSeconds(body.joinedAt);
   const conditionStatus = normalizePlayerConditionStatus(body.conditionStatus);
   const conditionNote =
     typeof body.conditionNote === "string" && body.conditionNote.trim()
@@ -273,6 +274,9 @@ app.post("/:teamId/players", async (c) => {
         joinedAtSeconds
       )
       .run();
+    if (joinedDateKey) {
+      await cleanupPreJoinMatchAttendance(c.env.DB, teamId, playerId, joinedDateKey);
+    }
     return c.json({ success: true, id: playerId });
   } catch {
     return c.json({ error: "選手の登録に失敗しました" }, 500);
@@ -297,9 +301,8 @@ app.patch("/:teamId/players/:playerId", async (c) => {
     conditionStatus?: string;
     conditionNote?: string | null;
   };
-  const joinedAtSeconds = body.joinedAt
-    ? Math.floor(new Date(body.joinedAt).getTime() / 1000)
-    : null;
+  const { unixSeconds: joinedAtSeconds, dateKey: joinedDateKey } =
+    parseDateInputToUnixSeconds(body.joinedAt);
   try {
     await ensurePlayerProfileColumns(c.env.DB);
     if (body.conditionStatus !== undefined || body.conditionNote !== undefined) {
@@ -351,6 +354,9 @@ app.patch("/:teamId/players/:playerId", async (c) => {
           teamId
         )
         .run();
+    }
+    if (joinedDateKey) {
+      await cleanupPreJoinMatchAttendance(c.env.DB, teamId, playerId, joinedDateKey);
     }
     return c.json({ success: true });
   } catch {

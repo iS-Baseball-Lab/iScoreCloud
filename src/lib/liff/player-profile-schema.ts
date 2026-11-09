@@ -303,7 +303,97 @@ export interface DemoPlayerProfileOverride {
   editableWeight?: number | null;
   notes?: string | null;
   isCaptain?: boolean;
+  joinedAt?: number | null;
   profileDetails?: PlayerProfileDetails;
+}
+
+/**
+ * Unix秒 / ミリ秒 / Date / 日付文字列を日本時間(JST: UTC+9)基準の「YYYY-MM-DD」へ変換する
+ */
+export function formatUnixTimestampToDateInput(
+  val: number | string | Date | null | undefined
+): string {
+  if (val === null || val === undefined || val === "") return "";
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return "";
+    const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (ymdMatch && !trimmed.includes("T")) {
+      return `${ymdMatch[1]}-${ymdMatch[2].padStart(2, "0")}-${ymdMatch[3].padStart(2, "0")}`;
+    }
+    if (/^\d+$/.test(trimmed)) {
+      return formatUnixTimestampToDateInput(Number(trimmed));
+    }
+    const parsed = new Date(trimmed);
+    if (isNaN(parsed.getTime())) return "";
+    return formatMsToJstDateKey(parsed.getTime());
+  }
+  if (val instanceof Date) {
+    return isNaN(val.getTime()) ? "" : formatMsToJstDateKey(val.getTime());
+  }
+  if (typeof val === "number") {
+    if (!Number.isFinite(val) || val <= 0) return "";
+    const ms = val < 10_000_000_000 ? val * 1000 : val;
+    return formatMsToJstDateKey(ms);
+  }
+  return "";
+}
+
+function formatMsToJstDateKey(ms: number): string {
+  const jstDate = new Date(ms + 9 * 60 * 60 * 1000);
+  if (isNaN(jstDate.getTime())) return "";
+  const y = jstDate.getUTCFullYear();
+  const m = String(jstDate.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jstDate.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * <input type="date"> 等の入力値（YYYY-MM-DD / Unix秒）をタイムゾーンずれのない JST正午 Unix秒と YYYY-MM-DD キーへ変換する
+ */
+export function parseDateInputToUnixSeconds(raw: unknown): {
+  unixSeconds: number | null;
+  dateKey: string | null;
+} {
+  if (raw === null || raw === undefined || raw === "") {
+    return { unixSeconds: null, dateKey: null };
+  }
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw <= 0) {
+      return { unixSeconds: null, dateKey: null };
+    }
+    const unixSeconds =
+      raw < 10_000_000_000 ? Math.floor(raw) : Math.floor(raw / 1000);
+    const dateKey = formatMsToJstDateKey(unixSeconds * 1000) || null;
+    return { unixSeconds, dateKey };
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return { unixSeconds: null, dateKey: null };
+    const m = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) {
+      const year = Number(m[1]);
+      const month = Number(m[2]);
+      const day = Number(m[3]);
+      if (year >= 1990 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const dateKey = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const jstNoon = new Date(`${dateKey}T12:00:00+09:00`);
+        if (!isNaN(jstNoon.getTime())) {
+          return {
+            unixSeconds: Math.floor(jstNoon.getTime() / 1000),
+            dateKey,
+          };
+        }
+      }
+    }
+    const fallback = new Date(trimmed);
+    if (!isNaN(fallback.getTime())) {
+      const unixSeconds = Math.floor(fallback.getTime() / 1000);
+      const dateKey = formatMsToJstDateKey(fallback.getTime()) || null;
+      return { unixSeconds, dateKey };
+    }
+  }
+  return { unixSeconds: null, dateKey: null };
 }
 
 const DEMO_PROFILE_STORAGE_KEY = "iscore_demo_player_profiles_v1";

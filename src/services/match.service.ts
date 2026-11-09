@@ -153,6 +153,7 @@ export const MatchService = {
         lockedByUserName: matches.lockedByUserName,
         lockedByUserId: matches.lockedByUserId,
         matchDayOps: matches.matchDayOps,
+        createdAt: matches.createdAt,
         venueAddress: venues.address,
         venueMapUrl: venues.mapUrl,
         venueCategory: venues.category,
@@ -262,6 +263,12 @@ export const MatchService = {
 
     return {
       ...row,
+      createdAt:
+        row.createdAt instanceof Date
+          ? Math.floor(row.createdAt.getTime() / 1000)
+          : typeof row.createdAt === "number"
+          ? row.createdAt
+          : null,
       hasScorebook: Boolean(abCheck),
       matchDayOps: parseMatchDayOpsJson(row.matchDayOps),
       venueId: resolvedVenueId,
@@ -405,7 +412,9 @@ export const MatchService = {
     const match = await db.select({
       myLineup: matches.myLineup,
       opponentLineup: matches.opponentLineup,
-      myAttendance: matches.myAttendance
+      opponentBench: matches.opponentBench,
+      myAttendance: matches.myAttendance,
+      matchCreatedAt: matches.createdAt,
     }).from(matches).where(eq(matches.id, matchId)).get();
 
     const safeParse = (str: string | null | undefined, fallback: any) => {
@@ -467,17 +476,37 @@ export const MatchService = {
     return {
       myLineup: safeParse(match?.myLineup, []),
       opponentLineup: safeParse(match?.opponentLineup, []),
+      opponentBench: safeParse(match?.opponentBench, []),
       myAttendance: safeParse(match?.myAttendance, {}),
       mySubstitutions,
+      matchCreatedAt:
+        match?.matchCreatedAt instanceof Date
+          ? Math.floor(match.matchCreatedAt.getTime() / 1000)
+          : typeof match?.matchCreatedAt === "number"
+          ? match.matchCreatedAt
+          : null,
     };
   },
 
-  async saveMatchLineups(db: DrizzleDB, matchId: string, myLineup: any[], opponentLineup: any[], myAttendance: any = {}) {
-    await db.update(matches).set({
+  async saveMatchLineups(
+    db: DrizzleDB,
+    matchId: string,
+    myLineup: unknown[],
+    opponentLineup: unknown[],
+    myAttendance?: Record<string, unknown>,
+    opponentBench?: unknown[]
+  ) {
+    const updatePatch: Partial<typeof matches.$inferInsert> = {
       myLineup: JSON.stringify(myLineup),
       opponentLineup: JSON.stringify(opponentLineup),
-      myAttendance: JSON.stringify(myAttendance)
-    }).where(eq(matches.id, matchId));
+    };
+    if (myAttendance !== undefined) {
+      updatePatch.myAttendance = JSON.stringify(myAttendance);
+    }
+    if (opponentBench !== undefined) {
+      updatePatch.opponentBench = JSON.stringify(opponentBench);
+    }
+    await db.update(matches).set(updatePatch).where(eq(matches.id, matchId));
   },
 
   // 7. スコア結果の保存
