@@ -498,7 +498,7 @@ export function MatchScorebookSection({
               {activeModel && (
                 <div className="relative rounded-xl border border-border/60 bg-[#fffefb] overflow-hidden">
                   <div className="overflow-x-auto overscroll-x-contain">
-                    <div className="min-w-[940px] p-1">
+                    <div className="min-w-[1280px] p-1">
                       {activeSide === "top" && topModel ? (
                         <DigitalScorebookSheet
                           model={topModel}
@@ -738,7 +738,7 @@ export function MatchScorebookSection({
             <div className="flex-1 overflow-auto p-3 pb-[max(env(safe-area-inset-bottom),20px)]">
               <div
                 style={{
-                  width: `${Math.round(1120 * fullscreenZoom)}px`,
+                  width: `${Math.round(1480 * fullscreenZoom)}px`,
                 }}
                 className="mx-auto"
               >

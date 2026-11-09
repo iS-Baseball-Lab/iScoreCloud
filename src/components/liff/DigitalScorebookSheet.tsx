@@ -7,6 +7,7 @@ import {
   isPickoffPitch,
   type CanonicalPitchResult,
   type ScorebookBatterSlot,
+  type ScorebookSubstitution,
 } from "@/types/scorebook-v2";
 import {
   formatAdvanceMethodByRules,
@@ -19,6 +20,7 @@ import {
 import {
   formatSubstitutionRoleShort,
   type BaseSegmentIndex,
+  type CompiledBatterStatValues,
   type CompiledCellSubMark,
   type CompiledDiamondSegment,
   type CompiledDoublePlayLink,
@@ -3165,9 +3167,104 @@ export function renderBatterLineupRowSvg(params: {
   } = params;
 
   if (rules.lineupStyle === "compact_order_first") {
-    const subs = slot.substitutions.filter((s) => s.name.trim() !== "");
-    const hasSubs = subs.length > 0;
-    const starterPos = formatPositionByRules(slot.position, rules);
+    const starterPositions: string[] = [];
+    if (slot.position.trim()) {
+      starterPositions.push(formatPositionByRules(slot.position, rules));
+    }
+
+    interface CompactSubDisplayItem {
+      id: string;
+      name: string;
+      uniformNumber: string;
+      inningEntered: number;
+      roleShort: string;
+      positions: string[];
+    }
+
+    const distinctSubs: CompactSubDisplayItem[] = [];
+    let activeIdx: 0 | 1 | 2 = 0;
+    let activePlayerId = slot.playerId || null;
+    let activeCleanName = slot.name.replace(/\s+/g, "");
+
+    for (let i = 0; i < slot.substitutions.length; i++) {
+      const sub: ScorebookSubstitution = slot.substitutions[i]!;
+      const cleanSubName = sub.name.replace(/\s+/g, "");
+      const cleanSubPos = sub.position.trim();
+      const cleanSubNum = sub.uniformNumber.trim();
+      if (!cleanSubName && !cleanSubPos && !cleanSubNum) continue;
+
+      const formattedPos = cleanSubPos
+        ? formatPositionByRules(cleanSubPos, rules)
+        : "";
+      const isSamePlayer =
+        (Boolean(sub.playerId) &&
+          Boolean(activePlayerId) &&
+          sub.playerId === activePlayerId) ||
+        ((!sub.playerId || !activePlayerId) &&
+          cleanSubName !== "" &&
+          activeCleanName !== "" &&
+          cleanSubName === activeCleanName) ||
+        (cleanSubName === "" && sub.subType === "DEF");
+
+      if (isSamePlayer) {
+        if (activeIdx === 0) {
+          if (
+            formattedPos &&
+            starterPositions[starterPositions.length - 1] !== formattedPos
+          ) {
+            starterPositions.push(formattedPos);
+          }
+        } else {
+          const targetSub = distinctSubs[activeIdx - 1];
+          if (targetSub) {
+            if (
+              formattedPos &&
+              targetSub.positions[targetSub.positions.length - 1] !==
+                formattedPos
+            ) {
+              targetSub.positions.push(formattedPos);
+            }
+            if (cleanSubNum && !targetSub.uniformNumber) {
+              targetSub.uniformNumber = cleanSubNum;
+            }
+          }
+        }
+        continue;
+      }
+
+      const roleShort = formatSubstitutionRoleShort(sub);
+      if (activeIdx < 2) {
+        activeIdx = (activeIdx + 1) as 1 | 2;
+        distinctSubs.push({
+          id: sub.id || `sub-${i}`,
+          name: sub.name.trim(),
+          uniformNumber: cleanSubNum,
+          inningEntered: sub.inningEntered,
+          roleShort,
+          positions: formattedPos ? [formattedPos] : [],
+        });
+      } else {
+        const lastSub = distinctSubs[1];
+        if (lastSub) {
+          lastSub.name = lastSub.name
+            ? `${lastSub.name}/${sub.name.trim()}`
+            : sub.name.trim();
+          lastSub.uniformNumber = cleanSubNum || lastSub.uniformNumber;
+          if (formattedPos) {
+            lastSub.positions.push(formattedPos);
+          }
+        }
+      }
+
+      activePlayerId = sub.playerId || null;
+      activeCleanName = cleanSubName;
+    }
+
+    const hasSubs = distinctSubs.length > 0;
+    const starterPos =
+      starterPositions.length > 1
+        ? `${starterPositions[0]}→${starterPositions[starterPositions.length - 1]}`
+        : starterPositions[0] || "";
 
     return (
       <g>
@@ -3222,7 +3319,7 @@ export function renderBatterLineupRowSvg(params: {
             <text
               x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
               y={ry + CELL_H / 2 + 4}
-              fontSize={11}
+              fontSize={starterPos.length >= 3 ? 8.2 : 11}
               fontWeight={800}
               textAnchor="middle"
               fill={COLOR_INK}
@@ -3258,17 +3355,28 @@ export function renderBatterLineupRowSvg(params: {
           <>
             <line
               x1={lineupX + COMPACT_ORD_W}
-              y1={ry + 30}
+              y1={ry + (distinctSubs.length === 1 ? 34 : 26)}
               x2={lineupX + COMPACT_LINEUP_TOTAL_W}
-              y2={ry + 30}
+              y2={ry + (distinctSubs.length === 1 ? 34 : 26)}
               stroke={COLOR_GRID_LIGHT}
               strokeWidth={0.85}
               strokeDasharray="2,2"
             />
+            {distinctSubs.length >= 2 && (
+              <line
+                x1={lineupX + COMPACT_ORD_W}
+                y1={ry + 50}
+                x2={lineupX + COMPACT_LINEUP_TOTAL_W}
+                y2={ry + 50}
+                stroke={COLOR_GRID_LIGHT}
+                strokeWidth={0.85}
+                strokeDasharray="2,2"
+              />
+            )}
             <text
               x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
-              y={ry + 19}
-              fontSize={10}
+              y={ry + (distinctSubs.length === 1 ? 21 : 17.5)}
+              fontSize={starterPos.length >= 3 ? 7.8 : 9.8}
               fontWeight={800}
               textAnchor="middle"
               fill={COLOR_INK}
@@ -3277,8 +3385,8 @@ export function renderBatterLineupRowSvg(params: {
             </text>
             <text
               x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W / 2}
-              y={ry + 19}
-              fontSize={9.5}
+              y={ry + (distinctSubs.length === 1 ? 21 : 17.5)}
+              fontSize={9.4}
               fontWeight={800}
               textAnchor="middle"
               fill={COLOR_MUTED}
@@ -3288,8 +3396,8 @@ export function renderBatterLineupRowSvg(params: {
             </text>
             <text
               x={lineupX + COMPACT_ORD_W + COMPACT_POS_W + COMPACT_NUM_W + 7}
-              y={ry + 19.5}
-              fontSize={10.8}
+              y={ry + (distinctSubs.length === 1 ? 21.5 : 18)}
+              fontSize={distinctSubs.length === 1 ? 10.6 : 10}
               fontWeight={900}
               fill={COLOR_INK}
             >
@@ -3299,17 +3407,19 @@ export function renderBatterLineupRowSvg(params: {
               )}
             </text>
 
-            {subs.slice(0, 2).map((sub, sIdx) => {
-              const sy = subs.length === 1 ? ry + 54 : ry + 45 + sIdx * 18;
-              const subPosText = sub.position
-                ? formatPositionByRules(sub.position, rules)
-                : formatSubstitutionRoleShort(sub);
+            {distinctSubs.map((sub, sIdx) => {
+              const sy =
+                distinctSubs.length === 1 ? ry + 58 : ry + 41.5 + sIdx * 24;
+              const subPosText =
+                sub.positions.length > 1
+                  ? `${sub.positions[0]}→${sub.positions[sub.positions.length - 1]}`
+                  : sub.positions[0] || sub.roleShort;
               return (
-                <g key={sub.id || sIdx}>
+                <g key={sub.id}>
                   <text
                     x={lineupX + COMPACT_ORD_W + COMPACT_POS_W / 2}
                     y={sy}
-                    fontSize={8.8}
+                    fontSize={subPosText.length >= 3 ? 7.4 : 8.8}
                     fontWeight={800}
                     textAnchor="middle"
                     fill={COLOR_BLUE}
@@ -3345,9 +3455,7 @@ export function renderBatterLineupRowSvg(params: {
                     fontWeight={800}
                     fill={COLOR_BLUE}
                   >
-                    {`(${sub.inningEntered}${formatSubstitutionRoleShort(
-                      sub
-                    )}) ${sub.name.slice(0, 6)}`}
+                    {`(${sub.inningEntered}${sub.roleShort}) ${sub.name.slice(0, 6)}`}
                   </text>
                 </g>
               );
@@ -3677,18 +3785,153 @@ export function DigitalScorebookSheet({
   // 左側ラインナップ列幅（3段フル様式: 258px / シンプル式: 230px）
   const LINEUP_TOTAL_W = getLineupTotalWidth(rules);
 
-  // 右端集計欄（8列: 打席・打数・安打・打点・得点・四死・三振・盗塁）
-  const STAT_COLS = [
-    { key: "pa", label: "打席", w: 24 },
-    { key: "ab", label: "打数", w: 24 },
-    { key: "h", label: "安打", w: 24 },
-    { key: "rbi", label: "打点", w: 24 },
-    { key: "r", label: "得点", w: 24 },
-    { key: "bb", label: "四死", w: 24 },
-    { key: "so", label: "三振", w: 24 },
-    { key: "sb", label: "盗塁", w: 24 },
-  ] as const;
-  const STATS_TOTAL_W = STAT_COLS.reduce((s, c) => s + c.w, 0); // 192
+  // 右端集計欄（22列：「打撃・走塁・守備成績」フル項目と完全同一の並び・名称）
+  interface BatterStatColSpec {
+    key: string;
+    label: string;
+    w: number;
+    kind: "num" | "hit" | "hr" | "rbi" | "run" | "err" | "avg";
+    groupStart?: boolean;
+    getValue: (v: CompiledBatterStatValues) => number | string;
+  }
+  const RAW_STAT_COLS: BatterStatColSpec[] = [
+    {
+      key: "pa",
+      label: "打席",
+      w: 24,
+      kind: "num",
+      groupStart: true,
+      getValue: (v) => v.plateAppearances,
+    },
+    { key: "ab", label: "打数", w: 24, kind: "num", getValue: (v) => v.atBats },
+    { key: "h", label: "安打", w: 24, kind: "hit", getValue: (v) => v.hits },
+    {
+      key: "1b",
+      label: "単打",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.singles,
+    },
+    {
+      key: "2b",
+      label: "二塁打",
+      w: 28,
+      kind: "num",
+      getValue: (v) => v.doubles,
+    },
+    {
+      key: "3b",
+      label: "三塁打",
+      w: 28,
+      kind: "num",
+      getValue: (v) => v.triples,
+    },
+    {
+      key: "hr",
+      label: "本塁打",
+      w: 28,
+      kind: "hr",
+      getValue: (v) => v.homeRuns,
+    },
+    { key: "rbi", label: "打点", w: 24, kind: "rbi", getValue: (v) => v.rbi },
+    { key: "r", label: "得点", w: 24, kind: "run", getValue: (v) => v.runs },
+    { key: "bb", label: "四球", w: 24, kind: "num", getValue: (v) => v.walks },
+    {
+      key: "hbp",
+      label: "死球",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.hitByPitch,
+    },
+    {
+      key: "so",
+      label: "三振",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.strikeouts,
+    },
+    {
+      key: "sh",
+      label: "犠打",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.sacBunts,
+    },
+    {
+      key: "sf",
+      label: "犠飛",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.sacFlies,
+    },
+    {
+      key: "sb",
+      label: "盗塁",
+      w: 24,
+      kind: "num",
+      groupStart: true,
+      getValue: (v) => v.stolenBases,
+    },
+    {
+      key: "cs",
+      label: "盗塁刺",
+      w: 28,
+      kind: "num",
+      getValue: (v) => v.caughtStealing,
+    },
+    {
+      key: "lob",
+      label: "残塁",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.leftOnBase,
+    },
+    {
+      key: "dp",
+      label: "併殺",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.doublePlays,
+    },
+    {
+      key: "e",
+      label: "失策",
+      w: 24,
+      kind: "err",
+      groupStart: true,
+      getValue: (v) => v.errors,
+    },
+    {
+      key: "a",
+      label: "捕殺",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.assists,
+    },
+    {
+      key: "po",
+      label: "刺殺",
+      w: 24,
+      kind: "num",
+      getValue: (v) => v.putouts,
+    },
+    {
+      key: "avg",
+      label: "打率",
+      w: 38,
+      kind: "avg",
+      groupStart: true,
+      getValue: (v) => v.avg,
+    },
+  ];
+  let runningStatOffset = 0;
+  const STAT_COLS = RAW_STAT_COLS.map((col) => {
+    const item = { ...col, offsetX: runningStatOffset };
+    runningStatOffset += col.w;
+    return item;
+  });
+  const STATS_TOTAL_W = runningStatOffset; // 558
+  const isMonoSheet = rules.hitLine === "mono_bold";
 
   const gridColsCount = model.columns.length;
   const GRID_TOTAL_W = gridColsCount * CELL_W;
@@ -3700,8 +3943,10 @@ export function DigitalScorebookSheet({
   const PITCHER_GAP = 12;
   const PITCHER_HEAD_H = 22;
   const PITCHER_ROW_H = 22;
+  const PITCHER_TOTAL_ROW_H = 23;
   const pitcherRowsCount = Math.max(1, model.pitcherRows.length);
-  const PITCHER_TOTAL_H = PITCHER_HEAD_H + pitcherRowsCount * PITCHER_ROW_H;
+  const PITCHER_TOTAL_H =
+    PITCHER_HEAD_H + pitcherRowsCount * PITCHER_ROW_H + PITCHER_TOTAL_ROW_H;
 
   const FOOTER_H = 20;
 
@@ -4116,26 +4361,31 @@ export function DigitalScorebookSheet({
           );
         })}
 
-        {/* 右端個人成績列見出し */}
+        {/* 右端個人成績列見出し（22項目：打撃・走塁・守備成績と完全共通） */}
         {STAT_COLS.map((sc, idx) => {
-          const sx = statsStartX + idx * 24;
+          const sx = statsStartX + sc.offsetX;
+          const isThreeChars = sc.label.length >= 3;
           return (
             <g key={sc.key}>
               <line
                 x1={sx}
                 y1={tableTopY}
                 x2={sx}
-                y2={summaryTopY + SUMMARY_TOTAL_H}
-                stroke={idx === 0 ? COLOR_FRAME : COLOR_GRID}
-                strokeWidth={idx === 0 ? 1.5 : 0.85}
+                y2={summaryTopY}
+                stroke={
+                  idx === 0 || sc.groupStart ? COLOR_FRAME : COLOR_GRID
+                }
+                strokeWidth={idx === 0 ? 1.5 : sc.groupStart ? 1.05 : 0.8}
               />
               <text
                 x={sx + sc.w / 2}
-                y={tableTopY + 19}
-                fontSize={8.5}
+                y={tableTopY + (isThreeChars ? 18.6 : 19)}
+                fontSize={isThreeChars ? 7.5 : 8.4}
                 fontWeight={900}
                 textAnchor="middle"
-                fill={COLOR_INK}
+                fill={
+                  sc.kind === "avg" && !isMonoSheet ? COLOR_BLUE : COLOR_INK
+                }
               >
                 {sc.label}
               </text>
@@ -4144,7 +4394,7 @@ export function DigitalScorebookSheet({
         })}
       </g>
 
-      {/* ━━━ 3. 打順行（1番〜10番+）＆ 打席グリッド ＆ 右端個人集計 ━━━ */}
+      {/* ━━━ 3. 打順行（1番〜10番+）＆ 打席グリッド ＆ 右端個人集計（3段サブ行対応） ━━━ */}
       {model.batterRows.map((bRow, rowIdx) => {
         const ry = gridBodyTopY + rowIdx * CELL_H;
         const isUnusedBatterRow =
@@ -4152,7 +4402,11 @@ export function DigitalScorebookSheet({
           bRow.slot.substitutions.every((s) => !s.name.trim()) &&
           bRow.plateAppearances === 0 &&
           bRow.runs === 0 &&
-          bRow.stolenBases === 0;
+          bRow.stolenBases === 0 &&
+          bRow.caughtStealing === 0 &&
+          bRow.errors === 0 &&
+          bRow.assists === 0 &&
+          bRow.putouts === 0;
 
         return (
           <g key={`batter-row-${bRow.battingOrder}`}>
@@ -4215,62 +4469,285 @@ export function DigitalScorebookSheet({
               );
             })}
 
-            {/* 右端打順別成績セル */}
-            {(
-              [
-                bRow.plateAppearances,
-                bRow.atBats,
-                bRow.hits,
-                bRow.rbi,
-                bRow.runs,
-                bRow.walksHbp,
-                bRow.strikeouts,
-                bRow.stolenBases,
-              ] as const
-            ).map((val, sIdx) => {
-              const sx = statsStartX + sIdx * 24;
-              const isHighlight = sIdx === 2 || sIdx === 4; // 安打・得点
+            {/* 右端打順別・出場選手別成績セル（22列 × 先発/途中交代サブ行完全同期） */}
+            {(() => {
+              const isClassicRow = rules.lineupStyle === "classic_three_row";
+              const subH = CELL_H / 3;
+              const hasSub1 = bRow.subRows[1].hasPlayer;
+              const hasSub2 = bRow.subRows[2].hasPlayer;
+              const starterActive =
+                !isUnusedBatterRow &&
+                (bRow.subRows[0].hasPlayer ||
+                  bRow.plateAppearances > 0 ||
+                  bRow.runs > 0 ||
+                  bRow.stolenBases > 0 ||
+                  bRow.caughtStealing > 0 ||
+                  bRow.errors > 0 ||
+                  bRow.assists > 0 ||
+                  bRow.putouts > 0);
+
+              type SubBandSpec = {
+                bandIdx: 0 | 1 | 2;
+                topY: number;
+                bandH: number;
+                textY: number;
+                active: boolean;
+                stats: CompiledBatterStatValues;
+              };
+
+              let bands: SubBandSpec[];
+              if (isClassicRow) {
+                bands = ([0, 1, 2] as const).map((sIdx) => ({
+                  bandIdx: sIdx,
+                  topY: ry + sIdx * subH,
+                  bandH: subH,
+                  textY: ry + (sIdx + 0.5) * subH + 3.5,
+                  active:
+                    sIdx === 0
+                      ? starterActive
+                      : !isUnusedBatterRow && bRow.subRows[sIdx].hasPlayer,
+                  stats: bRow.subRows[sIdx],
+                }));
+              } else if (!hasSub1 && !hasSub2) {
+                bands = [
+                  {
+                    bandIdx: 0,
+                    topY: ry,
+                    bandH: CELL_H,
+                    textY: ry + CELL_H / 2 + 3.8,
+                    active: starterActive,
+                    stats: bRow,
+                  },
+                ];
+              } else if (hasSub1 && !hasSub2) {
+                bands = [
+                  {
+                    bandIdx: 0,
+                    topY: ry,
+                    bandH: 34,
+                    textY: ry + 21,
+                    active: starterActive,
+                    stats: bRow.subRows[0],
+                  },
+                  {
+                    bandIdx: 1,
+                    topY: ry + 34,
+                    bandH: 40,
+                    textY: ry + 58,
+                    active: !isUnusedBatterRow,
+                    stats: bRow.subRows[1],
+                  },
+                ];
+              } else {
+                bands = [
+                  {
+                    bandIdx: 0,
+                    topY: ry,
+                    bandH: 26,
+                    textY: ry + 17.5,
+                    active: starterActive,
+                    stats: bRow.subRows[0],
+                  },
+                  {
+                    bandIdx: 1,
+                    topY: ry + 26,
+                    bandH: 24,
+                    textY: ry + 41.5,
+                    active: !isUnusedBatterRow,
+                    stats: bRow.subRows[1],
+                  },
+                  {
+                    bandIdx: 2,
+                    topY: ry + 50,
+                    bandH: 24,
+                    textY: ry + 65.5,
+                    active: !isUnusedBatterRow,
+                    stats: bRow.subRows[2],
+                  },
+                ];
+              }
+
               return (
-                <g key={`st-${sIdx}`}>
+                <g>
                   <rect
-                    x={sx}
+                    x={statsStartX}
                     y={ry}
-                    width={24}
+                    width={STATS_TOTAL_W}
                     height={CELL_H}
-                    fill={isHighlight && val > 0 ? COLOR_RED_SOFT : COLOR_PAPER}
+                    fill={COLOR_PAPER}
                     stroke={COLOR_GRID}
                     strokeWidth={0.85}
                   />
-                  {!isUnusedBatterRow && (
-                    <text
-                      x={sx + 12}
-                      y={ry + CELL_H / 2 + 4}
-                      fontSize={11}
-                      fontWeight={val > 0 ? 900 : 600}
-                      textAnchor="middle"
-                      fill={
-                        isHighlight && val > 0
-                          ? COLOR_RED
-                          : val > 0
-                          ? COLOR_INK
-                          : "#94a3b8"
+
+                  {/* サブ行ごとの強調セル背景（安打・本塁打・打点・得点が1以上の段のみ淡赤ハイライト） */}
+                  {!isMonoSheet &&
+                    bands.map((band) => {
+                      if (!band.active) return null;
+                      return STAT_COLS.map((sc) => {
+                        const isRedKind =
+                          sc.kind === "hit" ||
+                          sc.kind === "hr" ||
+                          sc.kind === "rbi" ||
+                          sc.kind === "run";
+                        if (!isRedKind) return null;
+                        const numVal = Number(sc.getValue(band.stats)) || 0;
+                        if (numVal <= 0) return null;
+                        return (
+                          <rect
+                            key={`hl-${band.bandIdx}-${sc.key}`}
+                            x={statsStartX + sc.offsetX}
+                            y={band.topY}
+                            width={sc.w}
+                            height={band.bandH}
+                            fill={COLOR_RED_SOFT}
+                          />
+                        );
+                      });
+                    })}
+
+                  {/* サブ行の水平仕切り罫線（左ラインナップ欄の段割りと1px単位で水平一致） */}
+                  {isClassicRow ? (
+                    <>
+                      <line
+                        x1={statsStartX}
+                        y1={ry + subH}
+                        x2={statsStartX + STATS_TOTAL_W}
+                        y2={ry + subH}
+                        stroke={COLOR_GRID_LIGHT}
+                        strokeWidth={0.75}
+                      />
+                      <line
+                        x1={statsStartX}
+                        y1={ry + subH * 2}
+                        x2={statsStartX + STATS_TOTAL_W}
+                        y2={ry + subH * 2}
+                        stroke={COLOR_GRID_LIGHT}
+                        strokeWidth={0.75}
+                      />
+                    </>
+                  ) : bands.length === 2 ? (
+                    <line
+                      x1={statsStartX}
+                      y1={ry + 34}
+                      x2={statsStartX + STATS_TOTAL_W}
+                      y2={ry + 34}
+                      stroke={COLOR_GRID_LIGHT}
+                      strokeWidth={0.8}
+                      strokeDasharray="2,2"
+                    />
+                  ) : bands.length === 3 ? (
+                    <>
+                      <line
+                        x1={statsStartX}
+                        y1={ry + 26}
+                        x2={statsStartX + STATS_TOTAL_W}
+                        y2={ry + 26}
+                        stroke={COLOR_GRID_LIGHT}
+                        strokeWidth={0.8}
+                        strokeDasharray="2,2"
+                      />
+                      <line
+                        x1={statsStartX}
+                        y1={ry + 50}
+                        x2={statsStartX + STATS_TOTAL_W}
+                        y2={ry + 50}
+                        stroke={COLOR_GRID_LIGHT}
+                        strokeWidth={0.8}
+                        strokeDasharray="2,2"
+                      />
+                    </>
+                  ) : null}
+
+                  {/* 22列の縦仕切り線 */}
+                  {STAT_COLS.map((sc, sIdx) => {
+                    const sx = statsStartX + sc.offsetX;
+                    return (
+                      <line
+                        key={`st-vline-${sc.key}`}
+                        x1={sx}
+                        y1={ry}
+                        x2={sx}
+                        y2={ry + CELL_H}
+                        stroke={
+                          sIdx === 0 || sc.groupStart ? COLOR_FRAME : COLOR_GRID
+                        }
+                        strokeWidth={
+                          sIdx === 0 ? 1.5 : sc.groupStart ? 1.05 : 0.8
+                        }
+                      />
+                    );
+                  })}
+
+                  {/* 各段・各列の数値描画 */}
+                  {bands.map((band) => {
+                    if (!band.active) return null;
+                    const baseFontSize = bands.length === 1 ? 10.6 : 9.3;
+                    return STAT_COLS.map((sc) => {
+                      const sx = statsStartX + sc.offsetX;
+                      const rawVal = sc.getValue(band.stats);
+
+                      if (sc.kind === "avg") {
+                        const hasHit = band.stats.hits > 0;
+                        const hasAb = band.stats.atBats > 0;
+                        return (
+                          <text
+                            key={`st-val-${band.bandIdx}-${sc.key}`}
+                            x={sx + sc.w / 2}
+                            y={band.textY}
+                            fontSize={bands.length === 1 ? 9.8 : 8.9}
+                            fontWeight={hasHit ? 900 : 700}
+                            textAnchor="middle"
+                            fill={
+                              hasHit
+                                ? isMonoSheet
+                                  ? COLOR_INK
+                                  : COLOR_BLUE
+                                : hasAb
+                                ? COLOR_MUTED
+                                : "#94a3b8"
+                            }
+                            fontFamily={FONT_MONO}
+                          >
+                            {String(rawVal)}
+                          </text>
+                        );
                       }
-                      fontFamily={FONT_MONO}
-                    >
-                      {val}
-                    </text>
-                  )}
+
+                      const numVal = Number(rawVal) || 0;
+                      const isRedHighlight =
+                        !isMonoSheet &&
+                        (sc.kind === "hit" ||
+                          sc.kind === "hr" ||
+                          sc.kind === "rbi" ||
+                          sc.kind === "run" ||
+                          sc.kind === "err") &&
+                        numVal > 0;
+
+                      return (
+                        <text
+                          key={`st-val-${band.bandIdx}-${sc.key}`}
+                          x={sx + sc.w / 2}
+                          y={band.textY}
+                          fontSize={baseFontSize}
+                          fontWeight={numVal > 0 ? 900 : 600}
+                          textAnchor="middle"
+                          fill={
+                            isRedHighlight
+                              ? COLOR_RED
+                              : numVal > 0
+                              ? COLOR_INK
+                              : "#94a3b8"
+                          }
+                          fontFamily={FONT_MONO}
+                        >
+                          {numVal}
+                        </text>
+                      );
+                    });
+                  })}
                 </g>
               );
-            })}
-            <line
-              x1={statsStartX}
-              y1={ry}
-              x2={statsStartX}
-              y2={ry + CELL_H}
-              stroke={COLOR_FRAME}
-              strokeWidth={1.5}
-            />
+            })()}
           </g>
         );
       })}
@@ -4481,8 +4958,8 @@ export function DigitalScorebookSheet({
               );
             })}
 
-            {/* 右端：4行目の「得点(R)」行にチーム総合計を表示、1〜3行目は補助集計 */}
-            {rIdx < 3 ? (
+            {/* 右端：1〜2行目に内訳サマリー、3行目に22列ミニ見出し、4行目に22列 TOTAL 総合計 */}
+            {rIdx <= 1 ? (
               <g>
                 <rect
                   x={statsStartX}
@@ -4493,59 +4970,145 @@ export function DigitalScorebookSheet({
                   stroke={COLOR_GRID}
                   strokeWidth={0.9}
                 />
+                <line
+                  x1={statsStartX}
+                  y1={sy}
+                  x2={statsStartX}
+                  y2={sy + SUMMARY_ROW_H}
+                  stroke={COLOR_FRAME}
+                  strokeWidth={1.5}
+                />
                 <text
                   x={statsStartX + 10}
                   y={sy + 14.5}
-                  fontSize={9}
+                  fontSize={8.6}
                   fontWeight={800}
                   fill={COLOR_MUTED}
                 >
                   {rIdx === 0
-                    ? `計 安打: ${model.totals.hits}本`
-                    : rIdx === 1
-                    ? `計 四死球: ${model.totals.walksHbp} / 敵失: ${model.totals.errors}`
-                    : `計 残塁: ${model.totals.leftOnBase} （三者均衡確認済）`}
+                    ? `計 安打: ${model.totals.hits}本（単${model.totals.singles}・二${model.totals.doubles}・三${model.totals.triples}・本${model.totals.homeRuns}） / チーム打率: ${model.totals.avg}`
+                    : `計 四死球: ${model.totals.walksHbp}（四球${model.totals.walks}・死球${model.totals.hitByPitch}） / 敵失: ${model.totals.opponentErrors} / 残塁: ${model.totals.leftOnBase}（三者均衡確認済）`}
                 </text>
+                {rIdx === 1 && (
+                  <text
+                    x={statsStartX + STATS_TOTAL_W - 8}
+                    y={sy + 14.5}
+                    fontSize={8.2}
+                    fontWeight={900}
+                    textAnchor="end"
+                    fill={COLOR_INK}
+                    fontFamily={FONT_MONO}
+                  >
+                    TOTAL ▼
+                  </text>
+                )}
+              </g>
+            ) : rIdx === 2 ? (
+              <g>
+                <rect
+                  x={statsStartX}
+                  y={sy}
+                  width={STATS_TOTAL_W}
+                  height={SUMMARY_ROW_H}
+                  fill={
+                    rules.lineupStyle === "classic_three_row" && !isMonoSheet
+                      ? COLOR_SAGE_HEAD
+                      : COLOR_PAPER_SUB
+                  }
+                  stroke={COLOR_GRID}
+                  strokeWidth={0.9}
+                />
+                {STAT_COLS.map((sc, sIdx) => {
+                  const tx = statsStartX + sc.offsetX;
+                  const isThree = sc.label.length >= 3;
+                  return (
+                    <g key={`tot-head-${sc.key}`}>
+                      <line
+                        x1={tx}
+                        y1={sy}
+                        x2={tx}
+                        y2={sy + SUMMARY_ROW_H}
+                        stroke={
+                          sIdx === 0 || sc.groupStart ? COLOR_FRAME : COLOR_GRID
+                        }
+                        strokeWidth={
+                          sIdx === 0 ? 1.5 : sc.groupStart ? 1.05 : 0.8
+                        }
+                      />
+                      <text
+                        x={tx + sc.w / 2}
+                        y={sy + 14.6}
+                        fontSize={isThree ? 7.1 : 7.8}
+                        fontWeight={900}
+                        textAnchor="middle"
+                        fill={
+                          sc.kind === "avg" && !isMonoSheet
+                            ? COLOR_BLUE
+                            : COLOR_INK
+                        }
+                      >
+                        {sc.label}
+                      </text>
+                    </g>
+                  );
+                })}
               </g>
             ) : (
-              (
-                [
-                  model.totals.plateAppearances,
-                  model.totals.atBats,
-                  model.totals.hits,
-                  model.totals.rbi,
-                  model.totals.runs,
-                  model.totals.walksHbp,
-                  model.totals.strikeouts,
-                  model.totals.stolenBases,
-                ] as const
-              ).map((totVal, tIdx) => {
-                const tx = statsStartX + tIdx * 24;
-                return (
-                  <g key={`tot-${tIdx}`}>
-                    <rect
-                      x={tx}
-                      y={sy}
-                      width={24}
-                      height={SUMMARY_ROW_H}
-                      fill={COLOR_RED_SOFT}
-                      stroke={COLOR_GRID}
-                      strokeWidth={0.9}
-                    />
-                    <text
-                      x={tx + 12}
-                      y={sy + 15}
-                      fontSize={10}
-                      fontWeight={900}
-                      textAnchor="middle"
-                      fill={tIdx === 2 || tIdx === 4 ? COLOR_RED : COLOR_INK}
-                      fontFamily={FONT_MONO}
-                    >
-                      {totVal}
-                    </text>
-                  </g>
-                );
-              })
+              <g>
+                <rect
+                  x={statsStartX}
+                  y={sy}
+                  width={STATS_TOTAL_W}
+                  height={SUMMARY_ROW_H}
+                  fill={isMonoSheet ? COLOR_PAPER_SUB : COLOR_RED_SOFT}
+                  stroke={COLOR_GRID}
+                  strokeWidth={0.9}
+                />
+                {STAT_COLS.map((sc, tIdx) => {
+                  const tx = statsStartX + sc.offsetX;
+                  const totVal = sc.getValue(model.totals);
+                  const isRedCol =
+                    !isMonoSheet &&
+                    (sc.kind === "hit" ||
+                      sc.kind === "hr" ||
+                      sc.kind === "rbi" ||
+                      sc.kind === "run") &&
+                    Number(totVal) > 0;
+                  return (
+                    <g key={`tot-${sc.key}`}>
+                      <line
+                        x1={tx}
+                        y1={sy}
+                        x2={tx}
+                        y2={sy + SUMMARY_ROW_H}
+                        stroke={
+                          tIdx === 0 || sc.groupStart ? COLOR_FRAME : COLOR_GRID
+                        }
+                        strokeWidth={
+                          tIdx === 0 ? 1.5 : sc.groupStart ? 1.05 : 0.8
+                        }
+                      />
+                      <text
+                        x={tx + sc.w / 2}
+                        y={sy + 15}
+                        fontSize={sc.kind === "avg" ? 9.4 : 9.8}
+                        fontWeight={900}
+                        textAnchor="middle"
+                        fill={
+                          sc.kind === "avg" && !isMonoSheet
+                            ? COLOR_BLUE
+                            : isRedCol
+                            ? COLOR_RED
+                            : COLOR_INK
+                        }
+                        fontFamily={FONT_MONO}
+                      >
+                        {String(totVal)}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
             )}
           </g>
         );
@@ -4570,136 +5133,460 @@ export function DigitalScorebookSheet({
         strokeWidth={1.5}
       />
 
-      {/* ━━━ 5. 下部：相手（守備側）登板投手成績テーブル ━━━ */}
-      <g>
-        <rect
-          x={lineupX}
-          y={pitcherTopY}
-          width={Math.min(760, totalWidth - PAD * 2)}
-          height={PITCHER_TOTAL_H}
-          fill="#ffffff"
-          stroke={COLOR_FRAME}
-          strokeWidth={1.4}
-        />
-        <rect
-          x={lineupX}
-          y={pitcherTopY}
-          width={Math.min(760, totalWidth - PAD * 2)}
-          height={PITCHER_HEAD_H}
-          fill={COLOR_BLUE_SOFT}
-        />
-        <line
-          x1={lineupX}
-          y1={pitcherTopY + PITCHER_HEAD_H}
-          x2={lineupX + Math.min(760, totalWidth - PAD * 2)}
-          y2={pitcherTopY + PITCHER_HEAD_H}
-          stroke={COLOR_FRAME}
-          strokeWidth={1}
-        />
+      {/* ━━━ 5. 下部：相手（守備側）登板投手成績テーブル（投手成績15項目＋TEAM TOTAL完全共通） ━━━ */}
+      {(() => {
+        const fieldingHeaderName = model.fieldingTeamName.slice(0, 11);
+        const PITCHER_ID_COLS = [
+          { key: "order", x: 0, w: 50, label: "登板順" },
+          { key: "num", x: 50, w: 40, label: "背番" },
+          {
+            key: "name",
+            x: 90,
+            w: 180,
+            label: `投手（${fieldingHeaderName}）`,
+          },
+          { key: "stint", x: 270, w: 64, label: "担当回" },
+        ] as const;
+        const PITCHER_LEFT_W = 334;
 
-        {(
-          [
-            { x: 0, w: 54, label: "登板順" },
-            { x: 54, w: 42, label: "背番" },
-            { x: 96, w: 154, label: `投手名（${model.fieldingTeamName}）` },
-            { x: 250, w: 72, label: "担当回" },
-            { x: 322, w: 62, label: "投球回" },
-            { x: 384, w: 58, label: "打者" },
-            { x: 442, w: 58, label: "球数" },
-            { x: 500, w: 58, label: "被安打" },
-            { x: 558, w: 58, label: "奪三振" },
-            { x: 616, w: 58, label: "四死球" },
-            { x: 674, w: 86, label: "失点 (R)" },
-          ] as const
-        ).map((pc, idx) => (
-          <g key={pc.label}>
-            {idx > 0 && (
-              <line
-                x1={lineupX + pc.x}
-                y1={pitcherTopY}
-                x2={lineupX + pc.x}
-                y2={pitcherTopY + PITCHER_TOTAL_H}
-                stroke={COLOR_GRID_LIGHT}
-                strokeWidth={0.85}
-              />
+        interface PitcherStatColSpec {
+          key: string;
+          label: string;
+          w: number;
+          kind: "ip" | "num" | "so" | "hr" | "run" | "er" | "era";
+          groupStart?: boolean;
+          getRowVal: (
+            p: CompiledScorebookSheetModel["pitcherRows"][number]
+          ) => string | number;
+          getTotalVal: (
+            t: CompiledScorebookSheetModel["pitcherTotals"]
+          ) => string | number;
+        }
+
+        const RAW_PITCHER_STAT_COLS: PitcherStatColSpec[] = [
+          {
+            key: "ip",
+            label: "投球回",
+            w: 52,
+            kind: "ip",
+            groupStart: true,
+            getRowVal: (p) => p.ipDisplay,
+            getTotalVal: (t) => t.ipDisplay,
+          },
+          {
+            key: "np",
+            label: "投球数",
+            w: 50,
+            kind: "num",
+            getRowVal: (p) => p.pitchesCount,
+            getTotalVal: (t) => t.pitchesCount,
+          },
+          {
+            key: "bf",
+            label: "打者",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.battersFaced,
+            getTotalVal: (t) => t.battersFaced,
+          },
+          {
+            key: "h",
+            label: "安打",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.hitsAllowed,
+            getTotalVal: (t) => t.hitsAllowed,
+          },
+          {
+            key: "hr",
+            label: "本塁打",
+            w: 48,
+            kind: "hr",
+            getRowVal: (p) => p.homeRunsAllowed,
+            getTotalVal: (t) => t.homeRunsAllowed,
+          },
+          {
+            key: "sh",
+            label: "犠打",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.sacBuntsAllowed,
+            getTotalVal: (t) => t.sacBuntsAllowed,
+          },
+          {
+            key: "sf",
+            label: "犠飛",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.sacFliesAllowed,
+            getTotalVal: (t) => t.sacFliesAllowed,
+          },
+          {
+            key: "so",
+            label: "三振",
+            w: 44,
+            kind: "so",
+            getRowVal: (p) => p.strikeouts,
+            getTotalVal: (t) => t.strikeouts,
+          },
+          {
+            key: "bb",
+            label: "四球",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.walks,
+            getTotalVal: (t) => t.walks,
+          },
+          {
+            key: "hbp",
+            label: "死球",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.hitByPitch,
+            getTotalVal: (t) => t.hitByPitch,
+          },
+          {
+            key: "wp",
+            label: "暴投",
+            w: 44,
+            kind: "num",
+            getRowVal: (p) => p.wildPitches,
+            getTotalVal: (t) => t.wildPitches,
+          },
+          {
+            key: "bk",
+            label: "ボーク",
+            w: 48,
+            kind: "num",
+            getRowVal: (p) => p.balks,
+            getTotalVal: (t) => t.balks,
+          },
+          {
+            key: "r",
+            label: "失点",
+            w: 44,
+            kind: "run",
+            groupStart: true,
+            getRowVal: (p) => p.runsAllowed,
+            getTotalVal: (t) => t.runsAllowed,
+          },
+          {
+            key: "er",
+            label: "自責点",
+            w: 48,
+            kind: "er",
+            getRowVal: (p) => p.earnedRuns,
+            getTotalVal: (t) => t.earnedRuns,
+          },
+          {
+            key: "era",
+            label: "防御率",
+            w: 58,
+            kind: "era",
+            groupStart: true,
+            getRowVal: (p) => p.eraDisplay,
+            getTotalVal: (t) => t.eraDisplay,
+          },
+        ];
+
+        let pStatRunningX = PITCHER_LEFT_W;
+        const PITCHER_STAT_COLS = RAW_PITCHER_STAT_COLS.map((c) => {
+          const colWithX = { ...c, x: pStatRunningX };
+          pStatRunningX += c.w;
+          return colWithX;
+        });
+        const PITCHER_TABLE_W = Math.min(pStatRunningX, totalWidth - PAD * 2);
+        const pitcherBodyBottomY =
+          pitcherTopY + PITCHER_HEAD_H + pitcherRowsCount * PITCHER_ROW_H;
+        const pitcherTotalRowY = pitcherBodyBottomY;
+
+        return (
+          <g>
+            {/* 外枠・ヘッダー背景・TEAM TOTAL 行背景 */}
+            <rect
+              x={lineupX}
+              y={pitcherTopY}
+              width={PITCHER_TABLE_W}
+              height={PITCHER_TOTAL_H}
+              fill="#ffffff"
+              stroke={COLOR_FRAME}
+              strokeWidth={1.4}
+            />
+            <rect
+              x={lineupX}
+              y={pitcherTopY}
+              width={PITCHER_TABLE_W}
+              height={PITCHER_HEAD_H}
+              fill={isMonoSheet ? COLOR_PAPER_SUB : COLOR_BLUE_SOFT}
+            />
+            <rect
+              x={lineupX}
+              y={pitcherTotalRowY}
+              width={PITCHER_TABLE_W}
+              height={PITCHER_TOTAL_ROW_H}
+              fill={COLOR_PAPER_SUB}
+            />
+
+            {/* ヘッダー下線 ＆ TEAM TOTAL 上線 */}
+            <line
+              x1={lineupX}
+              y1={pitcherTopY + PITCHER_HEAD_H}
+              x2={lineupX + PITCHER_TABLE_W}
+              y2={pitcherTopY + PITCHER_HEAD_H}
+              stroke={COLOR_FRAME}
+              strokeWidth={1}
+            />
+            <line
+              x1={lineupX}
+              y1={pitcherTotalRowY}
+              x2={lineupX + PITCHER_TABLE_W}
+              y2={pitcherTotalRowY}
+              stroke={COLOR_FRAME}
+              strokeWidth={1.05}
+            />
+
+            {/* 左側基本情報4列の見出し＆縦仕切り線（TEAM TOTAL 行は結合するため pitcherBodyBottomY で止める） */}
+            {PITCHER_ID_COLS.map((pc, idx) => (
+              <g key={pc.key}>
+                {idx > 0 && (
+                  <line
+                    x1={lineupX + pc.x}
+                    y1={pitcherTopY}
+                    x2={lineupX + pc.x}
+                    y2={pitcherBodyBottomY}
+                    stroke={COLOR_GRID_LIGHT}
+                    strokeWidth={0.85}
+                  />
+                )}
+                <text
+                  x={lineupX + pc.x + pc.w / 2}
+                  y={pitcherTopY + 15}
+                  fontSize={8.6}
+                  fontWeight={900}
+                  textAnchor="middle"
+                  fill={COLOR_INK}
+                >
+                  {pc.label}
+                </text>
+              </g>
+            ))}
+
+            {/* 15成績列の見出し＆縦仕切り線（TEAM TOTAL 行まで貫通） */}
+            {PITCHER_STAT_COLS.map((pc) => (
+              <g key={pc.key}>
+                <line
+                  x1={lineupX + pc.x}
+                  y1={pitcherTopY}
+                  x2={lineupX + pc.x}
+                  y2={pitcherTopY + PITCHER_TOTAL_H}
+                  stroke={pc.groupStart ? COLOR_FRAME : COLOR_GRID_LIGHT}
+                  strokeWidth={pc.groupStart ? 1.05 : 0.85}
+                />
+                <text
+                  x={lineupX + pc.x + pc.w / 2}
+                  y={pitcherTopY + 15}
+                  fontSize={8.5}
+                  fontWeight={900}
+                  textAnchor="middle"
+                  fill={
+                    pc.kind === "era" && !isMonoSheet ? COLOR_BLUE : COLOR_INK
+                  }
+                >
+                  {pc.label}
+                </text>
+              </g>
+            ))}
+
+            {/* 各登板投手データ行 */}
+            {model.pitcherRows.length === 0 ? (
+              <text
+                x={lineupX + 12}
+                y={pitcherTopY + PITCHER_HEAD_H + 15}
+                fontSize={9.2}
+                fontWeight={700}
+                fill={COLOR_MUTED}
+              >
+                投手記録なし
+              </text>
+            ) : (
+              model.pitcherRows.map((pRow, pIdx) => {
+                const py = pitcherTopY + PITCHER_HEAD_H + pIdx * PITCHER_ROW_H;
+                const stintText =
+                  pRow.fromInning === pRow.toInning
+                    ? `${pRow.fromInning}回`
+                    : `${pRow.fromInning}〜${pRow.toInning}回`;
+                return (
+                  <g key={`prow-${pIdx}`}>
+                    {pIdx > 0 && (
+                      <line
+                        x1={lineupX}
+                        y1={py}
+                        x2={lineupX + PITCHER_TABLE_W}
+                        y2={py}
+                        stroke={COLOR_GRID_LIGHT}
+                        strokeWidth={0.8}
+                      />
+                    )}
+                    {/* 登板順 */}
+                    <text
+                      x={lineupX + 25}
+                      y={py + 15}
+                      fontSize={9.3}
+                      fontWeight={800}
+                      textAnchor="middle"
+                      fill={COLOR_INK}
+                    >
+                      {pRow.order === 1 ? "先発" : `${pRow.order}番手`}
+                    </text>
+                    {/* 背番 */}
+                    <text
+                      x={lineupX + 70}
+                      y={py + 15}
+                      fontSize={9.3}
+                      fontWeight={800}
+                      textAnchor="middle"
+                      fill={COLOR_MUTED}
+                      fontFamily={FONT_MONO}
+                    >
+                      {pRow.uniformNumber ? `#${pRow.uniformNumber}` : "-"}
+                    </text>
+                    {/* 投手名 */}
+                    <text
+                      x={lineupX + 98}
+                      y={py + 15}
+                      fontSize={9.8}
+                      fontWeight={900}
+                      fill={COLOR_INK}
+                    >
+                      {pRow.name.slice(0, 14)}
+                    </text>
+                    {/* 担当回 */}
+                    <text
+                      x={lineupX + 302}
+                      y={py + 15}
+                      fontSize={9.2}
+                      fontWeight={800}
+                      textAnchor="middle"
+                      fill={COLOR_INK}
+                    >
+                      {stintText}
+                    </text>
+
+                    {/* 15成績列 */}
+                    {PITCHER_STAT_COLS.map((pc) => {
+                      const raw = pc.getRowVal(pRow);
+                      const numVal = Number(raw) || 0;
+                      const isEra = pc.kind === "era";
+                      const isIp = pc.kind === "ip";
+                      const isRed =
+                        !isMonoSheet &&
+                        (pc.kind === "run" || pc.kind === "hr") &&
+                        numVal > 0;
+                      const isZeroDim = !isEra && !isIp && numVal === 0;
+                      return (
+                        <text
+                          key={`pval-${pIdx}-${pc.key}`}
+                          x={lineupX + pc.x + pc.w / 2}
+                          y={py + 15}
+                          fontSize={9.6}
+                          fontWeight={
+                            isEra || isIp || numVal > 0 ? 900 : 600
+                          }
+                          textAnchor="middle"
+                          fill={
+                            isEra && !isMonoSheet
+                              ? COLOR_BLUE
+                              : isRed
+                              ? COLOR_RED
+                              : isZeroDim
+                              ? "#94a3b8"
+                              : COLOR_INK
+                          }
+                          fontFamily={FONT_MONO}
+                        >
+                          {String(raw)}
+                        </text>
+                      );
+                    })}
+                  </g>
+                );
+              })
             )}
+
+            {/* TEAM TOTAL 行 */}
             <text
-              x={lineupX + pc.x + pc.w / 2}
-              y={pitcherTopY + 15}
-              fontSize={8.8}
+              x={lineupX + 12}
+              y={pitcherTotalRowY + 15.5}
+              fontSize={9.2}
               fontWeight={900}
-              textAnchor="middle"
               fill={COLOR_INK}
+              fontFamily={FONT_MONO}
             >
-              {pc.label}
+              TEAM TOTAL
+            </text>
+            <text
+              x={lineupX + PITCHER_LEFT_W - 8}
+              y={pitcherTotalRowY + 15}
+              fontSize={7.6}
+              fontWeight={800}
+              textAnchor="end"
+              fill={COLOR_MUTED}
+            >
+              ※防御率は7回制換算
+            </text>
+            {PITCHER_STAT_COLS.map((pc) => {
+              const totVal = pc.getTotalVal(model.pitcherTotals);
+              const numVal = Number(totVal) || 0;
+              const isEra = pc.kind === "era";
+              const isRed =
+                !isMonoSheet && pc.kind === "run" && numVal > 0;
+              return (
+                <text
+                  key={`ptot-${pc.key}`}
+                  x={lineupX + pc.x + pc.w / 2}
+                  y={pitcherTotalRowY + 15.5}
+                  fontSize={9.6}
+                  fontWeight={900}
+                  textAnchor="middle"
+                  fill={
+                    isEra && !isMonoSheet
+                      ? COLOR_BLUE
+                      : isRed
+                      ? COLOR_RED
+                      : COLOR_INK
+                  }
+                  fontFamily={FONT_MONO}
+                >
+                  {String(totVal)}
+                </text>
+              );
+            })}
+
+            {/* 外周枠を再ストロークして角を引き締める */}
+            <rect
+              x={lineupX}
+              y={pitcherTopY}
+              width={PITCHER_TABLE_W}
+              height={PITCHER_TOTAL_H}
+              fill="none"
+              stroke={COLOR_FRAME}
+              strokeWidth={1.4}
+            />
+
+            {/* 右下クレジット */}
+            <text
+              x={totalWidth - PAD}
+              y={pitcherTopY + PITCHER_TOTAL_H - 4}
+              fontSize={8.5}
+              fontWeight={800}
+              textAnchor="end"
+              fill="#94a3b8"
+            >
+              Generated by iScoreCloud
             </text>
           </g>
-        ))}
-
-        {model.pitcherRows.map((pRow, pIdx) => {
-          const py = pitcherTopY + PITCHER_HEAD_H + pIdx * PITCHER_ROW_H;
-          const cells = [
-            { x: 0, w: 54, val: pRow.order === 1 ? "先発" : `${pRow.order}番手` },
-            { x: 54, w: 42, val: pRow.uniformNumber ? `#${pRow.uniformNumber}` : "-" },
-            { x: 96, w: 154, val: pRow.name },
-            {
-              x: 250,
-              w: 72,
-              val:
-                pRow.fromInning === pRow.toInning
-                  ? `${pRow.fromInning}回`
-                  : `${pRow.fromInning}〜${pRow.toInning}回`,
-            },
-            { x: 322, w: 62, val: pRow.ipDisplay },
-            { x: 384, w: 58, val: String(pRow.battersFaced) },
-            { x: 442, w: 58, val: String(pRow.pitchesCount) },
-            { x: 500, w: 58, val: String(pRow.hitsAllowed) },
-            { x: 558, w: 58, val: String(pRow.strikeouts) },
-            { x: 616, w: 58, val: String(pRow.walksHbp) },
-            { x: 674, w: 86, val: String(pRow.runsAllowed) },
-          ];
-          return (
-            <g key={`prow-${pIdx}`}>
-              {pIdx > 0 && (
-                <line
-                  x1={lineupX}
-                  y1={py}
-                  x2={lineupX + 760}
-                  y2={py}
-                  stroke={COLOR_GRID_LIGHT}
-                  strokeWidth={0.8}
-                />
-              )}
-              {cells.map((c, cIdx) => (
-                <text
-                  key={cIdx}
-                  x={cIdx === 2 ? lineupX + c.x + 10 : lineupX + c.x + c.w / 2}
-                  y={py + 15}
-                  fontSize={9.8}
-                  fontWeight={cIdx === 2 || cIdx === 10 ? 900 : 700}
-                  textAnchor={cIdx === 2 ? "start" : "middle"}
-                  fill={cIdx === 10 && pRow.runsAllowed > 0 ? COLOR_RED : COLOR_INK}
-                  fontFamily={cIdx >= 4 ? FONT_MONO : FONT_SANS}
-                >
-                  {c.val}
-                </text>
-              ))}
-            </g>
-          );
-        })}
-
-        {/* 右下クレジット */}
-        <text
-          x={totalWidth - PAD}
-          y={pitcherTopY + PITCHER_TOTAL_H - 4}
-          fontSize={8.5}
-          fontWeight={800}
-          textAnchor="end"
-          fill="#94a3b8"
-        >
-          Generated by iScoreCloud
-        </text>
-      </g>
+        );
+      })()}
     </svg>
   );
 }
@@ -5725,14 +6612,26 @@ export async function exportScorebookSvgElementsToPngBlob(
   }
 
   const sheetGap = loadedImages.length > 1 ? 24 : 0;
-  const maxW = Math.max(...loadedImages.map((i) => i.w));
-  const sumH =
+  const maxW = Math.max(1, ...loadedImages.map((i) => i.w));
+  const sumH = Math.max(
+    1,
     loadedImages.reduce((acc, i) => acc + i.h, 0) +
-    sheetGap * (loadedImages.length - 1);
+      sheetGap * (loadedImages.length - 1)
+  );
+
+  // iOS WKWebView の <canvas> 上限（最大辺 4096px / 総画素数 16.77MP）を超えないよう安全にスケール調整
+  const MAX_SAFE_CANVAS_DIM = 4096;
+  const MAX_SAFE_CANVAS_PIXELS = 15_500_000;
+  const effectiveScale = Math.min(
+    scale,
+    MAX_SAFE_CANVAS_DIM / maxW,
+    MAX_SAFE_CANVAS_DIM / sumH,
+    Math.sqrt(MAX_SAFE_CANVAS_PIXELS / (maxW * sumH))
+  );
 
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(maxW * scale);
-  canvas.height = Math.round(sumH * scale);
+  canvas.width = Math.max(1, Math.round(maxW * effectiveScale));
+  canvas.height = Math.max(1, Math.round(sumH * effectiveScale));
 
   const ctx = canvas.getContext("2d");
   if (!ctx) {
@@ -5747,9 +6646,9 @@ export async function exportScorebookSvgElementsToPngBlob(
     ctx.drawImage(
       item.img,
       0,
-      Math.round(curY * scale),
-      Math.round(item.w * scale),
-      Math.round(item.h * scale)
+      Math.round(curY * effectiveScale),
+      Math.round(item.w * effectiveScale),
+      Math.round(item.h * effectiveScale)
     );
     curY += item.h + sheetGap;
   }
@@ -5816,10 +6715,21 @@ export async function exportScorebookSvgElementsToPdfBlob(
     pixelH: number;
   }> = [];
 
+  const MAX_SAFE_CANVAS_DIM = 4096;
+  const MAX_SAFE_CANVAS_PIXELS = 15_500_000;
+
   for (const svgEl of svgElements) {
     const { img, w, h } = await rasterizeSvgElementToImage(svgEl);
-    const pixelW = Math.max(1, Math.round(w * scale));
-    const pixelH = Math.max(1, Math.round(h * scale));
+    const safeW = Math.max(1, w);
+    const safeH = Math.max(1, h);
+    const pageScale = Math.min(
+      scale,
+      MAX_SAFE_CANVAS_DIM / safeW,
+      MAX_SAFE_CANVAS_DIM / safeH,
+      Math.sqrt(MAX_SAFE_CANVAS_PIXELS / (safeW * safeH))
+    );
+    const pixelW = Math.max(1, Math.round(safeW * pageScale));
+    const pixelH = Math.max(1, Math.round(safeH * pageScale));
     const canvas = document.createElement("canvas");
     canvas.width = pixelW;
     canvas.height = pixelH;

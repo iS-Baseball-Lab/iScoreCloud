@@ -217,13 +217,19 @@ export function useMatchScorebookBundle({
 
   const topModel = useMemo(() => {
     if (!matchMeta || !topStructure || topAtBats.length === 0) return null;
-    return compileScorebookSheetModel(topStructure, topAtBats, matchMeta);
-  }, [topStructure, topAtBats, matchMeta]);
+    return compileScorebookSheetModel(topStructure, topAtBats, matchMeta, {
+      opponentAtBats: bottomAtBats,
+      opponentStructure: bottomStructure,
+    });
+  }, [topStructure, topAtBats, bottomStructure, bottomAtBats, matchMeta]);
 
   const bottomModel = useMemo(() => {
     if (!matchMeta || !bottomStructure || bottomAtBats.length === 0) return null;
-    return compileScorebookSheetModel(bottomStructure, bottomAtBats, matchMeta);
-  }, [bottomStructure, bottomAtBats, matchMeta]);
+    return compileScorebookSheetModel(bottomStructure, bottomAtBats, matchMeta, {
+      opponentAtBats: topAtBats,
+      opponentStructure: topStructure,
+    });
+  }, [bottomStructure, bottomAtBats, topStructure, topAtBats, matchMeta]);
 
   const effectiveRules: ScorebookSymbolRules = useMemo(
     () => cloudTeamRules ?? DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
