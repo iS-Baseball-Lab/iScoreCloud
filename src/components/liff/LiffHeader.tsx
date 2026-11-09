@@ -19,9 +19,10 @@ import {
   Settings,
   BookOpen,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useLiff } from "./LiffProvider";
 import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
-import { shareTargetPicker } from "@/lib/liff/liff-client";
+import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
 import {
   handleLiffRootLinkClick,
   navigateToLiffRoot,
@@ -113,8 +114,8 @@ interface LiffHeaderProps {
 
 export function LiffHeader({ shareData }: LiffHeaderProps) {
   const {
+    liff,
     profile,
-    isInClient,
     isLoggedIn,
     login,
     teams,
@@ -141,34 +142,17 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
   const handleShare = async () => {
     if (!shareData) return;
-
-    if (isInClient) {
-      const messages = [
-        {
-          type: "text" as const,
-          text: `⚾ ${shareData.title}\n${shareData.text}${
-            shareData.url
-              ? `\n\n👉 試合動画・予定の確認はこちら:\n${shareData.url}`
-              : ""
-          }`,
-        },
-      ];
-      const shared = await shareTargetPicker(messages);
-      if (shared) return;
-    }
-
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({
-          title: shareData.title,
-          text: shareData.text,
-          url:
-            shareData.url ||
-            (typeof window !== "undefined" ? window.location.href : ""),
-        });
-      } catch {
-        // ignore share cancellation
-      }
+    const outcome = await shareLiffPageViaLine({
+      title: shareData.title,
+      text: shareData.text,
+      url: shareData.url,
+      pathname,
+      teamId: currentTeam?.id || null,
+      teamName: currentTeam?.orgName || currentTeam?.name || null,
+      liff,
+    });
+    if (outcome === "shared") {
+      toast.success("LINEでページを共有しました！");
     }
   };
 

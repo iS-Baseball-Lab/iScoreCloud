@@ -1,11 +1,12 @@
 // filepath: src/components/liff/LiffPageHeader.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, Share2 } from "lucide-react";
+import { ChevronLeft, Loader2, Share2 } from "lucide-react";
+import { toast } from "sonner";
 import { useLiff } from "./LiffProvider";
-import { shareTargetPicker } from "@/lib/liff/liff-client";
+import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 
 interface LiffPageHeaderProps {
@@ -31,33 +32,27 @@ export function LiffPageHeader({
 }: LiffPageHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isInClient } = useLiff();
+  const { liff, currentTeam } = useLiff();
+  const [isSharing, setIsSharing] = useState(false);
 
   const handleShare = async () => {
-    if (!shareData) return;
-
-    if (isInClient) {
-      const messages = [
-        {
-          type: "text" as const,
-          text: `⚾ ${shareData.title}\n${shareData.text}${shareData.url ? `\n\n👉 詳細はこちら:\n${shareData.url}` : ""}`,
-        },
-      ];
-      const shared = await shareTargetPicker(messages);
-      if (shared) return;
-    }
-
-    // Web Share API フォールバック
-    if (typeof navigator !== "undefined" && navigator.share) {
-      try {
-        await navigator.share({
-          title: shareData.title,
-          text: shareData.text,
-          url: shareData.url || (typeof window !== "undefined" ? window.location.href : ""),
-        });
-      } catch {
-        // ignore share cancellation
+    if (!shareData || isSharing) return;
+    setIsSharing(true);
+    try {
+      const outcome = await shareLiffPageViaLine({
+        title: shareData.title,
+        text: shareData.text,
+        url: shareData.url,
+        pathname,
+        teamId: currentTeam?.id || null,
+        teamName: currentTeam?.orgName || currentTeam?.name || null,
+        liff,
+      });
+      if (outcome === "shared") {
+        toast.success("LINEでページを共有しました！");
       }
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -74,7 +69,7 @@ export function LiffPageHeader({
                 navigateToLiffRoot(router, pathname);
               }
             }}
-            className="p-2 -ml-1 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0"
+            className="p-2 -ml-1 rounded-2xl bg-card border border-border text-foreground hover:bg-muted active:scale-95 transition-all shadow-xs shrink-0 cursor-pointer"
             aria-label="戻る"
           >
             <ChevronLeft className="w-5 h-5" />
@@ -101,12 +96,17 @@ export function LiffPageHeader({
         {shareData && (
           <button
             type="button"
-            onClick={handleShare}
-            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted hover:border-[#06C755]/40 active:scale-95 transition-all shadow-xs"
+            disabled={isSharing}
+            onClick={() => void handleShare()}
+            className="p-2 rounded-2xl bg-card border border-border text-foreground hover:bg-muted hover:border-[#06C755]/40 active:scale-95 transition-all shadow-xs cursor-pointer disabled:opacity-60"
             aria-label="LINEで共有"
-            title="LINEで共有"
+            title="LINEで送信先を選択して共有"
           >
-            <Share2 className="w-4 h-4 text-[#06C755]" />
+            {isSharing ? (
+              <Loader2 className="w-4 h-4 text-[#06C755] animate-spin" />
+            ) : (
+              <Share2 className="w-4 h-4 text-[#06C755]" />
+            )}
           </button>
         )}
       </div>

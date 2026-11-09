@@ -1333,6 +1333,10 @@ function LiffGalleryContent() {
                 </span>
               }
               showBack
+              shareData={{
+                title: `【フォトギャラリー】${currentTeam?.orgName || currentTeam?.name || "チーム"} 写真アルバム`,
+                text: "試合・練習写真の一覧確認や選択一括ダウンロードはこちらから行えます！",
+              }}
             />
 
             {/* 試合詳細画面から ?matchId=... で遷移してきた場合のワンタップ作成バナー */}

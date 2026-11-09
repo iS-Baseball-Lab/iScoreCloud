@@ -1173,11 +1173,11 @@ function LiffPlayersDirectoryContent() {
             </div>
           </div>
 
-          {/* 下部純白ボディ（チームロゴ境界オーバーラップ ＋ 整理されたチーム情報 ＋ 守備位置サマリー） */}
+          {/* 下部純白ボディ（丸枠チームロゴ境界オーバーラップ ＋ 整理されたチーム情報 ＋ 守備位置サマリー） */}
           <div className="px-3.5 pb-3.5 pt-2 bg-card space-y-3">
-            {/* 境界オーバーラップ行：左にチームロゴ、右に在籍人数サマリー */}
+            {/* 境界オーバーラップ行：左に円形チームロゴ、右に在籍人数サマリー */}
             <div className="relative z-20 flex items-end justify-between gap-2.5 -mt-9">
-              <div className="w-16 h-16 rounded-2xl border-[3px] border-card bg-card shadow-sm ring-2 ring-primary/20 overflow-hidden flex items-center justify-center shrink-0">
+              <div className="w-16 h-16 rounded-full border-[3px] border-card bg-card shadow-sm ring-2 ring-primary/20 overflow-hidden flex items-center justify-center shrink-0">
                 {effectiveTeamLogoUrl ? (
                   <img
                     src={effectiveTeamLogoUrl}

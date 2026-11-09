@@ -534,7 +534,7 @@ export function TeamCoverPhotoModal({
 
                 <div className="px-3.5 pb-3 pt-1.5 bg-card">
                   <div className="relative z-20 flex items-end justify-between gap-2 -mt-8 mb-1">
-                    <div className="w-14 h-14 rounded-2xl border-[3px] border-card bg-card shadow-sm ring-1 ring-border overflow-hidden flex items-center justify-center shrink-0">
+                    <div className="w-14 h-14 rounded-full border-[3px] border-card bg-card shadow-sm ring-1 ring-border overflow-hidden flex items-center justify-center shrink-0">
                       {logoImageUrl ? (
                         <img
                           src={logoImageUrl}
@@ -618,7 +618,7 @@ export function TeamCoverPhotoModal({
                     />
                     {/* 薄めソリッドスクリム ＆ 左下チームロゴ重なり位置ガイド */}
                     <div className="pointer-events-none absolute inset-0 bg-slate-950/20" />
-                    <div className="pointer-events-none absolute left-3 -bottom-6 w-14 h-14 rounded-2xl border-2 border-dashed border-white/85 bg-slate-950/45 flex items-start justify-center pt-1.5">
+                    <div className="pointer-events-none absolute left-3 -bottom-6 w-14 h-14 rounded-full border-2 border-dashed border-white/85 bg-slate-950/45 flex items-start justify-center pt-1.5">
                       <span className="text-[8.5px] font-black text-white/90">
                         ロゴ位置
                       </span>

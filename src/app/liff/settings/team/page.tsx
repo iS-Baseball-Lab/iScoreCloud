@@ -717,7 +717,7 @@ export default function LiffTeamSettingsPage() {
                 </div>
 
                 <div className="p-3 pt-2 bg-card flex items-start gap-3">
-                  <div className="-mt-7 relative z-10 w-12 h-12 rounded-xl border-[3px] border-card bg-card shadow-xs flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="-mt-7 relative z-10 w-12 h-12 rounded-full border-[3px] border-card bg-card shadow-xs ring-1 ring-border flex items-center justify-center overflow-hidden shrink-0">
                     {logoPreviewUrl ? (
                       <img
                         src={logoPreviewUrl}
