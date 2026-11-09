@@ -254,7 +254,7 @@ const POSITION_MAP: Record<string, PositionMeta> = {
 
 function resolvePositionMeta(rawPos: string | null | undefined): PositionMeta {
   if (!rawPos) {
-    return { category: "未設定", shortLabel: "選手", fullLabel: "ポジション未設定", code: "ROSTER" };
+    return { category: "未設定", shortLabel: "選手", fullLabel: "ポジション未設定", code: "未設定" };
   }
   const clean = rawPos.trim();
   const exact = POSITION_MAP[clean] || POSITION_MAP[clean.toUpperCase()];
@@ -269,7 +269,7 @@ function resolvePositionMeta(rawPos: string | null | undefined): PositionMeta {
     return { category: "外野手", shortLabel: clean, fullLabel: clean, code: "OF" };
   }
 
-  return { category: "未設定", shortLabel: clean, fullLabel: clean, code: "ROSTER" };
+  return { category: "未設定", shortLabel: clean, fullLabel: clean, code: clean };
 }
 
 interface CategoryStyleDef {
@@ -1055,7 +1055,7 @@ function LiffPlayersDirectoryContent() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="選手名鑑"
-          subtitle={`${seasonYear} OFFICIAL ROSTER`}
+          subtitle="背番号・守備位置・選手プロフィール"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <IdCard className="w-4.5 h-4.5" />
@@ -1110,7 +1110,7 @@ function LiffPlayersDirectoryContent() {
           }}
         />
 
-        {/* ━━━ 🏟️ スタジアム風ロースターヒーローバナー（案B：境界オーバーラップ型 × 背景カバー写真対応） ━━━ */}
+        {/* ━━━ 🏟️ 選手名鑑 チーム情報ヘッダー（案B：境界オーバーラップ型 × 背景カバー写真対応） ━━━ */}
         <section className="relative overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-xs">
           {/* 上部ワイドステージ（背景カバー写真を遮らないよう最小限の角バッジのみ配置） */}
           <div className="relative h-36 sm:h-40 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
@@ -1150,8 +1150,8 @@ function LiffPlayersDirectoryContent() {
 
             <div className="relative z-10 flex items-start justify-between gap-2">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-widest uppercase shadow-2xs">
-                  {seasonYear} ROSTER
+                <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-wider shadow-2xs">
+                  {seasonYear}年度
                 </span>
                 {(isDemoMode || providerDemo) && (
                   <span className="px-2 py-0.5 rounded bg-[#0f172a] text-slate-200 border border-slate-700 text-[10px] font-black shadow-2xs">
@@ -1200,8 +1200,8 @@ function LiffPlayersDirectoryContent() {
                   </span>
                 )}
                 <div className="px-2.5 py-1 rounded-xl bg-muted border border-border flex items-baseline gap-1 shadow-2xs">
-                  <span className="text-[9.5px] font-black text-muted-foreground uppercase tracking-wider">
-                    PLAYERS
+                  <span className="text-[10px] font-black text-muted-foreground tracking-wider">
+                    在籍選手
                   </span>
                   <span className="text-base font-black italic tracking-tight tabular-nums text-foreground leading-none">
                     {rosterStatusCounts.activeCount}
@@ -1491,8 +1491,8 @@ function LiffPlayersDirectoryContent() {
             title={players.length === 0 ? "登録選手がいません" : "該当する選手がいません"}
             description={
               players.length === 0
-                ? "ROSTER IS EMPTY"
-                : "TRY ANOTHER FILTER OR KEYWORD"
+                ? "選手が登録されるとここに一覧表示されます"
+                : "別の絞り込み条件やキーワードをお試しください"
             }
           />
         ) : viewMode === "grid" ? (

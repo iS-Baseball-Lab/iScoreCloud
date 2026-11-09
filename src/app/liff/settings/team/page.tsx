@@ -712,7 +712,7 @@ export default function LiffTeamSettingsPage() {
                     </div>
                   )}
                   <span className="absolute top-2 left-2.5 px-2 py-0.5 rounded bg-slate-900/85 border border-slate-700 text-[9px] font-black text-slate-100 tracking-wider">
-                    ROSTER HEADER PREVIEW
+                    選手名鑑ヘッダー プレビュー
                   </span>
                 </div>
 

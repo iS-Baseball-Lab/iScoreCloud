@@ -568,7 +568,7 @@ export function PlayerProfileEditModal({
                 <div className="flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5 text-amber-400" />
                   <span className="text-xs font-black text-white">
-                    公式ロースター登録項目
+                    公式名簿の登録項目
                   </span>
                 </div>
                 <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black">

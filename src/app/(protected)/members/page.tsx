@@ -984,7 +984,7 @@ export default function UnifiedMembersPage() {
         <div className="space-y-4">
           <SectionHeader 
             title="名簿・メンバー管理" 
-            subtitle="MEMBERS & ROSTER" 
+            subtitle="選手・保護者・スタッフ一覧" 
             showPulse={pendingMembers.length > 0} 
           />
 

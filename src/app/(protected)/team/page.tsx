@@ -365,7 +365,7 @@ export default function TeamProfilePage() {
 
           <div className="lg:col-span-5 space-y-6">
             <div className="p-8 rounded-3xl bg-primary/5 dark:bg-primary/10 border border-primary/20 shadow-sm group backdrop-blur-md">
-              <span className="text-xs font-black text-muted-foreground uppercase tracking-widest mb-1 block">Active Roster</span>
+              <span className="text-xs font-black text-muted-foreground tracking-wider mb-1 block">在籍選手数</span>
               <div className="flex items-baseline gap-1.5 mt-1">
                 <span className="text-5xl font-black text-primary">{memberCount}</span>
                 <span className="text-sm font-bold text-primary/80">選手</span>

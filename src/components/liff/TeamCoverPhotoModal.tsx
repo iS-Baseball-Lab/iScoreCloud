@@ -484,7 +484,7 @@ export function TeamCoverPhotoModal({
                 チームヘッダー背景画像
               </h3>
               <p className="text-[10px] font-bold text-slate-300 leading-tight truncate">
-                TEAM ROSTER COVER PHOTO
+                選手名鑑のチーム背景カバー写真
               </p>
             </div>
           </div>
@@ -527,8 +527,8 @@ export function TeamCoverPhotoModal({
                     </div>
                   )}
 
-                  <span className="relative z-10 px-2 py-0.5 rounded bg-[#0f172a] border border-slate-700 text-white text-[9.5px] font-black tracking-wider uppercase">
-                    ROSTER
+                  <span className="relative z-10 px-2 py-0.5 rounded bg-primary text-primary-foreground text-[9.5px] font-black tracking-wider shadow-2xs">
+                    {new Date().getFullYear()}年度
                   </span>
                 </div>
 

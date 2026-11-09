@@ -465,7 +465,7 @@ export function SubstitutionModal({
         <div className="mt-auto bg-zinc-50 dark:bg-zinc-900 px-5 py-4 flex items-center justify-between border-t border-zinc-100 dark:border-zinc-800 text-zinc-450 dark:text-zinc-500">
           <div className="flex items-center gap-2">
             <Repeat className="h-4 w-4" />
-            <span className="text-[10px] font-black uppercase tracking-widest leading-none">Roster Syncing Enabled</span>
+            <span className="text-[10px] font-black tracking-wider leading-none">登録名簿と同期中</span>
           </div>
           <p className="text-[9px] font-bold">iScore Personnel System</p>
         </div>
