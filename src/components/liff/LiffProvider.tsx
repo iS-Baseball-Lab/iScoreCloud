@@ -21,6 +21,10 @@ import {
   navigateToLiffRoot,
 } from "@/lib/liff/navigation";
 import {
+  installLiffRuntimeRecovery,
+  releaseOrphanedBodyLocks,
+} from "@/lib/liff/runtime-recovery";
+import {
   LIFF_SCORE_SETTINGS_CHANGE_EVENT,
   loadTeamPracticeMatchLabel,
   loadTeamScoreNameDisplayMode,
@@ -239,6 +243,7 @@ export function LiffProvider({
   if (typeof window !== "undefined") {
     installLiffFastFetchCache();
     installLiffHistoryTracker();
+    installLiffRuntimeRecovery();
   }
   const router = useRouter();
   const pathname = usePathname();
@@ -466,6 +471,11 @@ export function LiffProvider({
       }
     }
     prevPathnameRef.current = pathname;
+
+    const lockTimer = setTimeout(() => {
+      releaseOrphanedBodyLocks();
+    }, 100);
+    return () => clearTimeout(lockTimer);
   }, [pathname, router]);
 
   // チーム選択ハンドラー（LocalStorageに永続化し、全画面で0ms同期）
@@ -562,6 +572,9 @@ export function LiffProvider({
       setProfile((prev) => {
         if (!prev || !prev.userId || prev.userId === "cached-user") {
           return webUser;
+        }
+        if (prev.userId === webUser.userId && webUser.pictureUrl && !prev.pictureUrl) {
+          return { ...prev, pictureUrl: webUser.pictureUrl };
         }
         return prev;
       });
@@ -1033,6 +1046,8 @@ export function LiffProvider({
               localStorage.setItem("iscore_user_id", userProfile.userId);
               if (userProfile.pictureUrl) {
                 localStorage.setItem("iscore_user_avatar", userProfile.pictureUrl);
+              } else {
+                localStorage.removeItem("iscore_user_avatar");
               }
               setProfile(userProfile);
               setIsLoggedIn(true);

@@ -39,7 +39,7 @@ export function LiffPageHeader({
     if (isInClient) {
       const messages = [
         {
-          type: "text",
+          type: "text" as const,
           text: `⚾ ${shareData.title}\n${shareData.text}${shareData.url ? `\n\n👉 詳細はこちら:\n${shareData.url}` : ""}`,
         },
       ];

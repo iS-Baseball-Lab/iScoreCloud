@@ -20,11 +20,13 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useLiff } from "./LiffProvider";
+import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import { shareTargetPicker } from "@/lib/liff/liff-client";
 import {
   handleLiffRootLinkClick,
   navigateToLiffRoot,
 } from "@/lib/liff/navigation";
+import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 import {
   LIFF_THEME_CHANGE_EVENT,
   syncLiffThemeClasses,
@@ -46,6 +48,57 @@ const APPEARANCES = [
   { id: "dark", icon: Moon, label: "ダーク" },
   { id: "system", icon: Monitor, label: "端末連動" },
 ] as const;
+
+type BrandLogoStage = "webp" | "png" | "fallback";
+
+/**
+ * 🛡️ 3段階フォールバック付きブランドロゴアイコン
+ * - `.webp` -> `.png` -> インラインソリッドバッジの順にフォールバックし、通信瞬断や WebView GPU テクスチャ破棄でも絶対に空白化させない。
+ * - `sticky` ヘッダー内での GPU レイヤー消失を防ぐため `img` 単体への `transform` トランジションを排除。
+ */
+function LiffBrandLogoMark() {
+  const [stage, setStage] = useState<BrandLogoStage>("webp");
+
+  useEffect(() => {
+    if (stage === "webp") return;
+    const handleResume = () => {
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      setStage("webp");
+    };
+    window.addEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleResume);
+    return () => {
+      window.removeEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleResume);
+    };
+  }, [stage]);
+
+  if (stage === "fallback") {
+    return (
+      <span
+        aria-hidden="true"
+        className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] bg-[#0f172a] border-2 border-primary text-slate-50 shadow-xs flex items-center justify-center shrink-0 select-none"
+      >
+        <span className="text-[12px] font-black italic tracking-tighter leading-none">
+          i<span className="text-primary">S</span>
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={stage === "webp" ? "/liff-logo.webp" : "/liff-logo.png"}
+      alt="iScoreCloud LINEミニアプリ"
+      width={36}
+      height={36}
+      decoding="sync"
+      fetchPriority="high"
+      onError={() => {
+        setStage((prev) => (prev === "webp" ? "png" : "fallback"));
+      }}
+      className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain shrink-0"
+    />
+  );
+}
 
 interface LiffHeaderProps {
   title?: string;
@@ -92,9 +145,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
     if (isInClient) {
       const messages = [
         {
-          type: "text",
-          text: `⚾ ${shareData.title}\n${shareData.text}${shareData.url ? `\n\n👉 試合動画・予定の確認はこちら:\n${shareData.url}` : ""
-            }`,
+          type: "text" as const,
+          text: `⚾ ${shareData.title}\n${shareData.text}${
+            shareData.url
+              ? `\n\n👉 試合動画・予定の確認はこちら:\n${shareData.url}`
+              : ""
+          }`,
         },
       ];
       const shared = await shareTargetPicker(messages);
@@ -106,7 +162,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         await navigator.share({
           title: shareData.title,
           text: shareData.text,
-          url: shareData.url || (typeof window !== "undefined" ? window.location.href : ""),
+          url:
+            shareData.url ||
+            (typeof window !== "undefined" ? window.location.href : ""),
         });
       } catch {
         // ignore share cancellation
@@ -121,8 +179,8 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
   const displayName = profile?.displayName || "メンバー";
   const userInitial = displayName.slice(0, 1).toUpperCase();
-  const visibleTeams = teams.filter(
-    (t) => Boolean(t.id === "demo-team" || t.isDemo || t.isMember)
+  const visibleTeams = teams.filter((t) =>
+    Boolean(t.id === "demo-team" || t.isDemo || t.isMember)
   );
 
   return (
@@ -131,17 +189,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
         {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud LINEミニアプリ) */}
         <Link
           href="/liff"
+          onPointerDown={() => warmupLiffEndpointForHref("/liff", currentTeam?.id)}
           onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
           className="flex items-center gap-2 shrink-0 group outline-hidden"
           title="チームHUBトップへ"
         >
-          <img
-            src="/liff-logo.webp"
-            alt="iScoreCloud LINEミニアプリ"
-            width={36}
-            height={36}
-            className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain group-hover:scale-105 transition-transform duration-300"
-          />
+          <LiffBrandLogoMark />
           <div className="flex flex-col justify-center">
             <h1 className="text-[15px] sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
               iScore<span className="text-primary">Cloud</span>
@@ -154,95 +207,105 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
         {/* 🌟 2. 右側: TeamSwitcher & UserProfileMenu */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 justify-end flex-1">
-          {/* チーム切り替えバッジ (TeamSwitcher) */}
-          <DropdownMenu>
+          {/* チーム切り替えバッジ (TeamSwitcher) — modal={false} で Radix の body pointer-events ロック残留を防止 */}
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
-              <div
-                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-foreground shadow-xs hover:opacity-90 transition-all cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${isDemo
+              <button
+                type="button"
+                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-left text-foreground shadow-xs hover:opacity-90 transition-colors cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${
+                  isDemo
                     ? "bg-amber-50 dark:bg-slate-900 border-amber-500"
                     : "bg-muted border-border"
-                  }`}
+                }`}
                 title={`${orgDisplayName} (${teamDisplayName})`}
               >
-                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-border bg-card shrink-0 overflow-hidden">
-                  {currentTeam?.logoImageUrl ? (
-                    <img
+                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-border bg-card shrink-0">
+                  {currentTeam?.logoImageUrl && (
+                    <AvatarImage
                       src={currentTeam.logoImageUrl}
-                      alt="Team Logo"
-                      className="h-full w-full object-contain"
+                      alt={orgDisplayName}
+                      className="object-contain"
                     />
-                  ) : (
-                    <AvatarFallback
-                      className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-card text-primary"
-                    >
-                      {orgDisplayName.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
                   )}
+                  <AvatarFallback className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-card text-primary">
+                    {orgDisplayName.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
                   <span className="text-[11.5px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
                     {orgDisplayName}
                   </span>
                   <span
-                    className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${isDemo
+                    className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
+                      isDemo
                         ? "text-amber-600 dark:text-amber-400 font-black"
                         : "text-muted-foreground font-bold"
-                      }`}
+                    }`}
                   >
                     {teamDisplayName}
                   </span>
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-primary shrink-0 ml-0.5" />
-              </div>
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 rounded-2xl border border-border bg-card p-1.5 shadow-xl space-y-1">
+            <DropdownMenuContent
+              align="end"
+              className="z-[10050] w-64 rounded-2xl border border-border bg-card p-1.5 shadow-xl space-y-1"
+            >
               <DropdownMenuLabel className="text-[10px] font-bold text-muted-foreground uppercase px-2 py-1">
                 チーム切り替え
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {visibleTeams.map((t) => (
-                <DropdownMenuItem
-                  key={t.id}
-                  onClick={() => {
-                    const isTeamChanged = currentTeam?.id !== t.id;
-                    selectTeam(t.id);
-                    if (isTeamChanged) {
-                      navigateToLiffRoot(router, pathname);
-                    }
-                  }}
-                  className={`flex items-center justify-between p-2 cursor-pointer rounded-xl font-black text-xs ${currentTeam?.id === t.id ? "bg-primary/10 text-primary" : "hover:bg-muted"
+              {visibleTeams.map((t) => {
+                const itemOrgLabel = t.orgName || t.name || "チーム";
+                return (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onSelect={() => {
+                      const isTeamChanged = currentTeam?.id !== t.id;
+                      selectTeam(t.id);
+                      if (isTeamChanged) {
+                        requestAnimationFrame(() => {
+                          navigateToLiffRoot(router, pathname);
+                        });
+                      }
+                    }}
+                    className={`flex items-center justify-between p-2 cursor-pointer rounded-xl font-black text-xs ${
+                      currentTeam?.id === t.id
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-muted"
                     }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Avatar className="h-7 w-7 border border-border bg-card shrink-0 overflow-hidden">
-                      {t.logoImageUrl ? (
-                        <img
-                          src={t.logoImageUrl}
-                          alt={t.name}
-                          className="h-full w-full object-contain"
-                        />
-                      ) : (
-                        <AvatarFallback className="text-[10px] font-black">
-                          {(t.orgName || t.name || "チーム").slice(0, 2)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar className="h-7 w-7 border border-border bg-card shrink-0">
+                        {t.logoImageUrl && (
+                          <AvatarImage
+                            src={t.logoImageUrl}
+                            alt={itemOrgLabel}
+                            className="object-contain"
+                          />
+                        )}
+                        <AvatarFallback className="text-[10px] font-black bg-card text-primary">
+                          {itemOrgLabel.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="flex flex-col min-w-0">
-                      <span className="truncate">{t.orgName || t.name}</span>
-                      <span className="text-[9px] text-muted-foreground font-medium">
-                        {t.teamName}
-                      </span>
+                      </Avatar>
+                      <div className="flex flex-col min-w-0">
+                        <span className="truncate">{itemOrgLabel}</span>
+                        <span className="text-[9px] text-muted-foreground font-medium">
+                          {t.teamName}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  {currentTeam?.id === t.id && (
-                    <Check className="w-4 h-4 text-primary shrink-0" />
-                  )}
-                </DropdownMenuItem>
-              ))}
+                    {currentTeam?.id === t.id && (
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                    )}
+                  </DropdownMenuItem>
+                );
+              })}
 
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => setIsJoinModalOpen(true)}
+                onSelect={() => setIsJoinModalOpen(true)}
                 className="flex items-center gap-2 p-2 cursor-pointer font-black text-xs text-primary hover:bg-primary/10 rounded-xl"
               >
                 <Users className="w-4 h-4" />
@@ -252,14 +315,14 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
           </DropdownMenu>
 
           {/* 🌟 ユーザープロフィールメニュー（スリム化版） */}
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="relative flex items-center justify-center rounded-full ring-2 ring-primary/40 hover:ring-primary transition-all p-0 outline-hidden shrink-0 active:scale-95 shadow-xs"
+                className="relative flex items-center justify-center rounded-full ring-2 ring-primary/40 hover:ring-primary transition-colors p-0 outline-hidden shrink-0 active:scale-95 shadow-xs"
                 aria-label="ユーザーメニュー"
               >
-                <Avatar className="h-9 w-9 sm:h-9.5 sm:w-9.5 border-0">
+                <Avatar className="h-9 w-9 sm:h-9.5 sm:w-9.5 border border-border bg-card">
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={displayName} />
                   )}
@@ -272,11 +335,11 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
 
             <DropdownMenuContent
               align="end"
-              className="w-68 sm:w-72 rounded-2xl border border-border bg-card p-2.5 shadow-2xl space-y-2"
+              className="z-[10050] w-68 sm:w-72 rounded-2xl border border-border bg-card p-2.5 shadow-2xl space-y-2"
             >
               {/* ユーザー情報ヘッダー */}
               <div className="flex items-center gap-2.5 p-2 rounded-xl bg-muted border border-border">
-                <Avatar className="h-10 w-10 border border-border">
+                <Avatar className="h-10 w-10 border border-border bg-card">
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={displayName} />
                   )}
@@ -290,8 +353,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                   </span>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${isLoggedIn ? "bg-[#06C755]" : "bg-amber-500"
-                        }`}
+                      className={`w-2 h-2 rounded-full shrink-0 ${
+                        isLoggedIn ? "bg-[#06C755]" : "bg-amber-500"
+                      }`}
                     />
                     <span className="text-[10px] font-bold text-muted-foreground">
                       {isLoggedIn ? "LINEミニアプリ連携中" : "LINE未連携"}
@@ -317,6 +381,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 <DropdownMenuItem asChild>
                   <Link
                     href="/liff/profile"
+                    onPointerDown={() =>
+                      warmupLiffEndpointForHref("/liff/profile", currentTeam?.id)
+                    }
                     className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
@@ -324,7 +391,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                         <UserCircle className="w-4.5 h-4.5" />
                       </span>
                       <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-foreground">プロフィール</span>
+                        <span className="text-xs font-black text-foreground">
+                          プロフィール
+                        </span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
                           表示名・お子様・マイカー設定
                         </span>
@@ -344,7 +413,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                         <BookOpen className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-foreground">スコア設定</span>
+                        <span className="text-xs font-black text-foreground">
+                          スコア設定
+                        </span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
                           記号早見表の登録・AI読取設定
                         </span>
@@ -364,7 +435,9 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                         <Settings className="w-4 h-4" />
                       </span>
                       <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-foreground">アプリ設定</span>
+                        <span className="text-xs font-black text-foreground">
+                          アプリ設定
+                        </span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
                           クイックメニュー・カラー・表示設定
                         </span>
@@ -401,8 +474,12 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                             : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                         )}
                       >
-                        <Icon className={cn("h-4 w-4", isActive && "text-primary")} />
-                        <span className="text-[10px] leading-tight">{a.label}</span>
+                        <Icon
+                          className={cn("h-4 w-4", isActive && "text-primary")}
+                        />
+                        <span className="text-[10px] leading-tight">
+                          {a.label}
+                        </span>
                       </button>
                     );
                   })}

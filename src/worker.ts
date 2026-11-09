@@ -186,7 +186,7 @@ export default {
     const contentType = assetRes.headers.get('content-type') || ''
     if (contentType.includes('text/html') || url.pathname.endsWith('.txt')) {
       const headers = new Headers(assetRes.headers)
-      headers.set('Cache-Control', 'public, max-age=0, must-revalidate')
+      headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
       return new Response(assetRes.body, {
         status: assetRes.status,
         statusText: assetRes.statusText,

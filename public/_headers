@@ -1,8 +1,22 @@
+/*
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/*.webp
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/*.png
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/*.jpg
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+/*.svg
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
 /_next/static/*
+  ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
-
-/*.html
-  Cache-Control: public, max-age=0, must-revalidate
-
-/*.txt
-  Cache-Control: public, max-age=0, must-revalidate

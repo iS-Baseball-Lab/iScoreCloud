@@ -5,6 +5,7 @@
  * - 画面遷移時はもちろん、LINEミニアプリを一度閉じて開き直したコールド起動時でも **1フレーム目（0ms）で即時返却** しスピナーをゼロにする。
  * - 指が触れた瞬間（`onPointerDown`）の先行プリフェッチ（`warmupLiffEndpointForHref` / `warmupLiffMatchDetail`）に対応。
  * - 同一URLへの同時フェッチ（LiffProvider と各ページの重複呼び出し等）を 1 本の通信に統合する。
+ * - モバイル回線切替（4G/5G・Wi-Fi）や LINE トーク画面往復時のハーフオープン通信ハングを防ぐタイムアウト＆ゾンビ通信自動破棄を搭載。
  * - POST / PUT / PATCH / DELETE 実行時は自動で L1/L2/L3 全キャッシュを即時破棄し、更新結果を確実に反映する。
  */
 
@@ -18,6 +19,12 @@ interface RawFetchSnapshot {
   statusText: string;
   contentType: string;
   bodyText: string;
+}
+
+interface TrackedInflightEntry<T> {
+  promise: Promise<T>;
+  controller: AbortController;
+  startedAt: number;
 }
 
 const LEGACY_SESSION_CACHE_PREFIXES = [
@@ -37,6 +44,10 @@ const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
 const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットは24時間保持（コールド起動0ms描画用）
 const MAX_PERSISTENT_ENTRIES = 22;
 const MAX_PERSISTENT_BYTES = 120_000;
+
+const FOREGROUND_GET_TIMEOUT_MS = 12_000; // 通常GET通信の最大待機時間（モバイル回線スタック防止）
+const WARMUP_GET_TIMEOUT_MS = 8_000; // 先行プリフェッチ通信の最大待機時間
+const RESUME_ZOMBIE_THRESHOLD_MS = 6_000; // バックグラウンド復帰時に強制解除する滞留通信の閾値
 
 const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/hub",
@@ -58,8 +69,8 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
 export const LIFF_CACHE_INVALIDATED_EVENT = "iscore:liff-cache-invalidated";
 
 const memoryCache = new Map<string, CacheEntry>();
-const inflightRequests = new Map<string, Promise<unknown>>();
-const inflightRawRequests = new Map<string, Promise<RawFetchSnapshot>>();
+const inflightRequests = new Map<string, TrackedInflightEntry<unknown>>();
+const inflightRawRequests = new Map<string, TrackedInflightEntry<RawFetchSnapshot>>();
 
 let nativeFetchRef: typeof fetch | null = null;
 let isGlobalFastFetchInstalled = false;
@@ -67,8 +78,75 @@ let hasPurgedLegacyCache = false;
 let cacheMutationEpoch = 0;
 let lastCacheInvalidatedAt = 0;
 
+let prefetchQueue: string[] = [];
+let prefetchGeneration = 0;
+let isPrefetchWorkerRunning = false;
+
 export function getLastLiffCacheInvalidatedAt(): number {
   return lastCacheInvalidatedAt;
+}
+
+function createTimedSignal(
+  timeoutMs: number,
+  upstreamSignal?: AbortSignal | null
+): {
+  controller: AbortController;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  const timerId = setTimeout(() => {
+    try {
+      controller.abort();
+    } catch {
+      // ignore abort errors
+    }
+  }, timeoutMs);
+
+  const onUpstreamAbort = () => {
+    try {
+      controller.abort();
+    } catch {
+      // ignore abort errors
+    }
+  };
+
+  if (upstreamSignal) {
+    if (upstreamSignal.aborted) {
+      clearTimeout(timerId);
+      onUpstreamAbort();
+    } else {
+      upstreamSignal.addEventListener("abort", onUpstreamAbort, { once: true });
+    }
+  }
+
+  const cleanup = () => {
+    clearTimeout(timerId);
+    if (upstreamSignal) {
+      upstreamSignal.removeEventListener("abort", onUpstreamAbort);
+    }
+  };
+
+  return { controller, cleanup };
+}
+
+function abortZombieInflightRequests(forceAllOlderThanMs = RESUME_ZOMBIE_THRESHOLD_MS): void {
+  const now = Date.now();
+  for (const [key, entry] of Array.from(inflightRequests.entries())) {
+    if (now - entry.startedAt >= forceAllOlderThanMs) {
+      try {
+        entry.controller.abort();
+      } catch {}
+      inflightRequests.delete(key);
+    }
+  }
+  for (const [key, entry] of Array.from(inflightRawRequests.entries())) {
+    if (now - entry.startedAt >= forceAllOlderThanMs) {
+      try {
+        entry.controller.abort();
+      } catch {}
+      inflightRawRequests.delete(key);
+    }
+  }
 }
 
 function purgeLegacySessionCache(): void {
@@ -134,6 +212,19 @@ function getActiveClientUserName(): string {
 function extractPathFromCacheKey(key: string): string {
   const sepIdx = key.indexOf("::");
   return sepIdx >= 0 ? key.slice(sepIdx + 2) : key;
+}
+
+function isSameOriginApiRequestUrl(rawUrl: string): boolean {
+  if (!rawUrl) return false;
+  if (rawUrl.startsWith("/api/")) return true;
+  if (rawUrl.startsWith("/") && !rawUrl.startsWith("//")) return false;
+  if (typeof window === "undefined") return false;
+  try {
+    const u = new URL(rawUrl, window.location.origin);
+    return u.origin === window.location.origin && u.pathname.startsWith("/api/");
+  } catch {
+    return false;
+  }
 }
 
 function shouldAttachClientAuthHeaders(rawUrl: string): boolean {
@@ -413,24 +504,33 @@ export function peekLiffApiCache<T>(url: string): T | null {
 }
 
 /**
- * 重複排除付きのネットワーク JSON フェッチ（成功時キャッシュ更新・常にネイティブ fetch を使用）
+ * 重複排除・タイムアウト保護付きのネットワーク JSON フェッチ（成功時キャッシュ更新・常にネイティブ fetch を使用）
  */
-export async function fetchLiffJsonFresh<T>(urlOrKey: string): Promise<T> {
+export async function fetchLiffJsonFresh<T>(
+  urlOrKey: string,
+  options?: { timeoutMs?: number }
+): Promise<T> {
   const fetchUrl = extractPathFromCacheKey(urlOrKey);
   const key = normalizeCacheKey(fetchUrl) || urlOrKey;
   const existing = inflightRequests.get(key);
   if (existing) {
-    return existing as Promise<T>;
+    return existing.promise as Promise<T>;
   }
 
   const startEpoch = cacheMutationEpoch;
   const baseFetch = getNativeFetch();
+  const timeoutMs = options?.timeoutMs ?? FOREGROUND_GET_TIMEOUT_MS;
+  const { controller, cleanup } = createTimedSignal(timeoutMs);
+
   const reqPromise = (async () => {
     try {
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
         fetchUrl,
         fetchUrl,
-        { cache: "no-store" }
+        {
+          cache: "no-store",
+          signal: controller.signal,
+        }
       );
       const res = await baseFetch(nextInput, nextInit);
       if (!res.ok) {
@@ -442,11 +542,19 @@ export async function fetchLiffJsonFresh<T>(urlOrKey: string): Promise<T> {
       }
       return json;
     } finally {
-      inflightRequests.delete(key);
+      cleanup();
+      const current = inflightRequests.get(key);
+      if (current && current.controller === controller) {
+        inflightRequests.delete(key);
+      }
     }
   })();
 
-  inflightRequests.set(key, reqPromise);
+  inflightRequests.set(key, {
+    promise: reqPromise,
+    controller,
+    startedAt: Date.now(),
+  });
   return reqPromise;
 }
 
@@ -550,8 +658,9 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
 
 /**
  * 🚀 全LIFFページの `fetch('/api/...')` を自動的に SWR 即時応答＋同時リクエスト統合化するアクセラレータ
+ * - `/api/*` 以外の通信（Next.js App Router の RSC `.txt` 遷移や静的チャンク読込等）は一切加工せず 0ms パススルーする。
  * - 90秒以内のキャッシュは `window.fetch` でも 0ms で即返却し、15秒超なら裏で静かに再検証する。
- * - 90秒超の L3 永続キャッシュは 1フレーム目の `peekLiffApiCache` で既に画面描画済みのため、`window.fetch` では最新データを取得して画面へ自動反映する。
+ * - タイムアウト保護（12秒）および LINE バックグラウンド復帰時の滞留リクエスト自動解除により、永久スピナーを根絶する。
  * - POST / PUT / PATCH / DELETE 通信が発生した瞬間に L1/L2/L3 全キャッシュを自動破棄するため古いデータが残らない。
  */
 export function installLiffFastFetchCache(): void {
@@ -560,19 +669,40 @@ export function installLiffFastFetchCache(): void {
   const baseFetch = getNativeFetch();
   isGlobalFastFetchInstalled = true;
 
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const method = (
-      init?.method ||
-      (input instanceof Request ? input.method : "GET") ||
-      "GET"
-    ).toUpperCase();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      abortZombieInflightRequests(RESUME_ZOMBIE_THRESHOLD_MS);
+    }
+  });
 
+  window.addEventListener("pageshow", (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      abortZombieInflightRequests(0);
+    }
+  });
+
+  window.addEventListener("online", () => {
+    abortZombieInflightRequests(3_000);
+  });
+
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const rawUrl =
       typeof input === "string"
         ? input
         : input instanceof URL
         ? input.toString()
         : input.url;
+
+    // 1. `/api/*` 以外の通信（Next.js RSC `.txt`・静的チャンク・外部API）は一切触れずにそのままネイティブ fetch へ直渡し
+    if (!isSameOriginApiRequestUrl(rawUrl)) {
+      return baseFetch(input, init);
+    }
+
+    const method = (
+      init?.method ||
+      (input instanceof Request ? input.method : "GET") ||
+      "GET"
+    ).toUpperCase();
 
     const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
       rawUrl,
@@ -582,12 +712,12 @@ export function installLiffFastFetchCache(): void {
 
     const cacheKey = normalizeCacheKey(rawUrl);
 
-    // 対象外のURL（外部URL・認証API・画像バイナリ・ポーリング専用API等）はヘッダー付与済みでそのままネイティブ fetch へ委譲
+    // 2. キャッシュ対象外の `/api/*`（認証API・画像バイナリ・ポーリング専用API等）はヘッダー付与済みでそのまま委譲
     if (!cacheKey) {
       return baseFetch(nextInput, nextInit);
     }
 
-    // 更新系リクエスト（POST / PUT / PATCH / DELETE）は実行直後にキャッシュを全クリアして最新状態を保証
+    // 3. 更新系リクエスト（POST / PUT / PATCH / DELETE）は実行直後にキャッシュを全クリアして最新状態を保証
     if (method !== "GET") {
       invalidateLiffApiCache();
       try {
@@ -609,13 +739,13 @@ export function installLiffFastFetchCache(): void {
       } catch {}
     }
 
-    // GET リクエスト：直近90秒以内のキャッシュは 0ms で Response を即返却（15秒超なら裏で再検証）
+    // 4. GET リクエスト：直近90秒以内のキャッシュは 0ms で Response を即返却（15秒超なら裏で再検証）
     const cached = !bypassCache ? readFromCache<unknown>(cacheKey, false) : null;
     if (cached) {
       const age = Date.now() - cached.updatedAt;
       if (age <= FAST_RETURN_STALE_MS) {
         if (age > DEFAULT_FRESH_MS) {
-          void fetchLiffJsonFresh(cacheKey).catch(() => {});
+          void fetchLiffJsonFresh(cacheKey, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
         }
         return new Response(JSON.stringify(cached.data), {
           status: 200,
@@ -628,15 +758,55 @@ export function installLiffFastFetchCache(): void {
       }
     }
 
-    // キャッシュミスまたは90秒超の古いスナップショット時：同一 URL への同時リクエストを 1 本に統合して最新取得
-    let pending = inflightRawRequests.get(cacheKey);
-    if (!pending) {
+    // 呼び出し元独自の AbortSignal が既に指定されている場合は共有統合せず個別にタイムアウト保護実行
+    const callerSignal =
+      init?.signal || (input instanceof Request ? input.signal : null);
+    if (callerSignal) {
+      const { controller, cleanup } = createTimedSignal(
+        FOREGROUND_GET_TIMEOUT_MS,
+        callerSignal
+      );
       const startEpoch = cacheMutationEpoch;
-      pending = (async () => {
+      try {
+        const res = await baseFetch(nextInput, {
+          ...nextInit,
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const contentType = res.headers.get("content-type") || "";
+        const bodyText = await res.text();
+        if (
+          res.ok &&
+          contentType.includes("application/json") &&
+          startEpoch === cacheMutationEpoch
+        ) {
+          try {
+            writeToCache(cacheKey, JSON.parse(bodyText) as unknown);
+          } catch {}
+        }
+        return new Response(bodyText, {
+          status: res.status,
+          statusText: res.statusText,
+          headers: {
+            "Content-Type": contentType || "application/json; charset=utf-8",
+          },
+        });
+      } finally {
+        cleanup();
+      }
+    }
+
+    // 5. キャッシュミスまたは90秒超の古いスナップショット時：同一 URL への同時リクエストをタイムアウト付きで 1 本に統合
+    let tracked = inflightRawRequests.get(cacheKey);
+    if (!tracked) {
+      const startEpoch = cacheMutationEpoch;
+      const { controller, cleanup } = createTimedSignal(FOREGROUND_GET_TIMEOUT_MS);
+      const pending = (async (): Promise<RawFetchSnapshot> => {
         try {
           const res = await baseFetch(nextInput, {
             ...nextInit,
             cache: "no-store",
+            signal: controller.signal,
           });
           const contentType = res.headers.get("content-type") || "";
           const bodyText = await res.text();
@@ -659,13 +829,22 @@ export function installLiffFastFetchCache(): void {
             bodyText,
           };
         } finally {
-          inflightRawRequests.delete(cacheKey);
+          cleanup();
+          const current = inflightRawRequests.get(cacheKey);
+          if (current && current.controller === controller) {
+            inflightRawRequests.delete(cacheKey);
+          }
         }
       })();
-      inflightRawRequests.set(cacheKey, pending);
+      tracked = {
+        promise: pending,
+        controller,
+        startedAt: Date.now(),
+      };
+      inflightRawRequests.set(cacheKey, tracked);
     }
 
-    const snap = await pending;
+    const snap = await tracked.promise;
     return new Response(snap.bodyText, {
       status: snap.status,
       statusText: snap.statusText,
@@ -677,13 +856,14 @@ export function installLiffFastFetchCache(): void {
 }
 
 function triggerWarmupUrl(url: string): void {
+  if (typeof document !== "undefined" && document.hidden) return;
   const key = normalizeCacheKey(url) || url;
   const existing = readFromCache(key, false);
   if (existing && Date.now() - existing.updatedAt <= DEFAULT_FRESH_MS) {
     return;
   }
   if (!inflightRequests.has(key) && !inflightRawRequests.has(key)) {
-    void fetchLiffJsonFresh(key).catch(() => {});
+    void fetchLiffJsonFresh(key, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
   }
 }
 
@@ -809,8 +989,48 @@ export function warmupLiffMatchDetail(
   }
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function runPolitePrefetchWorker(expectedGen: number): Promise<void> {
+  if (isPrefetchWorkerRunning) return;
+  isPrefetchWorkerRunning = true;
+  try {
+    await sleepMs(700);
+    while (prefetchQueue.length > 0 && expectedGen === prefetchGeneration) {
+      if (typeof document !== "undefined" && document.hidden) {
+        await sleepMs(1000);
+        continue;
+      }
+      // フォアグラウンドのAPI読込中は帯域・コネクション枠を100%譲る（ヘッダーアイコンや表示中画面の読込を最優先）
+      if (inflightRawRequests.size > 0) {
+        await sleepMs(250);
+        continue;
+      }
+      const nextUrl = prefetchQueue.shift();
+      if (!nextUrl) break;
+
+      const key = normalizeCacheKey(nextUrl) || nextUrl;
+      const existing = readFromCache(key, false);
+      if (!existing && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
+        await fetchLiffJsonFresh(key, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
+        await sleepMs(120);
+      }
+    }
+  } finally {
+    isPrefetchWorkerRunning = false;
+    if (prefetchQueue.length > 0 && expectedGen === prefetchGeneration) {
+      void runPolitePrefetchWorker(prefetchGeneration);
+    }
+  }
+}
+
 /**
- * アイドル時に主要画面（＋ボトムナビのカスタム割当画面）の API データを段階的プリフェッチし、初回タブ切替すら体感 0ms にする
+ * アイドル時に主要画面（＋ボトムナビのカスタム割当画面）の API データを1本ずつ直列プリフェッチし、
+ * 画像・アイコンやフォアグラウンド通信のコネクション枠を一切圧迫せずにタブ切替を体感 0ms にする
  */
 export function prefetchLiffCoreEndpoints(params: {
   teamId: string;
@@ -885,26 +1105,7 @@ export function prefetchLiffCoreEndpoints(params: {
     // ignore storage parse errors
   }
 
-  const scheduleIdle = (fn: () => void, delayMs: number) => {
-    setTimeout(() => {
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-        (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number }).requestIdleCallback(
-          fn,
-          { timeout: 1500 }
-        );
-      } else {
-        fn();
-      }
-    }, delayMs);
-  };
-
-  Array.from(urlSet).forEach((url, index) => {
-    scheduleIdle(() => {
-      const key = normalizeCacheKey(url) || url;
-      const existing = readFromCache(key, false);
-      if (!existing && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
-        void fetchLiffJsonFresh(key).catch(() => {});
-      }
-    }, 350 + index * 220);
-  });
+  prefetchGeneration += 1;
+  prefetchQueue = Array.from(urlSet);
+  void runPolitePrefetchWorker(prefetchGeneration);
 }
