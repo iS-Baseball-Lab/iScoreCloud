@@ -805,7 +805,7 @@ function LiffAdminDashboardContent() {
                   )}>未承認</span>
                   <span className={cn(
                     "text-xs font-black",
-                    pendingCount > 0 ? "text-amber-700 dark:text-amber-300 animate-pulse" : "text-foreground"
+                    pendingCount > 0 ? "text-amber-700 dark:text-amber-300" : "text-foreground"
                   )}>
                     {pendingCount}件
                   </span>
@@ -834,7 +834,7 @@ function LiffAdminDashboardContent() {
                 <UserCheck className={cn("w-3.5 h-3.5", activeTab === "requests" ? "text-primary" : "")} />
                 <span>参加承認</span>
                 {pendingCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black animate-pulse">
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black">
                     {pendingCount}
                   </span>
                 )}

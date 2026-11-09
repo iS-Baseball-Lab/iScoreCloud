@@ -679,7 +679,7 @@ export function HubHeroSection({
             {weeklyEvents.length > 1 && (
               <span className="text-[11px] font-black text-primary flex items-center gap-0.5">
                 <span>横スライドで確認 ({weeklyEvents.length}件)</span>
-                <ChevronRight className="w-3.5 h-3.5 animate-pulse" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </span>
             )}
           </div>

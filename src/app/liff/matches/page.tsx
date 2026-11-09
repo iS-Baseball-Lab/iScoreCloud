@@ -1579,8 +1579,9 @@ function MatchesContent() {
           </h2>
 
           {isLive ? (
-            <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs animate-pulse">
-              LIVE
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+              <span>LIVE</span>
             </span>
           ) : isRainout ? (
             <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black">

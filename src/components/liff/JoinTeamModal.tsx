@@ -237,7 +237,7 @@ export function JoinTeamModal({
                 {statusResult.status === "active" ? (
                   <CheckCircle2 className="w-8 h-8" />
                 ) : (
-                  <Clock className="w-8 h-8 animate-pulse" />
+                  <Clock className="w-8 h-8" />
                 )}
               </div>
               <div className="space-y-1">

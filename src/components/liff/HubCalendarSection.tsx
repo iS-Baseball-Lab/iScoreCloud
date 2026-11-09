@@ -315,7 +315,7 @@ export function HubCalendarSection({
           {todayCalendarEvents.length > 0 && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                <span className="w-2 h-2 rounded-full bg-primary ring-2 ring-primary/25 shrink-0" />
                 <span className="text-xs font-black text-primary flex items-center gap-1">
                   <span>本日（{todayCalendarEvents[0].date}）の活動予定</span>
                 </span>

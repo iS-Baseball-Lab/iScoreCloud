@@ -465,10 +465,14 @@ export function CarpoolConvoyLiveMap({
   }, [eventId, direction]);
 
   // ==========================================
-  // 1. サーバーからの隊列スナップショット取得（5秒ポーリング）
+  // 1. サーバーからの隊列スナップショット取得（稼働号車あり: 5秒 / 待機中: 15秒 省電力ポーリング）
   // ==========================================
+  const carsRef = useRef(cars);
+  carsRef.current = cars;
+
   const fetchSnapshot = useCallback(async () => {
     if (!eventId || isPollingInFlightRef.current) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
     isPollingInFlightRef.current = true;
     try {
       const qs = new URLSearchParams({
@@ -488,21 +492,22 @@ export function CarpoolConvoyLiveMap({
 
       setSnapshot(data);
 
+      const latestCars = carsRef.current;
       if (!hasInitializedMyCarRef.current) {
         hasInitializedMyCarRef.current = true;
         if (
           data.myAssignedCarpoolId &&
-          cars.some((c) => c.carpoolId === data.myAssignedCarpoolId)
+          latestCars.some((c) => c.carpoolId === data.myAssignedCarpoolId)
         ) {
           setMyCarpoolId(data.myAssignedCarpoolId);
-          const matchedCar = cars.find(
+          const matchedCar = latestCars.find(
             (c) => c.carpoolId === data.myAssignedCarpoolId
           );
           if (matchedCar) {
             setSelectedCarNumber(matchedCar.carNumber);
           }
-        } else if (cars[0]) {
-          setMyCarpoolId(cars[0].carpoolId);
+        } else if (latestCars[0]) {
+          setMyCarpoolId(latestCars[0].carpoolId);
         }
       }
     } catch {
@@ -511,19 +516,28 @@ export function CarpoolConvoyLiveMap({
       isPollingInFlightRef.current = false;
       setIsInitialLoading(false);
     }
-  }, [teamId, eventId, direction, effectiveUserId, effectiveUserName, cars]);
+  }, [teamId, eventId, direction, effectiveUserId, effectiveUserName]);
 
   useEffect(() => {
     void fetchSnapshot();
   }, [fetchSnapshot]);
 
+  const hasActiveSharingVehicle = useMemo(() => {
+    if (isBroadcasting) return true;
+    const stateMap = snapshot?.states;
+    if (!stateMap) return false;
+    return Object.values(stateMap).some((st) => Boolean(st?.isSharing));
+  }, [isBroadcasting, snapshot?.states]);
+
   useEffect(() => {
     if (!isExpanded) return;
+    // 誰かが位置共有中なら5秒間隔でリアルタイム追従、全車未発信の待機中は15秒に緩和して無線電力を節約
+    const pollIntervalMs = hasActiveSharingVehicle ? 5000 : 15_000;
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         void fetchSnapshot();
       }
-    }, 5000);
+    }, pollIntervalMs);
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
@@ -535,7 +549,7 @@ export function CarpoolConvoyLiveMap({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [isExpanded, fetchSnapshot]);
+  }, [isExpanded, hasActiveSharingVehicle, fetchSnapshot]);
 
   // 自分の選択号車の既存ステータスを同期
   useEffect(() => {
@@ -1055,9 +1069,9 @@ export function CarpoolConvoyLiveMap({
     showTraffic,
   ]);
 
-  // 折りたたんだ際に次回展開時再マウントできるよう参照整理
+  // 折りたたみ時および画面離脱（アンマウント）時にマーカー・TrafficLayer参照を確実解放
   useEffect(() => {
-    if (!isExpanded) {
+    const cleanupMapLayerRefs = () => {
       destMarkerRef.current?.setMap(null);
       destMarkerRef.current = null;
       vehicleMarkersRef.current.forEach((m) => m.setMap(null));
@@ -1065,7 +1079,14 @@ export function CarpoolConvoyLiveMap({
       trafficLayerRef.current?.setMap(null);
       trafficLayerRef.current = null;
       mapInstanceRef.current = null;
+    };
+
+    if (!isExpanded) {
+      cleanupMapLayerRefs();
     }
+    return () => {
+      cleanupMapLayerRefs();
+    };
   }, [isExpanded]);
 
   // マップ種別 & 渋滞レイヤー切替反映

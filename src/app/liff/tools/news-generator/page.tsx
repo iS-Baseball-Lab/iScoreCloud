@@ -214,6 +214,7 @@ function LiffNewsGeneratorContent() {
   const isPushingRef = useRef<boolean>(false);
   const queuedPushRef = useRef<boolean>(false);
   const isPollingRef = useRef<boolean>(false);
+  const lastSyncActivityAtRef = useRef<number>(Date.now());
 
   const selectedMatch = useMemo(
     () => matches.find((m) => m.id === selectedMatchKey) || null,
@@ -983,6 +984,7 @@ function LiffNewsGeneratorContent() {
         }
 
         if (!isHydratingRef.current) {
+          lastSyncActivityAtRef.current = Date.now();
           hasPendingLocalSaveRef.current = true;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
@@ -1016,6 +1018,14 @@ function LiffNewsGeneratorContent() {
         isHydratingRef.current ||
         isPushingRef.current ||
         isPollingRef.current
+      ) {
+        return;
+      }
+      // オフライン中のサイレントポーリングはスキップして無線モデムの無駄な再試行を防ぐ
+      if (
+        silent &&
+        typeof navigator !== "undefined" &&
+        navigator.onLine === false
       ) {
         return;
       }
@@ -1111,6 +1121,7 @@ function LiffNewsGeneratorContent() {
 
           baseDocRef.current = remoteDoc;
           baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
+          lastSyncActivityAtRef.current = Date.now();
           docRef.current = nextDoc;
           setDoc(nextDoc);
           if (!silent) {
@@ -1162,35 +1173,88 @@ function LiffNewsGeneratorContent() {
     await pullLatestFromCloud(false);
   };
 
-  // バックグラウンド自動同期（4.5秒間隔の軽量ポーリング ＋ LINE往復時の即時フラッシュ＆復帰同期）
+  // バックグラウンド自動同期（共同編集中の4.5秒軽量ポーリング ＋ 無操作時の省電力バックオフ ＋ LINE往復時の即時フラッシュ＆復帰同期）
   useEffect(() => {
     if (resolvedTeamId === "demo-team" || typeof window === "undefined") {
       return;
     }
 
-    const intervalId = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void pullLatestFromCloud(true);
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
+    let currentIntervalMs = 4500;
+
+    const clearPollTimer = () => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
       }
-    }, 4500);
+    };
+
+    const computeAdaptiveDelayMs = (): number | null => {
+      const idleMs = Date.now() - lastSyncActivityAtRef.current;
+      // 直近3分以内に自分または共同編集者の更新・操作がある間は 4.5秒 のリアルタイム同期を維持
+      if (idleMs < 3 * 60_000) return 4500;
+      // 3〜10分無操作（イニング間等）は 12秒 に緩和して 4G/5G 無線モデムを RRC_IDLE 省電力状態へ落とす
+      if (idleMs < 10 * 60_000) return 12_000;
+      // 10〜20分無操作は 25秒
+      if (idleMs < 20 * 60_000) return 25_000;
+      // 20分以上完全放置時は自動スリープ（画面タップ・フォーカス・LINE復帰で 0ms 即再開）
+      return null;
+    };
+
+    const scheduleNextPoll = () => {
+      clearPollTimer();
+      if (disposed || document.visibilityState !== "visible") return;
+      const nextMs = computeAdaptiveDelayMs();
+      currentIntervalMs = nextMs ?? 0;
+      if (nextMs === null) return;
+      timerId = setTimeout(async () => {
+        timerId = null;
+        if (disposed || document.visibilityState !== "visible") return;
+        await pullLatestFromCloud(true);
+        scheduleNextPoll();
+      }, nextMs);
+    };
+
+    lastSyncActivityAtRef.current = Date.now();
+    scheduleNextPoll();
+
+    const handleUserActivity = () => {
+      const wasSlowOrPaused = timerId === null || currentIntervalMs > 4500;
+      lastSyncActivityAtRef.current = Date.now();
+      if (wasSlowOrPaused && document.visibilityState === "visible") {
+        void pullLatestFromCloud(true);
+        scheduleNextPoll();
+      }
+    };
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
+        clearPollTimer();
         flushPendingSaveNow(true);
       } else if (document.visibilityState === "visible") {
+        lastSyncActivityAtRef.current = Date.now();
         void pullLatestFromCloud(true);
+        scheduleNextPoll();
       }
     };
 
     const handleWindowFocus = () => {
+      lastSyncActivityAtRef.current = Date.now();
       void pullLatestFromCloud(true);
+      scheduleNextPoll();
     };
 
+    window.addEventListener("pointerdown", handleUserActivity, { passive: true });
+    window.addEventListener("keydown", handleUserActivity, { passive: true });
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleWindowFocus);
 
     return () => {
-      clearInterval(intervalId);
+      disposed = true;
+      clearPollTimer();
+      window.removeEventListener("pointerdown", handleUserActivity);
+      window.removeEventListener("keydown", handleUserActivity);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleWindowFocus);
     };

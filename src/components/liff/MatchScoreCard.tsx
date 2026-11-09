@@ -92,7 +92,7 @@ export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean
       {hasVideo && (
         <div className="w-full aspect-video bg-muted relative flex flex-col items-center justify-center border-b border-border">
           <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-            <Video className="w-6 h-6 text-[#FF0000]/45 animate-pulse" />
+            <Video className="w-6 h-6 text-[#FF0000]/45" />
           </div>
           <div className="mt-2.5 h-2.5 w-28 bg-border rounded-full" />
         </div>
@@ -173,41 +173,90 @@ function getYoutubeVideoId(url: string | null | undefined): string | null {
   return match && match[2].length === 11 ? match[2] : null;
 }
 
-// 🌟 カウントダウン用サブコンポーネント（不正日付によるRangeErrorクラッシュを完全防止）
+// 🌟 カウントダウン用サブコンポーネント（不正日付防止 ＋ 省電力アダプティブ更新：1時間超は分単位更新・バックグラウンド時は完全停止）
+function computeMatchCountdownState(date: string): {
+  label: string;
+  nextDelayMs: number | null;
+} {
+  try {
+    const target = parseSafeMatchDate(date);
+    if (!target || isNaN(target.getTime())) {
+      return { label: "--:--", nextDelayMs: null };
+    }
+    const now = new Date();
+    const diff = differenceInSeconds(target, now);
+
+    if (isNaN(diff) || diff <= 0) {
+      return { label: "START", nextDelayMs: null };
+    }
+
+    const duration = intervalToDuration({ start: now, end: target });
+    const h = String(duration.hours || 0).padStart(2, "0");
+    const m = String(duration.minutes || 0).padStart(2, "0");
+    const s = String(duration.seconds || 0).padStart(2, "0");
+
+    // 開始まで1時間以上ある場合は分単位表示とし、次の「分」の切り替わりまでタイマーを休止してCPU消費を98%削減
+    if (diff >= 3600) {
+      const label = duration.days
+        ? `${duration.days}日 ${h}:${m}`
+        : `${Number(duration.hours || 0)}時間${m}分`;
+      const secondsIntoMinute = diff % 60;
+      const nextDelayMs = Math.min(
+        60_000,
+        Math.max(1_000, (secondsIntoMinute === 0 ? 60 : secondsIntoMinute) * 1000)
+      );
+      return { label, nextDelayMs };
+    }
+
+    return { label: `00:${m}:${s}`, nextDelayMs: 1_000 };
+  } catch {
+    return { label: "--:--", nextDelayMs: null };
+  }
+}
+
 function MatchCountdown({ date }: { date: string }) {
-  const [timeLeft, setTimeLeft] = useState("00:00:00");
+  const [timeLeft, setTimeLeft] = useState(() => computeMatchCountdownState(date).label);
 
   useEffect(() => {
-    const update = () => {
-      try {
-        const target = parseSafeMatchDate(date);
-        if (!target || isNaN(target.getTime())) {
-          setTimeLeft("--:--:--");
-          return;
-        }
-        const now = new Date();
-        const diff = differenceInSeconds(target, now);
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
-        if (isNaN(diff) || diff <= 0) {
-          setTimeLeft("START");
-          return;
-        }
-
-        const duration = intervalToDuration({ start: now, end: target });
-        const d = duration.days ? `${duration.days}日 ` : "";
-        const h = String(duration.hours || 0).padStart(2, "0");
-        const m = String(duration.minutes || 0).padStart(2, "0");
-        const s = String(duration.seconds || 0).padStart(2, "0");
-
-        setTimeLeft(`${d}${h}:${m}:${s}`);
-      } catch {
-        setTimeLeft("--:--:--");
+    const clearTimer = () => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        timerId = null;
       }
     };
 
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
+    const tick = () => {
+      clearTimer();
+      if (disposed) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      const { label, nextDelayMs } = computeMatchCountdownState(date);
+      setTimeLeft(label);
+      if (nextDelayMs !== null) {
+        timerId = setTimeout(tick, nextDelayMs);
+      }
+    };
+
+    tick();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        tick();
+      } else {
+        clearTimer();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      disposed = true;
+      clearTimer();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [date]);
 
   return (
@@ -394,11 +443,11 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               onClick={() => setIsPlayingVideo(true)}
               className="relative w-full h-full cursor-pointer overflow-hidden group/thumb bg-muted"
             >
-              {/* 🌟 サムネイル読み込み中スケルトン */}
+              {/* 🌟 サムネイル読み込み中プレースホルダー（lazy未読込カードやエラー時の常時60fps GPU負荷を防ぐため静的ソリッド表示） */}
               {!isThumbLoaded && (
-                <div className="absolute inset-0 bg-muted animate-pulse flex flex-col items-center justify-center z-0">
+                <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center z-0">
                   <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-                    <Video className="w-6 h-6 text-[#FF0000]/45 animate-pulse" />
+                    <Video className="w-6 h-6 text-[#FF0000]/45" />
                   </div>
                 </div>
               )}
@@ -410,6 +459,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 loading="lazy"
                 decoding="async"
                 onLoad={() => setIsThumbLoaded(true)}
+                onError={() => setIsThumbLoaded(true)}
                 className={cn(
                   "w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105",
                   !isThumbLoaded && "opacity-0"
@@ -496,8 +546,9 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
           <div className="shrink-0 flex items-center gap-1">
             {isLive ? (
-              <span className="px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black rounded animate-pulse">
-                LIVE
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                <span>LIVE</span>
               </span>
             ) : isRainout ? (
               <span className="px-2 py-0.5 bg-sky-600 text-white text-[10px] font-black rounded">

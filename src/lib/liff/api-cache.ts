@@ -38,8 +38,8 @@ const LEGACY_PERSISTENT_CACHE_PREFIXES = [
 ] as const;
 const SESSION_CACHE_PREFIX = "iscore_swr_v4:";
 const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v3:";
-const DEFAULT_FRESH_MS = 15_000; // 15秒以内は完全フレッシュ扱い
-const FAST_RETURN_STALE_MS = 90_000; // 90秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
+const DEFAULT_FRESH_MS = 30_000; // 30秒以内は完全フレッシュ扱い（更新時は全キャッシュ即時破棄されるため無駄な裏再検証通信＆ストレージ書込を削減）
+const FAST_RETURN_STALE_MS = 120_000; // 120秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
 const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
 const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットは24時間保持（コールド起動0ms描画用）
 const MAX_PERSISTENT_ENTRIES = 22;
@@ -995,6 +995,21 @@ function sleepMs(ms: number): Promise<void> {
   });
 }
 
+function waitUntilDocumentVisible(): Promise<void> {
+  if (typeof document === "undefined" || !document.hidden) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const onVisible = () => {
+      if (!document.hidden) {
+        document.removeEventListener("visibilitychange", onVisible);
+        resolve();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+  });
+}
+
 async function runPolitePrefetchWorker(expectedGen: number): Promise<void> {
   if (isPrefetchWorkerRunning) return;
   isPrefetchWorkerRunning = true;
@@ -1002,8 +1017,11 @@ async function runPolitePrefetchWorker(expectedGen: number): Promise<void> {
     await sleepMs(700);
     while (prefetchQueue.length > 0 && expectedGen === prefetchGeneration) {
       if (typeof document !== "undefined" && document.hidden) {
-        await sleepMs(1000);
+        await waitUntilDocumentVisible();
         continue;
+      }
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        break;
       }
       // フォアグラウンドのAPI読込中は帯域・コネクション枠を100%譲る（ヘッダーアイコンや表示中画面の読込を最優先）
       if (inflightRawRequests.size > 0) {
