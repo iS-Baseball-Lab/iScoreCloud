@@ -159,9 +159,10 @@ export function getInningSubColumnFractions(
   for (const m of innings) {
     const cols = Math.max(1, m.columnCount || 1);
     if (m.inning === inning) {
-      const safeSubCol = Math.max(1, Math.min(cols, subColIndex || 1));
+      const safeSubCol = Math.max(1, Math.round(subColIndex || 1));
+      const effectiveCols = Math.max(cols, safeSubCol);
       const inningS0 = cumCols / totalPhysCols;
-      const inningS1 = (cumCols + cols) / totalPhysCols;
+      const inningS1 = (cumCols + effectiveCols) / totalPhysCols;
       const s0 = (cumCols + safeSubCol - 1) / totalPhysCols;
       const s1 = (cumCols + safeSubCol) / totalPhysCols;
       return {
@@ -170,7 +171,7 @@ export function getInningSubColumnFractions(
         inningS0,
         inningS1,
         totalPhysCols,
-        subColsInInning: cols,
+        subColsInInning: effectiveCols,
         safeSubCol,
       };
     }

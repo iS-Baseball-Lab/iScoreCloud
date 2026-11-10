@@ -51,6 +51,7 @@ import {
   computeCountFromPitches,
   detectExcessOutInnings,
   detectMissingOrderGaps,
+  normalizeInningAtBatColumns,
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
@@ -87,6 +88,8 @@ import {
 import {
   getCellQuadInStructure,
   quadToBoundingBox,
+  resolveStructureGridCorners,
+  syncStructureBoxesFromCorners,
 } from "@/lib/liff/scorebook-grid";
 import {
   cropScorebookQuad,
@@ -370,8 +373,7 @@ export function Step3PinpointReview({
         runnerName: pr.runner.name || matchedPeer?.batterName || "走者",
         atBatId: matchedPeer?.id ?? null,
         inning: matchedPeer?.inning ?? editingAtBat.inning,
-        columnIndex:
-          matchedPeer?.columnIndex || editingAtBat.columnIndex || 1,
+        columnIndex: matchedPeer?.columnIndex || 1,
         cellBox: matchedPeer?.cellBox,
       };
     });
@@ -421,12 +423,15 @@ export function Step3PinpointReview({
     }
   }, [editingAtBat]);
 
-  // 編集中マスの切り抜きズーム画像を生成（4隅歪み補正ホモグラフィ＆複数列サブ列分割を最優先し、隣接マス映り込みゼロで水平展開）
   useEffect(() => {
-    let cancelled = false;
     setShowFullSheetInModal(false);
     setShowOrderAdjustPanel(false);
     setFocusedModalCellKey(null);
+  }, [editingAtBat?.id]);
+
+  // 編集中マスの切り抜きズーム画像を生成（4隅歪み補正ホモグラフィ＆複数列サブ列分割を最優先し、隣接マス映り込みゼロで水平展開）
+  useEffect(() => {
+    let cancelled = false;
 
     if (!editingAtBat || !currentSheetImage) {
       setCroppedCellUrl(null);
@@ -566,9 +571,15 @@ export function Step3PinpointReview({
   ]);
 
   /**
-   * イニング昇順に整列しつつ、すでに生還・アウト退場した走者の古い進塁行を後続打席から除去し、endingOuts（累積アウト）を再計算する
+   * イニング昇順に整列しつつ、サブ列番号(columnIndex)とcellBoxを同期し、
+   * すでに生還・アウト退場した走者の古い進塁行を後続打席から除去して endingOuts（累積アウト）を再計算する
    */
-  const recomputeSheetList = (items: ScorebookV2AtBat[]): ScorebookV2AtBat[] => {
+  const recomputeSheetList = (
+    items: ScorebookV2AtBat[],
+    structOverride?: ScorebookSheetStructure | null
+  ): ScorebookV2AtBat[] => {
+    const activeStruct =
+      structOverride !== undefined ? structOverride : currentStructure;
     const byInning = new Map<number, ScorebookV2AtBat[]>();
     for (const item of items) {
       const inn = Math.max(1, item.inning || 1);
@@ -580,12 +591,19 @@ export function Step3PinpointReview({
     const sortedInns = Array.from(byInning.keys()).sort((a, b) => a - b);
     const ordered: ScorebookV2AtBat[] = [];
     for (const inn of sortedInns) {
-      ordered.push(...(byInning.get(inn) || []));
+      const innItems = byInning.get(inn) || [];
+      const colNormalized = normalizeInningAtBatColumns(
+        innItems,
+        inn,
+        activeStruct,
+        false
+      ).atBats;
+      ordered.push(...colNormalized);
     }
 
     const pruned = pruneStaleSheetRunnerAdvances(
       ordered,
-      currentStructure
+      activeStruct
     ).atBats;
 
     const result: ScorebookV2AtBat[] = [];
@@ -603,6 +621,65 @@ export function Step3PinpointReview({
       });
     }
     return result;
+  };
+
+  /**
+   * 2列目・3列目が次のイニングとして誤認されていたケースで「-1回シフト」や「前イニングへ移動」を行った際、
+   * 複数列になったイニングの columnCount を引き上げつつ末尾の空イニング列を相殺してシート全体の物理列位置を正確に保つ
+   */
+  const syncStructureColumnsAfterInningShift = (
+    baseStruct: ScorebookSheetStructure,
+    nextAtBats: ScorebookV2AtBat[]
+  ): ScorebookSheetStructure | null => {
+    const maxColByInning = new Map<number, number>();
+    const countByInning = new Map<number, number>();
+    for (const ab of nextAtBats) {
+      const curMax = maxColByInning.get(ab.inning) || 1;
+      if ((ab.columnIndex || 1) > curMax) {
+        maxColByInning.set(ab.inning, ab.columnIndex || 1);
+      }
+      countByInning.set(ab.inning, (countByInning.get(ab.inning) || 0) + 1);
+    }
+
+    let addedCols = 0;
+    const nextInnings = baseStruct.innings.map((m) => {
+      const curCols = Math.max(1, m.columnCount || 1);
+      const neededCols = Math.max(curCols, maxColByInning.get(m.inning) || 1);
+      if (neededCols > curCols) {
+        addedCols += neededCols - curCols;
+        return { ...m, columnCount: neededCols };
+      }
+      return { ...m };
+    });
+
+    if (addedCols === 0) return null;
+
+    let trimmedCols = 0;
+    while (trimmedCols < addedCols && nextInnings.length > 1) {
+      const tail = nextInnings[nextInnings.length - 1];
+      const tailAtBatCount = countByInning.get(tail.inning) || 0;
+      if (tailAtBatCount > 0) break;
+      const tailCols = Math.max(1, tail.columnCount || 1);
+      const remain = addedCols - trimmedCols;
+      if (tailCols <= remain) {
+        trimmedCols += tailCols;
+        nextInnings.pop();
+      } else {
+        tail.columnCount = tailCols - remain;
+        trimmedCols += remain;
+      }
+    }
+
+    if (trimmedCols === 0) return null;
+
+    const corners = resolveStructureGridCorners(baseStruct);
+    return syncStructureBoxesFromCorners(
+      {
+        ...baseStruct,
+        innings: nextInnings,
+      },
+      corners
+    );
   };
 
   const updateSingleAtBat = (
@@ -624,6 +701,46 @@ export function Step3PinpointReview({
     } else {
       onChangeAtBats(isTop, nextAtBats);
     }
+  };
+
+  /**
+   * 同一イニング内で編集中打席のサブ列番号（1列目・2列目・3列目...）を切り替え、
+   * 前後の打席のサブ列単調性と cellBox 座標も一貫して同期する
+   */
+  const handleSelectSubColumn = (targetId: string, rawCol: number) => {
+    const targetCol = Math.max(1, Math.round(rawCol || 1));
+    const target = currentList.find((a) => a.id === targetId);
+    if (!target) return;
+
+    const peers = currentList.filter((a) => a.inning === target.inning);
+    const editIdx = peers.findIndex((a) => a.id === targetId);
+    if (editIdx < 0) return;
+
+    const oldCol = Math.max(1, target.columnIndex || 1);
+    const updatedPeers = peers.map((peer, idx) => {
+      const peerCol = Math.max(1, peer.columnIndex || 1);
+      let assigned = peerCol;
+      if (idx < editIdx) {
+        assigned = Math.min(peerCol, targetCol);
+      } else if (idx === editIdx) {
+        assigned = targetCol;
+      } else {
+        if (targetCol > oldCol) {
+          assigned = Math.max(peerCol, targetCol);
+        } else if (targetCol < oldCol && peerCol <= oldCol) {
+          assigned = targetCol;
+        }
+      }
+      return {
+        ...peer,
+        columnIndex: assigned,
+      };
+    });
+
+    const before = currentList.filter((a) => a.inning < target.inning);
+    const after = currentList.filter((a) => a.inning > target.inning);
+    const updated = recomputeSheetList([...before, ...updatedPeers, ...after]);
+    onChangeAtBats(isTop, updated);
   };
 
   /**
@@ -665,11 +782,25 @@ export function Step3PinpointReview({
       ? [...inTarget, movedItem]
       : [movedItem, ...inTarget];
 
-    const updated = recomputeSheetList([
+    let updated = recomputeSheetList([
       ...beforeTarget,
       ...mergedTarget,
       ...afterTarget,
     ]);
+    if (movingEarlier && currentStructure) {
+      const syncedStruct = syncStructureColumnsAfterInningShift(
+        currentStructure,
+        updated
+      );
+      if (syncedStruct) {
+        updated = recomputeSheetList(updated, syncedStruct);
+        handleApplyStructureAndAtBats(syncedStruct, updated);
+        if (selectedInning !== "all" && editingAtBatId === targetId) {
+          setSelectedInning(nextInning);
+        }
+        return;
+      }
+    }
     onChangeAtBats(isTop, updated);
 
     if (selectedInning !== "all" && editingAtBatId === targetId) {
@@ -713,39 +844,12 @@ export function Step3PinpointReview({
     const idx = peers.findIndex((a) => a.id === targetId);
     if (idx <= 0) return;
 
-    const lineupCycle = Math.max(9, currentStructure?.batters.length ?? 9);
-    const startBo = target.battingOrder;
-    const innMeta = currentStructure?.innings.find(
-      (m) => m.inning === target.inning
-    );
-    const maxSubCols = Math.max(1, innMeta?.columnCount ?? 1);
-
-    const rotatedPeers = [...peers.slice(idx), ...peers.slice(0, idx)].map(
-      (ab, posIdx) => {
-        const isFirstLapBeforeNineWrap =
-          posIdx < lineupCycle && ab.battingOrder >= startBo;
-        const safeCol = isFirstLapBeforeNineWrap
-          ? 1
-          : Math.max(1, Math.min(maxSubCols, ab.columnIndex || 1));
-        if (safeCol === ab.columnIndex) {
-          return ab;
-        }
-        const nextQuad = currentStructure
-          ? getCellQuadInStructure(
-              currentStructure,
-              target.inning,
-              safeCol,
-              ab.battingOrder,
-              0
-            )
-          : null;
-        return {
-          ...ab,
-          columnIndex: safeCol,
-          cellBox: nextQuad ? quadToBoundingBox(nextQuad) : ab.cellBox,
-        };
-      }
-    );
+    const rotatedPeers = normalizeInningAtBatColumns(
+      [...peers.slice(idx), ...peers.slice(0, idx)],
+      target.inning,
+      currentStructure,
+      true
+    ).atBats;
 
     const before = currentList.filter((a) => a.inning < target.inning);
     const after = currentList.filter((a) => a.inning > target.inning);
@@ -785,7 +889,24 @@ export function Step3PinpointReview({
       };
     });
 
-    const updated = recomputeSheetList(shifted);
+    let updated = recomputeSheetList(shifted);
+    if (delta === -1 && currentStructure) {
+      const syncedStruct = syncStructureColumnsAfterInningShift(
+        currentStructure,
+        updated
+      );
+      if (syncedStruct) {
+        updated = recomputeSheetList(updated, syncedStruct);
+        handleApplyStructureAndAtBats(syncedStruct, updated);
+        if (selectedInning !== "all") {
+          const movedSelf = updated.find((a) => a.id === fromAtBatId);
+          if (movedSelf) {
+            setSelectedInning(movedSelf.inning);
+          }
+        }
+        return;
+      }
+    }
     onChangeAtBats(isTop, updated);
 
     if (selectedInning !== "all") {
@@ -2115,9 +2236,26 @@ export function Step3PinpointReview({
                           const editInnMeta = currentStructure?.innings.find(
                             (m) => m.inning === editingAtBat.inning
                           );
+                          const lineupSize = Math.max(
+                            9,
+                            currentStructure?.batters.length || 9
+                          );
+                          const hasOrderWrapInInning = editingInningPeers.some(
+                            (p, idx) =>
+                              idx > 0 &&
+                              p.battingOrder <
+                                editingInningPeers[idx - 1].battingOrder
+                          );
+                          const maxPeerCol = editingInningPeers.reduce(
+                            (acc, p) => Math.max(acc, p.columnIndex || 1),
+                            1
+                          );
                           const totalSubCols = Math.max(
                             editInnMeta?.columnCount ?? 1,
-                            editingAtBat.columnIndex || 1
+                            editingAtBat.columnIndex || 1,
+                            maxPeerCol,
+                            Math.ceil(editingInningPeers.length / lineupSize),
+                            hasOrderWrapInInning ? 2 : 1
                           );
                           if (totalSubCols < 2 || showFullSheetInModal) {
                             return null;
@@ -2130,10 +2268,7 @@ export function Step3PinpointReview({
                               key={colNo}
                               type="button"
                               onClick={() =>
-                                updateSingleAtBat(editingAtBat.id, (prev) => ({
-                                  ...prev,
-                                  columnIndex: colNo,
-                                }))
+                                handleSelectSubColumn(editingAtBat.id, colNo)
                               }
                               className={`px-1.5 py-0.5 rounded-md text-[9px] font-black cursor-pointer transition-colors ${
                                 (editingAtBat.columnIndex || 1) === colNo
@@ -2194,9 +2329,17 @@ export function Step3PinpointReview({
                               focusedRunner.battingOrder > 0
                                 ? `${focusedRunner.battingOrder}番 `
                                 : ""
-                            }${focusedRunner.runnerName || "走者"}`
+                            }${focusedRunner.runnerName || "走者"}${
+                              (focusedRunner.columnIndex || 1) >= 2
+                                ? `（${focusedRunner.columnIndex}列目）`
+                                : ""
+                            }`
                           : `【今回の打者】${editingAtBat.battingOrder}番 ${
                               editingAtBat.batterName || "打者"
+                            }${
+                              (editingAtBat.columnIndex || 1) >= 2
+                                ? `（${editingAtBat.columnIndex}列目）`
+                                : ""
                             }`;
                         return (
                           <div className="p-2 space-y-1.5">
@@ -2255,6 +2398,9 @@ export function Step3PinpointReview({
                                       ? `${rc.battingOrder}番 `
                                       : ""}
                                     {rc.runnerName || "走者"}
+                                    {(rc.columnIndex || 1) >= 2
+                                      ? `（${rc.columnIndex}列目）`
+                                      : ""}
                                   </span>
                                   {rc.atBatId && (
                                     <button
@@ -2297,6 +2443,9 @@ export function Step3PinpointReview({
                               <span className="text-[10px] font-black truncate">
                                 今回の打者: {editingAtBat.battingOrder}番{" "}
                                 {editingAtBat.batterName || "打者"}
+                                {(editingAtBat.columnIndex || 1) >= 2
+                                  ? `（${editingAtBat.columnIndex}列目）`
+                                  : ""}
                               </span>
                               <span className="text-[9px] font-bold text-primary-foreground/85 shrink-0">
                                 タップで拡大

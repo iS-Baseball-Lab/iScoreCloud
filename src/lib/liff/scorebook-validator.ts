@@ -1626,13 +1626,20 @@ export function detectMissingOrderGaps(
         const missingOrders = expandMissingOrders(expected, g);
         for (const bo of missingOrders) {
           if (gaps.length >= MAX_GAPS) break;
+          const priorSameBoCount = list
+            .slice(0, i)
+            .filter((x) => x.battingOrder === bo).length;
           const subCol = Math.max(
             1,
             Math.min(
-              maxCols,
-              bo < prev.battingOrder && cur.columnIndex > prev.columnIndex
-                ? cur.columnIndex
-                : prev.columnIndex || 1
+              Math.max(maxCols, priorSameBoCount + 1, cur.columnIndex || 1),
+              Math.max(
+                priorSameBoCount + 1,
+                bo < prev.battingOrder &&
+                  (cur.columnIndex || 1) > (prev.columnIndex || 1)
+                  ? cur.columnIndex || 1
+                  : prev.columnIndex || 1
+              )
             )
           );
           const resolved = resolveActiveMatchupFromStructure(structure, inn, bo);
@@ -2287,33 +2294,12 @@ function reconcileCyclicInningLeadOffs(
       const isDifferentOrder = rotated.some((ab, i) => ab.id !== list[i]?.id);
       if (!isDifferentOrder) continue;
 
-      // 1巡目の9番折り返し前（targetStartBo..lineupCycle）は必ず1列目(columnIndex=1)になるため座標も安全同期
-      const innMeta = structure?.innings.find((m) => m.inning === inn);
-      const maxSubCols = Math.max(1, innMeta?.columnCount ?? 1);
-      const normalizedRotated = rotated.map((ab, posIdx) => {
-        const isFirstLapBeforeNineWrap =
-          posIdx < lineupCycle && ab.battingOrder >= targetStartBo!;
-        const safeCol = isFirstLapBeforeNineWrap
-          ? 1
-          : Math.max(1, Math.min(maxSubCols, ab.columnIndex || 1));
-        if (safeCol === ab.columnIndex) {
-          return ab;
-        }
-        const nextQuad = structure
-          ? getCellQuadInStructure(
-              structure,
-              inn,
-              safeCol,
-              ab.battingOrder,
-              0
-            )
-          : null;
-        return {
-          ...ab,
-          columnIndex: safeCol,
-          cellBox: nextQuad ? quadToBoundingBox(nextQuad) : ab.cellBox,
-        };
-      });
+      const normalizedRotated = normalizeInningAtBatColumns(
+        rotated,
+        inn,
+        structure,
+        true
+      ).atBats;
 
       inningsMap.set(inn, normalizedRotated);
       sweepChanged = true;
@@ -2324,6 +2310,111 @@ function reconcileCyclicInningLeadOffs(
   }
 
   return anyRotated;
+}
+
+/**
+ * 1イニング内の時系列順打席リストに対して、
+ * - 一巡充填式（10人目＝同一打順2巡目から2列目、19人目＝3巡目から3列目）
+ * - 9番下端折り返し式（9番の下端に達した次の1番から2列目、次の9番折り返しから3列目）
+ * の両方に対応した正確なサブ列番号 (columnIndex: 1, 2, 3...) と cellBox を決定論的に同期する。
+ */
+export function normalizeInningAtBatColumns(
+  list: ScorebookV2AtBat[],
+  inning: number,
+  structure?: ScorebookSheetStructure | null,
+  forceFirstSegmentToCol1 = true
+): { atBats: ScorebookV2AtBat[]; changed: boolean } {
+  if (list.length === 0) {
+    return { atBats: list, changed: false };
+  }
+
+  const lineupCycle = Math.max(
+    9,
+    structure?.batters.length || 9,
+    ...list.map((a) => a.battingOrder || 9)
+  );
+  const seenByBo = new Map<number, number>();
+  const laps: number[] = [];
+  const nineWraps: number[] = [];
+  let runningNineWrap = 0;
+
+  for (let i = 0; i < list.length; i++) {
+    const bo = Math.max(1, list[i].battingOrder || 1);
+    const seen = seenByBo.get(bo) || 0;
+    seenByBo.set(bo, seen + 1);
+    const lap = Math.max(seen, Math.floor(i / lineupCycle));
+    laps.push(lap);
+    if (i > 0 && bo < Math.max(1, list[i - 1].battingOrder || 1)) {
+      runningNineWrap += 1;
+    }
+    nineWraps.push(runningNineWrap);
+  }
+
+  const maxLap = Math.max(0, ...laps);
+  const maxNineWrap = Math.max(0, ...nineWraps);
+  const innMeta = structure?.innings.find((m) => m.inning === inning);
+  const metaCols = Math.max(1, innMeta?.columnCount ?? 1);
+  const useBottomNineWrap =
+    maxNineWrap > 0 &&
+    ((forceFirstSegmentToCol1 && metaCols > maxLap + 1) ||
+      list.some(
+        (ab, idx) =>
+          laps[idx] === 0 &&
+          nineWraps[idx] >= 1 &&
+          (ab.columnIndex || 1) >= 2
+      ));
+  const maxAllowedCols = Math.max(
+    metaCols,
+    maxLap + 1,
+    useBottomNineWrap ? maxNineWrap + 1 : 1,
+    ...list.map((ab) => ab.columnIndex || 1)
+  );
+
+  let changed = false;
+  let prevCol = 1;
+  const normalized = list.map((ab, i) => {
+    const lap = laps[i];
+    const nineWrap = nineWraps[i];
+    const isFirstLapBeforeNineWrap = lap === 0 && nineWrap === 0;
+    const minCol = useBottomNineWrap
+      ? Math.max(lap + 1, nineWrap + 1)
+      : lap + 1;
+    const rawCol =
+      forceFirstSegmentToCol1 && isFirstLapBeforeNineWrap
+        ? 1
+        : Math.max(1, Math.min(maxAllowedCols, ab.columnIndex || 1));
+    const safeCol =
+      forceFirstSegmentToCol1 && isFirstLapBeforeNineWrap
+        ? 1
+        : Math.min(maxAllowedCols, Math.max(prevCol, minCol, rawCol));
+    prevCol = safeCol;
+
+    const nextQuad = structure
+      ? getCellQuadInStructure(structure, inning, safeCol, ab.battingOrder, 0)
+      : null;
+    const nextBox = nextQuad ? quadToBoundingBox(nextQuad) : ab.cellBox;
+    const boxChanged = Boolean(
+      nextBox &&
+        (!ab.cellBox ||
+          ab.cellBox[0] !== nextBox[0] ||
+          ab.cellBox[1] !== nextBox[1] ||
+          ab.cellBox[2] !== nextBox[2] ||
+          ab.cellBox[3] !== nextBox[3])
+    );
+
+    if (safeCol !== (ab.columnIndex || 1) || boxChanged) {
+      changed = true;
+      return {
+        ...ab,
+        inning,
+        columnIndex: safeCol,
+        cellBox: nextBox,
+      };
+    }
+    return ab;
+  });
+
+  return { atBats: normalized, changed };
 }
 
 /**
@@ -2702,6 +2793,17 @@ export function reconcileSheetExcessOutsDeterministically(
         ab.endingOuts = monoOuts;
       }
       inningsMap.set(inn, list);
+    }
+  }
+
+  // Pass 3.5: 全イニングのサブ列番号（1列目・2列目・3列目...）と cellBox を打者一巡・9番折り返しに合わせて決定論的に同期
+  for (const inn of sortedInnings) {
+    const list = inningsMap.get(inn) || [];
+    if (list.length === 0) continue;
+    const colNorm = normalizeInningAtBatColumns(list, inn, structure, true);
+    if (colNorm.changed) {
+      inningsMap.set(inn, colNorm.atBats);
+      changed = true;
     }
   }
 

@@ -2664,17 +2664,17 @@ ${pitcherSpecLines.join("\n")}
       if (!matchedRaw) continue;
 
       const parsedInn = toFiniteInt(matchedRaw.i ?? matchedRaw.inning);
+      const parsedCol = toFiniteInt(matchedRaw.c ?? matchedRaw.columnIndex);
       const validCand =
+        gap.candidates.find(
+          (cand) => cand.inning === parsedInn && cand.columnIndex === parsedCol
+        ) ||
         gap.candidates.find((cand) => cand.inning === parsedInn) ||
         gap.candidates[0];
       if (!validCand) continue;
 
       const inning = validCand.inning;
-      const colIndex = Math.max(
-        1,
-        toFiniteInt(matchedRaw.c ?? matchedRaw.columnIndex, validCand.columnIndex) ||
-        validCand.columnIndex
-      );
+      const colIndex = Math.max(1, validCand.columnIndex || 1);
       const battingOrder = gap.battingOrder;
       const ocrPitcherHint = (
         matchedRaw.pt ??
@@ -3142,11 +3142,7 @@ ${batterRowsDesc.join("\n")}
         continue;
       }
 
-      const colIndex = Math.max(
-        1,
-        toFiniteInt(matched.c ?? matched.columnIndex, slot.columnIndex) ||
-        slot.columnIndex
-      );
+      const colIndex = Math.max(1, slot.columnIndex || 1);
       const battingOrder = slot.battingOrder;
       const ocrPitcherHint = (matched.pt ?? matched.pitcherName ?? "").trim();
       const matchup = resolveActiveMatchupFromStructure(
@@ -7940,21 +7936,52 @@ function orderAndAssignColumnsForChunk(
       });
     }
 
-    // サブ列番号 c (1, 2, 3...) の単調性＆周回下限 (c >= lap + 1) を保証
-    // ※1巡目の9番折り返し前 (lap === 0 && bo >= effectiveLeadOff) は必ず1列目(c=1)になるため誤読c=2による早期シフトを防止
-    const maxAllowedCols = Math.max(metaCols, maxLap + 1);
+    // 9番➔1番の折り返し回数 (nineWrap) を各打席について算出
+    const nineWraps: number[] = [];
+    let runningNineWrap = 0;
+    for (let idx = 0; idx < tagged.length; idx++) {
+      if (idx > 0 && tagged[idx].bo < tagged[idx - 1].bo) {
+        runningNineWrap += 1;
+      }
+      nineWraps.push(runningNineWrap);
+    }
+    const maxNineWrap = Math.max(0, ...nineWraps);
+
+    // 9番下端折り返し式（9番の下端に達した次の1番からすぐ右隣のサブ列へ移る方式）の自動判定:
+    // - イニング列数 metaCols が周回数 (maxLap + 1) より多い場合（例: 5番〜9番→1番〜2番の計7人で2列使用）
+    // - または1巡目の9番折り返し後 (lap === 0 && nineWrap >= 1) のいずれかの打席でAIが c >= 2 を検出している場合
+    const useBottomNineWrap =
+      maxNineWrap > 0 &&
+      (metaCols > maxLap + 1 ||
+        tagged.some(
+          (it, idx) =>
+            it.lap === 0 && nineWraps[idx] >= 1 && it.rawCol >= 2
+        ));
+
+    // サブ列番号 c (1, 2, 3...) の単調性＆周回/折り返し下限を保証
+    // ※1巡目の9番折り返し前 (lap === 0 && nineWrap === 0) は必ず1列目(c=1)になるため誤読c=2による早期シフトを防止
+    const maxAllowedCols = Math.max(
+      metaCols,
+      maxLap + 1,
+      useBottomNineWrap ? maxNineWrap + 1 : 1
+    );
     let prevCol = 1;
-    for (const item of tagged) {
-      const minRequiredCol = item.lap + 1;
-      const isFirstLapBeforeNineWrap =
-        item.lap === 0 && item.bo >= effectiveLeadOff;
+    for (let idx = 0; idx < tagged.length; idx++) {
+      const item = tagged[idx];
+      const nineWrap = nineWraps[idx];
+      const minRequiredCol = useBottomNineWrap
+        ? Math.max(item.lap + 1, nineWrap + 1)
+        : item.lap + 1;
+      const isFirstLapBeforeNineWrap = item.lap === 0 && nineWrap === 0;
       const clampedRawCol = isFirstLapBeforeNineWrap
         ? 1
         : Math.max(1, Math.min(maxAllowedCols, item.rawCol));
-      const assignedCol = Math.min(
-        maxAllowedCols,
-        Math.max(prevCol, minRequiredCol, clampedRawCol)
-      );
+      const assignedCol = isFirstLapBeforeNineWrap
+        ? 1
+        : Math.min(
+            maxAllowedCols,
+            Math.max(prevCol, minRequiredCol, clampedRawCol)
+          );
       prevCol = assignedCol;
       output.push({
         ...item.raw,
@@ -7994,7 +8021,7 @@ function computeCartesianCellBox(
   if (inningColBox && batterRowBox) {
     const [, colX1, , colX2] = inningColBox;
     const [rowY1, , rowY2] = batterRowBox;
-    const totalSubCols = Math.max(1, inningColumnCount || 1);
+    const totalSubCols = Math.max(1, inningColumnCount || 1, columnIndex || 1);
     const safeSubIdx = Math.max(1, Math.min(totalSubCols, columnIndex || 1));
     const subW = (colX2 - colX1) / totalSubCols;
     const subX1 = Math.round(colX1 + (safeSubIdx - 1) * subW);
