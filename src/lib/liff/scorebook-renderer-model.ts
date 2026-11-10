@@ -622,6 +622,7 @@ export function compileScorebookSheetModel(
     playerId: string | null;
     cleanName: string;
     inningEntered: number;
+    enteredFromBatterOrder?: number | null;
     subType: "STARTER" | "PH" | "PR" | "TR" | "DEF";
     position: string;
   }
@@ -702,6 +703,7 @@ export function compileScorebookSheetModel(
             playerId: sub.playerId || activePlayerId,
             cleanName: cleanSubName || activeCleanName,
             inningEntered: sub.inningEntered || 1,
+            enteredFromBatterOrder: sub.enteredFromBatterOrder ?? null,
             subType: sub.subType,
             position: normPos,
           });
@@ -733,6 +735,7 @@ export function compileScorebookSheetModel(
         playerId: activePlayerId,
         cleanName: activeCleanName,
         inningEntered: sub.inningEntered || 1,
+        enteredFromBatterOrder: sub.enteredFromBatterOrder ?? null,
         subType: sub.subType,
         position: normalizeFieldingPosCode(cleanSubPos),
       });
@@ -1975,6 +1978,39 @@ export function compileScorebookSheetModel(
       return null;
     };
 
+    const oppIndexById = new Map<string, number>();
+    const oppLeadOffByInning = new Map<number, number>();
+    oppAtBats.forEach((oAb, oIdx) => {
+      oppIndexById.set(oAb.id, oIdx);
+      if (!oppLeadOffByInning.has(oAb.inning)) {
+        oppLeadOffByInning.set(oAb.inning, oAb.battingOrder);
+      }
+    });
+
+    const isMidInningDefActiveAtOppAtBat = (
+      thresholdOrder: number,
+      oppAb: ScorebookV2AtBat
+    ): boolean => {
+      const oppIdx = oppIndexById.get(oppAb.id) ?? -1;
+      const cutoffIdx = oppAtBats.findIndex(
+        (a) =>
+          a.inning === oppAb.inning &&
+          a.battingOrder === thresholdOrder
+      );
+      if (oppIdx !== -1 && cutoffIdx !== -1) {
+        return oppIdx >= cutoffIdx;
+      }
+      const leadOff =
+        oppLeadOffByInning.get(oppAb.inning) ?? (oppAb.inning === 1 ? 1 : null);
+      const cycle = Math.max(9, oppAb.battingOrder, thresholdOrder);
+      if (typeof leadOff === "number" && leadOff >= 1 && leadOff <= cycle) {
+        const tOff = (((oppAb.battingOrder - leadOff) % cycle) + cycle) % cycle;
+        const thOff = (((thresholdOrder - leadOff) % cycle) + cycle) % cycle;
+        return tOff >= thOff;
+      }
+      return oppAb.battingOrder >= thresholdOrder;
+    };
+
     const resolveFielderAtInning = (
       posCode: string,
       oppAb: ScorebookV2AtBat
@@ -2009,11 +2045,23 @@ export function compileScorebookSheetModel(
           const pt = participants[i]!;
           if (pt.subType === "TR") continue;
           // 後攻チーム（!isTop）の代打・代走はN回裏攻撃から出場するため、N回表の守備にはまだ就いていない
-          const effectiveInDefense = isTop
+          let effectiveInDefense = isTop
             ? pt.inningEntered <= oppAb.inning
             : pt.subType === "DEF"
             ? pt.inningEntered <= oppAb.inning
             : pt.inningEntered < oppAb.inning;
+          if (
+            effectiveInDefense &&
+            pt.inningEntered === oppAb.inning &&
+            pt.subType === "DEF" &&
+            typeof pt.enteredFromBatterOrder === "number" &&
+            pt.enteredFromBatterOrder >= 1
+          ) {
+            effectiveInDefense = isMidInningDefActiveAtOppAtBat(
+              pt.enteredFromBatterOrder,
+              oppAb
+            );
+          }
           if (effectiveInDefense) {
             activeSubIdx = pt.subRowIndex;
             if (pt.position) activePos = pt.position;

@@ -217,6 +217,10 @@ export function applyAtBatBatterChange(params: {
   }
 
   // PH または DEF（この打席から途中交代）
+  const isFirstAtBatOfInning =
+    !atBats
+      .slice(0, targetIdx)
+      .some((prev) => prev.inning === targetAb.inning);
   const existingIdx = slot.substitutions.findIndex(
     (s) =>
       (s.subType === "PH" || s.subType === "DEF") &&
@@ -228,6 +232,9 @@ export function applyAtBatBatterChange(params: {
         ? slot.substitutions[existingIdx].id
         : crypto.randomUUID(),
     inningEntered: Math.max(1, targetAb.inning),
+    enteredFromBatterOrder: isFirstAtBatOfInning
+      ? null
+      : targetAb.battingOrder,
     enteredColumnIndex: Math.max(1, targetAb.columnIndex || 1),
     enteredAtBatId: targetAb.id,
     subType: mode === "PH" ? "PH" : "DEF",
@@ -422,11 +429,14 @@ export function applyAtBatPitcherChange(params: {
     name: string;
     playerId: string | null;
     fromInning: number;
+    fromBatterOrder: number | null;
+    fromColumnIndex: number | null;
     toInning: number;
   }
 
   const runs: ContiguousPitcherRun[] = [];
-  for (const ab of updatedAtBats) {
+  for (let abIdx = 0; abIdx < updatedAtBats.length; abIdx++) {
+    const ab = updatedAtBats[abIdx];
     if (ab.manualPitcherOverride) continue;
     const pName = ab.pitcherName.trim();
     if (!pName && !ab.pitcherPlayerId) continue;
@@ -436,11 +446,18 @@ export function applyAtBatPitcherChange(params: {
       last.fromInning = Math.min(last.fromInning, ab.inning);
       last.toInning = Math.max(last.toInning, ab.inning);
     } else {
+      const hasPriorInSameInning = updatedAtBats
+        .slice(0, abIdx)
+        .some((prev) => !prev.manualPitcherOverride && prev.inning === ab.inning);
       runs.push({
         key,
         name: pName,
         playerId: ab.pitcherPlayerId,
         fromInning: ab.inning,
+        fromBatterOrder: hasPriorInSameInning ? ab.battingOrder : null,
+        fromColumnIndex: hasPriorInSameInning
+          ? Math.max(1, ab.columnIndex || 1)
+          : null,
         toInning: ab.inning,
       });
     }
@@ -456,11 +473,15 @@ export function applyAtBatPitcherChange(params: {
         uniformNumber: cleanUniform,
         playerId,
         fromInning: 1,
+        fromBatterOrder: null,
+        fromColumnIndex: null,
         toInning: maxStructureInning,
       },
     ];
   } else {
     runs[0].fromInning = Math.min(1, runs[0].fromInning);
+    runs[0].fromBatterOrder = null;
+    runs[0].fromColumnIndex = null;
     runs[runs.length - 1].toInning = Math.max(
       runs[runs.length - 1].toInning,
       maxStructureInning
@@ -486,6 +507,8 @@ export function applyAtBatPitcherChange(params: {
           : matchedExisting?.uniformNumber || "",
         playerId: run.playerId,
         fromInning: run.fromInning,
+        fromBatterOrder: run.fromBatterOrder,
+        fromColumnIndex: run.fromColumnIndex,
         toInning: run.toInning,
       };
     });
@@ -1304,6 +1327,9 @@ export function Step3QuickSubstitutionModal({
   const [draftSubType, setDraftSubType] =
     useState<ScorebookSubstitution["subType"]>("PH");
   const [draftInning, setDraftInning] = useState<number>(5);
+  const [draftFromBatterOrder, setDraftFromBatterOrder] = useState<
+    number | null
+  >(null);
   const [draftRosterId, setDraftRosterId] = useState<string>("");
   const [draftName, setDraftName] = useState<string>("");
   const [draftUniform, setDraftUniform] = useState<string>("");
@@ -1458,6 +1484,7 @@ export function Step3QuickSubstitutionModal({
                             setAddingOrder(slot.battingOrder);
                             setDraftSubType("PH");
                             setDraftInning(Math.min(maxInning, 5));
+                            setDraftFromBatterOrder(null);
                             setDraftRosterId("");
                             setDraftName("");
                             setDraftUniform("");
@@ -1515,6 +1542,59 @@ export function Step3QuickSubstitutionModal({
                                   label: `${n}回`,
                                 }))}
                               />
+                              <LiffSelect
+                                value={
+                                  typeof sub.enteredFromBatterOrder ===
+                                    "number" && sub.enteredFromBatterOrder >= 1
+                                    ? String(sub.enteredFromBatterOrder)
+                                    : ""
+                                }
+                                ariaLabel="交代タイミング"
+                                title={`${sub.inningEntered}回の交代タイミングを変更`}
+                                size="xs"
+                                searchable={false}
+                                className="bg-muted shrink-0"
+                                onChange={(val) => {
+                                  const nextOrder = val ? Number(val) : null;
+                                  const nextStruct: ScorebookSheetStructure = {
+                                    ...structure,
+                                    batters: structure.batters.map((b) =>
+                                      b.battingOrder === slot.battingOrder
+                                        ? {
+                                            ...b,
+                                            substitutions: b.substitutions.map(
+                                              (s) =>
+                                                s.id === sub.id
+                                                  ? {
+                                                      ...s,
+                                                      enteredFromBatterOrder:
+                                                        nextOrder,
+                                                      enteredAtBatId: undefined,
+                                                    }
+                                                  : s
+                                            ),
+                                          }
+                                        : b
+                                    ),
+                                  };
+                                  applyStructureChangeAndSync(nextStruct);
+                                }}
+                                options={[
+                                  { value: "", label: "回頭から" },
+                                  ...Array.from(
+                                    {
+                                      length: Math.max(
+                                        9,
+                                        structure.batters.length
+                                      ),
+                                    },
+                                    (_, i) => i + 1
+                                  ).map((orderNum) => ({
+                                    value: String(orderNum),
+                                    label: `途中:${orderNum}番〜`,
+                                  })),
+                                ]}
+                              />
                               <span className="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
                                 {SUB_TYPE_LABELS[sub.subType]}
                               </span>
@@ -1557,33 +1637,86 @@ export function Step3QuickSubstitutionModal({
                             title="出場イニングを選択"
                             size="xs"
                             searchable={false}
-                            className="col-span-4 w-full bg-muted"
+                            className="col-span-3 w-full bg-muted"
                             ariaLabel="出場イニング"
                             options={inningOptions.map((n) => ({
                               value: String(n),
-                              label: `${n}回〜`,
+                              label: `${n}回`,
                             }))}
                           />
                           <LiffSelect
-                            value={draftSubType}
-                            onChange={(val) =>
-                              setDraftSubType(
-                                val as ScorebookSubstitution["subType"]
-                              )
+                            value={
+                              typeof draftFromBatterOrder === "number" &&
+                              draftFromBatterOrder >= 1
+                                ? String(draftFromBatterOrder)
+                                : ""
                             }
+                            onChange={(val) =>
+                              setDraftFromBatterOrder(val ? Number(val) : null)
+                            }
+                            title={`${draftInning}回の交代タイミングを選択`}
+                            size="xs"
+                            searchable={false}
+                            className="col-span-4 w-full bg-muted"
+                            ariaLabel="イニング内タイミング"
+                            options={[
+                              { value: "", label: "回頭から" },
+                              ...Array.from(
+                                {
+                                  length: Math.max(
+                                    9,
+                                    structure.batters.length
+                                  ),
+                                },
+                                (_, i) => i + 1
+                              ).map((orderNum) => ({
+                                value: String(orderNum),
+                                label: `途中:${orderNum}番〜`,
+                              })),
+                            ]}
+                          />
+                          <LiffSelect
+                            value={draftSubType}
+                            onChange={(val) => {
+                              if (val === "POS_SHIFT") {
+                                const lastNonTr = [...slot.substitutions]
+                                  .reverse()
+                                  .find(
+                                    (s) =>
+                                      s.subType !== "TR" && s.name.trim() !== ""
+                                  );
+                                const activeP = lastNonTr || slot;
+                                setDraftSubType("DEF");
+                                setDraftRosterId(activeP.playerId || "");
+                                setDraftName(activeP.name);
+                                setDraftUniform(activeP.uniformNumber || "");
+                              } else {
+                                setDraftSubType(
+                                  val as ScorebookSubstitution["subType"]
+                                );
+                              }
+                            }}
                             title="交代種別を選択"
                             size="xs"
                             searchable={false}
-                            className="col-span-8 w-full bg-muted"
+                            className="col-span-5 w-full bg-muted"
                             ariaLabel="交代種別"
                             options={[
                               { value: "PH", label: "代打 (PH)" },
-                              { value: "PR", label: "代走 (PR)・以降も出場" },
+                              { value: "PR", label: "代走 (PR)" },
                               {
                                 value: "TR",
-                                label: "臨時代走 (TR)・この回のみ",
+                                label: "臨時代走 (TR)",
                               },
-                              { value: "DEF", label: "守備交代・途中出場" },
+                              { value: "DEF", label: "守備交代 (別選手)" },
+                              ...(slot.name.trim()
+                                ? [
+                                    {
+                                      value: "POS_SHIFT",
+                                      label: "守備変更 (同選手)",
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </div>
@@ -1698,6 +1831,7 @@ export function Step3QuickSubstitutionModal({
                               const newSub: ScorebookSubstitution = {
                                 id: crypto.randomUUID(),
                                 inningEntered: draftInning,
+                                enteredFromBatterOrder: draftFromBatterOrder,
                                 subType: draftSubType,
                                 name: draftName.trim(),
                                 uniformNumber: draftUniform.trim(),
@@ -1737,7 +1871,7 @@ export function Step3QuickSubstitutionModal({
             <div className="space-y-2.5">
               <div className="p-2.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
                 <p className="text-[11px] font-bold text-muted-foreground leading-snug">
-                  担当イニングを変更すると該当回の全打席へ自動反映されます（回途中の継投は各打席をタップして「この打席から投手交代」も使えます）。
+                  担当イニングや「途中：○番打者から」を変更すると該当回の打席へ自動反映されます（各打席をタップして「この打席から投手交代」も使えます）。
                 </p>
                 <button
                   type="button"
@@ -1862,7 +1996,10 @@ export function Step3QuickSubstitutionModal({
                           const remaining = structure.pitchers.filter(
                             (item) => item.id !== pt.id
                           );
-                          if (remaining.length > 0 && idx === structure.pitchers.length - 1) {
+                          if (
+                            remaining.length > 0 &&
+                            idx === structure.pitchers.length - 1
+                          ) {
                             const lastIdx = remaining.length - 1;
                             remaining[lastIdx] = {
                               ...remaining[lastIdx],
@@ -1929,20 +2066,23 @@ export function Step3QuickSubstitutionModal({
                       </div>
                     )}
 
-                  <div className="flex items-center justify-between gap-2 pl-1">
-                    <span className="text-[11px] font-bold text-muted-foreground">
+                  <div className="flex items-center justify-between gap-2 pl-1 flex-wrap">
+                    <span className="text-[11px] font-bold text-muted-foreground shrink-0">
                       担当イニング
                     </span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       <LiffSelect
                         value={String(pt.fromInning)}
                         ariaLabel="登板開始イニング"
                         title="登板開始イニングを選択"
                         size="xs"
                         searchable={false}
-                        className="min-w-[4.25rem]"
+                        className="min-w-[4rem]"
                         onChange={(val) => {
                           const nextFrom = Number(val);
+                          const isMidInning =
+                            typeof pt.fromBatterOrder === "number" &&
+                            pt.fromBatterOrder >= 1;
                           const nextPitchers = structure.pitchers.map(
                             (item, pIdx) => {
                               if (item.id === pt.id) {
@@ -1952,15 +2092,25 @@ export function Step3QuickSubstitutionModal({
                                   toInning: Math.max(item.toInning, nextFrom),
                                 };
                               }
-                              if (
-                                pIdx === idx - 1 &&
-                                item.toInning >= nextFrom &&
-                                item.fromInning < nextFrom
-                              ) {
-                                return {
-                                  ...item,
-                                  toInning: nextFrom - 1,
-                                };
+                              if (pIdx === idx - 1) {
+                                if (isMidInning) {
+                                  return {
+                                    ...item,
+                                    toInning: Math.max(
+                                      item.fromInning,
+                                      nextFrom
+                                    ),
+                                  };
+                                }
+                                if (
+                                  item.toInning >= nextFrom &&
+                                  item.fromInning < nextFrom
+                                ) {
+                                  return {
+                                    ...item,
+                                    toInning: nextFrom - 1,
+                                  };
+                                }
                               }
                               return item;
                             }
@@ -1975,6 +2125,86 @@ export function Step3QuickSubstitutionModal({
                           label: `${n}回`,
                         }))}
                       />
+
+                      {idx >= 1 && (
+                        <LiffSelect
+                          value={
+                            typeof pt.fromBatterOrder === "number" &&
+                            pt.fromBatterOrder >= 1
+                              ? String(pt.fromBatterOrder)
+                              : ""
+                          }
+                          ariaLabel="イニング内登板タイミング"
+                          title={`${pt.fromInning}回の登板開始タイミングを選択`}
+                          size="xs"
+                          searchable={false}
+                          className="shrink-0"
+                          onChange={(val) => {
+                            const nextOrder = val ? Number(val) : null;
+                            const nextPitchers = structure.pitchers.map(
+                              (item, pIdx) => {
+                                if (item.id === pt.id) {
+                                  return {
+                                    ...item,
+                                    fromBatterOrder: nextOrder,
+                                  };
+                                }
+                                if (pIdx === idx - 1) {
+                                  if (nextOrder && nextOrder >= 1) {
+                                    return {
+                                      ...item,
+                                      toInning: Math.max(
+                                        item.fromInning,
+                                        pt.fromInning
+                                      ),
+                                    };
+                                  }
+                                  if (
+                                    item.toInning === pt.fromInning &&
+                                    item.fromInning < pt.fromInning
+                                  ) {
+                                    return {
+                                      ...item,
+                                      toInning: pt.fromInning - 1,
+                                    };
+                                  }
+                                }
+                                return item;
+                              }
+                            );
+                            applyStructureChangeAndSync({
+                              ...structure,
+                              pitchers: nextPitchers,
+                            });
+                          }}
+                          options={[
+                            {
+                              value: "",
+                              label: "回頭から",
+                              sublabel: `${pt.fromInning}回の先頭打者から登板`,
+                            },
+                            ...Array.from(
+                              {
+                                length: Math.max(9, structure.batters.length),
+                              },
+                              (_, i) => i + 1
+                            ).map((orderNum): LiffSelectOption => {
+                              const bSlot = structure.batters.find(
+                                (b) => b.battingOrder === orderNum
+                              );
+                              const bName = bSlot?.name
+                                ? `（${bSlot.name}）`
+                                : "";
+                              return {
+                                value: String(orderNum),
+                                label: `途中:${orderNum}番〜`,
+                                sublabel: `${pt.fromInning}回途中・${orderNum}番打者${bName}から登板`,
+                              };
+                            }),
+                          ]}
+                        />
+                      )}
+
                       <span className="text-xs font-black text-muted-foreground">
                         〜
                       </span>
@@ -1984,7 +2214,7 @@ export function Step3QuickSubstitutionModal({
                         title="登板終了イニングを選択"
                         size="xs"
                         searchable={false}
-                        className="min-w-[4.25rem]"
+                        className="min-w-[4rem]"
                         onChange={(val) => {
                           const nextTo = Number(val);
                           const nextPitchers = structure.pitchers.map(

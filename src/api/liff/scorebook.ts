@@ -1815,19 +1815,38 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       const subStr =
         b.substitutions.length > 0
           ? ` ➔ 交代: ${b.substitutions
-            .map(
-              (s) =>
-                `[${s.inningEntered}回〜 ${s.subType} #${s.uniformNumber} ${s.name}]`
-            )
+            .map((s) => {
+              const timingStr =
+                typeof s.enteredFromBatterOrder === "number" &&
+                s.enteredFromBatterOrder >= 1
+                  ? `${s.inningEntered}回(途中:${s.enteredFromBatterOrder}番打者時〜)`
+                  : `${s.inningEntered}回〜`;
+              return `[${timingStr} ${s.subType} #${s.uniformNumber} ${s.name}${
+                s.position ? `(守:${s.position})` : ""
+              }]`;
+            })
             .join(", ")}`
           : "";
       return `・${b.battingOrder}番: #${b.uniformNumber} ${b.name}${subStr}`;
     });
 
-    const pitcherSpecLines = body.structure.pitchers.map(
-      (p) =>
-        `・${p.fromInning}回〜${p.toInning}回: #${p.uniformNumber} ${p.name || "投手"}`
-    );
+    const pitcherSpecLines = body.structure.pitchers.map((p, pIdx) => {
+      const nextP = body.structure.pitchers[pIdx + 1];
+      const fromText =
+        pIdx >= 1 &&
+        typeof p.fromBatterOrder === "number" &&
+        p.fromBatterOrder >= 1
+          ? `${p.fromInning}回(途中:${p.fromBatterOrder}番打者から)`
+          : `${p.fromInning}回`;
+      const toText =
+        nextP &&
+        nextP.fromInning === p.toInning &&
+        typeof nextP.fromBatterOrder === "number" &&
+        nextP.fromBatterOrder >= 1
+          ? `${p.toInning}回(途中:${nextP.fromBatterOrder}番打者の前まで)`
+          : `${p.toInning}回`;
+      return `・${fromText}〜${toText}: #${p.uniformNumber} ${p.name || "投手"}`;
+    });
 
     const targetInningMetaLines = sortedTargets.map((innNum) => {
       const meta = body.structure.innings.find((m) => m.inning === innNum);
@@ -2105,6 +2124,11 @@ ${targetInningMetaLines.join("\n")}
     );
 
     let currentTrackingInning = -1;
+    let currentInningLeadOffOrder: number | null =
+      typeof body.expectedLeadOffOrder === "number" &&
+      body.expectedLeadOffOrder >= 1
+        ? body.expectedLeadOffOrder
+        : null;
     let runningInningOuts = 0;
     let activeBases: Record<"1B" | "2B" | "3B", boolean> = {
       "1B": false,
@@ -2114,16 +2138,17 @@ ${targetInningMetaLines.join("\n")}
 
     const rawMappedAtBats: ScorebookV2AtBat[] = rawList.map((ab) => {
       const inning = toFiniteInt(ab.i ?? ab.inning, sortedTargets[0]) || sortedTargets[0];
-      if (inning !== currentTrackingInning) {
-        currentTrackingInning = inning;
-        runningInningOuts = 0;
-        activeBases = { "1B": false, "2B": false, "3B": false };
-      }
-
       const battingOrder = Math.max(
         1,
         toFiniteInt(ab.bo ?? ab.battingOrder, 1) || 1
       );
+      if (inning !== currentTrackingInning) {
+        currentTrackingInning = inning;
+        currentInningLeadOffOrder = battingOrder;
+        runningInningOuts = 0;
+        activeBases = { "1B": false, "2B": false, "3B": false };
+      }
+
       const colIndex = Math.max(
         1,
         toFiniteInt(ab.c ?? ab.columnIndex, 1) || 1
@@ -2133,7 +2158,9 @@ ${targetInningMetaLines.join("\n")}
         body.structure,
         inning,
         battingOrder,
-        ocrPitcherHint
+        ocrPitcherHint,
+        colIndex,
+        currentInningLeadOffOrder
       );
 
       const reconciled = reconcileRawAtBatEvidence(
@@ -7183,8 +7210,12 @@ function normalizePitcherStints(
     const cur = result[i];
     const nxt = result[i + 1];
     nxt.fromInning = Math.max(cur.fromInning, Math.min(safeMax, nxt.fromInning));
+    const isNextMidInning =
+      typeof nxt.fromBatterOrder === "number" && nxt.fromBatterOrder >= 1;
 
-    if (cur.toInning >= safeMax && nxt.fromInning > cur.fromInning) {
+    if (isNextMidInning) {
+      cur.toInning = nxt.fromInning;
+    } else if (cur.toInning >= safeMax && nxt.fromInning > cur.fromInning) {
       // 前の投手の終了回が未確定(最終回デフォルト)だった場合は次投手の開始直前回に合わせる
       cur.toInning = Math.max(cur.fromInning, nxt.fromInning - 1);
     } else if (cur.toInning > nxt.fromInning) {

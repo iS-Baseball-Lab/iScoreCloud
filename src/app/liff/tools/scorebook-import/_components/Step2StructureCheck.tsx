@@ -1540,179 +1540,339 @@ export function Step2StructureCheck({
                 </div>
               )}
 
-              {/* 途中交代（代打・代走・守備交代・守備位置指定） */}
+              {/* 途中交代（代打・代走・守備交代・守備位置変更） */}
               {slot.substitutions.length > 0 && (
-                <div className="pl-5 space-y-1.5">
-                  {slot.substitutions.map((sub) => (
-                    <div
-                      key={sub.id}
-                      className="p-2 rounded-xl bg-primary/5 border border-primary/25 space-y-1.5"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <LiffSelect
-                          value={String(sub.inningEntered)}
-                          onChange={(val) =>
-                            updateSubstitution(slot.battingOrder, sub.id, {
-                              inningEntered: Number(val),
-                            })
-                          }
-                          title="途中交代のイニングを選択"
-                          size="xs"
-                          searchable={false}
-                          className="shrink-0"
-                          ariaLabel="途中交代のイニング"
-                          options={inningOptions.map((n) => ({
-                            value: String(n),
-                            label: `${n}回〜`,
-                          }))}
-                        />
+                <div className="pl-5 space-y-2">
+                  {slot.substitutions.map((sub, subIdx) => {
+                    const prevSubs = slot.substitutions.slice(0, subIdx);
+                    const lastNonTrSub = [...prevSubs]
+                      .reverse()
+                      .find((s) => s.subType !== "TR" && s.name.trim() !== "");
+                    const priorPlayer = lastNonTrSub
+                      ? {
+                          playerId: lastNonTrSub.playerId,
+                          name: lastNonTrSub.name,
+                          uniformNumber: lastNonTrSub.uniformNumber,
+                          position: lastNonTrSub.position || slot.position,
+                        }
+                      : {
+                          playerId: slot.playerId,
+                          name: slot.name,
+                          uniformNumber: slot.uniformNumber,
+                          position: slot.position,
+                        };
+                    const isSamePlayerPosShift =
+                      sub.subType === "DEF" &&
+                      Boolean(priorPlayer.name.trim()) &&
+                      sub.name.trim() === priorPlayer.name.trim() &&
+                      (sub.playerId || "") === (priorPlayer.playerId || "");
+                    const effectiveSubTypeValue = isSamePlayerPosShift
+                      ? "POS_SHIFT"
+                      : sub.subType;
 
-                        <LiffSelect
-                          value={sub.subType}
-                          onChange={(val) =>
-                            updateSubstitution(slot.battingOrder, sub.id, {
-                              subType: val as "PH" | "PR" | "TR" | "DEF",
-                            })
-                          }
-                          title="途中交代の種別を選択"
-                          size="xs"
-                          searchable={false}
-                          className="shrink-0"
-                          triggerTextClassName="text-primary"
-                          ariaLabel="途中交代の種別"
-                          options={[
-                            {
-                              value: "PH",
-                              label: "代打",
-                              sublabel: "打席から交代して出場",
-                            },
-                            {
-                              value: "PR",
-                              label: "代走",
-                              sublabel: "塁上から交代し以降の打順も引継",
-                            },
-                            {
-                              value: "TR",
-                              label: "臨時代走",
-                              sublabel: "このイニングの走塁のみ",
-                            },
-                            {
-                              value: "DEF",
-                              label: "守備",
-                              sublabel: "守備回から途中出場",
-                            },
-                          ]}
-                        />
-
-                        {current.isMyTeamBatting && roster.length > 0 ? (
+                    return (
+                      <div
+                        key={sub.id}
+                        className="p-2.5 rounded-xl bg-primary/5 border border-primary/25 space-y-2"
+                      >
+                        {/* 1段目: イニング ・ 回頭/途中タイミング ・ 交代種別 ・ 守備位置 ・ 削除 */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <LiffSelect
-                            value={sub.playerId || ""}
-                            onChange={(val) => {
-                              const found = roster.find((p) => p.id === val);
-                              if (found) {
-                                const autoPos =
-                                  sub.position ||
-                                  (sub.subType === "DEF" && found.primaryPosition
-                                    ? normalizePositionCode(found.primaryPosition)
-                                    : "");
-                                updateSubstitution(slot.battingOrder, sub.id, {
-                                  playerId: found.id,
-                                  name: found.name,
-                                  uniformNumber: found.uniformNumber,
-                                  position: autoPos,
-                                });
-                              } else {
-                                updateSubstitution(slot.battingOrder, sub.id, {
-                                  playerId: null,
-                                });
-                              }
-                            }}
-                            title={`${slot.battingOrder}番の交代選手を選択`}
-                            searchable={true}
-                            searchPlaceholder="背番号・選手名で検索..."
+                            value={String(sub.inningEntered)}
+                            onChange={(val) =>
+                              updateSubstitution(slot.battingOrder, sub.id, {
+                                inningEntered: Number(val),
+                              })
+                            }
+                            title="途中交代のイニングを選択"
                             size="xs"
-                            className="flex-1 min-w-0"
-                            ariaLabel="交代選手を選択"
+                            searchable={false}
+                            className="shrink-0"
+                            ariaLabel="途中交代のイニング"
+                            options={inningOptions.map((n) => ({
+                              value: String(n),
+                              label: `${n}回`,
+                            }))}
+                          />
+
+                          <LiffSelect
+                            value={
+                              typeof sub.enteredFromBatterOrder === "number" &&
+                              sub.enteredFromBatterOrder >= 1
+                                ? String(sub.enteredFromBatterOrder)
+                                : ""
+                            }
+                            onChange={(val) =>
+                              updateSubstitution(slot.battingOrder, sub.id, {
+                                enteredFromBatterOrder: val
+                                  ? Number(val)
+                                  : null,
+                              })
+                            }
+                            title={`${sub.inningEntered}回の交代・守備変更タイミングを選択`}
+                            subtitle="イニング途中の守備交代・守備位置変更の場合は開始打順を選択してください"
+                            size="xs"
+                            searchable={false}
+                            className="shrink-0"
+                            ariaLabel="イニング内の交代タイミング"
                             options={[
                               {
                                 value: "",
-                                label: sub.name
-                                  ? `未登録: ${sub.name}`
-                                  : "-- 交代選手 --",
+                                label: "回頭から",
+                                sublabel: `${sub.inningEntered}回の先頭打者から適用`,
                               },
-                              ...roster.map(
-                                (p): LiffSelectOption => ({
-                                  value: p.id,
-                                  label: `#${p.uniformNumber} ${p.name}`,
-                                  sublabel: p.primaryPosition
-                                    ? `主守備: ${p.primaryPosition}`
-                                    : undefined,
-                                  keywords: `${p.uniformNumber} ${p.name} ${
-                                    p.nameKana || ""
-                                  }`,
-                                })
-                              ),
+                              ...Array.from(
+                                {
+                                  length: Math.max(9, current.batters.length),
+                                },
+                                (_, i) => i + 1
+                              ).map((orderNum): LiffSelectOption => {
+                                const bSlot = current.batters.find(
+                                  (b) => b.battingOrder === orderNum
+                                );
+                                const bName = bSlot?.name
+                                  ? `（${bSlot.name}）`
+                                  : "";
+                                return {
+                                  value: String(orderNum),
+                                  label: `途中:${orderNum}番〜`,
+                                  sublabel: `${sub.inningEntered}回途中・${orderNum}番打者${bName}の時から適用`,
+                                };
+                              }),
                             ]}
                           />
+
+                          <LiffSelect
+                            value={effectiveSubTypeValue}
+                            onChange={(val) => {
+                              if (val === "POS_SHIFT") {
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  subType: "DEF",
+                                  playerId: priorPlayer.playerId,
+                                  name: priorPlayer.name,
+                                  uniformNumber: priorPlayer.uniformNumber,
+                                });
+                              } else {
+                                const nextType = val as
+                                  | "PH"
+                                  | "PR"
+                                  | "TR"
+                                  | "DEF";
+                                const shouldClearCopiedPlayer =
+                                  isSamePlayerPosShift && nextType === "DEF";
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  subType: nextType,
+                                  ...(shouldClearCopiedPlayer
+                                    ? {
+                                        playerId: null,
+                                        name: "",
+                                        uniformNumber: "",
+                                      }
+                                    : {}),
+                                });
+                              }
+                            }}
+                            title="途中交代・守備変更の種別を選択"
+                            size="xs"
+                            searchable={false}
+                            className="shrink-0"
+                            triggerTextClassName="text-primary"
+                            ariaLabel="途中交代の種別"
+                            options={[
+                              {
+                                value: "PH",
+                                label: "代打",
+                                sublabel: "打席から控え選手と交代して出場",
+                              },
+                              {
+                                value: "PR",
+                                label: "代走",
+                                sublabel:
+                                  "塁上から控え選手と交代し以降の打順も引継",
+                              },
+                              {
+                                value: "TR",
+                                label: "臨時代走",
+                                sublabel: "このイニングの走塁のみ代走",
+                              },
+                              {
+                                value: "DEF",
+                                label: "守備交代",
+                                sublabel: "控え選手と交代して守備から途中出場",
+                              },
+                              ...(priorPlayer.name.trim()
+                                ? [
+                                    {
+                                      value: "POS_SHIFT",
+                                      label: "守備変更(同選手)",
+                                      sublabel: `出場中の ${priorPlayer.name} が別ポジションへ移動（例: 遊→投、投→一）`,
+                                    },
+                                  ]
+                                : []),
+                            ]}
+                          />
+
+                          <LiffSelect
+                            value={sub.position}
+                            onChange={(val) =>
+                              updateSubstitution(slot.battingOrder, sub.id, {
+                                position: val,
+                              })
+                            }
+                            title="交代・変更後の守備位置を選択"
+                            size="xs"
+                            searchable={false}
+                            className="w-[4.5rem] shrink-0 ml-auto"
+                            ariaLabel="交代後の守備位置"
+                            options={[
+                              { value: "", label: "守備 -" },
+                              ...POSITION_OPTIONS.filter((p) => p.value !== ""),
+                            ]}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              removeSubstitution(slot.battingOrder, sub.id)
+                            }
+                            className="p-1 text-destructive cursor-pointer shrink-0"
+                            aria-label="途中交代を削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* 2段目: 選手選択（守備変更(同選手)の場合は同選手バッジを表示） */}
+                        {isSamePlayerPosShift ? (
+                          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-card border border-border">
+                            <span className="text-[11px] font-black text-foreground truncate">
+                              #{priorPlayer.uniformNumber || "-"}{" "}
+                              {priorPlayer.name} のポジション移動
+                              {priorPlayer.position && sub.position
+                                ? `（${
+                                    POSITION_OPTIONS.find(
+                                      (p) => p.value === priorPlayer.position
+                                    )?.label || priorPlayer.position
+                                  } → ${
+                                    POSITION_OPTIONS.find(
+                                      (p) => p.value === sub.position
+                                    )?.label || sub.position
+                                  }）`
+                                : ""}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateSubstitution(slot.battingOrder, sub.id, {
+                                  playerId: null,
+                                  name: "",
+                                  uniformNumber: "",
+                                })
+                              }
+                              className="text-[10px] font-black text-primary hover:underline shrink-0 cursor-pointer"
+                            >
+                              別選手と交代に切替
+                            </button>
+                          </div>
+                        ) : current.isMyTeamBatting && roster.length > 0 ? (
+                          <div className="space-y-1.5">
+                            <LiffSelect
+                              value={sub.playerId || ""}
+                              onChange={(val) => {
+                                const found = roster.find((p) => p.id === val);
+                                if (found) {
+                                  const autoPos =
+                                    sub.position ||
+                                    (sub.subType === "DEF" &&
+                                    found.primaryPosition
+                                      ? normalizePositionCode(
+                                          found.primaryPosition
+                                        )
+                                      : "");
+                                  updateSubstitution(
+                                    slot.battingOrder,
+                                    sub.id,
+                                    {
+                                      playerId: found.id,
+                                      name: found.name,
+                                      uniformNumber: found.uniformNumber,
+                                      position: autoPos,
+                                    }
+                                  );
+                                } else {
+                                  updateSubstitution(
+                                    slot.battingOrder,
+                                    sub.id,
+                                    {
+                                      playerId: null,
+                                    }
+                                  );
+                                }
+                              }}
+                              title={`${slot.battingOrder}番の交代選手を選択`}
+                              searchable={true}
+                              searchPlaceholder="背番号・選手名で検索..."
+                              size="xs"
+                              className="w-full"
+                              ariaLabel="交代選手を選択"
+                              options={[
+                                {
+                                  value: "",
+                                  label: sub.name
+                                    ? `未登録: ${sub.name}`
+                                    : "-- 交代選手を選択 --",
+                                },
+                                ...roster.map(
+                                  (p): LiffSelectOption => ({
+                                    value: p.id,
+                                    label: `#${p.uniformNumber} ${p.name}`,
+                                    sublabel: p.primaryPosition
+                                      ? `主守備: ${p.primaryPosition}`
+                                      : undefined,
+                                    keywords: `${p.uniformNumber} ${p.name} ${
+                                      p.nameKana || ""
+                                    }`,
+                                  })
+                                ),
+                              ]}
+                            />
+
+                            {!sub.playerId && (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="text"
+                                  value={sub.uniformNumber}
+                                  onChange={(e) =>
+                                    updateSubstitution(
+                                      slot.battingOrder,
+                                      sub.id,
+                                      {
+                                        uniformNumber: e.target.value,
+                                      }
+                                    )
+                                  }
+                                  placeholder="背番号"
+                                  className="w-14 h-7 px-1.5 rounded-lg bg-card border border-border text-center text-[10px] font-black text-foreground"
+                                />
+                                <input
+                                  type="text"
+                                  value={sub.name}
+                                  onChange={(e) =>
+                                    updateSubstitution(
+                                      slot.battingOrder,
+                                      sub.id,
+                                      {
+                                        name: e.target.value,
+                                      }
+                                    )
+                                  }
+                                  placeholder="助っ人・未登録の交代選手名を入力"
+                                  className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-card border border-border text-[10px] font-black text-foreground"
+                                />
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <>
-                            <input
-                              type="text"
-                              value={sub.uniformNumber}
-                              onChange={(e) =>
-                                updateSubstitution(slot.battingOrder, sub.id, {
-                                  uniformNumber: e.target.value,
-                                })
-                              }
-                              placeholder="#"
-                              className="w-10 h-8 px-1 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
-                            />
-                            <input
-                              type="text"
-                              value={sub.name}
-                              onChange={(e) =>
-                                updateSubstitution(slot.battingOrder, sub.id, {
-                                  name: e.target.value,
-                                })
-                              }
-                              placeholder="交代選手名"
-                              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                            />
-                          </>
-                        )}
-
-                        <LiffSelect
-                          value={sub.position}
-                          onChange={(val) =>
-                            updateSubstitution(slot.battingOrder, sub.id, {
-                              position: val,
-                            })
-                          }
-                          title="交代後の守備位置を選択"
-                          size="xs"
-                          searchable={false}
-                          className="w-[4.25rem] shrink-0"
-                          ariaLabel="交代後の守備位置"
-                          options={[
-                            { value: "", label: "守備 -" },
-                            ...POSITION_OPTIONS.filter((p) => p.value !== ""),
-                          ]}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            removeSubstitution(slot.battingOrder, sub.id)
-                          }
-                          className="p-1 text-destructive cursor-pointer shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      {current.isMyTeamBatting &&
-                        roster.length > 0 &&
-                        !sub.playerId && (
                           <div className="flex items-center gap-1.5">
                             <input
                               type="text"
@@ -1722,8 +1882,8 @@ export function Step2StructureCheck({
                                   uniformNumber: e.target.value,
                                 })
                               }
-                              placeholder="背番号"
-                              className="w-14 h-7 px-1.5 rounded-lg bg-card border border-border text-center text-[10px] font-black text-foreground"
+                              placeholder="#"
+                              className="w-12 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
                             />
                             <input
                               type="text"
@@ -1733,13 +1893,14 @@ export function Step2StructureCheck({
                                   name: e.target.value,
                                 })
                               }
-                              placeholder="助っ人・未登録の交代選手名を入力"
-                              className="flex-1 min-w-0 h-7 px-2 rounded-lg bg-card border border-border text-[10px] font-black text-foreground"
+                              placeholder="交代選手名を入力"
+                              className="flex-1 min-w-0 h-8 px-2 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
                             />
                           </div>
                         )}
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1757,7 +1918,7 @@ export function Step2StructureCheck({
                 : `相手（${opponentName}）の登板投手（継投）`}
             </h3>
             <p className="text-[10px] font-bold text-slate-300 leading-relaxed">
-              このシートの打者に対して投げた投手と担当回（回途中の交代は「1〜4回」と「4〜7回」のように交代回を重ねると波線位置で自動振り分けます）
+              このシートの打者に対して投げた投手と担当回（イニング途中の投手交代も「途中：○番打者から」で正確に指定できます）
             </p>
           </div>
           <button
@@ -1771,188 +1932,325 @@ export function Step2StructureCheck({
         </div>
 
         <div className="space-y-2">
-          {current.pitchers.map((pt, idx) => (
-            <div
-              key={pt.id}
-              className="p-2.5 rounded-2xl bg-muted border border-border space-y-2"
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="px-2 py-1 rounded-lg bg-primary/12 text-primary border border-primary/30 text-[10px] font-black shrink-0">
-                  {idx === 0 ? "先発" : `${idx + 1}番手`}
-                </span>
+          {current.pitchers.map((pt, idx) => {
+            const nextPt = current.pitchers[idx + 1];
+            const hasMidInningExit =
+              Boolean(nextPt) &&
+              nextPt.fromInning === pt.toInning &&
+              typeof nextPt.fromBatterOrder === "number" &&
+              nextPt.fromBatterOrder >= 1;
+            const hasMidInningEntry =
+              idx >= 1 &&
+              typeof pt.fromBatterOrder === "number" &&
+              pt.fromBatterOrder >= 1;
 
-                {!current.isMyTeamBatting && roster.length > 0 ? (
-                  <LiffSelect
-                    value={pt.playerId || ""}
-                    onChange={(val) => {
-                      const found = roster.find((p) => p.id === val);
-                      if (found) {
-                        updatePitcher(pt.id, {
-                          playerId: found.id,
-                          name: found.name,
-                          uniformNumber: found.uniformNumber,
-                        });
-                      } else {
-                        updatePitcher(pt.id, { playerId: null });
-                      }
-                    }}
-                    title={`${idx === 0 ? "先発" : `${idx + 1}番手`}投手を選択`}
-                    searchable={true}
-                    searchPlaceholder="背番号・選手名で検索..."
-                    size="sm"
-                    className="flex-1 min-w-0"
-                    ariaLabel="登板投手を選択"
-                    options={[
-                      {
-                        value: "",
-                        label: pt.name
-                          ? `未登録: ${pt.name}`
-                          : "-- 自チーム投手を選択 --",
-                      },
-                      ...roster.map(
-                        (p): LiffSelectOption => ({
-                          value: p.id,
-                          label: `#${p.uniformNumber} ${p.name}`,
-                          sublabel: p.primaryPosition
-                            ? `主守備: ${p.primaryPosition}`
-                            : undefined,
-                          keywords: `${p.uniformNumber} ${p.name} ${
-                            p.nameKana || ""
-                          }`,
-                        })
-                      ),
-                    ]}
-                  />
-                ) : (
-                  <>
-                    <input
-                      type="text"
-                      value={pt.uniformNumber}
-                      onChange={(e) =>
-                        updatePitcher(pt.id, { uniformNumber: e.target.value })
-                      }
-                      placeholder="#"
-                      className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border text-center text-xs font-black text-foreground shrink-0"
-                    />
-                    <input
-                      type="text"
-                      value={pt.name}
-                      onChange={(e) =>
-                        updatePitcher(pt.id, { name: e.target.value })
-                      }
-                      placeholder="相手投手名"
-                      className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
-                    />
-                  </>
-                )}
-
-                {current.pitchers.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removePitcher(pt.id)}
-                    className="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
-                    aria-label="投手を削除"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {!current.isMyTeamBatting && roster.length > 0 && !pt.playerId && (
-                <div className="pl-12 flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={pt.uniformNumber}
-                    onChange={(e) =>
-                      updatePitcher(pt.id, { uniformNumber: e.target.value })
-                    }
-                    placeholder="背番号"
-                    className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
-                  />
-                  <input
-                    type="text"
-                    value={pt.name}
-                    onChange={(e) =>
-                      updatePitcher(pt.id, { name: e.target.value })
-                    }
-                    placeholder="助っ人・未登録投手名を直接入力"
-                    className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
-                  />
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-2 pl-1">
-                <span className="text-[11px] font-bold text-muted-foreground">
-                  担当イニング
-                </span>
+            return (
+              <div
+                key={pt.id}
+                className="p-2.5 rounded-2xl bg-muted border border-border space-y-2"
+              >
                 <div className="flex items-center gap-1.5">
-                  <LiffSelect
-                    ariaLabel="登板開始イニング"
-                    title="登板開始イニングを選択"
-                    value={String(pt.fromInning)}
-                    size="sm"
-                    searchable={false}
-                    className="min-w-[4.5rem]"
-                    onChange={(val) => {
-                      const nextFrom = Number(val);
-                      const nextPitchers = current.pitchers.map(
-                        (item, pIdx) => {
-                          if (item.id === pt.id) {
-                            return {
-                              ...item,
-                              fromInning: nextFrom,
-                              toInning: Math.max(item.toInning, nextFrom),
-                            };
-                          }
-                          if (
-                            pIdx === idx - 1 &&
-                            item.toInning >= nextFrom &&
-                            item.fromInning < nextFrom
-                          ) {
-                            return {
-                              ...item,
-                              toInning: nextFrom - 1,
-                            };
-                          }
-                          return item;
-                        }
-                      );
-                      onChangeStructure(isTop, {
-                        ...current,
-                        pitchers: nextPitchers,
-                      });
-                    }}
-                    options={inningOptions.map((n) => ({
-                      value: String(n),
-                      label: `${n}回`,
-                    }))}
-                  />
-                  <span className="text-xs font-black text-muted-foreground">
-                    〜
+                  <span className="px-2 py-1 rounded-lg bg-primary/12 text-primary border border-primary/30 text-[10px] font-black shrink-0">
+                    {idx === 0 ? "先発" : `${idx + 1}番手`}
                   </span>
-                  <LiffSelect
-                    ariaLabel="登板終了イニング"
-                    title="登板終了イニングを選択"
-                    value={String(pt.toInning)}
-                    size="sm"
-                    searchable={false}
-                    className="min-w-[4.5rem]"
-                    onChange={(val) => {
-                      const nextTo = Number(val);
-                      updatePitcher(pt.id, {
-                        fromInning: Math.min(pt.fromInning, nextTo),
-                        toInning: nextTo,
-                      });
-                    }}
-                    options={inningOptions.map((n) => ({
-                      value: String(n),
-                      label: `${n}回`,
-                    }))}
-                  />
+
+                  {!current.isMyTeamBatting && roster.length > 0 ? (
+                    <LiffSelect
+                      value={pt.playerId || ""}
+                      onChange={(val) => {
+                        const found = roster.find((p) => p.id === val);
+                        if (found) {
+                          updatePitcher(pt.id, {
+                            playerId: found.id,
+                            name: found.name,
+                            uniformNumber: found.uniformNumber,
+                          });
+                        } else {
+                          updatePitcher(pt.id, { playerId: null });
+                        }
+                      }}
+                      title={`${
+                        idx === 0 ? "先発" : `${idx + 1}番手`
+                      }投手を選択`}
+                      searchable={true}
+                      searchPlaceholder="背番号・選手名で検索..."
+                      size="sm"
+                      className="flex-1 min-w-0"
+                      ariaLabel="登板投手を選択"
+                      options={[
+                        {
+                          value: "",
+                          label: pt.name
+                            ? `未登録: ${pt.name}`
+                            : "-- 自チーム投手を選択 --",
+                        },
+                        ...roster.map(
+                          (p): LiffSelectOption => ({
+                            value: p.id,
+                            label: `#${p.uniformNumber} ${p.name}`,
+                            sublabel: p.primaryPosition
+                              ? `主守備: ${p.primaryPosition}`
+                              : undefined,
+                            keywords: `${p.uniformNumber} ${p.name} ${
+                              p.nameKana || ""
+                            }`,
+                          })
+                        ),
+                      ]}
+                    />
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        value={pt.uniformNumber}
+                        onChange={(e) =>
+                          updatePitcher(pt.id, {
+                            uniformNumber: e.target.value,
+                          })
+                        }
+                        placeholder="#"
+                        className="w-11 h-9 px-1.5 rounded-xl bg-card border border-border text-center text-xs font-black text-foreground shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={pt.name}
+                        onChange={(e) =>
+                          updatePitcher(pt.id, { name: e.target.value })
+                        }
+                        placeholder="相手投手名"
+                        className="flex-1 min-w-0 h-9 px-2.5 rounded-xl bg-card border border-border text-xs font-black text-foreground"
+                      />
+                    </>
+                  )}
+
+                  {current.pitchers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePitcher(pt.id)}
+                      className="h-9 w-9 rounded-xl bg-card border border-border flex items-center justify-center text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
+                      aria-label="投手を削除"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+
+                {!current.isMyTeamBatting &&
+                  roster.length > 0 &&
+                  !pt.playerId && (
+                    <div className="pl-12 flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={pt.uniformNumber}
+                        onChange={(e) =>
+                          updatePitcher(pt.id, {
+                            uniformNumber: e.target.value,
+                          })
+                        }
+                        placeholder="背番号"
+                        className="w-14 h-8 px-1.5 rounded-lg bg-card border border-border text-center text-[11px] font-black text-foreground shrink-0"
+                      />
+                      <input
+                        type="text"
+                        value={pt.name}
+                        onChange={(e) =>
+                          updatePitcher(pt.id, { name: e.target.value })
+                        }
+                        placeholder="助っ人・未登録投手名を直接入力"
+                        className="flex-1 min-w-0 h-8 px-2.5 rounded-lg bg-card border border-border text-[11px] font-black text-foreground"
+                      />
+                    </div>
+                  )}
+
+                <div className="flex items-center justify-between gap-2 pl-1 flex-wrap">
+                  <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+                    担当イニング
+                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    <LiffSelect
+                      ariaLabel="登板開始イニング"
+                      title="登板開始イニングを選択"
+                      value={String(pt.fromInning)}
+                      size="xs"
+                      searchable={false}
+                      className="min-w-[4rem]"
+                      onChange={(val) => {
+                        const nextFrom = Number(val);
+                        const isMidInning =
+                          typeof pt.fromBatterOrder === "number" &&
+                          pt.fromBatterOrder >= 1;
+                        const nextPitchers = current.pitchers.map(
+                          (item, pIdx) => {
+                            if (item.id === pt.id) {
+                              return {
+                                ...item,
+                                fromInning: nextFrom,
+                                toInning: Math.max(item.toInning, nextFrom),
+                              };
+                            }
+                            if (pIdx === idx - 1) {
+                              if (isMidInning) {
+                                return {
+                                  ...item,
+                                  toInning: Math.max(item.fromInning, nextFrom),
+                                };
+                              }
+                              if (
+                                item.toInning >= nextFrom &&
+                                item.fromInning < nextFrom
+                              ) {
+                                return {
+                                  ...item,
+                                  toInning: nextFrom - 1,
+                                };
+                              }
+                            }
+                            return item;
+                          }
+                        );
+                        onChangeStructure(isTop, {
+                          ...current,
+                          pitchers: nextPitchers,
+                        });
+                      }}
+                      options={inningOptions.map((n) => ({
+                        value: String(n),
+                        label: `${n}回`,
+                      }))}
+                    />
+
+                    {idx >= 1 && (
+                      <LiffSelect
+                        ariaLabel="イニング内の登板開始タイミング"
+                        title={`${pt.fromInning}回の登板開始タイミングを選択`}
+                        subtitle="イニング途中で投手交代した場合は、この投手が投げ始めた打順を選択してください"
+                        value={
+                          typeof pt.fromBatterOrder === "number" &&
+                          pt.fromBatterOrder >= 1
+                            ? String(pt.fromBatterOrder)
+                            : ""
+                        }
+                        size="xs"
+                        searchable={false}
+                        className="shrink-0"
+                        triggerTextClassName={
+                          hasMidInningEntry ? "text-primary" : undefined
+                        }
+                        onChange={(val) => {
+                          const nextOrder = val ? Number(val) : null;
+                          const nextPitchers = current.pitchers.map(
+                            (item, pIdx) => {
+                              if (item.id === pt.id) {
+                                return {
+                                  ...item,
+                                  fromBatterOrder: nextOrder,
+                                };
+                              }
+                              if (pIdx === idx - 1) {
+                                if (nextOrder && nextOrder >= 1) {
+                                  return {
+                                    ...item,
+                                    toInning: Math.max(
+                                      item.fromInning,
+                                      pt.fromInning
+                                    ),
+                                  };
+                                }
+                                if (
+                                  item.toInning === pt.fromInning &&
+                                  item.fromInning < pt.fromInning
+                                ) {
+                                  return {
+                                    ...item,
+                                    toInning: pt.fromInning - 1,
+                                  };
+                                }
+                              }
+                              return item;
+                            }
+                          );
+                          onChangeStructure(isTop, {
+                            ...current,
+                            pitchers: nextPitchers,
+                          });
+                        }}
+                        options={[
+                          {
+                            value: "",
+                            label: "回頭から",
+                            sublabel: `${pt.fromInning}回の先頭打者から登板`,
+                          },
+                          ...Array.from(
+                            { length: Math.max(9, current.batters.length) },
+                            (_, i) => i + 1
+                          ).map((orderNum): LiffSelectOption => {
+                            const bSlot = current.batters.find(
+                              (b) => b.battingOrder === orderNum
+                            );
+                            const bName = bSlot?.name
+                              ? `（${bSlot.name}）`
+                              : "";
+                            return {
+                              value: String(orderNum),
+                              label: `途中:${orderNum}番〜`,
+                              sublabel: `${pt.fromInning}回途中・${orderNum}番打者${bName}の打席から登板`,
+                            };
+                          }),
+                        ]}
+                      />
+                    )}
+
+                    <span className="text-xs font-black text-muted-foreground">
+                      〜
+                    </span>
+                    <LiffSelect
+                      ariaLabel="登板終了イニング"
+                      title="登板終了イニングを選択"
+                      value={String(pt.toInning)}
+                      size="xs"
+                      searchable={false}
+                      className="min-w-[4rem]"
+                      onChange={(val) => {
+                        const nextTo = Number(val);
+                        updatePitcher(pt.id, {
+                          fromInning: Math.min(pt.fromInning, nextTo),
+                          toInning: nextTo,
+                        });
+                      }}
+                      options={inningOptions.map((n) => ({
+                        value: String(n),
+                        label: `${n}回`,
+                      }))}
+                    />
+                  </div>
+                </div>
+
+                {(hasMidInningEntry || hasMidInningExit) && (
+                  <div className="px-2.5 py-1 rounded-lg bg-primary/10 border border-primary/25 text-[10px] font-black text-primary flex items-center justify-between gap-2">
+                    <span>
+                      {hasMidInningEntry
+                        ? `${pt.fromInning}回途中（${pt.fromBatterOrder}番打者${
+                            current.batters.find(
+                              (b) => b.battingOrder === pt.fromBatterOrder
+                            )?.name
+                              ? `・${
+                                  current.batters.find(
+                                    (b) => b.battingOrder === pt.fromBatterOrder
+                                  )?.name
+                                }`
+                              : ""
+                          }から）`
+                        : `${pt.fromInning}回頭から`}
+                      {" 〜 "}
+                      {hasMidInningExit && nextPt
+                        ? `${pt.toInning}回途中（${nextPt.fromBatterOrder}番打者の前まで）`
+                        : `${pt.toInning}回終了まで`}
+                    </span>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -1989,7 +2287,7 @@ export function Step2StructureCheck({
 
         {/* 途中完了イニング保持・再開パネル（エラー時やStep3から戻った際も完了分を無駄にしない） */}
         {!isBusy && preservedAtBatsCount > 0 && (
-          <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-emerald-500 bg-card shadow-xs space-y-2.5">
+          <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-emerald-500 bg-card shadow-xs space-y-3">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1 space-y-0.5">
@@ -2005,12 +2303,12 @@ export function Step2StructureCheck({
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-col sm:flex-row gap-2.5">
               {missingInningsCount > 0 && onResumeMissingInnings && (
                 <button
                   type="button"
                   onClick={onResumeMissingInnings}
-                  className="flex-1 h-12 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                  className="w-full sm:flex-1 min-h-13 py-3.5 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-black shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer"
                 >
                   <RotateCcw className="w-4 h-4 shrink-0" />
                   <span>
@@ -2023,7 +2321,7 @@ export function Step2StructureCheck({
                 <button
                   type="button"
                   onClick={onProceedWithCompleted}
-                  className={`flex-1 h-12 px-4 rounded-xl text-xs font-black shadow-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer ${
+                  className={`w-full sm:flex-1 min-h-13 py-3.5 px-4 rounded-xl text-xs sm:text-sm font-black shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer ${
                     missingInningsCount > 0 && onResumeMissingInnings
                       ? "bg-primary/10 hover:bg-primary/15 border border-primary/25 text-primary"
                       : "bg-primary hover:bg-primary/90 text-primary-foreground"

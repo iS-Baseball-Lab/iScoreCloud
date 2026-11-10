@@ -102,6 +102,8 @@ export type ConfidenceLevel = "high" | "medium" | "low";
 export interface ScorebookSubstitution {
   id: string;
   inningEntered: number;
+  /** イニング途中で交代・守備変更した場合の開始打順（1〜9等。未指定/nullならイニング頭から） */
+  enteredFromBatterOrder?: number | null;
   /** 打者一巡時などのサブ列番号（1始まり・任意） */
   enteredColumnIndex?: number;
   /** STEP 3 の特定打席から交代を指定した場合の起点打席ID（任意） */
@@ -146,6 +148,10 @@ export interface ScorebookPitcherStint {
   uniformNumber: string;
   playerId: string | null;
   fromInning: number;
+  /** イニング途中で登板した場合の開始打順（1〜9等。未指定/nullならイニング頭から） */
+  fromBatterOrder?: number | null;
+  /** 打者一巡したイニングの2列目以降で途中登板した場合の列番号（1始まり・任意） */
+  fromColumnIndex?: number | null;
   toInning: number;
 }
 

@@ -471,43 +471,91 @@ export function matchRosterPlayer(
 }
 
 /**
+ * 同一イニング（同じ列）内で、指定された打順(targetOrder)が途中交代・継投の開始打順(thresholdOrder)に到達しているか判定する
+ * - inningLeadOffOrder（そのイニングの先頭打順 1〜9等）が判明している場合は、先頭打者からの巡目オフセットで厳密比較
+ * - 未指定の場合は、単純比較にフォールバック
+ */
+export function isBatterReachedInInningOrder(
+  targetOrder: number,
+  thresholdOrder: number,
+  inningLeadOffOrder?: number | null,
+  maxOrder = 9
+): boolean {
+  if (!thresholdOrder || thresholdOrder <= 0) return true;
+  const cycle = Math.max(9, maxOrder, targetOrder, thresholdOrder);
+  if (
+    typeof inningLeadOffOrder === "number" &&
+    inningLeadOffOrder >= 1 &&
+    inningLeadOffOrder <= cycle
+  ) {
+    const targetOffset =
+      (((targetOrder - inningLeadOffOrder) % cycle) + cycle) % cycle;
+    const thresholdOffset =
+      (((thresholdOrder - inningLeadOffOrder) % cycle) + cycle) % cycle;
+    return targetOffset >= thresholdOffset;
+  }
+  return targetOrder >= thresholdOrder;
+}
+
+/**
  * 確定したシート骨格(打順・途中交代・継投)から、指定イニング時点の打者・投手を解決する
- * - 同一イニング途中の投手交代（例: 先発 1〜4回、2番手 4〜7回のように交代回が重なるケース）では、
- *   AIが打席横の交代線から読み取った投手名ヒント(ocrPitcherHint)も照合して正確な投手を割り当てる。
+ * - イニング途中の投手交代（fromBatterOrder指定時）は先頭打順からの順序で厳密に切り替え
+ * - fromBatterOrder未指定で同一イニングに複数投手が重なるケースでは、AIが打席横の交代線から読み取った投手名ヒント(ocrPitcherHint)も照合して割り当てる
  */
 export function resolveActiveMatchupFromStructure(
   structure: ScorebookSheetStructure,
   inning: number,
   battingOrder: number,
   ocrPitcherHint?: string,
-  columnIndex?: number
+  columnIndex?: number,
+  inningLeadOffOrder?: number | null
 ): {
   batterName: string;
   batterPlayerId: string | null;
   pitcherName: string;
   pitcherPlayerId: string | null;
 } {
+  const maxOrder = Math.max(9, structure.batters.length);
+  const effectiveLeadOff =
+    typeof inningLeadOffOrder === "number" && inningLeadOffOrder >= 1
+      ? inningLeadOffOrder
+      : inning === 1
+      ? 1
+      : null;
+  const colIdx = Math.max(1, columnIndex ?? 1);
+
   const slot = structure.batters.find((b) => b.battingOrder === battingOrder);
   let batterName = slot?.name || "";
   let batterPlayerId = slot?.playerId || null;
 
   if (slot && slot.substitutions.length > 0) {
-    const colIdx = Math.max(1, columnIndex ?? 1);
     const applicableSubs = slot.substitutions
       .filter((s) => {
         if (s.subType === "TR" || s.name.trim() === "") return false;
         if (s.inningEntered < inning) return true;
         if (s.inningEntered > inning) return false;
-        if (
-          typeof s.enteredColumnIndex === "number" &&
-          s.enteredColumnIndex >= 1 &&
-          colIdx < s.enteredColumnIndex
-        ) {
+        const subCol =
+          typeof s.enteredColumnIndex === "number" && s.enteredColumnIndex >= 1
+            ? s.enteredColumnIndex
+            : 1;
+        if (colIdx < subCol) {
           return false;
         }
-        // 代走(PR)はその回の出塁後に入るため、同一イニング内は打者一巡の2打席目以降のみ打席に立つ
+        // 代走(PR)はその回の出塁後に入るため、同一イニング内は打者一巡の次列以降のみ打席に立つ
         if (s.subType === "PR") {
-          return colIdx >= 2;
+          return colIdx > subCol;
+        }
+        if (
+          typeof s.enteredFromBatterOrder === "number" &&
+          s.enteredFromBatterOrder >= 1 &&
+          colIdx === subCol
+        ) {
+          return isBatterReachedInInningOrder(
+            battingOrder,
+            s.enteredFromBatterOrder,
+            effectiveLeadOff,
+            maxOrder
+          );
         }
         return true;
       })
@@ -522,35 +570,91 @@ export function resolveActiveMatchupFromStructure(
   let pitcherName = "";
   let pitcherPlayerId: string | null = null;
   if (structure.pitchers.length > 0) {
-    const matchingStints = structure.pitchers.filter(
-      (p) => inning >= p.fromInning && inning <= p.toInning
+    const hasExplicitMidInningChangeInInning = structure.pitchers.some(
+      (p, pIdx) =>
+        pIdx > 0 &&
+        p.fromInning === inning &&
+        typeof p.fromBatterOrder === "number" &&
+        p.fromBatterOrder >= 1
     );
-    let chosenStint =
-      matchingStints[0] || structure.pitchers[structure.pitchers.length - 1];
 
-    // 同一イニング途中の継投で複数投手が重なる場合（matchingStints.length > 1）や
-    // 該当イニングが全スパン外の場合（matchingStints.length === 0）のみ投手名ヒントで照合する。
-    // ※matchingStints.length === 1 のときに旧投手名ヒントで交代前の投手へ先祖返りする不具合を防ぐ。
-    const cleanHint = normalizePlayerNameForMatch(ocrPitcherHint || "");
-    if (cleanHint && matchingStints.length !== 1) {
-      const pool =
-        matchingStints.length > 1 ? matchingStints : structure.pitchers;
-      const hintMatched = pool.find((p) => {
-        const cleanP = normalizePlayerNameForMatch(p.name);
-        if (!cleanP) return false;
-        return (
-          cleanP === cleanHint ||
-          cleanP.includes(cleanHint) ||
-          cleanHint.includes(cleanP)
+    if (hasExplicitMidInningChangeInInning) {
+      let chosenStint = structure.pitchers[0];
+      for (let pIdx = 0; pIdx < structure.pitchers.length; pIdx++) {
+        const p = structure.pitchers[pIdx];
+        const nextP = structure.pitchers[pIdx + 1];
+        const effectiveToInning = Math.max(
+          p.toInning,
+          nextP &&
+            nextP.fromInning === inning &&
+            typeof nextP.fromBatterOrder === "number" &&
+            nextP.fromBatterOrder >= 1
+            ? inning
+            : p.toInning
         );
-      });
-      if (hintMatched) {
-        chosenStint = hintMatched;
+        if (inning < p.fromInning || inning > effectiveToInning) {
+          continue;
+        }
+        if (pIdx === 0 || inning > p.fromInning) {
+          chosenStint = p;
+          continue;
+        }
+        // p.fromInning === inning
+        const pCol =
+          typeof p.fromColumnIndex === "number" && p.fromColumnIndex >= 1
+            ? p.fromColumnIndex
+            : 1;
+        if (colIdx < pCol) {
+          continue;
+        }
+        if (
+          colIdx === pCol &&
+          typeof p.fromBatterOrder === "number" &&
+          p.fromBatterOrder >= 1 &&
+          !isBatterReachedInInningOrder(
+            battingOrder,
+            p.fromBatterOrder,
+            effectiveLeadOff,
+            maxOrder
+          )
+        ) {
+          continue;
+        }
+        chosenStint = p;
       }
-    }
+      pitcherName = chosenStint.name;
+      pitcherPlayerId = chosenStint.playerId;
+    } else {
+      const matchingStints = structure.pitchers.filter(
+        (p) => inning >= p.fromInning && inning <= p.toInning
+      );
+      let chosenStint =
+        matchingStints[0] || structure.pitchers[structure.pitchers.length - 1];
 
-    pitcherName = chosenStint.name;
-    pitcherPlayerId = chosenStint.playerId;
+      // 同一イニング途中の継投で複数投手が重なる場合（matchingStints.length > 1）や
+      // 該当イニングが全スパン外の場合（matchingStints.length === 0）のみ投手名ヒントで照合する。
+      // ※matchingStints.length === 1 のときに旧投手名ヒントで交代前の投手へ先祖返りする不具合を防ぐ。
+      const cleanHint = normalizePlayerNameForMatch(ocrPitcherHint || "");
+      if (cleanHint && matchingStints.length !== 1) {
+        const pool =
+          matchingStints.length > 1 ? matchingStints : structure.pitchers;
+        const hintMatched = pool.find((p) => {
+          const cleanP = normalizePlayerNameForMatch(p.name);
+          if (!cleanP) return false;
+          return (
+            cleanP === cleanHint ||
+            cleanP.includes(cleanHint) ||
+            cleanHint.includes(cleanP)
+          );
+        });
+        if (hintMatched) {
+          chosenStint = hintMatched;
+        }
+      }
+
+      pitcherName = chosenStint.name;
+      pitcherPlayerId = chosenStint.playerId;
+    }
   }
 
   return {
@@ -563,9 +667,9 @@ export function resolveActiveMatchupFromStructure(
 
 /**
  * シート骨格（スタメン・代打PH・代走PR・守備交代DEF・継投投手）の変更を既存の打席リストおよび塁上走者名へ精密同期する
- * - enteredAtBatId が記録されている交代は、回途中・打者一巡・タイブレークを問わずその打席インデックス以降に厳密適用
+ * - enteredAtBatId / enteredFromBatterOrder が記録されている交代は、回途中・打者一巡・タイブレークを問わずその起点打席以降に厳密適用
  * - 代走(PR)は同一イニングの出塁打席（1打席目）を上書きせず、後続の走塁および次回以降の打席へ適用
- * - 回途中の投手交代（同一回に複数スティントが重なるケース）も各打席の割当を維持したまま後続回へ反映
+ * - 回途中の投手交代（fromBatterOrder指定時、または同一回に複数スティントが重なるケース）も各打席へ正確に反映
  */
 export function syncSheetAtBatsWithStructure(
   atBats: ScorebookV2AtBat[],
@@ -573,10 +677,52 @@ export function syncSheetAtBatsWithStructure(
 ): ScorebookV2AtBat[] {
   if (atBats.length === 0) return atBats;
 
+  const maxOrder = Math.max(9, structure.batters.length);
   const atBatIndexById = new Map<string, number>();
+  const leadOffByInning = new Map<number, number>();
   atBats.forEach((ab, idx) => {
     atBatIndexById.set(ab.id, idx);
+    if (!leadOffByInning.has(ab.inning)) {
+      leadOffByInning.set(ab.inning, ab.battingOrder);
+    }
   });
+
+  const hasReachedInningThresholdAt = (
+    targetIdx: number,
+    targetAb: ScorebookV2AtBat,
+    thresholdInning: number,
+    thresholdOrder?: number | null,
+    thresholdCol?: number | null
+  ): boolean => {
+    if (targetAb.inning > thresholdInning) return true;
+    if (targetAb.inning < thresholdInning) return false;
+    const tCol =
+      typeof thresholdCol === "number" && thresholdCol >= 1 ? thresholdCol : 1;
+    const abCol = Math.max(1, targetAb.columnIndex || 1);
+    if (abCol < tCol) return false;
+    if (abCol > tCol) return true;
+    if (typeof thresholdOrder !== "number" || thresholdOrder < 1) return true;
+
+    const exactIdx = atBats.findIndex(
+      (a) =>
+        a.inning === thresholdInning &&
+        Math.max(1, a.columnIndex || 1) === tCol &&
+        a.battingOrder === thresholdOrder
+    );
+    if (exactIdx !== -1) {
+      return targetIdx >= exactIdx;
+    }
+
+    const leadOff =
+      leadOffByInning.get(thresholdInning) ??
+      (thresholdInning === 1 ? 1 : null);
+    return isBatterReachedInInningOrder(
+      targetAb.battingOrder,
+      thresholdOrder,
+      leadOff,
+      maxOrder
+    );
+  };
 
   const firstPass = atBats.map((ab, idx) => {
     const slot = structure.batters.find(
@@ -600,15 +746,16 @@ export function syncSheetAtBatsWithStructure(
           if (sub.inningEntered > ab.inning) return false;
 
           const colIdx = Math.max(1, ab.columnIndex || 1);
-          if (
+          const subCol =
             typeof sub.enteredColumnIndex === "number" &&
-            sub.enteredColumnIndex >= 1 &&
-            colIdx < sub.enteredColumnIndex
-          ) {
+            sub.enteredColumnIndex >= 1
+              ? sub.enteredColumnIndex
+              : 1;
+          if (colIdx < subCol) {
             return false;
           }
           if (sub.subType === "PR") {
-            if (colIdx >= 2) return true;
+            if (colIdx > subCol) return true;
             const hasPriorSameOrderInInning = atBats
               .slice(0, idx)
               .some(
@@ -617,6 +764,18 @@ export function syncSheetAtBatsWithStructure(
                   prev.battingOrder === ab.battingOrder
               );
             return hasPriorSameOrderInInning;
+          }
+          if (
+            typeof sub.enteredFromBatterOrder === "number" &&
+            sub.enteredFromBatterOrder >= 1
+          ) {
+            return hasReachedInningThresholdAt(
+              idx,
+              ab,
+              sub.inningEntered,
+              sub.enteredFromBatterOrder,
+              subCol
+            );
           }
           return true;
         })
@@ -643,13 +802,63 @@ export function syncSheetAtBatsWithStructure(
       }
     }
 
-    const matchup = resolveActiveMatchupFromStructure(
-      structure,
-      ab.inning,
-      ab.battingOrder,
-      ab.pitcherName,
-      ab.columnIndex
+    const inningLeadOff =
+      leadOffByInning.get(ab.inning) ?? (ab.inning === 1 ? 1 : null);
+    let resolvedPitcherName = "";
+    let resolvedPitcherPlayerId: string | null = null;
+
+    const hasExplicitMidInningPitcherInAbInning = structure.pitchers.some(
+      (p, pIdx) =>
+        pIdx > 0 &&
+        p.fromInning === ab.inning &&
+        typeof p.fromBatterOrder === "number" &&
+        p.fromBatterOrder >= 1
     );
+
+    if (hasExplicitMidInningPitcherInAbInning && structure.pitchers.length > 0) {
+      let chosenStint = structure.pitchers[0];
+      for (let pIdx = 0; pIdx < structure.pitchers.length; pIdx++) {
+        const p = structure.pitchers[pIdx];
+        const nextP = structure.pitchers[pIdx + 1];
+        const effectiveToInning = Math.max(
+          p.toInning,
+          nextP &&
+            nextP.fromInning === ab.inning &&
+            typeof nextP.fromBatterOrder === "number" &&
+            nextP.fromBatterOrder >= 1
+            ? ab.inning
+            : p.toInning
+        );
+        if (ab.inning < p.fromInning || ab.inning > effectiveToInning) {
+          continue;
+        }
+        if (
+          pIdx === 0 ||
+          hasReachedInningThresholdAt(
+            idx,
+            ab,
+            p.fromInning,
+            p.fromBatterOrder,
+            p.fromColumnIndex
+          )
+        ) {
+          chosenStint = p;
+        }
+      }
+      resolvedPitcherName = chosenStint.name;
+      resolvedPitcherPlayerId = chosenStint.playerId;
+    } else {
+      const matchup = resolveActiveMatchupFromStructure(
+        structure,
+        ab.inning,
+        ab.battingOrder,
+        ab.pitcherName,
+        ab.columnIndex,
+        inningLeadOff
+      );
+      resolvedPitcherName = matchup.pitcherName;
+      resolvedPitcherPlayerId = matchup.pitcherPlayerId;
+    }
 
     const nextBatterName = ab.manualBatterOverride
       ? ab.batterName
@@ -662,11 +871,11 @@ export function syncSheetAtBatsWithStructure(
 
     const nextPitcherName = ab.manualPitcherOverride
       ? ab.pitcherName
-      : matchup.pitcherName || ab.pitcherName;
+      : resolvedPitcherName || ab.pitcherName;
     const nextPitcherPlayerId = ab.manualPitcherOverride
       ? ab.pitcherPlayerId
-      : matchup.pitcherName
-      ? matchup.pitcherPlayerId
+      : resolvedPitcherName
+      ? resolvedPitcherPlayerId
       : ab.pitcherPlayerId;
 
     const nextAdvances = ab.advances.map((adv) => {

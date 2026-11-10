@@ -206,9 +206,19 @@ function crossFillOppositePitchers(
     7;
 
   const builtPitchers: ScorebookPitcherStint[] = [];
+  const firstRelief = dedupedReliefs[0];
+  const isFirstReliefMidInning =
+    Boolean(firstRelief) &&
+    typeof firstRelief.enteredFromBatterOrder === "number" &&
+    firstRelief.enteredFromBatterOrder >= 1;
   const starterTo =
     dedupedReliefs.length > 0
-      ? Math.max(1, dedupedReliefs[0].inningEntered - 1)
+      ? Math.max(
+          1,
+          isFirstReliefMidInning
+            ? firstRelief.inningEntered
+            : firstRelief.inningEntered - 1
+        )
       : maxInn;
 
   builtPitchers.push({
@@ -218,11 +228,17 @@ function crossFillOppositePitchers(
     uniformNumber: starterBase.uniformNumber,
     playerId: starterBase.playerId,
     fromInning: 1,
+    fromBatterOrder: null,
+    fromColumnIndex: null,
     toInning: starterTo,
   });
 
   dedupedReliefs.forEach((rel, idx) => {
     const nextRel = dedupedReliefs[idx + 1];
+    const isNextRelMidInning =
+      Boolean(nextRel) &&
+      typeof nextRel.enteredFromBatterOrder === "number" &&
+      nextRel.enteredFromBatterOrder >= 1;
     builtPitchers.push({
       id: crypto.randomUUID(),
       order: idx + 2,
@@ -230,8 +246,22 @@ function crossFillOppositePitchers(
       uniformNumber: rel.uniformNumber,
       playerId: rel.playerId,
       fromInning: rel.inningEntered,
+      fromBatterOrder:
+        typeof rel.enteredFromBatterOrder === "number" &&
+        rel.enteredFromBatterOrder >= 1
+          ? rel.enteredFromBatterOrder
+          : null,
+      fromColumnIndex:
+        typeof rel.enteredColumnIndex === "number" && rel.enteredColumnIndex >= 1
+          ? rel.enteredColumnIndex
+          : null,
       toInning: nextRel
-        ? Math.max(rel.inningEntered, nextRel.inningEntered - 1)
+        ? Math.max(
+            rel.inningEntered,
+            isNextRelMidInning
+              ? nextRel.inningEntered
+              : nextRel.inningEntered - 1
+          )
         : maxInn,
     });
   });
@@ -1883,9 +1913,19 @@ export default function LiffScorebookImportPage() {
             x.position,
             x.rowBox?.[0],
             x.rowBox?.[2],
-            x.substitutions.map((s) => [s.inningEntered, s.name, s.position]),
+            x.substitutions.map((s) => [
+              s.inningEntered,
+              s.enteredFromBatterOrder ?? null,
+              s.name,
+              s.position,
+            ]),
           ]),
-          p: structure.pitchers.map((x) => [x.name, x.fromInning, x.toInning]),
+          p: structure.pitchers.map((x) => [
+            x.name,
+            x.fromInning,
+            x.fromBatterOrder ?? null,
+            x.toInning,
+          ]),
           i: structure.innings.map((x) => [
             x.inning,
             x.runs,
