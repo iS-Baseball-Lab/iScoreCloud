@@ -1557,8 +1557,11 @@ function inferFielderToken(
 
 function isCalledStrikeout(ab: ScorebookV2AtBat): boolean {
   const label = (ab.resultLabel || "").trim();
-  if (/見逃/.test(label) || /Ⓚ|ꓘ/.test(label)) return true;
-  if (/空振|バント|振逃|振り逃げ/.test(label)) return false;
+  const dir = (ab.battedDirection || "").trim();
+  if (/見逃/.test(label) || /Ⓚ|ꓘ/.test(label) || /Ⓚ|ꓘ/.test(dir)) return true;
+  if (/空振|バント|振逃|振り逃げ/.test(label) || /^SO\b/i.test(dir)) {
+    return false;
+  }
   for (let i = ab.pitches.length - 1; i >= 0; i--) {
     const p: CanonicalPitchResult = ab.pitches[i];
     if (p === "strike") return true;
@@ -1566,6 +1569,7 @@ function isCalledStrikeout(ab: ScorebookV2AtBat): boolean {
       return false;
     }
   }
+  if (/^K$/i.test(dir)) return true;
   return false;
 }
 
@@ -1799,7 +1803,13 @@ export function formatAtBatPlayNotation(
         ? "3B"
         : undefined;
 
-    if (rules.strikeout === "so") {
+    if (
+      rules.strikeout === "so" ||
+      (rc === "strikeout" &&
+        !called &&
+        rules.strikeout !== "k_only" &&
+        /^SO\b/i.test(dir))
+    ) {
       return {
         mainText: "SO",
         subText: dtsSub,
@@ -1833,8 +1843,16 @@ export function formatAtBatPlayNotation(
 
   // 4. 犠打（送りバント）
   if (rc === "sac_bunt") {
-    const token = inferFielderToken(dir, label, "1-3");
-    const main = token.includes("-") || token === "3" ? token : `${token}-3`;
+    const explicitBaseStepSac = dir.match(
+      /^([1-9](?:-[1-9])*(?:A|B|C|H|TO))$/i
+    );
+    const token = explicitBaseStepSac
+      ? explicitBaseStepSac[1].toUpperCase()
+      : inferFielderToken(dir, label, "1-3");
+    const main =
+      explicitBaseStepSac || token.includes("-") || token === "3"
+        ? token
+        : `${token}-3`;
     const sacDecorator =
       rules.buntMark === "square_sac_triangle_sf_bh" ||
       rules.buntMark === "square_all_bh" ||

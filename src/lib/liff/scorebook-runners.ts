@@ -332,6 +332,7 @@ export function isForceOutGroundout(
   const dir = (battedDirection || "").trim();
   const label = (resultLabel || "").trim();
   if (/^[1-9]-[2456]$/.test(dir)) return true;
+  if (/^[1-9][BCH]$/i.test(dir)) return true;
   if (/二封|三封|本封|封殺/.test(label)) return true;
   return false;
 }
@@ -1295,7 +1296,7 @@ export function simulateSheetRunners(
             let outAtBase: OccupiedBaseKey | "HP" = "2B";
 
             if (
-              (/^[1-9]-2/.test(dir) || label.includes("本封")) &&
+              (/^[1-9]-2|^[1-9]H$/i.test(dir) || label.includes("本封")) &&
               candidates.some((r) => r.currentBase === "3B")
             ) {
               forcedTargetRunner = candidates.find(
@@ -1303,7 +1304,7 @@ export function simulateSheetRunners(
               );
               outAtBase = "HP";
             } else if (
-              (/^[1-9]-5/.test(dir) ||
+              (/^[1-9]-5|^[1-9]C$/i.test(dir) ||
                 (ab.resultCode === "triple_play" && /^5-/.test(dir)) ||
                 label.includes("三封")) &&
               candidates.some((r) => r.currentBase === "2B")
@@ -2816,7 +2817,7 @@ export function buildSmartAdvancesForResultChange(params: {
       isForceOutGroundout(nextResultCode, nextBattedDirection, nextResultLabel)
     ) {
       if (
-        (/^[1-9]-2/.test(nextBattedDirection) ||
+        (/^[1-9]-2|^[1-9]H$/i.test(nextBattedDirection) ||
           nextResultLabel.includes("本封")) &&
         r3
       ) {
@@ -2829,7 +2830,7 @@ export function buildSmartAdvancesForResultChange(params: {
           isOut: true,
         });
       } else if (
-        (/^[1-9]-5/.test(nextBattedDirection) ||
+        (/^[1-9]-5|^[1-9]C$/i.test(nextBattedDirection) ||
           nextResultLabel.includes("三封")) &&
         r2
       ) {

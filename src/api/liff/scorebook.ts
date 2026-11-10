@@ -2334,6 +2334,11 @@ ${targetInningMetaLines.join("\n")}
         advances,
         activeBases
       );
+      harmonizeStrikeoutWithPitches(
+        resultCode,
+        harmonizedFielding,
+        normalizedPitches
+      );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
 
       // 【数学的自己補正 2】確定済みグリッドの列座標(columnBox × columnIndex)と打順行座標(rowBox)の直積交差から 1マスを厳密算出
@@ -2795,6 +2800,11 @@ ${pitcherSpecLines.join("\n")}
         resultCode,
         advances,
         { "1B": runnerMaybeOnBase, "2B": false, "3B": false }
+      );
+      harmonizeStrikeoutWithPitches(
+        resultCode,
+        harmonizedFielding,
+        normalizedPitches
       );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
 
@@ -3284,6 +3294,11 @@ ${batterRowsDesc.join("\n")}
         resultCode,
         advances,
         activeBases
+      );
+      harmonizeStrikeoutWithPitches(
+        resultCode,
+        harmonizedFielding,
+        normalizedPitches
       );
       const { balls, strikes } = computeCountFromPitches(normalizedPitches);
 
@@ -6476,6 +6491,11 @@ function reconcileRawAtBatEvidence(
   const rbMatch = obs.match(/(?:右下|打球)\s*[:：]\s*([^/]+)/);
   const rbText = rbMatch ? rbMatch[1].trim() : "";
   if (
+    (!rawDir || /^(?:K|三振)$/i.test(rawDir)) &&
+    /^SO\b/i.test(rbText)
+  ) {
+    rawDir = "SO";
+  } else if (
     (!rawDir || !/[1-9]/.test(rawDir)) &&
     rbText &&
     rbText !== "無" &&
@@ -8021,6 +8041,62 @@ function base64ToUint8Array(base64: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+function harmonizeStrikeoutWithPitches(
+  resultCode: CanonicalAtBatResult,
+  harmonizedFielding: { battedDirection: string; resultLabel: string },
+  normalizedPitches: CanonicalPitchResult[]
+): void {
+  if (resultCode !== "strikeout") return;
+  let lastBatterPitchIdx = -1;
+  for (let i = normalizedPitches.length - 1; i >= 0; i--) {
+    if (!isNonPitchMoundEvent(normalizedPitches[i])) {
+      lastBatterPitchIdx = i;
+      break;
+    }
+  }
+  const lastPitch =
+    lastBatterPitchIdx >= 0 ? normalizedPitches[lastBatterPitchIdx] : undefined;
+  const lbl = (harmonizedFielding.resultLabel || "").trim();
+  const dir = (harmonizedFielding.battedDirection || "").trim();
+
+  if (
+    lastPitch === "bunt_foul" ||
+    /3バント|スリーバント/.test(lbl) ||
+    /\b3B\b/i.test(dir)
+  ) {
+    harmonizedFielding.resultLabel = "スリーバント失敗";
+    harmonizedFielding.battedDirection = "SO";
+    if (lastBatterPitchIdx >= 0) {
+      normalizedPitches[lastBatterPitchIdx] = "bunt_foul";
+    }
+    return;
+  }
+
+  if (lastPitch === "swinging_strike" || lastPitch === "bunt_swinging") {
+    if (!/見逃/.test(lbl)) {
+      harmonizedFielding.resultLabel = "空振り三振";
+      harmonizedFielding.battedDirection = "SO";
+    } else if (lastBatterPitchIdx >= 0) {
+      normalizedPitches[lastBatterPitchIdx] = "strike";
+      harmonizedFielding.battedDirection = "K";
+    }
+    return;
+  }
+
+  if (lastPitch === "strike") {
+    if (/空振/.test(lbl) || /^SO\b/i.test(dir)) {
+      harmonizedFielding.resultLabel = "空振り三振";
+      harmonizedFielding.battedDirection = "SO";
+      if (lastBatterPitchIdx >= 0) {
+        normalizedPitches[lastBatterPitchIdx] = "swinging_strike";
+      }
+    } else {
+      harmonizedFielding.resultLabel = "見逃し三振";
+      harmonizedFielding.battedDirection = "K";
+    }
+  }
 }
 
 export default liffScorebookRouter;

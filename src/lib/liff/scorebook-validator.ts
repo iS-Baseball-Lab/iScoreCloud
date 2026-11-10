@@ -296,7 +296,9 @@ export function inferCanonicalResultCode(
   if (
     label.includes("ゴロ") ||
     label.includes("封殺") ||
+    label.includes("タッチアウト") ||
     /^[1-9]-[1-9]/.test(upper) ||
+    /^[1-9](?:A|TO)$/i.test(normErrToken) ||
     /^[~〜][1-9]$/.test(label)
   ) {
     return "groundout";

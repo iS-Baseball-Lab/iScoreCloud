@@ -29,6 +29,11 @@ export type AssistTargetOption =
   | "6"
   | "5"
   | "2"
+  | "base_a"
+  | "base_b"
+  | "base_c"
+  | "base_h"
+  | "touch_out"
   | "unassisted";
 
 export type ErrorStyleOption = "fielding" | "throwing";
@@ -364,25 +369,42 @@ export function parseFieldingMeta(
     }
   }
 
-  // 4. E6 / 4E / FC6 / K-E2 / 6F / 6L / 6IF / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
+  // 4. E6 / 4E / FC6 / K-E2 / 6F / 6L / 6IF / 3A / 6B / 5C / 2H / 3TO / ⌒4 / ︵4 / 傘4 / △2 / (2) / [1] / ◇3 / 4￣ / 単独 1〜9
   if (!primaryPos) {
     const strippedDecorDir = dir
       .replace(/[\u0304\u0305]/g, "")
       .replace(/^[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○[({\uff08\s]+/, "")
       .replace(/[⌒︵︶∩^傘~〜￣ー\-△▲□◇◯○\])}\uff09,，.\s]+$/, "");
+    const baseStepOrTouchMatch =
+      strippedDecorDir.match(
+        /^(?:BH|B|K\s*(?:-\s*)?\s*)?([1-9])\s*(A|B|C|H|TO)$/i
+      ) ||
+      label.match(
+        /\((?:BH|B|K\s*(?:-\s*)?\s*)?([1-9])\s*(A|B|C|H|TO)\)/i
+      );
     const suffixErrorMatch =
-      strippedDecorDir.match(/^([1-9])\s*E$/i) ||
-      label.match(/\(([1-9])E\)/i);
+      !baseStepOrTouchMatch &&
+      (strippedDecorDir.match(/^([1-9])\s*E$/i) ||
+        label.match(/\(([1-9])E\)/i));
     const codeDigitMatch =
+      baseStepOrTouchMatch ||
       suffixErrorMatch ||
       strippedDecorDir.match(
-        /^(?:BH|B|E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|B|F|L|IF|SF|E|FC|A|G)?$/i
+        /^(?:BH|B|E|FC|INT|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|B|F|L|IF|SF|E|FC|G)?$/i
       ) ||
       strippedDecorDir.match(/^([1-9])\s*(?:BH|E|FC|失)$/i) ||
       label.match(
-        /\((?:BH|B|E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|FC|A|G)?\)/i
+        /\((?:BH|B|E|FC|K\s*(?:-\s*E|E|-)?\s*)?([1-9])(?:BH|FC|G)?\)/i
       );
-    if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
+    if (baseStepOrTouchMatch && isValidPosDigit(baseStepOrTouchMatch[1])) {
+      primaryPos = baseStepOrTouchMatch[1];
+      const sfx = baseStepOrTouchMatch[2].toUpperCase();
+      if (sfx === "A") assistTargetPos = "base_a";
+      else if (sfx === "B") assistTargetPos = "base_b";
+      else if (sfx === "C") assistTargetPos = "base_c";
+      else if (sfx === "H") assistTargetPos = "base_h";
+      else if (sfx === "TO") assistTargetPos = "touch_out";
+    } else if (codeDigitMatch && isValidPosDigit(codeDigitMatch[1])) {
       primaryPos = codeDigitMatch[1];
       if (
         resultCode === "groundout" ||
@@ -480,9 +502,21 @@ export function parseFieldingMeta(
   }
 
   if (!assistTargetPos && primaryPos) {
-    if (label.includes("本封")) assistTargetPos = "2";
-    else if (label.includes("三封")) assistTargetPos = "5";
-    else if (label.includes("二封")) {
+    if (/一塁踏/.test(label) || /\b[1-9]A\b/i.test(combined)) {
+      assistTargetPos = "base_a";
+    } else if (/二塁踏/.test(label) || /\b[1-9]B\b/i.test(combined)) {
+      assistTargetPos = "base_b";
+    } else if (/三塁踏/.test(label) || /\b[1-9]C\b/i.test(combined)) {
+      assistTargetPos = "base_c";
+    } else if (/本塁踏/.test(label) || /\b[1-9]H\b/i.test(combined)) {
+      assistTargetPos = "base_h";
+    } else if (/タッチアウト/.test(label) || /\b[1-9]TO\b/i.test(combined)) {
+      assistTargetPos = "touch_out";
+    } else if (label.includes("本封")) {
+      assistTargetPos = "2";
+    } else if (label.includes("三封")) {
+      assistTargetPos = "5";
+    } else if (label.includes("二封")) {
       assistTargetPos = primaryPos === "4" ? "6" : "4";
     }
   }
@@ -516,7 +550,12 @@ export interface ComposeFieldingParams {
  */
 export function defaultGenericDirection(
   code: CanonicalAtBatResult,
-  options?: { flyStyle?: FlyStyleOption; clearPos?: boolean }
+  options?: {
+    flyStyle?: FlyStyleOption;
+    clearPos?: boolean;
+    presetId?: string;
+    resultLabel?: string;
+  }
 ): string {
   switch (code) {
     case "walk":
@@ -525,8 +564,13 @@ export function defaultGenericDirection(
       return "IBB";
     case "hit_by_pitch":
       return "D";
-    case "strikeout":
-      return "K";
+    case "strikeout": {
+      const lbl = (options?.resultLabel || "").trim();
+      if (options?.presetId === "so_look" || /見逃|Ⓚ|ꓘ/.test(lbl)) {
+        return "K";
+      }
+      return "SO";
+    }
     case "dropped_third_strike_out":
       return "K 2-3";
     case "dropped_third_strike":
@@ -607,9 +651,13 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     resultCode === "strikeout" ||
     resultCode === "other"
   ) {
+    const resolvedLabel =
+      params.fallbackLabel || defaultGenericLabel(resultCode);
     return {
-      battedDirection: defaultGenericDirection(resultCode),
-      resultLabel: params.fallbackLabel || defaultGenericLabel(resultCode),
+      battedDirection: defaultGenericDirection(resultCode, {
+        resultLabel: resolvedLabel,
+      }),
+      resultLabel: resolvedLabel,
     };
   }
 
@@ -776,7 +824,42 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     case "groundout": {
       const gSuffix = params.isBunt ? "バントゴロ" : "ゴロ";
       const target =
-        params.assistTargetPos || (code === "3" ? "unassisted" : "3");
+        params.assistTargetPos || (code === "3" ? "base_a" : "3");
+      if (target === "base_a") {
+        const dir = `${code}A`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}${gSuffix} (${dir})`,
+        };
+      }
+      if (target === "base_b") {
+        const dir = `${code}B`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}${gSuffix}二封 (${dir})`,
+        };
+      }
+      if (target === "base_c") {
+        const dir = `${code}C`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}${gSuffix}三封 (${dir})`,
+        };
+      }
+      if (target === "base_h") {
+        const dir = `${code}H`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}${gSuffix}本封 (${dir})`,
+        };
+      }
+      if (target === "touch_out") {
+        const dir = `${code}TO`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}${gSuffix}タッチアウト (${dir})`,
+        };
+      }
       if (target === "unassisted" || target === code) {
         return {
           battedDirection: code,
@@ -811,6 +894,41 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     case "sac_bunt": {
       const target =
         params.assistTargetPos || (code === "3" ? "4" : "3");
+      if (target === "base_a") {
+        const dir = `${code}A`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}犠打 (${dir})`,
+        };
+      }
+      if (target === "base_b") {
+        const dir = `${code}B`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}犠打 (${dir})`,
+        };
+      }
+      if (target === "base_c") {
+        const dir = `${code}C`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}犠打 (${dir})`,
+        };
+      }
+      if (target === "base_h") {
+        const dir = `${code}H`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}犠打 (${dir})`,
+        };
+      }
+      if (target === "touch_out") {
+        const dir = `${code}TO`;
+        return {
+          battedDirection: dir,
+          resultLabel: `${shortJa}犠打 (${dir})`,
+        };
+      }
       if (target === "unassisted" || target === code) {
         return {
           battedDirection: code,
@@ -826,7 +944,37 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
 
     case "dropped_third_strike_out": {
       const target =
-        params.assistTargetPos || (code === "3" ? "unassisted" : "3");
+        params.assistTargetPos || (code === "3" ? "base_a" : "3");
+      if (target === "base_a") {
+        return {
+          battedDirection: `K ${code}A`,
+          resultLabel: `振り逃げアウト (K ${code}A)`,
+        };
+      }
+      if (target === "base_b") {
+        return {
+          battedDirection: `K ${code}B`,
+          resultLabel: `振り逃げアウト (K ${code}B)`,
+        };
+      }
+      if (target === "base_c") {
+        return {
+          battedDirection: `K ${code}C`,
+          resultLabel: `振り逃げアウト (K ${code}C)`,
+        };
+      }
+      if (target === "base_h") {
+        return {
+          battedDirection: `K ${code}H`,
+          resultLabel: `振り逃げアウト (K ${code}H)`,
+        };
+      }
+      if (target === "touch_out") {
+        return {
+          battedDirection: `K ${code}TO`,
+          resultLabel: `振り逃げアウト (K ${code}TO)`,
+        };
+      }
       if (target === "unassisted" || target === code) {
         return {
           battedDirection: `K ${code}`,
@@ -1008,7 +1156,7 @@ export function resolveFieldingOnResultChange(
     rememberedFielding,
   } = params;
 
-  // 1. 四死球・三振・途中断は常に標準記号（B / IBB / D / K / ""）を確定設定
+  // 1. 四死球・三振・途中断は常に標準記号（B / IBB / D / SO / K / ""）を確定設定
   if (
     nextResultCode === "walk" ||
     nextResultCode === "intentional_walk" ||
@@ -1016,9 +1164,17 @@ export function resolveFieldingOnResultChange(
     nextResultCode === "strikeout" ||
     nextResultCode === "other"
   ) {
+    const resolvedLabel =
+      presetDefaultLabel ||
+      (prevResultCode === nextResultCode && prevResultLabel
+        ? prevResultLabel
+        : defaultGenericLabel(nextResultCode));
     return {
-      battedDirection: defaultGenericDirection(nextResultCode),
-      resultLabel: presetDefaultLabel || defaultGenericLabel(nextResultCode),
+      battedDirection: defaultGenericDirection(nextResultCode, {
+        presetId,
+        resultLabel: resolvedLabel,
+      }),
+      resultLabel: resolvedLabel,
     };
   }
 
@@ -1148,42 +1304,64 @@ export function resolveFieldingOnResultChange(
       (prevResultCode === "single" &&
         (Number(pos) <= 6 || sourceMeta.hitZone === "infield")) ||
       (prevResultCode === "error" && sourceMeta.errorStyle === "throwing");
+    const rawSourceAssist = sourceMeta.assistTargetPos;
+    const normalizedThrowDigitAssist: AssistTargetOption | "" =
+      rawSourceAssist === "base_b"
+        ? pos === "4"
+          ? "6"
+          : "4"
+        : rawSourceAssist === "base_c"
+        ? "5"
+        : rawSourceAssist === "base_h"
+        ? "2"
+        : rawSourceAssist === "base_a" || rawSourceAssist === "touch_out"
+        ? "unassisted"
+        : rawSourceAssist;
     const nextAssist: AssistTargetOption | "" =
       nextResultCode === "error"
         ? sourceMeta.errorStyle === "throwing"
-          ? sourceMeta.assistTargetPos || (pos === "3" ? "unassisted" : "3")
+          ? normalizedThrowDigitAssist || (pos === "3" ? "unassisted" : "3")
           : ""
         : nextResultCode === "fc"
-        ? prevResultCode === "fc" && sourceMeta.assistTargetPos !== pos
-          ? sourceMeta.assistTargetPos
+        ? prevResultCode === "fc" && normalizedThrowDigitAssist !== pos
+          ? normalizedThrowDigitAssist
           : wasThrowTargetPlay &&
-            (sourceMeta.assistTargetPos === "2" ||
-              sourceMeta.assistTargetPos === "4" ||
-              sourceMeta.assistTargetPos === "5" ||
-              sourceMeta.assistTargetPos === "6") &&
-            sourceMeta.assistTargetPos !== pos
-          ? sourceMeta.assistTargetPos
+            (normalizedThrowDigitAssist === "2" ||
+              normalizedThrowDigitAssist === "4" ||
+              normalizedThrowDigitAssist === "5" ||
+              normalizedThrowDigitAssist === "6") &&
+            normalizedThrowDigitAssist !== pos
+          ? normalizedThrowDigitAssist
           : ""
         : nextResultCode === "single"
         ? forcedIsBunt
           ? prevResultCode === "single" &&
             sourceMeta.isBunt &&
-            sourceMeta.assistTargetPos &&
-            sourceMeta.assistTargetPos !== pos
-            ? sourceMeta.assistTargetPos
+            normalizedThrowDigitAssist &&
+            normalizedThrowDigitAssist !== pos
+            ? normalizedThrowDigitAssist
             : "unassisted"
           : (Number(pos) <= 6 &&
               sourceMeta.hitZone !== "line" &&
               sourceMeta.hitZone !== "over") ||
             sourceMeta.hitZone === "infield"
           ? wasThrowTargetPlay &&
-            sourceMeta.assistTargetPos &&
-            sourceMeta.assistTargetPos !== pos
-            ? sourceMeta.assistTargetPos
+            normalizedThrowDigitAssist &&
+            normalizedThrowDigitAssist !== "unassisted" &&
+            normalizedThrowDigitAssist !== pos
+            ? normalizedThrowDigitAssist
             : "unassisted"
           : ""
+        : nextResultCode === "groundout"
+        ? prevResultCode === "groundout"
+          ? rawSourceAssist
+          : wasThrowTargetPlay &&
+            rawSourceAssist &&
+            rawSourceAssist !== "unassisted"
+          ? rawSourceAssist
+          : ""
         : wasThrowTargetPlay
-        ? sourceMeta.assistTargetPos
+        ? rawSourceAssist
         : "";
     const nextDpRelay =
       prevResultCode === "double_play" || prevResultCode === "triple_play"
@@ -1224,11 +1402,55 @@ export function harmonizeOcrFieldingAndLabel(
   const cleanLabel = (rawLabel || "").trim();
   const normInputDir = normalizeFieldingAscii(cleanDir);
 
+  if (resultCode === "strikeout") {
+    const isThreeBunt =
+      /3バント|スリーバント/.test(cleanLabel) ||
+      /\b3B\b/i.test(normInputDir);
+    const isCalled =
+      !isThreeBunt &&
+      (/見逃|Ⓚ|ꓘ/.test(cleanLabel) || /Ⓚ|ꓘ/.test(cleanDir));
+    const isSwinging =
+      !isThreeBunt &&
+      !isCalled &&
+      (/空振/.test(cleanLabel) || /^SO\b/i.test(normInputDir));
+
+    if (isThreeBunt) {
+      return {
+        battedDirection: "SO",
+        resultLabel:
+          cleanLabel && cleanLabel !== "三振" ? cleanLabel : "スリーバント失敗",
+      };
+    }
+    if (isCalled) {
+      return {
+        battedDirection: "K",
+        resultLabel:
+          cleanLabel && cleanLabel !== "三振" ? cleanLabel : "見逃し三振",
+      };
+    }
+    if (isSwinging) {
+      return {
+        battedDirection: "SO",
+        resultLabel:
+          cleanLabel && cleanLabel !== "三振" ? cleanLabel : "空振り三振",
+      };
+    }
+    if (/^K$/i.test(normInputDir)) {
+      return {
+        battedDirection: "K",
+        resultLabel: cleanLabel || "三振",
+      };
+    }
+    return {
+      battedDirection: "SO",
+      resultLabel: cleanLabel || "空振り三振",
+    };
+  }
+
   if (
     resultCode === "walk" ||
     resultCode === "intentional_walk" ||
     resultCode === "hit_by_pitch" ||
-    resultCode === "strikeout" ||
     resultCode === "other"
   ) {
     const defaultDir = defaultGenericDirection(resultCode);

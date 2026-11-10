@@ -1118,17 +1118,15 @@ export function Step3PinpointReview({
             : lastBatterPitch === "strike"
             ? "見逃し三振"
             : "空振り三振";
+        const soDir = defaultGenericDirection("strikeout", {
+          resultLabel: soLabel,
+        });
         if (
           prev.resultCode !== "strikeout" ||
           prev.resultLabel !== soLabel ||
-          !prev.battedDirection
+          prev.battedDirection !== soDir
         ) {
-          syncToResult(
-            "strikeout",
-            soLabel,
-            defaultGenericDirection("strikeout"),
-            1
-          );
+          syncToResult("strikeout", soLabel, soDir, 1);
         }
       }
     }
@@ -2966,11 +2964,21 @@ export function Step3PinpointReview({
                                     (preset.code === "strikeout" &&
                                       (editingAtBat.resultLabel ===
                                         preset.defaultLabel ||
+                                        (preset.id === "so_look" &&
+                                          editingAtBat.resultLabel === "三振" &&
+                                          editingAtBat.battedDirection.toUpperCase() ===
+                                            "K") ||
                                         (preset.id === "so_swing" &&
                                           editingAtBat.resultLabel !==
                                             "見逃し三振" &&
                                           editingAtBat.resultLabel !==
-                                            "スリーバント失敗"))));
+                                            "スリーバント失敗" &&
+                                          !(
+                                            editingAtBat.resultLabel ===
+                                              "三振" &&
+                                            editingAtBat.battedDirection.toUpperCase() ===
+                                              "K"
+                                          )))));
                               return (
                                 <button
                                   key={preset.id}
@@ -3158,29 +3166,36 @@ export function Step3PinpointReview({
                                                 "strike",
                                                 desiredFinalStrike,
                                               ];
-                                            } else if (
-                                              nextCode === "strikeout"
-                                            ) {
-                                              const preCnt =
+                                            } else {
+                                              let preCnt =
                                                 computeCountFromPitches(
                                                   nextPitches
                                                 );
-                                              if (preCnt.strikes >= 3) {
-                                                for (
-                                                  let k =
-                                                    nextPitches.length - 1;
-                                                  k >= 0;
-                                                  k--
+                                              while (preCnt.strikes < 3) {
+                                                nextPitches.push(
+                                                  preCnt.strikes === 2
+                                                    ? desiredFinalStrike
+                                                    : "strike"
+                                                );
+                                                preCnt =
+                                                  computeCountFromPitches(
+                                                    nextPitches
+                                                  );
+                                              }
+                                              for (
+                                                let k =
+                                                  nextPitches.length - 1;
+                                                k >= 0;
+                                                k--
+                                              ) {
+                                                if (
+                                                  !isNonPitchMoundEvent(
+                                                    nextPitches[k]
+                                                  )
                                                 ) {
-                                                  if (
-                                                    !isNonPitchMoundEvent(
-                                                      nextPitches[k]
-                                                    )
-                                                  ) {
-                                                    nextPitches[k] =
-                                                      desiredFinalStrike;
-                                                    break;
-                                                  }
+                                                  nextPitches[k] =
+                                                    desiredFinalStrike;
+                                                  break;
                                                 }
                                               }
                                             }
@@ -3392,8 +3407,13 @@ export function Step3PinpointReview({
                                 : "3"
                               : cur.assistTargetPos
                             : nextPos === "3" && effectiveCode === "groundout"
-                            ? "unassisted"
-                            : cur.assistTargetPos === "unassisted" &&
+                            ? cur.primaryPos === "3" &&
+                              cur.assistTargetPos &&
+                              cur.assistTargetPos !== "3"
+                              ? cur.assistTargetPos
+                              : "base_a"
+                            : (cur.assistTargetPos === "unassisted" ||
+                                cur.assistTargetPos === "base_a") &&
                               nextPos !== "3"
                             ? "3"
                             : cur.assistTargetPos;
@@ -3754,32 +3774,99 @@ export function Step3PinpointReview({
                                 </div>
                               )}
 
-                            {/* ゴロ・犠打・振逃アウト時の送球先（刺殺野手）セレクター */}
+                            {/* ゴロ・犠打・振逃アウト時の送球先（刺殺野手・ベース踏み封殺）セレクター */}
                             {isThrowOutCode && fMeta.primaryPos && (
                               <div className="pt-1 space-y-1">
                                 <span className="text-[10px] font-bold text-muted-foreground block">
-                                  送球先（アウトにした野手・塁）:
+                                  送球先・アウト形態（ベース踏み / 送球 / タッチ）:
                                 </span>
                                 <div className="grid grid-cols-3 gap-1">
                                   {(
                                     [
-                                      { id: "3", label: "一塁送球 (-3)" },
-                                      { id: "1", label: "一塁カバー投 (-1)" },
-                                      { id: "4", label: "二封・二塁手 (-4)" },
-                                      { id: "6", label: "二封・遊撃手 (-6)" },
-                                      { id: "5", label: "三塁封殺 (-5)" },
-                                      { id: "2", label: "本塁封殺 (-2)" },
                                       {
-                                        id: "unassisted",
-                                        label: "単独アウト (無補殺)",
+                                        id: "base_a" as const,
+                                        label: `一塁踏み (${fMeta.primaryPos}A)`,
                                       },
-                                    ] as const
+                                      ...(fMeta.primaryPos !== "3"
+                                        ? [
+                                            {
+                                              id: "3" as const,
+                                              label: `一塁送球 (${fMeta.primaryPos}-3)`,
+                                            },
+                                          ]
+                                        : []),
+                                      ...(fMeta.primaryPos !== "1"
+                                        ? [
+                                            {
+                                              id: "1" as const,
+                                              label: `一塁カバー投 (${fMeta.primaryPos}-1)`,
+                                            },
+                                          ]
+                                        : []),
+                                      ...(fMeta.primaryPos !== "4"
+                                        ? [
+                                            {
+                                              id: "4" as const,
+                                              label: `二封・二塁手 (${fMeta.primaryPos}-4)`,
+                                            },
+                                          ]
+                                        : []),
+                                      ...(fMeta.primaryPos !== "6"
+                                        ? [
+                                            {
+                                              id: "6" as const,
+                                              label: `二封・遊撃手 (${fMeta.primaryPos}-6)`,
+                                            },
+                                          ]
+                                        : []),
+                                      {
+                                        id: "base_b" as const,
+                                        label: `二塁踏み二封 (${fMeta.primaryPos}B)`,
+                                      },
+                                      ...(fMeta.primaryPos !== "5"
+                                        ? [
+                                            {
+                                              id: "5" as const,
+                                              label: `三塁封殺 (${fMeta.primaryPos}-5)`,
+                                            },
+                                          ]
+                                        : []),
+                                      {
+                                        id: "base_c" as const,
+                                        label: `三塁踏み三封 (${fMeta.primaryPos}C)`,
+                                      },
+                                      ...(fMeta.primaryPos !== "2"
+                                        ? [
+                                            {
+                                              id: "2" as const,
+                                              label: `本塁封殺 (${fMeta.primaryPos}-2)`,
+                                            },
+                                          ]
+                                        : []),
+                                      {
+                                        id: "base_h" as const,
+                                        label: `本塁踏み本封 (${fMeta.primaryPos}H)`,
+                                      },
+                                      {
+                                        id: "touch_out" as const,
+                                        label: `タッチアウト (${fMeta.primaryPos}TO)`,
+                                      },
+                                      {
+                                        id: "unassisted" as const,
+                                        label: `単独・記号なし (${fMeta.primaryPos})`,
+                                      },
+                                    ]
                                   ).map((tgt) => {
                                     const effectiveCurTarget =
                                       fMeta.assistTargetPos ||
                                       (fMeta.primaryPos === "3" &&
                                       rc === "groundout"
-                                        ? "unassisted"
+                                        ? "base_a"
+                                        : fMeta.primaryPos === "3" &&
+                                          rc === "sac_bunt"
+                                        ? "4"
+                                        : fMeta.primaryPos === "3"
+                                        ? "base_a"
                                         : "3");
                                     const isTgtActive =
                                       effectiveCurTarget === tgt.id;
