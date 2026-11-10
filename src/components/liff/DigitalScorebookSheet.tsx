@@ -3984,20 +3984,44 @@ export function DigitalScorebookSheet({
   const gridStartX = PAD + LINEUP_TOTAL_W;
   const statsStartX = gridStartX + GRID_TOTAL_W;
 
-  // イニング見出し結合用グループ
+  // イニング見出し結合用グループ（複数列イニングで同一打順が複数列に打席を持つ場合のみ「巡目」、9番→1番折り返し等は「列目」）
   const inningGroups: Array<{
     inning: number;
     startColIdx: number;
     colSpan: number;
+    isBattedAround: boolean;
   }> = [];
   model.columns.forEach((col, idx) => {
     const last = inningGroups[inningGroups.length - 1];
     if (last && last.inning === col.inning) {
       last.colSpan += 1;
     } else {
-      inningGroups.push({ inning: col.inning, startColIdx: idx, colSpan: 1 });
+      inningGroups.push({
+        inning: col.inning,
+        startColIdx: idx,
+        colSpan: 1,
+        isBattedAround: false,
+      });
     }
   });
+  for (const grp of inningGroups) {
+    if (grp.colSpan <= 1) continue;
+    const seenOrders = new Set<number>();
+    let hasDuplicateOrder = false;
+    for (let sub = 1; sub <= grp.colSpan && !hasDuplicateOrder; sub++) {
+      for (const bRow of model.batterRows) {
+        const c = model.cellsByKey[`${grp.inning}-${sub}-${bRow.battingOrder}`];
+        if (c?.atBat) {
+          if (seenOrders.has(bRow.battingOrder)) {
+            hasDuplicateOrder = true;
+            break;
+          }
+          seenOrders.add(bRow.battingOrder);
+        }
+      }
+    }
+    grp.isBattedAround = hasDuplicateOrder;
+  }
 
   // 上部ミニスコアボード列数（紙面と同じく最低9回まで表示し、延長時は自動拡張）
   const maxSheetInning =
@@ -4011,13 +4035,68 @@ export function DigitalScorebookSheet({
     matchMeta.topInningScores.length,
     matchMeta.bottomInningScores.length
   );
-  const sbColW = 20;
-  const sbTeamW = 112;
-  const sbRheW = 24;
+  const sbColW = 22;
+  const sbTeamW = 128;
+  const sbRheW = 26;
   const sbTotalW = sbTeamW + sbInningsCount * sbColW + sbRheW * 3;
   const sbX = totalWidth - PAD - sbTotalW;
-  const sbY = PAD + 6;
-  const sbRowH = 20;
+  const sbY = PAD + 5;
+  const sbRowH = 21;
+  const sbTotalH = sbRowH * 3;
+  const sbRheStartX = sbX + sbTeamW + sbInningsCount * sbColW;
+  const sbHeaderFill =
+    rules.lineupStyle === "classic_three_row" && !isMonoSheet
+      ? COLOR_SAGE_HEAD
+      : COLOR_PAPER_SUB;
+
+  const fitScoreboardTeamName = (
+    rawName: string
+  ): { text: string; fontSize: number; compressWidth?: number } => {
+    const trimmed = (rawName || "").trim();
+    if (!trimmed) return { text: "-", fontSize: 9.5 };
+    let units = 0;
+    let cutIdx = trimmed.length;
+    for (let i = 0; i < trimmed.length; i++) {
+      const w = trimmed.charCodeAt(i) > 0x7f ? 1 : 0.58;
+      if (units + w > 14.2) {
+        cutIdx = i;
+        break;
+      }
+      units += w;
+    }
+    const text = cutIdx < trimmed.length ? trimmed.slice(0, cutIdx) : trimmed;
+    const maxInnerW = sbTeamW - 14;
+    if (units <= 10.2) {
+      return { text, fontSize: 9.6 };
+    }
+    if (units <= 12) {
+      return { text, fontSize: 8.8 };
+    }
+    return { text, fontSize: 8.4, compressWidth: maxInnerW };
+  };
+
+  const topSbTeam = fitScoreboardTeamName(matchMeta.topTeamName);
+  const bottomSbTeam = fitScoreboardTeamName(matchMeta.bottomTeamName);
+  const sbRheCols = [
+    {
+      label: "R",
+      top: matchMeta.topTotalRuns,
+      bot: matchMeta.bottomTotalRuns,
+      highlight: true,
+    },
+    {
+      label: "H",
+      top: matchMeta.topTotalHits,
+      bot: matchMeta.bottomTotalHits,
+      highlight: false,
+    },
+    {
+      label: "E",
+      top: matchMeta.topTotalErrors,
+      bot: matchMeta.bottomTotalErrors,
+      highlight: false,
+    },
+  ] as const;
 
   return (
     <svg
@@ -4106,68 +4185,119 @@ export function DigitalScorebookSheet({
           }`}
         </text>
 
-        {/* 右上：ミニ・イニングスコアボード */}
+        {/* 右上：ミニ・イニングスコアボード（背景塗りを先に配置し、内枠線→文字→外周太枠の順で欠けゼロ描画） */}
         <g>
+          {/* Layer 1: 背景塗り */}
           <rect
             x={sbX}
             y={sbY}
             width={sbTotalW}
-            height={sbRowH * 3}
+            height={sbTotalH}
             fill="#ffffff"
-            stroke={COLOR_FRAME}
-            strokeWidth={1.4}
           />
           <rect
             x={sbX}
             y={sbY}
             width={sbTotalW}
             height={sbRowH}
-            fill={COLOR_PAPER_SUB}
+            fill={sbHeaderFill}
           />
+          {!isMonoSheet && (
+            <rect
+              x={sbRheStartX}
+              y={sbY + sbRowH}
+              width={sbRheW}
+              height={sbRowH * 2}
+              fill={COLOR_RED_SOFT}
+            />
+          )}
+
+          {/* Layer 2: 横罫線（ヘッダー下太線 ＆ 先攻/後攻仕切り線） */}
           <line
             x1={sbX}
             y1={sbY + sbRowH}
             x2={sbX + sbTotalW}
             y2={sbY + sbRowH}
             stroke={COLOR_FRAME}
-            strokeWidth={1}
+            strokeWidth={1.2}
           />
           <line
             x1={sbX}
             y1={sbY + sbRowH * 2}
             x2={sbX + sbTotalW}
             y2={sbY + sbRowH * 2}
-            stroke={COLOR_GRID_LIGHT}
-            strokeWidth={0.9}
+            stroke={COLOR_GRID}
+            strokeWidth={0.95}
           />
 
+          {/* Layer 2B: 縦罫線（TEAM境界・各イニング境界・R/H/E境界） */}
+          {Array.from({ length: sbInningsCount }).map((_, idx) => {
+            const cx = sbX + sbTeamW + idx * sbColW;
+            const isTeamDivider = idx === 0;
+            return (
+              <line
+                key={`sb-vline-${idx}`}
+                x1={cx}
+                y1={sbY}
+                x2={cx}
+                y2={sbY + sbTotalH}
+                stroke={isTeamDivider ? COLOR_FRAME : COLOR_GRID}
+                strokeWidth={isTeamDivider ? 1.25 : 0.9}
+              />
+            );
+          })}
+          {sbRheCols.map((col, rIdx) => {
+            const rx = sbRheStartX + rIdx * sbRheW;
+            const isRheStart = rIdx === 0;
+            return (
+              <line
+                key={`sb-rhe-vline-${col.label}`}
+                x1={rx}
+                y1={sbY}
+                x2={rx}
+                y2={sbY + sbTotalH}
+                stroke={isRheStart ? COLOR_FRAME : COLOR_GRID}
+                strokeWidth={isRheStart ? 1.3 : 0.9}
+              />
+            );
+          })}
+
+          {/* Layer 3: チーム名・イニング得点・R/H/E テキスト */}
           <text
             x={sbX + 8}
-            y={sbY + 13.5}
-            fontSize={8.5}
+            y={sbY + 14}
+            fontSize={8.6}
             fontWeight={900}
-            fill={COLOR_MUTED}
+            fill={COLOR_INK}
             fontFamily={FONT_MONO}
           >
             TEAM
           </text>
           <text
             x={sbX + 8}
-            y={sbY + sbRowH + 14}
-            fontSize={9.5}
+            y={sbY + sbRowH + 14.5}
+            fontSize={topSbTeam.fontSize}
             fontWeight={model.isTop ? 900 : 700}
             fill={model.isTop ? COLOR_INK : COLOR_MUTED}
+            textLength={topSbTeam.compressWidth}
+            lengthAdjust={
+              topSbTeam.compressWidth ? "spacingAndGlyphs" : undefined
+            }
           >
-            {matchMeta.topTeamName.slice(0, 10)}
+            {topSbTeam.text}
           </text>
           <text
             x={sbX + 8}
-            y={sbY + sbRowH * 2 + 14}
-            fontSize={9.5}
+            y={sbY + sbRowH * 2 + 14.5}
+            fontSize={bottomSbTeam.fontSize}
             fontWeight={!model.isTop ? 900 : 700}
             fill={!model.isTop ? COLOR_INK : COLOR_MUTED}
+            textLength={bottomSbTeam.compressWidth}
+            lengthAdjust={
+              bottomSbTeam.compressWidth ? "spacingAndGlyphs" : undefined
+            }
           >
-            {matchMeta.bottomTeamName.slice(0, 10)}
+            {bottomSbTeam.text}
           </text>
 
           {Array.from({ length: sbInningsCount }).map((_, idx) => {
@@ -4184,43 +4314,39 @@ export function DigitalScorebookSheet({
 
             return (
               <g key={`sb-inn-${idx}`}>
-                <line
-                  x1={cx}
-                  y1={sbY}
-                  x2={cx}
-                  y2={sbY + sbRowH * 3}
-                  stroke={COLOR_GRID_LIGHT}
-                  strokeWidth={0.8}
-                />
                 <text
                   x={cx + sbColW / 2}
-                  y={sbY + 13.5}
-                  fontSize={8.5}
-                  fontWeight={800}
+                  y={sbY + 14}
+                  fontSize={8.8}
+                  fontWeight={900}
                   textAnchor="middle"
-                  fill={COLOR_MUTED}
+                  fill={COLOR_INK}
                   fontFamily={FONT_MONO}
                 >
                   {idx + 1}
                 </text>
                 <text
                   x={cx + sbColW / 2}
-                  y={sbY + sbRowH + 14}
-                  fontSize={9.5}
+                  y={sbY + sbRowH + 14.6}
+                  fontSize={9.8}
                   fontWeight={800}
                   textAnchor="middle"
-                  fill={COLOR_INK}
+                  fill={typeof topVal === "number" ? COLOR_INK : COLOR_MUTED}
                   fontFamily={FONT_MONO}
                 >
                   {typeof topVal === "number" ? topVal : "-"}
                 </text>
                 <text
                   x={cx + sbColW / 2}
-                  y={sbY + sbRowH * 2 + 14}
-                  fontSize={9.5}
+                  y={sbY + sbRowH * 2 + 14.6}
+                  fontSize={9.8}
                   fontWeight={800}
                   textAnchor="middle"
-                  fill={COLOR_INK}
+                  fill={
+                    typeof botVal === "number" || isWalkOffOrX
+                      ? COLOR_INK
+                      : COLOR_MUTED
+                  }
                   fontFamily={FONT_MONO}
                 >
                   {typeof botVal === "number"
@@ -4233,78 +4359,40 @@ export function DigitalScorebookSheet({
             );
           })}
 
-          {(
-            [
-              {
-                label: "R",
-                top: matchMeta.topTotalRuns,
-                bot: matchMeta.bottomTotalRuns,
-                highlight: true,
-              },
-              {
-                label: "H",
-                top: matchMeta.topTotalHits,
-                bot: matchMeta.bottomTotalHits,
-                highlight: false,
-              },
-              {
-                label: "E",
-                top: matchMeta.topTotalErrors,
-                bot: matchMeta.bottomTotalErrors,
-                highlight: false,
-              },
-            ] as const
-          ).map((col, rIdx) => {
-            const rx =
-              sbX + sbTeamW + sbInningsCount * sbColW + rIdx * sbRheW;
+          {sbRheCols.map((col, rIdx) => {
+            const rx = sbRheStartX + rIdx * sbRheW;
+            const isRedCell = col.highlight && !isMonoSheet;
             return (
               <g key={col.label}>
-                {col.highlight && (
-                  <rect
-                    x={rx}
-                    y={sbY}
-                    width={sbRheW}
-                    height={sbRowH * 3}
-                    fill={COLOR_RED_SOFT}
-                  />
-                )}
-                <line
-                  x1={rx}
-                  y1={sbY}
-                  x2={rx}
-                  y2={sbY + sbRowH * 3}
-                  stroke={rIdx === 0 ? COLOR_FRAME : COLOR_GRID_LIGHT}
-                  strokeWidth={rIdx === 0 ? 1.2 : 0.8}
-                />
                 <text
                   x={rx + sbRheW / 2}
-                  y={sbY + 13.5}
-                  fontSize={8.5}
+                  y={sbY + 14}
+                  fontSize={8.8}
                   fontWeight={900}
                   textAnchor="middle"
-                  fill={col.highlight ? COLOR_RED : COLOR_MUTED}
+                  fill={isRedCell ? COLOR_RED : COLOR_INK}
                   fontFamily={FONT_MONO}
                 >
                   {col.label}
                 </text>
                 <text
                   x={rx + sbRheW / 2}
-                  y={sbY + sbRowH + 14}
-                  fontSize={10}
+                  y={sbY + sbRowH + 14.8}
+                  fontSize={10.2}
                   fontWeight={900}
                   textAnchor="middle"
-                  fill={col.highlight ? COLOR_RED : COLOR_INK}
+                  fill={isRedCell ? COLOR_RED : COLOR_INK}
                   fontFamily={FONT_MONO}
                 >
                   {col.top}
                 </text>
                 <text
                   x={rx + sbRheW / 2}
-                  y={sbY + sbRowH * 2 + 14}
-                  fontSize={10}
+                  y={sbY + sbRowH * 2 + 14.8}
+                  fontSize={10.2}
                   fontWeight={900}
                   textAnchor="middle"
-                  fill={col.highlight ? COLOR_RED : COLOR_INK}
+                  fill={isRedCell ? COLOR_RED : COLOR_INK}
                   fontFamily={FONT_MONO}
                 >
                   {col.bot}
@@ -4312,6 +4400,17 @@ export function DigitalScorebookSheet({
               </g>
             );
           })}
+
+          {/* Layer 4: 外周太枠を最後にストロークして四辺・四隅を均一に引き締める */}
+          <rect
+            x={sbX}
+            y={sbY}
+            width={sbTotalW}
+            height={sbTotalH}
+            fill="none"
+            stroke={COLOR_FRAME}
+            strokeWidth={1.6}
+          />
         </g>
       </g>
 
@@ -4354,7 +4453,7 @@ export function DigitalScorebookSheet({
                 x={gx + gw / 2}
                 y={
                   tableTopY +
-                  (grp.colSpan > 1 ? 14 : isClassicHead ? 20.5 : 19.5)
+                  (grp.colSpan > 1 ? 13.8 : isClassicHead ? 20.5 : 19.5)
                 }
                 fontSize={isClassicHead && grp.colSpan === 1 ? 13.5 : 11}
                 fontWeight={900}
@@ -4365,17 +4464,28 @@ export function DigitalScorebookSheet({
               </text>
               {grp.colSpan > 1 &&
                 Array.from({ length: grp.colSpan }).map((_, subIdx) => (
-                  <text
-                    key={subIdx}
-                    x={gx + subIdx * CELL_W + CELL_W / 2}
-                    y={tableTopY + 26}
-                    fontSize={7.5}
-                    fontWeight={800}
-                    textAnchor="middle"
-                    fill={COLOR_BLUE}
-                  >
-                    {`${subIdx + 1}巡目`}
-                  </text>
+                  <g key={subIdx}>
+                    {subIdx > 0 && (
+                      <line
+                        x1={gx + subIdx * CELL_W}
+                        y1={tableTopY + 18}
+                        x2={gx + subIdx * CELL_W}
+                        y2={tableTopY + COL_HEAD_H}
+                        stroke={COLOR_GRID}
+                        strokeWidth={0.85}
+                      />
+                    )}
+                    <text
+                      x={gx + subIdx * CELL_W + CELL_W / 2}
+                      y={tableTopY + 26.2}
+                      fontSize={7.5}
+                      fontWeight={800}
+                      textAnchor="middle"
+                      fill={isMonoSheet ? COLOR_INK : COLOR_BLUE}
+                    >
+                      {`${subIdx + 1}${grp.isBattedAround ? "巡目" : "列目"}`}
+                    </text>
+                  </g>
                 ))}
             </g>
           );

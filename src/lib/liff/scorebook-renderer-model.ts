@@ -529,16 +529,32 @@ export function compileScorebookSheetModel(
     }
   }
 
-  // 2. イニングごとに打席を割り当て、サブ列（打者一巡時の2列目・3列目）を衝突ゼロで確定
-  // 清書シート紙面は常に最低9回までマスを表示し、延長10回以降は自動拡張する
+  // 2. イニングごとに打席を割り当て、サブ列（打者一巡・折り返し時の2列目・3列目）を衝突ゼロで確定
+  // 清書シート紙面は基本「9列（標準9回分）」を維持し、複数列イニングや延長戦で実使用列数が9列を超える場合のみ動的に列追加する
+  const MIN_SHEET_COLUMNS = 9;
   const maxPlayedInning =
     atBats.length > 0 ? Math.max(1, ...atBats.map((a) => a.inning || 1)) : 0;
-  const maxInning = Math.max(
-    9,
-    matchMeta.scheduledInnings || 9,
-    ...structure.innings.map((m) => m.inning),
-    maxPlayedInning
+  const sideInningScores = isTop
+    ? matchMeta.topInningScores
+    : matchMeta.bottomInningScores;
+  const maxNonZeroScoreInning = sideInningScores.reduce(
+    (mx, score, idx) => (typeof score === "number" && score > 0 ? idx + 1 : mx),
+    0
   );
+  const maxNonZeroMetaInning = structure.innings.reduce(
+    (mx, m) =>
+      (m.runs ?? 0) > 0 || (m.hits ?? 0) > 0 ? Math.max(mx, m.inning) : mx,
+    0
+  );
+  const activeMaxInning =
+    atBats.length > 0
+      ? Math.max(
+          1,
+          maxPlayedInning,
+          maxNonZeroScoreInning,
+          maxNonZeroMetaInning
+        )
+      : Math.max(1, sideInningScores.length, maxNonZeroMetaInning);
 
   const atBatsByInning = new Map<number, ScorebookV2AtBat[]>();
   for (const ab of atBats) {
@@ -550,11 +566,11 @@ export function compileScorebookSheetModel(
 
   const assignedColByAtBatId = new Map<string, number>();
   const columnCountByInning = new Map<number, number>();
+  let totalAllocatedCols = 0;
 
-  for (let inn = 1; inn <= maxInning; inn++) {
-    const meta = structure.innings.find((m) => m.inning === inn);
+  for (let inn = 1; inn <= activeMaxInning; inn++) {
     const innAbs = atBatsByInning.get(inn) || [];
-    let maxCol = Math.max(1, meta?.columnCount ?? 1);
+    let maxCol = 1;
     const usedInInning = new Set<string>();
     let runningMinCol = 1;
 
@@ -570,6 +586,14 @@ export function compileScorebookSheetModel(
     }
 
     columnCountByInning.set(inn, maxCol);
+    totalAllocatedCols += maxCol;
+  }
+
+  let maxInning = activeMaxInning;
+  while (totalAllocatedCols < MIN_SHEET_COLUMNS) {
+    maxInning += 1;
+    columnCountByInning.set(maxInning, 1);
+    totalAllocatedCols += 1;
   }
 
   const columns: CompiledGridColumn[] = [];

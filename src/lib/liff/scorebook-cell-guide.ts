@@ -1623,10 +1623,28 @@ export function buildScorebookCellGuide(
   const colMeta = model.columns.find(
     (c) => c.inning === cell.inning && c.columnIndex === cell.columnIndex
   );
-  const subColSuffix =
-    colMeta && colMeta.totalColumnsInInning > 1
-      ? `（${cell.columnIndex}巡目）`
-      : "";
+  let subColSuffix = "";
+  if (colMeta && colMeta.totalColumnsInInning > 1) {
+    const seenOrders = new Set<number>();
+    let isBattedAround = false;
+    for (
+      let sub = 1;
+      sub <= colMeta.totalColumnsInInning && !isBattedAround;
+      sub++
+    ) {
+      for (const bRow of model.batterRows) {
+        const c = model.cellsByKey[`${cell.inning}-${sub}-${bRow.battingOrder}`];
+        if (c?.atBat) {
+          if (seenOrders.has(bRow.battingOrder)) {
+            isBattedAround = true;
+            break;
+          }
+          seenOrders.add(bRow.battingOrder);
+        }
+      }
+    }
+    subColSuffix = `（${cell.columnIndex}${isBattedAround ? "巡目" : "列目"}）`;
+  }
   const inningText = `${cell.inning}回${halfLabel}${subColSuffix}`;
   const teamAttackText = `${model.battingTeamName}の攻撃`;
 
