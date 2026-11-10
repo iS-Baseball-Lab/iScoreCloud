@@ -39,6 +39,7 @@ interface MatchAndHeaderSetupCardProps {
   hasSavedMatchLineup: boolean;
   onReloadMatchLineup: () => void;
   activeContextKey: string;
+  defaultExpanded?: boolean;
 }
 
 export function MatchAndHeaderSetupCard({
@@ -49,8 +50,9 @@ export function MatchAndHeaderSetupCard({
   hasSavedMatchLineup,
   onReloadMatchLineup,
   activeContextKey,
+  defaultExpanded = false,
 }: MatchAndHeaderSetupCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLineupModalOpen, setIsLineupModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 

@@ -23,10 +23,15 @@ import {
   Trash2,
   Share2,
   FileText,
+  Zap,
+  ListOrdered,
+  Settings2,
+  Plus,
+  Lock,
+  PenLine,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffHeader } from "@/components/liff/LiffHeader";
-import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
   LiffSelect,
   type LiffSelectBadgeTone,
@@ -53,9 +58,9 @@ import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
   compareHalfInningOrder,
+  computeScoreboardSummary,
   createDefaultEmptyLineup,
   createInitialLiveReportDocument,
-  deriveScoreboardShortName,
   formatJapaneseMatchDateLabel,
   formatLiveReportText,
   hydrateLiveReportFromLegacyLogsAndScores,
@@ -80,7 +85,15 @@ import { MatchAndHeaderSetupCard } from "./_components/MatchAndHeaderSetupCard";
 import { LiveAtBatPadCard } from "./_components/LiveAtBatPadCard";
 import { InningLogTimelineCard } from "./_components/InningLogTimelineCard";
 
-const FREE_MATCH_KEY = "__free__";
+type ReportSourceMode = "match" | "free";
+type WorkspaceTab = "pad" | "preview" | "timeline" | "setup";
+
+interface PersonalFreeReportEntry {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  doc: LiveReportV2Document;
+}
 
 interface MatchOptionWithDraft extends LiveReportMatchOption {
   hasCloudDraft?: boolean;
@@ -109,6 +122,14 @@ interface MatchBundlePayload {
   } | null;
 }
 
+interface PersonalFreeCloudDraftItem {
+  draftId: string;
+  freeId: string;
+  report: LiveReportV2Document;
+  updatedByName: string | null;
+  updatedAt: number;
+}
+
 interface ContextApiResponse {
   success: boolean;
   isDemo?: boolean;
@@ -117,6 +138,7 @@ interface ContextApiResponse {
   players?: LiveReportRosterPlayer[];
   matchBundle?: MatchBundlePayload | null;
   freeCloudDraft?: MatchBundlePayload["cloudDraft"];
+  personalFreeDrafts?: PersonalFreeCloudDraftItem[];
 }
 
 interface MatchBundleApiResponse {
@@ -136,23 +158,164 @@ interface DraftApiResponse {
   updatedByName?: string | null;
 }
 
-function getDraftIdForSelection(teamId: string, selectedKey: string): string {
-  if (!selectedKey || selectedKey === FREE_MATCH_KEY) {
-    return `team:${teamId}:free`;
+function getDraftIdForMode(
+  teamId: string,
+  mode: ReportSourceMode,
+  selectedMatchId: string,
+  ownerKey: string,
+  selectedFreeId: string
+): string {
+  if (mode === "free") {
+    const safeOwner = ownerKey.replace(/[^a-zA-Z0-9_-]/g, "") || "local";
+    const safeFreeId = selectedFreeId.replace(/[^a-zA-Z0-9_-]/g, "") || "f_default";
+    return `free:${teamId}:u:${safeOwner}:${safeFreeId}`;
   }
-  return `match:${selectedKey}`;
+  return `match:${selectedMatchId}`;
 }
 
 function getLocalDraftStorageKey(teamId: string, draftId: string): string {
   return `iscore_liff_news_v2_doc_${teamId}_${draftId}`;
 }
 
+function getLocalModeStorageKey(teamId: string): string {
+  return `iscore_liff_news_v2_mode_${teamId}`;
+}
+
 function getLocalActiveSelectionKey(teamId: string): string {
   return `iscore_liff_news_v2_sel_${teamId}`;
 }
 
+function getLocalFreeActiveIdKey(teamId: string, ownerKey: string): string {
+  return `iscore_liff_news_v2_free_sel_${teamId}_${ownerKey}`;
+}
+
+function getLocalPersonalFreeListKey(teamId: string, ownerKey: string): string {
+  return `iscore_liff_news_v2_free_list_${teamId}_${ownerKey}`;
+}
+
 function getLocalReporterStorageKey(teamId: string): string {
   return `iscore_liff_news_v2_rep_${teamId}`;
+}
+
+function resolvePersonalOwnerKey(userId?: string | null): string {
+  const cleanedUser = (userId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "");
+  if (cleanedUser && cleanedUser !== "demo-user") {
+    return cleanedUser;
+  }
+  if (typeof window !== "undefined") {
+    const storageKey = "iscore_liff_news_personal_owner_key";
+    let existing = localStorage.getItem(storageKey) || "";
+    existing = existing.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!existing) {
+      existing = `dev_${Date.now().toString(36)}_${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      localStorage.setItem(storageKey, existing);
+    }
+    return existing;
+  }
+  return "local_owner";
+}
+
+function buildFreeEntryDisplayLabel(
+  entry: PersonalFreeReportEntry,
+  idx: number
+): { label: string; sublabel: string; badge: string } {
+  const d = entry.doc;
+  const datePart = d.dateText.trim() || "日付未設定";
+  const oppPart = d.opponentName.trim()
+    ? `対 ${d.opponentName.trim()}`
+    : `フリー速報 #${idx + 1}`;
+  const summary = computeScoreboardSummary(d);
+  const totalPlays = d.halfInnings.reduce(
+    (sum, h) => sum + h.entries.length,
+    0
+  );
+  const subParts = [
+    d.tournamentText.trim(),
+    d.venueName.trim() ? `@${d.venueName.trim()}` : "",
+    totalPlays > 0 ? `${totalPlays}打席記録` : "未入力",
+  ].filter(Boolean);
+
+  return {
+    label: `${datePart} ${oppPart}`,
+    sublabel: subParts.join(" ・ "),
+    badge:
+      totalPlays > 0
+        ? `${summary.firstTotal}-${summary.secondTotal}`
+        : "個別登録",
+  };
+}
+
+function loadPersonalFreeEntriesFromLocal(
+  teamId: string,
+  ownerKey: string,
+  fallbackTeamName: string,
+  fallbackReporter: string
+): PersonalFreeReportEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(
+      getLocalPersonalFreeListKey(teamId, ownerKey)
+    );
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        const valid: PersonalFreeReportEntry[] = [];
+        for (const item of parsed) {
+          if (!item || typeof item !== "object") continue;
+          const obj = item as Record<string, unknown>;
+          const id = typeof obj.id === "string" ? obj.id.trim() : "";
+          const doc = sanitizeLiveReportDocument(obj.doc, fallbackTeamName);
+          if (id && doc) {
+            valid.push({
+              id,
+              createdAt:
+                typeof obj.createdAt === "number" ? obj.createdAt : Date.now(),
+              updatedAt:
+                typeof obj.updatedAt === "number" ? obj.updatedAt : Date.now(),
+              doc,
+            });
+          }
+        }
+        if (valid.length > 0) {
+          return valid.sort((a, b) => b.updatedAt - a.updatedAt);
+        }
+      }
+    }
+  } catch {
+    // ignore parse error
+  }
+
+  const initialId = `f_${Date.now().toString(36)}_1`;
+  const initialDoc = createInitialLiveReportDocument({
+    myTeamName: fallbackTeamName,
+    reporterNames: fallbackReporter,
+  });
+  return [
+    {
+      id: initialId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      doc: initialDoc,
+    },
+  ];
+}
+
+function savePersonalFreeEntriesToLocal(
+  teamId: string,
+  ownerKey: string,
+  entries: ReadonlyArray<PersonalFreeReportEntry>
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      getLocalPersonalFreeListKey(teamId, ownerKey),
+      JSON.stringify(entries)
+    );
+  } catch {
+    // ignore quota error
+  }
 }
 
 function formatSyncTimeLabel(ts: number | null): string {
@@ -183,15 +346,26 @@ function LiffNewsGeneratorContent() {
     return "demo-team";
   }, [currentTeam?.id, isDemo]);
 
+  const personalOwnerKey = useMemo(
+    () => resolvePersonalOwnerKey(profile?.userId || null),
+    [profile?.userId]
+  );
+
+  const [reportMode, setReportMode] = useState<ReportSourceMode>("match");
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("pad");
+
   const [matches, setMatches] = useState<MatchOptionWithDraft[]>([]);
   const [rosterPlayers, setRosterPlayers] = useState<LiveReportRosterPlayer[]>(
     []
   );
-  const [selectedMatchKey, setSelectedMatchKey] =
-    useState<string>(FREE_MATCH_KEY);
+  const [selectedMatchKey, setSelectedMatchKey] = useState<string>("");
   const [activeBundle, setActiveBundle] = useState<MatchBundlePayload | null>(
     null
   );
+
+  // フリー作成（個人ごとの個別登録リスト・他メンバーとは共有しない）
+  const [freeEntries, setFreeEntries] = useState<PersonalFreeReportEntry[]>([]);
+  const [selectedFreeId, setSelectedFreeId] = useState<string>("");
 
   const [doc, setDoc] = useState<LiveReportV2Document>(() =>
     createInitialLiveReportDocument({ myTeamName: "自チーム" })
@@ -210,6 +384,8 @@ function LiffNewsGeneratorContent() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHydratingRef = useRef<boolean>(true);
   const docRef = useRef<LiveReportV2Document>(doc);
+  const reportModeRef = useRef<ReportSourceMode>(reportMode);
+  const selectedFreeIdRef = useRef<string>(selectedFreeId);
   const baseDocRef = useRef<LiveReportV2Document | null>(null);
   const baseUpdatedAtRef = useRef<number | null>(null);
   const hasPendingLocalSaveRef = useRef<boolean>(false);
@@ -219,13 +395,29 @@ function LiffNewsGeneratorContent() {
   const lastSyncActivityAtRef = useRef<number>(Date.now());
 
   const selectedMatch = useMemo(
-    () => matches.find((m) => m.id === selectedMatchKey) || null,
-    [matches, selectedMatchKey]
+    () =>
+      reportMode === "match"
+        ? matches.find((m) => m.id === selectedMatchKey) || null
+        : null,
+    [reportMode, matches, selectedMatchKey]
   );
 
   const activeDraftId = useMemo(
-    () => getDraftIdForSelection(resolvedTeamId, selectedMatchKey),
-    [resolvedTeamId, selectedMatchKey]
+    () =>
+      getDraftIdForMode(
+        resolvedTeamId,
+        reportMode,
+        selectedMatchKey,
+        personalOwnerKey,
+        selectedFreeId
+      ),
+    [
+      resolvedTeamId,
+      reportMode,
+      selectedMatchKey,
+      personalOwnerKey,
+      selectedFreeId,
+    ]
   );
 
   const activeDraftIdRef = useRef<string>(activeDraftId);
@@ -235,6 +427,12 @@ function LiffNewsGeneratorContent() {
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+  useEffect(() => {
+    reportModeRef.current = reportMode;
+  }, [reportMode]);
+  useEffect(() => {
+    selectedFreeIdRef.current = selectedFreeId;
+  }, [selectedFreeId]);
 
   // 指定試合＋バンドルから初期 LiveReportV2Document を組み立てる
   const buildDocumentFromMatchAndBundle = useCallback(
@@ -390,6 +588,20 @@ function LiffNewsGeneratorContent() {
         : "";
 
     async function loadContext() {
+      // まず個人用のフリー作成リストをローカルから復元
+      let mergedFreeList = loadPersonalFreeEntriesFromLocal(
+        resolvedTeamId,
+        personalOwnerKey,
+        scoreTeamName,
+        savedReporter
+      );
+      const savedFreeId =
+        typeof window !== "undefined"
+          ? localStorage.getItem(
+              getLocalFreeActiveIdKey(resolvedTeamId, personalOwnerKey)
+            ) || ""
+          : "";
+
       // A. デモチームモード
       if (resolvedTeamId === "demo-team") {
         const demoCards = getHydratedDemoMatchCards();
@@ -446,27 +658,48 @@ function LiffNewsGeneratorContent() {
           mainPosition: null,
         }));
 
+        const savedModeRaw =
+          typeof window !== "undefined"
+            ? localStorage.getItem(getLocalModeStorageKey("demo-team")) || ""
+            : "";
         const savedSel =
           typeof window !== "undefined"
             ? localStorage.getItem(getLocalActiveSelectionKey("demo-team")) || ""
             : "";
-        const initialKey =
+
+        const initialMode: ReportSourceMode = queryMatchId
+          ? "match"
+          : savedModeRaw === "free" || demoMatches.length === 0
+          ? "free"
+          : "match";
+
+        const initialMatchKey =
           (queryMatchId && demoMatches.some((m) => m.id === queryMatchId)
             ? queryMatchId
             : "") ||
-          (savedSel &&
-          (savedSel === FREE_MATCH_KEY ||
-            demoMatches.some((m) => m.id === savedSel))
+          (savedSel && demoMatches.some((m) => m.id === savedSel)
             ? savedSel
-            : demoMatches[0]?.id || FREE_MATCH_KEY);
+            : demoMatches[0]?.id || "");
+
+        const initialFreeEntry =
+          mergedFreeList.find((f) => f.id === savedFreeId) || mergedFreeList[0];
 
         const targetMatch =
-          demoMatches.find((m) => m.id === initialKey) || null;
-        const bundle =
-          initialKey !== FREE_MATCH_KEY
-            ? buildDemoBundle(initialKey, targetMatch)
+          initialMode === "match"
+            ? demoMatches.find((m) => m.id === initialMatchKey) || null
             : null;
-        const draftId = getDraftIdForSelection("demo-team", initialKey);
+        const bundle =
+          initialMode === "match" && initialMatchKey
+            ? buildDemoBundle(initialMatchKey, targetMatch)
+            : null;
+        const draftId = getDraftIdForMode(
+          "demo-team",
+          initialMode,
+          initialMatchKey,
+          personalOwnerKey,
+          initialFreeEntry.id
+        );
+
         const localRaw =
           typeof window !== "undefined"
             ? localStorage.getItem(getLocalDraftStorageKey("demo-team", draftId))
@@ -486,21 +719,28 @@ function LiffNewsGeneratorContent() {
 
         if (!cancelled) {
           const initialDemoDoc =
-            localParsed ||
-            buildDocumentFromMatchAndBundle(
-              targetMatch,
-              bundle,
-              savedReporter
-            );
+            initialMode === "free"
+              ? initialFreeEntry.doc
+              : localParsed ||
+                buildDocumentFromMatchAndBundle(
+                  targetMatch,
+                  bundle,
+                  savedReporter
+                );
           baseDocRef.current = null;
           baseUpdatedAtRef.current = null;
           hasPendingLocalSaveRef.current = false;
           queuedPushRef.current = false;
           activeDraftIdRef.current = draftId;
+          reportModeRef.current = initialMode;
+          selectedFreeIdRef.current = initialFreeEntry.id;
           docRef.current = initialDemoDoc;
           setMatches(demoMatches);
           setRosterPlayers(demoRoster);
-          setSelectedMatchKey(initialKey);
+          setFreeEntries(mergedFreeList);
+          setSelectedFreeId(initialFreeEntry.id);
+          setReportMode(initialMode);
+          setSelectedMatchKey(initialMatchKey);
           setActiveBundle(bundle);
           setDoc(initialDemoDoc);
           setIsLoadingContext(false);
@@ -516,6 +756,10 @@ function LiffNewsGeneratorContent() {
         hasPendingLocalSaveRef.current = false;
         queuedPushRef.current = false;
 
+        const savedModeRaw =
+          typeof window !== "undefined"
+            ? localStorage.getItem(getLocalModeStorageKey(resolvedTeamId)) || ""
+            : "";
         const savedSel =
           typeof window !== "undefined"
             ? localStorage.getItem(getLocalActiveSelectionKey(resolvedTeamId)) ||
@@ -523,11 +767,11 @@ function LiffNewsGeneratorContent() {
             : "";
         const candidateMatchId =
           queryMatchId ||
-          (savedSel && savedSel !== FREE_MATCH_KEY ? savedSel : "");
+          (savedSel && savedSel !== "__free__" ? savedSel : "");
 
         const url = `/api/liff/news-generator/context?teamId=${encodeURIComponent(
           resolvedTeamId
-        )}${
+        )}&ownerKey=${encodeURIComponent(personalOwnerKey)}${
           candidateMatchId
             ? `&matchId=${encodeURIComponent(candidateMatchId)}`
             : ""
@@ -546,27 +790,69 @@ function LiffNewsGeneratorContent() {
         setMatches(fetchedMatches);
         setRosterPlayers(fetchedPlayers);
 
-        const resolvedKey =
+        // サーバーに保存されている本人専用の個別フリー作成データがあればマージ
+        if (
+          Array.isArray(json.personalFreeDrafts) &&
+          json.personalFreeDrafts.length > 0
+        ) {
+          const byId = new Map<string, PersonalFreeReportEntry>();
+          for (const loc of mergedFreeList) {
+            byId.set(loc.id, loc);
+          }
+          for (const rem of json.personalFreeDrafts) {
+            const existing = byId.get(rem.freeId);
+            if (!existing || rem.updatedAt >= existing.updatedAt) {
+              byId.set(rem.freeId, {
+                id: rem.freeId,
+                createdAt: existing?.createdAt ?? rem.updatedAt,
+                updatedAt: rem.updatedAt,
+                doc: rem.report,
+              });
+            }
+          }
+          mergedFreeList = Array.from(byId.values()).sort(
+            (a, b) => b.updatedAt - a.updatedAt
+          );
+          savePersonalFreeEntriesToLocal(
+            resolvedTeamId,
+            personalOwnerKey,
+            mergedFreeList
+          );
+        }
+
+        setFreeEntries(mergedFreeList);
+        const initialFreeEntry =
+          mergedFreeList.find((f) => f.id === savedFreeId) || mergedFreeList[0];
+        setSelectedFreeId(initialFreeEntry.id);
+        selectedFreeIdRef.current = initialFreeEntry.id;
+
+        const resolvedMatchKey =
           (queryMatchId && fetchedMatches.some((m) => m.id === queryMatchId)
             ? queryMatchId
             : "") ||
-          (savedSel &&
-          (savedSel === FREE_MATCH_KEY ||
-            fetchedMatches.some((m) => m.id === savedSel))
+          (savedSel && fetchedMatches.some((m) => m.id === savedSel)
             ? savedSel
-            : fetchedMatches[0]?.id || FREE_MATCH_KEY);
+            : fetchedMatches[0]?.id || "");
 
-        setSelectedMatchKey(resolvedKey);
+        const initialMode: ReportSourceMode = queryMatchId
+          ? "match"
+          : savedModeRaw === "free" || fetchedMatches.length === 0
+          ? "free"
+          : "match";
+
+        setReportMode(initialMode);
+        reportModeRef.current = initialMode;
+        setSelectedMatchKey(resolvedMatchKey);
 
         let bundle: MatchBundlePayload | null = null;
-        if (resolvedKey !== FREE_MATCH_KEY) {
-          if (json.matchBundle && json.matchBundle.matchId === resolvedKey) {
+        if (initialMode === "match" && resolvedMatchKey) {
+          if (json.matchBundle && json.matchBundle.matchId === resolvedMatchKey) {
             bundle = json.matchBundle;
           } else {
             const bRes = await fetch(
               `/api/liff/news-generator/match-bundle?teamId=${encodeURIComponent(
                 resolvedTeamId
-              )}&matchId=${encodeURIComponent(resolvedKey)}`,
+              )}&matchId=${encodeURIComponent(resolvedMatchKey)}`,
               { cache: "no-store" }
             );
             const bJson = (await bRes.json()) as MatchBundleApiResponse;
@@ -576,64 +862,75 @@ function LiffNewsGeneratorContent() {
         }
         setActiveBundle(bundle);
 
-        const draftId = getDraftIdForSelection(resolvedTeamId, resolvedKey);
+        const draftId = getDraftIdForMode(
+          resolvedTeamId,
+          initialMode,
+          resolvedMatchKey,
+          personalOwnerKey,
+          initialFreeEntry.id
+        );
         activeDraftIdRef.current = draftId;
 
-        const cloudDraft =
-          resolvedKey === FREE_MATCH_KEY
-            ? json.freeCloudDraft || null
-            : bundle?.cloudDraft || null;
-
-        const localRaw =
-          typeof window !== "undefined"
-            ? localStorage.getItem(
-                getLocalDraftStorageKey(resolvedTeamId, draftId)
+        if (initialMode === "free") {
+          baseDocRef.current = initialFreeEntry.doc;
+          baseUpdatedAtRef.current = initialFreeEntry.updatedAt;
+          docRef.current = initialFreeEntry.doc;
+          setDoc(initialFreeEntry.doc);
+          setLastSyncedAt(initialFreeEntry.updatedAt);
+          setLastSyncedBy(null);
+        } else {
+          const cloudDraft = bundle?.cloudDraft || null;
+          const localRaw =
+            typeof window !== "undefined"
+              ? localStorage.getItem(
+                  getLocalDraftStorageKey(resolvedTeamId, draftId)
+                )
+              : null;
+          const localParsed = localRaw
+            ? sanitizeLiveReportDocument(
+                (() => {
+                  try {
+                    return JSON.parse(localRaw) as unknown;
+                  } catch {
+                    return null;
+                  }
+                })(),
+                scoreTeamName
               )
             : null;
-        const localParsed = localRaw
-          ? sanitizeLiveReportDocument(
-              (() => {
-                try {
-                  return JSON.parse(localRaw) as unknown;
-                } catch {
-                  return null;
-                }
-              })(),
-              scoreTeamName
-            )
-          : null;
 
-        const targetMatch =
-          fetchedMatches.find((m) => m.id === resolvedKey) || null;
+          const targetMatch =
+            fetchedMatches.find((m) => m.id === resolvedMatchKey) || null;
 
-        if (cloudDraft) {
-          baseDocRef.current = cloudDraft.report;
-          baseUpdatedAtRef.current = cloudDraft.updatedAt;
-          docRef.current = cloudDraft.report;
-          setDoc(cloudDraft.report);
-          setLastSyncedAt(cloudDraft.updatedAt);
-          setLastSyncedBy(cloudDraft.updatedByName);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(
-              getLocalDraftStorageKey(resolvedTeamId, draftId),
-              JSON.stringify(cloudDraft.report)
+          if (cloudDraft) {
+            baseDocRef.current = cloudDraft.report;
+            baseUpdatedAtRef.current = cloudDraft.updatedAt;
+            docRef.current = cloudDraft.report;
+            setDoc(cloudDraft.report);
+            setLastSyncedAt(cloudDraft.updatedAt);
+            setLastSyncedBy(cloudDraft.updatedByName);
+            if (typeof window !== "undefined") {
+              localStorage.setItem(
+                getLocalDraftStorageKey(resolvedTeamId, draftId),
+                JSON.stringify(cloudDraft.report)
+              );
+            }
+          } else if (localParsed) {
+            baseDocRef.current = null;
+            baseUpdatedAtRef.current = null;
+            docRef.current = localParsed;
+            setDoc(localParsed);
+          } else {
+            const built = buildDocumentFromMatchAndBundle(
+              targetMatch,
+              bundle,
+              savedReporter
             );
+            baseDocRef.current = null;
+            baseUpdatedAtRef.current = null;
+            docRef.current = built;
+            setDoc(built);
           }
-        } else if (localParsed) {
-          baseDocRef.current = null;
-          baseUpdatedAtRef.current = null;
-          docRef.current = localParsed;
-          setDoc(localParsed);
-        } else {
-          const built = buildDocumentFromMatchAndBundle(
-            targetMatch,
-            bundle,
-            savedReporter
-          );
-          baseDocRef.current = null;
-          baseUpdatedAtRef.current = null;
-          docRef.current = built;
-          setDoc(built);
         }
       } catch (err) {
         if (!cancelled) {
@@ -654,15 +951,176 @@ function LiffNewsGeneratorContent() {
     };
   }, [
     resolvedTeamId,
+    personalOwnerKey,
     queryMatchId,
     scoreTeamName,
     buildDemoBundle,
     buildDocumentFromMatchAndBundle,
   ]);
 
-  // 2. 試合セレクタ手動切替ハンドラ
+  // 2A. モード切替ハンドラ（⚾ 試合連動 ⇔ ✏️ フリー作成）
+  const handleSwitchMode = async (nextMode: ReportSourceMode) => {
+    if (nextMode === reportMode) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    isHydratingRef.current = true;
+    hasPendingLocalSaveRef.current = false;
+    queuedPushRef.current = false;
+    baseDocRef.current = null;
+    baseUpdatedAtRef.current = null;
+
+    setReportMode(nextMode);
+    reportModeRef.current = nextMode;
+    setManualEditedText(null);
+    setShowResetConfirm(false);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), nextMode);
+    }
+
+    if (nextMode === "free") {
+      setActiveBundle(null);
+      const currentFree =
+        freeEntries.find((f) => f.id === selectedFreeId) || freeEntries[0];
+      if (currentFree) {
+        const draftId = getDraftIdForMode(
+          resolvedTeamId,
+          "free",
+          selectedMatchKey,
+          personalOwnerKey,
+          currentFree.id
+        );
+        activeDraftIdRef.current = draftId;
+        selectedFreeIdRef.current = currentFree.id;
+        setSelectedFreeId(currentFree.id);
+        baseDocRef.current = currentFree.doc;
+        baseUpdatedAtRef.current = currentFree.updatedAt;
+        docRef.current = currentFree.doc;
+        setDoc(currentFree.doc);
+        setLastSyncedAt(currentFree.updatedAt);
+        setLastSyncedBy(null);
+      }
+      isHydratingRef.current = false;
+      return;
+    }
+
+    // 試合連動モードへ切替
+    const targetMatchKey = selectedMatchKey || matches[0]?.id || "";
+    if (!targetMatchKey) {
+      isHydratingRef.current = false;
+      return;
+    }
+    setSelectedMatchKey(targetMatchKey);
+    await loadMatchSelection(targetMatchKey);
+  };
+
+  // 2B. 試合セレクタ手動切替ハンドラ（試合連動モード専用）
+  const loadMatchSelection = async (nextKey: string) => {
+    const savedReporter =
+      typeof window !== "undefined"
+        ? localStorage.getItem(getLocalReporterStorageKey(resolvedTeamId)) ||
+          docRef.current.reporterNames
+        : docRef.current.reporterNames;
+
+    const targetMatch = matches.find((m) => m.id === nextKey) || null;
+    const draftId = getDraftIdForMode(
+      resolvedTeamId,
+      "match",
+      nextKey,
+      personalOwnerKey,
+      selectedFreeIdRef.current
+    );
+    activeDraftIdRef.current = draftId;
+
+    const localRaw =
+      typeof window !== "undefined"
+        ? localStorage.getItem(getLocalDraftStorageKey(resolvedTeamId, draftId))
+        : null;
+    const localParsed = localRaw
+      ? sanitizeLiveReportDocument(
+          (() => {
+            try {
+              return JSON.parse(localRaw) as unknown;
+            } catch {
+              return null;
+            }
+          })(),
+          scoreTeamName
+        )
+      : null;
+
+    if (resolvedTeamId === "demo-team") {
+      const bundle = buildDemoBundle(nextKey, targetMatch);
+      const nextDemoDoc =
+        localParsed ||
+        buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter);
+      setActiveBundle(bundle);
+      docRef.current = nextDemoDoc;
+      setDoc(nextDemoDoc);
+      isHydratingRef.current = false;
+      return;
+    }
+
+    if (localParsed) {
+      docRef.current = localParsed;
+      setDoc(localParsed);
+    }
+
+    try {
+      setIsSyncingCloud(true);
+      const bRes = await fetch(
+        `/api/liff/news-generator/match-bundle?teamId=${encodeURIComponent(
+          resolvedTeamId
+        )}&matchId=${encodeURIComponent(nextKey)}`,
+        { cache: "no-store" }
+      );
+      const bJson = (await bRes.json()) as MatchBundleApiResponse;
+      if (activeDraftIdRef.current !== draftId) return;
+
+      const bundle = bJson.matchBundle || null;
+      setActiveBundle(bundle);
+
+      if (bundle?.cloudDraft) {
+        baseDocRef.current = bundle.cloudDraft.report;
+        baseUpdatedAtRef.current = bundle.cloudDraft.updatedAt;
+        docRef.current = bundle.cloudDraft.report;
+        setDoc(bundle.cloudDraft.report);
+        setLastSyncedAt(bundle.cloudDraft.updatedAt);
+        setLastSyncedBy(bundle.cloudDraft.updatedByName);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            getLocalDraftStorageKey(resolvedTeamId, draftId),
+            JSON.stringify(bundle.cloudDraft.report)
+          );
+        }
+      } else if (!localParsed) {
+        const built = buildDocumentFromMatchAndBundle(
+          targetMatch,
+          bundle,
+          savedReporter
+        );
+        docRef.current = built;
+        setDoc(built);
+        setLastSyncedAt(null);
+        setLastSyncedBy(null);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (activeDraftIdRef.current === draftId) {
+        setIsSyncingCloud(false);
+        isHydratingRef.current = false;
+      }
+    }
+  };
+
   const handleSelectMatchKey = async (nextKey: string) => {
-    if (nextKey === selectedMatchKey) return;
+    if (!nextKey || (reportMode === "match" && nextKey === selectedMatchKey)) {
+      return;
+    }
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -682,140 +1140,196 @@ function LiffNewsGeneratorContent() {
       localStorage.setItem(getLocalActiveSelectionKey(resolvedTeamId), nextKey);
     }
 
+    await loadMatchSelection(nextKey);
+  };
+
+  // 2C. フリー作成（個別登録）の切替・新規登録・削除ハンドラ
+  const handleSelectFreeEntry = (nextFreeId: string) => {
+    if (!nextFreeId || nextFreeId === selectedFreeId) return;
+    const found = freeEntries.find((f) => f.id === nextFreeId);
+    if (!found) return;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    isHydratingRef.current = true;
+    hasPendingLocalSaveRef.current = false;
+    queuedPushRef.current = false;
+
+    const draftId = getDraftIdForMode(
+      resolvedTeamId,
+      "free",
+      selectedMatchKey,
+      personalOwnerKey,
+      found.id
+    );
+    activeDraftIdRef.current = draftId;
+    selectedFreeIdRef.current = found.id;
+    setSelectedFreeId(found.id);
+    setManualEditedText(null);
+    setShowResetConfirm(false);
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getLocalFreeActiveIdKey(resolvedTeamId, personalOwnerKey),
+        found.id
+      );
+    }
+
+    baseDocRef.current = found.doc;
+    baseUpdatedAtRef.current = found.updatedAt;
+    docRef.current = found.doc;
+    setDoc(found.doc);
+    setLastSyncedAt(found.updatedAt);
+    setLastSyncedBy(null);
+    isHydratingRef.current = false;
+  };
+
+  const handleCreateNewFreeEntry = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
     const savedReporter =
       typeof window !== "undefined"
         ? localStorage.getItem(getLocalReporterStorageKey(resolvedTeamId)) ||
           docRef.current.reporterNames
         : docRef.current.reporterNames;
 
-    const targetMatch = matches.find((m) => m.id === nextKey) || null;
-    const draftId = getDraftIdForSelection(resolvedTeamId, nextKey);
+    const newId = `f_${Date.now().toString(36)}_${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
+    const newDoc = createInitialLiveReportDocument({
+      myTeamName: scoreTeamName,
+      reporterNames: savedReporter,
+    });
+    const now = Date.now();
+    const newEntry: PersonalFreeReportEntry = {
+      id: newId,
+      createdAt: now,
+      updatedAt: now,
+      doc: newDoc,
+    };
+
+    const nextList = [newEntry, ...freeEntries];
+    setFreeEntries(nextList);
+    savePersonalFreeEntriesToLocal(resolvedTeamId, personalOwnerKey, nextList);
+
+    const draftId = getDraftIdForMode(
+      resolvedTeamId,
+      "free",
+      selectedMatchKey,
+      personalOwnerKey,
+      newId
+    );
     activeDraftIdRef.current = draftId;
+    selectedFreeIdRef.current = newId;
+    setSelectedFreeId(newId);
+    setManualEditedText(null);
+    setShowResetConfirm(false);
 
-    // ローカル保存があればまず即時反映（体感0ms）
-    const localRaw =
-      typeof window !== "undefined"
-        ? localStorage.getItem(getLocalDraftStorageKey(resolvedTeamId, draftId))
-        : null;
-    const localParsed = localRaw
-      ? sanitizeLiveReportDocument(
-          (() => {
-            try {
-              return JSON.parse(localRaw) as unknown;
-            } catch {
-              return null;
-            }
-          })(),
-          scoreTeamName
-        )
-      : null;
-
-    if (resolvedTeamId === "demo-team") {
-      const bundle =
-        nextKey !== FREE_MATCH_KEY
-          ? buildDemoBundle(nextKey, targetMatch)
-          : null;
-      const nextDemoDoc =
-        localParsed ||
-        buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter);
-      setActiveBundle(bundle);
-      docRef.current = nextDemoDoc;
-      setDoc(nextDemoDoc);
-      isHydratingRef.current = false;
-      return;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getLocalFreeActiveIdKey(resolvedTeamId, personalOwnerKey),
+        newId
+      );
     }
 
-    if (localParsed) {
-      docRef.current = localParsed;
-      setDoc(localParsed);
-    }
-
-    try {
-      setIsSyncingCloud(true);
-      if (nextKey === FREE_MATCH_KEY) {
-        setActiveBundle(null);
-        const dRes = await fetch(
-          `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
-            resolvedTeamId
-          )}&draftId=${encodeURIComponent(draftId)}`,
-          { cache: "no-store" }
-        );
-        const dJson = (await dRes.json()) as DraftApiResponse;
-        if (activeDraftIdRef.current !== draftId) return;
-
-        if (dJson.cloudDraft) {
-          baseDocRef.current = dJson.cloudDraft.report;
-          baseUpdatedAtRef.current = dJson.cloudDraft.updatedAt;
-          docRef.current = dJson.cloudDraft.report;
-          setDoc(dJson.cloudDraft.report);
-          setLastSyncedAt(dJson.cloudDraft.updatedAt);
-          setLastSyncedBy(dJson.cloudDraft.updatedByName);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(
-              getLocalDraftStorageKey(resolvedTeamId, draftId),
-              JSON.stringify(dJson.cloudDraft.report)
-            );
-          }
-        } else if (!localParsed) {
-          const built = buildDocumentFromMatchAndBundle(
-            null,
-            null,
-            savedReporter
-          );
-          docRef.current = built;
-          setDoc(built);
-          setLastSyncedAt(null);
-          setLastSyncedBy(null);
-        }
-      } else {
-        const bRes = await fetch(
-          `/api/liff/news-generator/match-bundle?teamId=${encodeURIComponent(
-            resolvedTeamId
-          )}&matchId=${encodeURIComponent(nextKey)}`,
-          { cache: "no-store" }
-        );
-        const bJson = (await bRes.json()) as MatchBundleApiResponse;
-        if (activeDraftIdRef.current !== draftId) return;
-
-        const bundle = bJson.matchBundle || null;
-        setActiveBundle(bundle);
-
-        if (bundle?.cloudDraft) {
-          baseDocRef.current = bundle.cloudDraft.report;
-          baseUpdatedAtRef.current = bundle.cloudDraft.updatedAt;
-          docRef.current = bundle.cloudDraft.report;
-          setDoc(bundle.cloudDraft.report);
-          setLastSyncedAt(bundle.cloudDraft.updatedAt);
-          setLastSyncedBy(bundle.cloudDraft.updatedByName);
-          if (typeof window !== "undefined") {
-            localStorage.setItem(
-              getLocalDraftStorageKey(resolvedTeamId, draftId),
-              JSON.stringify(bundle.cloudDraft.report)
-            );
-          }
-        } else if (!localParsed) {
-          const built = buildDocumentFromMatchAndBundle(
-            targetMatch,
-            bundle,
-            savedReporter
-          );
-          docRef.current = built;
-          setDoc(built);
-          setLastSyncedAt(null);
-          setLastSyncedBy(null);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      if (activeDraftIdRef.current === draftId) {
-        setIsSyncingCloud(false);
-        isHydratingRef.current = false;
-      }
-    }
+    baseDocRef.current = newDoc;
+    baseUpdatedAtRef.current = now;
+    docRef.current = newDoc;
+    setDoc(newDoc);
+    setLastSyncedAt(now);
+    setLastSyncedBy(null);
+    setActiveTab("setup");
+    toast.success(
+      "新しいフリー速報（個人用）を作成しました！対戦相手やスタメンを設定できます"
+    );
   };
 
-  // 3. 端末自動保存 ＆ 3-Way共同編集マージ付きクラウド同期（方式B）
+  const handleDeleteCurrentFreeEntry = async () => {
+    const targetId = selectedFreeIdRef.current;
+    const targetDraftId = activeDraftIdRef.current;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    if (resolvedTeamId !== "demo-team") {
+      await fetch(
+        `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
+          resolvedTeamId
+        )}&draftId=${encodeURIComponent(targetDraftId)}`,
+        { method: "DELETE" }
+      ).catch(() => null);
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(
+        getLocalDraftStorageKey(resolvedTeamId, targetDraftId)
+      );
+    }
+
+    const remaining = freeEntries.filter((f) => f.id !== targetId);
+    let nextList = remaining;
+    if (nextList.length === 0) {
+      const savedReporter =
+        typeof window !== "undefined"
+          ? localStorage.getItem(getLocalReporterStorageKey(resolvedTeamId)) ||
+            docRef.current.reporterNames
+          : docRef.current.reporterNames;
+      const freshId = `f_${Date.now().toString(36)}_1`;
+      const freshDoc = createInitialLiveReportDocument({
+        myTeamName: scoreTeamName,
+        reporterNames: savedReporter,
+      });
+      nextList = [
+        {
+          id: freshId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          doc: freshDoc,
+        },
+      ];
+    }
+
+    setFreeEntries(nextList);
+    savePersonalFreeEntriesToLocal(resolvedTeamId, personalOwnerKey, nextList);
+
+    const nextActive = nextList[0];
+    const nextDraftId = getDraftIdForMode(
+      resolvedTeamId,
+      "free",
+      selectedMatchKey,
+      personalOwnerKey,
+      nextActive.id
+    );
+    activeDraftIdRef.current = nextDraftId;
+    selectedFreeIdRef.current = nextActive.id;
+    setSelectedFreeId(nextActive.id);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getLocalFreeActiveIdKey(resolvedTeamId, personalOwnerKey),
+        nextActive.id
+      );
+    }
+
+    docRef.current = nextActive.doc;
+    setDoc(nextActive.doc);
+    setManualEditedText(null);
+    setShowResetConfirm(false);
+    toast.success(
+      remaining.length > 0
+        ? "選択中のフリー速報を削除しました"
+        : "フリー速報を初期状態にリセットしました"
+    );
+  };
+
+  // 3. 端末自動保存 ＆ クラウド保存（試合連動時は3-Way共同編集マージ、フリー作成時は個人専用保存）
   const pushDraftToCloud = useCallback(
     async (options?: {
       silent?: boolean;
@@ -823,7 +1337,10 @@ function LiffNewsGeneratorContent() {
       preferKeepalive?: boolean;
     }) => {
       const silent = options?.silent ?? true;
-      const forceOverwrite = options?.forceOverwrite ?? false;
+      const isFreeMode = reportModeRef.current === "free";
+      const forceOverwrite = isFreeMode
+        ? true
+        : options?.forceOverwrite ?? false;
       const preferKeepalive = options?.preferKeepalive ?? false;
 
       if (resolvedTeamId === "demo-team") {
@@ -839,7 +1356,7 @@ function LiffNewsGeneratorContent() {
 
       const requestDraftId = activeDraftIdRef.current;
       const requestMatchId =
-        selectedMatchKey !== FREE_MATCH_KEY ? selectedMatchKey : null;
+        !isFreeMode && selectedMatchKey ? selectedMatchKey : null;
       const snapshotSent = docRef.current;
       const baseSent = baseDocRef.current;
       const baseTsSent = baseUpdatedAtRef.current;
@@ -887,11 +1404,11 @@ function LiffNewsGeneratorContent() {
           baseDocRef.current = serverDoc;
           baseUpdatedAtRef.current = nextUpdatedAt;
           setLastSyncedAt(nextUpdatedAt);
-          setLastSyncedBy(json.updatedByName ?? updaterName);
+          setLastSyncedBy(isFreeMode ? null : json.updatedByName ?? updaterName);
 
           if (docRef.current === snapshotSent) {
             hasPendingLocalSaveRef.current = false;
-            if (json.merged && json.report) {
+            if (!isFreeMode && json.merged && json.report) {
               const reconciled = mergeLiveReportDocuments({
                 base: baseSent,
                 remote: serverDoc,
@@ -908,10 +1425,9 @@ function LiffNewsGeneratorContent() {
               }
             }
           } else {
-            // PUT送信中にさらにローカル操作があった場合は最新サーバー状態へ3-Wayリベースして再送
             hasPendingLocalSaveRef.current = true;
             queuedPushRef.current = true;
-            if (json.merged && json.report) {
+            if (!isFreeMode && json.merged && json.report) {
               const rebased = mergeLiveReportDocuments({
                 base: snapshotSent,
                 remote: serverDoc,
@@ -937,13 +1453,17 @@ function LiffNewsGeneratorContent() {
             );
           }
           if (!silent) {
-            toast.success("クラウドに速報データを保存しました");
+            toast.success(
+              isFreeMode
+                ? "個人用のフリー速報を保存しました"
+                : "クラウドに速報データを保存しました"
+            );
           }
         }
       } catch (err) {
         console.error(err);
         if (!silent) {
-          toast.error("クラウド保存に失敗しました（端末内には保存済です）");
+          toast.error("保存に失敗しました（端末内には保存済です）");
         }
       } finally {
         isPushingRef.current = false;
@@ -985,6 +1505,7 @@ function LiffNewsGeneratorContent() {
       setDoc((prev) => {
         const next = updater(prev);
         docRef.current = next;
+        const now = Date.now();
 
         if (typeof window !== "undefined") {
           localStorage.setItem(
@@ -999,8 +1520,37 @@ function LiffNewsGeneratorContent() {
           }
         }
 
+        // フリー作成モード時は個人の個別登録リストもリアルタイム更新
+        if (reportModeRef.current === "free") {
+          const activeFreeId = selectedFreeIdRef.current;
+          setFreeEntries((prevList) => {
+            const exists = prevList.some((f) => f.id === activeFreeId);
+            const updatedList = exists
+              ? prevList.map((f) =>
+                  f.id === activeFreeId
+                    ? { ...f, updatedAt: now, doc: next }
+                    : f
+                )
+              : [
+                  {
+                    id: activeFreeId || `f_${now.toString(36)}`,
+                    createdAt: now,
+                    updatedAt: now,
+                    doc: next,
+                  },
+                  ...prevList,
+                ];
+            savePersonalFreeEntriesToLocal(
+              resolvedTeamId,
+              personalOwnerKey,
+              updatedList
+            );
+            return updatedList;
+          });
+        }
+
         if (!isHydratingRef.current) {
-          lastSyncActivityAtRef.current = Date.now();
+          lastSyncActivityAtRef.current = now;
           hasPendingLocalSaveRef.current = true;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
@@ -1011,7 +1561,7 @@ function LiffNewsGeneratorContent() {
         return next;
       });
     },
-    [resolvedTeamId, activeDraftId, pushDraftToCloud]
+    [resolvedTeamId, personalOwnerKey, activeDraftId, pushDraftToCloud]
   );
 
   useEffect(() => {
@@ -1020,9 +1570,12 @@ function LiffNewsGeneratorContent() {
     };
   }, []);
 
-  // 4. クラウドから最新状態を同期（自動バックグラウンド同期 ＆ 手動［最新同期］共通）
+  // 4. クラウドから最新状態を同期（試合連動モード専用 — フリー作成モードでは他者との共有・ポーリングを行わない）
   const pullLatestFromCloud = useCallback(
     async (silent: boolean) => {
+      if (reportModeRef.current === "free") {
+        return;
+      }
       if (resolvedTeamId === "demo-team") {
         if (!silent) {
           toast.info("デモチームは現在の端末内で自動保持されています");
@@ -1037,7 +1590,6 @@ function LiffNewsGeneratorContent() {
       ) {
         return;
       }
-      // オフライン中のサイレントポーリングはスキップして無線モデムの無駄な再試行を防ぐ
       if (
         silent &&
         typeof navigator !== "undefined" &&
@@ -1045,7 +1597,6 @@ function LiffNewsGeneratorContent() {
       ) {
         return;
       }
-      // デバウンス送信待ち中は送信側のサーバー3-Wayマージに任せて競合を防ぐ
       if (silent && saveTimerRef.current !== null) {
         return;
       }
@@ -1071,6 +1622,7 @@ function LiffNewsGeneratorContent() {
 
         if (
           activeDraftIdRef.current !== requestDraftId ||
+          (reportModeRef.current as ReportSourceMode) === "free" ||
           isHydratingRef.current ||
           isPushingRef.current
         ) {
@@ -1189,9 +1741,13 @@ function LiffNewsGeneratorContent() {
     await pullLatestFromCloud(false);
   };
 
-  // バックグラウンド自動同期（共同編集中の4.5秒軽量ポーリング ＋ 無操作時の省電力バックオフ ＋ LINE往復時の即時フラッシュ＆復帰同期）
+  // バックグラウンド自動同期（試合連動モード時のみ稼働）
   useEffect(() => {
-    if (resolvedTeamId === "demo-team" || typeof window === "undefined") {
+    if (
+      resolvedTeamId === "demo-team" ||
+      reportMode === "free" ||
+      typeof window === "undefined"
+    ) {
       return;
     }
 
@@ -1208,13 +1764,9 @@ function LiffNewsGeneratorContent() {
 
     const computeAdaptiveDelayMs = (): number | null => {
       const idleMs = Date.now() - lastSyncActivityAtRef.current;
-      // 直近3分以内に自分または共同編集者の更新・操作がある間は 4.5秒 のリアルタイム同期を維持
       if (idleMs < 3 * 60_000) return 4500;
-      // 3〜10分無操作（イニング間等）は 12秒 に緩和して 4G/5G 無線モデムを RRC_IDLE 省電力状態へ落とす
       if (idleMs < 10 * 60_000) return 12_000;
-      // 10〜20分無操作は 25秒
       if (idleMs < 20 * 60_000) return 25_000;
-      // 20分以上完全放置時は自動スリープ（画面タップ・フォーカス・LINE復帰で 0ms 即再開）
       return null;
     };
 
@@ -1261,7 +1813,9 @@ function LiffNewsGeneratorContent() {
       scheduleNextPoll();
     };
 
-    window.addEventListener("pointerdown", handleUserActivity, { passive: true });
+    window.addEventListener("pointerdown", handleUserActivity, {
+      passive: true,
+    });
     window.addEventListener("keydown", handleUserActivity, { passive: true });
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleWindowFocus);
@@ -1274,7 +1828,7 @@ function LiffNewsGeneratorContent() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [resolvedTeamId, pullLatestFromCloud, flushPendingSaveNow]);
+  }, [resolvedTeamId, reportMode, pullLatestFromCloud, flushPendingSaveNow]);
 
   // 5. 登録済みスタメン・記録済みスコアブックの再取込
   const handleReloadMatchLineup = () => {
@@ -1346,6 +1900,11 @@ function LiffNewsGeneratorContent() {
 
   // 6. この試合の速報データを初期化リセット
   const handleConfirmResetReport = async () => {
+    if (reportMode === "free") {
+      await handleDeleteCurrentFreeEntry();
+      return;
+    }
+
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -1466,10 +2025,12 @@ function LiffNewsGeneratorContent() {
   };
 
   const canImportSavedScore = Boolean(
-    activeBundle &&
+    reportMode === "match" &&
+      activeBundle &&
       (activeBundle.scorebookSnapshot || activeBundle.playLogs.length > 0)
   );
 
+  // 試合連動用オプション（フリーは完全に除外し、登録済み試合のみを表示）
   const matchSelectOptions = useMemo<LiffSelectOption[]>(() => {
     const bucketOrder: Record<string, number> = {
       live: 0,
@@ -1480,7 +2041,7 @@ function LiffNewsGeneratorContent() {
       (a, b) => (bucketOrder[a.status] ?? 3) - (bucketOrder[b.status] ?? 3)
     );
 
-    const items: LiffSelectOption[] = orderedMatches.map((m) => {
+    return orderedMatches.map((m) => {
       const dateDisp = formatJapaneseMatchDateLabel(m.date);
       const venueDisp = m.venueShortName || m.venueName || "";
       const tournDisp =
@@ -1530,278 +2091,465 @@ function LiffNewsGeneratorContent() {
         keywords: `${m.opponent} ${m.date} ${dateDisp} ${venueDisp} ${tournDisp}`,
       };
     });
-
-    items.push({
-      value: FREE_MATCH_KEY,
-      label: "＋ 試合データなしで新規手入力（フリー作成）",
-      sublabel:
-        "試合予定を登録せずに、その場で対戦相手・会場・スタメンを入力して作成します",
-      badge: "フリー作成",
-      badgeTone: "amber",
-      group: "フリー作成",
-      keywords: "フリー 新規 手入力 自由作成",
-    });
-
-    return items;
   }, [matches, practiceMatchLabel]);
+
+  // フリー作成（個人ごとの個別登録）用セレクタオプション
+  const freeSelectOptions = useMemo<LiffSelectOption[]>(() => {
+    return freeEntries.map((entry, idx) => {
+      const disp = buildFreeEntryDisplayLabel(entry, idx);
+      return {
+        value: entry.id,
+        label: disp.label,
+        sublabel: disp.sublabel,
+        badge: disp.badge,
+        badgeTone: "amber" as const,
+        keywords: `${disp.label} ${disp.sublabel}`,
+      };
+    });
+  }, [freeEntries]);
+
+  const totalEntriesCount = useMemo(
+    () => doc.halfInnings.reduce((sum, h) => sum + h.entries.length, 0),
+    [doc.halfInnings]
+  );
+
+  const filledLineupCount = useMemo(
+    () => doc.lineup.filter((s) => s.playerName.trim().length > 0).length,
+    [doc.lineup]
+  );
+
+  const activeContextKey =
+    reportMode === "free"
+      ? `${resolvedTeamId}:free:${selectedFreeId}`
+      : `${resolvedTeamId}:match:${selectedMatchKey}`;
 
   return (
     <div className="flex flex-col flex-1">
       <LiffHeader />
 
-      <div className="p-4 space-y-4">
-        <LiffPageHeader
-          title="試合速報ジェネレータ"
-          subtitle="LIVE NEWS GENERATOR v2"
-          icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
-              <Megaphone className="w-4 h-4" />
-            </span>
-          }
-          rightElement={
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-600 text-white">
-              v2稼働中
-            </span>
-          }
-          showBack
-        />
-
+      <div className="px-3 pt-2.5 pb-4 space-y-2.5">
         {/* ツール切替ナビ */}
         <LiffToolSubNav />
 
-        {/* 0. 対象試合の選択 ＆ クラウド引き継ぎ同期バー */}
+        {/* ════════════════════════════════════════════════════════════════
+            0. モード切替（⚾ 試合連動 ⇔ ✏️ フリー作成）＆ 対象セレクタ（超コンパクト）
+           ════════════════════════════════════════════════════════════════ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-2.5 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Calendar className="w-4 h-4 text-sky-400 shrink-0" />
-              <h2 className="text-xs font-black text-white truncate">
-                対象の試合を選択・クラウド同期
-              </h2>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300">
-                <Cloud className="w-3 h-3 text-emerald-400" />
-                {resolvedTeamId === "demo-team"
-                  ? "デモ端末保持"
-                  : isSyncingCloud
-                  ? "自動同期中..."
-                  : lastSyncedAt
-                  ? `共同編集・同期済 ${formatSyncTimeLabel(lastSyncedAt)}${
-                      lastSyncedBy ? ` (${lastSyncedBy})` : ""
-                    }`
-                  : "共同編集ON・自動保存"}
-              </span>
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-3 py-2 flex items-center justify-between gap-2">
+            {/* モード切替タブ（試合連動 vs フリー作成） */}
+            <div className="inline-flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-700">
               <button
                 type="button"
-                onClick={handlePullLatestCloudDraft}
-                disabled={isSyncingCloud}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[10px] font-black cursor-pointer active:scale-95"
-                title="他の速報担当者が入力した最新データを今すぐ手動でも取得します（通常は自動でバックグラウンド同期されます）"
+                onClick={() => void handleSwitchMode("match")}
+                className={cn(
+                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                  reportMode === "match"
+                    ? "bg-primary text-white shadow-2xs"
+                    : "text-slate-300 hover:text-white"
+                )}
               >
-                <RefreshCw
-                  className={cn("w-3 h-3 text-sky-400", isSyncingCloud && "animate-spin")}
-                />
-                <span>最新同期</span>
+                <Calendar className="w-3.5 h-3.5" />
+                <span>試合連動</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSwitchMode("free")}
+                className={cn(
+                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                  reportMode === "free"
+                    ? "bg-amber-400 text-slate-950 shadow-2xs"
+                    : "text-slate-300 hover:text-white"
+                )}
+              >
+                <PenLine className="w-3.5 h-3.5" />
+                <span>フリー作成</span>
               </button>
             </div>
+
+            {/* 右側: 試合連動時はクラウド共同編集ステータス、フリー時は個人個別登録ボタン */}
+            {reportMode === "match" ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300">
+                  <Cloud className="w-3 h-3 text-emerald-400" />
+                  {resolvedTeamId === "demo-team"
+                    ? "デモ保持"
+                    : isSyncingCloud
+                    ? "同期中..."
+                    : lastSyncedAt
+                    ? `同期済 ${formatSyncTimeLabel(lastSyncedAt)}`
+                    : "共同編集ON"}
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePullLatestCloudDraft}
+                  disabled={isSyncingCloud}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[10px] font-black cursor-pointer active:scale-95"
+                  title="他の速報担当者の最新データを手動同期"
+                >
+                  <RefreshCw
+                    className={cn(
+                      "w-3 h-3 text-sky-400",
+                      isSyncingCloud && "animate-spin"
+                    )}
+                  />
+                  <span>同期</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300">
+                  <Lock className="w-3 h-3" />
+                  <span>個人専用（非共有・{freeEntries.length}件）</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCreateNewFreeEntry}
+                  className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black cursor-pointer active:scale-95"
+                  title="新しいフリー速報を個別登録"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>新規登録</span>
+                </button>
+              </div>
+            )}
           </div>
 
-          <div className="p-3.5 space-y-2.5">
+          <div className="p-2.5 space-y-2">
             {isLoadingContext ? (
-              <div className="h-10 rounded-xl bg-muted animate-pulse" />
-            ) : (
-              <LiffSelect
-                value={selectedMatchKey}
-                onChange={(val) => void handleSelectMatchKey(val)}
-                options={matchSelectOptions}
-                title="対象の試合を選択"
-                subtitle="予定・終了試合との連携、またはフリー作成を選べます"
-                searchable={true}
-                searchPlaceholder="対戦相手・日付・会場名で検索..."
-                size="md"
-                className="w-full"
-              />
-            )}
-
-            {/* 記録済みスコア一括取込 ＆ リセットボタン */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {canImportSavedScore ? (
-                <button
-                  type="button"
-                  onClick={handleImportFromSavedScorebook}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[11px] font-black cursor-pointer active:scale-95"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>記録済みスコアから全打席を自動生成</span>
-                </button>
-              ) : (
-                <span className="text-[10.5px] font-bold text-muted-foreground">
-                  複数メンバーの同時入力に対応（自動マージ・LINE往復時も自動保存）
-                </span>
-              )}
-
-              {!showResetConfirm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowResetConfirm(true)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-black text-muted-foreground hover:text-rose-600 cursor-pointer"
-                >
-                  <Trash2 className="w-3 h-3" />
-                  <span>内容を初期化</span>
-                </button>
-              ) : (
+              <div className="h-9 rounded-xl bg-muted animate-pulse" />
+            ) : reportMode === "match" ? (
+              matchSelectOptions.length > 0 ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10.5px] font-black text-rose-600">
-                    初期化しますか？
+                  <LiffSelect
+                    value={selectedMatchKey}
+                    onChange={(val) => void handleSelectMatchKey(val)}
+                    options={matchSelectOptions}
+                    title="連動する試合を選択"
+                    subtitle="登録済みの予定・試合中・終了試合と連携します"
+                    searchable={true}
+                    searchPlaceholder="対戦相手・日付・会場名で検索..."
+                    size="sm"
+                    className="flex-1"
+                  />
+                  {canImportSavedScore && (
+                    <button
+                      type="button"
+                      onClick={handleImportFromSavedScorebook}
+                      className="h-9 px-2.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95"
+                      title="記録済みスコアブックから全打席を自動生成"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>スコブ取込</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">
+                    登録済みの試合がありません
                   </span>
                   <button
                     type="button"
-                    onClick={() => void handleConfirmResetReport()}
-                    className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10.5px] font-black cursor-pointer"
+                    onClick={() => void handleSwitchMode("free")}
+                    className="px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black cursor-pointer"
                   >
-                    実行
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowResetConfirm(false)}
-                    className="px-2 py-1 rounded-lg border border-border bg-card text-[10.5px] font-black text-foreground cursor-pointer"
-                  >
-                    やめる
+                    ✏️ フリー作成を使う
                   </button>
                 </div>
+              )
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <LiffSelect
+                  value={selectedFreeId}
+                  onChange={(val) => handleSelectFreeEntry(val)}
+                  options={freeSelectOptions}
+                  title="個別登録したフリー速報を選択"
+                  subtitle="他のメンバーとは共有されず、ご自身の端末・アカウント専用で複数登録できます"
+                  searchable={false}
+                  size="sm"
+                  className="flex-1"
+                />
+                {!showResetConfirm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowResetConfirm(true)}
+                    className="h-9 px-2.5 rounded-xl border border-border bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                    title="選択中のフリー速報を削除・初期化"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{freeEntries.length > 1 ? "削除" : "初期化"}</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteCurrentFreeEntry()}
+                      className="h-9 px-2.5 rounded-xl bg-rose-600 text-white text-[10.5px] font-black cursor-pointer"
+                    >
+                      実行
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowResetConfirm(false)}
+                      className="h-9 px-2 rounded-xl border border-border bg-card text-[10.5px] font-black text-foreground cursor-pointer"
+                    >
+                      戻す
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4画面ゼロスクロール・ワークスペース切替タブ */}
+            <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pad")}
+                className={cn(
+                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                  activeTab === "pad"
+                    ? "bg-[#0f172a] text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate">入力・速報</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("preview")}
+                className={cn(
+                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                  activeTab === "preview"
+                    ? "bg-[#0f172a] text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span className="truncate">速報全文</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("timeline")}
+                className={cn(
+                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                  activeTab === "timeline"
+                    ? "bg-[#0f172a] text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <ListOrdered className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span className="truncate">経過({totalEntriesCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("setup")}
+                className={cn(
+                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                  activeTab === "setup"
+                    ? "bg-[#0f172a] text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Settings2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate">設定({filledLineupCount}/9)</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 1 (デフォルト): ゼロスクロール・1画面ライブ入力＆速報確認パッド
+           ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "pad" && (
+          <LiveAtBatPadCard
+            doc={doc}
+            onChangeDoc={handleUpdateDoc}
+            rosterPlayers={rosterPlayers}
+            activeContextKey={activeContextKey}
+            outputMode={outputMode}
+            onChangeOutputMode={(m) => {
+              setOutputMode(m);
+              setManualEditedText(null);
+            }}
+            onCopyText={() => void handleCopyText()}
+            onShareLine={handleShareLine}
+            copied={copied}
+            onOpenFullPreview={() => setActiveTab("preview")}
+          />
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 2: LINE速報イメージ全文・出力形式切替・共有
+           ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "preview" && (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-3.5 py-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-sky-400 shrink-0" />
+                <h2 className="text-xs font-black text-white truncate">
+                  LINE速報イメージ確認・出力・共有
+                </h2>
+              </div>
+
+              {manualEditedText !== null ? (
+                <button
+                  type="button"
+                  onClick={() => setManualEditedText(null)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10.5px] font-black cursor-pointer active:scale-95"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>自動生成に戻す</span>
+                </button>
+              ) : (
+                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
+                  リアルタイム反映中
+                </span>
               )}
             </div>
-          </div>
-        </section>
 
-        {/* 1. 試合・スタメン・速報担当の設定カード */}
-        <MatchAndHeaderSetupCard
-          doc={doc}
-          onChangeDoc={handleUpdateDoc}
-          rosterPlayers={rosterPlayers}
-          suggestedReporters={selectedMatch?.lineLiveAssignees || []}
-          hasSavedMatchLineup={Boolean(
-            activeBundle && activeBundle.lineup.length > 0
-          )}
-          onReloadMatchLineup={handleReloadMatchLineup}
-          activeContextKey={`${resolvedTeamId}:${selectedMatchKey}`}
-        />
+            <div className="p-3 space-y-2.5">
+              {/* 上部にコピー＆LINE送信ボタンを配置（スクロール不要で即送信可能） */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyText()}
+                  className="py-2.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 shrink-0" />
+                      <span>コピーしました！</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 shrink-0" />
+                      <span>速報テキストをコピー</span>
+                    </>
+                  )}
+                </button>
 
-        {/* 2. ライブ1打席入力パッド */}
-        <LiveAtBatPadCard
-          doc={doc}
-          onChangeDoc={handleUpdateDoc}
-          rosterPlayers={rosterPlayers}
-          activeContextKey={`${resolvedTeamId}:${selectedMatchKey}`}
-        />
+                <button
+                  type="button"
+                  onClick={handleShareLine}
+                  className="py-2.5 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4 shrink-0" />
+                  <span>LINEで送る</span>
+                </button>
+              </div>
 
-        {/* 2.5. 記録済みイニング経過一覧（タップで1行修正・削除） */}
-        <InningLogTimelineCard
-          doc={doc}
-          onChangeDoc={handleUpdateDoc}
-          activeContextKey={`${resolvedTeamId}:${selectedMatchKey}`}
-        />
+              {/* 出力単位ワンタップ切替タブ */}
+              <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
+                {(
+                  [
+                    { id: "full", label: "全文積み上げ" },
+                    { id: "latest_inning", label: "直近イニング" },
+                    { id: "lineup", label: "スタメン発表" },
+                    { id: "game_set", label: "試合終了全文" },
+                  ] as const
+                ).map((tab) => {
+                  const active = outputMode === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setOutputMode(tab.id);
+                        setManualEditedText(null);
+                      }}
+                      className={cn(
+                        "py-1.5 px-1 rounded-lg text-[11px] transition-all cursor-pointer",
+                        active
+                          ? "bg-card text-foreground border border-border font-black shadow-2xs"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-        {/* 3. LINE速報テキスト プレビュー ＆ 出力モード切替 ＆ LINE共有 */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-2.5 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <FileText className="w-4 h-4 text-sky-400 shrink-0" />
-              <h2 className="text-xs font-black text-white truncate">
-                3. LINE速報テキスト出力・共有
-              </h2>
-            </div>
+              {/* 編集可能なプレビューテキストエリア */}
+              <textarea
+                value={displayedText}
+                onChange={(e) => setManualEditedText(e.target.value)}
+                rows={14}
+                className="w-full rounded-xl border border-border bg-muted/35 focus:bg-card focus:border-primary p-3 text-xs sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-y font-sans"
+                placeholder="ここにLINE速報テキストが自動生成されます（直接手直しも可能です）"
+              />
 
-            {manualEditedText !== null ? (
-              <button
-                type="button"
-                onClick={() => setManualEditedText(null)}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10.5px] font-black cursor-pointer active:scale-95"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>自動生成に戻す</span>
-              </button>
-            ) : (
-              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
-                リアルタイム反映中
-              </span>
-            )}
-          </div>
-
-          <div className="p-3.5 space-y-3">
-            {/* 出力単位ワンタップ切替タブ */}
-            <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
-              {(
-                [
-                  { id: "full", label: "全文積み上げ" },
-                  { id: "latest_inning", label: "直近イニング" },
-                  { id: "lineup", label: "スタメン発表" },
-                  { id: "game_set", label: "試合終了全文" },
-                ] as const
-              ).map((tab) => {
-                const active = outputMode === tab.id;
-                return (
+              {/* 初期化リセットボタン */}
+              <div className="flex items-center justify-end pt-1">
+                {!showResetConfirm ? (
                   <button
-                    key={tab.id}
                     type="button"
-                    onClick={() => {
-                      setOutputMode(tab.id);
-                      setManualEditedText(null);
-                    }}
-                    className={cn(
-                      "py-2 px-1 rounded-lg text-[11px] transition-all cursor-pointer",
-                      active
-                        ? "bg-card text-foreground border border-border font-black shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                    )}
+                    onClick={() => setShowResetConfirm(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-black text-muted-foreground hover:text-rose-600 cursor-pointer"
                   >
-                    {tab.label}
+                    <Trash2 className="w-3 h-3" />
+                    <span>この速報データを初期化</span>
                   </button>
-                );
-              })}
-            </div>
-
-            {/* 編集可能なプレビューテキストエリア */}
-            <textarea
-              value={displayedText}
-              onChange={(e) => setManualEditedText(e.target.value)}
-              rows={18}
-              className="w-full rounded-xl border border-border bg-muted/35 focus:bg-card focus:border-primary p-3.5 text-xs sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-y font-sans"
-              placeholder="ここにLINE速報テキストが自動生成されます（直接手直しも可能です）"
-            />
-
-            {/* コピー ＆ 公式ブランドカラー #06C755 LINE送信ボタン */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => void handleCopyText()}
-                className="py-3.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-4 h-4 shrink-0" />
-                    <span>コピーしました！</span>
-                  </>
                 ) : (
-                  <>
-                    <Copy className="w-4 h-4 shrink-0" />
-                    <span>全文をコピー</span>
-                  </>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10.5px] font-black text-rose-600">
+                      初期化しますか？
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleConfirmResetReport()}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10.5px] font-black cursor-pointer"
+                    >
+                      実行
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowResetConfirm(false)}
+                      className="px-2 py-1 rounded-lg border border-border bg-card text-[10.5px] font-black text-foreground cursor-pointer"
+                    >
+                      やめる
+                    </button>
+                  </div>
                 )}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleShareLine}
-                className="py-3.5 px-3 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-              >
-                <Share2 className="w-4 h-4 shrink-0" />
-                <span>LINEで送る</span>
-              </button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 3: 記録済みイニング経過一覧（タップで1行修正・挿入・削除）
+           ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "timeline" && (
+          <InningLogTimelineCard
+            doc={doc}
+            onChangeDoc={handleUpdateDoc}
+            activeContextKey={activeContextKey}
+          />
+        )}
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 4: 試合情報・スタメン・速報担当の設定
+           ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "setup" && (
+          <MatchAndHeaderSetupCard
+            doc={doc}
+            onChangeDoc={handleUpdateDoc}
+            rosterPlayers={rosterPlayers}
+            suggestedReporters={selectedMatch?.lineLiveAssignees || []}
+            hasSavedMatchLineup={Boolean(
+              reportMode === "match" &&
+                activeBundle &&
+                activeBundle.lineup.length > 0
+            )}
+            onReloadMatchLineup={handleReloadMatchLineup}
+            activeContextKey={activeContextKey}
+            defaultExpanded={true}
+          />
+        )}
 
         {/* 他のツールへの回遊リンク */}
         <LiffToolOtherLinks />

@@ -1,7 +1,7 @@
 // filepath: src/app/liff/tools/news-generator/_components/LiveAtBatPadCard.tsx
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Zap,
@@ -15,6 +15,10 @@ import {
   X,
   Footprints,
   Sparkles,
+  Copy,
+  Check,
+  Share2,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffSelect } from "@/components/liff/LiffSelect";
@@ -24,6 +28,7 @@ import {
   computeHalfInningSituation,
   computeScoreboardSummary,
   findActiveDefenderByDirection,
+  formatLiveReportText,
   formatPlayerReportName,
   formatSinglePlayEntryLine,
   getCurrentHmText,
@@ -39,6 +44,7 @@ import {
 import type {
   LiveReportBaseNum,
   LiveReportHalfInning,
+  LiveReportOutputMode,
   LiveReportPlayEntry,
   LiveReportRosterPlayer,
   LiveReportSubType,
@@ -52,21 +58,16 @@ interface LiveAtBatPadCardProps {
   ) => void;
   rosterPlayers: ReadonlyArray<LiveReportRosterPlayer>;
   activeContextKey: string;
+  outputMode?: LiveReportOutputMode;
+  onChangeOutputMode?: (mode: LiveReportOutputMode) => void;
+  onCopyText?: () => void;
+  onShareLine?: () => void;
+  copied?: boolean;
+  onOpenFullPreview?: () => void;
 }
 
-const DIRECTION_BUTTONS = [
-  "投",
-  "捕",
-  "一",
-  "二",
-  "三",
-  "遊",
-  "左",
-  "中",
-  "右",
-  "左中",
-  "右中",
-] as const;
+const INFIELD_DIRECTIONS = ["投", "捕", "一", "二", "三", "遊"] as const;
+const OUTFIELD_DIRECTIONS = ["左", "左中", "中", "右中", "右"] as const;
 
 const DIRECT_OUTCOMES: ReadonlyArray<{
   code: DirectOutcomeCode;
@@ -74,33 +75,45 @@ const DIRECT_OUTCOMES: ReadonlyArray<{
   tone: "out" | "reach";
 }> = [
   { code: "strikeout_swing", label: "空三振", tone: "out" },
-  { code: "strikeout_look", label: "見逃三振", tone: "out" },
+  { code: "strikeout_look", label: "見三振", tone: "out" },
   { code: "walk", label: "四球", tone: "reach" },
   { code: "hbp", label: "死球", tone: "reach" },
   { code: "ibb", label: "敬遠", tone: "reach" },
-  { code: "dropped_3rd_out", label: "振逃アウト", tone: "out" },
-  { code: "dropped_3rd_safe", label: "振逃出塁", tone: "reach" },
+  { code: "dropped_3rd_out", label: "振逃死", tone: "out" },
+  { code: "dropped_3rd_safe", label: "振逃生", tone: "reach" },
 ];
 
-const BATTED_OUTCOMES: ReadonlyArray<{
+const OUT_BATTED_OUTCOMES: ReadonlyArray<{
   code: BattedOutcomeCode;
   label: string;
-  group: "out" | "sac" | "hit" | "err";
 }> = [
-  { code: "groundout", label: "ゴロ", group: "out" },
-  { code: "hard_groundout", label: "強襲ゴロ", group: "out" },
-  { code: "flyout", label: "フライ", group: "out" },
-  { code: "liner", label: "ライナー", group: "out" },
-  { code: "foul_fly", label: "邪飛", group: "out" },
-  { code: "double_play", label: "併殺", group: "out" },
+  { code: "groundout", label: "ゴロ" },
+  { code: "hard_groundout", label: "強襲ゴロ" },
+  { code: "flyout", label: "フライ" },
+  { code: "liner", label: "ライナー" },
+  { code: "foul_fly", label: "邪飛" },
+  { code: "double_play", label: "併殺" },
+];
+
+const HIT_BATTED_OUTCOMES: ReadonlyArray<{
+  code: BattedOutcomeCode;
+  label: string;
+}> = [
+  { code: "front_hit", label: "前ヒット" },
+  { code: "hit", label: "ヒット" },
+  { code: "infield_hit", label: "内野安打" },
+  { code: "double", label: "二塁打" },
+  { code: "triple", label: "三塁打" },
+  { code: "homerun", label: "本塁打" },
+];
+
+const OTHER_BATTED_OUTCOMES: ReadonlyArray<{
+  code: BattedOutcomeCode;
+  label: string;
+  group: "sac" | "hit" | "err";
+}> = [
   { code: "sac_bunt", label: "送りバント", group: "sac" },
   { code: "sac_fly", label: "犠飛", group: "sac" },
-  { code: "front_hit", label: "前ヒット", group: "hit" },
-  { code: "hit", label: "ヒット", group: "hit" },
-  { code: "infield_hit", label: "内野安打", group: "hit" },
-  { code: "double", label: "二塁打", group: "hit" },
-  { code: "triple", label: "三塁打", group: "hit" },
-  { code: "homerun", label: "本塁打", group: "hit" },
   { code: "rh_homerun", label: "走本塁打", group: "hit" },
   { code: "error", label: "エラー", group: "err" },
   { code: "fc", label: "野選", group: "err" },
@@ -120,8 +133,16 @@ export function LiveAtBatPadCard({
   onChangeDoc,
   rosterPlayers,
   activeContextKey,
+  outputMode = "full",
+  onChangeOutputMode,
+  onCopyText,
+  onShareLine,
+  copied = false,
+  onOpenFullPreview,
 }: LiveAtBatPadCardProps) {
   const [mounted, setMounted] = useState(false);
+  const [monitorMode, setMonitorMode] = useState<"inning" | "full">("inning");
+  const monitorScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 状況の手動一時変更（タイブレーク無死1・2塁など）
   const [manualStartOuts, setManualStartOuts] = useState<number | null>(null);
@@ -725,37 +746,80 @@ export function LiveAtBatPadCard({
     ? `${doc.activeInning + 1}回表`
     : `${doc.activeInning}回裏`;
 
+  const currentInningLines = useMemo(() => {
+    if (!currentHalf || currentHalf.entries.length === 0) return [];
+    return currentHalf.entries
+      .map((e) => ({
+        id: e.id,
+        text: formatSinglePlayEntryLine(e, isMyAttack, doc.showSurnameOnly),
+      }))
+      .filter((item) => item.text.length > 0);
+  }, [currentHalf, isMyAttack, doc.showSurnameOnly]);
+
+  const fullFormattedText = useMemo(
+    () => formatLiveReportText(doc, outputMode),
+    [doc, outputMode]
+  );
+
+  const liveFirstTotal =
+    scoreboardSummary.firstTotal +
+    (!doc.activeIsBottom ? finalRunsScored : 0);
+  const liveSecondTotal =
+    scoreboardSummary.secondTotal +
+    (doc.activeIsBottom ? finalRunsScored : 0);
+
+  useEffect(() => {
+    if (monitorMode === "inning" && monitorScrollRef.current) {
+      monitorScrollRef.current.scrollTop =
+        monitorScrollRef.current.scrollHeight;
+    }
+  }, [
+    monitorMode,
+    currentInningLines.length,
+    previewLine,
+    doc.activeInning,
+    doc.activeIsBottom,
+  ]);
+
+  const selectDirection = (dir: string) => {
+    setSelectedDirection((prev) => (prev === dir ? "" : dir));
+    setSelectedDirect(null);
+    setSelectedCandidateIdx(0);
+  };
+
+  const selectBattedOutcome = (code: BattedOutcomeCode) => {
+    setSelectedBatted((prev) => (prev === code ? null : code));
+    setSelectedDirect(null);
+    setSelectedCandidateIdx(0);
+    setCustomPlayText("");
+    setCustomOutsAfter(null);
+    setCustomRunnersAfter(null);
+    setCustomRunsScored(null);
+  };
+
+  const selectDirectOutcome = (code: DirectOutcomeCode) => {
+    setSelectedDirect((prev) => (prev === code ? null : code));
+    setSelectedBatted(null);
+    setSelectedCandidateIdx(0);
+    setCustomPlayText("");
+    setCustomOutsAfter(null);
+    setCustomRunnersAfter(null);
+    setCustomRunsScored(null);
+  };
+
   return (
     <>
       <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-        {/* A-3 ダークヘッダーキャップ */}
-        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-2.5 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Zap className="w-4 h-4 text-amber-400 shrink-0" />
-            <h2 className="text-xs font-black text-white truncate">
-              2. ライブ1打席入力パッド
-            </h2>
-          </div>
-          <span
-            className={cn(
-              "px-2 py-0.5 rounded text-[10.5px] font-black shrink-0",
-              isMyAttack
-                ? "bg-primary text-primary-foreground"
-                : "bg-slate-800 text-slate-200 border border-slate-700"
-            )}
-          >
-            {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"} •{" "}
-            {isMyAttack ? "自チーム攻撃" : "相手攻撃"}
-          </span>
-        </div>
-
-        <div className="p-3.5 space-y-3.5">
-          {/* ① タップ切替可能なミニスコアボード */}
-          <div className="rounded-xl border border-border bg-[#0f172a] text-white overflow-x-auto">
-            <table className="w-full text-center font-mono text-xs border-collapse">
+        {/* ════════════════════════════════════════════════════════════════
+            ZONE 1: スコアボード ＆ 速報イメージモニター（常時表示・スクロール不要）
+           ════════════════════════════════════════════════════════════════ */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary p-2.5 space-y-2">
+          {/* ① タップ切替可能な超コンパクト・スコアボード */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/70 overflow-x-auto">
+            <table className="w-full text-center font-mono text-[11px] border-collapse">
               <thead>
-                <tr className="border-b border-slate-800 text-[10px] text-slate-400">
-                  <th className="py-1.5 px-2.5 text-left font-sans font-black min-w-[68px]">
+                <tr className="border-b border-slate-800 text-[9.5px] text-slate-400">
+                  <th className="py-1 px-2 text-left font-sans font-black min-w-[58px]">
                     TEAM
                   </th>
                   {Array.from(
@@ -765,14 +829,14 @@ export function LiveAtBatPadCard({
                     <th
                       key={inn}
                       className={cn(
-                        "py-1.5 px-1.5 font-black min-w-[26px]",
+                        "py-1 px-1 font-black min-w-[23px]",
                         doc.activeInning === inn && "text-amber-400"
                       )}
                     >
                       {inn}
                     </th>
                   ))}
-                  <th className="py-1.5 px-2.5 font-sans font-black text-amber-400 border-l border-slate-800">
+                  <th className="py-1 px-2 font-sans font-black text-amber-400 border-l border-slate-800">
                     計
                   </th>
                 </tr>
@@ -780,7 +844,7 @@ export function LiveAtBatPadCard({
               <tbody>
                 {/* 先攻（表） */}
                 <tr className="border-b border-slate-800/80">
-                  <td className="py-1.5 px-2.5 text-left font-sans text-[11px] font-black truncate">
+                  <td className="py-0.5 px-2 text-left font-sans text-[10.5px] font-black truncate max-w-[72px]">
                     {doc.firstTeamShortName}
                   </td>
                   {scoreboardSummary.firstInningScores.map((sc, idx) => {
@@ -793,9 +857,9 @@ export function LiveAtBatPadCard({
                           type="button"
                           onClick={() => handleSelectHalfInning(inn, false)}
                           className={cn(
-                            "w-full py-1 rounded-md font-black transition-all cursor-pointer",
+                            "w-full py-0.5 rounded font-black transition-all cursor-pointer",
                             isActiveCell
-                              ? "bg-primary text-white ring-2 ring-sky-300"
+                              ? "bg-primary text-white ring-1 ring-sky-300"
                               : "hover:bg-slate-800 text-slate-100"
                           )}
                         >
@@ -804,14 +868,14 @@ export function LiveAtBatPadCard({
                       </td>
                     );
                   })}
-                  <td className="py-1.5 px-2.5 font-black text-sm text-amber-400 border-l border-slate-800">
+                  <td className="py-0.5 px-2 font-black text-xs text-amber-400 border-l border-slate-800">
                     {scoreboardSummary.firstTotal}
                   </td>
                 </tr>
 
                 {/* 後攻（裏） */}
                 <tr>
-                  <td className="py-1.5 px-2.5 text-left font-sans text-[11px] font-black truncate">
+                  <td className="py-0.5 px-2 text-left font-sans text-[10.5px] font-black truncate max-w-[72px]">
                     {doc.secondTeamShortName}
                   </td>
                   {scoreboardSummary.secondInningScores.map((sc, idx) => {
@@ -824,9 +888,9 @@ export function LiveAtBatPadCard({
                           type="button"
                           onClick={() => handleSelectHalfInning(inn, true)}
                           className={cn(
-                            "w-full py-1 rounded-md font-black transition-all cursor-pointer",
+                            "w-full py-0.5 rounded font-black transition-all cursor-pointer",
                             isActiveCell
-                              ? "bg-primary text-white ring-2 ring-sky-300"
+                              ? "bg-primary text-white ring-1 ring-sky-300"
                               : "hover:bg-slate-800 text-slate-100"
                           )}
                         >
@@ -835,7 +899,7 @@ export function LiveAtBatPadCard({
                       </td>
                     );
                   })}
-                  <td className="py-1.5 px-2.5 font-black text-sm text-amber-400 border-l border-slate-800">
+                  <td className="py-0.5 px-2 font-black text-xs text-amber-400 border-l border-slate-800">
                     {scoreboardSummary.secondTotal}
                   </td>
                 </tr>
@@ -843,87 +907,234 @@ export function LiveAtBatPadCard({
             </table>
           </div>
 
-          {/* イニング送りバー */}
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => handleStepHalfInning(-1)}
-              disabled={doc.activeInning === 1 && !doc.activeIsBottom}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent disabled:opacity-40 text-xs font-black text-foreground cursor-pointer"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>前の回</span>
-            </button>
+          {/* ② 📺 速報イメージモニター（入力しながら同じ画面で速報テキストを確認・即コピー＆LINE送信） */}
+          <div className="rounded-xl border border-slate-700/90 bg-slate-900 overflow-hidden">
+            {/* モニター上部バー: 表示切替 ＆ ワンタップ共有 */}
+            <div className="px-2.5 py-1.5 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between gap-1.5 flex-wrap">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-black text-amber-400 mr-0.5">
+                  速報イメージ:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMonitorMode("inning")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-black transition-all cursor-pointer",
+                    monitorMode === "inning"
+                      ? "bg-primary text-white"
+                      : "bg-slate-800 text-slate-300 hover:text-white"
+                  )}
+                >
+                  {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMonitorMode("full")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md text-[10px] font-black transition-all cursor-pointer",
+                    monitorMode === "full"
+                      ? "bg-primary text-white"
+                      : "bg-slate-800 text-slate-300 hover:text-white"
+                  )}
+                >
+                  全文プレビュー
+                </button>
+                {monitorMode === "full" && onChangeOutputMode && (
+                  <div className="flex items-center gap-0.5 ml-1 bg-slate-900 rounded-md p-0.5 border border-slate-800">
+                    {(
+                      [
+                        { id: "full", label: "全文" },
+                        { id: "latest_inning", label: "直近" },
+                        { id: "lineup", label: "スタメン" },
+                      ] as const
+                    ).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => onChangeOutputMode(m.id)}
+                        className={cn(
+                          "px-1.5 py-0.5 rounded text-[9.5px] font-black cursor-pointer",
+                          outputMode === m.id
+                            ? "bg-amber-400 text-slate-950"
+                            : "text-slate-400 hover:text-white"
+                        )}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            <div className="text-center">
-              <span className="text-xs font-black text-foreground">
-                {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}（この回{" "}
-                {autoSituation.runs}点）
-              </span>
+              <div className="flex items-center gap-1">
+                {onCopyText && (
+                  <button
+                    type="button"
+                    onClick={onCopyText}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-[10px] font-black cursor-pointer active:scale-95"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-300">コピー済</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3 text-sky-400" />
+                        <span>コピー</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                {onShareLine && (
+                  <button
+                    type="button"
+                    onClick={onShareLine}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#06C755] hover:bg-[#05b34c] text-white text-[10px] font-black cursor-pointer active:scale-95"
+                  >
+                    <Share2 className="w-3 h-3" />
+                    <span>LINE送信</span>
+                  </button>
+                )}
+                {onOpenFullPreview && (
+                  <button
+                    type="button"
+                    onClick={onOpenFullPreview}
+                    title="全文・出力形式の詳細確認を開く"
+                    className="inline-flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-black cursor-pointer"
+                  >
+                    <FileText className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => handleStepHalfInning(1)}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground cursor-pointer"
-            >
-              <span>次の回</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+            {/* モニター本文 */}
+            {monitorMode === "inning" ? (
+              <div
+                ref={monitorScrollRef}
+                className="max-h-[86px] overflow-y-auto px-2.5 py-1.5 space-y-0.5 font-sans text-[11px] leading-snug"
+              >
+                <div className="flex items-center justify-between text-[10px] font-black text-slate-400">
+                  <span>
+                    {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}（
+                    {isMyAttack ? "自チーム攻撃" : "相手攻撃"}）
+                  </span>
+                  <span className="font-mono text-amber-300">
+                    得点{autoSituation.runs + (previewLine ? finalRunsScored : 0)}{" "}
+                    ｜ {liveFirstTotal}-{liveSecondTotal}
+                  </span>
+                </div>
 
+                {currentInningLines.length === 0 && !previewLine ? (
+                  <p className="text-[11px] font-bold text-slate-400 py-1">
+                    まだこの回の記録はありません（下のボタンで選択 ➔「確定」でここに追加されます）
+                  </p>
+                ) : (
+                  currentInningLines.map((line) => (
+                    <p
+                      key={line.id}
+                      className="text-[11.5px] font-bold text-slate-100 break-all"
+                    >
+                      {line.text}
+                    </p>
+                  ))
+                )}
+
+                {previewLine && (
+                  <div className="mt-1 px-2 py-1 rounded-md bg-amber-400/15 border border-amber-400/50 flex items-center justify-between gap-2">
+                    <p className="text-[11.5px] font-black text-amber-300 break-all">
+                      ➕ {previewLine}
+                    </p>
+                    <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black shrink-0">
+                      確定待ち
+                    </span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="max-h-[140px] overflow-y-auto px-2.5 py-2 bg-slate-950/90 font-sans text-[11px] leading-relaxed text-slate-100 whitespace-pre-wrap">
+                {fullFormattedText}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ════════════════════════════════════════════════════════════════
+            ZONE 2: 状況・打者バー ＆ 固定「記録確定」バー ＆ 1画面入力パッド
+           ════════════════════════════════════════════════════════════════ */}
+        <div className="p-2.5 space-y-2">
           {/* 3アウト到達時のワンタップチェンジ誘導バナー */}
           {autoSituation.outs >= 3 && manualStartOuts === null && (
             <button
               type="button"
               onClick={() => handleStepHalfInning(1)}
-              className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
+              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
             >
               <span>⚾️ 3アウトチェンジ！ 次の「{nextHalfLabel}」へ進む</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           )}
 
-          {/* ② 現在のアウト・塁状況・打者ステータスバー（タップでタイブレーク等の初期走者調整も可能） */}
-          <div className="rounded-xl border border-border bg-muted/45 p-2.5 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {/* アウト数 */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10.5px] font-black text-muted-foreground">
-                  現在アウト:
+          {/* ③ 1ボックス統合：回移動・アウト・走者・現在打者・サブ操作 */}
+          <div className="rounded-xl border border-border bg-muted/45 px-2.5 py-2 space-y-1.5">
+            {/* 上段: 回送り ＋ アウト ＋ 走者 ＋ 直前走塁/戻す */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              {/* 回送り */}
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleStepHalfInning(-1)}
+                  disabled={doc.activeInning === 1 && !doc.activeIsBottom}
+                  className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-40 flex items-center justify-center text-foreground cursor-pointer"
+                  title="前の回へ"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-1.5 py-0.5 rounded-md bg-[#0f172a] text-white text-[11px] font-black">
+                  {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}
                 </span>
-                <div className="inline-flex items-center gap-1 bg-card border border-border rounded-lg px-2 py-1">
-                  {[0, 1, 2].map((o) => {
-                    const active = o < (effectiveOutsBefore >= 3 ? 3 : effectiveOutsBefore);
-                    return (
-                      <button
-                        key={o}
-                        type="button"
-                        onClick={() => {
-                          const target = o + 1 === effectiveOutsBefore ? o : o + 1;
-                          setManualStartOuts(target);
-                        }}
-                        className={cn(
-                          "w-4 h-4 rounded-full border transition-all cursor-pointer",
-                          active
-                            ? "bg-slate-900 border-slate-900"
-                            : "bg-muted border-slate-300"
-                        )}
-                        title={`${o + 1}アウトに切替`}
-                      />
-                    );
-                  })}
-                  <span className="ml-1 text-[11px] font-black font-mono text-foreground">
-                    {effectiveOutsBefore >= 3 ? "3死" : `${effectiveOutsBefore}死`}
-                  </span>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStepHalfInning(1)}
+                  className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent flex items-center justify-center text-foreground cursor-pointer"
+                  title="次の回へ"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
-              {/* 走者ピル（タップで手動ON/OFF可＝タイブレーク等にも即対応） */}
-              <div className="flex items-center gap-1">
-                <span className="text-[10.5px] font-black text-muted-foreground mr-0.5">
-                  走者:
+              {/* アウト数（タップ切替） */}
+              <div className="inline-flex items-center gap-1 bg-card border border-border rounded-lg px-2 py-0.5 h-6">
+                {[0, 1, 2].map((o) => {
+                  const active =
+                    o < (effectiveOutsBefore >= 3 ? 3 : effectiveOutsBefore);
+                  return (
+                    <button
+                      key={o}
+                      type="button"
+                      onClick={() => {
+                        const target =
+                          o + 1 === effectiveOutsBefore ? o : o + 1;
+                        setManualStartOuts(target);
+                      }}
+                      className={cn(
+                        "w-3.5 h-3.5 rounded-full border transition-all cursor-pointer",
+                        active
+                          ? "bg-slate-900 border-slate-900"
+                          : "bg-muted border-slate-300"
+                      )}
+                      title={`${o + 1}アウトに切替`}
+                    />
+                  );
+                })}
+                <span className="text-[10.5px] font-black font-mono text-foreground ml-0.5">
+                  {effectiveOutsBefore >= 3 ? "3死" : `${effectiveOutsBefore}死`}
                 </span>
+              </div>
+
+              {/* 走者ピル（タップで手動ON/OFF可） */}
+              <div className="inline-flex items-center gap-1">
                 {([1, 2, 3] as const).map((b) => {
                   const onBase = effectiveRunnersBefore.includes(b);
                   return (
@@ -940,7 +1151,7 @@ export function LiveAtBatPadCard({
                         setManualStartRunners(next);
                       }}
                       className={cn(
-                        "px-2 py-1 rounded-lg text-[10.5px] font-black border transition-all cursor-pointer",
+                        "px-1.5 h-6 rounded-lg text-[10px] font-black border transition-all cursor-pointer",
                         onBase
                           ? "bg-amber-400 text-slate-950 border-amber-500"
                           : "bg-card text-muted-foreground border-border hover:text-foreground"
@@ -951,25 +1162,49 @@ export function LiveAtBatPadCard({
                   );
                 })}
               </div>
+
+              {/* 直前走塁追記 ＆ 1つ戻す */}
+              <div className="inline-flex items-center gap-1 ml-auto">
+                <button
+                  type="button"
+                  disabled={!lastBatterEntry}
+                  onClick={openFollowUpModal}
+                  className="px-2 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                  title="直前の打席行に盗塁・暴投・走塁死などを追記"
+                >
+                  <Footprints className="w-3 h-3 text-teal-600 shrink-0" />
+                  <span>走塁追記</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!currentHalf || currentHalf.entries.length === 0}
+                  onClick={handleUndoLastEntry}
+                  className="px-2 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                  title="直前の1行を取り消す"
+                >
+                  <Undo2 className="w-3 h-3 text-slate-600 shrink-0" />
+                  <span>戻す</span>
+                </button>
+              </div>
             </div>
 
-            {/* 現在の打者 ＆ 選手交代ボタン */}
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/70">
-              <div className="flex items-center gap-1.5 min-w-0">
+            {/* 下段: 現在の打者 ＆ 選手交代・微調整・試合終了 */}
+            <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-border/70">
+              <div className="flex items-center gap-1 min-w-0">
                 <button
                   type="button"
                   onClick={() => handleShiftOrder(-1)}
-                  className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                  className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground flex items-center justify-center cursor-pointer active:scale-95"
                 >
                   -
                 </button>
-                <span className="px-2 py-1 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black shrink-0">
+                <span className="px-2 py-0.5 rounded-lg bg-[#0f172a] text-white font-mono text-[11px] font-black shrink-0">
                   {currentOrder}番
                 </span>
                 <button
                   type="button"
                   onClick={() => handleShiftOrder(1)}
-                  className="w-7 h-7 rounded-lg bg-card border border-border text-xs font-black text-foreground flex items-center justify-center cursor-pointer active:scale-95"
+                  className="w-6 h-6 rounded-lg bg-card border border-border text-xs font-black text-foreground flex items-center justify-center cursor-pointer active:scale-95"
                 >
                   +
                 </button>
@@ -977,12 +1212,12 @@ export function LiveAtBatPadCard({
                 {isMyAttack ? (
                   <div className="min-w-0 ml-1">
                     {activeBatterSlot?.playerName ? (
-                      <span className="text-sm font-black text-foreground truncate block">
+                      <span className="text-xs sm:text-sm font-black text-foreground truncate block">
                         {formatPlayerReportName(
                           activeBatterSlot.playerName,
                           doc.showSurnameOnly
                         )}
-                        <span className="ml-1 text-[10.5px] font-bold text-muted-foreground">
+                        <span className="ml-1 text-[10px] font-bold text-muted-foreground">
                           ({normalizeReportPositionCode(activeBatterSlot.position)})
                         </span>
                       </span>
@@ -1002,144 +1237,73 @@ export function LiveAtBatPadCard({
                           }));
                         }}
                         placeholder={`${currentOrder}番の苗字を入力`}
-                        className="h-7 w-32 rounded-lg border border-border bg-card px-2 text-xs font-black text-foreground outline-none focus:border-primary"
+                        className="h-6 w-28 rounded-lg border border-border bg-card px-2 text-[11px] font-black text-foreground outline-none focus:border-primary"
                       />
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs font-bold text-muted-foreground ml-1 truncate">
-                    相手打者（番号のみ出力）
+                  <span className="text-[11px] font-bold text-muted-foreground ml-1 truncate">
+                    相手打者（番号のみ）
                   </span>
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={openSubstitutionModal}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card border border-border hover:bg-muted text-[11px] font-black text-primary shrink-0 cursor-pointer active:scale-95"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>{isMyAttack ? "代打・代走" : "投手・守備交代"}</span>
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={openSubstitutionModal}
+                  className="inline-flex items-center gap-0.5 px-2 h-6 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-black text-primary cursor-pointer active:scale-95"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  <span>{isMyAttack ? "代打/代走" : "投手/守備交代"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCustomOverride((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 px-2 h-6 rounded-lg border text-[10px] font-black cursor-pointer",
+                    showCustomOverride
+                      ? "bg-[#0f172a] text-white border-[#0f172a]"
+                      : "bg-card text-foreground border-border hover:bg-muted"
+                  )}
+                >
+                  <SlidersHorizontal className="w-3 h-3" />
+                  <span>微調整</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGameSetPanelOpen((v) => !v)}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 px-2 h-6 rounded-lg border text-[10px] font-black cursor-pointer",
+                    doc.isGameFinished
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-card text-foreground border-border hover:bg-muted"
+                  )}
+                >
+                  <Flag className="w-3 h-3 text-amber-500" />
+                  <span>{doc.isGameFinished ? "終了ON" : "終了"}</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* ③ A. 1タップ結果（三振・四死球） */}
-          <div className="space-y-1.5">
-            <span className="block text-[10.5px] font-black text-muted-foreground">
-              A. 三振・四死球（1タップ）
-            </span>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
-              {DIRECT_OUTCOMES.map((item) => {
-                const isSelected = selectedDirect === item.code;
-                return (
-                  <button
-                    key={item.code}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDirect(isSelected ? null : item.code);
-                      setSelectedBatted(null);
-                      setSelectedCandidateIdx(0);
-                      setCustomPlayText("");
-                      setCustomOutsAfter(null);
-                      setCustomRunnersAfter(null);
-                      setCustomRunsScored(null);
-                    }}
-                    className={cn(
-                      "py-2 px-1.5 rounded-xl border text-xs font-black transition-all cursor-pointer active:scale-95",
-                      isSelected
-                        ? "bg-[#0f172a] text-white border-[#0f172a] shadow-xs"
-                        : item.tone === "reach"
-                        ? "bg-sky-500/10 text-sky-800 dark:text-sky-300 border-sky-500/30 hover:bg-sky-500/15"
-                        : "bg-card text-foreground border-border hover:bg-muted"
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ④ B. 打球方向 × 打球結果（2タップ） */}
-          <div className="space-y-2">
-            <span className="block text-[10.5px] font-black text-muted-foreground">
-              B. 打球方向 ➔ 打球結果（2タップ）
-            </span>
-
-            {/* 方向ボタン */}
-            <div className="grid grid-cols-6 sm:grid-cols-11 gap-1.5">
-              {DIRECTION_BUTTONS.map((dir) => {
-                const isSelected = selectedDirection === dir;
-                return (
-                  <button
-                    key={dir}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDirection(isSelected ? "" : dir);
-                      setSelectedDirect(null);
-                      setSelectedCandidateIdx(0);
-                    }}
-                    className={cn(
-                      "py-2 px-1 rounded-xl border text-xs font-black transition-all cursor-pointer active:scale-95",
-                      isSelected
-                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
-                        : "bg-muted/60 text-foreground border-border hover:bg-muted"
-                    )}
-                  >
-                    {dir}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 打球結果ボタン */}
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 pt-0.5">
-              {BATTED_OUTCOMES.map((item) => {
-                const isSelected = selectedBatted === item.code;
-                const toneClass =
-                  item.group === "hit"
-                    ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/15"
-                    : item.group === "sac"
-                    ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/35 hover:bg-amber-500/20"
-                    : item.group === "err"
-                    ? "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/15"
-                    : "bg-card text-foreground border-border hover:bg-muted";
-
-                return (
-                  <button
-                    key={item.code}
-                    type="button"
-                    onClick={() => {
-                      setSelectedBatted(isSelected ? null : item.code);
-                      setSelectedDirect(null);
-                      setSelectedCandidateIdx(0);
-                      setCustomPlayText("");
-                      setCustomOutsAfter(null);
-                      setCustomRunnersAfter(null);
-                      setCustomRunsScored(null);
-                    }}
-                    className={cn(
-                      "py-2 px-1.5 rounded-xl border text-[11.5px] font-black transition-all cursor-pointer active:scale-95",
-                      isSelected
-                        ? "bg-[#0f172a] text-white border-[#0f172a] shadow-xs"
-                        : toneClass
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ⑤ 走者がいる場合の自動進塁パターン切替ピル */}
-          {candidates.length > 1 && (
-            <div className="rounded-xl border border-primary/30 bg-primary/6 p-2.5 space-y-1.5 animate-in fade-in duration-150">
-              <span className="block text-[10.5px] font-black text-primary">
-                走者の動きを選択:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
+          {/* ④ 固定位置の「プレビュー ＆ 記録確定バー」（スクロールゼロで即確定！） */}
+          <div
+            className={cn(
+              "rounded-xl border p-2 transition-all space-y-1.5",
+              finalPlayText
+                ? "border-primary bg-primary/8 shadow-2xs"
+                : "border-border bg-muted/40"
+            )}
+          >
+            {/* 走者がいる場合の自動進塁パターン切替ピル（確定バーのすぐ上にコンパクト表示） */}
+            {candidates.length > 1 && (
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                <span className="text-[10px] font-black text-primary shrink-0">
+                  走者:
+                </span>
                 {candidates.map((cand, idx) => {
                   const active = idx === selectedCandidateIdx;
                   return (
@@ -1154,7 +1318,7 @@ export function LiveAtBatPadCard({
                         setCustomRunsScored(null);
                       }}
                       className={cn(
-                        "px-2.5 py-1.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer",
+                        "px-2 py-1 rounded-lg border text-[10.5px] font-black whitespace-nowrap transition-all cursor-pointer",
                         active
                           ? "bg-primary text-primary-foreground border-primary shadow-2xs"
                           : "bg-card text-foreground border-border hover:bg-muted"
@@ -1165,28 +1329,385 @@ export function LiveAtBatPadCard({
                   );
                 })}
               </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                {previewLine ? (
+                  <>
+                    {finalRunsScored > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shrink-0">
+                        +{finalRunsScored}点
+                      </span>
+                    )}
+                    <p className="text-xs sm:text-sm font-black text-foreground truncate">
+                      {previewLine}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[11px] font-bold text-muted-foreground truncate">
+                    {selectedDirection
+                      ? `方向「${selectedDirection}」を選択中 ➔ 下の打球結果を選択`
+                      : "下のボタンから結果を選択 ➔ 右の「確定」で記録"}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                {(selectedDirection || selectedBatted || selectedDirect) && (
+                  <button
+                    type="button"
+                    onClick={resetPadSelection}
+                    className="w-8 h-9 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground flex items-center justify-center cursor-pointer"
+                    title="選択をクリア"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!finalPlayText}
+                  onClick={handleRecordAtBat}
+                  className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground text-xs sm:text-sm font-black inline-flex items-center justify-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>記録確定</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 手動微調整ドロワー（開いた時のみ表示） */}
+          {showCustomOverride && (
+            <div className="rounded-xl border border-border bg-muted/40 p-2.5 space-y-2 animate-in fade-in duration-150">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-0.5">
+                  <label className="block text-[9.5px] font-black text-muted-foreground">
+                    結果文言（自由編集可）
+                  </label>
+                  <input
+                    type="text"
+                    value={customPlayText || activeCandidate?.playText || ""}
+                    onChange={(e) => setCustomPlayText(e.target.value)}
+                    placeholder="例: 中前ヒット中暴投"
+                    className="w-full h-7 rounded-lg border border-border bg-card px-2 text-[11px] font-bold text-foreground outline-none focus:border-primary"
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <label className="block text-[9.5px] font-black text-muted-foreground">
+                    一言コメント（自由入力）
+                  </label>
+                  <input
+                    type="text"
+                    value={reactionText}
+                    onChange={(e) => setReactionText(e.target.value)}
+                    placeholder="例: ナイスラン❗️"
+                    className="w-full h-7 rounded-lg border border-border bg-card px-2 text-[11px] font-bold text-foreground outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9.5px] font-black text-muted-foreground">
+                    後アウト:
+                  </span>
+                  {[0, 1, 2, 3].map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      onClick={() => setCustomOutsAfter(o)}
+                      className={cn(
+                        "w-6 h-6 rounded-md border text-[11px] font-black cursor-pointer",
+                        finalOutsAfter === o
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-card text-foreground border-border"
+                      )}
+                    >
+                      {o}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-[9.5px] font-black text-muted-foreground">
+                    後走者:
+                  </span>
+                  {([1, 2, 3] as const).map((b) => {
+                    const onB = finalRunnersAfter.includes(b);
+                    return (
+                      <button
+                        key={b}
+                        type="button"
+                        disabled={finalOutsAfter >= 3}
+                        onClick={() => {
+                          const next = onB
+                            ? finalRunnersAfter.filter((x) => x !== b)
+                            : normalizeRunnersList([...finalRunnersAfter, b]);
+                          setCustomRunnersAfter(next);
+                        }}
+                        className={cn(
+                          "px-1.5 h-6 rounded-md border text-[10px] font-black cursor-pointer disabled:opacity-40",
+                          onB
+                            ? "bg-amber-400 text-slate-950 border-amber-500"
+                            : "bg-card text-foreground border-border"
+                        )}
+                      >
+                        {b}塁
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <span className="text-[9.5px] font-black text-muted-foreground">
+                    得点:
+                  </span>
+                  {[0, 1, 2, 3, 4].map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setCustomRunsScored(r)}
+                      className={cn(
+                        "w-6 h-6 rounded-md border text-[11px] font-black cursor-pointer",
+                        finalRunsScored === r
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card text-foreground border-border"
+                      )}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
-          {/* ⑥ 一言リアクション・好守備ワンタップ付与 */}
+          {/* 試合終了（ゲームセット）設定パネル */}
+          {(isGameSetPanelOpen || doc.isGameFinished) && (
+            <div className="rounded-xl border border-slate-300 bg-muted/50 p-2.5 space-y-2 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Flag className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-[11px] font-black text-foreground">
+                    ゲームセット（試合終了行）の出力設定
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChangeDoc((p) => ({
+                      ...p,
+                      isGameFinished: !p.isGameFinished,
+                      endTime:
+                        !p.isGameFinished && !p.endTime.trim()
+                          ? getCurrentHmText()
+                          : p.endTime,
+                    }))
+                  }
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-[10.5px] font-black cursor-pointer",
+                    doc.isGameFinished
+                      ? "bg-emerald-600 text-white"
+                      : "bg-card border border-border text-foreground"
+                  )}
+                >
+                  {doc.isGameFinished ? "ゲームセット出力中" : "試合終了にする"}
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    "勝利❗️応援ありがとうございました🙌",
+                    "快勝‼️",
+                    "惜敗。。",
+                    "引き分け",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() =>
+                        onChangeDoc((p) => ({
+                          ...p,
+                          isGameFinished: true,
+                          closingComment: preset,
+                        }))
+                      }
+                      className="px-2 py-0.5 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-bold text-foreground cursor-pointer"
+                    >
+                      ＋{preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={doc.closingComment}
+                  onChange={(e) =>
+                    onChangeDoc((p) => ({
+                      ...p,
+                      closingComment: e.target.value,
+                    }))
+                  }
+                  placeholder="結びコメント（例: 惜敗。。 / 見事勝利❗️）"
+                  className="w-full h-8 rounded-lg border border-border bg-card px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ⑤ ゼロスクロール・コンパクト入力キーパッド（方向2段 ＋ 結果4段 ＋ リアクション1段） */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10.5px] font-black text-muted-foreground flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-amber-500" />
-                <span>一言リアクション・好守備追記（任意）</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowCustomOverride((v) => !v)}
-                className="inline-flex items-center gap-1 text-[10.5px] font-black text-primary cursor-pointer"
-              >
-                <SlidersHorizontal className="w-3 h-3" />
-                <span>{showCustomOverride ? "詳細調整を閉じる" : "手動微調整"}</span>
-              </button>
+            {/* 1. 打球方向（内野6列 ＋ 外野5列） */}
+            <div className="space-y-1">
+              <div className="grid grid-cols-6 gap-1">
+                {INFIELD_DIRECTIONS.map((dir) => {
+                  const isSelected = selectedDirection === dir;
+                  return (
+                    <button
+                      key={dir}
+                      type="button"
+                      onClick={() => selectDirection(dir)}
+                      className={cn(
+                        "h-8 rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95",
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          : "bg-muted/65 text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {dir}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {OUTFIELD_DIRECTIONS.map((dir) => {
+                  const isSelected = selectedDirection === dir;
+                  return (
+                    <button
+                      key={dir}
+                      type="button"
+                      onClick={() => selectDirection(dir)}
+                      className={cn(
+                        "h-8 rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95",
+                        isSelected
+                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          : "bg-muted/65 text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {dir}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {/* 相手攻撃時、打球方向の自チーム守備選手名を自動サジェスト（例: 赤羽ナイスキャッチ❗️） */}
+            {/* 2. 打球・打席結果（4行コンパクトグリッド） */}
+            <div className="space-y-1 pt-0.5">
+              {/* Row A: アウト系（6列） */}
+              <div className="grid grid-cols-6 gap-1">
+                {OUT_BATTED_OUTCOMES.map((item) => {
+                  const isSelected = selectedBatted === item.code;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => selectBattedOutcome(item.code)}
+                      className={cn(
+                        "h-8 px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                        isSelected
+                          ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Row B: 安打系（6列） */}
+              <div className="grid grid-cols-6 gap-1">
+                {HIT_BATTED_OUTCOMES.map((item) => {
+                  const isSelected = selectedBatted === item.code;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => selectBattedOutcome(item.code)}
+                      className={cn(
+                        "h-8 px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                        isSelected
+                          ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                          : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/15"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Row C: 犠打・走本・エラー・野選（5列） */}
+              <div className="grid grid-cols-5 gap-1">
+                {OTHER_BATTED_OUTCOMES.map((item) => {
+                  const isSelected = selectedBatted === item.code;
+                  const toneClass =
+                    item.group === "sac"
+                      ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/35 hover:bg-amber-500/20"
+                      : item.group === "hit"
+                      ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/15"
+                      : "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/15";
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => selectBattedOutcome(item.code)}
+                      className={cn(
+                        "h-8 px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                        isSelected
+                          ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                          : toneClass
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Row D: 1タップ三振・四死球（7列） */}
+              <div className="grid grid-cols-7 gap-1">
+                {DIRECT_OUTCOMES.map((item) => {
+                  const isSelected = selectedDirect === item.code;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => selectDirectOutcome(item.code)}
+                      className={cn(
+                        "h-8 px-0.5 rounded-lg border text-[10.5px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                        isSelected
+                          ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                          : item.tone === "reach"
+                          ? "bg-sky-500/10 text-sky-800 dark:text-sky-300 border-sky-500/30 hover:bg-sky-500/15"
+                          : "bg-slate-100 dark:bg-slate-800 text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. 一言リアクション・好守備ワンタップ付与（横スクロール1行） */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pt-0.5">
+              <span className="text-[10px] font-black text-muted-foreground flex items-center gap-0.5 shrink-0 mr-0.5">
+                <Sparkles className="w-3 h-3 text-amber-500" />
+                <span>一言:</span>
+              </span>
+
               {activeDefenderSurname && (
                 <>
                   <button
@@ -1199,7 +1720,7 @@ export function LiveAtBatPadCard({
                       )
                     }
                     className={cn(
-                      "px-2.5 py-1 rounded-lg border text-[11px] font-black transition-all cursor-pointer",
+                      "px-2 h-7 rounded-lg border text-[10.5px] font-black whitespace-nowrap transition-all cursor-pointer shrink-0",
                       reactionText === `${activeDefenderSurname}ナイスキャッチ❗️`
                         ? "bg-amber-400 text-slate-950 border-amber-500"
                         : "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/35"
@@ -1217,7 +1738,7 @@ export function LiveAtBatPadCard({
                       )
                     }
                     className={cn(
-                      "px-2.5 py-1 rounded-lg border text-[11px] font-black transition-all cursor-pointer",
+                      "px-2 h-7 rounded-lg border text-[10.5px] font-black whitespace-nowrap transition-all cursor-pointer shrink-0",
                       reactionText === `${activeDefenderSurname}好守備❗️`
                         ? "bg-amber-400 text-slate-950 border-amber-500"
                         : "bg-amber-500/12 text-amber-900 dark:text-amber-300 border-amber-500/35"
@@ -1236,7 +1757,7 @@ export function LiveAtBatPadCard({
                     type="button"
                     onClick={() => setReactionText(isSelected ? "" : chip)}
                     className={cn(
-                      "px-2.5 py-1 rounded-lg border text-[11px] font-black transition-all cursor-pointer",
+                      "px-2 h-7 rounded-lg border text-[10.5px] font-black whitespace-nowrap transition-all cursor-pointer shrink-0",
                       isSelected
                         ? "bg-amber-400 text-slate-950 border-amber-500"
                         : "bg-muted/60 text-foreground border-border hover:bg-muted"
@@ -1247,268 +1768,7 @@ export function LiveAtBatPadCard({
                 );
               })}
             </div>
-
-            {/* 手動微調整ドロワー（例外プレー・自由文言・アウト・残塁・得点の完全制御） */}
-            {showCustomOverride && (
-              <div className="mt-2 rounded-xl border border-border bg-muted/40 p-3 space-y-2.5 animate-in fade-in duration-150">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black text-muted-foreground">
-                      結果文言（自由編集可）
-                    </label>
-                    <input
-                      type="text"
-                      value={customPlayText || activeCandidate?.playText || ""}
-                      onChange={(e) => setCustomPlayText(e.target.value)}
-                      placeholder="例: 中前ヒット中暴投"
-                      className="w-full h-8 rounded-lg border border-border bg-card px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black text-muted-foreground">
-                      一言コメント（自由入力）
-                    </label>
-                    <input
-                      type="text"
-                      value={reactionText}
-                      onChange={(e) => setReactionText(e.target.value)}
-                      placeholder="例: ナイスラン❗️"
-                      className="w-full h-8 rounded-lg border border-border bg-card px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-black text-muted-foreground">
-                      後アウト:
-                    </span>
-                    {[0, 1, 2, 3].map((o) => (
-                      <button
-                        key={o}
-                        type="button"
-                        onClick={() => setCustomOutsAfter(o)}
-                        className={cn(
-                          "w-7 h-7 rounded-lg border text-xs font-black cursor-pointer",
-                          finalOutsAfter === o
-                            ? "bg-slate-900 text-white border-slate-900"
-                            : "bg-card text-foreground border-border"
-                        )}
-                      >
-                        {o}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-black text-muted-foreground">
-                      後走者:
-                    </span>
-                    {([1, 2, 3] as const).map((b) => {
-                      const onB = finalRunnersAfter.includes(b);
-                      return (
-                        <button
-                          key={b}
-                          type="button"
-                          disabled={finalOutsAfter >= 3}
-                          onClick={() => {
-                            const next = onB
-                              ? finalRunnersAfter.filter((x) => x !== b)
-                              : normalizeRunnersList([...finalRunnersAfter, b]);
-                            setCustomRunnersAfter(next);
-                          }}
-                          className={cn(
-                            "px-2 h-7 rounded-lg border text-[10.5px] font-black cursor-pointer disabled:opacity-40",
-                            onB
-                              ? "bg-amber-400 text-slate-950 border-amber-500"
-                              : "bg-card text-foreground border-border"
-                          )}
-                        >
-                          {b}塁
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-black text-muted-foreground">
-                      この打席得点:
-                    </span>
-                    {[0, 1, 2, 3, 4].map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setCustomRunsScored(r)}
-                        className={cn(
-                          "w-6 h-7 rounded-lg border text-xs font-black cursor-pointer",
-                          finalRunsScored === r
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-card text-foreground border-border"
-                        )}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
-
-          {/* ⑦ 1行リアルタイムプレビュー ＆ 記録確定ボタン */}
-          <div className="rounded-xl border border-border bg-muted/50 p-3 space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-black text-muted-foreground">
-                追加される速報行プレビュー:
-              </span>
-              {finalRunsScored > 0 && (
-                <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black">
-                  ＋{finalRunsScored}点記録
-                </span>
-              )}
-            </div>
-
-            <div className="min-h-[36px] rounded-lg border border-border bg-card px-3 py-2 flex items-center">
-              {previewLine ? (
-                <p className="text-xs sm:text-sm font-black text-foreground break-all">
-                  {previewLine}
-                </p>
-              ) : (
-                <p className="text-xs font-bold text-muted-foreground">
-                  上のボタンから打席結果を選ぶとここに表示されます
-                </p>
-              )}
-            </div>
-
-            <button
-              type="button"
-              disabled={!finalPlayText}
-              onClick={handleRecordAtBat}
-              className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground text-sm font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer disabled:cursor-not-allowed"
-            >
-              <Plus className="w-4 h-4" />
-              <span>
-                {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}に記録する
-              </span>
-            </button>
-          </div>
-
-          {/* ⑧ サブ操作バー（直前走塁追記・1つ戻す・試合終了設定） */}
-          <div className="grid grid-cols-3 gap-2 pt-0.5">
-            <button
-              type="button"
-              disabled={!lastBatterEntry}
-              onClick={openFollowUpModal}
-              className="py-2 px-2 rounded-xl border border-border bg-card hover:bg-muted disabled:opacity-40 text-[11px] font-black text-foreground flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-            >
-              <Footprints className="w-3.5 h-3.5 text-teal-600 shrink-0" />
-              <span className="truncate">直前に走塁追記</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={!currentHalf || currentHalf.entries.length === 0}
-              onClick={handleUndoLastEntry}
-              className="py-2 px-2 rounded-xl border border-border bg-card hover:bg-muted disabled:opacity-40 text-[11px] font-black text-foreground flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-            >
-              <Undo2 className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-              <span className="truncate">1つ戻す</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsGameSetPanelOpen((v) => !v)}
-              className={cn(
-                "py-2 px-2 rounded-xl border text-[11px] font-black flex items-center justify-center gap-1 cursor-pointer active:scale-95",
-                doc.isGameFinished
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-card hover:bg-muted text-foreground border-border"
-              )}
-            >
-              <Flag className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-              <span className="truncate">
-                {doc.isGameFinished ? "試合終了ON" : "ゲームセット"}
-              </span>
-            </button>
-          </div>
-
-          {/* 試合終了（ゲームセット）設定パネル */}
-          {(isGameSetPanelOpen || doc.isGameFinished) && (
-            <div className="rounded-xl border border-slate-300 bg-muted/50 p-3 space-y-2.5 animate-in fade-in duration-150">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Flag className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-black text-foreground">
-                    ゲームセット（試合終了行）の出力設定
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onChangeDoc((p) => ({
-                      ...p,
-                      isGameFinished: !p.isGameFinished,
-                      endTime:
-                        !p.isGameFinished && !p.endTime.trim()
-                          ? getCurrentHmText()
-                          : p.endTime,
-                    }))
-                  }
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-black cursor-pointer",
-                    doc.isGameFinished
-                      ? "bg-emerald-600 text-white"
-                      : "bg-card border border-border text-foreground"
-                  )}
-                >
-                  {doc.isGameFinished ? "ゲームセット出力中" : "試合終了にする"}
-                </button>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[10.5px] font-black text-muted-foreground">
-                  スコア直後の結びコメント（例:{" "}
-                  {scoreboardSummary.firstTotal}-{scoreboardSummary.secondTotal}
-                  {doc.closingComment || "〇〇惜敗。。"}）
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    "勝利❗️応援ありがとうございました🙌",
-                    "快勝‼️",
-                    "惜敗。。",
-                    "引き分け",
-                  ].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() =>
-                        onChangeDoc((p) => ({
-                          ...p,
-                          isGameFinished: true,
-                          closingComment: preset,
-                        }))
-                      }
-                      className="px-2 py-1 rounded-lg bg-card border border-border hover:bg-muted text-[10.5px] font-bold text-foreground cursor-pointer"
-                    >
-                      ＋{preset}
-                    </button>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={doc.closingComment}
-                  onChange={(e) =>
-                    onChangeDoc((p) => ({
-                      ...p,
-                      closingComment: e.target.value,
-                    }))
-                  }
-                  placeholder="例: 惜敗。。 / 見事勝利❗️"
-                  className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-          )}
         </div>
       </section>
 

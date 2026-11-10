@@ -250,6 +250,8 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
   try {
     const teamId = (c.req.query("teamId") || "").trim();
     const matchId = (c.req.query("matchId") || "").trim();
+    const rawOwnerKey = (c.req.query("ownerKey") || "").trim();
+    const safeOwnerKey = rawOwnerKey.replace(/[^a-zA-Z0-9_-]/g, "");
 
     if (!teamId || teamId === "demo-team") {
       return c.json({
@@ -266,6 +268,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         players: [],
         matchBundle: null,
         freeCloudDraft: null,
+        personalFreeDrafts: [],
       });
     }
 
@@ -371,30 +374,40 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
     }
 
     const draftMatchIdSet = new Set<string>();
-    let freeCloudDraft: {
+    const personalFreePrefix = safeOwnerKey
+      ? `free:${teamId}:u:${safeOwnerKey}:`
+      : "";
+    const personalFreeDrafts: Array<{
       draftId: string;
+      freeId: string;
       report: LiveReportV2Document;
       updatedByName: string | null;
       updatedAt: number;
-    } | null = null;
+    }> = [];
 
-    const freeDraftId = `team:${teamId}:free`;
     for (const dr of teamDraftRows) {
       if (dr.matchId) draftMatchIdSet.add(dr.matchId);
-      if (dr.id === freeDraftId && dr.reportJson) {
+      if (
+        personalFreePrefix &&
+        dr.id.startsWith(personalFreePrefix) &&
+        dr.reportJson
+      ) {
+        const freeId = dr.id.slice(personalFreePrefix.length);
         const parsed = sanitizeLiveReportDocument(
           safeParseJson<unknown>(dr.reportJson, null)
         );
-        if (parsed) {
-          freeCloudDraft = {
+        if (freeId && parsed) {
+          personalFreeDrafts.push({
             draftId: dr.id,
+            freeId,
             report: parsed,
             updatedByName: dr.updatedByName ?? null,
             updatedAt: dr.updatedAt,
-          };
+          });
         }
       }
     }
+    personalFreeDrafts.sort((a, b) => b.updatedAt - a.updatedAt);
 
     const formattedMatches: Array<
       LiveReportMatchOption & { hasCloudDraft: boolean }
@@ -512,7 +525,8 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
       matches: formattedMatches,
       players: activePlayers,
       matchBundle,
-      freeCloudDraft,
+      freeCloudDraft: null,
+      personalFreeDrafts,
     });
   } catch (error) {
     console.error("[GET /api/liff/news-generator/context] Error:", error);
@@ -686,8 +700,14 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
 
     let finalDoc: LiveReportV2Document = sanitized;
     let merged = false;
+    const isPersonalFreeDraft = draftId.startsWith("free:");
 
-    if (existingRow && existingRow.reportJson && !body.forceOverwrite) {
+    if (
+      existingRow &&
+      existingRow.reportJson &&
+      !body.forceOverwrite &&
+      !isPersonalFreeDraft
+    ) {
       const clientBaseTs =
         typeof body.baseUpdatedAt === "number" && Number.isFinite(body.baseUpdatedAt)
           ? body.baseUpdatedAt
