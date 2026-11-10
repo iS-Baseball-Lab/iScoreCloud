@@ -6,8 +6,11 @@ import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import {
   comparePlayersByConditionAndUniform,
-  normalizePlayerConditionStatus,
+  getTodayJstDateKey,
+  resolveEffectivePlayerConditionOnDate,
 } from "@/lib/liff/player-condition";
+import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
+import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
 import type { WorkerEnv } from "@/types/api";
 
 const liffCarpoolSimpleRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -16,6 +19,7 @@ const {
   teams,
   teamMembers,
   players,
+  parentChildRelations,
   events,
   attendances,
   venues,
@@ -302,33 +306,51 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
     await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
 
-    const [teamRow, teamEvents, allMembers, allPlayers, allCars, allVenues] =
-      await Promise.all([
-        db
-          .select({ id: teams.id, homeGround: teams.homeGround })
-          .from(teams)
-          .where(eq(teams.id, teamId))
-          .get(),
-        db
-          .select()
-          .from(events)
-          .where(eq(events.teamId, teamId))
-          .orderBy(desc(events.startAt))
-          .limit(40)
-          .all(),
-        db
-          .select()
-          .from(teamMembers)
-          .where(eq(teamMembers.teamId, teamId))
-          .all(),
-        db.select().from(players).where(eq(players.teamId, teamId)).all(),
-        db
-          .select()
-          .from(memberCars)
-          .where(eq(memberCars.teamId, teamId))
-          .all(),
-        db.select({ id: venues.id, name: venues.name }).from(venues).all().catch(() => []),
-      ]);
+    const [
+      teamRow,
+      teamEvents,
+      allMembers,
+      allPlayers,
+      allCars,
+      allVenues,
+      allRelations,
+      periodsByPlayerId,
+    ] = await Promise.all([
+      db
+        .select({ id: teams.id, homeGround: teams.homeGround })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select()
+        .from(events)
+        .where(eq(events.teamId, teamId))
+        .orderBy(desc(events.startAt))
+        .limit(40)
+        .all(),
+      db
+        .select()
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId))
+        .all(),
+      db.select().from(players).where(eq(players.teamId, teamId)).all(),
+      db
+        .select()
+        .from(memberCars)
+        .where(eq(memberCars.teamId, teamId))
+        .all(),
+      db.select({ id: venues.id, name: venues.name }).from(venues).all().catch(() => []),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          childId: parentChildRelations.childId,
+        })
+        .from(parentChildRelations)
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all()
+        .catch(() => []),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
+    ]);
 
     if (!teamRow) {
       return c.json({ success: false, error: "チームが見つかりません" }, 404);
@@ -489,12 +511,66 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       }
     }
 
-    const adultMembers = allMembers.filter(
-      (m) =>
-        m.memberType !== "player" &&
-        m.status !== "rejected" &&
-        Boolean(m.name && m.name.trim())
+    const targetEventDateKey = selectedEvent
+      ? toJstDateParts(new Date(selectedEvent.startAt)).dateKey
+      : getTodayJstDateKey();
+    const todayKey = getTodayJstDateKey();
+
+    const onLeavePlayerIdsOnEvent = new Set<string>();
+    const playersWithResolvedCondition = allPlayers
+      .filter((p) => p.isActive !== false)
+      .map((p) => {
+        const eff = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: periodsByPlayerId.get(p.id) || [],
+          fallbackStatus: p.conditionStatus,
+          dateKey: targetEventDateKey,
+          todayKey,
+        });
+        if (eff.status === "on_leave") {
+          onLeavePlayerIdsOnEvent.add(p.id);
+        }
+        return {
+          ...p,
+          resolvedConditionStatus: eff.status,
+        };
+      });
+
+    const parentToChildIdsMap = buildParentToChildrenMap({
+      players: allPlayers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        userId: p.userId,
+        isActive: p.isActive,
+        conditionStatus: p.conditionStatus,
+        conditionPeriods: periodsByPlayerId.get(p.id) || [],
+      })),
+      teamMembers: allMembers,
+      relations: allRelations,
+    });
+    const existingDriverIds = new Set(
+      existingCarpoolRows.map((cp) => cp.driverId).filter((id): id is string => Boolean(id))
     );
+
+    const adultMembers = allMembers.filter((m) => {
+      if (m.memberType === "player" || m.status === "rejected") return false;
+      if (!m.name || !m.name.trim()) return false;
+      const isStaff =
+        m.memberType === "staff" ||
+        m.role === "manager" ||
+        m.role === "coach" ||
+        m.role === "owner";
+      if (isStaff || existingDriverIds.has(m.id)) return true;
+      const att = memberAttendanceById.get(m.id);
+      if (att?.hasCar) return true;
+      const linkedKids = parentToChildIdsMap.get(m.id) || [];
+      if (
+        linkedKids.length > 0 &&
+        linkedKids.every((cid) => onLeavePlayerIdsOnEvent.has(cid))
+      ) {
+        return false;
+      }
+      return true;
+    });
 
     const drivers: SimpleCarpoolDriverCandidate[] = adultMembers
       .map((m) => {
@@ -527,20 +603,18 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         return a.name.localeCompare(b.name, "ja");
       });
 
-    // 休部中(on_leave)を除外して選手一覧を構築
-    const activePlayers = allPlayers
-      .filter(
-        (p) => normalizePlayerConditionStatus(p.conditionStatus) !== "on_leave"
-      )
+    // 対象イベント日時点で休部中(on_leave)の選手のみを除外して一覧を構築
+    const activePlayers = playersWithResolvedCondition
+      .filter((p) => p.resolvedConditionStatus !== "on_leave")
       .sort((a, b) =>
         comparePlayersByConditionAndUniform(
           {
-            conditionStatus: a.conditionStatus,
+            conditionStatus: a.resolvedConditionStatus,
             uniformNumber: a.uniformNumber,
             name: a.name,
           },
           {
-            conditionStatus: b.conditionStatus,
+            conditionStatus: b.resolvedConditionStatus,
             uniformNumber: b.uniformNumber,
             name: b.name,
           }

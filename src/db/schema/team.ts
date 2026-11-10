@@ -78,6 +78,24 @@ export const players = sqliteTable('players', {
 }));
 
 // ==========================================
+// 🩹 選手の休部・故障・制限期間履歴テーブル
+// ==========================================
+export const playerConditionPeriods = sqliteTable("player_condition_periods", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+  playerId: text("player_id").notNull().references(() => players.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // 'restricted' | 'rehab' | 'on_leave'
+  startDate: text("start_date").notNull(), // 'YYYY-MM-DD'
+  endDate: text("end_date"), // 'YYYY-MM-DD' | null (null = 未定)
+  privateNote: text("private_note"), // 指導者・管理者限定メモ（一般閲覧者には非公開）
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  teamIdx: index("idx_player_cond_periods_team_id").on(table.teamId),
+  playerIdx: index("idx_player_cond_periods_player_id").on(table.playerId),
+}));
+
+// ==========================================
 // 📋 スタメンテンプレート（事前オーダー保存）テーブル
 // ==========================================
 export const lineupTemplates = sqliteTable("lineup_templates", {

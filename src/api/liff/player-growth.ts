@@ -7,6 +7,7 @@ import { ensurePlayerProfileColumns } from "@/lib/db-helper";
 import {
   aggregateTeamPlayerPositions,
   classifyBattedBallDirection,
+  enrichSectionWithConditionPeriods,
   formatAvgRate,
   formatInningsPitched,
   normalizePlayerNameKey,
@@ -23,6 +24,7 @@ import {
   type PlayerMonthlyBattingItem,
   type PlayerPitchingTrendItem,
   type PlayerRecentFormComparison,
+  type TeamMatchBriefForGrowth,
 } from "@/lib/liff/player-positions-and-growth";
 import {
   isNonPitchMoundEvent,
@@ -32,9 +34,13 @@ import {
 } from "@/types/scorebook-v2";
 import {
   comparePlayersByConditionAndUniform,
-  normalizePlayerConditionStatus,
+  getTodayJstDateKey,
+  maskConditionPeriodsForViewer,
+  resolveEffectivePlayerConditionOnDate,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+import { toTimestampCalendarKey } from "@/lib/liff/demo-lineup";
+import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
 import {
   parsePlayerProfileDetails,
   type PlayerProfileDetails,
@@ -1594,6 +1600,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       rawMatches,
       allTeamMembersRaw,
       allRelations,
+      periodsByPlayerId,
     ] = await Promise.all([
       resolveCallerTeamAccess(c),
       db
@@ -1629,6 +1636,8 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           notes: players.notes,
           profileDetails: players.profileDetails,
           conditionStatus: players.conditionStatus,
+          conditionNote: players.conditionNote,
+          joinedAt: players.joinedAt,
           isActive: players.isActive,
         })
         .from(players)
@@ -1673,6 +1682,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         .from(parentChildRelations)
         .where(eq(parentChildRelations.teamId, teamId))
         .all(),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
     if (!teamRow) {
@@ -1757,17 +1767,32 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       }))
     );
 
+    const todayKey = getTodayJstDateKey();
+    const resolvedTodayStatusByPlayerId = new Map<string, PlayerConditionStatus>();
+    for (const rp of rawPlayers) {
+      const eff = resolveEffectivePlayerConditionOnDate({
+        conditionPeriods: periodsByPlayerId.get(rp.id) || [],
+        fallbackStatus: rp.conditionStatus,
+        fallbackNote: rp.conditionNote,
+        dateKey: todayKey,
+        todayKey,
+      });
+      resolvedTodayStatusByPlayerId.set(rp.id, eff.status);
+    }
+
     const sortedActivePlayers = rawPlayers
       .filter((p) => p.isActive !== false)
       .sort((a, b) =>
         comparePlayersByConditionAndUniform(
           {
-            conditionStatus: a.conditionStatus,
+            conditionStatus:
+              resolvedTodayStatusByPlayerId.get(a.id) ?? a.conditionStatus,
             uniformNumber: a.uniformNumber,
             name: a.nameKana || a.name,
           },
           {
-            conditionStatus: b.conditionStatus,
+            conditionStatus:
+              resolvedTodayStatusByPlayerId.get(b.id) ?? b.conditionStatus,
             uniformNumber: b.uniformNumber,
             name: b.nameKana || b.name,
           }
@@ -1806,7 +1831,8 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           positionSource: agg ? agg.positionSource : "profile",
           profileImageUrl: p.profileImageUrl || null,
           actionImageUrl: pDetails?.actionImageUrl || null,
-          conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
+          conditionStatus:
+            resolvedTodayStatusByPlayerId.get(p.id) || "active",
           isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
         };
       }
@@ -1827,9 +1853,8 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         positionSource: agg ? agg.positionSource : "profile",
         profileImageUrl: targetPlayer.profileImageUrl || null,
         actionImageUrl: tDetails?.actionImageUrl || null,
-        conditionStatus: normalizePlayerConditionStatus(
-          targetPlayer.conditionStatus
-        ),
+        conditionStatus:
+          resolvedTodayStatusByPlayerId.get(targetPlayer.id) || "active",
         isCaptain: Boolean(
           teamRow.captainId && teamRow.captainId === targetPlayer.id
         ),
@@ -2505,6 +2530,35 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       }
     }
 
+    const targetRawPeriods = periodsByPlayerId.get(targetPlayer.id) || [];
+    const maskedTargetPeriods = maskConditionPeriodsForViewer(
+      targetRawPeriods,
+      canManagePlayers
+    );
+    const targetEffectiveToday = resolveEffectivePlayerConditionOnDate({
+      conditionPeriods: targetRawPeriods,
+      fallbackStatus: targetPlayer.conditionStatus,
+      fallbackNote: targetPlayer.conditionNote,
+      dateKey: todayKey,
+      todayKey,
+    });
+    const activeConditionPeriod = targetEffectiveToday.period
+      ? maskConditionPeriodsForViewer(
+          [targetEffectiveToday.period],
+          canManagePlayers
+        )[0] || null
+      : null;
+    const joinedDateKey = toTimestampCalendarKey(targetPlayer.joinedAt);
+
+    const teamMatchBriefs: TeamMatchBriefForGrowth[] = finishedMatches.map(
+      (fm) => ({
+        id: fm.id,
+        date: fm.date,
+        opponent: fm.opponent,
+        matchType: normalizeMatchType(fm.matchType),
+      })
+    );
+
     const filterKeys: GrowthFilterKey[] = [
       "all",
       "official",
@@ -2524,26 +2578,32 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         fk === "all"
           ? allPitchingLogs
           : allPitchingLogs.filter((p) => p.matchType === fk);
-      const fMatchCount =
+      const fTeamMatches =
         fk === "all"
-          ? finishedMatches.length
-          : finishedMatches.filter(
-              (m) => normalizeMatchType(m.matchType) === fk
-            ).length;
-      sectionsByFilter[fk] = buildSectionFromGameLogs(
+          ? teamMatchBriefs
+          : teamMatchBriefs.filter((m) => m.matchType === fk);
+      const baseSection = buildSectionFromGameLogs(
         fBat,
         fPit,
-        fMatchCount
+        fTeamMatches.length
       );
+      sectionsByFilter[fk] = enrichSectionWithConditionPeriods(baseSection, {
+        conditionPeriods: maskedTargetPeriods,
+        teamMatches: fTeamMatches,
+        joinedDateKey,
+        todayKey,
+      });
     }
 
     const posAgg = aggregatedPosMap.get(targetPlayer.id);
     const targetDetails =
       parsedDetailsByPlayerId.get(targetPlayer.id) ||
       parsePlayerProfileDetails(targetPlayer.profileDetails);
-    const targetCondition = normalizePlayerConditionStatus(
-      targetPlayer.conditionStatus
-    );
+    const targetCondition = targetEffectiveToday.status;
+    const resolvedPrivateNote =
+      targetCondition !== "active"
+        ? targetEffectiveToday.note ?? targetPlayer.conditionNote
+        : targetPlayer.conditionNote;
     const isSelf = Boolean(
       targetPlayer.userId &&
         callerAccess.candidateUserIds.includes(targetPlayer.userId)
@@ -2579,8 +2639,12 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           teamRow.captainId && teamRow.captainId === targetPlayer.id
         ),
         conditionStatus: targetCondition,
+        conditionNote: canManagePlayers ? resolvedPrivateNote || null : null,
+        conditionPeriods: maskedTargetPeriods,
+        activeConditionPeriod,
         profileDetails: targetDetails,
         canEditProfile,
+        canManagePlayers,
         primaryPosition: posAgg
           ? posAgg.primaryPosition
           : targetPlayer.primaryPosition || null,

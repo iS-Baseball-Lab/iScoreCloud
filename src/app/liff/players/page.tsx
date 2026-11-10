@@ -36,6 +36,9 @@ import {
   GraduationCap,
   Volume2,
   ImagePlus,
+  Calendar,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -50,9 +53,19 @@ import {
   PLAYER_CONDITION_META,
   PLAYER_CONDITION_STATUS_ORDER,
   comparePlayersByConditionAndUniform,
+  findUpcomingPlayerConditionPeriod,
+  formatConditionPeriodRange,
+  getTodayJstDateKey,
+  isNonActiveConditionStatus,
   loadDemoPlayerConditionOverrides,
+  normalizeIsoDateKey,
   normalizePlayerConditionStatus,
+  resolveEffectivePlayerConditionOnDate,
   saveDemoPlayerConditionOverride,
+  shiftIsoDateKeyByDays,
+  shiftIsoDateKeyByMonths,
+  sortPlayerConditionPeriods,
+  type PlayerConditionPeriod,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import {
@@ -142,6 +155,9 @@ interface DirectoryPlayer {
   hasLinkedUser?: boolean;
   conditionStatus?: PlayerConditionStatus;
   conditionNote?: string | null;
+  conditionPeriods?: PlayerConditionPeriod[];
+  activeConditionPeriod?: PlayerConditionPeriod | null;
+  upcomingConditionPeriod?: PlayerConditionPeriod | null;
   isCaptain: boolean;
   joinedAt: number | null;
   batting: PlayerBattingStat | null;
@@ -363,11 +379,28 @@ function hydrateDirectoryPlayer(p: DirectoryPlayer): DirectoryPlayer {
   const details = p.profileDetails
     ? parsePlayerProfileDetails(p.profileDetails)
     : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
+  const todayKey = getTodayJstDateKey();
+  const periods = Array.isArray(p.conditionPeriods)
+    ? sortPlayerConditionPeriods(p.conditionPeriods)
+    : [];
+  const effToday = resolveEffectivePlayerConditionOnDate({
+    conditionPeriods: periods,
+    fallbackStatus: p.conditionStatus,
+    fallbackNote: p.conditionNote,
+    dateKey: todayKey,
+    todayKey,
+  });
+  const upcoming = findUpcomingPlayerConditionPeriod(periods, todayKey);
   return {
     ...p,
     profileDetails: details,
-    conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-    conditionNote: p.conditionNote ?? null,
+    conditionStatus: effToday.status,
+    conditionNote:
+      effToday.status !== "active" ? effToday.note ?? p.conditionNote ?? null : p.conditionNote ?? null,
+    conditionPeriods: periods,
+    activeConditionPeriod: p.activeConditionPeriod !== undefined ? p.activeConditionPeriod : effToday.period,
+    upcomingConditionPeriod:
+      p.upcomingConditionPeriod !== undefined ? p.upcomingConditionPeriod : upcoming,
   };
 }
 
@@ -436,11 +469,16 @@ function LiffPlayersDirectoryContent() {
   const [confirmingClaimPlayerId, setConfirmingClaimPlayerId] = useState<string | null>(null);
   const [isClaimingSelf, setIsClaimingSelf] = useState<boolean>(false);
 
-  // 指導者・管理者向け：在籍・コンディション編集ステート
+  // 指導者・管理者向け：在籍・コンディション＆期間編集ステート
   const [isConditionEditorOpen, setIsConditionEditorOpen] = useState<boolean>(false);
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null);
   const [draftConditionStatus, setDraftConditionStatus] =
     useState<PlayerConditionStatus>("active");
   const [draftConditionNote, setDraftConditionNote] = useState<string>("");
+  const [draftStartDate, setDraftStartDate] = useState<string>(() => getTodayJstDateKey());
+  const [draftIsEndUndecided, setDraftIsEndUndecided] = useState<boolean>(true);
+  const [draftEndDate, setDraftEndDate] = useState<string>("");
+  const [draftReturnDate, setDraftReturnDate] = useState<string>(() => getTodayJstDateKey());
   const [isSavingCondition, setIsSavingCondition] = useState<boolean>(false);
 
   const handledDeepLinkRef = useRef<string>("");
@@ -482,13 +520,23 @@ function LiffPlayersDirectoryContent() {
   useEffect(() => {
     if (!selectedPlayerId) {
       setIsConditionEditorOpen(false);
+      setEditingPeriodId(null);
       setConfirmingClaimPlayerId(null);
       return;
     }
     const target = players.find((p) => p.id === selectedPlayerId);
     if (target) {
+      const todayKey = getTodayJstDateKey();
+      const activePeriod = target.activeConditionPeriod || null;
+      setEditingPeriodId(null);
       setDraftConditionStatus(normalizePlayerConditionStatus(target.conditionStatus));
-      setDraftConditionNote(target.conditionNote || "");
+      setDraftConditionNote(
+        activePeriod?.privateNote ?? target.conditionNote ?? ""
+      );
+      setDraftStartDate(activePeriod?.startDate || todayKey);
+      setDraftIsEndUndecided(!activePeriod?.endDate);
+      setDraftEndDate(activePeriod?.endDate || shiftIsoDateKeyByMonths(todayKey, 1));
+      setDraftReturnDate(todayKey);
       setIsConditionEditorOpen(false);
       setConfirmingClaimPlayerId(null);
     }
@@ -719,8 +767,10 @@ function LiffPlayersDirectoryContent() {
                   profileDetails: mergedDetails,
                   conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
                   conditionNote: cOv ? cOv.conditionNote : p.conditionNote,
+                  conditionPeriods: cOv ? cOv.conditionPeriods : p.conditionPeriods,
                 };
               })
+              .map(hydrateDirectoryPlayer)
               .sort(comparePlayersByConditionAndUniform);
           }
 
@@ -814,6 +864,33 @@ function LiffPlayersDirectoryContent() {
 
   const handleSaveCondition = useCallback(async () => {
     if (!selectedPlayerId) return;
+    const currentTarget = players.find((p) => p.id === selectedPlayerId);
+    const todayKey = getTodayJstDateKey();
+    const isHistoryEditMode = Boolean(editingPeriodId);
+
+    if (isHistoryEditMode && draftConditionStatus === "active") {
+      toast.error("期間履歴には一部制限・リハビリ・休部のいずれかを選択してください");
+      return;
+    }
+
+    const normStart = normalizeIsoDateKey(draftStartDate) || todayKey;
+    const normEnd = draftIsEndUndecided ? null : normalizeIsoDateKey(draftEndDate);
+
+    if (draftConditionStatus !== "active") {
+      if (!normalizeIsoDateKey(draftStartDate)) {
+        toast.error("開始日（いつから）を選択してください");
+        return;
+      }
+      if (!draftIsEndUndecided && !normEnd) {
+        toast.error("終了日を選択するか、「未定」を選択してください");
+        return;
+      }
+      if (normEnd && normEnd < normStart) {
+        toast.error("終了日は開始日以降の日付を指定してください");
+        return;
+      }
+    }
+
     setIsSavingCondition(true);
     try {
       const trimmedNote =
@@ -822,6 +899,13 @@ function LiffPlayersDirectoryContent() {
           : draftConditionNote.trim()
           ? draftConditionNote.trim().slice(0, 160)
           : null;
+
+      const actionType = isHistoryEditMode ? "save_period" : "save_status";
+      const targetPeriodId =
+        editingPeriodId === "__new_history__"
+          ? null
+          : editingPeriodId || currentTarget?.activeConditionPeriod?.id || null;
+      const normReturn = normalizeIsoDateKey(draftReturnDate) || todayKey;
 
       const res = await fetch(
         `/api/liff/players/${encodeURIComponent(selectedPlayerId)}/condition`,
@@ -832,8 +916,13 @@ function LiffPlayersDirectoryContent() {
             teamId: activeTeamId,
             userId: effectiveUserId || null,
             userName: effectiveUserName || null,
+            action: actionType,
             conditionStatus: draftConditionStatus,
             conditionNote: trimmedNote,
+            periodId: targetPeriodId,
+            startDate: normStart,
+            endDate: normEnd,
+            returnDate: normReturn,
           }),
         }
       );
@@ -843,6 +932,9 @@ function LiffPlayersDirectoryContent() {
         isDemo?: boolean;
         conditionStatus?: PlayerConditionStatus;
         conditionNote?: string | null;
+        conditionPeriods?: PlayerConditionPeriod[];
+        activeConditionPeriod?: PlayerConditionPeriod | null;
+        upcomingConditionPeriod?: PlayerConditionPeriod | null;
         error?: string;
       };
 
@@ -851,29 +943,184 @@ function LiffPlayersDirectoryContent() {
         return;
       }
 
+      if (isDemoMode || providerDemo || activeTeamId === "demo-team" || json.isDemo) {
+        const existingPeriods = [...(currentTarget?.conditionPeriods || [])];
+        let nextDemoPeriods: PlayerConditionPeriod[] = existingPeriods;
+
+        if (actionType === "save_period" && isNonActiveConditionStatus(draftConditionStatus)) {
+          if (targetPeriodId && existingPeriods.some((ep) => ep.id === targetPeriodId)) {
+            nextDemoPeriods = existingPeriods.map((ep) =>
+              ep.id === targetPeriodId
+                ? {
+                    ...ep,
+                    status: draftConditionStatus,
+                    startDate: normStart,
+                    endDate: normEnd,
+                    privateNote: trimmedNote,
+                    updatedAt: Date.now(),
+                  }
+                : ep
+            );
+          } else {
+            nextDemoPeriods = [
+              ...existingPeriods,
+              {
+                id: `demo-cond-${Date.now()}`,
+                playerId: selectedPlayerId,
+                status: draftConditionStatus,
+                startDate: normStart,
+                endDate: normEnd,
+                privateNote: trimmedNote,
+                updatedAt: Date.now(),
+              },
+            ];
+          }
+        } else if (draftConditionStatus === "active") {
+          const closeEnd = shiftIsoDateKeyByDays(normReturn, -1);
+          nextDemoPeriods = existingPeriods.flatMap((ep) => {
+            const isOngoing =
+              ep.startDate <= todayKey && (!ep.endDate || todayKey <= ep.endDate);
+            if (!isOngoing) return [ep];
+            if (ep.startDate === todayKey && normReturn <= todayKey) return [];
+            return [
+              {
+                ...ep,
+                endDate: closeEnd < ep.startDate ? ep.startDate : closeEnd,
+                updatedAt: Date.now(),
+              },
+            ];
+          });
+        } else if (isNonActiveConditionStatus(draftConditionStatus)) {
+          const ongoing = existingPeriods.find(
+            (ep) => ep.startDate <= todayKey && (!ep.endDate || todayKey <= ep.endDate)
+          );
+          if (targetPeriodId && existingPeriods.some((ep) => ep.id === targetPeriodId)) {
+            nextDemoPeriods = existingPeriods.map((ep) =>
+              ep.id === targetPeriodId
+                ? {
+                    ...ep,
+                    status: draftConditionStatus,
+                    startDate: normStart,
+                    endDate: normEnd,
+                    privateNote: trimmedNote,
+                    updatedAt: Date.now(),
+                  }
+                : ep
+            );
+          } else if (ongoing) {
+            if (ongoing.status === draftConditionStatus || ongoing.startDate >= normStart) {
+              nextDemoPeriods = existingPeriods.map((ep) =>
+                ep.id === ongoing.id
+                  ? {
+                      ...ep,
+                      status: draftConditionStatus,
+                      startDate: normStart,
+                      endDate: normEnd,
+                      privateNote: trimmedNote,
+                      updatedAt: Date.now(),
+                    }
+                  : ep
+              );
+            } else {
+              const prevClose = shiftIsoDateKeyByDays(normStart, -1);
+              nextDemoPeriods = [
+                ...existingPeriods.map((ep) =>
+                  ep.id === ongoing.id
+                    ? {
+                        ...ep,
+                        endDate: prevClose < ep.startDate ? ep.startDate : prevClose,
+                        updatedAt: Date.now(),
+                      }
+                    : ep
+                ),
+                {
+                  id: `demo-cond-${Date.now()}`,
+                  playerId: selectedPlayerId,
+                  status: draftConditionStatus,
+                  startDate: normStart,
+                  endDate: normEnd,
+                  privateNote: trimmedNote,
+                  updatedAt: Date.now(),
+                },
+              ];
+            }
+          } else {
+            nextDemoPeriods = [
+              ...existingPeriods,
+              {
+                id: `demo-cond-${Date.now()}`,
+                playerId: selectedPlayerId,
+                status: draftConditionStatus,
+                startDate: normStart,
+                endDate: normEnd,
+                privateNote: trimmedNote,
+                updatedAt: Date.now(),
+              },
+            ];
+          }
+        }
+
+        const savedDemo = saveDemoPlayerConditionOverride(
+          selectedPlayerId,
+          draftConditionStatus,
+          trimmedNote,
+          nextDemoPeriods
+        );
+
+        setPlayers((prev) =>
+          prev
+            .map((p) =>
+              p.id === selectedPlayerId
+                ? hydrateDirectoryPlayer({
+                    ...p,
+                    conditionStatus: savedDemo?.conditionStatus ?? draftConditionStatus,
+                    conditionNote: savedDemo?.conditionNote ?? trimmedNote,
+                    conditionPeriods: savedDemo?.conditionPeriods ?? nextDemoPeriods,
+                    activeConditionPeriod: undefined,
+                    upcomingConditionPeriod: undefined,
+                  })
+                : p
+            )
+            .sort(comparePlayersByConditionAndUniform)
+        );
+
+        invalidateLiffApiCache("/api/liff/");
+        setEditingPeriodId(null);
+        setIsConditionEditorOpen(false);
+        toast.success("在籍・コンディション期間を保存しました");
+        return;
+      }
+
       const savedStatus = normalizePlayerConditionStatus(
         json.conditionStatus ?? draftConditionStatus
       );
       const savedNote = json.conditionNote !== undefined ? json.conditionNote : trimmedNote;
-
-      if (isDemoMode || providerDemo || activeTeamId === "demo-team") {
-        saveDemoPlayerConditionOverride(selectedPlayerId, savedStatus, savedNote);
-      }
+      const savedPeriods = json.conditionPeriods || [];
 
       setPlayers((prev) =>
         prev
           .map((p) =>
             p.id === selectedPlayerId
-              ? { ...p, conditionStatus: savedStatus, conditionNote: savedNote }
+              ? hydrateDirectoryPlayer({
+                  ...p,
+                  conditionStatus: savedStatus,
+                  conditionNote: savedNote,
+                  conditionPeriods: savedPeriods,
+                  activeConditionPeriod: json.activeConditionPeriod,
+                  upcomingConditionPeriod: json.upcomingConditionPeriod,
+                })
               : p
           )
           .sort(comparePlayersByConditionAndUniform)
       );
 
       invalidateLiffApiCache("/api/liff/");
+      setEditingPeriodId(null);
       setIsConditionEditorOpen(false);
       toast.success(
-        `在籍・コンディションを「${PLAYER_CONDITION_META[savedStatus].label}」に更新しました`
+        actionType === "save_period"
+          ? "期間履歴を保存しました"
+          : `在籍・コンディションを「${PLAYER_CONDITION_META[savedStatus].label}」に更新しました`
       );
     } catch (err) {
       console.error("Failed to save condition:", err);
@@ -885,12 +1132,122 @@ function LiffPlayersDirectoryContent() {
     activeTeamId,
     draftConditionNote,
     draftConditionStatus,
+    draftEndDate,
+    draftIsEndUndecided,
+    draftReturnDate,
+    draftStartDate,
+    editingPeriodId,
     effectiveUserId,
     effectiveUserName,
     isDemoMode,
+    players,
     providerDemo,
     selectedPlayerId,
   ]);
+
+  const handleDeleteConditionPeriod = useCallback(
+    async (periodId: string) => {
+      if (!selectedPlayerId || !periodId) return;
+      setIsSavingCondition(true);
+      try {
+        const currentTarget = players.find((p) => p.id === selectedPlayerId);
+        if (isDemoMode || providerDemo || activeTeamId === "demo-team") {
+          const remaining = (currentTarget?.conditionPeriods || []).filter(
+            (ep) => ep.id !== periodId
+          );
+          const savedDemo = saveDemoPlayerConditionOverride(
+            selectedPlayerId,
+            "active",
+            null,
+            remaining
+          );
+          setPlayers((prev) =>
+            prev
+              .map((p) =>
+                p.id === selectedPlayerId
+                  ? hydrateDirectoryPlayer({
+                      ...p,
+                      conditionStatus: savedDemo?.conditionStatus ?? "active",
+                      conditionNote: savedDemo?.conditionNote ?? null,
+                      conditionPeriods: savedDemo?.conditionPeriods ?? remaining,
+                      activeConditionPeriod: undefined,
+                      upcomingConditionPeriod: undefined,
+                    })
+                  : p
+              )
+              .sort(comparePlayersByConditionAndUniform)
+          );
+          if (editingPeriodId === periodId) setEditingPeriodId(null);
+          invalidateLiffApiCache("/api/liff/");
+          toast.success("期間履歴を削除しました");
+          return;
+        }
+
+        const res = await fetch(
+          `/api/liff/players/${encodeURIComponent(selectedPlayerId)}/condition`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: activeTeamId,
+              userId: effectiveUserId || null,
+              userName: effectiveUserName || null,
+              action: "delete_period",
+              periodId,
+            }),
+          }
+        );
+        const json = (await res.json()) as {
+          success?: boolean;
+          conditionStatus?: PlayerConditionStatus;
+          conditionNote?: string | null;
+          conditionPeriods?: PlayerConditionPeriod[];
+          activeConditionPeriod?: PlayerConditionPeriod | null;
+          upcomingConditionPeriod?: PlayerConditionPeriod | null;
+          error?: string;
+        };
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "期間履歴の削除に失敗しました");
+          return;
+        }
+
+        setPlayers((prev) =>
+          prev
+            .map((p) =>
+              p.id === selectedPlayerId
+                ? hydrateDirectoryPlayer({
+                    ...p,
+                    conditionStatus: normalizePlayerConditionStatus(json.conditionStatus),
+                    conditionNote: json.conditionNote ?? null,
+                    conditionPeriods: json.conditionPeriods || [],
+                    activeConditionPeriod: json.activeConditionPeriod,
+                    upcomingConditionPeriod: json.upcomingConditionPeriod,
+                  })
+                : p
+            )
+            .sort(comparePlayersByConditionAndUniform)
+        );
+        if (editingPeriodId === periodId) setEditingPeriodId(null);
+        invalidateLiffApiCache("/api/liff/");
+        toast.success("期間履歴を削除しました");
+      } catch (err) {
+        console.error("Failed to delete condition period:", err);
+        toast.error("通信エラーにより削除できませんでした");
+      } finally {
+        setIsSavingCondition(false);
+      }
+    },
+    [
+      activeTeamId,
+      editingPeriodId,
+      effectiveUserId,
+      effectiveUserName,
+      isDemoMode,
+      players,
+      providerDemo,
+      selectedPlayerId,
+    ]
+  );
 
   // 自分または紐付けお子様の選手リスト
   const myPersonalPlayers = useMemo(
@@ -1604,12 +1961,32 @@ function LiffPlayersDirectoryContent() {
                       </span>
                     </div>
 
-                    <div className="relative z-10 flex items-end justify-end gap-1">
+                    <div className="relative z-10 flex items-end justify-end gap-1 flex-wrap">
                       {condStatus !== "active" ? (
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-black shadow-2xs whitespace-nowrap ${condMeta.solidBadgeClass}`}
-                        >
-                          {condMeta.compactBadgeText}
+                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-black shadow-2xs whitespace-nowrap ${condMeta.solidBadgeClass}`}
+                          >
+                            {condMeta.compactBadgeText}
+                          </span>
+                          {player.activeConditionPeriod && (
+                            <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-slate-700 text-white text-[9px] font-black tabular-nums shadow-2xs whitespace-nowrap">
+                              {formatConditionPeriodRange(
+                                player.activeConditionPeriod.startDate,
+                                player.activeConditionPeriod.endDate,
+                                { compact: true }
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      ) : player.upcomingConditionPeriod ? (
+                        <span className="px-1.5 py-0.5 rounded bg-[#0f172a] border border-slate-700 text-amber-300 text-[9px] font-black tabular-nums shadow-2xs whitespace-nowrap">
+                          予定 {PLAYER_CONDITION_META[player.upcomingConditionPeriod.status].mark}
+                          {formatConditionPeriodRange(
+                            player.upcomingConditionPeriod.startDate,
+                            player.upcomingConditionPeriod.endDate,
+                            { compact: true }
+                          )}
                         </span>
                       ) : pDetails?.gradeOrAge ? (
                         <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-black text-foreground shadow-2xs">
@@ -1910,6 +2287,25 @@ function LiffPlayersDirectoryContent() {
                               className={`px-2 py-0.2 rounded-md text-[10px] font-black ${condMeta.solidBadgeClass}`}
                             >
                               {condMeta.badgeText}
+                            </span>
+                          )}
+                          {condStatus !== "active" && player.activeConditionPeriod && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-muted border border-border text-[9.5px] font-black text-foreground tabular-nums">
+                              {formatConditionPeriodRange(
+                                player.activeConditionPeriod.startDate,
+                                player.activeConditionPeriod.endDate,
+                                { compact: true }
+                              )}
+                            </span>
+                          )}
+                          {condStatus === "active" && player.upcomingConditionPeriod && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-muted border border-border text-[9.5px] font-black text-muted-foreground tabular-nums">
+                              予定:{PLAYER_CONDITION_META[player.upcomingConditionPeriod.status].mark}
+                              {formatConditionPeriodRange(
+                                player.upcomingConditionPeriod.startDate,
+                                player.upcomingConditionPeriod.endDate,
+                                { compact: true }
+                              )}
                             </span>
                           )}
                         </div>
@@ -2405,18 +2801,32 @@ function LiffPlayersDirectoryContent() {
                   </div>
                 )}
 
-                {/* 🩹 公開ステータス案内バナー */}
+                {/* 🩹 公開ステータス案内バナー（期間表示対応） */}
                 {condStatus !== "active" && (
                   <div className={`p-3 rounded-2xl space-y-2 ${condMeta.bannerClass}`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${condMeta.solidBadgeClass}`}
-                      >
-                        {condMeta.badgeText}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${condMeta.solidBadgeClass}`}
+                        >
+                          {condMeta.badgeText}
+                        </span>
+                        {selectedPlayer.activeConditionPeriod && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card border border-border text-[10.5px] font-black text-foreground tabular-nums">
+                            <Calendar className="w-3 h-3 text-primary shrink-0" />
+                            <span>
+                              期間:{" "}
+                              {formatConditionPeriodRange(
+                                selectedPlayer.activeConditionPeriod.startDate,
+                                selectedPlayer.activeConditionPeriod.endDate
+                              )}
+                            </span>
+                          </span>
+                        )}
+                      </div>
                       {condStatus === "on_leave" && (
                         <span className="text-[10px] font-black text-muted-foreground">
-                          未回答集計・スタメン自動除外
+                          期間中のみ本人・父母「休」／過去試合保護
                         </span>
                       )}
                     </div>
@@ -2437,6 +2847,33 @@ function LiffPlayersDirectoryContent() {
                   </div>
                 )}
 
+                {/* 📅 今後の予定期間がある場合の案内 */}
+                {condStatus === "active" && selectedPlayer.upcomingConditionPeriod && (
+                  <div className="p-3 rounded-2xl bg-muted/45 border border-border flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                      <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>
+                        今後の登録期間:{" "}
+                        {formatConditionPeriodRange(
+                          selectedPlayer.upcomingConditionPeriod.startDate,
+                          selectedPlayer.upcomingConditionPeriod.endDate
+                        )}
+                      </span>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                        PLAYER_CONDITION_META[selectedPlayer.upcomingConditionPeriod.status]
+                          .solidBadgeClass
+                      }`}
+                    >
+                      {
+                        PLAYER_CONDITION_META[selectedPlayer.upcomingConditionPeriod.status]
+                          .badgeText
+                      }
+                    </span>
+                  </div>
+                )}
+
                 {/* 通常時でも指導者限定メモが残っている場合の表示 */}
                 {condStatus === "active" &&
                   canManagePlayers &&
@@ -2452,7 +2889,7 @@ function LiffPlayersDirectoryContent() {
                     </div>
                   )}
 
-                {/* 🔒 指導者・管理者専用：在籍・コンディション設定パネル */}
+                {/* 🔒 指導者・管理者専用：在籍・コンディション＆期間設定パネル */}
                 {canManagePlayers && (
                   <div className="rounded-2xl border border-border bg-card shadow-2xs overflow-hidden">
                     <button
@@ -2467,14 +2904,21 @@ function LiffPlayersDirectoryContent() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-black text-foreground">
-                              在籍・コンディション設定
+                              在籍・休部／故障期間の設定
                             </span>
                             <span className="px-1.5 py-0.2 rounded bg-[#0f172a] text-slate-100 text-[9px] font-black">
                               指導者限定
                             </span>
                           </div>
                           <p className="text-[10px] font-bold text-muted-foreground truncate">
-                            現在: {condMeta.label}（休部・リハビリ・投球制限の切替）
+                            現在: {condMeta.label}
+                            {selectedPlayer.activeConditionPeriod
+                              ? `（${formatConditionPeriodRange(
+                                  selectedPlayer.activeConditionPeriod.startDate,
+                                  selectedPlayer.activeConditionPeriod.endDate,
+                                  { compact: true }
+                                )}）`
+                              : "（期間指定・過去履歴管理）"}
                           </p>
                         </div>
                       </div>
@@ -2484,9 +2928,41 @@ function LiffPlayersDirectoryContent() {
                     </button>
 
                     {isConditionEditorOpen && (
-                      <div className="p-3.5 border-t border-border space-y-3 bg-card">
+                      <div className="p-3.5 border-t border-border space-y-3.5 bg-card">
+                        {editingPeriodId && (
+                          <div className="px-3 py-2 rounded-xl bg-[#0f172a] text-slate-50 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-black">
+                              {editingPeriodId === "__new_history__"
+                                ? "📅 過去・予定の休部／故障期間を追加中"
+                                : "✏️ 登録済みの期間履歴を編集中"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const todayKey = getTodayJstDateKey();
+                                const activeP = selectedPlayer.activeConditionPeriod;
+                                setEditingPeriodId(null);
+                                setDraftConditionStatus(condStatus);
+                                setDraftConditionNote(
+                                  activeP?.privateNote ?? selectedPlayer.conditionNote ?? ""
+                                );
+                                setDraftStartDate(activeP?.startDate || todayKey);
+                                setDraftIsEndUndecided(!activeP?.endDate);
+                                setDraftEndDate(
+                                  activeP?.endDate || shiftIsoDateKeyByMonths(todayKey, 1)
+                                );
+                              }}
+                              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-[10px] font-black text-slate-100 cursor-pointer"
+                            >
+                              現在設定へ戻る
+                            </button>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-2">
-                          {PLAYER_CONDITION_STATUS_ORDER.map((stKey) => {
+                          {PLAYER_CONDITION_STATUS_ORDER.filter(
+                            (stKey) => !editingPeriodId || stKey !== "active"
+                          ).map((stKey) => {
                             const meta = PLAYER_CONDITION_META[stKey];
                             const isSelected = draftConditionStatus === stKey;
                             return (
@@ -2517,6 +2993,217 @@ function LiffPlayersDirectoryContent() {
                             );
                           })}
                         </div>
+
+                        {/* 📅 期間設定トレイ（休部・リハビリ・一部制限の選択時） */}
+                        {draftConditionStatus !== "active" && (
+                          <div className="p-3 rounded-2xl bg-[#eef2f6] dark:bg-slate-900 border border-border space-y-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span>対象期間（いつから〜いつまで）</span>
+                              </span>
+                              <span className="text-[9.5px] font-black text-muted-foreground">
+                                期間外の過去試合は保護されます
+                              </span>
+                            </div>
+
+                            {/* いつから（開始日） */}
+                            <div className="space-y-1.5 p-2.5 rounded-xl bg-card border border-border">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[11px] font-black text-foreground">
+                                  いつから（開始日）
+                                </label>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setDraftStartDate(getTodayJstDateKey())}
+                                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-[9.5px] font-black text-foreground cursor-pointer"
+                                  >
+                                    今日
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const tk = getTodayJstDateKey();
+                                      setDraftStartDate(`${tk.slice(0, 7)}-01`);
+                                    }}
+                                    className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-[9.5px] font-black text-foreground cursor-pointer"
+                                  >
+                                    今月1日
+                                  </button>
+                                </div>
+                              </div>
+                              <input
+                                type="date"
+                                value={draftStartDate}
+                                onChange={(e) => setDraftStartDate(e.target.value)}
+                                className="w-full h-10 px-3 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground tabular-nums focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                              />
+                            </div>
+
+                            {/* いつまで（未定 or 日付指定） */}
+                            <div className="space-y-2 p-2.5 rounded-xl bg-card border border-border">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[11px] font-black text-foreground">
+                                  いつまで（終了・復帰予定日）
+                                </label>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftIsEndUndecided(true)}
+                                  className={`h-9 px-2.5 rounded-xl border text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                    draftIsEndUndecided
+                                      ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                                      : "bg-muted/35 text-foreground border-border hover:bg-muted/70"
+                                  }`}
+                                >
+                                  {draftIsEndUndecided && <Check className="w-3.5 h-3.5 shrink-0" />}
+                                  <span>未定（復帰日未定）</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDraftIsEndUndecided(false);
+                                    if (!draftEndDate || draftEndDate < draftStartDate) {
+                                      setDraftEndDate(
+                                        shiftIsoDateKeyByMonths(
+                                          draftStartDate || getTodayJstDateKey(),
+                                          1
+                                        )
+                                      );
+                                    }
+                                  }}
+                                  className={`h-9 px-2.5 rounded-xl border text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                                    !draftIsEndUndecided
+                                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                      : "bg-muted/35 text-foreground border-border hover:bg-muted/70"
+                                  }`}
+                                >
+                                  {!draftIsEndUndecided && (
+                                    <Check className="w-3.5 h-3.5 shrink-0" />
+                                  )}
+                                  <span>日付を指定</span>
+                                </button>
+                              </div>
+
+                              {draftIsEndUndecided ? (
+                                <p className="text-[10.5px] font-bold text-muted-foreground bg-muted/40 border border-border rounded-lg px-2.5 py-1.5 leading-snug">
+                                  終了日は「未定」として登録されます（復帰時に「出場可」へ戻すと前日までの履歴として自動保存されます）。
+                                </p>
+                              ) : (
+                                <div className="space-y-1.5 pt-0.5">
+                                  <input
+                                    type="date"
+                                    min={draftStartDate || undefined}
+                                    value={draftEndDate}
+                                    onChange={(e) => setDraftEndDate(e.target.value)}
+                                    className="w-full h-10 px-3 rounded-xl bg-muted/35 border border-border text-xs font-black text-foreground tabular-nums focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                                  />
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {[
+                                      {
+                                        label: "+2週間",
+                                        calc: () =>
+                                          shiftIsoDateKeyByDays(
+                                            draftStartDate || getTodayJstDateKey(),
+                                            13
+                                          ),
+                                      },
+                                      {
+                                        label: "+1ヶ月",
+                                        calc: () =>
+                                          shiftIsoDateKeyByMonths(
+                                            draftStartDate || getTodayJstDateKey(),
+                                            1
+                                          ),
+                                      },
+                                      {
+                                        label: "+3ヶ月",
+                                        calc: () =>
+                                          shiftIsoDateKeyByMonths(
+                                            draftStartDate || getTodayJstDateKey(),
+                                            3
+                                          ),
+                                      },
+                                      {
+                                        label: "今月末",
+                                        calc: () => {
+                                          const base =
+                                            normalizeIsoDateKey(draftStartDate) ||
+                                            getTodayJstDateKey();
+                                          const [yy, mm] = base
+                                            .split("-")
+                                            .map((v) => Number.parseInt(v, 10));
+                                          const lastDay = new Date(
+                                            Date.UTC(yy, mm, 0)
+                                          ).getUTCDate();
+                                          return `${String(yy).padStart(4, "0")}-${String(
+                                            mm
+                                          ).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+                                        },
+                                      },
+                                    ].map((chip) => (
+                                      <button
+                                        key={chip.label}
+                                        type="button"
+                                        onClick={() => setDraftEndDate(chip.calc())}
+                                        className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 border border-border text-[9.5px] font-black text-foreground active:scale-95 transition-all cursor-pointer"
+                                      >
+                                        {chip.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <p className="text-[10px] font-bold text-muted-foreground leading-relaxed px-0.5">
+                              {draftConditionStatus === "on_leave"
+                                ? "💡 休部期間中は、本人および紐づく父母（お父さん・お母さん）の出欠も自動で「休」になり、開始日より前の過去試合の控え・出場記録には一切影響しません。"
+                                : "💡 設定した故障・制限期間は個人成長レポートのタイムラインや月別推移・復帰戦バッジにも自動反映されます。"}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* 🎉 現在休部・故障中から「通常（出場可）」へ復帰させる場合の案内 */}
+                        {!editingPeriodId &&
+                          draftConditionStatus === "active" &&
+                          condStatus !== "active" &&
+                          selectedPlayer.activeConditionPeriod && (
+                            <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/35 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-black text-emerald-800 dark:text-emerald-300">
+                                  🎉 通常（出場可）への復帰日
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftReturnDate(getTodayJstDateKey())}
+                                  className="px-2 py-0.5 rounded-md bg-card border border-border text-[9.5px] font-black text-foreground cursor-pointer"
+                                >
+                                  今日にセット
+                                </button>
+                              </div>
+                              <input
+                                type="date"
+                                value={draftReturnDate}
+                                onChange={(e) => setDraftReturnDate(e.target.value)}
+                                className="w-full h-9 px-3 rounded-xl bg-card border border-border text-xs font-black text-foreground tabular-nums"
+                              />
+                              <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                                復帰日の前日（
+                                {formatConditionPeriodRange(
+                                  selectedPlayer.activeConditionPeriod.startDate,
+                                  shiftIsoDateKeyByDays(
+                                    normalizeIsoDateKey(draftReturnDate) || getTodayJstDateKey(),
+                                    -1
+                                  )
+                                )}
+                                ）までの期間履歴を残したまま通常出場に戻します。
+                              </p>
+                            </div>
+                          )}
 
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-black text-foreground flex items-center gap-1">
@@ -2558,8 +3245,18 @@ function LiffPlayersDirectoryContent() {
                             type="button"
                             disabled={isSavingCondition}
                             onClick={() => {
+                              const todayKey = getTodayJstDateKey();
+                              const activeP = selectedPlayer.activeConditionPeriod;
+                              setEditingPeriodId(null);
                               setDraftConditionStatus(condStatus);
-                              setDraftConditionNote(selectedPlayer.conditionNote || "");
+                              setDraftConditionNote(
+                                activeP?.privateNote ?? selectedPlayer.conditionNote ?? ""
+                              );
+                              setDraftStartDate(activeP?.startDate || todayKey);
+                              setDraftIsEndUndecided(!activeP?.endDate);
+                              setDraftEndDate(
+                                activeP?.endDate || shiftIsoDateKeyByMonths(todayKey, 1)
+                              );
                               setIsConditionEditorOpen(false);
                             }}
                             className="px-3 py-2 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground cursor-pointer"
@@ -2577,8 +3274,110 @@ function LiffPlayersDirectoryContent() {
                             ) : (
                               <Check className="w-3.5 h-3.5" />
                             )}
-                            <span>設定を保存</span>
+                            <span>{editingPeriodId ? "期間履歴を保存" : "設定を保存"}</span>
                           </button>
+                        </div>
+
+                        {/* 📜 登録済みの休部・故障期間履歴（過去期間の追加・編集・削除） */}
+                        <div className="pt-2.5 border-t border-border space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-black text-foreground">
+                              登録済みの休部・故障期間履歴（
+                              {(selectedPlayer.conditionPeriods || []).length}件）
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const todayKey = getTodayJstDateKey();
+                                setEditingPeriodId("__new_history__");
+                                setDraftConditionStatus("rehab");
+                                setDraftStartDate(shiftIsoDateKeyByMonths(todayKey, -1));
+                                setDraftIsEndUndecided(false);
+                                setDraftEndDate(todayKey);
+                                setDraftConditionNote("");
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted hover:bg-muted/80 border border-border text-[10px] font-black text-foreground active:scale-95 transition-all cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3 text-primary" />
+                              <span>過去・予定の期間を追加</span>
+                            </button>
+                          </div>
+
+                          {(selectedPlayer.conditionPeriods || []).length === 0 ? (
+                            <p className="text-[10.5px] font-bold text-muted-foreground">
+                              まだ期間履歴はありません。過去の故障期間を登録すると個人成長レポートにも反映されます。
+                            </p>
+                          ) : (
+                            <div className="space-y-1.5">
+                              {[...(selectedPlayer.conditionPeriods || [])]
+                                .reverse()
+                                .map((period) => {
+                                  const pMeta = PLAYER_CONDITION_META[period.status];
+                                  const isEditingThis = editingPeriodId === period.id;
+                                  return (
+                                    <div
+                                      key={period.id}
+                                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${
+                                        isEditingThis
+                                          ? "border-primary bg-primary/5"
+                                          : "border-border bg-muted/25"
+                                      }`}
+                                    >
+                                      <div className="min-w-0 space-y-0.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span
+                                            className={`px-1.5 py-0.5 rounded text-[9.5px] font-black ${pMeta.solidBadgeClass}`}
+                                          >
+                                            {pMeta.compactBadgeText}
+                                          </span>
+                                          <span className="text-[11px] font-black text-foreground tabular-nums">
+                                            {formatConditionPeriodRange(
+                                              period.startDate,
+                                              period.endDate
+                                            )}
+                                          </span>
+                                        </div>
+                                        {period.privateNote && (
+                                          <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                            🔒 {period.privateNote}
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          disabled={isSavingCondition}
+                                          onClick={() => {
+                                            setEditingPeriodId(period.id);
+                                            setDraftConditionStatus(period.status);
+                                            setDraftStartDate(period.startDate);
+                                            setDraftIsEndUndecided(!period.endDate);
+                                            setDraftEndDate(
+                                              period.endDate ||
+                                                shiftIsoDateKeyByMonths(period.startDate, 1)
+                                            );
+                                            setDraftConditionNote(period.privateNote || "");
+                                          }}
+                                          className="px-2 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground cursor-pointer"
+                                        >
+                                          編集
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={isSavingCondition}
+                                          onClick={() => handleDeleteConditionPeriod(period.id)}
+                                          title="この期間履歴を削除"
+                                          className="w-7 h-7 rounded-lg bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 flex items-center justify-center cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

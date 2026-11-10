@@ -46,7 +46,9 @@ import {
   DEMO_LINEUP_PLAYERS,
   getHydratedDemoMatchCards,
   loadDemoMatchLineups,
+  resolveLineupPlayerConditionForMatch,
 } from "@/lib/liff/demo-lineup";
+import { loadDemoPlayerConditionOverrides } from "@/lib/liff/player-condition";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
@@ -421,8 +423,22 @@ function LiffNewsGeneratorContent() {
           };
         });
 
+        const demoCondOverrides = loadDemoPlayerConditionOverrides();
+        const initialDemoMatch =
+          (queryMatchId ? demoMatches.find((m) => m.id === queryMatchId) : null) ||
+          demoMatches[0];
         const demoRoster: LiveReportRosterPlayer[] = DEMO_LINEUP_PLAYERS.filter(
-          (p) => p.conditionStatus !== "on_leave"
+          (p) => {
+            const ov = demoCondOverrides[p.id];
+            const eff = resolveLineupPlayerConditionForMatch(
+              {
+                conditionStatus: ov ? ov.conditionStatus : p.conditionStatus,
+                conditionPeriods: ov ? ov.conditionPeriods : p.conditionPeriods,
+              },
+              initialDemoMatch?.date || null
+            );
+            return eff.status !== "on_leave";
+          }
         ).map((p) => ({
           id: p.id,
           name: p.name,

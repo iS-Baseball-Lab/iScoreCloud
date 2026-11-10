@@ -4,7 +4,12 @@ import { drizzle } from "drizzle-orm/d1";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
-import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
+import {
+  comparePlayersByConditionAndUniform,
+  getTodayJstDateKey,
+  resolveEffectivePlayerConditionOnDate,
+} from "@/lib/liff/player-condition";
+import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
@@ -453,11 +458,40 @@ liffScorebookRouter.get("/context", async (c) => {
         .catch(() => ({ results: [] })),
     ]);
 
+    const periodsByPlayerId = await loadTeamPlayerConditionPeriodsMap(
+      c.env.DB,
+      targetTeam.id
+    );
+    const todayKey = getTodayJstDateKey();
+
+    // 過去試合の紙スコアブック遡及取込時に休部前の出場選手が欠落しないよう全在籍選手を保持し、現在休部中のみ末尾へ配置する
     const sortedRoster: ScorebookRosterPlayer[] = rosterRows
-      .filter(
-        (r) =>
-          r.isActive !== false &&
-          normalizePlayerConditionStatus(r.conditionStatus) !== "on_leave"
+      .filter((r) => r.isActive !== false)
+      .map((r) => {
+        const effToday = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: periodsByPlayerId.get(r.id) || [],
+          fallbackStatus: r.conditionStatus,
+          dateKey: todayKey,
+          todayKey,
+        });
+        return {
+          ...r,
+          resolvedTodayCondition: effToday.status,
+        };
+      })
+      .sort((a, b) =>
+        comparePlayersByConditionAndUniform(
+          {
+            conditionStatus: a.resolvedTodayCondition,
+            uniformNumber: a.uniformNumber,
+            name: a.name,
+          },
+          {
+            conditionStatus: b.resolvedTodayCondition,
+            uniformNumber: b.uniformNumber,
+            name: b.name,
+          }
+        )
       )
       .map(({ id, name, nameKana, uniformNumber, primaryPosition, bats }) => ({
         id,
@@ -466,13 +500,7 @@ liffScorebookRouter.get("/context", async (c) => {
         uniformNumber,
         primaryPosition,
         bats,
-      }))
-      .sort((a, b) => {
-        const na = parseInt(a.uniformNumber, 10);
-        const nb = parseInt(b.uniformNumber, 10);
-        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-        return a.uniformNumber.localeCompare(b.uniformNumber);
-      });
+      }));
 
     // すでに打席データが入っている試合ID一覧を取得
     const existingAtBatMatchIds = new Set<string>();

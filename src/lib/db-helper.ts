@@ -179,6 +179,20 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL
     )`,
   },
+  {
+    name: "player_condition_periods",
+    ddl: `CREATE TABLE IF NOT EXISTS player_condition_periods (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      player_id text NOT NULL,
+      status text NOT NULL,
+      start_date text NOT NULL,
+      end_date text,
+      private_note text,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -191,6 +205,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_match_live_reports_match_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_match_id ON match_live_reports (match_id)" },
   { name: "idx_carpool_live_event_dir", ddl: "CREATE INDEX IF NOT EXISTS idx_carpool_live_event_dir ON carpool_live_locations (event_id, direction)" },
   { name: "idx_carpool_live_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_carpool_live_team_id ON carpool_live_locations (team_id)" },
+  { name: "idx_player_cond_periods_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_team_id ON player_condition_periods (team_id)" },
+  { name: "idx_player_cond_periods_player_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_player_id ON player_condition_periods (player_id)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {
@@ -307,5 +323,9 @@ export async function ensureLiveReportsTable(d1?: D1Database | null): Promise<vo
 }
 
 export async function ensureScheduleDefaultTimesColumn(d1?: D1Database | null): Promise<void> {
+  await ensureAllSchemasOnce(d1);
+}
+
+export async function ensurePlayerConditionPeriodsTable(d1?: D1Database | null): Promise<void> {
   await ensureAllSchemasOnce(d1);
 }

@@ -1,5 +1,8 @@
 // filepath: src/lib/liff/group-attendance.ts
-import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
+import {
+  resolveEffectivePlayerConditionOnDate,
+  type PlayerConditionPeriod,
+} from "@/lib/liff/player-condition";
 
 export type AttendanceGroupKey = "player" | "mother" | "father" | "staff";
 export type NormalizedAttendanceBucket =
@@ -168,9 +171,11 @@ export function normalizeGroupStatusSummaryConfig(
 
 export interface RosterPlayerRow {
   id: string;
+  name?: string | null;
   userId?: string | null;
   isActive?: boolean | number | null;
   conditionStatus?: string | null;
+  conditionPeriods?: readonly PlayerConditionPeriod[] | null;
 }
 
 export interface RosterTeamMemberRow {
@@ -195,29 +200,107 @@ export interface ClassifiedTeamAttendanceRosters {
   staffIds: string[];
   uniqueAllIds: string[];
   onLeavePlayerIds: Set<string>;
+  onLeaveMotherIds: Set<string>;
+  onLeaveFatherIds: Set<string>;
+  onLeaveMemberIds: Set<string>;
+  parentToChildrenMap: Map<string, string[]>;
   memberIdByUserId: Map<string, string>;
   playerIdByUserId: Map<string, string>;
 }
 
+function normalizeRosterNameToken(raw: string): string {
+  return raw.replace(/[\s　]+/g, "").trim();
+}
+
+function extractParentSurnameStemForRoster(rawName: string): string {
+  const cleaned = normalizeRosterNameToken(rawName);
+  if (!cleaned) return "";
+  const match = cleaned.match(
+    /^(.+?)(?:お父さん|お母さん|保護者|パパ|ママ|父|母|夫|妻)$/
+  );
+  if (!match) return "";
+  return match[1].trim();
+}
+
+/**
+ * 保護者（`team_members`）と子ども選手（`players`）の家族紐付けマップを構築する。
+ * 1. `parent_child_relations` の明示紐付けを最優先で採用
+ * 2. 未紐付けの保護者で末尾に「父/母/パパ/ママ/保護者」等が付く場合は苗字一致の在籍選手を自動補完
+ */
+export function buildParentToChildrenMap(params: {
+  players: readonly RosterPlayerRow[];
+  teamMembers: readonly RosterTeamMemberRow[];
+  relations: readonly RosterParentChildRow[];
+}): Map<string, string[]> {
+  const activePlayers = params.players.filter(
+    (p) => p.isActive !== false && p.isActive !== 0
+  );
+  const activePlayerIdSet = new Set(activePlayers.map((p) => p.id));
+  const map = new Map<string, string[]>();
+
+  for (const rel of params.relations) {
+    if (!rel.parentId || !rel.childId || !activePlayerIdSet.has(rel.childId)) continue;
+    const list = map.get(rel.parentId) || [];
+    if (!list.includes(rel.childId)) {
+      list.push(rel.childId);
+      map.set(rel.parentId, list);
+    }
+  }
+
+  for (const m of params.teamMembers) {
+    if ((m.status && m.status !== "active") || m.memberType === "player") continue;
+    if (map.has(m.id)) continue;
+    const stem = extractParentSurnameStemForRoster(m.name || "");
+    if (!stem) continue;
+    const matchedIds: string[] = [];
+    for (const p of activePlayers) {
+      const rawPName = (p.name || "").trim();
+      if (!rawPName) continue;
+      const tokens = rawPName.split(/[\s　]+/).filter(Boolean);
+      const isMatch =
+        tokens.length >= 2
+          ? normalizeRosterNameToken(tokens[0]) === stem
+          : stem.length >= 2 && normalizeRosterNameToken(rawPName).startsWith(stem);
+      if (isMatch) {
+        matchedIds.push(p.id);
+      }
+    }
+    if (matchedIds.length > 0) {
+      map.set(m.id, matchedIds);
+    }
+  }
+
+  return map;
+}
+
 /**
  * 出欠一覧表（`/api/liff/attendance-matrix`）と100%同一ルールで
- * チーム在籍メンバーを「選手 / 母 / 父 / スタッフ」に分類する（O(N)・DBクエリゼロ）
+ * 指定日（`dateKey`: YYYY-MM-DD）時点のチーム在籍メンバーを「選手 / 母 / 父 / スタッフ」に分類する（O(N)・DBクエリゼロ）
+ * ※お子様が全員休部期間中（`on_leave`）の父母は `onLeaveMotherIds` / `onLeaveFatherIds` に分類し未回答カウントから自動除外する。
  */
 export function classifyTeamAttendanceRosters(params: {
   players: RosterPlayerRow[];
   teamMembers: RosterTeamMemberRow[];
   relations: RosterParentChildRow[];
+  dateKey?: string | null;
+  todayKey?: string;
 }): ClassifiedTeamAttendanceRosters {
   const onLeavePlayerIds = new Set<string>();
-  const activePlayerAllIds = new Set<string>();
+  const onLeaveMotherIds = new Set<string>();
+  const onLeaveFatherIds = new Set<string>();
+  const onLeaveMemberIds = new Set<string>();
   const playerIds: string[] = [];
   const playerIdByUserId = new Map<string, string>();
 
   for (const p of params.players) {
     if (p.isActive === false || p.isActive === 0) continue;
-    activePlayerAllIds.add(p.id);
-    const cond = normalizePlayerConditionStatus(p.conditionStatus);
-    if (cond === "on_leave") {
+    const effective = resolveEffectivePlayerConditionOnDate({
+      conditionPeriods: p.conditionPeriods,
+      fallbackStatus: p.conditionStatus,
+      dateKey: params.dateKey,
+      todayKey: params.todayKey,
+    });
+    if (effective.status === "on_leave") {
       onLeavePlayerIds.add(p.id);
       continue;
     }
@@ -227,12 +310,11 @@ export function classifyTeamAttendanceRosters(params: {
     }
   }
 
-  const parentsWithKidsSet = new Set<string>();
-  for (const rel of params.relations) {
-    if (rel.parentId && rel.childId && activePlayerAllIds.has(rel.childId)) {
-      parentsWithKidsSet.add(rel.parentId);
-    }
-  }
+  const parentToChildrenMap = buildParentToChildrenMap({
+    players: params.players,
+    teamMembers: params.teamMembers,
+    relations: params.relations,
+  });
 
   const activeAdults = params.teamMembers.filter(
     (m) => (m.status === "active" || !m.status) && m.memberType !== "player"
@@ -254,7 +336,10 @@ export function classifyTeamAttendanceRosters(params: {
 
   for (const m of activeAdults) {
     const name = m.name || "";
-    const hasKids = parentsWithKidsSet.has(m.id);
+    const linkedChildIds = parentToChildrenMap.get(m.id) || [];
+    const hasKids = linkedChildIds.length > 0;
+    const isAllKidsOnLeave =
+      hasKids && linkedChildIds.every((cid) => onLeavePlayerIds.has(cid));
     const hasMotherKeyword =
       name.includes("母") ||
       name.includes("ママ") ||
@@ -282,7 +367,14 @@ export function classifyTeamAttendanceRosters(params: {
         (typeof m.subRoles === "string" && m.subRoles.toLowerCase().includes("mother")) ||
         hasMotherKeyword;
 
-      if (isMother) {
+      if (isAllKidsOnLeave) {
+        onLeaveMemberIds.add(m.id);
+        if (isMother) {
+          onLeaveMotherIds.add(m.id);
+        } else {
+          onLeaveFatherIds.add(m.id);
+        }
+      } else if (isMother) {
         motherIds.push(m.id);
       } else {
         fatherIds.push(m.id);
@@ -301,6 +393,10 @@ export function classifyTeamAttendanceRosters(params: {
     staffIds,
     uniqueAllIds,
     onLeavePlayerIds,
+    onLeaveMotherIds,
+    onLeaveFatherIds,
+    onLeaveMemberIds,
+    parentToChildrenMap,
     memberIdByUserId,
     playerIdByUserId,
   };
@@ -400,8 +496,14 @@ export function computeEventGroupAttendance(
       ...summarizeIds(rosters.playerIds, statusByEntityId),
       onLeave: rosters.onLeavePlayerIds.size,
     },
-    mother: summarizeIds(rosters.motherIds, statusByEntityId),
-    father: summarizeIds(rosters.fatherIds, statusByEntityId),
+    mother: {
+      ...summarizeIds(rosters.motherIds, statusByEntityId),
+      onLeave: rosters.onLeaveMotherIds.size,
+    },
+    father: {
+      ...summarizeIds(rosters.fatherIds, statusByEntityId),
+      onLeave: rosters.onLeaveFatherIds.size,
+    },
     staff: summarizeIds(rosters.staffIds, statusByEntityId),
   };
 

@@ -40,8 +40,11 @@ import {
 } from "@/lib/liff/group-attendance";
 import {
   PLAYER_CONDITION_META,
+  formatConditionPeriodRange,
   loadDemoPlayerConditionOverrides,
   normalizePlayerConditionStatus,
+  resolveEffectivePlayerConditionOnDate,
+  type PlayerConditionPeriod,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 
@@ -117,6 +120,7 @@ interface FamilyChildItem {
   uniformNumber?: string;
   parentName?: string;
   conditionStatus?: PlayerConditionStatus;
+  conditionPeriods?: PlayerConditionPeriod[];
 }
 
 interface MyFamilyApiResponse {
@@ -187,6 +191,7 @@ export function HubHeroSection({
 
   // 📋 出欠欄のアコーディオン展開ステート (eventId -> boolean, デフォルト全閉じ)
   const [expandedAttendance, setExpandedAttendance] = useState<Record<string, boolean>>({});
+  const [manualParentOverrideEvents, setManualParentOverrideEvents] = useState<Record<string, boolean>>({});
   const toggleAttendance = (eventId: string) => {
     setExpandedAttendance(prev => ({
       ...prev,
@@ -224,6 +229,9 @@ export function HubHeroSection({
                   conditionStatus: override
                     ? override.conditionStatus
                     : normalizePlayerConditionStatus(c.conditionStatus),
+                  conditionPeriods: override
+                    ? override.conditionPeriods
+                    : c.conditionPeriods || [],
                 });
               }
             }
@@ -236,6 +244,7 @@ export function HubHeroSection({
                 name: "山田 翔太",
                 uniformNumber: "#10",
                 conditionStatus: demoOverride ? demoOverride.conditionStatus : "active",
+                conditionPeriods: demoOverride ? demoOverride.conditionPeriods : [],
               },
             ]);
           } else {
@@ -1098,239 +1107,396 @@ export function HubHeroSection({
                           dateStr={ev.dateStr}
                         />
 
-                        {/* アコーディオントグルボタン */}
-                        <button
-                          type="button"
-                          onClick={() => toggleAttendance(ev.id)}
-                          className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                              <Users className="w-4 h-4" />
-                            </span>
-                            <div className="flex items-center gap-2 text-xs font-black text-foreground">
-                              <span>出欠を回答・確認</span>
-                              {/* 現在のステータス要約バッジ */}
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
-                                pStatus === "present"
-                                  ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
-                                  : pStatus === "late"
-                                  ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25"
-                                  : pStatus === "absent"
-                                  ? "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30"
-                                  : "bg-muted/50 text-muted-foreground border-border/60"
-                              }`}>
-                                {pStatus === "present" ? "○ 出席" : pStatus === "late" ? "△ 調整" : pStatus === "absent" ? "× 欠席" : "？ 未定"}
-                              </span>
-                            </div>
-                          </div>
+                        {(() => {
+                          const isFamilyOnLeaveForEvent =
+                            userRole === "parent" &&
+                            children.length > 0 &&
+                            children.every(
+                              (c) =>
+                                resolveEffectivePlayerConditionOnDate({
+                                  conditionPeriods: c.conditionPeriods,
+                                  fallbackStatus: c.conditionStatus,
+                                  dateKey: ev.dateStr,
+                                }).status === "on_leave"
+                            );
+                          const showParentLeaveCard =
+                            isFamilyOnLeaveForEvent &&
+                            pStatus === "pending" &&
+                            !manualParentOverrideEvents[ev.id];
 
-                          <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
-                            <span>{expandedAttendance[ev.id] ? "閉じる" : "開く"}</span>
-                            {expandedAttendance[ev.id] ? (
-                              <ChevronUp className="w-4 h-4 text-primary shrink-0" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
-                            )}
-                          </div>
-                        </button>
-
-                        {/* 展開時の中身 */}
-                        {expandedAttendance[ev.id] && (
-                          <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
-                            {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
-                            {userRole === "parent" && children.map((child) => {
-                              const childCond = normalizePlayerConditionStatus(child.conditionStatus);
-                              const childCondMeta = PLAYER_CONDITION_META[childCond];
-
-                              if (childCond === "on_leave") {
-                                return (
-                                  <div
-                                    key={child.id}
-                                    className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 space-y-1.5"
-                                  >
-                                    <div className="flex items-center justify-between gap-2 text-xs">
-                                      <span className="font-black text-muted-foreground flex items-center gap-1.5 min-w-0">
-                                        <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs shrink-0">
-                                          👦
-                                        </span>
-                                        <span className="truncate">
-                                          お子様（{child.name}
-                                          {child.uniformNumber ? ` ${child.uniformNumber}` : ""}）
-                                        </span>
-                                      </span>
-                                      <span
-                                        className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${childCondMeta.solidBadgeClass}`}
-                                      >
-                                        {childCondMeta.badgeText}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
-                                      休部中のため出欠回答は不要です（出欠一覧表には「休」表示で掲載され、未回答カウントからは自動除外されています）。
-                                    </p>
-                                  </div>
-                                );
-                              }
-
-                              const childStatus = getChildAttendance(ev.id, child.id);
-                              return (
-                                <div key={child.id} className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5">
-                                  <div className="flex items-center justify-between gap-1.5 text-xs flex-wrap">
-                                    <span className="font-black text-foreground flex items-center gap-1.5 flex-wrap">
-                                      <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs shrink-0">👦</span>
-                                      <span>お子様（{child.name}{child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠</span>
-                                      {childCond !== "active" && (
-                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${childCondMeta.solidBadgeClass}`}>
-                                          {childCondMeta.compactBadgeText}
-                                        </span>
-                                      )}
+                          return (
+                            <>
+                              {/* アコーディオントグルボタン */}
+                              <button
+                                type="button"
+                                onClick={() => toggleAttendance(ev.id)}
+                                className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 shadow-2xs transition-all cursor-pointer group select-none"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                                    <Users className="w-4 h-4" />
+                                  </span>
+                                  <div className="flex items-center gap-2 text-xs font-black text-foreground">
+                                    <span>出欠を回答・確認</span>
+                                    {/* 現在のステータス要約バッジ */}
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
+                                        pStatus === "present"
+                                          ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25"
+                                          : pStatus === "late"
+                                          ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25"
+                                          : pStatus === "absent"
+                                          ? "bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30"
+                                          : isFamilyOnLeaveForEvent
+                                          ? "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700"
+                                          : "bg-muted/50 text-muted-foreground border-border/60"
+                                      }`}
+                                    >
+                                      {pStatus === "present"
+                                        ? "○ 出席"
+                                        : pStatus === "late"
+                                        ? "△ 調整"
+                                        : pStatus === "absent"
+                                        ? "× 欠席"
+                                        : isFamilyOnLeaveForEvent
+                                        ? "休 休部中（回答不要）"
+                                        : "？ 未定"}
                                     </span>
-                                    <span className="text-[11px] font-bold">
-                                      {childStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ 参加</span>}
-                                      {childStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
-                                      {childStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">× 欠席</span>}
-                                      {childStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
-                                    </span>
-                                  </div>
-                                  {childCond === "rehab" && (
-                                    <p className="text-[10.5px] font-bold text-rose-700 dark:text-rose-300 leading-snug">
-                                      ※ 別メニュー練習・ベンチ帯同・欠席などの予定をご回答ください。
-                                    </p>
-                                  )}
-
-                                  <div className="grid grid-cols-4 gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => setChildAttendance(ev.id, child.id, "present")}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                        childStatus === "present"
-                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">○</span>
-                                      <span className="text-[10px]">参加</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => setChildAttendance(ev.id, child.id, "late")}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                        childStatus === "late"
-                                          ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">△</span>
-                                      <span className="text-[10px]">調整</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => setChildAttendance(ev.id, child.id, "absent")}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                        childStatus === "absent"
-                                          ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
-                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">×</span>
-                                      <span className="text-[10px]">欠席</span>
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => setChildAttendance(ev.id, child.id, "pending")}
-                                      className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                        childStatus === "pending"
-                                          ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
-                                          : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                      }`}
-                                    >
-                                      <span className="text-base leading-none mb-0.5 font-black">？</span>
-                                      <span className="text-[10px]">未定</span>
-                                    </button>
                                   </div>
                                 </div>
-                              );
-                            })}
 
-                            {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
-                            <div className="space-y-2.5 p-3 rounded-2xl bg-muted/35 border border-border/60">
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="font-black text-foreground flex items-center gap-1.5">
-                                  <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
-                                    {userRole === "parent" ? "👨" : "⚾"}
-                                  </span>
-                                  <span>{userRole === "parent" ? "保護者（自分）の参加・当番" : "あなたの出欠回答"}</span>
-                                </span>
-                                <span className="text-[11px] font-bold">
-                                  {pStatus === "present" && <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">○ {userRole === "parent" ? "参加・当番可" : "出席"}</span>}
-                                  {pStatus === "late" && <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 font-black">△ 調整</span>}
-                                  {pStatus === "absent" && <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">× 欠席</span>}
-                                  {pStatus === "pending" && <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">？ 未定</span>}
-                                </span>
-                              </div>
+                                <div className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground group-hover:text-foreground">
+                                  <span>{expandedAttendance[ev.id] ? "閉じる" : "開く"}</span>
+                                  {expandedAttendance[ev.id] ? (
+                                    <ChevronUp className="w-4 h-4 text-primary shrink-0" />
+                                  ) : (
+                                    <ChevronDown className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
+                                  )}
+                                </div>
+                              </button>
 
-                              {/* ○, △, ×, ？ の4等分グリッド */}
-                              <div className="grid grid-cols-4 gap-1.5">
-                                {/* ○ 出席 */}
-                                <button
-                                  type="button"
-                                  onClick={() => setEventAttendance(ev.id, "present")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    pStatus === "present"
-                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                  }`}
-                                >
-                                  <span className="text-base leading-none mb-0.5 font-black">○</span>
-                                  <span className="text-[10px]">{userRole === "parent" ? "参加/当番" : "出席"}</span>
-                                </button>
+                              {/* 展開時の中身 */}
+                              {expandedAttendance[ev.id] && (
+                                <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                                  {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
+                                  {userRole === "parent" &&
+                                    children.map((child) => {
+                                      const effChildCond = resolveEffectivePlayerConditionOnDate({
+                                        conditionPeriods: child.conditionPeriods,
+                                        fallbackStatus: child.conditionStatus,
+                                        dateKey: ev.dateStr,
+                                      });
+                                      const childCond = effChildCond.status;
+                                      const childCondMeta = PLAYER_CONDITION_META[childCond];
+                                      const childPeriodLabel = effChildCond.period
+                                        ? formatConditionPeriodRange(
+                                            effChildCond.period.startDate,
+                                            effChildCond.period.endDate,
+                                            { compact: true }
+                                          )
+                                        : "";
 
-                                {/* △ 調整 / 遅刻 */}
-                                <button
-                                  type="button"
-                                  onClick={() => setEventAttendance(ev.id, "late")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    pStatus === "late"
-                                      ? "bg-amber-500 text-white border-amber-500 shadow-xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                  }`}
-                                >
-                                  <span className="text-base leading-none mb-0.5 font-black">△</span>
-                                  <span className="text-[10px]">調整</span>
-                                </button>
+                                      if (childCond === "on_leave") {
+                                        return (
+                                          <div
+                                            key={child.id}
+                                            className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 space-y-1.5"
+                                          >
+                                            <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+                                              <span className="font-black text-muted-foreground flex items-center gap-1.5 min-w-0">
+                                                <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs shrink-0">
+                                                  👦
+                                                </span>
+                                                <span className="truncate">
+                                                  お子様（{child.name}
+                                                  {child.uniformNumber ? ` ${child.uniformNumber}` : ""}）
+                                                </span>
+                                              </span>
+                                              <div className="flex items-center gap-1 shrink-0">
+                                                <span
+                                                  className={`px-2 py-0.5 rounded text-[10px] font-black ${childCondMeta.solidBadgeClass}`}
+                                                >
+                                                  {childCondMeta.badgeText}
+                                                </span>
+                                                {childPeriodLabel && (
+                                                  <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-black text-foreground tabular-nums">
+                                                    {childPeriodLabel}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
+                                              休部期間中のため出欠回答は不要です（出欠一覧表には「休」表示で掲載され、未回答カウントからは自動除外されています）。
+                                            </p>
+                                          </div>
+                                        );
+                                      }
 
-                                {/* × 欠席 */}
-                                <button
-                                  type="button"
-                                  onClick={() => setEventAttendance(ev.id, "absent")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    pStatus === "absent"
-                                      ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                  }`}
-                                >
-                                  <span className="text-base leading-none mb-0.5 font-black">×</span>
-                                  <span className="text-[10px]">欠席</span>
-                                </button>
+                                      const childStatus = getChildAttendance(ev.id, child.id);
+                                      return (
+                                        <div
+                                          key={child.id}
+                                          className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5"
+                                        >
+                                          <div className="flex items-center justify-between gap-1.5 text-xs flex-wrap">
+                                            <span className="font-black text-foreground flex items-center gap-1.5 flex-wrap">
+                                              <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs shrink-0">
+                                                👦
+                                              </span>
+                                              <span>
+                                                お子様（{child.name}
+                                                {child.uniformNumber ? ` ${child.uniformNumber}` : ""}）の出欠
+                                              </span>
+                                              {childCond !== "active" && (
+                                                <span
+                                                  className={`px-1.5 py-0.5 rounded text-[10px] font-black ${childCondMeta.solidBadgeClass}`}
+                                                >
+                                                  {childCondMeta.compactBadgeText}
+                                                  {childPeriodLabel ? ` (${childPeriodLabel})` : ""}
+                                                </span>
+                                              )}
+                                            </span>
+                                            <span className="text-[11px] font-bold">
+                                              {childStatus === "present" && (
+                                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">
+                                                  ○ 参加
+                                                </span>
+                                              )}
+                                              {childStatus === "late" && (
+                                                <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25 font-black">
+                                                  △ 調整
+                                                </span>
+                                              )}
+                                              {childStatus === "absent" && (
+                                                <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">
+                                                  × 欠席
+                                                </span>
+                                              )}
+                                              {childStatus === "pending" && (
+                                                <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">
+                                                  ？ 未定
+                                                </span>
+                                              )}
+                                            </span>
+                                          </div>
+                                          {childCond === "rehab" && (
+                                            <p className="text-[10.5px] font-bold text-rose-700 dark:text-rose-300 leading-snug">
+                                              ※ 別メニュー練習・ベンチ帯同・欠席などの予定をご回答ください。
+                                            </p>
+                                          )}
 
-                                {/* ？ 未定 */}
-                                <button
-                                  type="button"
-                                  onClick={() => setEventAttendance(ev.id, "pending")}
-                                  className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
-                                    pStatus === "pending"
-                                      ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
-                                      : "bg-card hover:bg-muted text-muted-foreground border-border/60"
-                                  }`}
-                                >
-                                  <span className="text-base leading-none mb-0.5 font-black">？</span>
-                                  <span className="text-[10px]">未定</span>
-                                </button>
-                              </div>
-                            </div>
+                                          <div className="grid grid-cols-4 gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setChildAttendance(ev.id, child.id, "present")
+                                              }
+                                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                                childStatus === "present"
+                                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                              }`}
+                                            >
+                                              <span className="text-base leading-none mb-0.5 font-black">
+                                                ○
+                                              </span>
+                                              <span className="text-[10px]">参加</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setChildAttendance(ev.id, child.id, "late")
+                                              }
+                                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                                childStatus === "late"
+                                                  ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                              }`}
+                                            >
+                                              <span className="text-base leading-none mb-0.5 font-black">
+                                                △
+                                              </span>
+                                              <span className="text-[10px]">調整</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setChildAttendance(ev.id, child.id, "absent")
+                                              }
+                                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                                childStatus === "absent"
+                                                  ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
+                                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                              }`}
+                                            >
+                                              <span className="text-base leading-none mb-0.5 font-black">
+                                                ×
+                                              </span>
+                                              <span className="text-[10px]">欠席</span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setChildAttendance(ev.id, child.id, "pending")
+                                              }
+                                              className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                                childStatus === "pending"
+                                                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
+                                                  : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                              }`}
+                                            >
+                                              <span className="text-base leading-none mb-0.5 font-black">
+                                                ？
+                                              </span>
+                                              <span className="text-[10px]">未定</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+
+                                  {/* 👨 2. 保護者本人（または選手本人）の出欠回答 */}
+                                  {showParentLeaveCard ? (
+                                    <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-300 dark:border-slate-700 space-y-2">
+                                      <div className="flex items-center justify-between gap-2 text-xs">
+                                        <span className="font-black text-muted-foreground flex items-center gap-1.5">
+                                          <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center text-xs shrink-0">
+                                            👨
+                                          </span>
+                                          <span>保護者（父母）の出欠</span>
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded bg-slate-600 text-white border border-slate-700 text-[10px] font-black">
+                                          休 自動「休」設定中
+                                        </span>
+                                      </div>
+                                      <p className="text-[11px] font-bold text-muted-foreground leading-relaxed pl-6">
+                                        お子様の休部期間中は、父母の出欠も自動で「休」となるため回答不要です。
+                                      </p>
+                                      <div className="pl-6">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setManualParentOverrideEvents((prev) => ({
+                                              ...prev,
+                                              [ev.id]: true,
+                                            }))
+                                          }
+                                          className="text-[10.5px] font-black text-primary hover:underline cursor-pointer"
+                                        >
+                                          ※保護者会などで個別に出欠を登録する場合はこちら
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2.5 p-3 rounded-2xl bg-muted/35 border border-border/60">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-black text-foreground flex items-center gap-1.5">
+                                          <span className="w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs">
+                                            {userRole === "parent" ? "👨" : "⚾"}
+                                          </span>
+                                          <span>
+                                            {userRole === "parent"
+                                              ? "保護者（自分）の参加・当番"
+                                              : "あなたの出欠回答"}
+                                          </span>
+                                        </span>
+                                        <span className="text-[11px] font-bold">
+                                          {pStatus === "present" && (
+                                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-black">
+                                              ○ {userRole === "parent" ? "参加・当番可" : "出席"}
+                                            </span>
+                                          )}
+                                          {pStatus === "late" && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25 font-black">
+                                              △ 調整
+                                            </span>
+                                          )}
+                                          {pStatus === "absent" && (
+                                            <span className="px-2 py-0.5 rounded-full bg-slate-500/15 text-slate-700 dark:text-slate-300 border-slate-500/30 font-black">
+                                              × 欠席
+                                            </span>
+                                          )}
+                                          {pStatus === "pending" && (
+                                            <span className="px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 font-black">
+                                              ？ 未定
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+
+                                      {/* ○, △, ×, ？ の4等分グリッド */}
+                                      <div className="grid grid-cols-4 gap-1.5">
+                                        {/* ○ 出席 */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setEventAttendance(ev.id, "present")}
+                                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                            pStatus === "present"
+                                              ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                              : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                          }`}
+                                        >
+                                          <span className="text-base leading-none mb-0.5 font-black">
+                                            ○
+                                          </span>
+                                          <span className="text-[10px]">
+                                            {userRole === "parent" ? "参加/当番" : "出席"}
+                                          </span>
+                                        </button>
+
+                                        {/* △ 調整 / 遅刻 */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setEventAttendance(ev.id, "late")}
+                                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                            pStatus === "late"
+                                              ? "bg-amber-500 text-white border-amber-500 shadow-xs"
+                                              : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                          }`}
+                                        >
+                                          <span className="text-base leading-none mb-0.5 font-black">
+                                            △
+                                          </span>
+                                          <span className="text-[10px]">調整</span>
+                                        </button>
+
+                                        {/* × 欠席 */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setEventAttendance(ev.id, "absent")}
+                                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                            pStatus === "absent"
+                                              ? "bg-slate-600 dark:bg-slate-500 text-white border-slate-600 dark:border-slate-500 shadow-xs"
+                                              : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                          }`}
+                                        >
+                                          <span className="text-base leading-none mb-0.5 font-black">
+                                            ×
+                                          </span>
+                                          <span className="text-[10px]">欠席</span>
+                                        </button>
+
+                                        {/* ？ 未定 */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setEventAttendance(ev.id, "pending")}
+                                          className={`flex flex-col items-center justify-center py-2 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
+                                            pStatus === "pending"
+                                              ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 shadow-2xs"
+                                              : "bg-card hover:bg-muted text-muted-foreground border-border/60"
+                                          }`}
+                                        >
+                                          <span className="text-base leading-none mb-0.5 font-black">
+                                            ？
+                                          </span>
+                                          <span className="text-[10px]">未定</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
 
                             {/* 参加時の配車アンケート (※試合・遠征時のみ表示) */}
                             {(ev.eventType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("遠征") || ev.title.includes("大会") || ev.title.includes("vs")))) && (pStatus === "present" || pStatus === "late") && (
@@ -1383,6 +1549,9 @@ export function HubHeroSection({
                             )}
                           </div>
                         )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

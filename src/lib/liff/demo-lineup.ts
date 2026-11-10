@@ -1,6 +1,11 @@
 // filepath: src/lib/liff/demo-lineup.ts
 import type { Match, MatchDayOps } from "@/types/match";
-import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
+import {
+  resolveEffectivePlayerConditionOnDate,
+  type PlayerConditionPeriod,
+  type PlayerConditionStatus,
+  type ResolvedPlayerCondition,
+} from "@/lib/liff/player-condition";
 import {
   DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
   type LiffMatchScheduleSyncInfo,
@@ -77,6 +82,8 @@ export interface LineupPlayer {
   isActive?: number | boolean;
   conditionStatus?: PlayerConditionStatus;
   conditionNote?: string | null;
+  conditionPeriods?: PlayerConditionPeriod[];
+  activeConditionPeriod?: PlayerConditionPeriod | null;
   joinedAt?: number | string | null;
   createdAt?: number | string | null;
 }
@@ -203,6 +210,19 @@ export function isPlayerJoinedAfterMatch(
   return true;
 }
 
+export function resolveLineupPlayerConditionForMatch(
+  player: Pick<LineupPlayer, "conditionStatus" | "conditionNote" | "conditionPeriods">,
+  matchDate?: string | null
+): ResolvedPlayerCondition {
+  const matchKey = toMatchCalendarKey(matchDate);
+  return resolveEffectivePlayerConditionOnDate({
+    conditionPeriods: player.conditionPeriods,
+    fallbackStatus: player.conditionStatus,
+    fallbackNote: player.conditionNote,
+    dateKey: matchKey,
+  });
+}
+
 export function resolvePlayerMatchAttendanceStatus(
   player: LineupPlayer,
   savedAttendance: Record<string, string | undefined> | null | undefined,
@@ -215,7 +235,8 @@ export function resolvePlayerMatchAttendanceStatus(
   if (explicit === "absent") return "absent";
   if (explicit === "bench") return "bench";
 
-  if (player.conditionStatus === "on_leave") {
+  const effectiveCondition = resolveLineupPlayerConditionForMatch(player, ctx.matchDate);
+  if (effectiveCondition.status === "on_leave") {
     return "excluded";
   }
 

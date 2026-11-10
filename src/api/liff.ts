@@ -46,7 +46,15 @@ import {
 import { aggregateTeamPlayerPositions } from "@/lib/liff/player-positions-and-growth";
 import {
   comparePlayersByConditionAndUniform,
+  findUpcomingPlayerConditionPeriod,
+  getTodayJstDateKey,
+  isNonActiveConditionStatus,
+  maskConditionPeriodsForViewer,
+  normalizeIsoDateKey,
   normalizePlayerConditionStatus,
+  resolveEffectivePlayerConditionOnDate,
+  shiftIsoDateKeyByDays,
+  type PlayerConditionPeriod,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import {
@@ -55,13 +63,20 @@ import {
   parsePlayerProfileDetails,
   type PlayerProfileDetails,
 } from "@/lib/liff/player-profile-schema";
-import { cleanupPreJoinMatchAttendance } from "@/lib/player-roster-cleanup";
-import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
 import {
+  cleanupLeavePeriodsMatchAttendance,
+  cleanupPreJoinMatchAttendance,
+  loadSinglePlayerConditionPeriods,
+  loadTeamPlayerConditionPeriodsMap,
+} from "@/lib/player-roster-cleanup";
+import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensurePlayerConditionPeriodsTable, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
+import {
+  buildParentToChildrenMap,
   classifyTeamAttendanceRosters,
   computeEventGroupAttendance,
   DEMO_GROUP_ATTEND_COUNT_LIST,
   normalizeGroupStatusSummaryConfig,
+  type ClassifiedTeamAttendanceRosters,
 } from "@/lib/liff/group-attendance";
 import {
   DEFAULT_TEAM_SCHEDULE_TIMES,
@@ -1529,6 +1544,7 @@ app.get("/hub", async (c) => {
         db
           .select({
             id: players.id,
+            name: players.name,
             userId: players.userId,
             isActive: players.isActive,
             conditionStatus: players.conditionStatus,
@@ -1604,8 +1620,8 @@ app.get("/hub", async (c) => {
 
     const hubMatchIds = matchesList.map((m) => m.id);
 
-    // ⚡ 全イベント出欠一括取得・at_bats 存在確認・予定試合の配車連携を完全並列取得
-    const [hubAttChunkResults, abRows, hubScheduleSyncMap] = await Promise.all([
+    // ⚡ 全イベント出欠一括取得・at_bats 存在確認・予定試合の配車連携・休部/故障期間マップを完全並列取得
+    const [hubAttChunkResults, abRows, hubScheduleSyncMap, hubConditionPeriodsMap] = await Promise.all([
       Promise.all(
         hubAttChunks.map((chunk) =>
           db
@@ -1629,20 +1645,31 @@ app.get("/hub", async (c) => {
             .all()
         : Promise.resolve([]),
       buildScheduledMatchCarpoolSyncMap(db, teamId, matchesList, allEventsList),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
     const hubStatusConfig = normalizeGroupStatusSummaryConfig(targetTeam.attendanceStatusConfig);
     const hubTeamScheduleDefaults = normalizeTeamScheduleDefaultTimes(targetTeam.scheduleDefaultTimes);
-    const hubRosters = classifyTeamAttendanceRosters({
-      players: teamPlayerRows,
-      teamMembers: teamMemberList,
-      relations: teamRelationsRows,
-    });
-    const hubOnLeavePlayerIds = new Set(
-      teamPlayerRows
-        .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave")
-        .map((p) => p.id)
-    );
+    const hubTodayKey = getTodayJstDateKey();
+    const hubRosterPlayerInputs = teamPlayerRows.map((p) => ({
+      ...p,
+      conditionPeriods: hubConditionPeriodsMap.get(p.id) || [],
+    }));
+    const hubRostersByDateCache = new Map<string, ClassifiedTeamAttendanceRosters>();
+    const getHubRostersForDate = (dateKey: string): ClassifiedTeamAttendanceRosters => {
+      const cacheKey = hubConditionPeriodsMap.size > 0 ? dateKey : "__default__";
+      const cached = hubRostersByDateCache.get(cacheKey);
+      if (cached) return cached;
+      const computed = classifyTeamAttendanceRosters({
+        players: hubRosterPlayerInputs,
+        teamMembers: teamMemberList,
+        relations: teamRelationsRows,
+        dateKey,
+        todayKey: hubTodayKey,
+      });
+      hubRostersByDateCache.set(cacheKey, computed);
+      return computed;
+    };
 
     const hubAttendancesByEvent = new Map<
       string,
@@ -1657,7 +1684,6 @@ app.get("/hub", async (c) => {
     for (const rows of hubAttChunkResults) {
       for (const a of rows) {
         if (!a.eventId) continue;
-        if (a.playerId && hubOnLeavePlayerIds.has(a.playerId)) continue;
         let bucket = hubAttendancesByEvent.get(a.eventId);
         if (!bucket) {
           bucket = [];
@@ -1667,6 +1693,7 @@ app.get("/hub", async (c) => {
 
         if (
           a.status &&
+          !a.playerId &&
           ((currentMemberId && a.memberId === currentMemberId) ||
             (a.userId && hubCandidateSet.has(a.userId)))
         ) {
@@ -1740,7 +1767,7 @@ app.get("/hub", async (c) => {
       // 🎯 対象チーム・グループ（Aチーム/Bチーム/試合組/練習組/全体など）
       const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
       const evAttRows = hubAttendancesByEvent.get(ev.id) || [];
-      const groupAtt = computeEventGroupAttendance(hubRosters, evAttRows);
+      const groupAtt = computeEventGroupAttendance(getHubRostersForDate(dateStr), evAttRows);
 
       return {
         id: ev.id,
@@ -2133,6 +2160,7 @@ app.get("/schedule", async (c) => {
         db
           .select({
             id: players.id,
+            name: players.name,
             userId: players.userId,
             isActive: players.isActive,
             conditionStatus: players.conditionStatus,
@@ -2165,29 +2193,18 @@ app.get("/schedule", async (c) => {
     const schedDefaultTimes = normalizeTeamScheduleDefaultTimes(
       teamConfigRow?.scheduleDefaultTimes
     );
-    const schedRosters = classifyTeamAttendanceRosters({
-      players: teamPlayerRows,
-      teamMembers: teamMemberList,
-      relations: teamRelationsRows,
-    });
-
-    const onLeavePlayerIds = new Set(
-      teamPlayerRows
-        .filter((p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave")
-        .map((p) => p.id)
-    );
 
     const authUserId = sessionUser?.id;
     const authUserName = sessionUser?.name || undefined;
 
-    // ⚡ account連携展開 と 全イベント分の出欠レコード一括取得（N+1クエリを完全排除！）を並列実行
+    // ⚡ account連携展開・全イベント出欠一括取得・休部/故障期間マップを並列実行（N+1クエリ完全排除）
     const eventIds = eventList.map((ev) => ev.id);
     const attendanceChunks: string[][] = [];
     for (let i = 0; i < eventIds.length; i += 80) {
       attendanceChunks.push(eventIds.slice(i, i + 80));
     }
 
-    const [schedCandidateIds, attChunkResults] = await Promise.all([
+    const [schedCandidateIds, attChunkResults, schedConditionPeriodsMap] = await Promise.all([
       expandCandidateUserIds(db, [userId, authUserId]),
       Promise.all(
         attendanceChunks.map((chunk) =>
@@ -2205,7 +2222,29 @@ app.get("/schedule", async (c) => {
             .all()
         )
       ),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
+
+    const schedTodayKey = getTodayJstDateKey();
+    const schedRosterPlayerInputs = teamPlayerRows.map((p) => ({
+      ...p,
+      conditionPeriods: schedConditionPeriodsMap.get(p.id) || [],
+    }));
+    const schedRostersByDateCache = new Map<string, ClassifiedTeamAttendanceRosters>();
+    const getSchedRostersForDate = (dateKey: string): ClassifiedTeamAttendanceRosters => {
+      const cacheKey = schedConditionPeriodsMap.size > 0 ? dateKey : "__default__";
+      const cached = schedRostersByDateCache.get(cacheKey);
+      if (cached) return cached;
+      const computed = classifyTeamAttendanceRosters({
+        players: schedRosterPlayerInputs,
+        teamMembers: teamMemberList,
+        relations: teamRelationsRows,
+        dateKey,
+        todayKey: schedTodayKey,
+      });
+      schedRostersByDateCache.set(cacheKey, computed);
+      return computed;
+    };
 
     const attendancesByEventId = new Map<
       string,
@@ -2220,7 +2259,6 @@ app.get("/schedule", async (c) => {
     for (const rows of attChunkResults) {
       for (const row of rows) {
         if (!row.eventId) continue;
-        if (row.playerId && onLeavePlayerIds.has(row.playerId)) continue;
         let bucket = attendancesByEventId.get(row.eventId);
         if (!bucket) {
           bucket = [];
@@ -2263,16 +2301,24 @@ app.get("/schedule", async (c) => {
 
     // 各イベントの出欠集計（メモリ上で O(N) 計算、DB クエリ 0 回）
     const formattedEvents = eventList.map((ev) => {
+      const startDate = new Date(ev.startAt);
+      const y = startDate.getUTCFullYear();
+      const m = String(startDate.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(startDate.getUTCDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${d}`;
+      const wStr = ["日", "月", "火", "水", "木", "金", "土"][startDate.getUTCDay()];
+
       const attList = attendancesByEventId.get(ev.id) || [];
-      const groupAtt = computeEventGroupAttendance(schedRosters, attList);
+      const groupAtt = computeEventGroupAttendance(getSchedRostersForDate(dateStr), attList);
 
       let myStatus: string = "pending";
       let mySelectedGroupId: string | null = null;
       if (schedCandidateIds.length > 0 || schedMemberIdsSet.size > 0) {
         const myAtt = attList.find(
           (a) =>
-            (a.memberId && schedMemberIdsSet.has(a.memberId)) ||
-            (a.userId && schedCandidateIds.includes(a.userId))
+            !a.playerId &&
+            ((a.memberId && schedMemberIdsSet.has(a.memberId)) ||
+              (a.userId && schedCandidateIds.includes(a.userId)))
         );
         if (myAtt?.status) {
           myStatus = myAtt.status;
@@ -2307,13 +2353,6 @@ app.get("/schedule", async (c) => {
           }
         }
       }
-
-      const startDate = new Date(ev.startAt);
-      const y = startDate.getUTCFullYear();
-      const m = String(startDate.getUTCMonth() + 1).padStart(2, "0");
-      const d = String(startDate.getUTCDate()).padStart(2, "0");
-      const dateStr = `${y}-${m}-${d}`;
-      const wStr = ["日", "月", "火", "水", "木", "金", "土"][startDate.getUTCDay()];
 
       const isAmOff = ev.amType === "off";
       const hasAm = !isAmOff;
@@ -2688,7 +2727,7 @@ app.get("/attendance-matrix", async (c) => {
       matrixAttChunks.push(teamEventIds.slice(i, i + 80));
     }
 
-    const [searchUserIds, attChunkResults] = await Promise.all([
+    const [searchUserIds, attChunkResults, matrixConditionPeriodsMap] = await Promise.all([
       expandCandidateUserIds(db, [userId, authUserId]),
       Promise.all(
         matrixAttChunks.map((chunk) =>
@@ -2705,6 +2744,7 @@ app.get("/attendance-matrix", async (c) => {
             .all()
         )
       ),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
     const isTeamCreator = Boolean(
@@ -2870,30 +2910,55 @@ app.get("/attendance-matrix", async (c) => {
     const myMemberIds = Array.from(familyMemberIdsSet);
     const myPlayerIds = Array.from(myPlayerIdsSet);
 
-    // ⏸ 休部中 (on_leave) の選手も出欠一覧表に表示（初期順は末尾へ配置し、⏸休部バッジ＆「休」セルで明示）
-    // 🩹 リハビリ・調整中 / ⚠️ 一部制限あり と合わせて conditionStatus を付与する
+    // ⏸ 休部中 (on_leave) の選手も出欠一覧表に表示（初期順は末尾へ配置し、期間内のイベントは⏸休部バッジ＆「休」セルで明示）
+    // 🩹 リハビリ・調整中 / ⚠️ 一部制限あり と合わせて conditionStatus & conditionPeriods を付与する
+    const matrixTodayKey = getTodayJstDateKey();
     const formattedPlayers = allPlayers
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        uniformNumber: p.uniformNumber || "",
-        subText: p.uniformNumber ? `#${p.uniformNumber}` : "",
-        groupType: "player" as const,
-        conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-      }))
+      .map((p) => {
+        const rawPeriods = matrixConditionPeriodsMap.get(p.id) || [];
+        const effectiveToday = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: rawPeriods,
+          fallbackStatus: p.conditionStatus,
+          dateKey: matrixTodayKey,
+          todayKey: matrixTodayKey,
+        });
+        return {
+          id: p.id,
+          name: p.name,
+          uniformNumber: p.uniformNumber || "",
+          subText: p.uniformNumber ? `#${p.uniformNumber}` : "",
+          groupType: "player" as const,
+          conditionStatus: effectiveToday.status,
+          conditionPeriods: maskConditionPeriodsForViewer(rawPeriods, false),
+        };
+      })
       .sort(comparePlayersByConditionAndUniform);
+
+    const formattedPlayerById = new Map(formattedPlayers.map((fp) => [fp.id, fp]));
 
     // 4. 大人のメンバー一覧分類 (選手除外 & 承認済みアクティブのみ)
     const allTeamMembers = activeAllMembers.filter(m => m.memberType !== "player");
 
-    // 親ID -> 子供名リストのマッピング
+    // 親ID -> 子供IDリスト・子供名リストのマッピング（親子関係テーブル ＋ 未設定時の苗字一致補完）
+    const parentToChildIdsMap = buildParentToChildrenMap({
+      players: allPlayers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        userId: p.userId,
+        isActive: p.isActive,
+        conditionStatus: p.conditionStatus,
+        conditionPeriods: matrixConditionPeriodsMap.get(p.id) || [],
+      })),
+      teamMembers: allTeamMembers,
+      relations,
+    });
     const parentChildrenMap = new Map<string, string[]>();
-    for (const rel of relations) {
-      const player = allPlayers.find(p => p.id === rel.childId);
-      if (player && rel.parentId) {
-        const currentList = parentChildrenMap.get(rel.parentId) || [];
-        currentList.push(player.name);
-        parentChildrenMap.set(rel.parentId, currentList);
+    for (const [parentId, cIds] of parentToChildIdsMap.entries()) {
+      const names = cIds
+        .map((cid) => formattedPlayerById.get(cid)?.name)
+        .filter((n): n is string => Boolean(n));
+      if (names.length > 0) {
+        parentChildrenMap.set(parentId, names);
       }
     }
 
@@ -2904,9 +2969,15 @@ app.get("/attendance-matrix", async (c) => {
 
     for (const m of allTeamMembers) {
       const name = m.name || "";
+      const linkedChildIds = parentToChildIdsMap.get(m.id) || [];
       const kids = parentChildrenMap.get(m.id) || [];
       const hasKids = kids.length > 0;
       const kidsName = hasKids ? kids.join("・") : "";
+      const isAllKidsOnLeaveToday =
+        linkedChildIds.length > 0 &&
+        linkedChildIds.every(
+          (cid) => formattedPlayerById.get(cid)?.conditionStatus === "on_leave"
+        );
 
       const hasFatherKeyword =
         name.includes("父") ||
@@ -2968,6 +3039,8 @@ app.get("/attendance-matrix", async (c) => {
             name: name,
             subText: (hasKids ? `${kidsName}の母` : "保護者(母)") + adminTag,
             groupType: "mother" as const,
+            linkedChildIds,
+            conditionStatus: isAllKidsOnLeaveToday ? ("on_leave" as const) : ("active" as const),
           });
         } else {
           // 母設定・キーワードがない保護者は父グループとして扱い、タブ未所属による孤立や選手誤判定を防ぐ
@@ -2976,10 +3049,22 @@ app.get("/attendance-matrix", async (c) => {
             name: name,
             subText: (hasKids ? `${kidsName}の父` : "保護者(父)") + adminTag,
             groupType: "father" as const,
+            linkedChildIds,
+            conditionStatus: isAllKidsOnLeaveToday ? ("on_leave" as const) : ("active" as const),
           });
         }
       }
     }
+
+    const sortParentDefault = (list: Array<any>) =>
+      list.sort((a, b) => {
+        const aLeave = a.conditionStatus === "on_leave";
+        const bLeave = b.conditionStatus === "on_leave";
+        if (aLeave !== bLeave) return aLeave ? 1 : -1;
+        return 0;
+      });
+    sortParentDefault(mothersList);
+    sortParentDefault(fathersList);
 
     // 👪 保護者全体（母 + 父 + 一般保護者）
     const allParentsList = [...mothersList, ...fathersList, ...otherParentsList];
@@ -3496,22 +3581,36 @@ app.get("/my-family", async (c) => {
       });
     }
 
-    // 1. チーム全体の親子関係一覧を取得 (parentChildRelations + teamMembers + players)
-    const allRelations = await db
-      .select({
-        id: parentChildRelations.id,
-        parentId: parentChildRelations.parentId,
-        parentName: teamMembers.name,
-        childId: parentChildRelations.childId,
-        childName: players.name,
-        uniformNumber: players.uniformNumber,
-        conditionStatus: players.conditionStatus,
-      })
-      .from(parentChildRelations)
-      .leftJoin(teamMembers, eq(parentChildRelations.parentId, teamMembers.id))
-      .leftJoin(players, eq(parentChildRelations.childId, players.id))
-      .where(eq(parentChildRelations.teamId, teamId))
-      .all();
+    // 1. チーム全体の親子関係一覧 ＆ 在籍選手一覧 ＆ 休部/故障期間マップを並列取得
+    const [allRelations, familyAllPlayers, familyConditionPeriodsMap] = await Promise.all([
+      db
+        .select({
+          id: parentChildRelations.id,
+          parentId: parentChildRelations.parentId,
+          parentName: teamMembers.name,
+          childId: parentChildRelations.childId,
+          childName: players.name,
+          uniformNumber: players.uniformNumber,
+          conditionStatus: players.conditionStatus,
+        })
+        .from(parentChildRelations)
+        .leftJoin(teamMembers, eq(parentChildRelations.parentId, teamMembers.id))
+        .leftJoin(players, eq(parentChildRelations.childId, players.id))
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all(),
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          uniformNumber: players.uniformNumber,
+          conditionStatus: players.conditionStatus,
+          isActive: players.isActive,
+        })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
+    ]);
 
     // 2. チームメンバーから保護者レコードを特定（account双方向連携 & 安全な名前照合）
     let authUserId: string | undefined;
@@ -3585,7 +3684,8 @@ app.get("/my-family", async (c) => {
       }
     }
 
-    // 3. 親子関係から該当する保護者のお子様のみを抽出（重複排除）
+    // 3. 親子関係から該当する保護者のお子様のみを抽出（重複排除 ＋ 未設定時の苗字一致補完）
+    const familyTodayKey = getTodayJstDateKey();
     let childrenList: Array<{
       id: string;
       name: string;
@@ -3593,6 +3693,7 @@ app.get("/my-family", async (c) => {
       parentId?: string;
       parentName?: string;
       conditionStatus?: PlayerConditionStatus;
+      conditionPeriods?: PlayerConditionPeriod[];
     }> = [];
 
     if (member) {
@@ -3603,13 +3704,55 @@ app.get("/my-family", async (c) => {
       for (const rel of myRelations) {
         if (!seen.has(rel.childId)) {
           seen.add(rel.childId);
+          const rawPeriods = familyConditionPeriodsMap.get(rel.childId) || [];
+          const effectiveToday = resolveEffectivePlayerConditionOnDate({
+            conditionPeriods: rawPeriods,
+            fallbackStatus: rel.conditionStatus,
+            dateKey: familyTodayKey,
+            todayKey: familyTodayKey,
+          });
           childrenList.push({
             id: rel.childId,
             name: rel.childName || "選手",
             uniformNumber: rel.uniformNumber ? (rel.uniformNumber.startsWith("#") ? rel.uniformNumber : `#${rel.uniformNumber}`) : undefined,
             parentId: member.id,
             parentName: member.name || undefined,
-            conditionStatus: normalizePlayerConditionStatus(rel.conditionStatus),
+            conditionStatus: effectiveToday.status,
+            conditionPeriods: maskConditionPeriodsForViewer(rawPeriods, false),
+          });
+        }
+      }
+
+      if (childrenList.length === 0) {
+        const fallbackParentMap = buildParentToChildrenMap({
+          players: familyAllPlayers,
+          teamMembers: [member],
+          relations: [],
+        });
+        const fallbackChildIds = fallbackParentMap.get(member.id) || [];
+        for (const cid of fallbackChildIds) {
+          const pRow = familyAllPlayers.find((fp) => fp.id === cid);
+          if (!pRow || seen.has(cid)) continue;
+          seen.add(cid);
+          const rawPeriods = familyConditionPeriodsMap.get(cid) || [];
+          const effectiveToday = resolveEffectivePlayerConditionOnDate({
+            conditionPeriods: rawPeriods,
+            fallbackStatus: pRow.conditionStatus,
+            dateKey: familyTodayKey,
+            todayKey: familyTodayKey,
+          });
+          childrenList.push({
+            id: cid,
+            name: pRow.name || "選手",
+            uniformNumber: pRow.uniformNumber
+              ? pRow.uniformNumber.startsWith("#")
+                ? pRow.uniformNumber
+                : `#${pRow.uniformNumber}`
+              : undefined,
+            parentId: member.id,
+            parentName: member.name || undefined,
+            conditionStatus: effectiveToday.status,
+            conditionPeriods: maskConditionPeriodsForViewer(rawPeriods, false),
           });
         }
       }
@@ -9965,7 +10108,7 @@ app.get("/players", async (c) => {
   }
 
   try {
-    const [teamRow, rawPlayers, [battingQueryRes, pitchingQueryRes]] = await Promise.all([
+    const [teamRow, rawPlayers, [battingQueryRes, pitchingQueryRes], periodsByPlayerId] = await Promise.all([
       db
         .select({
           id: teams.id,
@@ -10036,6 +10179,7 @@ app.get("/players", async (c) => {
           GROUP BY ab.pitcher_id
         `).bind(teamId),
       ]).catch(() => [{ results: [] }, { results: [] }]),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
     if (!teamRow) {
@@ -10117,10 +10261,29 @@ app.get("/players", async (c) => {
       return rem > 0 ? `${full} ${rem}/3` : `${full}`;
     };
 
+    const playersTodayKey = getTodayJstDateKey();
     const sortedPlayers = rawPlayers
       .filter((p) => p.isActive !== false)
-      .sort(comparePlayersByConditionAndUniform)
       .map((p) => {
+        const rawPeriods = periodsByPlayerId.get(p.id) || [];
+        const effectiveToday = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: rawPeriods,
+          fallbackStatus: p.conditionStatus,
+          fallbackNote: p.conditionNote,
+          dateKey: playersTodayKey,
+          todayKey: playersTodayKey,
+        });
+        return {
+          raw: p,
+          rawPeriods,
+          effectiveToday,
+          conditionStatus: effectiveToday.status,
+          uniformNumber: p.uniformNumber,
+          name: p.name,
+        };
+      })
+      .sort(comparePlayersByConditionAndUniform)
+      .map(({ raw: p, rawPeriods, effectiveToday }) => {
         const bStat = battingMap.get(p.id);
         const pStat = pitchingMap.get(p.id);
 
@@ -10170,7 +10333,20 @@ app.get("/players", async (c) => {
           joinedTs = p.joinedAt;
         }
 
-        const normalizedCondition = normalizePlayerConditionStatus(p.conditionStatus);
+        const normalizedCondition = effectiveToday.status;
+        const resolvedPrivateNote =
+          normalizedCondition !== "active"
+            ? effectiveToday.note ?? p.conditionNote
+            : p.conditionNote;
+        const maskedPeriods = maskConditionPeriodsForViewer(rawPeriods, canManagePlayers);
+        const activeConditionPeriod = effectiveToday.period
+          ? maskConditionPeriodsForViewer([effectiveToday.period], canManagePlayers)[0] || null
+          : null;
+        const upcomingRaw = findUpcomingPlayerConditionPeriod(rawPeriods, playersTodayKey);
+        const upcomingConditionPeriod = upcomingRaw
+          ? maskConditionPeriodsForViewer([upcomingRaw], canManagePlayers)[0] || null
+          : null;
+
         const profileDetails = parsePlayerProfileDetails(p.profileDetails);
         const isSelf = Boolean(p.userId && callerPerm.searchUserIds.includes(p.userId));
         const isLinkedChild = callerPerm.linkedChildIds.has(p.id);
@@ -10204,7 +10380,10 @@ app.get("/players", async (c) => {
           canEditProfile,
           hasLinkedUser: Boolean(p.userId),
           conditionStatus: normalizedCondition,
-          conditionNote: canManagePlayers ? p.conditionNote || null : null,
+          conditionNote: canManagePlayers ? resolvedPrivateNote || null : null,
+          conditionPeriods: maskedPeriods,
+          activeConditionPeriod,
+          upcomingConditionPeriod,
           isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
           joinedAt: joinedTs,
           batting,
@@ -10557,11 +10736,11 @@ app.post("/players/:playerId/profile", async (c) => {
 });
 
 /**
- * 🩹 選手の在籍・コンディション状態更新API (POST /players/:playerId/condition)
- * 指導者・管理者限定で「通常 / 一部制限あり / リハビリ・調整中 / 休部中」と非公開メモを保存する
+ * 🩹 選手の在籍・コンディション状態＆期間履歴更新API (POST /players/:playerId/condition)
+ * 指導者・管理者限定で「通常 / 一部制限あり / リハビリ・調整中 / 休部中」、期間（いつから〜いつまで/未定）、非公開メモを管理する
  */
 app.post("/players/:playerId/condition", async (c) => {
-  await ensurePlayerProfileColumns(c.env.DB);
+  await ensurePlayerConditionPeriodsTable(c.env.DB);
   const db = drizzle(c.env.DB);
   const playerId = c.req.param("playerId");
 
@@ -10570,14 +10749,21 @@ app.post("/players/:playerId/condition", async (c) => {
       teamId?: string;
       userId?: string | null;
       userName?: string | null;
+      action?: "save_status" | "save_period" | "delete_period";
       conditionStatus?: string;
       conditionNote?: string | null;
+      periodId?: string | null;
+      startDate?: string | null;
+      endDate?: string | null;
+      returnDate?: string | null;
     };
 
     const teamId = (body.teamId || c.req.query("teamId") || "").trim();
+    const action = body.action || "save_status";
     const nextStatus = normalizePlayerConditionStatus(body.conditionStatus);
     const rawNote = typeof body.conditionNote === "string" ? body.conditionNote.trim() : "";
     const nextNote = rawNote ? rawNote.slice(0, 160) : null;
+    const todayKey = getTodayJstDateKey();
 
     if (!teamId || teamId === "demo-team" || playerId.startsWith("demo-")) {
       return c.json({
@@ -10589,7 +10775,7 @@ app.post("/players/:playerId/condition", async (c) => {
       });
     }
 
-    const [teamRow, existingPlayer] = await Promise.all([
+    const [teamRow, existingPlayer, existingPeriods] = await Promise.all([
       db
         .select({
           id: teams.id,
@@ -10603,10 +10789,12 @@ app.post("/players/:playerId/condition", async (c) => {
         .select({
           id: players.id,
           teamId: players.teamId,
+          conditionNote: players.conditionNote,
         })
         .from(players)
         .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
         .get(),
+      loadSinglePlayerConditionPeriods(c.env.DB, teamId, playerId),
     ]);
 
     if (!teamRow) {
@@ -10634,20 +10822,213 @@ app.post("/players/:playerId/condition", async (c) => {
       );
     }
 
-    await db
-      .update(players)
-      .set({
-        conditionStatus: nextStatus,
-        conditionNote: nextNote,
-      })
-      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    if (action === "delete_period") {
+      const targetPeriodId = (body.periodId || "").trim();
+      if (!targetPeriodId) {
+        return c.json({ success: false, error: "削除対象の期間IDが指定されていません" }, 400);
+      }
+      await c.env.DB.prepare(
+        `DELETE FROM player_condition_periods WHERE id = ? AND team_id = ? AND player_id = ?`
+      )
+        .bind(targetPeriodId, teamId, playerId)
+        .run();
+    } else if (action === "save_period") {
+      if (!isNonActiveConditionStatus(nextStatus)) {
+        return c.json(
+          { success: false, error: "期間履歴には一部制限・リハビリ・休部のいずれかを指定してください" },
+          400
+        );
+      }
+      const sDate = normalizeIsoDateKey(body.startDate);
+      if (!sDate) {
+        return c.json({ success: false, error: "開始日（いつから）を入力してください" }, 400);
+      }
+      const eDate = body.endDate ? normalizeIsoDateKey(body.endDate) : null;
+      if (body.endDate && !eDate) {
+        return c.json({ success: false, error: "終了日の形式が正しくありません" }, 400);
+      }
+      if (eDate && eDate < sDate) {
+        return c.json({ success: false, error: "終了日は開始日以降の日付を指定してください" }, 400);
+      }
+
+      const editId = (body.periodId || "").trim();
+      const hasExisting = editId && existingPeriods.some((p) => p.id === editId);
+      if (hasExisting) {
+        await c.env.DB.prepare(
+          `UPDATE player_condition_periods
+           SET status = ?, start_date = ?, end_date = ?, private_note = ?, updated_at = ?
+           WHERE id = ? AND team_id = ? AND player_id = ?`
+        )
+          .bind(nextStatus, sDate, eDate, nextNote, nowSec, editId, teamId, playerId)
+          .run();
+      } else {
+        const newId = crypto.randomUUID();
+        await c.env.DB.prepare(
+          `INSERT INTO player_condition_periods
+           (id, team_id, player_id, status, start_date, end_date, private_note, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(newId, teamId, playerId, nextStatus, sDate, eDate, nextNote, nowSec, nowSec)
+          .run();
+      }
+    } else {
+      // action === "save_status"
+      if (nextStatus === "active") {
+        // 通常（出場可）への復帰：現在有効な期間があれば終了日を自動クローズして過去履歴として保持する
+        const returnDateKey = normalizeIsoDateKey(body.returnDate) || todayKey;
+        const closeEndKey = shiftIsoDateKeyByDays(returnDateKey, -1);
+        const ongoingPeriods = existingPeriods.filter(
+          (p) => p.startDate <= todayKey && (!p.endDate || todayKey <= p.endDate)
+        );
+        for (const op of ongoingPeriods) {
+          if (op.startDate === todayKey && returnDateKey <= todayKey) {
+            // 当日誤操作で作成して即座に通常へ戻した場合は不要な当日ゴミ履歴を残さず削除
+            await c.env.DB.prepare(
+              `DELETE FROM player_condition_periods WHERE id = ? AND team_id = ? AND player_id = ?`
+            )
+              .bind(op.id, teamId, playerId)
+              .run();
+          } else {
+            const safeEnd = closeEndKey < op.startDate ? op.startDate : closeEndKey;
+            await c.env.DB.prepare(
+              `UPDATE player_condition_periods SET end_date = ?, updated_at = ? WHERE id = ? AND team_id = ? AND player_id = ?`
+            )
+              .bind(safeEnd, nowSec, op.id, teamId, playerId)
+              .run();
+          }
+        }
+      } else {
+        const sDate = normalizeIsoDateKey(body.startDate) || todayKey;
+        const eDate = body.endDate ? normalizeIsoDateKey(body.endDate) : null;
+        if (eDate && eDate < sDate) {
+          return c.json({ success: false, error: "終了日は開始日以降の日付を指定してください" }, 400);
+        }
+
+        const explicitPeriodId = (body.periodId || "").trim();
+        const matchingById = explicitPeriodId
+          ? existingPeriods.find((p) => p.id === explicitPeriodId)
+          : undefined;
+        const ongoing = existingPeriods.find(
+          (p) => p.startDate <= todayKey && (!p.endDate || todayKey <= p.endDate)
+        );
+
+        if (matchingById) {
+          await c.env.DB.prepare(
+            `UPDATE player_condition_periods
+             SET status = ?, start_date = ?, end_date = ?, private_note = ?, updated_at = ?
+             WHERE id = ? AND team_id = ? AND player_id = ?`
+          )
+            .bind(nextStatus, sDate, eDate, nextNote, nowSec, matchingById.id, teamId, playerId)
+            .run();
+        } else if (ongoing) {
+          if (ongoing.status === nextStatus || ongoing.startDate >= sDate) {
+            await c.env.DB.prepare(
+              `UPDATE player_condition_periods
+               SET status = ?, start_date = ?, end_date = ?, private_note = ?, updated_at = ?
+               WHERE id = ? AND team_id = ? AND player_id = ?`
+            )
+              .bind(nextStatus, sDate, eDate, nextNote, nowSec, ongoing.id, teamId, playerId)
+              .run();
+          } else {
+            // 例：リハビリ（10/1〜）から一部制限（11/10〜）へ段階移行した場合、前期間を前日で閉じて新期間を追加
+            const prevCloseEnd = shiftIsoDateKeyByDays(sDate, -1);
+            await c.env.DB.batch([
+              c.env.DB.prepare(
+                `UPDATE player_condition_periods SET end_date = ?, updated_at = ? WHERE id = ? AND team_id = ? AND player_id = ?`
+              ).bind(
+                prevCloseEnd < ongoing.startDate ? ongoing.startDate : prevCloseEnd,
+                nowSec,
+                ongoing.id,
+                teamId,
+                playerId
+              ),
+              c.env.DB.prepare(
+                `INSERT INTO player_condition_periods
+                 (id, team_id, player_id, status, start_date, end_date, private_note, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              ).bind(
+                crypto.randomUUID(),
+                teamId,
+                playerId,
+                nextStatus,
+                sDate,
+                eDate,
+                nextNote,
+                nowSec,
+                nowSec
+              ),
+            ]);
+          }
+        } else {
+          await c.env.DB.prepare(
+            `INSERT INTO player_condition_periods
+             (id, team_id, player_id, status, start_date, end_date, private_note, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+            .bind(
+              crypto.randomUUID(),
+              teamId,
+              playerId,
+              nextStatus,
+              sDate,
+              eDate,
+              nextNote,
+              nowSec,
+              nowSec
+            )
+            .run();
+        }
+      }
+    }
+
+    const updatedPeriods = await loadSinglePlayerConditionPeriods(c.env.DB, teamId, playerId);
+    const effectiveToday = resolveEffectivePlayerConditionOnDate({
+      conditionPeriods: updatedPeriods,
+      fallbackStatus: action === "save_status" && nextStatus === "active" ? "active" : undefined,
+      fallbackNote: action === "save_status" && nextStatus === "active" ? nextNote : null,
+      dateKey: todayKey,
+      todayKey,
+    });
+
+    const syncedStatus = effectiveToday.status;
+    const syncedNote =
+      syncedStatus !== "active"
+        ? effectiveToday.note
+        : action === "save_status"
+        ? nextNote
+        : existingPlayer.conditionNote || null;
+
+    await Promise.all([
+      db
+        .update(players)
+        .set({
+          conditionStatus: syncedStatus,
+          conditionNote: syncedNote,
+        })
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId))),
+      cleanupLeavePeriodsMatchAttendance(c.env.DB, teamId, playerId, updatedPeriods),
+    ]);
+
+    const maskedPeriods = maskConditionPeriodsForViewer(updatedPeriods, true);
+    const activeConditionPeriod = effectiveToday.period
+      ? maskConditionPeriodsForViewer([effectiveToday.period], true)[0] || null
+      : null;
+    const upcomingRaw = findUpcomingPlayerConditionPeriod(updatedPeriods, todayKey);
+    const upcomingConditionPeriod = upcomingRaw
+      ? maskConditionPeriodsForViewer([upcomingRaw], true)[0] || null
+      : null;
 
     return c.json({
       success: true,
       isDemo: false,
       playerId,
-      conditionStatus: nextStatus,
-      conditionNote: nextNote,
+      conditionStatus: syncedStatus,
+      conditionNote: syncedNote,
+      conditionPeriods: maskedPeriods,
+      activeConditionPeriod,
+      upcomingConditionPeriod,
     });
   } catch (err: unknown) {
     console.error("Failed to update player condition:", err);

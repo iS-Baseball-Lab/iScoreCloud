@@ -1,6 +1,16 @@
 // filepath: src/lib/liff/player-positions-and-growth.ts
 import type { ScorebookSheetStructure } from "@/types/scorebook-v2";
-import type { PlayerConditionStatus } from "@/lib/liff/player-condition";
+import {
+  countConditionPeriodDays,
+  getTodayJstDateKey,
+  isNonActiveConditionStatus,
+  normalizeIsoDateKey,
+  resolveEffectivePlayerConditionOnDate,
+  sortPlayerConditionPeriods,
+  type NonActiveConditionStatus,
+  type PlayerConditionPeriod,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
 import type { PlayerProfileDetails } from "@/lib/liff/player-profile-schema";
 
 export type CanonicalDefensivePosition =
@@ -78,6 +88,9 @@ export interface PlayerBattingTrendItem {
   cumObpNum: number;
   cumOps: string;
   cumOpsNum: number;
+  conditionDuringMatch?: NonActiveConditionStatus | null;
+  isReturnMatch?: boolean;
+  returnedFromStatus?: NonActiveConditionStatus | null;
 }
 
 export interface PlayerMonthlyBattingItem {
@@ -99,6 +112,7 @@ export interface PlayerMonthlyBattingItem {
   ops: string;
   kRatePercent: number;
   bbRatePercent: number;
+  conditionStatuses?: NonActiveConditionStatus[];
 }
 
 export interface PlayerBattedDirectionSplit {
@@ -211,6 +225,37 @@ export interface PlayerPitchingTrendItem {
   cumEraNum: number;
   cumWhip: string;
   cumWhipNum: number;
+  conditionDuringMatch?: NonActiveConditionStatus | null;
+  isReturnMatch?: boolean;
+  returnedFromStatus?: NonActiveConditionStatus | null;
+}
+
+export interface PlayerGrowthConditionTimelineItem {
+  id: string;
+  status: NonActiveConditionStatus;
+  startDate: string;
+  endDate: string | null;
+  days: number;
+  isOngoing: boolean;
+  isFuture: boolean;
+  privateNote: string | null;
+  teamMatchesDuringPeriod: number;
+  playedMatchesDuringPeriod: number;
+  missedMatchesDuringPeriod: number;
+  returnMatch: {
+    matchId: string;
+    date: string;
+    opponent: string;
+  } | null;
+}
+
+export interface PlayerGrowthParticipationSummary {
+  totalTeamMatches: number;
+  eligibleTeamMatches: number;
+  playedMatches: number;
+  rehabMissedMatches: number;
+  onLeaveMatches: number;
+  restrictedPlayedMatches: number;
 }
 
 export interface PlayerGrowthSectionPayload {
@@ -222,6 +267,8 @@ export interface PlayerGrowthSectionPayload {
   recentForm: PlayerRecentFormComparison;
   pitchingSummary: PlayerGrowthPitchingSummary | null;
   pitchingTrend: PlayerPitchingTrendItem[];
+  conditionTimeline?: PlayerGrowthConditionTimelineItem[];
+  participationSummary?: PlayerGrowthParticipationSummary;
 }
 
 export interface PlayerGrowthRosterItem {
@@ -265,8 +312,12 @@ export interface PlayerGrowthResponse {
     notes: string | null;
     isCaptain: boolean;
     conditionStatus?: PlayerConditionStatus;
+    conditionNote?: string | null;
+    conditionPeriods?: PlayerConditionPeriod[];
+    activeConditionPeriod?: PlayerConditionPeriod | null;
     profileDetails?: PlayerProfileDetails;
     canEditProfile?: boolean;
+    canManagePlayers?: boolean;
     primaryPosition: string | null;
     subPositions: string[];
     registeredPrimaryPosition: string | null;
@@ -1051,5 +1102,337 @@ export function formatInningsPitched(outs: number): string {
   const full = Math.floor(outs / 3);
   const rem = outs % 3;
   return `${full}.${rem}`;
+}
+
+export interface TeamMatchBriefForGrowth {
+  id: string;
+  date: string;
+  opponent: string;
+  matchType: "official" | "exchange" | "practice";
+}
+
+function enumerateYearMonthsBetween(startYm: string, endYm: string): string[] {
+  const sm = startYm.match(/^(\d{4})-(\d{2})$/);
+  const em = endYm.match(/^(\d{4})-(\d{2})$/);
+  if (!sm || !em) return [];
+  let y = Number.parseInt(sm[1], 10);
+  let m = Number.parseInt(sm[2], 10);
+  const ey = Number.parseInt(em[1], 10);
+  const emNum = Number.parseInt(em[2], 10);
+  const list: string[] = [];
+  let guard = 0;
+  while ((y < ey || (y === ey && m <= emNum)) && guard < 48) {
+    list.push(`${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    guard += 1;
+  }
+  return list;
+}
+
+function formatMonthLabelForGrowth(yyyyMm: string): string {
+  const m = yyyyMm.match(/^(\d{4})-(\d{1,2})$/);
+  if (!m) return yyyyMm;
+  return `${m[1]}年${Number(m[2])}月`;
+}
+
+/**
+ * 個人成長レポートのセクションデータに対して、選手の休部・故障・制限期間（`conditionPeriods`）を反映する。
+ * - 各出場試合の `conditionDuringMatch`（一部制限中の出場等）および `isReturnMatch`（故障・休部明け復帰初戦）を付与
+ * - 月別推移（`monthlyBatting`）に期間バッジおよび故障・休部による0試合月を補完
+ * - 期間ごとのチーム見送り試合数・復帰戦を含む `conditionTimeline` ＆ `participationSummary` を算出
+ */
+export function enrichSectionWithConditionPeriods(
+  section: PlayerGrowthSectionPayload,
+  params: {
+    conditionPeriods: readonly PlayerConditionPeriod[];
+    teamMatches: readonly TeamMatchBriefForGrowth[];
+    joinedDateKey?: string | null;
+    todayKey?: string;
+  }
+): PlayerGrowthSectionPayload {
+  const todayKey = normalizeIsoDateKey(params.todayKey) || getTodayJstDateKey();
+  const sortedPeriods = sortPlayerConditionPeriods(
+    (params.conditionPeriods || []).filter((p) => isNonActiveConditionStatus(p.status))
+  );
+
+  const playedMatchIds = new Set<string>();
+  const playedMatchesChrono: Array<{
+    matchId: string;
+    date: string;
+    dateKey: string;
+    opponent: string;
+  }> = [];
+
+  for (const bt of section.battingTrend) {
+    playedMatchIds.add(bt.matchId);
+    const dk = normalizeIsoDateKey(bt.date);
+    if (dk) {
+      playedMatchesChrono.push({
+        matchId: bt.matchId,
+        date: bt.date,
+        dateKey: dk,
+        opponent: bt.opponent,
+      });
+    }
+  }
+  for (const pt of section.pitchingTrend) {
+    if (!playedMatchIds.has(pt.matchId)) {
+      playedMatchIds.add(pt.matchId);
+      const dk = normalizeIsoDateKey(pt.date);
+      if (dk) {
+        playedMatchesChrono.push({
+          matchId: pt.matchId,
+          date: pt.date,
+          dateKey: dk,
+          opponent: pt.opponent,
+        });
+      }
+    }
+  }
+  playedMatchesChrono.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+
+  if (sortedPeriods.length === 0) {
+    const joinedKey = normalizeIsoDateKey(params.joinedDateKey);
+    const eligibleCount = params.teamMatches.filter((tm) => {
+      const dk = normalizeIsoDateKey(tm.date);
+      if (!dk) return true;
+      return !joinedKey || dk >= joinedKey;
+    }).length;
+
+    return {
+      ...section,
+      conditionTimeline: [],
+      participationSummary: {
+        totalTeamMatches: params.teamMatches.length,
+        eligibleTeamMatches: eligibleCount,
+        playedMatches: playedMatchIds.size,
+        rehabMissedMatches: 0,
+        onLeaveMatches: 0,
+        restrictedPlayedMatches: 0,
+      },
+    };
+  }
+
+  // 1. 復帰初戦（rehab / on_leave 終了後の最初の出場試合）を特定
+  const returnMatchMap = new Map<string, NonActiveConditionStatus>();
+  const conditionTimeline: PlayerGrowthConditionTimelineItem[] = sortedPeriods.map((period) => {
+    const { days, isOngoing, isFuture } = countConditionPeriodDays(
+      period.startDate,
+      period.endDate,
+      todayKey
+    );
+    const matchesInPeriod = params.teamMatches.filter((tm) => {
+      const dk = normalizeIsoDateKey(tm.date);
+      if (!dk) return false;
+      if (dk < period.startDate) return false;
+      if (period.endDate && dk > period.endDate) return false;
+      return true;
+    });
+    const playedInPeriod = matchesInPeriod.filter((tm) => playedMatchIds.has(tm.id)).length;
+    const missedInPeriod = Math.max(0, matchesInPeriod.length - playedInPeriod);
+
+    let returnMatch: PlayerGrowthConditionTimelineItem["returnMatch"] = null;
+    if (
+      (period.status === "rehab" || period.status === "on_leave") &&
+      period.endDate &&
+      period.endDate <= todayKey
+    ) {
+      const firstAfter = playedMatchesChrono.find((pm) => pm.dateKey > period.endDate!);
+      if (firstAfter) {
+        returnMatch = {
+          matchId: firstAfter.matchId,
+          date: firstAfter.date,
+          opponent: firstAfter.opponent,
+        };
+        if (!returnMatchMap.has(firstAfter.matchId)) {
+          returnMatchMap.set(firstAfter.matchId, period.status);
+        }
+      }
+    }
+
+    return {
+      id: period.id,
+      status: period.status,
+      startDate: period.startDate,
+      endDate: period.endDate ?? null,
+      days,
+      isOngoing,
+      isFuture,
+      privateNote: period.privateNote || null,
+      teamMatchesDuringPeriod: matchesInPeriod.length,
+      playedMatchesDuringPeriod: playedInPeriod,
+      missedMatchesDuringPeriod: missedInPeriod,
+      returnMatch,
+    };
+  });
+
+  // 2. 打撃・投手トレンドへの期間アノテーション付与
+  let restrictedPlayedMatchesSet = new Set<string>();
+
+  const nextBattingTrend: PlayerBattingTrendItem[] = section.battingTrend.map((bt) => {
+    const dk = normalizeIsoDateKey(bt.date);
+    const eff = dk
+      ? resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: sortedPeriods,
+          dateKey: dk,
+          todayKey,
+        })
+      : { status: "active" as const };
+    const condDuring = isNonActiveConditionStatus(eff.status) ? eff.status : null;
+    if (condDuring === "restricted") {
+      restrictedPlayedMatchesSet.add(bt.matchId);
+    }
+    const retFrom = returnMatchMap.get(bt.matchId) || null;
+    return {
+      ...bt,
+      conditionDuringMatch: condDuring,
+      isReturnMatch: Boolean(retFrom),
+      returnedFromStatus: retFrom,
+    };
+  });
+
+  const nextPitchingTrend: PlayerPitchingTrendItem[] = section.pitchingTrend.map((pt) => {
+    const dk = normalizeIsoDateKey(pt.date);
+    const eff = dk
+      ? resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: sortedPeriods,
+          dateKey: dk,
+          todayKey,
+        })
+      : { status: "active" as const };
+    const condDuring = isNonActiveConditionStatus(eff.status) ? eff.status : null;
+    if (condDuring === "restricted") {
+      restrictedPlayedMatchesSet.add(pt.matchId);
+    }
+    const retFrom = returnMatchMap.get(pt.matchId) || null;
+    return {
+      ...pt,
+      conditionDuringMatch: condDuring,
+      isReturnMatch: Boolean(retFrom),
+      returnedFromStatus: retFrom,
+    };
+  });
+
+  // 3. 月別ステップアップ推移への期間バッジ＆休養0試合月の補完
+  const existingMonthMap = new Map<string, PlayerMonthlyBattingItem>();
+  for (const mb of section.monthlyBatting) {
+    existingMonthMap.set(mb.month, { ...mb });
+  }
+
+  const allSeasonMonths = new Set<string>(existingMonthMap.keys());
+  const firstPlayedMonth =
+    section.monthlyBatting.length > 0 ? section.monthlyBatting[0].month : null;
+  const todayYm = todayKey.slice(0, 7);
+
+  for (const period of sortedPeriods) {
+    if (period.startDate > todayKey) continue;
+    const pStartYm = period.startDate.slice(0, 7);
+    const rawEndKey = period.endDate && period.endDate < todayKey ? period.endDate : todayKey;
+    const pEndYm = rawEndKey.slice(0, 7);
+    for (const ym of enumerateYearMonthsBetween(pStartYm, pEndYm)) {
+      if (!firstPlayedMonth || ym >= firstPlayedMonth || existingMonthMap.size === 0) {
+        if (ym <= todayYm) {
+          allSeasonMonths.add(ym);
+        }
+      }
+    }
+  }
+
+  const nextMonthlyBatting: PlayerMonthlyBattingItem[] = Array.from(allSeasonMonths)
+    .sort((a, b) => a.localeCompare(b))
+    .map((ym) => {
+      const monthStart = `${ym}-01`;
+      const monthEnd = `${ym}-31`;
+      const overlappingStatuses = Array.from(
+        new Set<NonActiveConditionStatus>(
+          sortedPeriods
+            .filter((p) => {
+              const pEnd = p.endDate || "9999-12-31";
+              return p.startDate <= monthEnd && pEnd >= monthStart;
+            })
+            .map((p) => p.status)
+        )
+      );
+      const base = existingMonthMap.get(ym);
+      if (base) {
+        return {
+          ...base,
+          conditionStatuses: overlappingStatuses.length > 0 ? overlappingStatuses : undefined,
+        };
+      }
+      return {
+        month: ym,
+        monthLabel: formatMonthLabelForGrowth(ym),
+        games: 0,
+        pa: 0,
+        ab: 0,
+        hits: 0,
+        hr: 0,
+        rbi: 0,
+        runs: 0,
+        walksAndHbp: 0,
+        strikeouts: 0,
+        sb: 0,
+        avg: "---",
+        avgNum: 0,
+        obp: "---",
+        ops: "---",
+        kRatePercent: 0,
+        bbRatePercent: 0,
+        conditionStatuses: overlappingStatuses.length > 0 ? overlappingStatuses : undefined,
+      };
+    })
+    .filter((mb) => mb.games > 0 || (mb.conditionStatuses && mb.conditionStatuses.length > 0));
+
+  // 4. 在籍・休養・出場サマリー算出
+  const joinedKey = normalizeIsoDateKey(params.joinedDateKey);
+  let eligibleTeamMatches = 0;
+  let rehabMissedMatches = 0;
+  let onLeaveMatches = 0;
+
+  for (const tm of params.teamMatches) {
+    const dk = normalizeIsoDateKey(tm.date);
+    if (dk && joinedKey && dk < joinedKey) {
+      continue;
+    }
+    const eff = dk
+      ? resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: sortedPeriods,
+          dateKey: dk,
+          todayKey,
+        })
+      : { status: "active" as const };
+    const played = playedMatchIds.has(tm.id);
+
+    if (eff.status === "on_leave" && !played) {
+      onLeaveMatches += 1;
+      continue;
+    }
+
+    eligibleTeamMatches += 1;
+    if (eff.status === "rehab" && !played) {
+      rehabMissedMatches += 1;
+    }
+  }
+
+  return {
+    ...section,
+    battingTrend: nextBattingTrend,
+    pitchingTrend: nextPitchingTrend,
+    monthlyBatting: nextMonthlyBatting,
+    conditionTimeline,
+    participationSummary: {
+      totalTeamMatches: params.teamMatches.length,
+      eligibleTeamMatches,
+      playedMatches: playedMatchIds.size,
+      rehabMissedMatches,
+      onLeaveMatches,
+      restrictedPlayedMatches: restrictedPlayedMatchesSet.size,
+    },
+  };
 }
 

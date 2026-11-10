@@ -47,6 +47,7 @@ import type { Match } from "@/types/match";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import {
   PLAYER_CONDITION_META,
+  formatConditionPeriodRange,
   loadDemoPlayerConditionOverrides,
   normalizePlayerConditionStatus,
 } from "@/lib/liff/player-condition";
@@ -65,6 +66,7 @@ import {
   formatLineupShareText,
   formatPlayerJoinedShortDate,
   isPlayerJoinedAfterMatch,
+  resolveLineupPlayerConditionForMatch,
   resolvePlayerMatchAttendanceStatus,
   type LineupPlayer,
   type MyLineupSlot,
@@ -183,23 +185,31 @@ function getTodayIsoDate(): string {
 
 function filterLineupCandidatePlayers(
   rawPlayers: LineupPlayer[],
-  applyDemoOverrides: boolean
+  applyDemoOverrides: boolean,
+  matchDate?: string | null
 ): LineupPlayer[] {
   const overrides = applyDemoOverrides ? loadDemoPlayerConditionOverrides() : {};
   return (Array.isArray(rawPlayers) ? rawPlayers : [])
     .map((p) => {
       const ov = overrides[p.id];
-      if (!ov) {
-        return {
-          ...p,
-          conditionStatus: normalizePlayerConditionStatus(p.conditionStatus),
-          conditionNote: p.conditionNote ?? null,
-        };
-      }
+      const mergedPeriods = ov ? ov.conditionPeriods : p.conditionPeriods;
+      const fallbackCond = ov ? ov.conditionStatus : p.conditionStatus;
+      const fallbackNote = ov ? ov.conditionNote : p.conditionNote ?? null;
+      const eff = resolveLineupPlayerConditionForMatch(
+        {
+          conditionStatus: fallbackCond,
+          conditionNote: fallbackNote,
+          conditionPeriods: mergedPeriods,
+        },
+        matchDate
+      );
       return {
         ...p,
-        conditionStatus: ov.conditionStatus,
-        conditionNote: ov.conditionNote,
+        conditionPeriods: mergedPeriods,
+        activeConditionPeriod: eff.period,
+        conditionStatus: eff.status,
+        conditionNote:
+          eff.status !== "active" ? eff.note ?? fallbackNote : null,
       };
     })
     .filter(
@@ -477,10 +487,14 @@ function LiffLineupContent() {
     try {
       // 🅰️ デモ試合IDの場合のみデモデータを参照（実試合UUIDがデモ扱いされる不具合を完全防止）
       if (isDemoMatchId(selectedMatchId)) {
-        const demoCandidates = filterLineupCandidatePlayers(DEMO_LINEUP_PLAYERS, true);
-        setTeamPlayers(demoCandidates);
         const demoMatch = getDemoMatchById(selectedMatchId) || DEMO_MATCH_MAP["demo-match-3"];
         setCurrentMatch(demoMatch);
+        const demoCandidates = filterLineupCandidatePlayers(
+          DEMO_LINEUP_PLAYERS,
+          true,
+          demoMatch?.date ?? null
+        );
+        setTeamPlayers(demoCandidates);
 
         const demoLineups = loadDemoMatchLineups(selectedMatchId);
         setMyLineup(
@@ -568,7 +582,7 @@ function LiffLineupContent() {
 
         if (playersRes.ok) {
           const playersData = (await playersRes.json()) as LineupPlayer[];
-          activePlayers = filterLineupCandidatePlayers(playersData, false);
+          activePlayers = filterLineupCandidatePlayers(playersData, false, matchDate);
           setTeamPlayers(activePlayers);
         }
       }
@@ -2374,8 +2388,17 @@ function LiffLineupContent() {
                     normalizePlayerConditionStatus(tempSelectedPlayer.conditionStatus) ===
                       "restricted" && (
                       <div className="mb-3 p-2.5 rounded-xl bg-amber-500/12 border border-amber-500/35 border-l-4 border-l-amber-500 space-y-0.5">
-                        <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-800 dark:text-amber-300">
+                        <div className="flex items-center justify-between gap-1.5 flex-wrap text-[11px] font-black text-amber-800 dark:text-amber-300">
                           <span>⚠️ 一部プレー制限ありの選手です</span>
+                          {tempSelectedPlayer.activeConditionPeriod && (
+                            <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
+                              {formatConditionPeriodRange(
+                                tempSelectedPlayer.activeConditionPeriod.startDate,
+                                tempSelectedPlayer.activeConditionPeriod.endDate,
+                                { compact: true }
+                              )}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10.5px] font-bold text-foreground leading-snug">
                           {tempSelectedPlayer.conditionNote

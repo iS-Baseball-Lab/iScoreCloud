@@ -25,6 +25,8 @@ import {
   Edit3,
   Volume2,
   Users,
+  Lock,
+  HeartPulse,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -33,9 +35,12 @@ import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import type { PlayerPhotoKind } from "@/components/liff/PlayerPhotoCaptureModal";
 import {
+  formatConditionPeriodRange,
+  getTodayJstDateKey,
   normalizePlayerConditionStatus,
   PLAYER_CONDITION_META,
   loadDemoPlayerConditionOverrides,
+  resolveEffectivePlayerConditionOnDate,
 } from "@/lib/liff/player-condition";
 import {
   EMPTY_PLAYER_PROFILE_DETAILS,
@@ -52,11 +57,13 @@ const PlayerPhotoCaptureModal = dynamic(
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import type {
-  GrowthFilterKey,
-  PlayerBattingTrendItem,
-  PlayerGrowthResponse,
-  PlayerPitchingTrendItem,
+import {
+  enrichSectionWithConditionPeriods,
+  type GrowthFilterKey,
+  type PlayerBattingTrendItem,
+  type PlayerGrowthResponse,
+  type PlayerPitchingTrendItem,
+  type TeamMatchBriefForGrowth,
 } from "@/lib/liff/player-positions-and-growth";
 
 interface PositionLabelMeta {
@@ -441,6 +448,38 @@ function BattingGrowthChart({
                 className="cursor-pointer"
                 onClick={() => onSelectIndex(idx)}
               >
+                {/* 復帰初戦の縦区切りガイドライン */}
+                {item.isReturnMatch && idx > 0 && (
+                  <g>
+                    <line
+                      x1={(getX(idx - 1) + cx) / 2}
+                      y1={padT}
+                      x2={(getX(idx - 1) + cx) / 2}
+                      y2={padT + plotH}
+                      stroke="currentColor"
+                      className="text-emerald-600 dark:text-emerald-400"
+                      strokeWidth={1.3}
+                      strokeDasharray="3 2"
+                    />
+                    <rect
+                      x={(getX(idx - 1) + cx) / 2 - 11}
+                      y={padT - 1}
+                      width={22}
+                      height={11}
+                      rx={3}
+                      className="fill-emerald-600"
+                    />
+                    <text
+                      x={(getX(idx - 1) + cx) / 2}
+                      y={padT + 7}
+                      textAnchor="middle"
+                      className="text-[7.5px] font-black fill-white"
+                    >
+                      復帰
+                    </text>
+                  </g>
+                )}
+
                 {/* 選択中の縦ガイドライン */}
                 {isSel && (
                   <line
@@ -473,7 +512,29 @@ function BattingGrowthChart({
                   className="text-primary/60"
                 />
 
-                {/* 打率メインドット */}
+                {/* 打率メインドット（復帰初戦・一部制限中はアクセントリング表示） */}
+                {item.isReturnMatch && (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={isSel ? 8.5 : 6.5}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.8}
+                    className="text-emerald-600"
+                  />
+                )}
+                {!item.isReturnMatch && item.conditionDuringMatch === "restricted" && (
+                  <circle
+                    cx={cx}
+                    cy={cy}
+                    r={isSel ? 8 : 6}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.8}
+                    className="text-amber-500"
+                  />
+                )}
                 <circle
                   cx={cx}
                   cy={cy}
@@ -517,6 +578,16 @@ function BattingGrowthChart({
               <span className="font-black text-foreground truncate">
                 vs {activeItem.opponent}
               </span>
+              {activeItem.isReturnMatch && (
+                <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9.5px] font-black">
+                  ✨ 復帰戦
+                </span>
+              )}
+              {activeItem.conditionDuringMatch === "restricted" && (
+                <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black">
+                  ⚠️ 一部制限中
+                </span>
+              )}
             </div>
             <p className="text-xs font-black text-foreground tabular-nums">
               この試合: {activeItem.ab}打数 {activeItem.hits}安打
@@ -828,9 +899,46 @@ function applyDemoGrowthOverrides(
       ? po.editableWeight
       : p.weight;
 
+  const demoPeriods = co ? co.conditionPeriods : p.conditionPeriods || [];
+  const todayKey = getTodayJstDateKey();
+  const demoEffToday = resolveEffectivePlayerConditionOnDate({
+    conditionPeriods: demoPeriods,
+    fallbackStatus: co ? co.conditionStatus : p.conditionStatus,
+    fallbackNote: co ? co.conditionNote : p.conditionNote,
+    dateKey: todayKey,
+    todayKey,
+  });
+
+  let nextSections = data.sectionsByFilter;
+  if (nextSections && demoPeriods.length > 0) {
+    const inferredMatches: TeamMatchBriefForGrowth[] = (
+      nextSections.all?.battingTrend || []
+    ).map((bt) => ({
+      id: bt.matchId,
+      date: bt.date,
+      opponent: bt.opponent,
+      matchType: bt.matchType,
+    }));
+    const filterKeys: GrowthFilterKey[] = ["all", "official", "exchange", "practice"];
+    const computed = {} as Record<GrowthFilterKey, typeof nextSections.all>;
+    for (const fk of filterKeys) {
+      const fMatches =
+        fk === "all"
+          ? inferredMatches
+          : inferredMatches.filter((m) => m.matchType === fk);
+      computed[fk] = enrichSectionWithConditionPeriods(nextSections[fk], {
+        conditionPeriods: demoPeriods,
+        teamMatches: fMatches,
+        todayKey,
+      });
+    }
+    nextSections = computed;
+  }
+
   return {
     ...data,
     roster: nextRoster,
+    sectionsByFilter: nextSections,
     player: {
       ...p,
       ...(po?.name ? { name: po.name } : {}),
@@ -846,11 +954,13 @@ function applyDemoGrowthOverrides(
         : {}),
       ...(po?.notes !== undefined ? { notes: po.notes } : {}),
       ...(typeof po?.isCaptain === "boolean" ? { isCaptain: po.isCaptain } : {}),
-      conditionStatus: co
-        ? co.conditionStatus
-        : normalizePlayerConditionStatus(p.conditionStatus),
+      conditionStatus: demoEffToday.status,
+      conditionNote: demoEffToday.note ?? (co ? co.conditionNote : p.conditionNote),
+      conditionPeriods: demoPeriods,
+      activeConditionPeriod: demoEffToday.period,
       profileDetails: mergedDetails,
       canEditProfile: true,
+      canManagePlayers: true,
     },
   };
 }
@@ -1455,6 +1565,17 @@ function PlayerGrowthContent() {
                             {condMeta.badgeText}
                           </span>
                         )}
+                        {condStatus !== "active" && player.activeConditionPeriod && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-muted border border-border text-[10px] font-black text-foreground tabular-nums">
+                            <Calendar className="w-3 h-3 text-primary shrink-0" />
+                            <span>
+                              {formatConditionPeriodRange(
+                                player.activeConditionPeriod.startDate,
+                                player.activeConditionPeriod.endDate
+                              )}
+                            </span>
+                          </span>
+                        )}
                         {isDemoFlag && (
                           <span className="px-2 py-0.5 rounded bg-muted border border-border text-muted-foreground text-[10px] font-black">
                             DEMO
@@ -1520,6 +1641,20 @@ function PlayerGrowthContent() {
                           ))}
                         </div>
                       )}
+
+                      {player.canManagePlayers && player.conditionNote && (
+                        <div className="p-2.5 rounded-xl bg-muted/45 border border-border flex items-start gap-1.5 text-xs">
+                          <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-black text-muted-foreground block">
+                              指導者・管理者限定メモ（一般保護者には非公開）
+                            </span>
+                            <span className="font-black text-foreground leading-snug">
+                              {player.conditionNote}
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -1573,6 +1708,142 @@ function PlayerGrowthContent() {
                 );
               })}
             </div>
+
+            {/* ━━━ 🩹 コンディション・休養／復帰タイムライン（期間登録がある選手のみ表示） ━━━ */}
+            {(activeSection.conditionTimeline?.length ?? 0) > 0 && (
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <HeartPulse className="w-4 h-4 text-rose-400" />
+                    <span>コンディション・休養／復帰タイムライン</span>
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-300 tabular-nums">
+                    全{activeSection.conditionTimeline?.length ?? 0}期間
+                  </span>
+                </div>
+
+                <div className="p-4 space-y-3">
+                  {/* 出場・休養コンテキスト集計バー */}
+                  {activeSection.participationSummary && (
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2 rounded-xl bg-muted/45 border border-border">
+                        <span className="text-[9.5px] font-bold text-muted-foreground block">
+                          出場 / 在籍対象
+                        </span>
+                        <span className="text-sm font-black text-foreground tabular-nums">
+                          {activeSection.participationSummary.playedMatches}
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            {" "}
+                            / {activeSection.participationSummary.eligibleTeamMatches}試合
+                          </span>
+                        </span>
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/25">
+                        <span className="text-[9.5px] font-bold text-rose-700 dark:text-rose-300 block">
+                          故障・調整見送り
+                        </span>
+                        <span className="text-sm font-black text-rose-700 dark:text-rose-300 tabular-nums">
+                          {activeSection.participationSummary.rehabMissedMatches}
+                          <span className="text-[10px] font-bold"> 試合</span>
+                        </span>
+                      </div>
+
+                      <div className="p-2 rounded-xl bg-slate-500/10 border border-slate-500/25">
+                        <span className="text-[9.5px] font-bold text-muted-foreground block">
+                          {activeSection.participationSummary.onLeaveMatches > 0
+                            ? "休部期間中"
+                            : "制限ケア出場"}
+                        </span>
+                        <span className="text-sm font-black text-foreground tabular-nums">
+                          {activeSection.participationSummary.onLeaveMatches > 0
+                            ? activeSection.participationSummary.onLeaveMatches
+                            : activeSection.participationSummary.restrictedPlayedMatches}
+                          <span className="text-[10px] font-bold text-muted-foreground">
+                            {" "}
+                            試合
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 各期間カード */}
+                  <div className="space-y-2">
+                    {[...(activeSection.conditionTimeline || [])]
+                      .reverse()
+                      .map((tl) => {
+                        const tlMeta = PLAYER_CONDITION_META[tl.status];
+                        return (
+                          <div
+                            key={tl.id}
+                            className="p-3 rounded-2xl bg-muted/30 border border-border space-y-2"
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span
+                                  className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-black",
+                                    tlMeta.solidBadgeClass
+                                  )}
+                                >
+                                  {tlMeta.badgeText}
+                                </span>
+                                <span className="text-xs font-black text-foreground tabular-nums">
+                                  {formatConditionPeriodRange(tl.startDate, tl.endDate)}
+                                </span>
+                              </div>
+
+                              <span
+                                className={cn(
+                                  "px-2 py-0.5 rounded-full text-[9.5px] font-black border tabular-nums",
+                                  tl.isOngoing
+                                    ? "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/30"
+                                    : tl.isFuture
+                                    ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/30"
+                                    : "bg-card text-muted-foreground border-border"
+                                )}
+                              >
+                                {tl.isOngoing
+                                  ? `継続中（${tl.days}日目）`
+                                  : tl.isFuture
+                                  ? "今後の予定"
+                                  : `計${tl.days}日間`}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 flex-wrap text-[11px]">
+                              <span className="font-bold text-muted-foreground tabular-nums">
+                                {tl.status === "restricted"
+                                  ? `一部制限ケア中の出場: ${tl.playedMatchesDuringPeriod}試合`
+                                  : tl.teamMatchesDuringPeriod > 0
+                                  ? `期間中のチーム試合: ${tl.teamMatchesDuringPeriod}試合（休養見送り ${tl.missedMatchesDuringPeriod}試合）`
+                                  : "期間中のチーム試合なし"}
+                              </span>
+
+                              {tl.returnMatch && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black">
+                                  <span>
+                                    🔥 復帰戦: {formatShortDate(tl.returnMatch.date)} vs{" "}
+                                    {tl.returnMatch.opponent}
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+
+                            {player?.canManagePlayers && tl.privateNote && (
+                              <div className="px-2.5 py-1.5 rounded-xl bg-card border border-border flex items-center gap-1.5 text-[10.5px] font-bold text-foreground">
+                                <Lock className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>{tl.privateNote}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </section>
+            )}
 
             {activeSection.battingTrend.length === 0 &&
             !activeSection.pitchingSummary ? (
@@ -1836,41 +2107,71 @@ function PlayerGrowthContent() {
                         </div>
 
                         <div className="space-y-1.5">
-                          {activeSection.monthlyBatting.map((m) => (
-                            <div
-                              key={m.month}
-                              className="px-3 py-2 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-2 text-xs"
-                            >
-                              <div className="min-w-0">
-                                <span className="font-black text-foreground">
-                                  {m.monthLabel}
-                                </span>
-                                <span className="text-[10px] font-bold text-muted-foreground ml-1.5 tabular-nums">
-                                  ({m.games}試合 {m.ab}打数{m.hits}安打)
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2 shrink-0 tabular-nums">
-                                <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden hidden min-[370px]:block">
-                                  <div
-                                    className="h-full bg-primary rounded-full"
-                                    style={{
-                                      width: `${Math.min(
-                                        100,
-                                        Math.round((m.avgNum / 0.5) * 100)
-                                      )}%`,
-                                    }}
-                                  />
+                          {activeSection.monthlyBatting.map((m) => {
+                            const mConds = m.conditionStatuses || [];
+                            const isZeroGameRestMonth = m.games === 0 && mConds.length > 0;
+                            return (
+                              <div
+                                key={m.month}
+                                className={cn(
+                                  "px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs",
+                                  isZeroGameRestMonth
+                                    ? "bg-slate-100/80 dark:bg-slate-900/60 border-border"
+                                    : "bg-muted/35 border-border"
+                                )}
+                              >
+                                <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-black text-foreground">
+                                    {m.monthLabel}
+                                  </span>
+                                  {!isZeroGameRestMonth && (
+                                    <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                                      ({m.games}試合 {m.ab}打数{m.hits}安打)
+                                    </span>
+                                  )}
+                                  {mConds.map((cs) => (
+                                    <span
+                                      key={`${m.month}-${cs}`}
+                                      className={cn(
+                                        "px-1.5 py-0.2 rounded text-[9.5px] font-black",
+                                        PLAYER_CONDITION_META[cs].softBadgeClass
+                                      )}
+                                    >
+                                      {PLAYER_CONDITION_META[cs].compactBadgeText}
+                                    </span>
+                                  ))}
                                 </div>
-                                <span className="font-black text-primary">
-                                  {m.avg}
-                                </span>
-                                <span className="text-[10px] font-bold text-muted-foreground">
-                                  OPS {m.ops}
-                                </span>
+
+                                {isZeroGameRestMonth ? (
+                                  <span className="text-[10.5px] font-black text-muted-foreground shrink-0">
+                                    {mConds.includes("on_leave")
+                                      ? "休部期間（出場なし）"
+                                      : "調整・休養期間（出場なし）"}
+                                  </span>
+                                ) : (
+                                  <div className="flex items-center gap-2 shrink-0 tabular-nums">
+                                    <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden hidden min-[370px]:block">
+                                      <div
+                                        className="h-full bg-primary rounded-full"
+                                        style={{
+                                          width: `${Math.min(
+                                            100,
+                                            Math.round((m.avgNum / 0.5) * 100)
+                                          )}%`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="font-black text-primary">
+                                      {m.avg}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-muted-foreground">
+                                      OPS {m.ops}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -2244,6 +2545,16 @@ function PlayerGrowthContent() {
                                 {roleLabel && (
                                   <span className="px-1.5 py-0.2 rounded bg-muted/50 border border-border text-[9.5px] font-black text-foreground">
                                     {roleLabel}
+                                  </span>
+                                )}
+                                {g.isReturnMatch && (
+                                  <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9.5px] font-black">
+                                    ✨ 復帰戦
+                                  </span>
+                                )}
+                                {g.conditionDuringMatch === "restricted" && (
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black">
+                                    ⚠️ 一部制限中
                                   </span>
                                 )}
                               </div>

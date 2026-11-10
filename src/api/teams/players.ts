@@ -3,11 +3,18 @@ import { Hono } from "hono";
 import { getAuth } from "@/lib/auth";
 import { ensurePlayerProfileColumns } from "@/lib/db-helper";
 import {
+  comparePlayersByConditionAndUniform,
+  getTodayJstDateKey,
+  maskConditionPeriodsForViewer,
   normalizePlayerConditionStatus,
+  resolveEffectivePlayerConditionOnDate,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import { parseDateInputToUnixSeconds } from "@/lib/liff/player-profile-schema";
-import { cleanupPreJoinMatchAttendance } from "@/lib/player-roster-cleanup";
+import {
+  cleanupPreJoinMatchAttendance,
+  loadTeamPlayerConditionPeriodsMap,
+} from "@/lib/player-roster-cleanup";
 import { canManageTeam } from "@/lib/roles";
 import type { AuthUser, WorkerEnv } from "@/types/api";
 
@@ -175,12 +182,12 @@ async function resolveCanViewPlayerConditionNotes(
   return false;
 }
 
-// 選手一覧取得（主要フィールド全て含む・conditionNoteは指導者/管理者のみ返却）
+// 選手一覧取得（主要フィールド全て含む・conditionNote/privateNoteは指導者/管理者のみ返却）
 app.get("/:teamId/players", async (c) => {
   const teamId = c.req.param("teamId");
   try {
     await ensurePlayerProfileColumns(c.env.DB);
-    const [queryRes, canViewNotes] = await Promise.all([
+    const [queryRes, canViewNotes, periodsByPlayerId] = await Promise.all([
       c.env.DB.prepare(
         `SELECT
           id,
@@ -201,25 +208,37 @@ app.get("/:teamId/players", async (c) => {
           created_at        AS createdAt
          FROM players
          WHERE team_id = ?
-         ORDER BY
-           CASE WHEN COALESCE(condition_status, 'active') = 'on_leave' THEN 1 ELSE 0 END ASC,
-           CAST(uniform_number AS INTEGER) ASC`
+         ORDER BY CAST(uniform_number AS INTEGER) ASC`
       )
         .bind(teamId)
         .all<RawPlayerDbRow>(),
       resolveCanViewPlayerConditionNotes(c, teamId),
+      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
-    const maskedResults = (queryRes.results || []).map((row) => {
-      const normalizedStatus: PlayerConditionStatus = normalizePlayerConditionStatus(
-        row.conditionStatus
-      );
-      return {
-        ...row,
-        conditionStatus: normalizedStatus,
-        conditionNote: canViewNotes ? row.conditionNote || null : null,
-      };
-    });
+    const todayKey = getTodayJstDateKey();
+    const maskedResults = (queryRes.results || [])
+      .map((row) => {
+        const rawPeriods = periodsByPlayerId.get(row.id) || [];
+        const effectiveToday = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: rawPeriods,
+          fallbackStatus: row.conditionStatus,
+          fallbackNote: row.conditionNote,
+          dateKey: todayKey,
+          todayKey,
+        });
+        const resolvedNote =
+          effectiveToday.status !== "active"
+            ? effectiveToday.note ?? row.conditionNote
+            : row.conditionNote;
+        return {
+          ...row,
+          conditionStatus: effectiveToday.status as PlayerConditionStatus,
+          conditionNote: canViewNotes ? resolvedNote || null : null,
+          conditionPeriods: maskConditionPeriodsForViewer(rawPeriods, canViewNotes),
+        };
+      })
+      .sort(comparePlayersByConditionAndUniform);
 
     return c.json(maskedResults);
   } catch {

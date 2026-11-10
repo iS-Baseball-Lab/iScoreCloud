@@ -12,10 +12,14 @@ import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/li
 import {
   PLAYER_CONDITION_META,
   comparePlayersByConditionAndUniform,
+  formatConditionPeriodRange,
   loadDemoPlayerConditionOverrides,
   normalizePlayerConditionStatus,
+  resolveEffectivePlayerConditionOnDate,
+  type PlayerConditionPeriod,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
+import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
 import {
   Calendar as CalendarIcon,
   Users,
@@ -222,6 +226,8 @@ interface MemberPerson {
   subText?: string;
   groupType: "player" | "parent" | "mother" | "father" | "staff";
   conditionStatus?: PlayerConditionStatus;
+  conditionPeriods?: PlayerConditionPeriod[];
+  linkedChildIds?: string[];
 }
 
 type MemberSortOrderMap = {
@@ -623,15 +629,52 @@ function AttendanceMatrixBoardContent() {
           const cond = override
             ? override.conditionStatus
             : normalizePlayerConditionStatus(p.conditionStatus);
+          const periods = override ? override.conditionPeriods : p.conditionPeriods || [];
           return {
             ...p,
             conditionStatus: cond,
+            conditionPeriods: periods,
           };
         })
         .sort(comparePlayersByConditionAndUniform);
-      const mothers = g.mothers || [];
-      const fathers = g.fathers || [];
-      const parents = g.parents || [...mothers, ...fathers];
+
+      const rawMothers = g.mothers || [];
+      const rawFathers = g.fathers || [];
+      const fallbackParentMap = buildParentToChildrenMap({
+        players: effectivePlayers.map((ep) => ({
+          id: ep.id,
+          name: ep.name,
+          isActive: true,
+          conditionStatus: ep.conditionStatus,
+          conditionPeriods: ep.conditionPeriods,
+        })),
+        teamMembers: [...rawMothers, ...rawFathers].map((m) => ({
+          id: m.id,
+          name: m.name,
+          memberType: "parent",
+          status: "active",
+        })),
+        relations: [],
+      });
+      const effectivePlayerMap = new Map(effectivePlayers.map((ep) => [ep.id, ep]));
+      const enrichParentPerson = (m: MemberPerson): MemberPerson => {
+        const cIds =
+          Array.isArray(m.linkedChildIds) && m.linkedChildIds.length > 0
+            ? m.linkedChildIds
+            : fallbackParentMap.get(m.id) || [];
+        const allKidsLeaveToday =
+          cIds.length > 0 &&
+          cIds.every((cid) => effectivePlayerMap.get(cid)?.conditionStatus === "on_leave");
+        return {
+          ...m,
+          linkedChildIds: cIds,
+          conditionStatus: allKidsLeaveToday ? "on_leave" : "active",
+        };
+      };
+
+      const mothers = rawMothers.map(enrichParentPerson);
+      const fathers = rawFathers.map(enrichParentPerson);
+      const parents = (g.parents || [...mothers, ...fathers]).map(enrichParentPerson);
       setGroups({
         players: effectivePlayers,
         parents: parents,
@@ -854,29 +897,122 @@ function AttendanceMatrixBoardContent() {
     return list;
   }, [events, selectedMonth, showPastDates, todayStr, currentMonthStr]);
 
-  // メンバー並び替えヘルパー関数（カスタム並び順未登録時は在籍区分・背番号順で休部選手を末尾へ配置）
-  const sortMembersByCustomOrder = useCallback((members: MemberPerson[], orderIds?: string[]) => {
-    if (!orderIds || orderIds.length === 0) {
-      return [...members].sort((a, b) => {
-        if (a.groupType === "player" && b.groupType === "player") {
-          return comparePlayersByConditionAndUniform(a, b);
-        }
-        return 0;
-      });
-    }
-    const orderMap = new Map<string, number>();
-    orderIds.forEach((id, idx) => orderMap.set(id, idx));
+  const playerByIdMap = useMemo(
+    () => new Map(groups.players.map((p) => [p.id, p])),
+    [groups.players]
+  );
 
-    return [...members].sort((a, b) => {
-      const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
-      const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
-      if (idxA !== idxB) return idxA - idxB;
-      if (a.groupType === "player" && b.groupType === "player") {
-        return comparePlayersByConditionAndUniform(a, b);
+  const resolvePersonConditionOnDate = useCallback(
+    (
+      person: MemberPerson,
+      dateKey?: string | null
+    ): { status: PlayerConditionStatus; period: PlayerConditionPeriod | null } => {
+      if (person.groupType === "player") {
+        const eff = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: person.conditionPeriods,
+          fallbackStatus: person.conditionStatus,
+          dateKey,
+          todayKey: todayStr,
+        });
+        return { status: eff.status, period: eff.period };
       }
-      return a.name.localeCompare(b.name, "ja");
-    });
-  }, []);
+
+      if (
+        person.groupType === "mother" ||
+        person.groupType === "father" ||
+        person.groupType === "parent"
+      ) {
+        const childIds = person.linkedChildIds || [];
+        if (childIds.length > 0) {
+          let firstLeavePeriod: PlayerConditionPeriod | null = null;
+          const allOnLeave = childIds.every((cid) => {
+            const child = playerByIdMap.get(cid);
+            if (!child) return false;
+            const eff = resolveEffectivePlayerConditionOnDate({
+              conditionPeriods: child.conditionPeriods,
+              fallbackStatus: child.conditionStatus,
+              dateKey,
+              todayKey: todayStr,
+            });
+            if (eff.status === "on_leave") {
+              if (!firstLeavePeriod && eff.period) {
+                firstLeavePeriod = eff.period;
+              }
+              return true;
+            }
+            return false;
+          });
+          if (allOnLeave) {
+            return { status: "on_leave", period: firstLeavePeriod };
+          }
+        }
+      }
+
+      return { status: "active", period: null };
+    },
+    [playerByIdMap, todayStr]
+  );
+
+  // 表示中の月・日程リスト全体におけるヘッダー代表コンディション（表示月が休部前/復帰後の場合は通常扱い）
+  const resolvePersonHeaderCondition = useCallback(
+    (
+      person: MemberPerson
+    ): { status: PlayerConditionStatus; period: PlayerConditionPeriod | null } => {
+      if (filteredEvents.length > 0) {
+        const allLeaveInView = filteredEvents.every(
+          (ev) => resolvePersonConditionOnDate(person, ev.dateStr).status === "on_leave"
+        );
+        if (allLeaveInView) {
+          return resolvePersonConditionOnDate(person, filteredEvents[0].dateStr);
+        }
+        if (person.groupType === "player") {
+          const anyRehab = filteredEvents.find(
+            (ev) => resolvePersonConditionOnDate(person, ev.dateStr).status === "rehab"
+          );
+          if (anyRehab) return resolvePersonConditionOnDate(person, anyRehab.dateStr);
+          const anyRestricted = filteredEvents.find(
+            (ev) => resolvePersonConditionOnDate(person, ev.dateStr).status === "restricted"
+          );
+          if (anyRestricted) return resolvePersonConditionOnDate(person, anyRestricted.dateStr);
+        }
+        return { status: "active", period: null };
+      }
+      return resolvePersonConditionOnDate(person, todayStr);
+    },
+    [filteredEvents, resolvePersonConditionOnDate, todayStr]
+  );
+
+  // メンバー並び替えヘルパー関数（カスタム並び順登録済みでも、表示期間全体で休部中の選手・父母は末尾へ配置）
+  const sortMembersByCustomOrder = useCallback(
+    (members: MemberPerson[], orderIds?: string[]) => {
+      const hasCustomOrder = Boolean(orderIds && orderIds.length > 0);
+      const orderMap = new Map<string, number>();
+      if (orderIds) {
+        orderIds.forEach((id, idx) => orderMap.set(id, idx));
+      }
+
+      return [...members].sort((a, b) => {
+        const aLeave = resolvePersonHeaderCondition(a).status === "on_leave";
+        const bLeave = resolvePersonHeaderCondition(b).status === "on_leave";
+        if (aLeave !== bLeave) {
+          return aLeave ? 1 : -1;
+        }
+        if (hasCustomOrder) {
+          const idxA = orderMap.has(a.id) ? orderMap.get(a.id)! : 9999;
+          const idxB = orderMap.has(b.id) ? orderMap.get(b.id)! : 9999;
+          if (idxA !== idxB) return idxA - idxB;
+        }
+        if (a.groupType === "player" && b.groupType === "player") {
+          return comparePlayersByConditionAndUniform(
+            { ...a, conditionStatus: aLeave ? "on_leave" : "active" },
+            { ...b, conditionStatus: bLeave ? "on_leave" : "active" }
+          );
+        }
+        return hasCustomOrder ? a.name.localeCompare(b.name, "ja") : 0;
+      });
+    },
+    [resolvePersonHeaderCondition]
+  );
 
   // 選択されたタブに応じたメンバー一覧（カスタム並び順適用）
   const currentMembers = useMemo(() => {
@@ -1462,6 +1598,13 @@ function AttendanceMatrixBoardContent() {
       const comment = cellData?.comment?.trim() || "";
       const memberGroup = memberSubLabels[person.id] || person.subText || "";
       const isDutyMember = isDutyGroupMatch(memberGroup, event.dutyGroup);
+      const isOnLeaveOnEvent =
+        resolvePersonConditionOnDate(person, event.dateStr).status === "on_leave";
+
+      // 休部期間中の選手・父母は未回答や通常欠席時に「当番欠席」「欠席」としてLINE集計へ混入させない
+      if (isOnLeaveOnEvent && (status === "pending" || (status === "absent" && !comment.includes("当番欠席")))) {
+        return;
+      }
 
       if (status === "absent" && (isDutyMember || comment.includes("当番欠席"))) {
         dutyAbsentList.push({ name: person.name, comment });
@@ -1950,12 +2093,17 @@ function AttendanceMatrixBoardContent() {
                         myInfo.memberIds.includes(person.id) ||
                         myInfo.playerIds.includes(person.id);
                       const subLabel = memberSubLabels[person.id];
-                      const pCond =
-                        person.groupType === "player"
-                          ? normalizePlayerConditionStatus(person.conditionStatus)
-                          : "active";
+                      const headerCond = resolvePersonHeaderCondition(person);
+                      const pCond = headerCond.status;
                       const isOnLeave = pCond === "on_leave";
                       const pCondMeta = PLAYER_CONDITION_META[pCond];
+                      const periodLabel = headerCond.period
+                        ? formatConditionPeriodRange(
+                            headerCond.period.startDate,
+                            headerCond.period.endDate,
+                            { compact: true }
+                          )
+                        : "";
                       return (
                         <th
                           key={person.id}
@@ -1969,9 +2117,11 @@ function AttendanceMatrixBoardContent() {
                               ? "bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400"
                               : "bg-muted text-foreground"
                           }`}
-                          title={`${person.name}${pCond !== "active" ? `（${pCondMeta.label}）` : ""}${
-                            myInfo.isManager ? ": タップして班・ラベルを変更" : ""
-                          }`}
+                          title={`${person.name}${
+                            pCond !== "active"
+                              ? `（${pCondMeta.label}${periodLabel ? `: ${periodLabel}` : ""}）`
+                              : ""
+                          }${myInfo.isManager ? ": タップして班・ラベルを変更" : ""}`}
                         >
                           <div className="flex flex-col items-center justify-center leading-none py-0.5">
                             {person.uniformNumber ? (
@@ -2151,14 +2301,20 @@ function AttendanceMatrixBoardContent() {
                           );
                         })}
 
-                        {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5) */}
+                        {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5・休部期間＆父母連動対応) */}
                         {currentMembers.map((person) => {
                           const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
-                          const isPersonOnLeave =
-                            person.groupType === "player" &&
-                            normalizePlayerConditionStatus(person.conditionStatus) === "on_leave";
+                          const condOnEvent = resolvePersonConditionOnDate(person, ev.dateStr);
+                          const isPersonOnLeave = condOnEvent.status === "on_leave";
                           const isDefaultOnLeaveCell =
                             isPersonOnLeave && (att.status === "pending" || !att.status);
+                          const leavePeriodTip = condOnEvent.period
+                            ? ` ${formatConditionPeriodRange(
+                                condOnEvent.period.startDate,
+                                condOnEvent.period.endDate,
+                                { compact: true }
+                              )}`
+                            : "";
                           const statusConfig =
                             ATTENDANCE_STATUSES[att.status as AttendanceMarkType] ||
                             ATTENDANCE_STATUSES.pending;
@@ -2174,7 +2330,9 @@ function AttendanceMatrixBoardContent() {
                               onClick={() => handleCellClick(ev, person)}
                               title={
                                 isDefaultOnLeaveCell
-                                  ? `${person.name}（休部中）`
+                                  ? `${person.name}（${
+                                      person.groupType === "player" ? "休部期間中" : "ご家族休部期間中"
+                                    }${leavePeriodTip}）`
                                   : undefined
                               }
                               className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border transition-all overflow-hidden ${

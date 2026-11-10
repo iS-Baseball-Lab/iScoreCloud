@@ -4,7 +4,12 @@ import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
-import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
+import { toMatchCalendarKey } from "@/lib/liff/demo-lineup";
+import {
+  getTodayJstDateKey,
+  resolveEffectivePlayerConditionOnDate,
+} from "@/lib/liff/player-condition";
+import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
@@ -448,11 +453,27 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
       return b.date.localeCompare(a.date);
     });
 
+    const periodsByPlayerId = await loadTeamPlayerConditionPeriodsMap(
+      c.env.DB,
+      teamId
+    );
+    const todayKey = getTodayJstDateKey();
+    const targetMatchOption = matchId
+      ? formattedMatches.find((m) => m.id === matchId)
+      : formattedMatches[0];
+    const targetMatchDateKey =
+      toMatchCalendarKey(targetMatchOption?.date) || todayKey;
+
     const activePlayers: LiveReportRosterPlayer[] = rawPlayerRows
       .filter((p) => {
         if (p.isActive === false) return false;
-        const cond = normalizePlayerConditionStatus(p.conditionStatus);
-        return cond !== "on_leave";
+        const eff = resolveEffectivePlayerConditionOnDate({
+          conditionPeriods: periodsByPlayerId.get(p.id) || [],
+          fallbackStatus: p.conditionStatus,
+          dateKey: targetMatchDateKey,
+          todayKey,
+        });
+        return eff.status !== "on_leave";
       })
       .map((p) => ({
         id: p.id,
