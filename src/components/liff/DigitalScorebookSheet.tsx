@@ -146,7 +146,8 @@ function renderPitchColumn(
   rules: ScorebookSymbolRules,
   originX: number,
   originY: number,
-  stealPitchIndices?: number[]
+  stealPitchIndices?: number[],
+  stealPitchNumbers?: number[]
 ): React.ReactNode {
   if (rules.pitchMark === "numbered_bs") {
     const strikeTokens: string[] = [];
@@ -157,20 +158,21 @@ function renderPitchColumn(
       if (isNonPitchMoundEvent(p)) continue;
       if (p === "in_play" || p === "hit" || p === "hbp") continue;
       seq += 1;
+      const stealPrime = stealPitchNumbers?.includes(seq) ? "′" : "";
       if (p === "ball") {
-        ballTokens.push(String(seq));
+        ballTokens.push(`${seq}${stealPrime}`);
       } else if (p === "bunt_foul" && rules.buntPitchMark !== "same_as_normal") {
-        strikeTokens.push(`${seq}BF`);
+        strikeTokens.push(`${seq}BF${stealPrime}`);
       } else if (p === "foul" || p === "bunt_foul") {
-        strikeTokens.push(`${seq}F`);
+        strikeTokens.push(`${seq}F${stealPrime}`);
       } else if (
         p === "bunt_swinging" &&
         (rules.buntPitchMark === "v_dot_circle_dot" ||
           rules.buntPitchMark === "inv_triangle_diamond")
       ) {
-        strikeTokens.push(`${seq}BS`);
+        strikeTokens.push(`${seq}BS${stealPrime}`);
       } else {
-        strikeTokens.push(String(seq));
+        strikeTokens.push(`${seq}${stealPrime}`);
       }
     }
 
@@ -595,9 +597,25 @@ function renderPitchColumn(
           </text>
         );
       })}
-      {rules.advanceError === "senior_chart" &&
-        Array.isArray(stealPitchIndices) &&
-        stealPitchIndices.map((sIdx) => {
+      {(() => {
+        let resolvedPrimeIndices: number[] = [];
+        if (Array.isArray(stealPitchNumbers) && stealPitchNumbers.length > 0) {
+          let formalSeq = 0;
+          maxDraw.forEach((p, idx) => {
+            if (!isNonPitchMoundEvent(p)) {
+              formalSeq += 1;
+              if (stealPitchNumbers.includes(formalSeq)) {
+                resolvedPrimeIndices.push(idx);
+              }
+            }
+          });
+        } else if (
+          rules.advanceError === "senior_chart" &&
+          Array.isArray(stealPitchIndices)
+        ) {
+          resolvedPrimeIndices = stealPitchIndices;
+        }
+        return resolvedPrimeIndices.map((sIdx) => {
           if (sIdx < 0 || sIdx >= maxDraw.length) return null;
           const cy = originY + startOffsetY + sIdx * stepY;
           return (
@@ -612,7 +630,8 @@ function renderPitchColumn(
               strokeLinecap="round"
             />
           );
-        })}
+        });
+      })()}
     </g>
   );
 }
@@ -1995,7 +2014,8 @@ export function renderSingleScorebookCellSvg(
           rules,
           ox,
           oy,
-          cell?.stealPitchIndices
+          cell?.stealPitchIndices,
+          cell?.stealPitchNumbers
         )}
 
       {/* ダイヤモンド進塁線 (1〜4区間) */}

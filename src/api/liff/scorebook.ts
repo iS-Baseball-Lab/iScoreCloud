@@ -3823,6 +3823,8 @@ liffScorebookRouter.post("/save", async (c) => {
 
       // B. 1球ごとの pitches 挿入（牽制球・バントファウルも区別して保存）
       const pitchIdByNum: Record<number, string> = {};
+      const formalPitchIdByNum: Record<number, string> = {};
+      let formalPitchCounter = 0;
       let ballsBefore = 0;
       let strikesBefore = 0;
 
@@ -3830,6 +3832,10 @@ liffScorebookRouter.post("/save", async (c) => {
         const pitchNum = idx + 1;
         const pitchId = crypto.randomUUID();
         pitchIdByNum[pitchNum] = pitchId;
+        if (!isPickoffPitch(pCode) && pCode !== "balk") {
+          formalPitchCounter += 1;
+          formalPitchIdByNum[formalPitchCounter] = pitchId;
+        }
 
         const dbPitchResult =
           pCode === "in_play"
@@ -3897,7 +3903,12 @@ liffScorebookRouter.post("/save", async (c) => {
             id: crypto.randomUUID(),
             matchId: match.id,
             atBatId,
-            pitchId: adv.pitchNumber ? pitchIdByNum[adv.pitchNumber] || null : null,
+            pitchId:
+              typeof adv.pitchNumber === "number" && adv.pitchNumber > 0
+                ? formalPitchIdByNum[adv.pitchNumber] ||
+                  pitchIdByNum[adv.pitchNumber] ||
+                  null
+                : null,
             runnerId,
             fromBase: fromBaseNum,
             toBase: toBaseNum,
@@ -3944,8 +3955,15 @@ liffScorebookRouter.post("/save", async (c) => {
           const rLabel = a.runnerName ? a.runnerName : "走者";
           const fJa = formatBaseJa(a.from);
           const tJa = formatBaseJa(a.to);
-          return `${rLabel}:${fJa}→${tJa}${a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
-            }`;
+          const pitchTag =
+            typeof a.pitchNumber === "number"
+              ? a.pitchNumber === 0
+                ? "@投球外"
+                : `@${a.pitchNumber}球目`
+              : "";
+          return `${rLabel}:${fJa}→${tJa}${
+            a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
+          }${pitchTag}`;
         });
       const runnerSuffix =
         runnerMovesText.length > 0 ? ` ［${runnerMovesText.join("、")}］` : "";
@@ -4611,9 +4629,17 @@ liffScorebookRouter.get("/saved", async (c) => {
           const linkedLog = logByAb.get(dbAb.id);
           const dbPitchList = pitchesByAb.get(dbAb.id) || [];
           const dbAdvList = advsByAb.get(dbAb.id) || [];
-          const pitchNumberById = new Map<string, number>(
-            dbPitchList.map((pr) => [pr.id, pr.pitchNumber])
-          );
+          const pitchNumberById = new Map<string, number>();
+          let formalSavedPitchSeq = 0;
+          for (const pr of dbPitchList) {
+            const pRes = pr.result as CanonicalPitchResult;
+            if (!isPickoffPitch(pRes) && pRes !== "balk") {
+              formalSavedPitchSeq += 1;
+              pitchNumberById.set(pr.id, formalSavedPitchSeq);
+            } else {
+              pitchNumberById.set(pr.id, pr.pitchNumber);
+            }
+          }
 
           let parsedOrder = 0;
           let parsedBatterName = "";
@@ -4622,6 +4648,7 @@ liffScorebookRouter.get("/saved", async (c) => {
           let parsedRbi: number | undefined;
           let parsedOuts: number | undefined;
           const runnerNameByFromBase = new Map<string, string>();
+          const runnerPitchNumByFromTo = new Map<string, number>();
           let parsedPitches: CanonicalPitchResult[] = [];
 
           if (linkedLog?.description) {
@@ -4657,12 +4684,14 @@ liffScorebookRouter.get("/saved", async (c) => {
               playBody = headMatch[3].trim();
             }
 
-            // ［走者名:1塁→2塁、...］の解析・除去
+            // ［走者名:1塁→2塁@2球目、...］の解析・除去
             const runnerBracketMatch = playBody.match(/\s*［([^］]+)］\s*$/);
             if (runnerBracketMatch) {
               const segs = runnerBracketMatch[1].split("、");
               for (const seg of segs) {
-                const rm = seg.match(/^([^:]+):(1塁|2塁|3塁)→/);
+                const rm = seg.match(
+                  /^([^:]+):(1塁|2塁|3塁)→(1塁|2塁|3塁|本塁)(?:アウト|生還)?(?:@(投球外|\d+球目))?/
+                );
                 if (rm) {
                   const baseCode =
                     rm[2] === "1塁"
@@ -4670,7 +4699,27 @@ liffScorebookRouter.get("/saved", async (c) => {
                       : rm[2] === "2塁"
                         ? "2B"
                         : "3B";
+                  const toBaseCode =
+                    rm[3] === "1塁"
+                      ? "1B"
+                      : rm[3] === "2塁"
+                        ? "2B"
+                        : rm[3] === "3塁"
+                          ? "3B"
+                          : "HP";
                   runnerNameByFromBase.set(baseCode, rm[1].trim());
+                  if (rm[4]) {
+                    const parsedPitchTag =
+                      rm[4] === "投球外"
+                        ? 0
+                        : Number(rm[4].replace("球目", ""));
+                    if (!Number.isNaN(parsedPitchTag)) {
+                      runnerPitchNumByFromTo.set(
+                        `${baseCode}->${toBaseCode}`,
+                        parsedPitchTag
+                      );
+                    }
+                  }
                 }
               }
               playBody = playBody.slice(0, runnerBracketMatch.index).trim();
@@ -4803,6 +4852,10 @@ liffScorebookRouter.get("/saved", async (c) => {
               runnerNameByFromBase.get(from) ||
               (from === "BAT" ? batterName : "");
 
+            const resolvedPitchNumber =
+              runnerPitchNumByFromTo.get(`${from}->${to}`) ??
+              (adv.pitchId ? pitchNumberById.get(adv.pitchId) : undefined);
+
             return {
               id: adv.id || crypto.randomUUID(),
               runnerName: resolvedRunnerName,
@@ -4810,9 +4863,7 @@ liffScorebookRouter.get("/saved", async (c) => {
               to,
               method: normalizeAdvanceMethod(adv.reason),
               isOut: Boolean(adv.isOut),
-              pitchNumber: adv.pitchId
-                ? pitchNumberById.get(adv.pitchId)
-                : undefined,
+              pitchNumber: resolvedPitchNumber,
             };
           });
 

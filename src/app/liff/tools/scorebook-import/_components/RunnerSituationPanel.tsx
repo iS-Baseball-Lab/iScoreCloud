@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 import {
   ADVANCE_METHOD_LABELS,
+  isNonPitchMoundEvent,
   type AdvanceMethodCode,
+  type CanonicalPitchResult,
   type ScorebookBatterSlot,
   type ScorebookRosterPlayer,
   type ScorebookV2Advance,
@@ -115,6 +117,68 @@ export function MiniBaseDiamond({
   );
 }
 
+const PITCH_SHORT_LABEL: Partial<Record<CanonicalPitchResult, string>> = {
+  ball: "ボール",
+  strike: "見逃S",
+  swinging_strike: "空振S",
+  bunt_swinging: "バント空振",
+  foul: "ファウル",
+  bunt_foul: "バントF",
+  in_play: "打撃",
+  hit: "安打",
+  hbp: "死球",
+};
+
+function formatPrePlayTimingShort(pitchNumber?: number): string {
+  if (pitchNumber === 0) return "投球外";
+  if (typeof pitchNumber === "number" && pitchNumber >= 1) {
+    return `${pitchNumber}球目`;
+  }
+  return "";
+}
+
+function buildPrePlayTimingChoices(
+  pitches: CanonicalPitchResult[],
+  currentPitchNumber?: number
+): Array<{
+  pitchNumber: number;
+  chipLabel: string;
+  selectLabel: string;
+}> {
+  const formalPitches = pitches.filter((p) => !isNonPitchMoundEvent(p));
+  const maxPitchCount = Math.max(
+    formalPitches.length,
+    typeof currentPitchNumber === "number" && currentPitchNumber >= 1
+      ? currentPitchNumber
+      : 0,
+    5
+  );
+
+  const list: Array<{
+    pitchNumber: number;
+    chipLabel: string;
+    selectLabel: string;
+  }> = [
+    {
+      pitchNumber: 0,
+      chipLabel: "投球外(牽制・返球等)",
+      selectLabel: "投球外（牽制・返球間・投球前等）",
+    },
+  ];
+
+  for (let n = 1; n <= maxPitchCount; n++) {
+    const pCode = formalPitches[n - 1];
+    const shortName = pCode ? PITCH_SHORT_LABEL[pCode] : undefined;
+    list.push({
+      pitchNumber: n,
+      chipLabel: shortName ? `${n}球目(${shortName})` : `${n}球目`,
+      selectLabel: shortName ? `${n}球目（${shortName}）` : `${n}球目`,
+    });
+  }
+
+  return list;
+}
+
 interface AtBatCardRunnerStripProps {
   atBat: ScorebookV2AtBat;
   snapshot?: AtBatRunnerSnapshot;
@@ -122,7 +186,7 @@ interface AtBatCardRunnerStripProps {
 }
 
 /**
- * Step 3 打席カード内に常時表示する「打席前 ➔ 打席後の走者・アウト状況 ＆ 先行走者の進塁結果」バー
+ * Step 3 打席カード内に常時表示する「打席前 ➔ 打席後走者・アウト状況 ＆ 先行走者の進塁結果」バー
  */
 export function AtBatCardRunnerStrip({
   atBat,
@@ -203,13 +267,23 @@ export function AtBatCardRunnerStrip({
             const preTag =
               pr.prePlayMoves.length > 0
                 ? `${pr.prePlayMoves
-                    .map(
-                      (m) =>
-                        `${formatBaseJa(m.from)}→${formatBaseJa(m.to)}(${
-                          ADVANCE_METHOD_LABELS[m.method]
-                        })`
-                    )
+                    .map((m) => {
+                      const tShort = formatPrePlayTimingShort(m.pitchNumber);
+                      return `${formatBaseJa(m.from)}→${formatBaseJa(m.to)}(${
+                        ADVANCE_METHOD_LABELS[m.method]
+                      }${tShort ? `・${tShort}` : ""})`;
+                    })
                     .join("・")}`
+                : "";
+            const lastPreMove =
+              pr.prePlayMoves.length > 0
+                ? pr.prePlayMoves[pr.prePlayMoves.length - 1]
+                : undefined;
+            const lastPreTiming =
+              lastPreMove &&
+              !pr.inPlayExplicitMove &&
+              pr.effectiveMethod === lastPreMove.method
+                ? formatPrePlayTimingShort(lastPreMove.pitchNumber)
                 : "";
 
             if (pr.isOut) {
@@ -220,7 +294,8 @@ export function AtBatCardRunnerStrip({
                 >
                   ✖ {rLabel}: {formatBaseJa(pr.startBase)}→
                   {formatBaseJa(pr.finalBase)}アウト（
-                  {ADVANCE_METHOD_LABELS[pr.effectiveMethod]}）
+                  {ADVANCE_METHOD_LABELS[pr.effectiveMethod]}
+                  {lastPreTiming ? `・${lastPreTiming}` : ""}）
                 </span>
               );
             }
@@ -246,6 +321,7 @@ export function AtBatCardRunnerStrip({
                   🏃 {rLabel}: {formatBaseJa(pr.startBase)}→
                   {formatBaseJa(pr.finalBase)}（
                   {ADVANCE_METHOD_LABELS[pr.effectiveMethod]}
+                  {lastPreTiming ? `・${lastPreTiming}` : ""}
                   {pr.isImplicit ? "・自動" : ""}）
                 </span>
               );
@@ -411,6 +487,9 @@ export function AtBatModalRunnerEditor({
   const [showOtherEventPresets, setShowOtherEventPresets] = useState(false);
   const [openPrePlayForBase, setOpenPrePlayForBase] =
     useState<OccupiedBaseKey | null>(null);
+  const [pendingPrePlayPitchNumber, setPendingPrePlayPitchNumber] = useState<
+    number | undefined
+  >(undefined);
   const [openPinchRunnerBase, setOpenPinchRunnerBase] =
     useState<OccupiedBaseKey | null>(null);
   const [prSubType, setPrSubType] = useState<"PR" | "TR">("PR");
@@ -533,12 +612,20 @@ export function AtBatModalRunnerEditor({
     summary: PrecedingRunnerSummary,
     toBase: OccupiedBaseKey | "HP",
     method: AdvanceMethodCode,
-    isOut: boolean
+    isOut: boolean,
+    pitchNumber?: number
   ) => {
     const startFrom: OccupiedBaseKey =
       summary.baseAtInPlay && summary.baseAtInPlay !== "HP"
         ? summary.baseAtInPlay
         : summary.startBase;
+
+    const resolvedPitchNumber =
+      pitchNumber !== undefined
+        ? pitchNumber
+        : method === "pickoff_out" || method === "pickoff_error" || method === "balk"
+        ? 0
+        : undefined;
 
     onUpdateAtBat((prev) => {
       const newAdv: ScorebookV2Advance = {
@@ -548,6 +635,9 @@ export function AtBatModalRunnerEditor({
         to: toBase,
         method,
         isOut,
+        ...(resolvedPitchNumber !== undefined
+          ? { pitchNumber: resolvedPitchNumber }
+          : {}),
       };
       // 既存の元塁インプレー進塁があれば起点を更新または一旦クリアして再評価させる
       const cleaned = prev.advances.filter(
@@ -1255,28 +1345,113 @@ export function AtBatModalRunnerEditor({
                   );
                 })()}
 
-                {/* 投球間イベント（盗塁・暴投等）が入っている場合の表示 */}
+                {/* 投球間イベント（盗塁・暴投等）が入っている場合の表示 ＋ 発生タイミング（何球目 / 投球外）ワンタップ設定 */}
                 {pr.prePlayMoves.length > 0 && (
-                  <div className="flex items-center flex-wrap gap-1">
-                    {pr.prePlayMoves.map((pm) => (
-                      <span
-                        key={pm.id}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-primary/10 border border-primary/25 text-primary text-[10px] font-black"
-                      >
-                        <span>
-                          投球間: {formatBaseJa(pm.from)}→{formatBaseJa(pm.to)}（
-                          {ADVANCE_METHOD_LABELS[pm.method]}）
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteExplicitAdvanceRow(pm.id)}
-                          className="text-destructive ml-0.5 cursor-pointer"
-                          aria-label="投球間進塁を削除"
+                  <div className="space-y-1.5">
+                    {pr.prePlayMoves.map((pm) => {
+                      const timingChoices = buildPrePlayTimingChoices(
+                        atBat.pitches,
+                        pm.pitchNumber
+                      );
+                      const timingBadgeText =
+                        pm.pitchNumber === 0
+                          ? "投球外（牽制・返球等）"
+                          : typeof pm.pitchNumber === "number" &&
+                            pm.pitchNumber >= 1
+                          ? `${pm.pitchNumber}球目`
+                          : "タイミング未設定";
+                      return (
+                        <div
+                          key={pm.id}
+                          className="p-2 rounded-xl bg-primary/8 border border-primary/25 space-y-1.5"
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center flex-wrap gap-1 min-w-0">
+                              <span className="text-[10px] font-black text-primary">
+                                投球間: {formatBaseJa(pm.from)}→
+                                {formatBaseJa(pm.to)}（
+                                {ADVANCE_METHOD_LABELS[pm.method]}）
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black ${
+                                  pm.pitchNumber !== undefined
+                                    ? "bg-primary text-primary-foreground border-primary"
+                                    : "bg-card text-muted-foreground border-border"
+                                }`}
+                              >
+                                {timingBadgeText}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleDeleteExplicitAdvanceRow(pm.id)
+                              }
+                              className="px-1.5 py-0.5 rounded-md bg-destructive/12 border border-destructive/30 text-destructive text-[9px] font-black shrink-0 cursor-pointer"
+                              aria-label="投球間進塁を削除"
+                            >
+                              × 削除
+                            </button>
+                          </div>
+
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-bold text-muted-foreground block">
+                              発生タイミング（何球目 / 投球外［牽制・返球間等］）:
+                            </span>
+                            <div className="flex items-center flex-wrap gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateExplicitAdvanceRow(
+                                    pm.id,
+                                    (cur) => ({
+                                      ...cur,
+                                      pitchNumber: undefined,
+                                    })
+                                  )
+                                }
+                                className={`px-2 py-0.5 rounded-lg border text-[9px] font-black cursor-pointer ${
+                                  pm.pitchNumber === undefined
+                                    ? "bg-slate-700 text-white border-slate-700"
+                                    : "bg-card text-muted-foreground border-border"
+                                }`}
+                              >
+                                指定なし
+                              </button>
+                              {timingChoices.map((tc) => {
+                                const active =
+                                  pm.pitchNumber === tc.pitchNumber;
+                                return (
+                                  <button
+                                    key={tc.pitchNumber}
+                                    type="button"
+                                    onClick={() =>
+                                      handleUpdateExplicitAdvanceRow(
+                                        pm.id,
+                                        (cur) => ({
+                                          ...cur,
+                                          pitchNumber:
+                                            cur.pitchNumber === tc.pitchNumber
+                                              ? undefined
+                                              : tc.pitchNumber,
+                                        })
+                                      )
+                                    }
+                                    className={`px-2 py-0.5 rounded-lg border text-[9px] font-black cursor-pointer ${
+                                      active
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-card text-foreground border-border"
+                                    }`}
+                                  >
+                                    {tc.chipLabel}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
@@ -1464,79 +1639,138 @@ export function AtBatModalRunnerEditor({
                     </button>
 
                     {openPrePlayForBase === pr.startBase && (
-                      <div className="grid grid-cols-3 gap-1 pt-1.5">
+                      <div className="space-y-2 pt-1.5">
+                        {/* 1. 発生タイミング選択（何球目 / 投球外） */}
                         {(() => {
-                          const nextB: OccupiedBaseKey | "HP" =
-                            inPlayBase === "1B"
-                              ? "2B"
-                              : inPlayBase === "2B"
-                              ? "3B"
-                              : "HP";
-                          const items: Array<{
-                            label: string;
-                            to: OccupiedBaseKey | "HP";
-                            method: AdvanceMethodCode;
-                            isOut: boolean;
-                          }> = [
-                            {
-                              label: `盗塁 (→${formatBaseJa(nextB)})`,
-                              to: nextB,
-                              method: "steal",
-                              isOut: false,
-                            },
-                            {
-                              label: `盗塁死 (${formatBaseJa(nextB)})`,
-                              to: nextB,
-                              method: "caught_stealing",
-                              isOut: true,
-                            },
-                            {
-                              label: `牽制死 (${formatBaseJa(inPlayBase)})`,
-                              to: inPlayBase,
-                              method: "pickoff_out",
-                              isOut: true,
-                            },
-                            {
-                              label: `暴投WP (→${formatBaseJa(nextB)})`,
-                              to: nextB,
-                              method: "wp",
-                              isOut: false,
-                            },
-                            {
-                              label: `捕逸PB (→${formatBaseJa(nextB)})`,
-                              to: nextB,
-                              method: "pb",
-                              isOut: false,
-                            },
-                            {
-                              label: `ボーク (→${formatBaseJa(nextB)})`,
-                              to: nextB,
-                              method: "balk",
-                              isOut: false,
-                            },
-                          ];
-                          return items.map((ev) => (
-                            <button
-                              key={ev.label}
-                              type="button"
-                              onClick={() =>
-                                handleAddPrePlayEventForRunner(
-                                  pr,
-                                  ev.to,
-                                  ev.method,
-                                  ev.isOut
-                                )
-                              }
-                              className={`py-1.5 px-1 rounded-lg border text-[10px] font-black cursor-pointer ${
-                                ev.isOut
-                                  ? "bg-destructive/10 border-destructive/30 text-destructive"
-                                  : "bg-primary/10 border-primary/25 text-primary"
-                              }`}
-                            >
-                              {ev.label}
-                            </button>
-                          ));
+                          const timingChoices = buildPrePlayTimingChoices(
+                            atBat.pitches,
+                            pendingPrePlayPitchNumber
+                          );
+                          return (
+                            <div className="p-2 rounded-xl bg-muted border border-border space-y-1">
+                              <span className="text-[9px] font-bold text-muted-foreground block">
+                                ① 発生タイミング（任意・追加後も変更可）:
+                              </span>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPendingPrePlayPitchNumber(undefined)
+                                  }
+                                  className={`px-2 py-0.5 rounded-lg border text-[9px] font-black cursor-pointer ${
+                                    pendingPrePlayPitchNumber === undefined
+                                      ? "bg-slate-700 text-white border-slate-700"
+                                      : "bg-card text-muted-foreground border-border"
+                                  }`}
+                                >
+                                  指定なし
+                                </button>
+                                {timingChoices.map((tc) => {
+                                  const active =
+                                    pendingPrePlayPitchNumber ===
+                                    tc.pitchNumber;
+                                  return (
+                                    <button
+                                      key={tc.pitchNumber}
+                                      type="button"
+                                      onClick={() =>
+                                        setPendingPrePlayPitchNumber((prev) =>
+                                          prev === tc.pitchNumber
+                                            ? undefined
+                                            : tc.pitchNumber
+                                        )
+                                      }
+                                      className={`px-2 py-0.5 rounded-lg border text-[9px] font-black cursor-pointer ${
+                                        active
+                                          ? "bg-primary text-primary-foreground border-primary"
+                                          : "bg-card text-foreground border-border"
+                                      }`}
+                                    >
+                                      {tc.chipLabel}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
                         })()}
+
+                        {/* 2. 投球間・投球外イベント種別ボタン */}
+                        <div className="grid grid-cols-3 gap-1">
+                          {(() => {
+                            const nextB: OccupiedBaseKey | "HP" =
+                              inPlayBase === "1B"
+                                ? "2B"
+                                : inPlayBase === "2B"
+                                ? "3B"
+                                : "HP";
+                            const items: Array<{
+                              label: string;
+                              to: OccupiedBaseKey | "HP";
+                              method: AdvanceMethodCode;
+                              isOut: boolean;
+                            }> = [
+                              {
+                                label: `盗塁 (→${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "steal",
+                                isOut: false,
+                              },
+                              {
+                                label: `盗塁死 (${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "caught_stealing",
+                                isOut: true,
+                              },
+                              {
+                                label: `牽制死 (${formatBaseJa(inPlayBase)})`,
+                                to: inPlayBase,
+                                method: "pickoff_out",
+                                isOut: true,
+                              },
+                              {
+                                label: `暴投WP (→${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "wp",
+                                isOut: false,
+                              },
+                              {
+                                label: `捕逸PB (→${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "pb",
+                                isOut: false,
+                              },
+                              {
+                                label: `ボーク (→${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "balk",
+                                isOut: false,
+                              },
+                            ];
+                            return items.map((ev) => (
+                              <button
+                                key={ev.label}
+                                type="button"
+                                onClick={() =>
+                                  handleAddPrePlayEventForRunner(
+                                    pr,
+                                    ev.to,
+                                    ev.method,
+                                    ev.isOut,
+                                    pendingPrePlayPitchNumber
+                                  )
+                                }
+                                className={`py-1.5 px-1 rounded-lg border text-[10px] font-black cursor-pointer ${
+                                  ev.isOut
+                                    ? "bg-destructive/10 border-destructive/30 text-destructive"
+                                    : "bg-primary/10 border-primary/25 text-primary"
+                                }`}
+                              >
+                                {ev.label}
+                              </button>
+                            ));
+                          })()}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1931,6 +2165,48 @@ export function AtBatModalRunnerEditor({
                       }))}
                     />
                   </div>
+
+                  {/* 3段目: 投球間・投球外イベント（盗塁・盗塁死・暴投・捕逸・牽制死・ボーク等）の場合のタイミング選択 */}
+                  {isPrePlayAdvanceMethod(adv.method) && (
+                    <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
+                      <span className="text-[9px] font-black text-muted-foreground shrink-0">
+                        発生タイミング:
+                      </span>
+                      <LiffSelect
+                        value={
+                          adv.pitchNumber === undefined
+                            ? "__unset__"
+                            : String(adv.pitchNumber)
+                        }
+                        onChange={(val) => {
+                          const nextPitchNumber =
+                            val === "__unset__" ? undefined : Number(val);
+                          handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
+                            ...cur,
+                            pitchNumber: nextPitchNumber,
+                          }));
+                        }}
+                        title="発生タイミング（何球目 / 投球外）を選択"
+                        size="xs"
+                        searchable={false}
+                        className="min-w-0 flex-1"
+                        ariaLabel="発生タイミング"
+                        options={[
+                          {
+                            value: "__unset__",
+                            label: "指定なし（球数指定なし）",
+                          },
+                          ...buildPrePlayTimingChoices(
+                            atBat.pitches,
+                            adv.pitchNumber
+                          ).map((tc) => ({
+                            value: String(tc.pitchNumber),
+                            label: tc.selectLabel,
+                          })),
+                        ]}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

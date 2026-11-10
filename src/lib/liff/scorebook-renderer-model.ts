@@ -61,6 +61,8 @@ export interface CompiledDiamondSegment {
   customLabelOverride?: string;
   /** 早稲田式（塁線波線）モード用の代走選手名 */
   pinchRunnerName?: string;
+  /** 投球間・投球外イベント時の発生タイミング（1以上＝1始まりの正式投球番号、0＝投球外［牽制・返球間等］） */
+  pitchNumber?: number;
 }
 
 export interface CompiledCellSubMark {
@@ -114,6 +116,8 @@ export interface CompiledScorebookCell {
   pitcherChangeAtPitchIndex?: number;
   /** この打席中に盗塁が発生した投球インデックス配列（BSOの○′表記用） */
   stealPitchIndices?: number[];
+  /** この打席中に盗塁・盗塁死が明示指定された1始まりの正式投球番号配列 */
+  stealPitchNumbers?: number[];
   /** 代打(PH)：このマスの左境界に赤縦波線＋縦書き選手名を描画 */
   leftOutsideSub?: CompiledCellSubMark;
   /** 代走(PR/TR)・守備交代(DEF)：このマスの右内に赤縦波線＋縦書き選手名を描画 */
@@ -385,6 +389,7 @@ function applyRunnerStepSegments(
     isForceOut?: boolean;
     throwChain?: string;
     isDoubleSteal?: boolean;
+    pitchNumber?: number;
   }
 ): void {
   const startLv = baseToLevel(fromBase);
@@ -409,6 +414,7 @@ function applyRunnerStepSegments(
       isPrePlay: options.isPrePlay,
       isForceOut: false,
       throwChain: options.throwChain,
+      pitchNumber: options.pitchNumber,
     };
     return;
   }
@@ -436,6 +442,7 @@ function applyRunnerStepSegments(
       isDoubleSteal: isFinalStep ? options.isDoubleSteal : undefined,
       customLabelOverride:
         !isFinalStep || suppressBatterSamePlayDup ? "" : undefined,
+      pitchNumber: isFinalStep ? options.pitchNumber : undefined,
     };
   }
 }
@@ -1139,17 +1146,48 @@ export function compileScorebookSheetModel(
         return outsTracker as 1 | 2 | 3;
       };
 
-      // 同一打席中の盗塁数（2人以上ならダブルスチール DS）
+      // 同一打席中の盗塁数（2人以上ならダブルスチール DS）および発生球数タイミングの抽出
       let stealRunnersInAtBat = 0;
+      const explicitStealPitchNums: number[] = [];
+      let hasExplicitNonPitchSteal = false;
       for (const pr of snap.precedingRunners) {
         if (pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal")) {
           stealRunnersInAtBat += 1;
         }
+        for (const pm of pr.prePlayMoves) {
+          if (pm.method === "steal" || pm.method === "caught_stealing") {
+            if (typeof pm.pitchNumber === "number" && pm.pitchNumber >= 1) {
+              explicitStealPitchNums.push(pm.pitchNumber);
+            } else if (pm.pitchNumber === 0) {
+              hasExplicitNonPitchSteal = true;
+            }
+          }
+        }
       }
-      if (stealRunnersInAtBat > 0) {
-        const visiblePitches = ab.pitches.filter(
-          (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+      const visiblePitches = ab.pitches.filter(
+        (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+      );
+      if (explicitStealPitchNums.length > 0) {
+        const uniqueNums = Array.from(new Set(explicitStealPitchNums)).sort(
+          (a, b) => a - b
         );
+        cell.stealPitchNumbers = uniqueNums;
+        if (visiblePitches.length > 0) {
+          const matchedIndices: number[] = [];
+          let formalSeq = 0;
+          visiblePitches.forEach((p, vIdx) => {
+            if (!isNonPitchMoundEvent(p)) {
+              formalSeq += 1;
+              if (uniqueNums.includes(formalSeq)) {
+                matchedIndices.push(vIdx);
+              }
+            }
+          });
+          if (matchedIndices.length > 0) {
+            cell.stealPitchIndices = matchedIndices;
+          }
+        }
+      } else if (stealRunnersInAtBat > 0 && !hasExplicitNonPitchSteal) {
         if (visiblePitches.length > 0) {
           cell.stealPitchIndices = [0];
         }
@@ -1203,6 +1241,7 @@ export function compileScorebookSheetModel(
               throwChain: defaultPickoffChain,
               isDoubleSteal:
                 !pm.isOut && pm.method === "steal" && stealRunnersInAtBat >= 2,
+              pitchNumber: pm.pitchNumber,
             });
           }
           if (!pm.isOut && pm.to === "HP") {

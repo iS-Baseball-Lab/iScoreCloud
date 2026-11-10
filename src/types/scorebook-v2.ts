@@ -185,6 +185,7 @@ export interface ScorebookV2Advance {
   to: "1B" | "2B" | "3B" | "HP";
   method: AdvanceMethodCode;
   isOut: boolean;
+  /** 発生タイミング（1以上＝1始まりの正式投球番号、0＝投球外［牽制・返球間・投球前・ディレイドスチール等］、undefined＝未指定） */
   pitchNumber?: number;
 }
 

@@ -1,5 +1,6 @@
 // filepath: src/lib/liff/scorebook-cell-guide.ts
 import {
+  ADVANCE_METHOD_LABELS,
   isNonPitchMoundEvent,
   isPickoffPitch,
   type AdvanceMethodCode,
@@ -7,6 +8,10 @@ import {
   type CanonicalPitchResult,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
+import {
+  formatBaseJa,
+  isPrePlayAdvanceMethod,
+} from "@/lib/liff/scorebook-runners";
 import type {
   BaseSegmentIndex,
   CompiledDiamondSegment,
@@ -555,21 +560,85 @@ function buildPitchSection(
 
     const desc = describeSinglePitch(p, rules, officialPitchCount);
     const isTerminalInPlay = p === "in_play" || p === "hit" || p === "hbp";
+    const matchedPreAdvances = !isMound
+      ? ab.advances.filter(
+          (a) =>
+            a.from !== "BAT" &&
+            isPrePlayAdvanceMethod(a.method) &&
+            a.pitchNumber === officialPitchCount
+        )
+      : [];
+    const preAdvSuffix =
+      matchedPreAdvances.length > 0
+        ? `【${matchedPreAdvances
+            .map(
+              (a) =>
+                `${a.runnerName ? `${a.runnerName}:` : ""}${formatBaseJa(
+                  a.from
+                )}→${formatBaseJa(a.to)}（${ADVANCE_METHOD_LABELS[a.method]}）`
+            )
+            .join(" / ")}】`
+        : "";
+    const hasStealOnThisPitch = matchedPreAdvances.some(
+      (a) => a.method === "steal" || a.method === "caught_stealing"
+    );
 
     items.push({
       stepIndex: idx + 1,
       pitchNumber: isMound ? null : officialPitchCount,
       pitchCode: p,
-      numberedToken: desc.numberedToken,
+      numberedToken:
+        desc.numberedToken && hasStealOnThisPitch
+          ? `${desc.numberedToken}′`
+          : desc.numberedToken,
       numberedLane: desc.numberedLane,
-      symbolHint: desc.symbolHint,
-      title: desc.title,
-      description: desc.description,
+      symbolHint:
+        hasStealOnThisPitch && rules.pitchMark !== "numbered_bs"
+          ? `${desc.symbolHint}′`
+          : desc.symbolHint,
+      title: preAdvSuffix ? `${desc.title} ${preAdvSuffix}` : desc.title,
+      description: preAdvSuffix
+        ? `${desc.description} この${officialPitchCount}球目のタイミングで ${matchedPreAdvances
+            .map(
+              (a) =>
+                `${a.runnerName ? `「${a.runnerName}」が` : "走者が"}${formatBaseJa(
+                  a.from
+                )}→${formatBaseJa(a.to)}（${ADVANCE_METHOD_LABELS[a.method]}）`
+            )
+            .join("、")} となりました。`
+        : desc.description,
       countText: isMound || isTerminalInPlay ? null : `${balls}B-${strikes}S`,
       isNoBsoMarkEvent: desc.isNoBsoMarkEvent,
       tone: desc.tone,
     });
   });
+
+  // 投球外（牽制・返球間・投球前等 pitchNumber === 0）に発生した盗塁・走塁イベントがあれば補足行を追加
+  const nonPitchPreAdvances = ab.advances.filter(
+    (a) =>
+      a.from !== "BAT" &&
+      isPrePlayAdvanceMethod(a.method) &&
+      a.pitchNumber === 0
+  );
+  for (const npAdv of nonPitchPreAdvances) {
+    items.push({
+      stepIndex: items.length + 1,
+      pitchNumber: null,
+      pitchCode: "pickoff_1b",
+      symbolHint: "投球外",
+      title: `投球外（牽制・返球間等）：${formatBaseJa(npAdv.from)}→${formatBaseJa(
+        npAdv.to
+      )}（${ADVANCE_METHOD_LABELS[npAdv.method]}）`,
+      description: `正式な投球と関係ないタイミング（牽制時・返球間・投球前スタート等）で${
+        npAdv.runnerName ? `「${npAdv.runnerName}」が` : "走者が"
+      }${formatBaseJa(npAdv.from)}から${formatBaseJa(npAdv.to)}へ${
+        ADVANCE_METHOD_LABELS[npAdv.method]
+      }${npAdv.isOut ? "（アウト）" : ""}となった記録です。球数には含めません。`,
+      countText: null,
+      isNoBsoMarkEvent: true,
+      tone: "mound",
+    });
+  }
 
   const visibleMarksCount = ab.pitches.filter(
     (p) =>
@@ -1098,6 +1167,19 @@ function describeAdvanceMethodMeaning(
     };
   }
 
+  const prePlayTimingTitleSuffix =
+    seg.isPrePlay && typeof seg.pitchNumber === "number"
+      ? seg.pitchNumber === 0
+        ? "（投球外［牽制・返球間等］）"
+        : `（${seg.pitchNumber}球目）`
+      : "";
+  const prePlayTimingDescSuffix =
+    seg.isPrePlay && typeof seg.pitchNumber === "number"
+      ? seg.pitchNumber === 0
+        ? " 正式な投球と関係ないタイミング（牽制時・返球間・投球前スタート等）で発生したプレーです。"
+        : ` ${seg.pitchNumber}球目の投球タイミングで発生したプレーです。`
+      : "";
+
   if (seg.status === "out") {
     const outLineSymbol =
       rules.runnerOutLine === "t_stop"
@@ -1131,8 +1213,8 @@ function describeAdvanceMethodMeaning(
     return {
       symbolText: outLineSymbol,
       tone: "dark",
-      title: `${rangeJa}：${reasonJa}`,
-      description: `${driverJa}${rangeJa}の間でアウトになりました。${lineStyleJa}`,
+      title: `${rangeJa}：${reasonJa}${prePlayTimingTitleSuffix}`,
+      description: `${driverJa}${rangeJa}の間でアウトになりました。${prePlayTimingDescSuffix}${lineStyleJa}`,
     };
   }
 
@@ -1179,10 +1261,10 @@ function describeAdvanceMethodMeaning(
     return {
       symbolText: advSymbol || "S",
       tone: "blue",
-      title: `${rangeJa}：盗塁（スティール）成功`,
+      title: `${rangeJa}：盗塁（スティール）成功${prePlayTimingTitleSuffix}`,
       description: `「${
         advSymbol || "S"
-      }」は投球間に次の塁を奪った盗塁成功を表します。${dottedNote}`,
+      }」は次の塁を奪った盗塁成功を表します。${prePlayTimingDescSuffix}${dottedNote}`,
     };
   }
 
@@ -1190,10 +1272,10 @@ function describeAdvanceMethodMeaning(
     return {
       symbolText: advSymbol || "WP",
       tone: "blue",
-      title: `${rangeJa}：暴投（ワイルドピッチ）で進塁`,
+      title: `${rangeJa}：暴投（ワイルドピッチ）で進塁${prePlayTimingTitleSuffix}`,
       description: `「${
         advSymbol || "WP"
-      }」は投手の暴投の間に進塁したことを表します。${dottedNote}`,
+      }」は投手の暴投の間に進塁したことを表します。${prePlayTimingDescSuffix}${dottedNote}`,
     };
   }
 
@@ -1201,10 +1283,10 @@ function describeAdvanceMethodMeaning(
     return {
       symbolText: advSymbol || "PB",
       tone: "blue",
-      title: `${rangeJa}：捕逸（パスボール）で進塁`,
+      title: `${rangeJa}：捕逸（パスボール）で進塁${prePlayTimingTitleSuffix}`,
       description: `「${
         advSymbol || "PB"
-      }」は捕手が捕球を逸らした（パスボール）間に進塁したことを表します。${dottedNote}`,
+      }」は捕手が捕球を逸らした（パスボール）間に進塁したことを表します。${prePlayTimingDescSuffix}${dottedNote}`,
     };
   }
 
@@ -1212,10 +1294,10 @@ function describeAdvanceMethodMeaning(
     return {
       symbolText: advSymbol || "BK",
       tone: "blue",
-      title: `${rangeJa}：ボークで進塁`,
+      title: `${rangeJa}：ボークで進塁${prePlayTimingTitleSuffix}`,
       description: `「${
         advSymbol || "BK"
-      }」は相手投手のボークにより安全進塁権を得て進んだことを表します。${dottedNote}`,
+      }」は相手投手のボークにより安全進塁権を得て進んだことを表します。${prePlayTimingDescSuffix}${dottedNote}`,
     };
   }
 
