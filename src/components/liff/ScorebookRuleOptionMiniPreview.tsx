@@ -977,6 +977,43 @@ export const ScorebookRuleOptionMiniPreview = React.memo(
           );
         }
 
+        case "drivingOrderMark": {
+          const homeInSegs = makeEmptySegments();
+          homeInSegs[1] = makeSegment(1, "safe", "walk");
+          homeInSegs[2] = makeSegment(2, "safe", "steal");
+          homeInSegs[3] = makeSegment(3, "safe", "wp");
+          homeInSegs[4] = makeSegment(4, "safe", "hit", {
+            drivingBatterOrder: 3,
+          });
+          const homeInCell = makeSampleCell("opt-driving-home", {
+            runScored: true,
+            isUnearnedRun: false,
+            segments: homeInSegs,
+            atBatSeed: { resultCode: "walk", resultLabel: "四球" },
+          });
+
+          const adv23Segs = makeEmptySegments();
+          adv23Segs[1] = makeSegment(1, "safe", "walk");
+          adv23Segs[2] = makeSegment(2, "safe", "hit", {
+            drivingBatterOrder: 2,
+          });
+          adv23Segs[3] = makeSegment(3, "safe", "hit", {
+            drivingBatterOrder: 3,
+          });
+          const adv23Cell = makeSampleCell("opt-driving-23b", {
+            isResidual: true,
+            residualBase: "3B",
+            segments: adv23Segs,
+            atBatSeed: { resultCode: "walk", resultLabel: "四球" },
+          });
+
+          return renderDiamondStripSvg(
+            [homeInCell, adv23Cell],
+            previewRules,
+            ["本塁生還", "2・3塁進塁"]
+          );
+        }
+
         case "rbiMark": {
           const rbiCell = makeSampleCell("opt-rbi", {
             segments: makeHitSegments(2),

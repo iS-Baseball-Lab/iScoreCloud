@@ -81,6 +81,10 @@ export type DoublePlayMarkStyle =
   | "wavy_link"
   | "chain_only";
 export type AdvanceErrorMarkStyle = "senior_chart" | "english" | "kanji";
+export type DrivingOrderMarkStyle =
+  | "paren"
+  | "circled"
+  | "home_circled_other_paren";
 export type PositionLabelStyle = "kanji" | "number" | "english";
 export type InningEndMarkStyle =
   | "red_double_slash"
@@ -100,6 +104,7 @@ export interface ScorebookSymbolRules {
   runnerOutLine: RunnerOutLineStyle;
   forceOutMark: ForceOutMarkStyle;
   runMark: RunMarkStyle;
+  drivingOrderMark: DrivingOrderMarkStyle;
   rbiMark: RbiMarkStyle;
   pitchMark: PitchMarkStyle;
   buntPitchMark: BuntPitchMarkStyle;
@@ -172,6 +177,7 @@ export const STANDARD_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   runnerOutLine: "t_stop",
   forceOutMark: "standard_to",
   runMark: "red_dot",
+  drivingOrderMark: "paren",
   rbiMark: "red_dots",
   pitchMark: "waseda_symbols",
   buntPitchMark: "filled_triangle",
@@ -202,6 +208,7 @@ export const SENIOR_CHART_SCOREBOOK_SYMBOL_RULES: ScorebookSymbolRules = {
   runnerOutLine: "dotted_only",
   forceOutMark: "base_letter_abch",
   runMark: "earned_filled_unearned_open",
+  drivingOrderMark: "paren",
   rbiMark: "hidden",
   pitchMark: "cross_swing",
   buntPitchMark: "v_dot_circle_dot",
@@ -268,6 +275,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerOutLine: "dotted_only",
       forceOutMark: "standard_to",
       runMark: "red_dot",
+      drivingOrderMark: "circled",
       rbiMark: "hidden",
       pitchMark: "cross_swing",
       buntPitchMark: "v_dot_circle_dot",
@@ -297,6 +305,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerOutLine: "t_stop",
       forceOutMark: "standard_to",
       runMark: "double_circle",
+      drivingOrderMark: "paren",
       rbiMark: "red_dots",
       pitchMark: "numbered_bs",
       buntPitchMark: "inv_triangle_diamond",
@@ -326,6 +335,7 @@ export const SCOREBOOK_SYMBOL_PRESETS: readonly ScorebookSymbolPreset[] = [
       runnerOutLine: "t_stop",
       forceOutMark: "standard_to",
       runMark: "kanji_toku",
+      drivingOrderMark: "paren",
       rbiMark: "black_dots",
       pitchMark: "slash_swing",
       buntPitchMark: "filled_triangle",
@@ -530,6 +540,26 @@ export const SYMBOL_RULE_FIELD_CONFIGS = {
         sample: "中央に丸得マーク",
       },
     ] satisfies ReadonlyArray<SymbolRuleFieldOption<RunMarkStyle>>,
+  },
+  drivingOrderMark: {
+    title: "本塁生還・進塁時の打順番号表記（(1) / ①）",
+    options: [
+      {
+        value: "paren",
+        label: "カッコ数字（(1)・(2)・(3)）",
+        sample: "本塁生還・進塁とも (1)・(2)・(3)",
+      },
+      {
+        value: "circled",
+        label: "丸数字（①・②・③）",
+        sample: "本塁生還・進塁とも ①・②・③",
+      },
+      {
+        value: "home_circled_other_paren",
+        label: "本塁生還は丸数字（①②③）・進塁は(1)(2)",
+        sample: "3塁→本塁生還は ①②③ ／ 2・3塁進塁は (1)(2)",
+      },
+    ] satisfies ReadonlyArray<SymbolRuleFieldOption<DrivingOrderMarkStyle>>,
   },
   rbiMark: {
     title: "打点（RBI）マーク表記",
@@ -905,6 +935,11 @@ export function sanitizeScorebookSymbolRules(
       ["earned_filled_unearned_open", "red_dot", "double_circle", "kanji_toku"],
       fallback.runMark
     ),
+    drivingOrderMark: isOneOf(
+      obj.drivingOrderMark,
+      ["paren", "circled", "home_circled_other_paren"],
+      fallback.drivingOrderMark ?? "paren"
+    ),
     rbiMark: isOneOf(
       obj.rbiMark,
       ["hidden", "red_dots", "black_dots"],
@@ -1202,6 +1237,13 @@ export function summarizeSymbolRulesBadges(
   if (rules.runMark === "earned_filled_unearned_open") {
     badges.push("自責●/非自責○");
   }
+  if (rules.drivingOrderMark === "circled") {
+    badges.push("①②③進塁/生還打順");
+  } else if (rules.drivingOrderMark === "home_circled_other_paren") {
+    badges.push("①②③生還・(1)進塁");
+  } else {
+    badges.push("(1)(2)(3)進塁/生還");
+  }
   if (rules.runnerLine === "dotted_only") {
     badges.push("進塁点線維持");
   }
@@ -1354,6 +1396,46 @@ export function formatPositionByRules(
   return NUM_TO_KANJI[canonical] || (rawPosition || "-").trim().slice(0, 2);
 }
 
+const CIRCLED_NUMBERS_1_TO_20 = [
+  "①",
+  "②",
+  "③",
+  "④",
+  "⑤",
+  "⑥",
+  "⑦",
+  "⑧",
+  "⑨",
+  "⑩",
+  "⑪",
+  "⑫",
+  "⑬",
+  "⑭",
+  "⑮",
+  "⑯",
+  "⑰",
+  "⑱",
+  "⑲",
+  "⑳",
+] as const;
+
+export function formatDrivingBatterOrderByRules(
+  drivingBatterOrder: number,
+  rules: ScorebookSymbolRules,
+  targetBase?: 1 | 2 | 3 | 4
+): string {
+  const n = Math.trunc(drivingBatterOrder);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  const style: DrivingOrderMarkStyle = rules.drivingOrderMark ?? "paren";
+  const useCircled =
+    style === "circled" ||
+    (style === "home_circled_other_paren" && targetBase === 4);
+  if (useCircled && n >= 1 && n <= CIRCLED_NUMBERS_1_TO_20.length) {
+    return CIRCLED_NUMBERS_1_TO_20[n - 1];
+  }
+  return `(${n})`;
+}
+
 export interface FormatAdvanceMethodExtraOptions {
   /** 到達（またはアウトになった）目標塁: 1=1塁(A), 2=2塁(B), 3=3塁(C), 4=本塁(H) */
   targetBase?: 1 | 2 | 3 | 4;
@@ -1443,7 +1525,11 @@ export function formatAdvanceMethodByRules(
       return isKanji ? "失" : "E";
     case "fc":
       return drivingBatterOrder && drivingBatterOrder > 0
-        ? `(${drivingBatterOrder})`
+        ? formatDrivingBatterOrderByRules(
+            drivingBatterOrder,
+            rules,
+            extra?.targetBase
+          )
         : isKanji
         ? "野"
         : "FC";
@@ -1463,7 +1549,11 @@ export function formatAdvanceMethodByRules(
       return "TB";
     case "throw_advance":
       return drivingBatterOrder && drivingBatterOrder > 0
-        ? `(${drivingBatterOrder})`
+        ? formatDrivingBatterOrderByRules(
+            drivingBatterOrder,
+            rules,
+            extra?.targetBase
+          )
         : isKanji
         ? "送"
         : "T";
@@ -1475,7 +1565,11 @@ export function formatAdvanceMethodByRules(
     case "other":
     default:
       if (drivingBatterOrder && drivingBatterOrder > 0) {
-        return `(${drivingBatterOrder})`;
+        return formatDrivingBatterOrderByRules(
+          drivingBatterOrder,
+          rules,
+          extra?.targetBase
+        );
       }
       return "";
   }

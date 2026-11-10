@@ -314,6 +314,17 @@ function buildChartColumns(
     isForceOut: false,
     throwChain: "3",
   });
+  const homeInOrderSegs = makeEmptySegments();
+  homeInOrderSegs[1] = makeSegment(1, "safe", "walk");
+  homeInOrderSegs[2] = makeSegment(2, "safe", "hit", {
+    drivingBatterOrder: 2,
+  });
+  homeInOrderSegs[3] = makeSegment(3, "safe", "hit", {
+    drivingBatterOrder: 2,
+  });
+  homeInOrderSegs[4] = makeSegment(4, "safe", "hit", {
+    drivingBatterOrder: 3,
+  });
 
   const col2Rows: Array<SampleChartRowItem | null> = [
     {
@@ -382,7 +393,25 @@ function buildChartColumns(
         },
       }),
     },
-    null,
+    {
+      lines: ["本塁生還・進塁", "(打順番号)"],
+      noteLines: [
+        rules.drivingOrderMark === "circled"
+          ? "※①②③で打順記載"
+          : rules.drivingOrderMark === "home_circled_other_paren"
+          ? "※生還①/進塁(2)"
+          : "※(1)(2)で打順記載",
+      ],
+      cell: makeCell("c2-12", {
+        runScored: true,
+        isUnearnedRun: false,
+        segments: homeInOrderSegs,
+        atBatSeed: {
+          resultCode: "walk",
+          resultLabel: "四球",
+        },
+      }),
+    },
     null,
     null,
     null,

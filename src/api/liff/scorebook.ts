@@ -842,6 +842,7 @@ interface GeminiExtractedSymbolRulesResponse {
   runnerOutLine?: string;
   forceOutMark?: string;
   runMark?: string;
+  drivingOrderMark?: string;
   rbiMark?: string;
   pitchMark?: string;
   pickoffMark?: string;
@@ -929,6 +930,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   "runnerOutLine": "dotted_only" | "quadrant_arrow" | "t_stop", // 走塁死・封殺時のひし形ライン: 線を描かず点線のまま中央アウトと記号のみなら "dotted_only"、ひし形は点線のまま外側に進行方向の矢印＋T.O/CS等を添える方式なら "quadrant_arrow"、塁間途中で切って先端に垂直の止め線（━━┫）を描く早稲田式なら "t_stop"
   "forceOutMark": "base_letter_abch" | "standard_to", // ベースアウト・タッチアウト表記: 1塁=1A・2塁=6B・3塁=5C・本塁=2Hのように塁アルファベット(A/B/C/H)を使いタッチアウトを3TO/1-3TOと書くなら "base_letter_abch"、T.OやFCで統一する標準式なら "standard_to"
   "runMark": "earned_filled_unearned_open" | "red_dot" | "double_circle" | "kanji_toku", // 得点マーク: 自責点を塗り丸●・非自責点を白抜き丸○で区別するなら "earned_filled_unearned_open"、すべて中央塗り丸●なら "red_dot"、二重丸◎なら "double_circle"、丸得なら "kanji_toku"
+  "drivingOrderMark": "paren" | "circled" | "home_circled_other_paren", // 本塁生還・進塁時の打順番号表記: 後続打者による進塁・生還打順を (1)(2)(3) のカッコ数字で書くなら "paren"、すべて ①②③ の丸数字で書くなら "circled"、3塁→本塁の生還時のみ ①②③ の丸数字で2・3塁進塁は (1)(2) なら "home_circled_other_paren"（不明なら "paren"）
   "rbiMark": "hidden" | "red_dots" | "black_dots", // 打点(RBI)マーク: 打席マス右上に打点ドットを打たない方式なら "hidden"、右上に打点数分の赤点(●・●●)を打つ早稲田式なら "red_dots"、黒点(・/・・)なら "black_dots"
   "pitchMark": "waseda_symbols" | "cross_swing" | "cross_dot_swing" | "slash_swing" | "numbered_bs", // 投球BSO: ○見逃/●空振/ーB/△F なら "waseda_symbols"、○見逃/×空振/ーB(横棒ボール) なら "cross_swing"、○見逃/×空振/・B(点・黒点ボール) なら "cross_dot_swing"、○見逃/／空振 なら "slash_swing"、B/S欄に投球番号1,2,3を書く方式なら "numbered_bs"
   "pickoffMark": "chevron_arrow" | "full_arrow" | "kanji_num" | "hidden", // 牽制球記号: 軸線・中塗り無しの矢先記号（1塁＞・2塁∧・3塁＜）なら "chevron_arrow"、軸線付き矢印（1塁→・2塁↑・3塁←）なら "full_arrow"、1牽・2牽・3牽や丸数字なら "kanji_num"（不明なら "chevron_arrow"）

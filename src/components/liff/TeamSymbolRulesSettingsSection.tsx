@@ -431,8 +431,8 @@ export function TeamSymbolRulesSettingsSection({
       stepLabel: "カテゴリ 5",
       title: "アウト・得点・打点・イニング終了",
       subtitle:
-        "アウトカウント数字、自責点/非自責点マーク、打点ドット、3アウトチェンジ区切り線",
-      rangeLabel: "18〜21",
+        "アウトカウント数字、自責点/非自責点マーク、生還・進塁時の打順番号((1)/①)、打点ドット、3アウトチェンジ区切り線",
+      rangeLabel: "18〜22",
       accentBorderClass: "border-l-rose-400",
       icon: <Trophy className="w-4 h-4 text-rose-300 shrink-0" />,
       items: [
@@ -450,12 +450,18 @@ export function TeamSymbolRulesSettingsSection({
         },
         {
           itemNo: "20",
+          key: "drivingOrderMark",
+          title: SYMBOL_RULE_FIELD_CONFIGS.drivingOrderMark.title,
+          options: SYMBOL_RULE_FIELD_CONFIGS.drivingOrderMark.options,
+        },
+        {
+          itemNo: "21",
           key: "rbiMark",
           title: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.title,
           options: SYMBOL_RULE_FIELD_CONFIGS.rbiMark.options,
         },
         {
-          itemNo: "21",
+          itemNo: "22",
           key: "inningEndMark",
           title: SYMBOL_RULE_FIELD_CONFIGS.inningEndMark.title,
           options: SYMBOL_RULE_FIELD_CONFIGS.inningEndMark.options,
@@ -593,12 +599,12 @@ export function TeamSymbolRulesSettingsSection({
           </div>
         </div>
 
-        {/* 2. カテゴリ別・各記号の詳細カスタマイズ（全21項目・各項目独立カード枠＋見出し帯） */}
+        {/* 2. カテゴリ別・各記号の詳細カスタマイズ（全22項目・各項目独立カード枠＋見出し帯） */}
         <div className="pt-3 border-t-2 border-slate-200 dark:border-border space-y-5">
           <div className="flex items-center justify-between gap-2 px-0.5">
             <div>
               <h3 className="text-xs sm:text-[13px] font-black text-foreground">
-                項目ごとの詳細ルール選択（全21項目）
+                項目ごとの詳細ルール選択（全22項目）
               </h3>
               <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
                 5つのカテゴリ別に整理しています。各見本をタップすると即座に保存されます。

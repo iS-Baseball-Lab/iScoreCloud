@@ -21,6 +21,7 @@ import type {
 import {
   formatAdvanceMethodByRules,
   formatAtBatPlayNotation,
+  formatDrivingBatterOrderByRules,
   formatOutOrdinalText,
   type ScorebookSymbolRules,
 } from "@/lib/liff/scorebook-symbol-rules";
@@ -1328,11 +1329,22 @@ function describeAdvanceMethodMeaning(
         : seg.method === "throw_advance"
         ? "送球間の進塁"
         : "安打・打撃";
+    const orderSymbol = formatDrivingBatterOrderByRules(
+      seg.drivingBatterOrder,
+      rules,
+      endSeg
+    );
+    const symbolKindLabel = orderSymbol.startsWith("(")
+      ? "カッコ数字"
+      : "丸数字";
+    const actionJa = endSeg === 4 ? "本塁に生還した" : "この塁まで進んだ";
     return {
-      symbolText: `(${seg.drivingBatterOrder})`,
+      symbolText: orderSymbol,
       tone: "dark",
-      title: `${rangeJa}：後続の ${driverText} の打席で進塁`,
-      description: `カッコ数字「(${seg.drivingBatterOrder})」は、「${seg.drivingBatterOrder}番打者の打席結果（${viaMethod}）によってこの塁まで進んだ」という意味です。スコアブックで誰が誰を還したかを追える大事な記号です。${dottedNote}`,
+      title: `${rangeJa}：後続の ${driverText} の打席で${
+        endSeg === 4 ? "本塁生還" : "進塁"
+      }`,
+      description: `${symbolKindLabel}「${orderSymbol}」は、「${seg.drivingBatterOrder}番打者の打席結果（${viaMethod}）によって${actionJa}」という意味です。スコアブックで誰が誰を進めた・還したかを追える大事な記号です。${dottedNote}`,
     };
   }
 
