@@ -56,6 +56,7 @@ import {
   AlertTriangle,
   Megaphone,
   Camera,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -67,6 +68,13 @@ import {
 } from "@/lib/google-maps";
 import { cn } from "@/lib/utils";
 import {
+  PLAYER_CONDITION_META,
+  formatConditionPeriodRange,
+  loadDemoPlayerConditionOverrides,
+  normalizePlayerConditionStatus,
+  type PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
+import {
   DEMO_LINEUP_PLAYERS,
   deleteDemoMatch,
   getDemoAdjacentMatches,
@@ -76,6 +84,7 @@ import {
   isDemoMatchId,
   isDemoTeamId,
   loadDemoMatchLineups,
+  resolveLineupPlayerConditionForMatch,
   resolvePlayerMatchAttendanceStatus,
   saveCustomDemoMatch,
   formatLineupShareText,
@@ -1011,14 +1020,89 @@ function MatchesContent() {
     [mySubstitutions]
   );
 
+  // 試合日（match.date）時点での有効なコンディション区分・期間・補足メモを解決したチーム選手名簿
+  const resolvedTeamPlayers = useMemo<LineupPlayer[]>(() => {
+    const applyDemoOverrides = Boolean(
+      isDemo || (match && isDemoMatchId(match.id))
+    );
+    const overrides = applyDemoOverrides ? loadDemoPlayerConditionOverrides() : {};
+    return teamPlayers.map((p) => {
+      const ov = overrides[p.id];
+      const mergedPeriods = ov ? ov.conditionPeriods : p.conditionPeriods;
+      const fallbackCond = ov ? ov.conditionStatus : p.conditionStatus;
+      const fallbackNote = ov ? ov.conditionNote : p.conditionNote ?? null;
+      const eff = resolveLineupPlayerConditionForMatch(
+        {
+          conditionStatus: fallbackCond,
+          conditionNote: fallbackNote,
+          conditionPeriods: mergedPeriods,
+        },
+        match?.date ?? null
+      );
+      return {
+        ...p,
+        conditionPeriods: mergedPeriods,
+        activeConditionPeriod: eff.period,
+        conditionStatus: eff.status,
+        conditionNote:
+          eff.status !== "active" ? eff.note ?? fallbackNote : null,
+      };
+    });
+  }, [teamPlayers, isDemo, match]);
+
+  const resolveMatchPlayerCondition = useCallback(
+    (params: {
+      playerId?: string | null;
+      name?: string | null;
+      uniformNumber?: string | null;
+    }) => {
+      const rawId = (params.playerId || "").trim();
+      const rawName = (params.name || "").replace(/\s+/g, "");
+      const rawNum = (params.uniformNumber || "").replace(/^#/, "").trim();
+      const matched =
+        (rawId ? resolvedTeamPlayers.find((p) => p.id === rawId) : undefined) ||
+        (rawName
+          ? resolvedTeamPlayers.find((p) => {
+              const pName = (p.name || "").replace(/\s+/g, "");
+              if (pName !== rawName) return false;
+              if (!rawNum || !p.uniformNumber) return true;
+              return String(p.uniformNumber).replace(/^#/, "").trim() === rawNum;
+            }) ||
+            resolvedTeamPlayers.find(
+              (p) => (p.name || "").replace(/\s+/g, "") === rawName
+            )
+          : undefined);
+      const status: PlayerConditionStatus = normalizePlayerConditionStatus(
+        matched?.conditionStatus
+      );
+      const meta = PLAYER_CONDITION_META[status];
+      const periodLabel = matched?.activeConditionPeriod
+        ? formatConditionPeriodRange(
+            matched.activeConditionPeriod.startDate,
+            matched.activeConditionPeriod.endDate,
+            { compact: true }
+          )
+        : "";
+      const note = matched?.conditionNote || null;
+      return {
+        player: matched || null,
+        status,
+        meta,
+        periodLabel,
+        note,
+      };
+    },
+    [resolvedTeamPlayers]
+  );
+
   const remainingPlayers = useMemo(
     () =>
-      teamPlayers.filter(
+      resolvedTeamPlayers.filter(
         (p) =>
           !starterPlayerIds.includes(p.id) &&
           !substitutedPlayerIds.includes(p.id)
       ),
-    [teamPlayers, starterPlayerIds, substitutedPlayerIds]
+    [resolvedTeamPlayers, starterPlayerIds, substitutedPlayerIds]
   );
 
   const rosterFilterContext = useMemo<MatchRosterFilterContext>(
@@ -1051,6 +1135,120 @@ function MatchesContent() {
     () => remainingPlayers.filter((p) => resolvedMyAttendance[p.id] === "absent"),
     [remainingPlayers, resolvedMyAttendance]
   );
+
+  // この試合で一部制限あり（restricted）またはリハビリ・調整中（rehab）の出場・控え・欠席メンバー一覧
+  const matchConditionAttentionEntries = useMemo(() => {
+    const entries: Array<{
+      key: string;
+      roleCategory: "starter" | "sub" | "bench" | "absent";
+      roleLabel: string;
+      name: string;
+      uniformNumber: string;
+      status: PlayerConditionStatus;
+      periodLabel: string;
+      note: string | null;
+    }> = [];
+    const seenIds = new Set<string>();
+
+    filledStarters.forEach((slot) => {
+      const cond = resolveMatchPlayerCondition({
+        playerId: slot.playerId,
+        name: slot.name,
+        uniformNumber: slot.uniformNumber,
+      });
+      if (cond.status !== "restricted" && cond.status !== "rehab") return;
+      const dedupeKey = cond.player?.id || `starter-${slot.order}-${slot.name}`;
+      if (seenIds.has(dedupeKey)) return;
+      seenIds.add(dedupeKey);
+      const posInfo = getPositionBadgeInfo(slot.position);
+      entries.push({
+        key: dedupeKey,
+        roleCategory: "starter",
+        roleLabel: `スタメン ${slot.order}番${posInfo ? `[${posInfo.shortLabel}]` : ""}`,
+        name: slot.name || cond.player?.name || "",
+        uniformNumber: slot.uniformNumber || cond.player?.uniformNumber || "",
+        status: cond.status,
+        periodLabel: cond.periodLabel,
+        note: cond.note,
+      });
+    });
+
+    mySubstitutions.forEach((sub) => {
+      const cond = resolveMatchPlayerCondition({
+        playerId: sub.playerId,
+        name: sub.name,
+        uniformNumber: sub.uniformNumber,
+      });
+      if (cond.status !== "restricted" && cond.status !== "rehab") return;
+      const dedupeKey = cond.player?.id || `sub-${sub.id}`;
+      if (seenIds.has(dedupeKey)) return;
+      seenIds.add(dedupeKey);
+      entries.push({
+        key: dedupeKey,
+        roleCategory: "sub",
+        roleLabel: `途中出場 (${sub.inningEntered}回・${sub.battingOrder}番)`,
+        name: sub.name || cond.player?.name || "",
+        uniformNumber: sub.uniformNumber || cond.player?.uniformNumber || "",
+        status: cond.status,
+        periodLabel: cond.periodLabel,
+        note: cond.note,
+      });
+    });
+
+    benchPlayers.forEach((p) => {
+      const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
+      if (condStatus !== "restricted" && condStatus !== "rehab") return;
+      if (seenIds.has(p.id)) return;
+      seenIds.add(p.id);
+      entries.push({
+        key: p.id,
+        roleCategory: "bench",
+        roleLabel: "控え",
+        name: p.name,
+        uniformNumber: p.uniformNumber || "",
+        status: condStatus,
+        periodLabel: p.activeConditionPeriod
+          ? formatConditionPeriodRange(
+              p.activeConditionPeriod.startDate,
+              p.activeConditionPeriod.endDate,
+              { compact: true }
+            )
+          : "",
+        note: p.conditionNote || null,
+      });
+    });
+
+    absentPlayers.forEach((p) => {
+      const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
+      if (condStatus !== "restricted" && condStatus !== "rehab") return;
+      if (seenIds.has(p.id)) return;
+      seenIds.add(p.id);
+      entries.push({
+        key: p.id,
+        roleCategory: "absent",
+        roleLabel: "欠席",
+        name: p.name,
+        uniformNumber: p.uniformNumber || "",
+        status: condStatus,
+        periodLabel: p.activeConditionPeriod
+          ? formatConditionPeriodRange(
+              p.activeConditionPeriod.startDate,
+              p.activeConditionPeriod.endDate,
+              { compact: true }
+            )
+          : "",
+        note: p.conditionNote || null,
+      });
+    });
+
+    return entries;
+  }, [
+    filledStarters,
+    mySubstitutions,
+    benchPlayers,
+    absentPlayers,
+    resolveMatchPlayerCondition,
+  ]);
 
   // 試合詳細ページ用の共有スコアブックバンドル（タイムライン1マス表示・清書シート・記号解説モーダルで共有）
   const activeDetailMatch =
@@ -1479,7 +1677,8 @@ function MatchesContent() {
             match.date,
             myLineup,
             remainingPlayers,
-            resolvedMyAttendance
+            resolvedMyAttendance,
+            resolvedTeamPlayers
           )
         : "";
 
@@ -1729,7 +1928,7 @@ function MatchesContent() {
             <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
               {/* A-3 上帯ダークソリッドキャップ */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                   <Users className="w-4 h-4 text-sky-400 shrink-0" />
                   <span className="text-xs font-black text-white truncate">
                     出場メンバー・ベンチ・欠席
@@ -1737,6 +1936,11 @@ function MatchesContent() {
                   <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono tabular-nums shrink-0">
                     スタメン {filledStarters.length}名
                   </span>
+                  {matchConditionAttentionEntries.length > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-500 text-[10px] font-black font-mono tabular-nums shrink-0">
+                      ⚠️・🩹 制限/調整 {matchConditionAttentionEntries.length}名
+                    </span>
+                  )}
                 </div>
                 <Link
                   href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
@@ -1927,14 +2131,29 @@ function MatchesContent() {
                 <>
               {/* ① スターティングメンバー（見出しは内枠の外） */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between px-0.5">
+                <div className="flex items-center justify-between px-0.5 gap-2">
                   <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
                     <UserStar className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>スターティングメンバー</span>
                   </span>
-                  <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
-                    {filledStarters.length}名
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {matchConditionAttentionEntries.some(
+                      (e) => e.roleCategory === "starter"
+                    ) && (
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 border border-amber-500">
+                        ⚠️制限{" "}
+                        {
+                          matchConditionAttentionEntries.filter(
+                            (e) => e.roleCategory === "starter"
+                          ).length
+                        }
+                        名
+                      </span>
+                    )}
+                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
+                      {filledStarters.length}名
+                    </span>
+                  </div>
                 </div>
 
                 {filledStarters.length === 0 ? (
@@ -1968,10 +2187,25 @@ function MatchesContent() {
                     <div className="divide-y divide-border">
                       {filledStarters.map((slot) => {
                         const posInfo = getPositionBadgeInfo(slot.position);
+                        const cond = resolveMatchPlayerCondition({
+                          playerId: slot.playerId,
+                          name: slot.name,
+                          uniformNumber: slot.uniformNumber,
+                        });
+                        const hasConditionFlag =
+                          cond.status === "restricted" || cond.status === "rehab";
+
                         return (
                           <div
                             key={`${slot.order}-${slot.playerId || slot.name}`}
-                            className="grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
+                            className={cn(
+                              "grid grid-cols-[2.25rem_3.25rem_1fr_2.75rem] items-center px-2 py-1.5",
+                              cond.status === "restricted"
+                                ? "border-l-[3px] border-l-amber-500 bg-amber-500/[0.06]"
+                                : cond.status === "rehab"
+                                ? "border-l-[3px] border-l-rose-600 bg-rose-500/[0.06]"
+                                : "odd:bg-card even:bg-muted/35"
+                            )}
                           >
                             {/* 打順バッジ */}
                             <div className="flex items-center justify-center">
@@ -1998,10 +2232,35 @@ function MatchesContent() {
                               )}
                             </div>
 
-                            {/* 選手名 */}
-                            <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
-                              {slot.name}
-                            </span>
+                            {/* 選手名 ＋ 故障/制限バッジ */}
+                            <div className="pl-2 min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                <span className="font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                                  {slot.name}
+                                </span>
+                                {hasConditionFlag && (
+                                  <span
+                                    className={cn(
+                                      "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none shrink-0",
+                                      cond.meta.solidBadgeClass
+                                    )}
+                                  >
+                                    <span>{cond.meta.compactBadgeText}</span>
+                                    {cond.periodLabel && (
+                                      <span className="font-mono text-[8.5px] opacity-85">
+                                        ({cond.periodLabel})
+                                      </span>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                              {hasConditionFlag && cond.note && (
+                                <p className="text-[9.5px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1 truncate mt-0.5">
+                                  <Lock className="w-2.5 h-2.5 shrink-0" />
+                                  <span className="truncate">{cond.note}</span>
+                                </p>
+                              )}
+                            </div>
 
                             {/* 背番号 */}
                             <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
@@ -2027,19 +2286,42 @@ function MatchesContent() {
               {/* ①-B 途中出場・交代選手 */}
               {mySubstitutions.length > 0 && (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between px-0.5">
+                  <div className="flex items-center justify-between px-0.5 gap-2">
                     <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5 text-primary shrink-0" />
                       <span>途中出場・選手交代</span>
                     </span>
-                    <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
-                      {mySubstitutions.length}名
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {matchConditionAttentionEntries.some(
+                        (e) => e.roleCategory === "sub"
+                      ) && (
+                        <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 border border-amber-500">
+                          ⚠️制限{" "}
+                          {
+                            matchConditionAttentionEntries.filter(
+                              (e) => e.roleCategory === "sub"
+                            ).length
+                          }
+                          名
+                        </span>
+                      )}
+                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
+                        {mySubstitutions.length}名
+                      </span>
+                    </div>
                   </div>
 
                   <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border">
                     {mySubstitutions.map((sub) => {
                       const posInfo = getPositionBadgeInfo(sub.position);
+                      const cond = resolveMatchPlayerCondition({
+                        playerId: sub.playerId,
+                        name: sub.name,
+                        uniformNumber: sub.uniformNumber,
+                      });
+                      const hasConditionFlag =
+                        cond.status === "restricted" || cond.status === "rehab";
+
                       const roleBadge =
                         sub.position === "P"
                           ? { label: "代打", badgeClass: "bg-primary text-primary-foreground" }
@@ -2056,7 +2338,14 @@ function MatchesContent() {
                       return (
                         <div
                           key={sub.id}
-                          className="grid grid-cols-[4rem_3.5rem_1fr_2.75rem] items-center px-2 py-1.5 odd:bg-card even:bg-muted/35"
+                          className={cn(
+                            "grid grid-cols-[4rem_3.5rem_1fr_2.75rem] items-center px-2 py-1.5",
+                            cond.status === "restricted"
+                              ? "border-l-[3px] border-l-amber-500 bg-amber-500/[0.06]"
+                              : cond.status === "rehab"
+                              ? "border-l-[3px] border-l-rose-600 bg-rose-500/[0.06]"
+                              : "odd:bg-card even:bg-muted/35"
+                          )}
                         >
                           <span className="text-[10px] font-black text-muted-foreground font-mono tabular-nums text-center">
                             {sub.inningEntered}回・{sub.battingOrder}番
@@ -2071,9 +2360,34 @@ function MatchesContent() {
                               {roleBadge.label}
                             </span>
                           </div>
-                          <span className="pl-2 font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
-                            {sub.name}
-                          </span>
+                          <div className="pl-2 min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                              <span className="font-black text-xs sm:text-[13px] text-foreground truncate tracking-tight">
+                                {sub.name}
+                              </span>
+                              {hasConditionFlag && (
+                                <span
+                                  className={cn(
+                                    "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none shrink-0",
+                                    cond.meta.solidBadgeClass
+                                  )}
+                                >
+                                  <span>{cond.meta.compactBadgeText}</span>
+                                  {cond.periodLabel && (
+                                    <span className="font-mono text-[8.5px] opacity-85">
+                                      ({cond.periodLabel})
+                                    </span>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            {hasConditionFlag && cond.note && (
+                              <p className="text-[9.5px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1 truncate mt-0.5">
+                                <Lock className="w-2.5 h-2.5 shrink-0" />
+                                <span className="truncate">{cond.note}</span>
+                              </p>
+                            )}
+                          </div>
                           <span className="pr-1 text-right font-mono tabular-nums text-xs font-black">
                             {sub.uniformNumber ? (
                               <>
@@ -2100,14 +2414,29 @@ function MatchesContent() {
                 <>
                   {/* ② 控え（ベンチ入り） */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between px-0.5">
+                    <div className="flex items-center justify-between px-0.5 gap-2">
                       <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
                         <UserCheck className="w-3.5 h-3.5 text-primary shrink-0" />
                         <span>控え（ベンチ入り）</span>
                       </span>
-                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
-                        {benchPlayers.length}名
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {matchConditionAttentionEntries.some(
+                          (e) => e.roleCategory === "bench"
+                        ) && (
+                          <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 border border-amber-500">
+                            ⚠️・🩹制限/調整{" "}
+                            {
+                              matchConditionAttentionEntries.filter(
+                                (e) => e.roleCategory === "bench"
+                              ).length
+                            }
+                            名
+                          </span>
+                        )}
+                        <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/25">
+                          {benchPlayers.length}名
+                        </span>
+                      </div>
                     </div>
 
                     <div className="rounded-xl border border-border bg-muted/35 p-2.5">
@@ -2117,22 +2446,46 @@ function MatchesContent() {
                         </p>
                       ) : (
                         <div className="flex flex-wrap gap-1.5">
-                          {benchPlayers.map((p) => (
-                            <span
-                              key={p.id}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border shadow-2xs text-[11px] font-black text-foreground",
-                                p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
-                              )}
-                            >
-                              {p.uniformNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono tabular-nums text-[10px] font-black leading-none">
-                                  #{p.uniformNumber}
-                                </span>
-                              )}
-                              <span>{p.name}</span>
-                            </span>
-                          ))}
+                          {benchPlayers.map((p) => {
+                            const condStatus = normalizePlayerConditionStatus(
+                              p.conditionStatus
+                            );
+                            const condMeta = PLAYER_CONDITION_META[condStatus];
+                            const isRestricted = condStatus === "restricted";
+                            const isRehab = condStatus === "rehab";
+
+                            return (
+                              <span
+                                key={p.id}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 py-1 rounded-lg border shadow-2xs text-[11px] font-black text-foreground",
+                                  isRestricted
+                                    ? "bg-amber-500/10 border-amber-500/50"
+                                    : isRehab
+                                    ? "bg-rose-500/10 border-rose-500/45"
+                                    : "bg-card border-border",
+                                  p.uniformNumber ? "pl-1.5 pr-2" : "px-2.5"
+                                )}
+                              >
+                                {p.uniformNumber && (
+                                  <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono tabular-nums text-[10px] font-black leading-none">
+                                    #{p.uniformNumber}
+                                  </span>
+                                )}
+                                <span>{p.name}</span>
+                                {(isRestricted || isRehab) && (
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none",
+                                      condMeta.solidBadgeClass
+                                    )}
+                                  >
+                                    {condMeta.compactBadgeText}
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -2140,14 +2493,29 @@ function MatchesContent() {
 
                   {/* ③ 欠席 */}
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between px-0.5">
+                    <div className="flex items-center justify-between px-0.5 gap-2">
                       <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
                         <UserMinus className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         <span>欠席</span>
                       </span>
-                      <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border">
-                        {absentPlayers.length}名
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {matchConditionAttentionEntries.some(
+                          (e) => e.roleCategory === "absent"
+                        ) && (
+                          <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-rose-600 text-white border border-rose-700">
+                            🩹故障・調整{" "}
+                            {
+                              matchConditionAttentionEntries.filter(
+                                (e) => e.roleCategory === "absent"
+                              ).length
+                            }
+                            名
+                          </span>
+                        )}
+                        <span className="text-[10px] font-black font-mono tabular-nums px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border">
+                          {absentPlayers.length}名
+                        </span>
+                      </div>
                     </div>
 
                     <div className="rounded-xl border border-border bg-muted/35 p-2.5">
@@ -2157,26 +2525,118 @@ function MatchesContent() {
                         </p>
                       ) : (
                         <div className="flex flex-wrap gap-1.5">
-                          {absentPlayers.map((p) => (
-                            <span
-                              key={p.id}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 py-1 rounded-lg bg-card border border-border text-[11px] font-bold text-muted-foreground",
-                                p.uniformNumber ? "pl-1.5 pr-2.5" : "px-2.5"
-                              )}
-                            >
-                              {p.uniformNumber && (
-                                <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono tabular-nums text-[10px] font-black leading-none">
-                                  #{p.uniformNumber}
-                                </span>
-                              )}
-                              <span>{p.name}</span>
-                            </span>
-                          ))}
+                          {absentPlayers.map((p) => {
+                            const condStatus = normalizePlayerConditionStatus(
+                              p.conditionStatus
+                            );
+                            const condMeta = PLAYER_CONDITION_META[condStatus];
+                            const isRestricted = condStatus === "restricted";
+                            const isRehab = condStatus === "rehab";
+
+                            return (
+                              <span
+                                key={p.id}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 py-1 rounded-lg border text-[11px] font-bold",
+                                  isRehab
+                                    ? "bg-rose-500/10 border-rose-500/45 text-foreground"
+                                    : isRestricted
+                                    ? "bg-amber-500/10 border-amber-500/50 text-foreground"
+                                    : "bg-card border-border text-muted-foreground",
+                                  p.uniformNumber ? "pl-1.5 pr-2" : "px-2.5"
+                                )}
+                              >
+                                {p.uniformNumber && (
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] font-black leading-none",
+                                      isRehab || isRestricted
+                                        ? "bg-card text-foreground border border-border"
+                                        : "bg-muted text-muted-foreground"
+                                    )}
+                                  >
+                                    #{p.uniformNumber}
+                                  </span>
+                                )}
+                                <span>{p.name}</span>
+                                {(isRestricted || isRehab) && (
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none",
+                                      condMeta.solidBadgeClass
+                                    )}
+                                  >
+                                    {condMeta.compactBadgeText}
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   </div>
+
+                  {/* ④ 故障・一部制限あり選手のコンディション配慮サマリー（対象者がいる場合のみ表示） */}
+                  {matchConditionAttentionEntries.length > 0 && (
+                    <div className="rounded-xl border border-amber-500/40 border-l-4 border-l-amber-500 bg-amber-500/[0.06] p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-foreground flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>故障・プレー制限ありの選手（{matchConditionAttentionEntries.length}名）</span>
+                        </span>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        {matchConditionAttentionEntries.map((entry) => {
+                          const meta = PLAYER_CONDITION_META[entry.status];
+                          return (
+                            <div
+                              key={entry.key}
+                              className="rounded-lg bg-card border border-border px-2.5 py-1.5 space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                  <span className="px-1.5 py-0.5 rounded bg-muted text-foreground border border-border text-[9.5px] font-black leading-none shrink-0">
+                                    {entry.roleLabel}
+                                  </span>
+                                  {entry.uniformNumber && (
+                                    <span className="font-mono tabular-nums text-[10px] font-black text-primary shrink-0">
+                                      #{entry.uniformNumber}
+                                    </span>
+                                  )}
+                                  <span className="text-xs font-black text-foreground truncate">
+                                    {entry.name}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {entry.periodLabel && (
+                                    <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border font-mono tabular-nums text-[9.5px] font-bold leading-none">
+                                      {entry.periodLabel}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none",
+                                      meta.solidBadgeClass
+                                    )}
+                                  >
+                                    {meta.badgeText}
+                                  </span>
+                                </div>
+                              </div>
+                              {entry.note && (
+                                <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 leading-snug">
+                                  <Lock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                  <span>{entry.note}</span>
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
                 </>

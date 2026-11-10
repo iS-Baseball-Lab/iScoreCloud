@@ -313,10 +313,37 @@ export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
     isActive: 1,
     conditionStatus: "restricted",
     conditionNote: "右肘ケアのため投球球数制限（打撃・外野守備は可）",
+    conditionPeriods: [
+      {
+        id: "demo-cond-p9-1",
+        playerId: "demo-p-9",
+        status: "restricted",
+        startDate: "2026-08-01",
+        endDate: null,
+        privateNote: "右肘ケアのため投球球数制限（打撃・外野守備は可）",
+      },
+    ],
   },
   { id: "demo-p-10", name: "山田 翔太", uniformNumber: "10", isActive: 1 },
   { id: "demo-p-11", name: "佐藤 陽太", uniformNumber: "11", isActive: 1 },
-  { id: "demo-p-12", name: "加藤 湊", uniformNumber: "12", isActive: 1 },
+  {
+    id: "demo-p-12",
+    name: "加藤 湊",
+    uniformNumber: "12",
+    isActive: 1,
+    conditionStatus: "rehab",
+    conditionNote: "足首捻挫のため別メニュー調整中（走塁・守備見合わせ）",
+    conditionPeriods: [
+      {
+        id: "demo-cond-p12-1",
+        playerId: "demo-p-12",
+        status: "rehab",
+        startDate: "2026-08-15",
+        endDate: null,
+        privateNote: "足首捻挫のため別メニュー調整中（走塁・守備見合わせ）",
+      },
+    ],
+  },
 ];
 
 export const DEMO_MATCH_MAP: Record<string, Match> = {
@@ -770,14 +797,33 @@ export function formatLineupShareText(
   dateStr: string,
   myLineup: MyLineupSlot[],
   remainingPlayers: LineupPlayer[],
-  attendance: PlayerMatchAttendanceMap
+  attendance: PlayerMatchAttendanceMap,
+  allTeamPlayers?: LineupPlayer[]
 ): string {
+  const playerPool =
+    allTeamPlayers && allTeamPlayers.length > 0 ? allTeamPlayers : remainingPlayers;
+  const getConditionTag = (playerId?: string, name?: string): string => {
+    const matched =
+      (playerId ? playerPool.find((tp) => tp.id === playerId) : undefined) ||
+      (name
+        ? playerPool.find(
+            (tp) => tp.name.replace(/\s+/g, "") === name.replace(/\s+/g, "")
+          )
+        : undefined);
+    if (!matched) return "";
+    const resolved = resolveLineupPlayerConditionForMatch(matched, dateStr);
+    if (resolved.status === "restricted") return " (⚠️一部制限)";
+    if (resolved.status === "rehab") return " (🩹調整中)";
+    return "";
+  };
+
   const filledStarters = myLineup.filter((p) => p.playerId || p.name);
   const starterLines = filledStarters.map((p) => {
     const posInfo = getPositionBadgeInfo(p.position);
     const posText = posInfo ? `[${posInfo.shortLabel}]` : "[未]";
     const numText = p.uniformNumber ? `#${p.uniformNumber} ` : "";
-    return `${p.order}番 ${posText} ${numText}${p.name}`;
+    const condTag = getConditionTag(p.playerId, p.name);
+    return `${p.order}番 ${posText} ${numText}${p.name}${condTag}`;
   });
 
   const benchPlayers = remainingPlayers.filter(
@@ -795,12 +841,16 @@ export function formatLineupShareText(
   if (benchPlayers.length > 0) {
     lines.push(
       "",
-      `🟢 控え (${benchPlayers.length}名): ${benchPlayers.map((p) => p.name).join("、")}`
+      `🟢 控え (${benchPlayers.length}名): ${benchPlayers
+        .map((p) => `${p.name}${getConditionTag(p.id, p.name)}`)
+        .join("、")}`
     );
   }
   if (absentPlayers.length > 0) {
     lines.push(
-      `🔴 欠席 (${absentPlayers.length}名): ${absentPlayers.map((p) => p.name).join("、")}`
+      `🔴 欠席 (${absentPlayers.length}名): ${absentPlayers
+        .map((p) => `${p.name}${getConditionTag(p.id, p.name)}`)
+        .join("、")}`
     );
   }
 

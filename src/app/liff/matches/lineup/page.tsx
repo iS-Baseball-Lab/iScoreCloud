@@ -313,7 +313,7 @@ function LiffLineupContent() {
           }
           return;
         }
-      } catch {}
+      } catch { }
       if (!cancelled) {
         setResolvedTeamId("demo-team");
       }
@@ -418,7 +418,7 @@ function LiffLineupContent() {
             );
             return;
           }
-        } catch {}
+        } catch { }
         applyMatchList(getHydratedDemoMatchCards());
         return;
       }
@@ -478,7 +478,7 @@ function LiffLineupContent() {
             const rawPlayers = (await playersRes.json()) as LineupPlayer[];
             setTeamPlayers(filterLineupCandidatePlayers(rawPlayers, false));
           }
-        } catch {}
+        } catch { }
       }
       return;
     }
@@ -529,7 +529,7 @@ function LiffLineupContent() {
             if (localTpl) {
               setTemplates(JSON.parse(localTpl) as LineupTemplateItem[]);
             }
-          } catch {}
+          } catch { }
         }
         return;
       }
@@ -1006,8 +1006,8 @@ function LiffLineupContent() {
         (p) =>
           Boolean(
             (p.name && p.name.trim() !== "") ||
-              (p.position && p.position !== "") ||
-              (p.uniformNumber && p.uniformNumber.trim() !== "")
+            (p.position && p.position !== "") ||
+            (p.uniformNumber && p.uniformNumber.trim() !== "")
           )
       );
 
@@ -1129,8 +1129,22 @@ function LiffLineupContent() {
   const shareSummaryText = useMemo(() => {
     const opp = currentMatch?.opponent || "対戦相手";
     const dt = currentMatch?.date || "";
-    return formatLineupShareText(opp, dt, myLineup, remainingPlayers, attendance);
-  }, [currentMatch?.opponent, currentMatch?.date, myLineup, remainingPlayers, attendance]);
+    return formatLineupShareText(
+      opp,
+      dt,
+      myLineup,
+      remainingPlayers,
+      attendance,
+      teamPlayers
+    );
+  }, [
+    currentMatch?.opponent,
+    currentMatch?.date,
+    myLineup,
+    remainingPlayers,
+    attendance,
+    teamPlayers,
+  ]);
 
   const handleCopyLineupText = async () => {
     try {
@@ -1166,9 +1180,9 @@ function LiffLineupContent() {
           shareData={
             currentMatch
               ? {
-                  title: `vs ${currentMatch.opponent} 出場メンバー`,
-                  text: shareSummaryText,
-                }
+                title: `vs ${currentMatch.opponent} 出場メンバー`,
+                text: shareSummaryText,
+              }
               : undefined
           }
           rightElement={
@@ -1213,15 +1227,15 @@ function LiffLineupContent() {
                     currentMatch?.matchType === "official"
                       ? "bg-amber-400 text-slate-950 border-amber-400"
                       : currentMatch?.matchType === "exchange"
-                      ? "bg-sky-500 text-white border-sky-500"
-                      : "bg-slate-800 text-slate-200 border-slate-700"
+                        ? "bg-sky-500 text-white border-sky-500"
+                        : "bg-slate-800 text-slate-200 border-slate-700"
                   )}
                 >
                   {currentMatch?.matchType === "official"
                     ? "公式戦"
                     : currentMatch?.matchType === "exchange"
-                    ? "交流戦"
-                    : practiceMatchLabel}
+                      ? "交流戦"
+                      : practiceMatchLabel}
                 </span>
                 {currentMatch?.tournamentName && (
                   <span className="text-[11px] font-bold text-slate-300 truncate">
@@ -1234,15 +1248,15 @@ function LiffLineupContent() {
                     currentMatch?.status === "live"
                       ? "bg-rose-600 text-white"
                       : currentMatch?.status === "finished"
-                      ? "bg-slate-800 text-slate-200 border border-slate-700"
-                      : "bg-primary text-primary-foreground"
+                        ? "bg-slate-800 text-slate-200 border border-slate-700"
+                        : "bg-primary text-primary-foreground"
                   )}
                 >
                   {currentMatch?.status === "live"
                     ? "試合中"
                     : currentMatch?.status === "finished"
-                    ? "試合終了"
-                    : "試合予定"}
+                      ? "試合終了"
+                      : "試合予定"}
                 </span>
               </div>
 
@@ -1315,8 +1329,8 @@ function LiffLineupContent() {
                             m.status === "scheduled"
                               ? "bg-primary/15 text-primary"
                               : m.status === "live"
-                              ? "bg-rose-600 text-white"
-                              : "bg-muted text-muted-foreground"
+                                ? "bg-rose-600 text-white"
+                                : "bg-muted text-muted-foreground"
                           )}
                         >
                           {m.status === "scheduled" ? "予定" : m.status === "live" ? "試合中" : "終了"}
@@ -1475,218 +1489,254 @@ function LiffLineupContent() {
               </div>
 
               <div className="p-3 space-y-2.5 bg-card">
-              <div className="space-y-2">
-                {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
-                  const disabledPos = getDisabledPositions(
-                    activeTab === "myTeam" ? myLineup : opponentLineup,
-                    index
-                  );
-                  const isCompleted =
-                    activeTab === "myTeam"
-                      ? Boolean(player.position && (player as MyLineupSlot).playerId)
-                      : Boolean(player.position && player.name.trim());
+                <div className="space-y-2">
+                  {(activeTab === "myTeam" ? myLineup : opponentLineup).map((player, index) => {
+                    const disabledPos = getDisabledPositions(
+                      activeTab === "myTeam" ? myLineup : opponentLineup,
+                      index
+                    );
+                    const isCompleted =
+                      activeTab === "myTeam"
+                        ? Boolean(player.position && (player as MyLineupSlot).playerId)
+                        : Boolean(player.position && player.name.trim());
 
-                  const posDef = LINEUP_POSITIONS.find((p) => p.id === player.position);
+                    const posDef = LINEUP_POSITIONS.find((p) => p.id === player.position);
+                    const matchedMyStarterPlayer =
+                      activeTab === "myTeam" && myLineup[index]?.playerId
+                        ? teamPlayers.find((tp) => tp.id === myLineup[index].playerId) || null
+                        : null;
+                    const starterCondStatus = normalizePlayerConditionStatus(
+                      matchedMyStarterPlayer?.conditionStatus
+                    );
+                    const starterCondMeta = PLAYER_CONDITION_META[starterCondStatus];
 
-                  return (
-                    <div
-                      key={index}
-                      className={cn(
-                        "flex items-center gap-2 p-2 rounded-2xl bg-card shadow-xs transition-all",
-                        isCompleted
-                          ? "border border-border"
-                          : "border border-dashed border-border"
-                      )}
-                    >
+                    return (
                       <div
+                        key={index}
                         className={cn(
-                          "w-7 text-center font-black italic flex items-center justify-center text-xs shrink-0",
-                          isCompleted ? "text-primary" : "text-muted-foreground"
+                          "flex items-center gap-2 p-2 rounded-2xl bg-card shadow-xs transition-all",
+                          starterCondStatus === "restricted"
+                            ? "border border-amber-500/50 bg-amber-500/[0.04]"
+                            : starterCondStatus === "rehab"
+                              ? "border border-rose-500/45 bg-rose-500/[0.04]"
+                              : isCompleted
+                                ? "border border-border"
+                                : "border border-dashed border-border"
                         )}
                       >
-                        {index + 1}
-                      </div>
+                        <div
+                          className={cn(
+                            "w-7 text-center font-black italic flex items-center justify-center text-xs shrink-0",
+                            isCompleted ? "text-primary" : "text-muted-foreground"
+                          )}
+                        >
+                          {index + 1}
+                        </div>
 
-                      {activeTab === "myTeam" ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (teamPlayers.length === 0) {
-                              toast.error("チームに選手が登録されていません。Web版またはメンバー管理から選手を登録してください。");
-                              return;
-                            }
-                            setActiveSelectionIndex(index);
-                            setPlayerSearchQuery("");
-                            const currentSlot = myLineup[index];
-                            setTempSelectedPlayer(
-                              currentSlot.playerId
-                                ? {
+                        {activeTab === "myTeam" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (teamPlayers.length === 0) {
+                                toast.error("チームに選手が登録されていません。Web版またはメンバー管理から選手を登録してください。");
+                                return;
+                              }
+                              setActiveSelectionIndex(index);
+                              setPlayerSearchQuery("");
+                              const currentSlot = myLineup[index];
+                              setTempSelectedPlayer(
+                                currentSlot.playerId
+                                  ? matchedMyStarterPlayer || {
                                     id: currentSlot.playerId,
                                     name: currentSlot.name,
                                     uniformNumber: currentSlot.uniformNumber || null,
                                   }
-                                : null
-                            );
-                            setModalStep(currentSlot.playerId ? "position" : "player");
-                          }}
-                          className="flex-1 h-11 px-2.5 bg-transparent border-none font-bold text-sm rounded-xl focus:outline-none hover:bg-muted/40 active:bg-muted/60 transition-colors flex items-center justify-between min-w-0 cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2 overflow-hidden mr-2">
-                            {posDef ? (
-                              <span
-                                className={cn(
-                                  "px-2 py-1 rounded-lg text-white font-black text-[10px] shrink-0",
-                                  posDef.color
-                                )}
-                              >
-                                {posDef.label}
-                              </span>
-                            ) : (
-                              <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border">
-                                守備未設定
-                              </span>
-                            )}
-
-                            <span
-                              className={cn(
-                                "truncate text-left text-xs sm:text-sm",
-                                myLineup[index].playerId
-                                  ? "font-black text-foreground"
-                                  : "font-bold text-muted-foreground"
+                                  : null
+                              );
+                              setModalStep(currentSlot.playerId ? "position" : "player");
+                            }}
+                            className="flex-1 min-h-11 py-1.5 px-2.5 bg-transparent border-none font-bold text-sm rounded-xl focus:outline-none hover:bg-muted/40 active:bg-muted/60 transition-colors flex items-center justify-between min-w-0 cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden mr-2 min-w-0">
+                              {posDef ? (
+                                <span
+                                  className={cn(
+                                    "px-2 py-1 rounded-lg text-white font-black text-[10px] shrink-0",
+                                    posDef.color
+                                  )}
+                                >
+                                  {posDef.label}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-1 rounded-lg bg-muted text-muted-foreground font-black text-[10px] shrink-0 border border-border">
+                                  守備未設定
+                                </span>
                               )}
-                            >
-                              {myLineup[index].playerId
-                                ? `${
-                                    myLineup[index].uniformNumber
-                                      ? `#${myLineup[index].uniformNumber} `
-                                      : ""
-                                  }${myLineup[index].name}`
-                                : "タップして選手・守備を選択..."}
-                            </span>
-                          </div>
-                          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-                        </button>
-                      ) : (
-                        <>
-                          <LiffSelect
-                            value={player.position}
-                            onChange={(val) => {
-                              const list = [...opponentLineup];
-                              list[index] = { ...list[index], position: val };
-                              setOpponentLineup(list);
-                            }}
-                            options={[
-                              {
-                                value: "",
-                                label: "守備未設定（クリア）",
-                              },
-                              ...LINEUP_POSITIONS.map((p) => {
-                                const isTaken = disabledPos.includes(p.id);
-                                return {
-                                  value: p.id,
-                                  label: p.label,
-                                  disabled: isTaken,
-                                  badge: isTaken ? "他打順で使用中" : undefined,
-                                  badgeTone: "slate" as const,
+
+                              <div className="min-w-0 text-left">
+                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                  <span
+                                    className={cn(
+                                      "truncate text-left text-xs sm:text-sm",
+                                      myLineup[index].playerId
+                                        ? "font-black text-foreground"
+                                        : "font-bold text-muted-foreground"
+                                    )}
+                                  >
+                                    {myLineup[index].playerId
+                                      ? `${myLineup[index].uniformNumber
+                                        ? `#${myLineup[index].uniformNumber} `
+                                        : ""
+                                      }${myLineup[index].name}`
+                                      : "タップして選手・守備を選択..."}
+                                  </span>
+                                  {(starterCondStatus === "restricted" ||
+                                    starterCondStatus === "rehab") && (
+                                      <span
+                                        className={cn(
+                                          "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none shrink-0",
+                                          starterCondMeta.solidBadgeClass
+                                        )}
+                                      >
+                                        {starterCondMeta.compactBadgeText}
+                                      </span>
+                                    )}
+                                </div>
+                                {(starterCondStatus === "restricted" ||
+                                  starterCondStatus === "rehab") &&
+                                  matchedMyStarterPlayer?.conditionNote && (
+                                    <span className="text-[9.5px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5">
+                                      <Lock className="w-2.5 h-2.5 shrink-0" />
+                                      <span className="truncate">
+                                        {matchedMyStarterPlayer.conditionNote}
+                                      </span>
+                                    </span>
+                                  )}
+                              </div>
+                            </div>
+                            <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                          </button>
+                        ) : (
+                          <>
+                            <LiffSelect
+                              value={player.position}
+                              onChange={(val) => {
+                                const list = [...opponentLineup];
+                                list[index] = { ...list[index], position: val };
+                                setOpponentLineup(list);
+                              }}
+                              options={[
+                                {
+                                  value: "",
+                                  label: "守備未設定（クリア）",
+                                },
+                                ...LINEUP_POSITIONS.map((p) => {
+                                  const isTaken = disabledPos.includes(p.id);
+                                  return {
+                                    value: p.id,
+                                    label: p.label,
+                                    disabled: isTaken,
+                                    badge: isTaken ? "他打順で使用中" : undefined,
+                                    badgeTone: "slate" as const,
+                                  };
+                                }),
+                              ]}
+                              displayValueOverride={posDef ? posDef.label : "守備"}
+                              title={`相手 ${index + 1}番の守備位置`}
+                              searchable={false}
+                              className={cn(
+                                "w-20 h-11 rounded-xl px-2.5 shrink-0",
+                                posDef
+                                  ? posDef.id === "1"
+                                    ? "bg-red-500 hover:bg-red-600 border-red-600 text-white [&>svg]:text-white/90"
+                                    : posDef.id === "2"
+                                      ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
+                                      : posDef.id === "3"
+                                        ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
+                                        : posDef.id === "4"
+                                          ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
+                                          : posDef.id === "5"
+                                            ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
+                                            : posDef.id === "6"
+                                              ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
+                                              : posDef.id === "7"
+                                                ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
+                                                : posDef.id === "8"
+                                                  ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
+                                                  : posDef.id === "9"
+                                                    ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
+                                                    : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
+                                  : "bg-muted hover:bg-muted/80 text-foreground border-border"
+                              )}
+                              triggerTextClassName={
+                                posDef
+                                  ? "text-white font-black text-center flex-1"
+                                  : "text-foreground font-black text-center flex-1"
+                              }
+                            />
+
+                            <Input
+                              placeholder="背番"
+                              maxLength={4}
+                              className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
+                              value={player.uniformNumber || ""}
+                              onChange={(e) => {
+                                const list = [...opponentLineup];
+                                list[index] = {
+                                  ...list[index],
+                                  uniformNumber: e.target.value.replace(/^#/, ""),
                                 };
-                              }),
-                            ]}
-                            displayValueOverride={posDef ? posDef.label : "守備"}
-                            title={`相手 ${index + 1}番の守備位置`}
-                            searchable={false}
-                            className={cn(
-                              "w-20 h-11 rounded-xl px-2.5 shrink-0",
-                              posDef
-                                ? posDef.id === "1"
-                                  ? "bg-red-500 hover:bg-red-600 border-red-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "2"
-                                  ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "3"
-                                  ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "4"
-                                  ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "5"
-                                  ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "6"
-                                  ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "7"
-                                  ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "8"
-                                  ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
-                                  : posDef.id === "9"
-                                  ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
-                                  : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
-                                : "bg-muted hover:bg-muted/80 text-foreground border-border"
-                            )}
-                            triggerTextClassName={
-                              posDef
-                                ? "text-white font-black text-center flex-1"
-                                : "text-foreground font-black text-center flex-1"
-                            }
-                          />
+                                setOpponentLineup(list);
+                              }}
+                            />
 
-                          <Input
-                            placeholder="背番"
-                            maxLength={4}
-                            className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
-                            value={player.uniformNumber || ""}
-                            onChange={(e) => {
-                              const list = [...opponentLineup];
-                              list[index] = {
-                                ...list[index],
-                                uniformNumber: e.target.value.replace(/^#/, ""),
-                              };
-                              setOpponentLineup(list);
-                            }}
-                          />
+                            <Input
+                              placeholder="相手選手名"
+                              className={cn(
+                                "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
+                                isCompleted ? "text-foreground" : "text-muted-foreground"
+                              )}
+                              value={player.name}
+                              onChange={(e) => {
+                                const list = [...opponentLineup];
+                                list[index] = { ...list[index], name: e.target.value };
+                                setOpponentLineup(list);
+                              }}
+                            />
+                          </>
+                        )}
 
-                          <Input
-                            placeholder="相手選手名"
-                            className={cn(
-                              "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
-                              isCompleted ? "text-foreground" : "text-muted-foreground"
-                            )}
-                            value={player.name}
-                            onChange={(e) => {
-                              const list = [...opponentLineup];
-                              list[index] = { ...list[index], name: e.target.value };
-                              setOpponentLineup(list);
-                            }}
-                          />
-                        </>
-                      )}
+                        {index >= 9 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveBatter(activeTab, index)}
+                            className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all shrink-0 cursor-pointer"
+                            title="この打順枠を削除"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        )}
 
-                      {index >= 9 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveBatter(activeTab, index)}
-                          className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all shrink-0 cursor-pointer"
-                          title="この打順枠を削除"
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </button>
-                      )}
+                        {isCompleted && (
+                          <div className="w-6 flex justify-center shrink-0">
+                            <CheckCircle2 className="w-4 h-4 text-primary" />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-                      {isCompleted && (
-                        <div className="w-6 flex justify-center shrink-0">
-                          <CheckCircle2 className="w-4 h-4 text-primary" />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* EDH（全員打撃）対応: 打順追加ボタン */}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => handleAddBatter(activeTab)}
-                className="w-full h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>打順（バッター）を追加（全員打撃対応）</span>
-              </Button>
+                {/* EDH（全員打撃）対応: 打順追加ボタン */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleAddBatter(activeTab)}
+                  className="w-full h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>打順（バッター）を追加（全員打撃対応）</span>
+                </Button>
               </div>
             </section>
 
@@ -1716,178 +1766,178 @@ function LiffLineupContent() {
                 </div>
 
                 <div className="p-3 bg-card space-y-2">
-                {excludedCount > 0 && (
-                  <div className="px-3 py-2 rounded-xl bg-muted/50 border border-border text-[10.5px] font-bold text-muted-foreground leading-relaxed">
-                    試合日より後に入団・追加された選手は自動的に「対象外」となり、過去試合の控え・欠席一覧には表示されません（体験参加等で当日ベンチ入りしていた場合は「控え」へ切替可能です）。
-                  </div>
-                )}
+                  {excludedCount > 0 && (
+                    <div className="px-3 py-2 rounded-xl bg-muted/50 border border-border text-[10.5px] font-bold text-muted-foreground leading-relaxed">
+                      試合日より後に入団・追加された選手は自動的に「対象外」となり、過去試合の控え・欠席一覧には表示されません（体験参加等で当日ベンチ入りしていた場合は「控え」へ切替可能です）。
+                    </div>
+                  )}
 
-                {teamPlayers.length === 0 ? (
-                  <EmptyState
-                    icon={Users}
-                    title="選手がまだ登録されていません"
-                    description="チームに選手名簿が登録されると、スタメン・控え・欠席の振り分けが行えます"
-                  />
-                ) : remainingPlayers.length === 0 ? (
-                  <div className="text-center py-6 bg-card rounded-2xl border border-border shadow-xs">
-                    <p className="text-xs font-black text-muted-foreground">
-                      全選手がスタメンに登録されています
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-2">
-                    {remainingPlayers.map((player) => {
-                      const status = attendance[player.id] || "bench";
-                      const isAbsent = status === "absent";
-                      const isExcluded = status === "excluded";
-                      const isJoinedAfter = isPlayerJoinedAfterMatch(player, matchRosterCtx);
-                      const joinedShort = formatPlayerJoinedShortDate(player.joinedAt);
-                      const isLockedBySchedule = originalAbsents.includes(player.id);
-                      const condStatus = normalizePlayerConditionStatus(player.conditionStatus);
-                      const condMeta = PLAYER_CONDITION_META[condStatus];
+                  {teamPlayers.length === 0 ? (
+                    <EmptyState
+                      icon={Users}
+                      title="選手がまだ登録されていません"
+                      description="チームに選手名簿が登録されると、スタメン・控え・欠席の振り分けが行えます"
+                    />
+                  ) : remainingPlayers.length === 0 ? (
+                    <div className="text-center py-6 bg-card rounded-2xl border border-border shadow-xs">
+                      <p className="text-xs font-black text-muted-foreground">
+                        全選手がスタメンに登録されています
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      {remainingPlayers.map((player) => {
+                        const status = attendance[player.id] || "bench";
+                        const isAbsent = status === "absent";
+                        const isExcluded = status === "excluded";
+                        const isJoinedAfter = isPlayerJoinedAfterMatch(player, matchRosterCtx);
+                        const joinedShort = formatPlayerJoinedShortDate(player.joinedAt);
+                        const isLockedBySchedule = originalAbsents.includes(player.id);
+                        const condStatus = normalizePlayerConditionStatus(player.conditionStatus);
+                        const condMeta = PLAYER_CONDITION_META[condStatus];
 
-                      return (
-                        <div
-                          key={player.id}
-                          className={cn(
-                            "flex items-center justify-between p-2.5 pl-3 rounded-2xl border border-border shadow-xs transition-all gap-2",
-                            isExcluded
-                              ? "bg-muted/50 opacity-80"
-                              : isAbsent
-                              ? "bg-muted/35"
-                              : "bg-card"
-                          )}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <span
-                              className={cn(
-                                "text-xs font-black min-w-[24px] text-center px-1 py-0.5 rounded-md shrink-0 tabular-nums",
-                                isExcluded || isAbsent
-                                  ? "bg-muted text-muted-foreground"
-                                  : "bg-primary/10 text-primary"
-                              )}
-                            >
-                              {player.uniformNumber ? `#${player.uniformNumber}` : "-"}
-                            </span>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span
-                                  className={cn(
-                                    "text-xs sm:text-sm font-black block truncate",
-                                    isAbsent
-                                      ? "text-muted-foreground line-through"
-                                      : isExcluded
-                                      ? "text-muted-foreground"
-                                      : "text-foreground"
-                                  )}
-                                >
-                                  {player.name}
-                                </span>
-                                {isJoinedAfter && (
-                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0">
-                                    入団前{joinedShort ? ` (${joinedShort}〜)` : ""}
-                                  </span>
+                        return (
+                          <div
+                            key={player.id}
+                            className={cn(
+                              "flex items-center justify-between p-2.5 pl-3 rounded-2xl border border-border shadow-xs transition-all gap-2",
+                              isExcluded
+                                ? "bg-muted/50 opacity-80"
+                                : isAbsent
+                                  ? "bg-muted/35"
+                                  : "bg-card"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span
+                                className={cn(
+                                  "text-xs font-black min-w-[24px] text-center px-1 py-0.5 rounded-md shrink-0 tabular-nums",
+                                  isExcluded || isAbsent
+                                    ? "bg-muted text-muted-foreground"
+                                    : "bg-primary/10 text-primary"
                                 )}
-                                {condStatus !== "active" && (
+                              >
+                                {player.uniformNumber ? `#${player.uniformNumber}` : "-"}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span
                                     className={cn(
-                                      "px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0",
-                                      condMeta.solidBadgeClass
+                                      "text-xs sm:text-sm font-black block truncate",
+                                      isAbsent
+                                        ? "text-muted-foreground line-through"
+                                        : isExcluded
+                                          ? "text-muted-foreground"
+                                          : "text-foreground"
                                     )}
                                   >
-                                    {condMeta.compactBadgeText}
+                                    {player.name}
+                                  </span>
+                                  {isJoinedAfter && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0">
+                                      入団前{joinedShort ? ` (${joinedShort}〜)` : ""}
+                                    </span>
+                                  )}
+                                  {condStatus !== "active" && (
+                                    <span
+                                      className={cn(
+                                        "px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0",
+                                        condMeta.solidBadgeClass
+                                      )}
+                                    >
+                                      {condMeta.compactBadgeText}
+                                    </span>
+                                  )}
+                                </div>
+                                {player.conditionNote && (
+                                  <span className="text-[9.5px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5">
+                                    <Lock className="w-2.5 h-2.5 shrink-0" />
+                                    <span className="truncate">{player.conditionNote}</span>
+                                  </span>
+                                )}
+                                {isLockedBySchedule && (
+                                  <span className="text-[9.5px] font-bold text-muted-foreground block">
+                                    ※出欠表で欠席登録済
                                   </span>
                                 )}
                               </div>
-                              {player.conditionNote && (
-                                <span className="text-[9.5px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5">
-                                  <Lock className="w-2.5 h-2.5 shrink-0" />
-                                  <span className="truncate">{player.conditionNote}</span>
-                                </span>
-                              )}
-                              {isLockedBySchedule && (
-                                <span className="text-[9.5px] font-bold text-muted-foreground block">
-                                  ※出欠表で欠席登録済
-                                </span>
-                              )}
+                            </div>
+
+                            {/* 控え / 欠席 / 対象外 3セグメントトグル */}
+                            <div className="flex gap-0.5 bg-muted p-1 rounded-2xl w-[178px] sm:w-[196px] shrink-0 border border-border">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (isLockedBySchedule) {
+                                    toast.error("出欠管理で欠席登録されているため、控えに変更できません。");
+                                    return;
+                                  }
+                                  setAttendance((prev) => ({ ...prev, [player.id]: "bench" }));
+                                }}
+                                disabled={isLockedBySchedule}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  status === "bench"
+                                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
+                                  isLockedBySchedule && "opacity-45 cursor-not-allowed"
+                                )}
+                              >
+                                <UserCheck
+                                  className={cn(
+                                    "w-3 h-3 mr-0.5 shrink-0",
+                                    status === "bench" ? "text-primary" : "text-muted-foreground"
+                                  )}
+                                />
+                                控え
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAttendance((prev) => ({ ...prev, [player.id]: "absent" }))
+                                }
+                                className={cn(
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  status === "absent"
+                                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                )}
+                              >
+                                <UserMinus
+                                  className={cn(
+                                    "w-3 h-3 mr-0.5 shrink-0",
+                                    status === "absent" ? "text-primary" : "text-muted-foreground"
+                                  )}
+                                />
+                                欠席
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setAttendance((prev) => ({ ...prev, [player.id]: "excluded" }))
+                                }
+                                title="入団前・ベンチ外・未帯同としてこの試合から除外"
+                                className={cn(
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  status === "excluded"
+                                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                )}
+                              >
+                                <Ban
+                                  className={cn(
+                                    "w-3 h-3 mr-0.5 shrink-0",
+                                    status === "excluded" ? "text-amber-600" : "text-muted-foreground"
+                                  )}
+                                />
+                                対象外
+                              </button>
                             </div>
                           </div>
-
-                          {/* 控え / 欠席 / 対象外 3セグメントトグル */}
-                          <div className="flex gap-0.5 bg-muted p-1 rounded-2xl w-[178px] sm:w-[196px] shrink-0 border border-border">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (isLockedBySchedule) {
-                                  toast.error("出欠管理で欠席登録されているため、控えに変更できません。");
-                                  return;
-                                }
-                                setAttendance((prev) => ({ ...prev, [player.id]: "bench" }));
-                              }}
-                              disabled={isLockedBySchedule}
-                              className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
-                                status === "bench"
-                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
-                                isLockedBySchedule && "opacity-45 cursor-not-allowed"
-                              )}
-                            >
-                              <UserCheck
-                                className={cn(
-                                  "w-3 h-3 mr-0.5 shrink-0",
-                                  status === "bench" ? "text-primary" : "text-muted-foreground"
-                                )}
-                              />
-                              控え
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setAttendance((prev) => ({ ...prev, [player.id]: "absent" }))
-                              }
-                              className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
-                                status === "absent"
-                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                              )}
-                            >
-                              <UserMinus
-                                className={cn(
-                                  "w-3 h-3 mr-0.5 shrink-0",
-                                  status === "absent" ? "text-primary" : "text-muted-foreground"
-                                )}
-                              />
-                              欠席
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setAttendance((prev) => ({ ...prev, [player.id]: "excluded" }))
-                              }
-                              title="入団前・ベンチ外・未帯同としてこの試合から除外"
-                              className={cn(
-                                "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
-                                status === "excluded"
-                                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                              )}
-                            >
-                              <Ban
-                                className={cn(
-                                  "w-3 h-3 mr-0.5 shrink-0",
-                                  status === "excluded" ? "text-amber-600" : "text-muted-foreground"
-                                )}
-                              />
-                              対象外
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </section>
             ) : (
@@ -1920,7 +1970,7 @@ function LiffLineupContent() {
                         );
                         const hasInput = Boolean(
                           (benchPlayer.name && benchPlayer.name.trim()) ||
-                            (benchPlayer.uniformNumber && benchPlayer.uniformNumber.trim())
+                          (benchPlayer.uniformNumber && benchPlayer.uniformNumber.trim())
                         );
 
                         return (
@@ -1965,22 +2015,22 @@ function LiffLineupContent() {
                                   ? posDef.id === "1"
                                     ? "bg-red-500 hover:bg-red-600 border-red-600 text-white [&>svg]:text-white/90"
                                     : posDef.id === "2"
-                                    ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "3"
-                                    ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "4"
-                                    ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "5"
-                                    ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "6"
-                                    ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "7"
-                                    ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "8"
-                                    ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
-                                    : posDef.id === "9"
-                                    ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
-                                    : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
+                                      ? "bg-blue-500 hover:bg-blue-600 border-blue-600 text-white [&>svg]:text-white/90"
+                                      : posDef.id === "3"
+                                        ? "bg-orange-500 hover:bg-orange-600 border-orange-600 text-white [&>svg]:text-white/90"
+                                        : posDef.id === "4"
+                                          ? "bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white [&>svg]:text-white/90"
+                                          : posDef.id === "5"
+                                            ? "bg-amber-500 hover:bg-amber-600 border-amber-600 text-white [&>svg]:text-white/90"
+                                            : posDef.id === "6"
+                                              ? "bg-purple-500 hover:bg-purple-600 border-purple-600 text-white [&>svg]:text-white/90"
+                                              : posDef.id === "7"
+                                                ? "bg-lime-500 hover:bg-lime-600 border-lime-600 text-white [&>svg]:text-white/90"
+                                                : posDef.id === "8"
+                                                  ? "bg-teal-500 hover:bg-teal-600 border-teal-600 text-white [&>svg]:text-white/90"
+                                                  : posDef.id === "9"
+                                                    ? "bg-cyan-500 hover:bg-cyan-600 border-cyan-600 text-white [&>svg]:text-white/90"
+                                                    : "bg-zinc-500 hover:bg-zinc-600 border-zinc-600 text-white [&>svg]:text-white/90"
                                   : "bg-muted hover:bg-muted/80 text-foreground border-border"
                               )}
                               triggerTextClassName={
@@ -2188,282 +2238,282 @@ function LiffLineupContent() {
               className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[85dvh] animate-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
-            {/* モーダルヘッダー (A-3 ダークソリッドキャップ) */}
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-sm font-black text-white">
-                  {modalStep === "player" ? "選手を選択" : "守備位置を選択"}
-                </h3>
-                <p className="text-[11px] text-slate-300 font-bold mt-0.5 truncate">
-                  {activeSelectionIndex + 1}番打者
-                  {modalStep === "position" && tempSelectedPlayer
-                    ? ` : ${tempSelectedPlayer.uniformNumber ? `#${tempSelectedPlayer.uniformNumber} ` : ""}${tempSelectedPlayer.name}`
-                    : ""}
-                </p>
+              {/* モーダルヘッダー (A-3 ダークソリッドキャップ) */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-white">
+                    {modalStep === "player" ? "選手を選択" : "守備位置を選択"}
+                  </h3>
+                  <p className="text-[11px] text-slate-300 font-bold mt-0.5 truncate">
+                    {activeSelectionIndex + 1}番打者
+                    {modalStep === "position" && tempSelectedPlayer
+                      ? ` : ${tempSelectedPlayer.uniformNumber ? `#${tempSelectedPlayer.uniformNumber} ` : ""}${tempSelectedPlayer.name}`
+                      : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSelectionIndex(null);
+                    setTempSelectedPlayer(null);
+                  }}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                  aria-label="閉じる"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSelectionIndex(null);
-                  setTempSelectedPlayer(null);
-                }}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-                aria-label="閉じる"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-5 flex flex-col flex-1 overflow-hidden bg-card">
-              {modalStep === "player" ? (
-                /* ステップ1: 選手選択 */
-                <>
-                  <div className="mb-3 relative">
-                    <Input
-                      placeholder="選手名または背番号で検索..."
-                      value={playerSearchQuery}
-                      onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                      className="h-11 rounded-xl bg-muted/50 border-border font-bold pl-3.5 pr-12 text-sm"
-                    />
-                    {playerSearchQuery && (
+              <div className="p-5 flex flex-col flex-1 overflow-hidden bg-card">
+                {modalStep === "player" ? (
+                  /* ステップ1: 選手選択 */
+                  <>
+                    <div className="mb-3 relative">
+                      <Input
+                        placeholder="選手名または背番号で検索..."
+                        value={playerSearchQuery}
+                        onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                        className="h-11 rounded-xl bg-muted/50 border-border font-bold pl-3.5 pr-12 text-sm"
+                      />
+                      {playerSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setPlayerSearchQuery("")}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground hover:text-foreground"
+                        >
+                          クリア
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[260px]">
+                      {/* 選択解除ボタン */}
                       <button
                         type="button"
-                        onClick={() => setPlayerSearchQuery("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                          const list = [...myLineup];
+                          list[activeSelectionIndex] = {
+                            ...list[activeSelectionIndex],
+                            playerId: "",
+                            name: "",
+                            uniformNumber: "",
+                            position: "",
+                          };
+                          setMyLineup(list);
+                          setActiveSelectionIndex(null);
+                          setTempSelectedPlayer(null);
+                          toast.success(`${activeSelectionIndex + 1}番の選択を解除しました`);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
                       >
-                        クリア
+                        選択をクリアする（空欄にする）
                       </button>
-                    )}
-                  </div>
 
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-0.5 min-h-[260px]">
-                    {/* 選択解除ボタン */}
+                      {(() => {
+                        const query = playerSearchQuery.trim().toLowerCase();
+                        const filtered = teamPlayers.filter((p) => {
+                          const nameMatch = p.name.toLowerCase().includes(query);
+                          const numMatch = p.uniformNumber ? p.uniformNumber.includes(query) : false;
+                          return nameMatch || numMatch;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="text-center py-10">
+                              <p className="text-xs font-bold text-muted-foreground">選手が見つかりません</p>
+                            </div>
+                          );
+                        }
+
+                        const disabledPlayers = getDisabledPlayers(myLineup, activeSelectionIndex);
+
+                        return filtered.map((p) => {
+                          const isAlreadySelected = disabledPlayers.includes(p.id);
+                          const isAbsent = attendance[p.id] === "absent";
+                          const isExcluded = attendance[p.id] === "excluded";
+                          const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
+                          const condMeta = PLAYER_CONDITION_META[condStatus];
+                          const isRehab = condStatus === "rehab";
+                          const isDisabled = isAlreadySelected || isAbsent || isExcluded || isRehab;
+                          const assignedOrder = myLineup.find(
+                            (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
+                          )?.order;
+
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => {
+                                setTempSelectedPlayer(p);
+                                setModalStep("position");
+                              }}
+                              className={cn(
+                                "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer",
+                                myLineup[activeSelectionIndex].playerId === p.id
+                                  ? "bg-primary/10 border-primary text-primary"
+                                  : "bg-card hover:bg-muted/40 border-border",
+                                isDisabled && "opacity-55 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
+                              )}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="text-xs font-black min-w-[26px] text-primary shrink-0">
+                                    {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
+                                  </span>
+                                  <span className="text-sm font-black text-foreground truncate">
+                                    {p.name}
+                                  </span>
+                                </div>
+                                {p.conditionNote && (
+                                  <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5 pl-[36px]">
+                                    <Lock className="w-2.5 h-2.5 shrink-0" />
+                                    <span className="truncate">{p.conditionNote}</span>
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="flex gap-1.5 items-center shrink-0 ml-2">
+                                {isAlreadySelected && (
+                                  <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
+                                    選択中 ({assignedOrder}番)
+                                  </span>
+                                )}
+                                {isAbsent && (
+                                  <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
+                                    欠席
+                                  </span>
+                                )}
+                                {!isAlreadySelected && !isAbsent && isExcluded && (
+                                  <span className="text-[10px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-md">
+                                    対象外
+                                  </span>
+                                )}
+                                {!isAlreadySelected && !isAbsent && !isExcluded && isRehab && (
+                                  <span
+                                    className={cn(
+                                      "text-[10px] font-black px-2 py-0.5 rounded-md",
+                                      condMeta.solidBadgeClass
+                                    )}
+                                  >
+                                    🩹 調整中（出場不可）
+                                  </span>
+                                )}
+                                {!isAlreadySelected && !isAbsent && !isRehab && (
+                                  <>
+                                    {condStatus === "restricted" && (
+                                      <span
+                                        className={cn(
+                                          "text-[10px] font-black px-2 py-0.5 rounded-md",
+                                          condMeta.solidBadgeClass
+                                        )}
+                                      >
+                                        {condMeta.compactBadgeText}
+                                      </span>
+                                    )}
+                                    <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
+                                      起用可能
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </>
+                ) : (
+                  /* ステップ2: 守備位置選択 */
+                  <div className="flex flex-col flex-1 overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => {
-                        const list = [...myLineup];
-                        list[activeSelectionIndex] = {
-                          ...list[activeSelectionIndex],
-                          playerId: "",
-                          name: "",
-                          uniformNumber: "",
-                          position: "",
-                        };
-                        setMyLineup(list);
-                        setActiveSelectionIndex(null);
-                        setTempSelectedPlayer(null);
-                        toast.success(`${activeSelectionIndex + 1}番の選択を解除しました`);
-                      }}
-                      className="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl border border-dashed border-border text-xs font-black text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-all cursor-pointer"
+                      onClick={() => setModalStep("player")}
+                      className="text-xs text-primary font-black flex items-center gap-1 hover:underline mb-3 self-start cursor-pointer"
                     >
-                      選択をクリアする（空欄にする）
+                      ← 選手選択に戻る
                     </button>
 
-                    {(() => {
-                      const query = playerSearchQuery.trim().toLowerCase();
-                      const filtered = teamPlayers.filter((p) => {
-                        const nameMatch = p.name.toLowerCase().includes(query);
-                        const numMatch = p.uniformNumber ? p.uniformNumber.includes(query) : false;
-                        return nameMatch || numMatch;
-                      });
-
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="text-center py-10">
-                            <p className="text-xs font-bold text-muted-foreground">選手が見つかりません</p>
-                          </div>
-                        );
-                      }
-
-                      const disabledPlayers = getDisabledPlayers(myLineup, activeSelectionIndex);
-
-                      return filtered.map((p) => {
-                        const isAlreadySelected = disabledPlayers.includes(p.id);
-                        const isAbsent = attendance[p.id] === "absent";
-                        const isExcluded = attendance[p.id] === "excluded";
-                        const condStatus = normalizePlayerConditionStatus(p.conditionStatus);
-                        const condMeta = PLAYER_CONDITION_META[condStatus];
-                        const isRehab = condStatus === "rehab";
-                        const isDisabled = isAlreadySelected || isAbsent || isExcluded || isRehab;
-                        const assignedOrder = myLineup.find(
-                          (item, idx) => idx !== activeSelectionIndex && item.playerId === p.id
-                        )?.order;
-
-                        return (
-                          <button
-                            key={p.id}
-                            type="button"
-                            disabled={isDisabled}
-                            onClick={() => {
-                              setTempSelectedPlayer(p);
-                              setModalStep("position");
-                            }}
-                            className={cn(
-                              "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left cursor-pointer",
-                              myLineup[activeSelectionIndex].playerId === p.id
-                                ? "bg-primary/10 border-primary text-primary"
-                                : "bg-card hover:bg-muted/40 border-border",
-                              isDisabled && "opacity-55 cursor-not-allowed bg-muted/35 hover:bg-muted/35"
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <span className="text-xs font-black min-w-[26px] text-primary shrink-0">
-                                  {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
-                                </span>
-                                <span className="text-sm font-black text-foreground truncate">
-                                  {p.name}
-                                </span>
-                              </div>
-                              {p.conditionNote && (
-                                <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5 pl-[36px]">
-                                  <Lock className="w-2.5 h-2.5 shrink-0" />
-                                  <span className="truncate">{p.conditionNote}</span>
-                                </p>
-                              )}
-                            </div>
-
-                            <div className="flex gap-1.5 items-center shrink-0 ml-2">
-                              {isAlreadySelected && (
-                                <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
-                                  選択中 ({assignedOrder}番)
-                                </span>
-                              )}
-                              {isAbsent && (
-                                <span className="text-[10px] font-black bg-muted text-muted-foreground px-2 py-0.5 rounded-md">
-                                  欠席
-                                </span>
-                              )}
-                              {!isAlreadySelected && !isAbsent && isExcluded && (
-                                <span className="text-[10px] font-black bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 px-2 py-0.5 rounded-md">
-                                  対象外
-                                </span>
-                              )}
-                              {!isAlreadySelected && !isAbsent && !isExcluded && isRehab && (
-                                <span
-                                  className={cn(
-                                    "text-[10px] font-black px-2 py-0.5 rounded-md",
-                                    condMeta.solidBadgeClass
-                                  )}
-                                >
-                                  🩹 調整中（出場不可）
-                                </span>
-                              )}
-                              {!isAlreadySelected && !isAbsent && !isRehab && (
-                                <>
-                                  {condStatus === "restricted" && (
-                                    <span
-                                      className={cn(
-                                        "text-[10px] font-black px-2 py-0.5 rounded-md",
-                                        condMeta.solidBadgeClass
-                                      )}
-                                    >
-                                      {condMeta.compactBadgeText}
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-md">
-                                    起用可能
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </>
-              ) : (
-                /* ステップ2: 守備位置選択 */
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setModalStep("player")}
-                    className="text-xs text-primary font-black flex items-center gap-1 hover:underline mb-3 self-start cursor-pointer"
-                  >
-                    ← 選手選択に戻る
-                  </button>
-
-                  {tempSelectedPlayer &&
-                    normalizePlayerConditionStatus(tempSelectedPlayer.conditionStatus) ===
+                    {tempSelectedPlayer &&
+                      normalizePlayerConditionStatus(tempSelectedPlayer.conditionStatus) ===
                       "restricted" && (
-                      <div className="mb-3 p-2.5 rounded-xl bg-amber-500/12 border border-amber-500/35 border-l-4 border-l-amber-500 space-y-0.5">
-                        <div className="flex items-center justify-between gap-1.5 flex-wrap text-[11px] font-black text-amber-800 dark:text-amber-300">
-                          <span>⚠️ 一部プレー制限ありの選手です</span>
-                          {tempSelectedPlayer.activeConditionPeriod && (
-                            <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
-                              {formatConditionPeriodRange(
-                                tempSelectedPlayer.activeConditionPeriod.startDate,
-                                tempSelectedPlayer.activeConditionPeriod.endDate,
-                                { compact: true }
-                              )}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10.5px] font-bold text-foreground leading-snug">
-                          {tempSelectedPlayer.conditionNote
-                            ? `共有メモ: ${tempSelectedPlayer.conditionNote}`
-                            : "投球や守備負荷に制限がないか確認して守備位置を選択してください。"}
-                        </p>
-                      </div>
-                    )}
-
-                  <p className="text-xs text-muted-foreground font-bold mb-3">
-                    {tempSelectedPlayer?.name} 選手の守備位置を選択してください
-                  </p>
-
-                  <div className="grid grid-cols-2 gap-2.5 flex-1 overflow-y-auto pr-0.5">
-                    {(() => {
-                      const disabledPos = getDisabledPositions(myLineup, activeSelectionIndex);
-
-                      return LINEUP_POSITIONS.map((pos) => {
-                        const isPosDisabled = disabledPos.includes(pos.id);
-                        const isCurrentPos = myLineup[activeSelectionIndex].position === pos.id;
-
-                        return (
-                          <button
-                            key={pos.id}
-                            type="button"
-                            disabled={isPosDisabled}
-                            onClick={() => {
-                              if (!tempSelectedPlayer) return;
-                              const list = [...myLineup];
-                              list[activeSelectionIndex] = {
-                                ...list[activeSelectionIndex],
-                                playerId: tempSelectedPlayer.id,
-                                name: tempSelectedPlayer.name,
-                                uniformNumber: tempSelectedPlayer.uniformNumber || "",
-                                position: pos.id,
-                              };
-                              setMyLineup(list);
-                              setActiveSelectionIndex(null);
-                              setTempSelectedPlayer(null);
-                              toast.success(
-                                `${activeSelectionIndex + 1}番に ${tempSelectedPlayer.name} (${pos.label}) を設定しました`
-                              );
-                            }}
-                            className={cn(
-                              "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-xs relative cursor-pointer active:scale-95",
-                              pos.color,
-                              isCurrentPos && "ring-4 ring-primary/40",
-                              isPosDisabled &&
-                                "opacity-35 cursor-not-allowed bg-muted text-muted-foreground shadow-none"
-                            )}
-                          >
-                            <span>{pos.label}</span>
-                            {isPosDisabled && (
-                              <span className="absolute bottom-1 right-2 text-[9px] opacity-80">
-                                選択済
+                        <div className="mb-3 p-2.5 rounded-xl bg-amber-500/12 border border-amber-500/35 border-l-4 border-l-amber-500 space-y-0.5">
+                          <div className="flex items-center justify-between gap-1.5 flex-wrap text-[11px] font-black text-amber-800 dark:text-amber-300">
+                            <span>⚠️ 一部プレー制限ありの選手です</span>
+                            {tempSelectedPlayer.activeConditionPeriod && (
+                              <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
+                                {formatConditionPeriodRange(
+                                  tempSelectedPlayer.activeConditionPeriod.startDate,
+                                  tempSelectedPlayer.activeConditionPeriod.endDate,
+                                  { compact: true }
+                                )}
                               </span>
                             )}
-                          </button>
-                        );
-                      });
-                    })()}
+                          </div>
+                          <p className="text-[10.5px] font-bold text-foreground leading-snug">
+                            {tempSelectedPlayer.conditionNote
+                              ? `共有メモ: ${tempSelectedPlayer.conditionNote}`
+                              : "投球や守備負荷に制限がないか確認して守備位置を選択してください。"}
+                          </p>
+                        </div>
+                      )}
+
+                    <p className="text-xs text-muted-foreground font-bold mb-3">
+                      {tempSelectedPlayer?.name} 選手の守備位置を選択してください
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2.5 flex-1 overflow-y-auto pr-0.5">
+                      {(() => {
+                        const disabledPos = getDisabledPositions(myLineup, activeSelectionIndex);
+
+                        return LINEUP_POSITIONS.map((pos) => {
+                          const isPosDisabled = disabledPos.includes(pos.id);
+                          const isCurrentPos = myLineup[activeSelectionIndex].position === pos.id;
+
+                          return (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              disabled={isPosDisabled}
+                              onClick={() => {
+                                if (!tempSelectedPlayer) return;
+                                const list = [...myLineup];
+                                list[activeSelectionIndex] = {
+                                  ...list[activeSelectionIndex],
+                                  playerId: tempSelectedPlayer.id,
+                                  name: tempSelectedPlayer.name,
+                                  uniformNumber: tempSelectedPlayer.uniformNumber || "",
+                                  position: pos.id,
+                                };
+                                setMyLineup(list);
+                                setActiveSelectionIndex(null);
+                                setTempSelectedPlayer(null);
+                                toast.success(
+                                  `${activeSelectionIndex + 1}番に ${tempSelectedPlayer.name} (${pos.label}) を設定しました`
+                                );
+                              }}
+                              className={cn(
+                                "h-12 rounded-2xl font-black text-xs text-white transition-all flex items-center justify-center shadow-xs relative cursor-pointer active:scale-95",
+                                pos.color,
+                                isCurrentPos && "ring-4 ring-primary/40",
+                                isPosDisabled &&
+                                "opacity-35 cursor-not-allowed bg-muted text-muted-foreground shadow-none"
+                              )}
+                            >
+                              <span>{pos.label}</span>
+                              {isPosDisabled && (
+                                <span className="absolute bottom-1 right-2 text-[9px] opacity-80">
+                                  選択済
+                                </span>
+                              )}
+                            </button>
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
             </div>
           </div>,
           document.body
@@ -2484,159 +2534,159 @@ function LiffLineupContent() {
               onClick={(e) => e.stopPropagation()}
               className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xs overflow-hidden flex flex-col max-h-[88dvh]"
             >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
-              <div className="min-w-0">
-                <h3 className="text-sm font-black text-white">新しい試合予定を作成</h3>
-                <p className="text-[11px] font-bold text-slate-300 mt-0.5">
-                  作成後すぐにスタメン・控え・欠席を登録できます
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateMatchModalOpen(false)}
-                className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-                aria-label="閉じる"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-3.5 overflow-y-auto bg-card">
-              <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">対戦相手 *</label>
-                <Input
-                  required
-                  placeholder="例：ブルーサンダース"
-                  value={newOpponent}
-                  onChange={(e) => setNewOpponent(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
-                />
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-white">新しい試合予定を作成</h3>
+                  <p className="text-[11px] font-bold text-slate-300 mt-0.5">
+                    作成後すぐにスタメン・控え・欠席を登録できます
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateMatchModalOpen(false)}
+                  className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+                  aria-label="閉じる"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="p-5 space-y-3.5 overflow-y-auto bg-card">
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground">試合日 *</label>
+                  <label className="text-xs font-black text-foreground">対戦相手 *</label>
                   <Input
-                    type="date"
                     required
-                    value={newDate}
-                    onChange={(e) => setNewDate(e.target.value)}
-                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
+                    placeholder="例：ブルーサンダース"
+                    value={newOpponent}
+                    onChange={(e) => setNewOpponent(e.target.value)}
+                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground">開始予定時刻</label>
-                  <Input
-                    type="time"
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">試合種別</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(
-                    [
-                      { id: "practice", label: practiceMatchLabel },
-                      { id: "official", label: "公式戦" },
-                      { id: "exchange", label: "交流戦" },
-                    ] as const
-                  ).map((item) => (
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">試合日 *</label>
+                    <Input
+                      type="date"
+                      required
+                      value={newDate}
+                      onChange={(e) => setNewDate(e.target.value)}
+                      className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">開始予定時刻</label>
+                    <Input
+                      type="time"
+                      value={newTime}
+                      onChange={(e) => setNewTime(e.target.value)}
+                      className="h-11 rounded-xl bg-muted/50 border-border font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-foreground">試合種別</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        { id: "practice", label: practiceMatchLabel },
+                        { id: "official", label: "公式戦" },
+                        { id: "exchange", label: "交流戦" },
+                      ] as const
+                    ).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setNewMatchType(item.id)}
+                        className={cn(
+                          "py-2 rounded-xl text-xs border transition-all cursor-pointer",
+                          newMatchType === item.id
+                            ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                            : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {newMatchType !== "practice" && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">大会名</label>
+                    <Input
+                      placeholder="例：秋季大会 2回戦"
+                      value={newTournamentName}
+                      onChange={(e) => setNewTournamentName(e.target.value)}
+                      className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
-                      key={item.id}
                       type="button"
-                      onClick={() => setNewMatchType(item.id)}
+                      onClick={() => setNewBattingOrder("first")}
                       className={cn(
                         "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                        newMatchType === item.id
+                        newBattingOrder === "first"
                           ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
                           : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
                       )}
                     >
-                      {item.label}
+                      先攻（表）
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setNewBattingOrder("second")}
+                      className={cn(
+                        "py-2 rounded-xl text-xs border transition-all cursor-pointer",
+                        newBattingOrder === "second"
+                          ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                      )}
+                    >
+                      後攻（裏）
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              {newMatchType !== "practice" && (
                 <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground">大会名</label>
+                  <label className="text-xs font-black text-foreground">球場・グラウンド</label>
                   <Input
-                    placeholder="例：秋季大会 2回戦"
-                    value={newTournamentName}
-                    onChange={(e) => setNewTournamentName(e.target.value)}
+                    placeholder="例：多摩川緑地野球場"
+                    value={newVenue}
+                    onChange={(e) => setNewVenue(e.target.value)}
                     className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
                   />
                 </div>
-              )}
 
-              <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
+                <div className="flex gap-2.5 pt-2">
+                  <Button
                     type="button"
-                    onClick={() => setNewBattingOrder("first")}
-                    className={cn(
-                      "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                      newBattingOrder === "first"
-                        ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
-                    )}
+                    variant="outline"
+                    onClick={() => setIsCreateMatchModalOpen(false)}
+                    className="flex-1 h-12 rounded-2xl border-border font-black"
                   >
-                    先攻（表）
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewBattingOrder("second")}
-                    className={cn(
-                      "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                      newBattingOrder === "second"
-                        ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                        : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
-                    )}
+                    キャンセル
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isCreatingMatch}
+                    className="flex-1 h-12 rounded-2xl font-black gap-1.5"
                   >
-                    後攻（裏）
-                  </button>
+                    {isCreatingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span>作成して登録へ</span>
+                  </Button>
                 </div>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-black text-foreground">球場・グラウンド</label>
-                <Input
-                  placeholder="例：多摩川緑地野球場"
-                  value={newVenue}
-                  onChange={(e) => setNewVenue(e.target.value)}
-                  className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
-                />
-              </div>
-
-              <div className="flex gap-2.5 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsCreateMatchModalOpen(false)}
-                  className="flex-1 h-12 rounded-2xl border-border font-black"
-                >
-                  キャンセル
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isCreatingMatch}
-                  className="flex-1 h-12 rounded-2xl font-black gap-1.5"
-                >
-                  {isCreatingMatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  <span>作成して登録へ</span>
-                </Button>
-              </div>
-            </div>
-          </form>
-        </div>,
-        document.body
-      )}
+            </form>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
