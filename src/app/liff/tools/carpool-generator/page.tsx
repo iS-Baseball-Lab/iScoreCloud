@@ -6,10 +6,6 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
-  LiffToolSubNav,
-  LiffToolOtherLinks,
-} from "@/components/liff/LiffToolSubNav";
-import {
   Wand2,
   Car,
   Users,
@@ -41,9 +37,6 @@ export default function LiffCarpoolGeneratorPage() {
           }
           showBack
         />
-
-        {/* ツール切替ナビ */}
-        <LiffToolSubNav />
 
         {/* 🚗 簡易配車（今すぐ使える配車作成・編集）起動カード */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -211,9 +204,6 @@ export default function LiffCarpoolGeneratorPage() {
             </Link>
           </div>
         </section>
-
-        {/* 他のツールへの回遊リンク */}
-        <LiffToolOtherLinks />
 
         <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>

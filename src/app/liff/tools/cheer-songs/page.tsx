@@ -6,10 +6,6 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
-  LiffToolSubNav,
-  LiffToolOtherLinks,
-} from "@/components/liff/LiffToolSubNav";
-import {
   Music,
   Volume2,
   Users,
@@ -59,9 +55,6 @@ export default function LiffCheerSongsPage() {
           }
           showBack
         />
-
-        {/* ツール切替ナビ */}
-        <LiffToolSubNav />
 
         {/* コンセプト概要バナー */}
         <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-2.5 overflow-hidden">
@@ -242,9 +235,6 @@ export default function LiffCheerSongsPage() {
             <ArrowRight className="w-4 h-4 text-muted-foreground" />
           </Link>
         </section>
-
-        {/* 他のツールへの回遊リンク */}
-        <LiffToolOtherLinks />
 
         <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>

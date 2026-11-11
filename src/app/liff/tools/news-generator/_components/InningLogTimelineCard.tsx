@@ -7,8 +7,7 @@ import {
   ListOrdered,
   Edit3,
   Trash2,
-  ChevronDown,
-  ChevronUp,
+  Zap,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,6 +30,7 @@ interface InningLogTimelineCardProps {
     updater: (prev: LiveReportV2Document) => LiveReportV2Document
   ) => void;
   activeContextKey: string;
+  onStartRecording?: () => void;
 }
 
 interface EditingEntryTarget {
@@ -43,8 +43,8 @@ export function InningLogTimelineCard({
   doc,
   onChangeDoc,
   activeContextKey,
+  onStartRecording,
 }: InningLogTimelineCardProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
   const [mounted, setMounted] = useState(false);
   const [editingTarget, setEditingTarget] = useState<EditingEntryTarget | null>(
     null
@@ -73,7 +73,39 @@ export function InningLogTimelineCard({
   );
 
   if (sortedHalves.length === 0) {
-    return null;
+    return (
+      <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-3.5 py-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <ListOrdered className="w-4 h-4 text-sky-400 shrink-0" />
+            <h2 className="text-xs font-black text-white truncate">
+              記録済みイニング経過
+            </h2>
+          </div>
+          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black font-mono shrink-0">
+            0件
+          </span>
+        </div>
+        <div className="p-6 text-center space-y-3">
+          <p className="text-xs font-black text-foreground">
+            まだ打席・イニング経過の記録がありません
+          </p>
+          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+            「入力・速報」タブの下部キーパッドから打席結果を確定すると、ここにイニングごとの経過一覧が並び、タップで1行ずつ修正・削除できます。
+          </p>
+          {onStartRecording && (
+            <button
+              type="button"
+              onClick={onStartRecording}
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300" />
+              <span>入力・速報パッドを開く</span>
+            </button>
+          )}
+        </div>
+      </section>
+    );
   }
 
   const handleSaveEntryEdit = () => {
@@ -118,32 +150,19 @@ export function InningLogTimelineCard({
   return (
     <>
       <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-2.5 flex items-center justify-between gap-2">
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-3.5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <ListOrdered className="w-4 h-4 text-sky-400 shrink-0" />
             <h2 className="text-xs font-black text-white truncate">
-              記録済みイニング経過（タップで個別修正・削除）
+              記録済みイニング経過（行タップで修正・削除）
             </h2>
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono shrink-0">
-              {totalEntriesCount}件
-            </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setIsExpanded((v) => !v)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10.5px] font-black cursor-pointer"
-          >
-            <span>{isExpanded ? "折りたたむ" : "展開する"}</span>
-            {isExpanded ? (
-              <ChevronUp className="w-3 h-3" />
-            ) : (
-              <ChevronDown className="w-3 h-3" />
-            )}
-          </button>
+          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono shrink-0">
+            {totalEntriesCount}件
+          </span>
         </div>
 
-        {isExpanded && (
-          <div className="divide-y divide-border">
+        <div className="divide-y divide-border">
             {sortedHalves.map((half) => {
               const runs = getHalfInningRuns(half);
               if (!half.isBottom) runningFirst += runs;
@@ -278,8 +297,7 @@ export function InningLogTimelineCard({
                 </div>
               );
             })}
-          </div>
-        )}
+        </div>
       </section>
 
       {/* 個別行編集・削除モーダル（createPortal + z-[9999]） */}
@@ -332,7 +350,7 @@ export function InningLogTimelineCard({
                             : null
                         )
                       }
-                      className="w-full h-10 rounded-xl border border-border bg-card px-3 text-xs font-black text-foreground outline-none focus:border-primary"
+                      className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                     />
                   </div>
                 ) : (
@@ -360,7 +378,7 @@ export function InningLogTimelineCard({
                                 : null
                             )
                           }
-                          className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-xs font-black text-foreground outline-none focus:border-primary"
+                          className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                         />
                       </div>
 
@@ -385,7 +403,7 @@ export function InningLogTimelineCard({
                             )
                           }
                           placeholder="選手名"
-                          className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-black text-foreground outline-none focus:border-primary"
+                          className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                         />
                       </div>
                     </div>

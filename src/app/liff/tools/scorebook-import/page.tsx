@@ -7,7 +7,6 @@ import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { LiffToolSubNav } from "@/components/liff/LiffToolSubNav";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
@@ -2989,9 +2988,6 @@ export default function LiffScorebookImportPage() {
             </Link>
           }
         />
-
-        {/* ツール切替バー（Step 1時のみ表示し、作業中は画面集中） */}
-        {step === 1 && <LiffToolSubNav />}
 
         {/* ステップインジケーター */}
         <div className="space-y-2">

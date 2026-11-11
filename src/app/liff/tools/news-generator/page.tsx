@@ -9,10 +9,11 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { useSearchParams } from "next/navigation";
+import { createPortal } from "react-dom";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Megaphone,
+  ChevronLeft,
   Copy,
   Check,
   RotateCcw,
@@ -27,8 +28,9 @@ import {
   ListOrdered,
   Settings2,
   Plus,
-  Lock,
   PenLine,
+  Users,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -37,10 +39,7 @@ import {
   type LiffSelectBadgeTone,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import {
-  LiffToolSubNav,
-  LiffToolOtherLinks,
-} from "@/components/liff/LiffToolSubNav";
+import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 import {
   useLiff,
   usePracticeMatchLabel,
@@ -328,6 +327,8 @@ function formatSyncTimeLabel(ts: number | null): string {
 }
 
 function LiffNewsGeneratorContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryMatchId =
     searchParams.get("matchId") || searchParams.get("id") || "";
@@ -335,6 +336,13 @@ function LiffNewsGeneratorContent() {
   const { currentTeam, isDemo, profile } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
+
+  const [mounted, setMounted] = useState(false);
+  const [openLineupSignal, setOpenLineupSignal] = useState(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const resolvedTeamId = useMemo(() => {
     if (isDemo || currentTeam?.id === "demo-team") return "demo-team";
@@ -2123,103 +2131,90 @@ function LiffNewsGeneratorContent() {
       ? `${resolvedTeamId}:free:${selectedFreeId}`
       : `${resolvedTeamId}:match:${selectedMatchKey}`;
 
+  // SKILL.md 規約5: コンテキスト切替時に確認モーダルを安全にリセット
+  useEffect(() => {
+    setShowResetConfirm(false);
+  }, [activeContextKey, reportMode]);
+
+  const scoreboardSummary = useMemo(() => computeScoreboardSummary(doc), [doc]);
+
+  const handleSelectHalfInning = useCallback(
+    (inning: number, isBottom: boolean) => {
+      handleUpdateDoc((prev) => ({
+        ...prev,
+        activeInning: Math.max(1, inning),
+        activeIsBottom: isBottom,
+      }));
+    },
+    [handleUpdateDoc]
+  );
+
+  const handleBackNavigation = () => {
+    flushPendingSaveNow(true);
+    if (canGoBackInLiff()) {
+      router.back();
+    } else {
+      navigateToLiffRoot(router, pathname);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1">
-      <LiffHeader />
-
-      <div className="px-3 pt-2.5 pb-4 space-y-2.5">
-        {/* ツール切替ナビ */}
-        <LiffToolSubNav />
-
+    <>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background">
         {/* ════════════════════════════════════════════════════════════════
-            0. モード切替（⚾ 試合連動 ⇔ ✏️ フリー作成）＆ 対象セレクタ（超コンパクト）
+            FIXED TOP ZONE: コンパクトヘッダー ＋ 対象切替 ＋ 4タブ ＋ スコアボード
            ════════════════════════════════════════════════════════════════ */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-3 py-2 flex items-center justify-between gap-2">
-            {/* モード切替タブ（試合連動 vs フリー作成） */}
-            <div className="inline-flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-700">
+        <LiffHeader compact />
+
+        <section className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[2px] border-primary px-2.5 py-1.5 space-y-1.5">
+          {/* 1段目: 戻るボタン ＋ [連動|フリー] ＋ 対象セレクタ ＋ 同期/新規アクション */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              onClick={handleBackNavigation}
+              className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+              aria-label="前の画面へ戻る"
+              title="前の画面へ戻る"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* モード切替（試合連動 vs フリー） */}
+            <div className="inline-flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-700 shrink-0">
               <button
                 type="button"
                 onClick={() => void handleSwitchMode("match")}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                  "inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-[10.5px] font-black transition-all cursor-pointer",
                   reportMode === "match"
                     ? "bg-primary text-white shadow-2xs"
                     : "text-slate-300 hover:text-white"
                 )}
               >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>試合連動</span>
+                <Calendar className="w-3 h-3 shrink-0" />
+                <span>連動</span>
               </button>
               <button
                 type="button"
                 onClick={() => void handleSwitchMode("free")}
                 className={cn(
-                  "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black transition-all cursor-pointer",
+                  "inline-flex items-center gap-0.5 px-2 py-1 rounded-md text-[10.5px] font-black transition-all cursor-pointer",
                   reportMode === "free"
                     ? "bg-amber-400 text-slate-950 shadow-2xs"
                     : "text-slate-300 hover:text-white"
                 )}
               >
-                <PenLine className="w-3.5 h-3.5" />
-                <span>フリー作成</span>
+                <PenLine className="w-3 h-3 shrink-0" />
+                <span>フリー</span>
               </button>
             </div>
 
-            {/* 右側: 試合連動時はクラウド共同編集ステータス、フリー時は個人個別登録ボタン */}
-            {reportMode === "match" ? (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-300">
-                  <Cloud className="w-3 h-3 text-emerald-400" />
-                  {resolvedTeamId === "demo-team"
-                    ? "デモ保持"
-                    : isSyncingCloud
-                    ? "同期中..."
-                    : lastSyncedAt
-                    ? `同期済 ${formatSyncTimeLabel(lastSyncedAt)}`
-                    : "共同編集ON"}
-                </span>
-                <button
-                  type="button"
-                  onClick={handlePullLatestCloudDraft}
-                  disabled={isSyncingCloud}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[10px] font-black cursor-pointer active:scale-95"
-                  title="他の速報担当者の最新データを手動同期"
-                >
-                  <RefreshCw
-                    className={cn(
-                      "w-3 h-3 text-sky-400",
-                      isSyncingCloud && "animate-spin"
-                    )}
-                  />
-                  <span>同期</span>
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-300">
-                  <Lock className="w-3 h-3" />
-                  <span>個人専用（非共有・{freeEntries.length}件）</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCreateNewFreeEntry}
-                  className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black cursor-pointer active:scale-95"
-                  title="新しいフリー速報を個別登録"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>新規登録</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="p-2.5 space-y-2">
-            {isLoadingContext ? (
-              <div className="h-9 rounded-xl bg-muted animate-pulse" />
-            ) : reportMode === "match" ? (
-              matchSelectOptions.length > 0 ? (
-                <div className="flex items-center gap-1.5">
+            {/* 対象試合 or 個人フリー速報セレクタ */}
+            <div className="flex-1 min-w-0">
+              {isLoadingContext ? (
+                <div className="h-7 rounded-lg bg-slate-800 animate-pulse" />
+              ) : reportMode === "match" ? (
+                matchSelectOptions.length > 0 ? (
                   <LiffSelect
                     value={selectedMatchKey}
                     onChange={(val) => void handleSelectMatchKey(val)}
@@ -2228,141 +2223,254 @@ function LiffNewsGeneratorContent() {
                     subtitle="登録済みの予定・試合中・終了試合と連携します"
                     searchable={true}
                     searchPlaceholder="対戦相手・日付・会場名で検索..."
-                    size="sm"
-                    className="flex-1"
+                    size="xs"
+                    variant="dark"
+                    className="w-full min-w-0"
                   />
-                  {canImportSavedScore && (
-                    <button
-                      type="button"
-                      onClick={handleImportFromSavedScorebook}
-                      className="h-9 px-2.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95"
-                      title="記録済みスコアブックから全打席を自動生成"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>スコブ取込</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-muted-foreground">
-                    登録済みの試合がありません
-                  </span>
+                ) : (
                   <button
                     type="button"
                     onClick={() => void handleSwitchMode("free")}
-                    className="px-3 py-1.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black cursor-pointer"
+                    className="w-full h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10.5px] font-black text-amber-300 truncate cursor-pointer"
                   >
-                    ✏️ フリー作成を使う
+                    試合未登録 ➔ フリー作成へ
                   </button>
-                </div>
-              )
-            ) : (
-              <div className="flex items-center gap-1.5">
+                )
+              ) : (
                 <LiffSelect
                   value={selectedFreeId}
                   onChange={(val) => handleSelectFreeEntry(val)}
                   options={freeSelectOptions}
                   title="個別登録したフリー速報を選択"
-                  subtitle="他のメンバーとは共有されず、ご自身の端末・アカウント専用で複数登録できます"
+                  subtitle={`個人専用（非共有・現在${freeEntries.length}件）`}
                   searchable={false}
-                  size="sm"
-                  className="flex-1"
+                  size="xs"
+                  variant="dark"
+                  accent="amber"
+                  className="w-full min-w-0"
                 />
-                {!showResetConfirm ? (
+              )}
+            </div>
+
+            {/* 右端クイック操作ボタン */}
+            {reportMode === "match" ? (
+              <div className="flex items-center gap-1 shrink-0">
+                {canImportSavedScore && (
                   <button
                     type="button"
-                    onClick={() => setShowResetConfirm(true)}
-                    className="h-9 px-2.5 rounded-xl border border-border bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer"
-                    title="選択中のフリー速報を削除・初期化"
+                    onClick={handleImportFromSavedScorebook}
+                    className="h-7 px-2 rounded-lg bg-primary/20 hover:bg-primary/30 text-sky-200 border border-primary/45 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="記録済みスコアブックから全打席を自動生成"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>{freeEntries.length > 1 ? "削除" : "初期化"}</span>
+                    <Download className="w-3 h-3 shrink-0" />
+                    <span>取込</span>
                   </button>
-                ) : (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteCurrentFreeEntry()}
-                      className="h-9 px-2.5 rounded-xl bg-rose-600 text-white text-[10.5px] font-black cursor-pointer"
-                    >
-                      実行
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowResetConfirm(false)}
-                      className="h-9 px-2 rounded-xl border border-border bg-card text-[10.5px] font-black text-foreground cursor-pointer"
-                    >
-                      戻す
-                    </button>
-                  </div>
                 )}
+                <button
+                  type="button"
+                  onClick={handlePullLatestCloudDraft}
+                  disabled={isSyncingCloud}
+                  className="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
+                  title={
+                    resolvedTeamId === "demo-team"
+                      ? "体験デモ端末保持"
+                      : lastSyncedAt
+                      ? `最終同期 ${formatSyncTimeLabel(lastSyncedAt)}${
+                          lastSyncedBy ? ` (${lastSyncedBy})` : ""
+                        } — タップで手動同期`
+                      : "他の速報担当者の最新データを手動同期"
+                  }
+                >
+                  {isSyncingCloud ? (
+                    <RefreshCw className="w-3 h-3 text-sky-400 animate-spin" />
+                  ) : (
+                    <Cloud className="w-3 h-3 text-emerald-400" />
+                  )}
+                  <span>
+                    {lastSyncedAt ? formatSyncTimeLabel(lastSyncedAt) : "同期"}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleCreateNewFreeEntry}
+                  className="h-7 px-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                  title="新しいフリー速報を個別登録"
+                >
+                  <Plus className="w-3 h-3 shrink-0" />
+                  <span>新規</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center cursor-pointer active:scale-95"
+                  title="選択中のフリー速報を削除・初期化"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
             )}
-
-            {/* 4画面ゼロスクロール・ワークスペース切替タブ */}
-            <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
-              <button
-                type="button"
-                onClick={() => setActiveTab("pad")}
-                className={cn(
-                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
-                  activeTab === "pad"
-                    ? "bg-[#0f172a] text-white shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="truncate">入力・速報</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("preview")}
-                className={cn(
-                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
-                  activeTab === "preview"
-                    ? "bg-[#0f172a] text-white shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span className="truncate">速報全文</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("timeline")}
-                className={cn(
-                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
-                  activeTab === "timeline"
-                    ? "bg-[#0f172a] text-white shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <ListOrdered className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span className="truncate">経過({totalEntriesCount})</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("setup")}
-                className={cn(
-                  "py-1.5 px-1 rounded-lg text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
-                  activeTab === "setup"
-                    ? "bg-[#0f172a] text-white shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Settings2 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="truncate">設定({filledLineupCount}/9)</span>
-              </button>
-            </div>
           </div>
+
+          {/* 2段目: 4ワークスペース切替タブ */}
+          <div className="grid grid-cols-4 gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveTab("pad")}
+              className={cn(
+                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                activeTab === "pad"
+                  ? "bg-primary text-white shadow-2xs"
+                  : "text-slate-300 hover:text-white"
+              )}
+            >
+              <Zap className="w-3 h-3 text-amber-300 shrink-0" />
+              <span className="truncate">入力・速報</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("preview")}
+              className={cn(
+                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                activeTab === "preview"
+                  ? "bg-primary text-white shadow-2xs"
+                  : "text-slate-300 hover:text-white"
+              )}
+            >
+              <FileText className="w-3 h-3 text-sky-300 shrink-0" />
+              <span className="truncate">速報全文</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("timeline")}
+              className={cn(
+                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                activeTab === "timeline"
+                  ? "bg-primary text-white shadow-2xs"
+                  : "text-slate-300 hover:text-white"
+              )}
+            >
+              <ListOrdered className="w-3 h-3 text-emerald-300 shrink-0" />
+              <span className="truncate">経過({totalEntriesCount})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("setup")}
+              className={cn(
+                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                activeTab === "setup"
+                  ? "bg-primary text-white shadow-2xs"
+                  : "text-slate-300 hover:text-white"
+              )}
+            >
+              <Settings2 className="w-3 h-3 text-amber-300 shrink-0" />
+              <span className="truncate">設定({filledLineupCount}/9)</span>
+            </button>
+          </div>
+
+          {/* 3段目: 上部固定インタラクティブ・スコアボード（入力・速報 / 経過タブで常時固定表示） */}
+          {(activeTab === "pad" || activeTab === "timeline") && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950 overflow-x-auto">
+              <table className="w-full text-center font-mono text-[10.5px] border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[9px] text-slate-400">
+                    <th className="py-0.5 px-2 text-left font-sans font-black min-w-[56px]">
+                      TEAM
+                    </th>
+                    {Array.from(
+                      { length: scoreboardSummary.maxInning },
+                      (_, idx) => idx + 1
+                    ).map((inn) => (
+                      <th
+                        key={inn}
+                        className={cn(
+                          "py-0.5 px-1 font-black min-w-[22px]",
+                          doc.activeInning === inn && "text-amber-400"
+                        )}
+                      >
+                        {inn}
+                      </th>
+                    ))}
+                    <th className="py-0.5 px-2 font-sans font-black text-amber-400 border-l border-slate-800">
+                      計
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* 先攻（表） */}
+                  <tr className="border-b border-slate-800/80">
+                    <td className="py-0.5 px-2 text-left font-sans text-[10px] font-black truncate max-w-[70px]">
+                      {doc.firstTeamShortName}
+                    </td>
+                    {scoreboardSummary.firstInningScores.map((sc, idx) => {
+                      const inn = idx + 1;
+                      const isActiveCell =
+                        doc.activeInning === inn && !doc.activeIsBottom;
+                      return (
+                        <td key={`t-${inn}`} className="p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectHalfInning(inn, false)}
+                            className={cn(
+                              "w-full py-0.5 rounded font-black transition-all cursor-pointer leading-tight",
+                              isActiveCell
+                                ? "bg-primary text-white ring-1 ring-sky-300"
+                                : "hover:bg-slate-800 text-slate-100"
+                            )}
+                          >
+                            {sc !== null ? sc : "·"}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="py-0.5 px-2 font-black text-xs text-amber-400 border-l border-slate-800">
+                      {scoreboardSummary.firstTotal}
+                    </td>
+                  </tr>
+
+                  {/* 後攻（裏） */}
+                  <tr>
+                    <td className="py-0.5 px-2 text-left font-sans text-[10px] font-black truncate max-w-[70px]">
+                      {doc.secondTeamShortName}
+                    </td>
+                    {scoreboardSummary.secondInningScores.map((sc, idx) => {
+                      const inn = idx + 1;
+                      const isActiveCell =
+                        doc.activeInning === inn && doc.activeIsBottom;
+                      return (
+                        <td key={`b-${inn}`} className="p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectHalfInning(inn, true)}
+                            className={cn(
+                              "w-full py-0.5 rounded font-black transition-all cursor-pointer leading-tight",
+                              isActiveCell
+                                ? "bg-primary text-white ring-1 ring-sky-300"
+                                : "hover:bg-slate-800 text-slate-100"
+                            )}
+                          >
+                            {sc !== null ? sc : "·"}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="py-0.5 px-2 font-black text-xs text-amber-400 border-l border-slate-800">
+                      {scoreboardSummary.secondTotal}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 1 (デフォルト): ゼロスクロール・1画面ライブ入力＆速報確認パッド
+            TAB 1 (デフォルト): ゼロスクロール・中央ライブモニター ＋ 下部固定入力パッド
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "pad" && (
           <LiveAtBatPadCard
@@ -2383,67 +2491,33 @@ function LiffNewsGeneratorContent() {
         )}
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 2: LINE速報イメージ全文・出力形式切替・共有
+            TAB 2: LINE速報イメージ全文確認・出力形式切替 ＋ 下部固定送信バー
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "preview" && (
-          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-3.5 py-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-sky-400 shrink-0" />
-                <h2 className="text-xs font-black text-white truncate">
-                  LINE速報イメージ確認・出力・共有
-                </h2>
-              </div>
-
-              {manualEditedText !== null ? (
-                <button
-                  type="button"
-                  onClick={() => setManualEditedText(null)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10.5px] font-black cursor-pointer active:scale-95"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>自動生成に戻す</span>
-                </button>
-              ) : (
-                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
-                  リアルタイム反映中
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col p-2.5 gap-2 overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-foreground truncate">
+                  LINE速報テキスト確認・直接手直し
                 </span>
-              )}
-            </div>
-
-            <div className="p-3 space-y-2.5">
-              {/* 上部にコピー＆LINE送信ボタンを配置（スクロール不要で即送信可能） */}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleCopyText()}
-                  className="py-2.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4 shrink-0" />
-                      <span>コピーしました！</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 shrink-0" />
-                      <span>速報テキストをコピー</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleShareLine}
-                  className="py-2.5 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs sm:text-sm font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
-                >
-                  <Share2 className="w-4 h-4 shrink-0" />
-                  <span>LINEで送る</span>
-                </button>
+                {manualEditedText !== null ? (
+                  <button
+                    type="button"
+                    onClick={() => setManualEditedText(null)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10.5px] font-black cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>自動生成に戻す</span>
+                  </button>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-bold shrink-0">
+                    リアルタイム反映中
+                  </span>
+                )}
               </div>
 
               {/* 出力単位ワンタップ切替タブ */}
-              <div className="grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
+              <div className="shrink-0 grid grid-cols-4 gap-1 bg-muted p-1 rounded-xl border border-border">
                 {(
                   [
                     { id: "full", label: "全文積み上げ" },
@@ -2474,93 +2548,245 @@ function LiffNewsGeneratorContent() {
                 })}
               </div>
 
-              {/* 編集可能なプレビューテキストエリア */}
+              {/* 残り縦幅いっぱいに伸縮するプレビューテキストエリア（16pxでiOSズーム防止） */}
               <textarea
                 value={displayedText}
                 onChange={(e) => setManualEditedText(e.target.value)}
-                rows={14}
-                className="w-full rounded-xl border border-border bg-muted/35 focus:bg-card focus:border-primary p-3 text-xs sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-y font-sans"
+                className="flex-1 min-h-0 w-full rounded-xl border border-border bg-card focus:border-primary p-3 text-base sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-none font-sans"
                 placeholder="ここにLINE速報テキストが自動生成されます（直接手直しも可能です）"
               />
-
-              {/* 初期化リセットボタン */}
-              <div className="flex items-center justify-end pt-1">
-                {!showResetConfirm ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowResetConfirm(true)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-black text-muted-foreground hover:text-rose-600 cursor-pointer"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>この速報データを初期化</span>
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10.5px] font-black text-rose-600">
-                      初期化しますか？
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleConfirmResetReport()}
-                      className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[10.5px] font-black cursor-pointer"
-                    >
-                      実行
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowResetConfirm(false)}
-                      className="px-2 py-1 rounded-lg border border-border bg-card text-[10.5px] font-black text-foreground cursor-pointer"
-                    >
-                      やめる
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
-          </section>
+
+            {/* 下部固定アクションバー（ボトムナビの代替配置） */}
+            <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pad")}
+                className="h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground inline-flex items-center justify-center gap-1 shrink-0 cursor-pointer active:scale-95"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <span>入力へ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleCopyText()}
+                className="flex-1 h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>コピー済！</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 shrink-0" />
+                    <span>コピー</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareLine}
+                className="flex-1 h-10 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>LINEで送る</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowResetConfirm(true)}
+                className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+                title="この速報データを初期化"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 3: 記録済みイニング経過一覧（タップで1行修正・挿入・削除）
+            TAB 3: 記録済みイニング経過一覧 ＋ 下部固定アクションバー
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "timeline" && (
-          <InningLogTimelineCard
-            doc={doc}
-            onChangeDoc={handleUpdateDoc}
-            activeContextKey={activeContextKey}
-          />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
+              <InningLogTimelineCard
+                doc={doc}
+                onChangeDoc={handleUpdateDoc}
+                activeContextKey={activeContextKey}
+                onStartRecording={() => setActiveTab("pad")}
+              />
+            </div>
+
+            <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pad")}
+                className="flex-1 h-10 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>入力パッドへ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void handleCopyText()}
+                className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>コピー済</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 shrink-0" />
+                    <span>コピー</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareLine}
+                className="flex-1 h-10 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>LINE送信</span>
+              </button>
+            </div>
+          </div>
         )}
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 4: 試合情報・スタメン・速報担当の設定
+            TAB 4: 試合情報・スタメン・速報担当の設定 ＋ 下部固定アクションバー
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "setup" && (
-          <MatchAndHeaderSetupCard
-            doc={doc}
-            onChangeDoc={handleUpdateDoc}
-            rosterPlayers={rosterPlayers}
-            suggestedReporters={selectedMatch?.lineLiveAssignees || []}
-            hasSavedMatchLineup={Boolean(
-              reportMode === "match" &&
-                activeBundle &&
-                activeBundle.lineup.length > 0
-            )}
-            onReloadMatchLineup={handleReloadMatchLineup}
-            activeContextKey={activeContextKey}
-            defaultExpanded={true}
-          />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
+              <MatchAndHeaderSetupCard
+                doc={doc}
+                onChangeDoc={handleUpdateDoc}
+                rosterPlayers={rosterPlayers}
+                suggestedReporters={selectedMatch?.lineLiveAssignees || []}
+                hasSavedMatchLineup={Boolean(
+                  reportMode === "match" &&
+                    activeBundle &&
+                    activeBundle.lineup.length > 0
+                )}
+                onReloadMatchLineup={handleReloadMatchLineup}
+                activeContextKey={activeContextKey}
+                defaultExpanded={true}
+                openLineupSignal={openLineupSignal}
+              />
+            </div>
+
+            <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOpenLineupSignal((c) => c + 1)}
+                className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>オーダー編集 ({filledLineupCount}/9)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("pad")}
+                className="flex-1 h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>入力パッドへ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleShareLine}
+                className="h-10 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>LINE</span>
+              </button>
+            </div>
+          </div>
         )}
-
-        {/* 他のツールへの回遊リンク */}
-        <LiffToolOtherLinks />
-
-        {/* SKILL.md 規約60: LiffBottomNav 干渉防止用最下部スペーサー */}
-        <div
-          className="h-8 w-full shrink-0 pointer-events-none select-none"
-          aria-hidden="true"
-        />
       </div>
-    </div>
+
+      {/* 初期化・フリー速報削除の確認モーダル（createPortal + z-[9999]） */}
+      {mounted &&
+        showResetConfirm &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 animate-in fade-in duration-150"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setShowResetConfirm(false)}
+          >
+            <div
+              className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden text-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-center justify-between">
+                <h3 className="text-sm font-black text-white">
+                  {reportMode === "free" && freeEntries.length > 1
+                    ? "選択中のフリー速報を削除"
+                    : "速報データの初期化"}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-2">
+                <p className="text-xs font-black text-foreground leading-relaxed">
+                  {reportMode === "free" && freeEntries.length > 1
+                    ? "現在選択している個人フリー速報を削除しますか？"
+                    : "入力済みのイニング経過・打席記録を初期状態にリセットしますか？"}
+                </p>
+                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                  {reportMode === "match"
+                    ? "※試合データ本体や登録済みスタメン・スコアブックは削除されません。"
+                    : "※この操作は取り消せません。"}
+                </p>
+              </div>
+
+              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                >
+                  やめる
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (reportMode === "free") {
+                      void handleDeleteCurrentFreeEntry();
+                    } else {
+                      void handleConfirmResetReport();
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black cursor-pointer active:scale-95"
+                >
+                  {reportMode === "free" && freeEntries.length > 1
+                    ? "削除する"
+                    : "初期化する"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -2568,12 +2794,11 @@ export default function LiffNewsGeneratorPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col flex-1">
-          <LiffHeader />
-          <div className="p-4 space-y-4">
-            <div className="h-14 rounded-2xl bg-card border border-border animate-pulse" />
-            <div className="h-64 rounded-2xl bg-card border border-border animate-pulse" />
-          </div>
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-background">
+          <LiffHeader compact />
+          <div className="h-28 bg-[#0f172a] animate-pulse shrink-0" />
+          <div className="flex-1 bg-slate-900 animate-pulse" />
+          <div className="h-80 bg-card border-t-2 border-[#0f172a] animate-pulse shrink-0" />
         </div>
       }
     >

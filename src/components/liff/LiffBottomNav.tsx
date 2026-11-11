@@ -452,6 +452,11 @@ export function LiffBottomNav() {
     (!isHome && !isLeftActive && !isCenterActive && !isRightActive);
   const isArchStyle = navConfig.style === "arch";
 
+  // 試合速報ジェネレータではボトムナビの代わりに最下部固定キーパッドを配置するため非表示
+  if (pathname?.startsWith("/liff/tools/news-generator")) {
+    return null;
+  }
+
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">

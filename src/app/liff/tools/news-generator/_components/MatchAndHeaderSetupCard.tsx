@@ -40,6 +40,7 @@ interface MatchAndHeaderSetupCardProps {
   onReloadMatchLineup: () => void;
   activeContextKey: string;
   defaultExpanded?: boolean;
+  openLineupSignal?: number;
 }
 
 export function MatchAndHeaderSetupCard({
@@ -51,6 +52,7 @@ export function MatchAndHeaderSetupCard({
   onReloadMatchLineup,
   activeContextKey,
   defaultExpanded = false,
+  openLineupSignal = 0,
 }: MatchAndHeaderSetupCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLineupModalOpen, setIsLineupModalOpen] = useState(false);
@@ -59,6 +61,12 @@ export function MatchAndHeaderSetupCard({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (openLineupSignal > 0) {
+      setIsLineupModalOpen(true);
+    }
+  }, [openLineupSignal]);
 
   // SKILL.md 規約5: 対象試合切替時にモーダルを安全にリセット
   useEffect(() => {
@@ -193,7 +201,7 @@ export function MatchAndHeaderSetupCard({
                   onChangeDoc((p) => ({ ...p, startTime: e.target.value }))
                 }
                 placeholder="11:57"
-                className="w-full min-w-0 bg-transparent text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
                 type="button"
@@ -218,7 +226,7 @@ export function MatchAndHeaderSetupCard({
                   onChangeDoc((p) => ({ ...p, endTime: e.target.value }))
                 }
                 placeholder="13:17"
-                className="w-full min-w-0 bg-transparent text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
               />
               <button
                 type="button"
@@ -243,7 +251,7 @@ export function MatchAndHeaderSetupCard({
                   onChangeDoc((p) => ({ ...p, reporterNames: e.target.value }))
                 }
                 placeholder="例: 山田、佐藤"
-                className="w-full min-w-0 bg-transparent text-xs font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-black text-foreground outline-none placeholder:text-muted-foreground/60"
               />
             </div>
           </div>
@@ -317,7 +325,7 @@ export function MatchAndHeaderSetupCard({
                       onChangeDoc((p) => ({ ...p, dateText: e.target.value }))
                     }
                     placeholder="例: 11月3日(火祝)"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
                 <div className="space-y-1">
@@ -334,7 +342,7 @@ export function MatchAndHeaderSetupCard({
                       }))
                     }
                     placeholder="例: 秋季大会　第三回戦"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
                 <div className="space-y-1">
@@ -346,7 +354,7 @@ export function MatchAndHeaderSetupCard({
                     value={doc.opponentName}
                     onChange={(e) => handleOpponentChange(e.target.value)}
                     placeholder="例: 〇〇チーム"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
                 <div className="space-y-1">
@@ -360,7 +368,7 @@ export function MatchAndHeaderSetupCard({
                       onChangeDoc((p) => ({ ...p, venueName: e.target.value }))
                     }
                     placeholder="例: 市民球場"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
               </div>
@@ -380,7 +388,7 @@ export function MatchAndHeaderSetupCard({
                       }))
                     }
                     placeholder="例: 自チーム"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
                 <div className="space-y-1">
@@ -397,7 +405,7 @@ export function MatchAndHeaderSetupCard({
                       }))
                     }
                     placeholder="例: 相　手"
-                    className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-xs font-bold text-foreground outline-none focus:border-primary"
+                    className="w-full h-9 rounded-xl border border-border bg-card px-2.5 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
                   />
                 </div>
                 <div className="space-y-1">
@@ -668,7 +676,7 @@ export function MatchAndHeaderSetupCard({
                         });
                       }}
                       placeholder="選手名を入力"
-                      className="h-8 flex-1 min-w-0 rounded-lg border border-border bg-card px-2.5 text-xs font-black text-foreground outline-none focus:border-primary"
+                      className="h-8 flex-1 min-w-0 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                     />
 
                     {doc.lineup.length > 9 && index === doc.lineup.length - 1 && (

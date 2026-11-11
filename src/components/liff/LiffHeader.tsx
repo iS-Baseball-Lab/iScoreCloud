@@ -57,7 +57,7 @@ type BrandLogoStage = "webp" | "png" | "fallback";
  * - `.webp` -> `.png` -> インラインソリッドバッジの順にフォールバックし、通信瞬断や WebView GPU テクスチャ破棄でも絶対に空白化させない。
  * - `sticky` ヘッダー内での GPU レイヤー消失を防ぐため `img` 単体への `transform` トランジションを排除。
  */
-function LiffBrandLogoMark() {
+function LiffBrandLogoMark({ compact = false }: { compact?: boolean }) {
   const [stage, setStage] = useState<BrandLogoStage>("webp");
 
   useEffect(() => {
@@ -76,9 +76,17 @@ function LiffBrandLogoMark() {
     return (
       <span
         aria-hidden="true"
-        className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] bg-[#0f172a] border-2 border-primary text-slate-50 shadow-xs flex items-center justify-center shrink-0 select-none"
+        className={cn(
+          "rounded-[22%] bg-[#0f172a] border-2 border-primary text-slate-50 shadow-xs flex items-center justify-center shrink-0 select-none",
+          compact ? "h-7 w-7" : "h-9 w-9 sm:h-9.5 sm:w-9.5"
+        )}
       >
-        <span className="text-[12px] font-black italic tracking-tighter leading-none">
+        <span
+          className={cn(
+            "font-black italic tracking-tighter leading-none",
+            compact ? "text-[10.5px]" : "text-[12px]"
+          )}
+        >
           i<span className="text-primary">S</span>
         </span>
       </span>
@@ -89,14 +97,17 @@ function LiffBrandLogoMark() {
     <img
       src={stage === "webp" ? "/liff-logo.webp" : "/liff-logo.png"}
       alt="iScoreCloud LINEミニアプリ"
-      width={36}
-      height={36}
+      width={compact ? 28 : 36}
+      height={compact ? 28 : 36}
       decoding="sync"
       fetchPriority="high"
       onError={() => {
         setStage((prev) => (prev === "webp" ? "png" : "fallback"));
       }}
-      className="h-9 w-9 sm:h-9.5 sm:w-9.5 rounded-[22%] shadow-xs object-contain shrink-0"
+      className={cn(
+        "rounded-[22%] shadow-xs object-contain shrink-0",
+        compact ? "h-7 w-7" : "h-9 w-9 sm:h-9.5 sm:w-9.5"
+      )}
     />
   );
 }
@@ -105,6 +116,7 @@ interface LiffHeaderProps {
   title?: string;
   subtitle?: string;
   showBack?: boolean;
+  compact?: boolean;
   shareData?: {
     title: string;
     text: string;
@@ -112,7 +124,7 @@ interface LiffHeaderProps {
   };
 }
 
-export function LiffHeader({ shareData }: LiffHeaderProps) {
+export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
   const {
     liff,
     profile,
@@ -168,24 +180,46 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
   );
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200">
-      <div className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-4 gap-2 sm:gap-3">
+    <header
+      className={cn(
+        "sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200",
+        compact && "shrink-0"
+      )}
+    >
+      <div
+        className={cn(
+          "flex items-center justify-between",
+          compact
+            ? "h-10.5 px-2.5 sm:px-3 gap-2"
+            : "h-14 sm:h-16 px-3 sm:px-4 gap-2 sm:gap-3"
+        )}
+      >
         {/* 🌟 1. 左側: ロゴ & ブランド (iScoreCloud LINEミニアプリ) */}
         <Link
           href="/liff"
           onPointerDown={() => warmupLiffEndpointForHref("/liff", currentTeam?.id)}
           onClick={(e) => handleLiffRootLinkClick(e, router, pathname)}
-          className="flex items-center gap-2 shrink-0 group outline-hidden"
+          className={cn(
+            "flex items-center shrink-0 group outline-hidden",
+            compact ? "gap-1.5" : "gap-2"
+          )}
           title="チームHUBトップへ"
         >
-          <LiffBrandLogoMark />
+          <LiffBrandLogoMark compact={compact} />
           <div className="flex flex-col justify-center">
-            <h1 className="text-[15px] sm:text-lg font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors">
+            <h1
+              className={cn(
+                "font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors",
+                compact ? "text-[13.5px]" : "text-[15px] sm:text-lg"
+              )}
+            >
               iScore<span className="text-primary">Cloud</span>
             </h1>
-            <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
-              LINEミニアプリ
-            </span>
+            {!compact && (
+              <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
+                LINEミニアプリ
+              </span>
+            )}
           </div>
         </Link>
 
@@ -196,14 +230,21 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className={`flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border text-left text-foreground shadow-xs hover:opacity-90 transition-colors cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none ${
+                className={cn(
+                  "flex items-center rounded-full border text-left text-foreground shadow-xs hover:opacity-90 transition-colors cursor-pointer flex-1 min-w-0 max-w-[190px] min-[400px]:max-w-[225px] sm:max-w-[285px] outline-hidden select-none",
+                  compact ? "gap-1.5 pl-1 pr-2 py-0.5" : "gap-2 pl-1 pr-2.5 py-1",
                   isDemo
                     ? "bg-amber-50 dark:bg-slate-900 border-amber-500"
                     : "bg-muted border-border"
-                }`}
+                )}
                 title={`${orgDisplayName} (${teamDisplayName})`}
               >
-                <Avatar className="h-8 w-8 sm:h-8.5 sm:w-8.5 border border-border bg-card shrink-0">
+                <Avatar
+                  className={cn(
+                    "border border-border bg-card shrink-0",
+                    compact ? "h-6.5 w-6.5" : "h-8 w-8 sm:h-8.5 sm:w-8.5"
+                  )}
+                >
                   {currentTeam?.logoImageUrl && (
                     <AvatarImage
                       src={currentTeam.logoImageUrl}
@@ -211,23 +252,35 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                       className="object-contain"
                     />
                   )}
-                  <AvatarFallback className="w-full h-full flex items-center justify-center font-black text-xs select-none bg-card text-primary">
+                  <AvatarFallback
+                    className={cn(
+                      "w-full h-full flex items-center justify-center font-black select-none bg-card text-primary",
+                      compact ? "text-[10px]" : "text-xs"
+                    )}
+                  >
                     {orgDisplayName.slice(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col justify-center overflow-hidden min-w-0 flex-1">
-                  <span className="text-[11.5px] sm:text-xs font-black tracking-tight text-foreground truncate leading-tight">
+                  <span
+                    className={cn(
+                      "font-black tracking-tight text-foreground truncate leading-tight",
+                      compact ? "text-[11px]" : "text-[11.5px] sm:text-xs"
+                    )}
+                  >
                     {orgDisplayName}
                   </span>
-                  <span
-                    className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
-                      isDemo
-                        ? "text-amber-600 dark:text-amber-400 font-black"
-                        : "text-muted-foreground font-bold"
-                    }`}
-                  >
-                    {teamDisplayName}
-                  </span>
+                  {!compact && (
+                    <span
+                      className={`text-[9.5px] font-black uppercase truncate leading-none mt-0.5 ${
+                        isDemo
+                          ? "text-amber-600 dark:text-amber-400 font-black"
+                          : "text-muted-foreground font-bold"
+                      }`}
+                    >
+                      {teamDisplayName}
+                    </span>
+                  )}
                 </div>
                 <ChevronDown className="h-3.5 w-3.5 text-primary shrink-0 ml-0.5" />
               </button>
@@ -306,11 +359,21 @@ export function LiffHeader({ shareData }: LiffHeaderProps) {
                 className="relative flex items-center justify-center rounded-full ring-2 ring-primary/40 hover:ring-primary transition-colors p-0 outline-hidden shrink-0 active:scale-95 shadow-xs"
                 aria-label="ユーザーメニュー"
               >
-                <Avatar className="h-9 w-9 sm:h-9.5 sm:w-9.5 border border-border bg-card">
+                <Avatar
+                  className={cn(
+                    "border border-border bg-card",
+                    compact ? "h-7.5 w-7.5" : "h-9 w-9 sm:h-9.5 sm:w-9.5"
+                  )}
+                >
                   {profile?.pictureUrl && (
                     <AvatarImage src={profile.pictureUrl} alt={displayName} />
                   )}
-                  <AvatarFallback className="bg-primary/20 text-primary font-black text-sm">
+                  <AvatarFallback
+                    className={cn(
+                      "bg-primary/20 text-primary font-black",
+                      compact ? "text-xs" : "text-sm"
+                    )}
+                  >
                     {userInitial}
                   </AvatarFallback>
                 </Avatar>
