@@ -523,6 +523,25 @@ export default function LiffTeamSettingsPage() {
       void persistPracticeMatchLabel(trimmedPractice, true);
     }
     void persistScheduleDefaultTimes(scheduleTimes, true);
+    if (tid !== "demo-team" && !currentTeam?.isDemo && teamName.trim()) {
+      void fetch("/api/liff/admin/mgmt/teams/current", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: tid,
+          userId: profile?.userId || undefined,
+          orgName: teamName.trim(),
+          category,
+        }),
+      })
+        .then((res) => {
+          if (res.ok) {
+            invalidateLiffApiCache();
+            void refreshTeams();
+          }
+        })
+        .catch(() => {});
+    }
     toast.success("チーム設定を保存しました");
   };
 
@@ -563,7 +582,7 @@ export default function LiffTeamSettingsPage() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="チーム設定"
-          subtitle="チーム情報・活動班・マスタ管理・LINE連携"
+          subtitle="ロゴ・背景写真・予定初期時間・表示呼称"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <ShieldCheck className="w-4 h-4" />
@@ -571,6 +590,59 @@ export default function LiffTeamSettingsPage() {
           }
           showBack
         />
+
+        {/* 管理メニュー（編成追加・マイクロバス管理・権限管理）への直通ショートカット */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+            <span className="text-xs font-black text-white">
+              管理者メニュー（編成追加・車両・権限管理）
+            </span>
+            <span className="text-[10px] font-bold text-slate-300">
+              監督・IT管理者
+            </span>
+          </div>
+          <div className="p-3 grid grid-cols-3 gap-2 text-xs">
+            <Link
+              href="/liff/admin/teams"
+              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <Layers className="w-3.5 h-3.5 text-primary" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <span className="font-black text-foreground">チーム・編成</span>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                A/B編成・新設
+              </span>
+            </Link>
+            <Link
+              href="/liff/admin/cars"
+              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <Car className="w-3.5 h-3.5 text-teal-600" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <span className="font-black text-foreground">車両・バス</span>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                マイクロ・道具車
+              </span>
+            </Link>
+            <Link
+              href="/liff/admin/roles"
+              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <span className="font-black text-foreground">権限・役職</span>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                兼務・役職呼称
+              </span>
+            </Link>
+          </div>
+        </section>
 
         {/* ━━━ セクション 1: 🛡️ チーム基本情報 ━━━ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">

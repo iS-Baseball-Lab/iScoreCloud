@@ -85,6 +85,11 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "is_important", ddl: "ALTER TABLE team_links ADD COLUMN is_important integer DEFAULT 0" },
     { name: "image_url", ddl: "ALTER TABLE team_links ADD COLUMN image_url text" },
   ],
+  member_cars: [
+    { name: "owner_id2", ddl: "ALTER TABLE member_cars ADD COLUMN owner_id2 text" },
+    { name: "color_code", ddl: "ALTER TABLE member_cars ADD COLUMN color_code text" },
+    { name: "car_type", ddl: "ALTER TABLE member_cars ADD COLUMN car_type text DEFAULT 'normal'" },
+  ],
 };
 
 const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
@@ -193,6 +198,27 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "team_role_settings",
+    ddl: `CREATE TABLE IF NOT EXISTS team_role_settings (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      role text NOT NULL,
+      custom_label text NOT NULL
+    )`,
+  },
+  {
+    name: "team_equipments",
+    ddl: `CREATE TABLE IF NOT EXISTS team_equipments (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      name text NOT NULL,
+      description text,
+      is_heavy integer DEFAULT 0,
+      quantity integer DEFAULT 1,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -207,6 +233,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_carpool_live_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_carpool_live_team_id ON carpool_live_locations (team_id)" },
   { name: "idx_player_cond_periods_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_team_id ON player_condition_periods (team_id)" },
   { name: "idx_player_cond_periods_player_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_player_id ON player_condition_periods (player_id)" },
+  { name: "team_role_idx", ddl: "CREATE UNIQUE INDEX IF NOT EXISTS team_role_idx ON team_role_settings (team_id, role)" },
+  { name: "idx_team_equipments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_equipments_team_id ON team_equipments (team_id)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {

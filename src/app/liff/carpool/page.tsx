@@ -80,6 +80,7 @@ interface CarAssignment {
   capacity: number;
   passengers: { name: string; type: "player" | "adult" }[];
   isCargo?: boolean;
+  isBus?: boolean;
 }
 
 interface CarpoolData {
@@ -554,6 +555,11 @@ function LiffCarpoolContent() {
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
+                    {(car.isBus || car.capacity >= 11) && (
+                      <span className="px-2 py-0.5 rounded bg-teal-400 text-slate-950 text-[10px] font-black">
+                        🚌 バス
+                      </span>
+                    )}
                     {car.isCargo && (
                       <span className="px-2 py-0.5 rounded bg-amber-400 text-slate-950 text-[10px] font-black">
                         📦 道具車
@@ -574,26 +580,51 @@ function LiffCarpoolContent() {
                 {/* 単色シートブロックゲージ ＆ 乗車メンバー一覧 */}
                 <div className="p-4 pt-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-black text-muted-foreground">
+                    <span className="text-[10px] font-black text-muted-foreground shrink-0">
                       座席状況
                     </span>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: seatTotal }).map((_, sIdx) => {
-                        const occupied = sIdx < car.passengers.length;
-                        return (
-                          <span
-                            key={sIdx}
-                            className={`w-5 h-2.5 rounded-xs ${
-                              occupied
-                                ? isFull
-                                  ? "bg-emerald-600"
-                                  : "bg-primary"
-                                : "bg-muted border border-border"
+                    {seatTotal <= 10 ? (
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: seatTotal }).map((_, sIdx) => {
+                          const occupied = sIdx < car.passengers.length;
+                          return (
+                            <span
+                              key={sIdx}
+                              className={`w-5 h-2.5 rounded-xs ${
+                                occupied
+                                  ? isFull
+                                    ? "bg-emerald-600"
+                                    : "bg-primary"
+                                  : "bg-muted border border-border"
+                              }`}
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-1 max-w-[220px]">
+                        <div className="h-2.5 flex-1 rounded-full bg-muted border border-border overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${
+                              isFull ? "bg-emerald-600" : "bg-teal-600"
                             }`}
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round(
+                                  (car.passengers.length /
+                                    Math.max(1, seatTotal)) *
+                                    100
+                                )
+                              )}%`,
+                            }}
                           />
-                        );
-                      })}
-                    </div>
+                        </div>
+                        <span className="text-[11px] font-black tabular-nums text-foreground shrink-0">
+                          {car.passengers.length}/{seatTotal}席
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1.5 pt-1 border-t border-border">

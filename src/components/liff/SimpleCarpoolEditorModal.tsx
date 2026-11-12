@@ -16,6 +16,7 @@ import type {
   SimpleCarpoolSavePayload,
 } from "@/api/liff/carpool-simple";
 import {
+  Bus,
   CalendarPlus,
   Car,
   Check,
@@ -49,6 +50,7 @@ interface DraftCarSlot {
   plate: string;
   capacity: number;
   isCargo: boolean;
+  isBus: boolean;
   riders: DraftRiderItem[];
 }
 
@@ -118,6 +120,7 @@ export function SimpleCarpoolEditorModal({
             plate: data.drivers[0]?.cars[0]?.numberPlate || "",
             capacity: data.drivers[0]?.cars[0]?.capacity || 4,
             isCargo: Boolean(data.drivers[0]?.cars[0]?.isCargo),
+            isBus: Boolean(data.drivers[0]?.cars[0]?.isBus),
             riders: [],
           },
         ]);
@@ -141,6 +144,7 @@ export function SimpleCarpoolEditorModal({
             plate: ec.plate,
             capacity: ec.capacity,
             isCargo: ec.isCargo,
+            isBus: Boolean(ec.isBus),
             riders: ec.riders.map((r) => ({ ...r })),
           }))
         );
@@ -165,6 +169,7 @@ export function SimpleCarpoolEditorModal({
                 plate: preferredCar?.numberPlate || "",
                 capacity: preferredCar?.capacity || 4,
                 isCargo: Boolean(preferredCar?.isCargo),
+                isBus: Boolean(preferredCar?.isBus),
                 riders: [],
               };
             })
@@ -182,6 +187,7 @@ export function SimpleCarpoolEditorModal({
               plate: firstCar?.numberPlate || "",
               capacity: firstCar?.capacity || 4,
               isCargo: Boolean(firstCar?.isCargo),
+              isBus: Boolean(firstCar?.isBus),
               riders: [],
             },
           ]);
@@ -248,6 +254,7 @@ export function SimpleCarpoolEditorModal({
             plate: firstCar?.numberPlate || "",
             capacity: firstCar?.capacity || 4,
             isCargo: Boolean(firstCar?.isCargo),
+            isBus: Boolean(firstCar?.isBus),
             riders: [],
           },
         ]);
@@ -339,6 +346,7 @@ export function SimpleCarpoolEditorModal({
         plate: preferredCar?.numberPlate || "",
         capacity: preferredCar?.capacity || 4,
         isCargo: Boolean(preferredCar?.isCargo),
+        isBus: Boolean(preferredCar?.isBus),
         riders: [],
       },
     ]);
@@ -371,7 +379,20 @@ export function SimpleCarpoolEditorModal({
             return {
               ...slot,
               driverMemberId: "__custom__",
-              carId: null,
+              carId: slot.isBus ? slot.carId : null,
+              riders: filteredRiders,
+            };
+          }
+          // 既にチーム共有バスを選択中の場合はその車両を維持
+          const isKeepingSharedBus =
+            slot.isBus &&
+            slot.carId &&
+            Boolean(ctx?.sharedCars?.some((sc) => sc.carId === slot.carId));
+          if (isKeepingSharedBus) {
+            return {
+              ...slot,
+              driverMemberId: nextDriverMemberId,
+              customDriverName: "",
               riders: filteredRiders,
             };
           }
@@ -384,12 +405,13 @@ export function SimpleCarpoolEditorModal({
             plate: preferredCar?.numberPlate || slot.plate,
             capacity: preferredCar?.capacity || slot.capacity,
             isCargo: preferredCar ? preferredCar.isCargo : slot.isCargo,
+            isBus: preferredCar ? Boolean(preferredCar.isBus) : slot.isBus,
             riders: filteredRiders,
           };
         })
       );
     },
-    [ctx?.drivers]
+    [ctx?.drivers, ctx?.sharedCars]
   );
 
   const handleToggleRiderInSlot = useCallback(
@@ -515,6 +537,7 @@ export function SimpleCarpoolEditorModal({
           plate: slot.plate.trim() || undefined,
           capacity: slot.capacity,
           isCargo: slot.isCargo,
+          isBus: slot.isBus,
           riders: slot.riders.map((r) => ({ type: r.type, id: r.id })),
         })),
       };
@@ -824,6 +847,14 @@ export function SimpleCarpoolEditorModal({
                     slot.capacity - slot.riders.length
                   );
 
+                  const driverCars = selectedDriver?.cars || [];
+                  const driverCarIds = new Set(driverCars.map((dc) => dc.carId));
+                  const extraSharedCars = (ctx?.sharedCars || []).filter(
+                    (sc) => !driverCarIds.has(sc.carId)
+                  );
+                  const hasSelectableVehicles =
+                    driverCars.length > 0 || extraSharedCars.length > 0;
+
                   return (
                     <section
                       key={slot.localKey}
@@ -831,7 +862,7 @@ export function SimpleCarpoolEditorModal({
                     >
                       {/* 号車ヘッダー（A-3 上帯ダークキャップ） */}
                       <div className="px-3.5 py-2.5 bg-[#0f172a] text-white border-b-[3px] border-primary flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="w-6 h-6 rounded-lg bg-primary text-primary-foreground text-xs font-black flex items-center justify-center tabular-nums">
                             {carNumber}
                           </span>
@@ -842,9 +873,41 @@ export function SimpleCarpoolEditorModal({
                             type="button"
                             onClick={() =>
                               setDraftCars((prev) =>
+                                prev.map((c) => {
+                                  if (c.localKey !== slot.localKey) return c;
+                                  const nextBus = !c.isBus;
+                                  return {
+                                    ...c,
+                                    isBus: nextBus,
+                                    isCargo: nextBus ? false : c.isCargo,
+                                    capacity:
+                                      nextBus && c.capacity <= 8
+                                        ? 20
+                                        : c.capacity,
+                                  };
+                                })
+                              )
+                            }
+                            className={`px-2 py-0.5 rounded text-[11px] font-black flex items-center gap-1 cursor-pointer transition-colors ${
+                              slot.isBus
+                                ? "bg-teal-400 text-slate-950"
+                                : "bg-slate-800 text-slate-300 border border-slate-700"
+                            }`}
+                          >
+                            <Bus className="w-3 h-3" />
+                            <span>バス</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftCars((prev) =>
                                 prev.map((c) =>
                                   c.localKey === slot.localKey
-                                    ? { ...c, isCargo: !c.isCargo }
+                                    ? {
+                                        ...c,
+                                        isCargo: !c.isCargo,
+                                        isBus: !c.isCargo ? false : c.isBus,
+                                      }
                                     : c
                                 )
                               )
@@ -860,7 +923,7 @@ export function SimpleCarpoolEditorModal({
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <span className="text-xs font-black text-slate-200 tabular-nums">
                             {slot.riders.length}/{slot.capacity}席
                           </span>
@@ -897,7 +960,11 @@ export function SimpleCarpoolEditorModal({
                                 );
                                 const carSummary = d.cars[0]
                                   ? `${d.cars[0].name}・${d.cars[0].capacity}席${
-                                      d.cars[0].isCargo ? "（道具車）" : ""
+                                      d.cars[0].isBus
+                                        ? "（バス）"
+                                        : d.cars[0].isCargo
+                                        ? "（道具車）"
+                                        : ""
                                     }`
                                   : undefined;
                                 return {
@@ -928,7 +995,7 @@ export function SimpleCarpoolEditorModal({
                                 value: "__custom__",
                                 label: "＋ 運転手名を手入力する",
                                 sublabel:
-                                  "名簿にない保護者・スタッフの氏名と車両を手動で入力します",
+                                  "名簿にない保護者・スタッフ・バス運転手の氏名を手動で入力します",
                                 badge: "手入力",
                                 badgeTone: "amber" as const,
                               },
@@ -955,60 +1022,112 @@ export function SimpleCarpoolEditorModal({
                                   )
                                 );
                               }}
-                              placeholder="運転手名を入力（例: 山田 パパ）"
+                              placeholder="運転手名を入力（例: スタッフ名 / バス運転手）"
                               className="w-full h-9 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
                             />
                           )}
                         </div>
 
                         {/* 車種 ＆ 乗車定員ステッパー */}
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-7 space-y-1">
+                        <div className="grid grid-cols-12 gap-2 items-start">
+                          <div className="col-span-7 space-y-1.5">
                             <label className="block text-[11px] font-black text-muted-foreground">
-                              車両名（任意）
+                              車両選択・車両名（任意）
                             </label>
-                            {selectedDriver && selectedDriver.cars.length > 1 ? (
+                            {hasSelectableVehicles && (
                               <LiffSelect
-                                value={slot.carId || ""}
+                                value={slot.carId || "__manual__"}
                                 onChange={(val) => {
-                                  const nextCarId = val || null;
-                                  const foundCar = selectedDriver.cars.find(
-                                    (mc) => mc.carId === nextCarId
+                                  if (!val || val === "__manual__") {
+                                    setDraftCars((prev) =>
+                                      prev.map((c) =>
+                                        c.localKey === slot.localKey
+                                          ? { ...c, carId: null }
+                                          : c
+                                      )
+                                    );
+                                    return;
+                                  }
+                                  const foundDriverCar = driverCars.find(
+                                    (mc) => mc.carId === val
                                   );
+                                  const foundSharedCar = extraSharedCars.find(
+                                    (sc) => sc.carId === val
+                                  );
+                                  const chosen =
+                                    foundDriverCar || foundSharedCar || null;
                                   setDraftCars((prev) =>
                                     prev.map((c) =>
                                       c.localKey === slot.localKey
                                         ? {
                                             ...c,
-                                            carId: nextCarId,
-                                            customCarName: foundCar?.name || "",
-                                            plate: foundCar?.numberPlate || "",
+                                            carId: val,
+                                            customCarName: chosen?.name || "",
+                                            plate: chosen?.numberPlate || "",
                                             capacity:
-                                              foundCar?.capacity || c.capacity,
-                                            isCargo: foundCar
-                                              ? foundCar.isCargo
+                                              chosen?.capacity || c.capacity,
+                                            isCargo: chosen
+                                              ? Boolean(chosen.isCargo)
                                               : c.isCargo,
+                                            isBus: chosen
+                                              ? Boolean(chosen.isBus)
+                                              : c.isBus,
                                           }
                                         : c
                                     )
                                   );
                                 }}
-                                options={selectedDriver.cars.map((mc) => ({
-                                  value: mc.carId,
-                                  label: `${mc.name}（定員${mc.capacity}）`,
-                                  badge: mc.isCargo ? "道具車" : undefined,
-                                  badgeTone: "amber" as const,
-                                  sublabel: mc.numberPlate
-                                    ? `ナンバー: ${mc.numberPlate}`
-                                    : undefined,
-                                }))}
-                                title={`${selectedDriver.name}の車両を選択`}
+                                options={[
+                                  ...driverCars.map((mc) => ({
+                                    value: mc.carId,
+                                    label: `${mc.name}（定員${mc.capacity}）`,
+                                    badge: mc.isBus
+                                      ? "バス"
+                                      : mc.isCargo
+                                      ? "道具車"
+                                      : undefined,
+                                    badgeTone: (mc.isBus
+                                      ? "teal"
+                                      : "amber") as LiffSelectBadgeTone,
+                                    sublabel: mc.numberPlate
+                                      ? `ナンバー: ${mc.numberPlate}`
+                                      : undefined,
+                                    group: "運転手の登録車両",
+                                  })),
+                                  ...extraSharedCars.map((sc) => ({
+                                    value: sc.carId,
+                                    label: `${sc.name}（定員${sc.capacity}）`,
+                                    badge: sc.isBus
+                                      ? "バス・共有車"
+                                      : sc.isCargo
+                                      ? "共有道具車"
+                                      : "チーム共有車",
+                                    badgeTone: (sc.isBus
+                                      ? "teal"
+                                      : "amber") as LiffSelectBadgeTone,
+                                    sublabel: sc.numberPlate
+                                      ? `ナンバー: ${sc.numberPlate}`
+                                      : "チーム共有登録車両",
+                                    group: "🚌 チーム共有車両・マイクロバス",
+                                  })),
+                                  {
+                                    value: "__manual__",
+                                    label: "＋ 車両名を手入力する",
+                                    badge: "手入力",
+                                    badgeTone: "slate" as const,
+                                    group: "その他",
+                                  },
+                                ]}
+                                title={`${carNumber}号車の車両を選択`}
                                 accent="teal"
                                 size="sm"
-                                searchable={false}
+                                searchable={
+                                  driverCars.length + extraSharedCars.length > 5
+                                }
                                 className="w-full h-9 bg-background"
                               />
-                            ) : (
+                            )}
+                            {(!hasSelectableVehicles || slot.carId === null) && (
                               <input
                                 type="text"
                                 value={slot.customCarName}
@@ -1017,18 +1136,26 @@ export function SimpleCarpoolEditorModal({
                                   setDraftCars((prev) =>
                                     prev.map((c) =>
                                       c.localKey === slot.localKey
-                                        ? { ...c, carId: null, customCarName: val }
+                                        ? {
+                                            ...c,
+                                            carId: null,
+                                            customCarName: val,
+                                          }
                                         : c
                                     )
                                   );
                                 }}
-                                placeholder="例: ミニバン (白)"
+                                placeholder={
+                                  slot.isBus
+                                    ? "例: マイクロバス 1号車"
+                                    : "例: ミニバン (白)"
+                                }
                                 className="w-full h-9 px-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
                               />
                             )}
                           </div>
 
-                          <div className="col-span-5 space-y-1">
+                          <div className="col-span-5 space-y-1.5">
                             <label className="block text-[11px] font-black text-muted-foreground">
                               定員（運転手除く）
                             </label>
@@ -1041,7 +1168,10 @@ export function SimpleCarpoolEditorModal({
                                       c.localKey === slot.localKey
                                         ? {
                                             ...c,
-                                            capacity: Math.max(1, c.capacity - 1),
+                                            capacity: Math.max(
+                                              1,
+                                              c.capacity - 1
+                                            ),
                                           }
                                         : c
                                     )
@@ -1062,7 +1192,10 @@ export function SimpleCarpoolEditorModal({
                                       c.localKey === slot.localKey
                                         ? {
                                             ...c,
-                                            capacity: Math.min(25, c.capacity + 1),
+                                            capacity: Math.min(
+                                              60,
+                                              c.capacity + 1
+                                            ),
                                           }
                                         : c
                                     )
@@ -1075,6 +1208,37 @@ export function SimpleCarpoolEditorModal({
                             </div>
                           </div>
                         </div>
+
+                        {/* バス選択時のワンタップ座席数プリセット */}
+                        {slot.isBus && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            <span className="text-[11px] font-black text-muted-foreground">
+                              🚌 バス座席プリセット:
+                            </span>
+                            {[18, 22, 24, 28, 45].map((presetCap) => (
+                              <button
+                                key={presetCap}
+                                type="button"
+                                onClick={() =>
+                                  setDraftCars((prev) =>
+                                    prev.map((c) =>
+                                      c.localKey === slot.localKey
+                                        ? { ...c, capacity: presetCap }
+                                        : c
+                                    )
+                                  )
+                                }
+                                className={`px-2 py-0.5 rounded-lg border text-[11px] font-black tabular-nums cursor-pointer transition-colors ${
+                                  slot.capacity === presetCap
+                                    ? "bg-teal-600 text-white border-teal-600"
+                                    : "bg-muted text-foreground border-border hover:bg-muted/80"
+                                }`}
+                              >
+                                {presetCap}席
+                              </button>
+                            ))}
+                          </div>
+                        )}
 
                         {/* 同乗者チップ一覧 ＆ ピッカー開閉ボタン */}
                         <div className="pt-2 border-t border-border space-y-2">

@@ -34,6 +34,7 @@ import liffCarpoolConvoyRoute from './api/liff/carpool-convoy'
 import liffCarpoolSimpleRoute from './api/liff/carpool-simple'
 import liffGroundsAiRoute from './api/liff/grounds-ai'
 import liffGalleryRoute from './api/liff/gallery'
+import liffAdminMgmtRoute from './api/liff/admin-management'
 import documentsRoute from './api/documents'
 import {
   createLiffTeamIsolationMiddleware,
@@ -68,6 +69,7 @@ app.use(
       '/api/liff/my-status',
       '/api/liff/join',
       '/api/liff/hub',
+      '/api/liff/admin/mgmt/create-club',
     ],
   })
 )
@@ -96,6 +98,7 @@ app.route('/api/liff/carpool-convoy', liffCarpoolConvoyRoute)
 app.route('/api/liff/carpool-simple', liffCarpoolSimpleRoute)
 app.route('/api/liff/grounds/ai-lookup', liffGroundsAiRoute)
 app.route('/api/liff/gallery', liffGalleryRoute)
+app.route('/api/liff/admin/mgmt', liffAdminMgmtRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)
 app.route('/api/attendance', attendanceRoute)      // GET /api/attendance/:eventId

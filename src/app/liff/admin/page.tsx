@@ -39,12 +39,16 @@ import {
 import type { Liff } from "@line/liff";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { ADMIN_MGMT_NAV_ITEMS } from "@/components/liff/AdminMgmtShell";
 import {
   LiffSelect,
   type LiffSelectBadgeTone,
 } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  invalidateLiffApiCache,
+  warmupLiffEndpointForHref,
+} from "@/lib/liff/api-cache";
 import { handleLiffRootLinkClick } from "@/lib/liff/navigation";
 import {
   buildLineMiniAppInviteTargets,
@@ -727,8 +731,8 @@ function LiffAdminDashboardContent() {
         {/* ページタイトル */}
         <div className="flex items-center justify-between">
           <LiffPageHeader 
-            title="IT管理コンソール" 
-            subtitle="TEAM ADMIN DASHBOARD" 
+            title="参加承認・管理ハブ" 
+            subtitle="TEAM ADMIN CONSOLE" 
             icon={
               <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 border border-slate-500/25 flex items-center justify-center font-black">
                 <ShieldCheck className="w-4 h-4" />
@@ -748,6 +752,36 @@ function LiffAdminDashboardContent() {
             <span>更新</span>
           </Button>
         </div>
+
+        {/* 7つの管理メニュー横断クイックスイッチャー */}
+        <nav
+          aria-label="管理メニュー切替"
+          className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
+        >
+          {ADMIN_MGMT_NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive = item.href === "/liff/admin";
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                onPointerDown={() => warmupLiffEndpointForHref(item.href)}
+                className={`h-8 px-2.5 rounded-xl border text-xs flex items-center gap-1.5 shrink-0 transition-colors ${
+                  isActive
+                    ? "bg-[#0f172a] text-white border-[#0f172a] font-black shadow-xs"
+                    : "bg-card text-foreground border-border hover:bg-muted font-bold"
+                }`}
+              >
+                <Icon
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isActive ? "text-teal-400" : "text-muted-foreground"
+                  }`}
+                />
+                <span>{item.shortLabel}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
         {/* 🔒 権限エラー表示（IT管理者・監督でない場合） */}
         {!isLoading && !isAuthorized && (
@@ -818,6 +852,46 @@ function LiffAdminDashboardContent() {
                 </div>
               </div>
             </div>
+
+            {/* 🛠️ 管理メニュー一覧（専用管理ページへの2列カードグリッド） */}
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between">
+                <span className="text-xs font-black text-white">
+                  管理メニュー（チーム・車両・権限・マスタ）
+                </span>
+                <span className="text-[10px] font-bold text-slate-300">
+                  監督・IT管理者共通
+                </span>
+              </div>
+              <div className="p-3 grid grid-cols-2 gap-2">
+                {ADMIN_MGMT_NAV_ITEMS.filter((item) => item.id !== "hub").map(
+                  (item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.id}
+                        href={item.href}
+                        onPointerDown={() => warmupLiffEndpointForHref(item.href)}
+                        className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex items-start justify-between gap-1.5 transition-colors"
+                      >
+                        <div className="space-y-0.5 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <Icon className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                            <span className="text-xs font-black text-foreground truncate">
+                              {item.label}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold text-muted-foreground line-clamp-2 leading-snug">
+                            {item.desc}
+                          </p>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                      </Link>
+                    );
+                  }
+                )}
+              </div>
+            </section>
 
             {/* 🌟 セグメントタブ切り替え */}
             <div className="flex items-center gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">

@@ -54,7 +54,18 @@ export interface SimpleCarpoolDriverCandidate {
     numberPlate: string | null;
     capacity: number;
     isCargo: boolean;
+    isBus?: boolean;
   }>;
+}
+
+export interface SimpleCarpoolSharedCarItem {
+  carId: string;
+  name: string;
+  color: string | null;
+  numberPlate: string | null;
+  capacity: number;
+  isCargo: boolean;
+  isBus: boolean;
 }
 
 export interface SimpleCarpoolPlayerCandidate {
@@ -74,6 +85,7 @@ export interface SimpleCarpoolExistingCar {
   plate: string;
   capacity: number;
   isCargo: boolean;
+  isBus?: boolean;
   riders: Array<{
     type: "player" | "adult";
     id: string;
@@ -92,6 +104,7 @@ export interface SimpleCarpoolContextResponse {
   selectedEventId: string | null;
   events: SimpleCarpoolEventOption[];
   drivers: SimpleCarpoolDriverCandidate[];
+  sharedCars?: SimpleCarpoolSharedCarItem[];
   players: SimpleCarpoolPlayerCandidate[];
   venues: SimpleCarpoolVenueOption[];
   homeGround: string;
@@ -121,6 +134,7 @@ export interface SimpleCarpoolSavePayload {
     plate?: string;
     capacity: number;
     isCargo: boolean;
+    isBus?: boolean;
     riders: Array<{
       type: "player" | "adult";
       id: string;
@@ -258,6 +272,17 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         offeredCarId: null,
         attendanceStatus: "present",
         cars: [],
+      },
+    ],
+    sharedCars: [
+      {
+        carId: "demo-bus-1",
+        name: "チーム マイクロバス 1号",
+        color: "ホワイト×ネイビー",
+        numberPlate: "・・29",
+        capacity: 24,
+        isCargo: false,
+        isBus: true,
       },
     ],
     players: [
@@ -494,15 +519,22 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       string,
       SimpleCarpoolDriverCandidate["cars"]
     >();
+    const sharedCars: SimpleCarpoolSharedCarItem[] = [];
     for (const car of allCars) {
+      const isBus = car.carType === "bus";
+      const isCargo = car.carType === "cargo";
       const carItem = {
         carId: car.id,
         name: car.name,
         color: car.color || null,
         numberPlate: car.numberPlate || null,
-        capacity: car.capacity || 4,
-        isCargo: car.carType === "cargo",
+        capacity: car.capacity || (isBus ? 20 : 4),
+        isCargo,
+        isBus,
       };
+      if (isBus || (!car.ownerId && !car.ownerId2)) {
+        sharedCars.push(carItem);
+      }
       for (const ownerId of [car.ownerId, car.ownerId2]) {
         if (!ownerId) continue;
         const list = carsByOwnerId.get(ownerId) || [];
@@ -655,6 +687,7 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         plate: cp.numberPlate || "",
         capacity: cp.capacity || 4,
         isCargo: cp.carType === "cargo",
+        isBus: cp.carType === "bus",
         riders: ridersMap.get(cp.id) || [],
       })
     );
@@ -665,6 +698,7 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       selectedEventId: selectedEvent?.id || null,
       events: eventOptions,
       drivers,
+      sharedCars,
       players: playerCandidates,
       venues: allVenues,
       homeGround: teamRow.homeGround || "",
@@ -818,7 +852,7 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       driverId: string;
       carId: string | null;
       capacity: number;
-      carType: "normal" | "cargo";
+      carType: "normal" | "cargo" | "bus";
       riders: Array<{ playerId: string | null; memberId: string | null }>;
     }> = [];
 
@@ -868,8 +902,17 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       }
       usedDriverIds.add(resolvedDriverId);
 
-      const capacity = Math.min(25, Math.max(1, Number(rawCar.capacity) || 4));
-      const carType: "normal" | "cargo" = rawCar.isCargo ? "cargo" : "normal";
+      const capacity = Math.min(60, Math.max(1, Number(rawCar.capacity) || 4));
+      const matchedMasterCar =
+        rawCar.carId && validCarById.has(rawCar.carId)
+          ? validCarById.get(rawCar.carId)
+          : undefined;
+      const carType: "normal" | "cargo" | "bus" =
+        rawCar.isBus || matchedMasterCar?.carType === "bus"
+          ? "bus"
+          : rawCar.isCargo
+          ? "cargo"
+          : "normal";
 
       // 車両マスタの解決または手入力車両の自動登録
       let resolvedCarId: string | null =

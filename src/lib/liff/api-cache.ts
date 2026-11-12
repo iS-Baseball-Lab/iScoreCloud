@@ -42,7 +42,7 @@ const DEFAULT_FRESH_MS = 30_000; // 30秒以内は完全フレッシュ扱い（
 const FAST_RETURN_STALE_MS = 120_000; // 120秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
 const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
 const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットは24時間保持（コールド起動0ms描画用）
-const MAX_PERSISTENT_ENTRIES = 22;
+const MAX_PERSISTENT_ENTRIES = 28;
 const MAX_PERSISTENT_BYTES = 120_000;
 
 const FOREGROUND_GET_TIMEOUT_MS = 12_000; // 通常GET通信の最大待機時間（モバイル回線スタック防止）
@@ -64,6 +64,7 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/links",
   "/api/liff/attendance-matrix",
   "/api/liff/my-family",
+  "/api/liff/admin",
 ];
 
 export const LIFF_CACHE_INVALIDATED_EVENT = "iscore:liff-cache-invalidated";
@@ -948,6 +949,27 @@ export function warmupLiffEndpointForHref(
   }
   if (cleanPath === "/liff/links") {
     triggerWarmupUrl(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/admin") {
+    const aQs = new URLSearchParams({ teamId: tid });
+    if (uid) aQs.set("userId", uid);
+    triggerWarmupUrl(`/api/liff/admin/dashboard?${aQs.toString()}`);
+    return;
+  }
+  const adminMgmtSubMap: Record<string, string> = {
+    "/liff/admin/teams": "teams",
+    "/liff/admin/cars": "cars",
+    "/liff/admin/roles": "roles",
+    "/liff/admin/family": "family",
+    "/liff/admin/tournaments": "tournaments",
+    "/liff/admin/equipments": "equipments",
+  };
+  const mgmtEndpoint = adminMgmtSubMap[cleanPath];
+  if (mgmtEndpoint) {
+    triggerWarmupUrl(
+      `/api/liff/admin/mgmt/${mgmtEndpoint}?teamId=${encodeURIComponent(tid)}`
+    );
   }
 }
 

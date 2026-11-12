@@ -767,6 +767,7 @@ async function buildScheduledMatchCarpoolSyncMap(
           plate: car.numberPlate || "未登録",
           capacity: car.capacity || 4,
           isCargo: car.carType === "cargo",
+          isBus: car.carType === "bus",
           passengers,
         };
       }
@@ -4282,6 +4283,7 @@ app.get("/carpool", async (c) => {
         plate: car.numberPlate || "未登録",
         capacity: car.capacity || 4,
         isCargo: car.carType === "cargo",
+        isBus: car.carType === "bus",
         passengers,
       };
     });
@@ -4596,6 +4598,7 @@ app.get("/match-ops-context", async (c) => {
           plate: car.numberPlate || "未登録",
           capacity: car.capacity || 4,
           isCargo: car.carType === "cargo",
+          isBus: car.carType === "bus",
           passengers,
         };
       });
@@ -9433,7 +9436,7 @@ app.post("/profile/cars", async (c) => {
       color?: string;
       numberPlate?: string;
       capacity?: number;
-      carType?: "normal" | "cargo";
+      carType?: "normal" | "cargo" | "bus";
     };
 
     const teamId = body.teamId || "demo-team";
@@ -9442,8 +9445,9 @@ app.post("/profile/cars", async (c) => {
       return c.json({ success: false, error: "車種名を入力してください（例: セレナ）" }, 400);
     }
 
-    const capacityNum = Math.max(1, Math.min(29, Number(body.capacity) || 4));
-    const carType: "normal" | "cargo" = body.carType === "cargo" ? "cargo" : "normal";
+    const capacityNum = Math.max(1, Math.min(60, Number(body.capacity) || 4));
+    const carType: "normal" | "cargo" | "bus" =
+      body.carType === "bus" ? "bus" : body.carType === "cargo" ? "cargo" : "normal";
 
     if (teamId === "demo-team") {
       return c.json({
