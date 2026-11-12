@@ -4,7 +4,6 @@
 import React from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { OpenLineMiniAppButton } from "@/components/common/OpenLineMiniAppButton";
 
 export default function NotFound() {
   return (
@@ -44,24 +43,18 @@ export default function NotFound() {
               <strong className="font-black text-foreground">
                 iScoreCloud LINEミニアプリ
               </strong>{" "}
-              へ統合されました。下のボタンからミニアプリまたはトップページへ移動できます。
+              へ統合されました。トップページよりLINEミニアプリを起動してください。
             </p>
           </div>
 
-          <div className="flex flex-col gap-2.5 pt-1">
-            <OpenLineMiniAppButton
-              variant="menu-item"
-              className="w-full"
-            />
-            <Link
-              href="/"
-              id="not-found-back-home"
-              className="h-11 px-4 rounded-xl border border-border bg-muted hover:bg-muted/80 text-foreground font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>トップページへ戻る</span>
-            </Link>
-          </div>
+          <Link
+            href="/"
+            id="not-found-back-home"
+            className="h-11 px-4 rounded-xl bg-primary hover:opacity-90 text-primary-foreground font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-opacity w-full shadow-xs"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>トップページへ戻る</span>
+          </Link>
         </div>
       </div>
     </div>
