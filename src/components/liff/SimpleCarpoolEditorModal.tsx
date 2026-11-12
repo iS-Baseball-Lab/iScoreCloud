@@ -14,6 +14,7 @@ import type {
   SimpleCarpoolDriverCandidate,
   SimpleCarpoolPlayerCandidate,
   SimpleCarpoolSavePayload,
+  SimpleCarpoolSharedCarItem,
 } from "@/api/liff/carpool-simple";
 import {
   Bus,
@@ -118,7 +119,7 @@ export function SimpleCarpoolEditorModal({
             carId: data.drivers[0]?.cars[0]?.carId || null,
             customCarName: data.drivers[0]?.cars[0]?.name || "",
             plate: data.drivers[0]?.cars[0]?.numberPlate || "",
-            capacity: data.drivers[0]?.cars[0]?.capacity || 4,
+            capacity: data.drivers[0]?.cars[0]?.capacity ?? 4,
             isCargo: Boolean(data.drivers[0]?.cars[0]?.isCargo),
             isBus: Boolean(data.drivers[0]?.cars[0]?.isBus),
             riders: [],
@@ -167,7 +168,7 @@ export function SimpleCarpoolEditorModal({
                 carId: preferredCar?.carId || null,
                 customCarName: preferredCar?.name || "",
                 plate: preferredCar?.numberPlate || "",
-                capacity: preferredCar?.capacity || 4,
+                capacity: preferredCar?.capacity ?? 4,
                 isCargo: Boolean(preferredCar?.isCargo),
                 isBus: Boolean(preferredCar?.isBus),
                 riders: [],
@@ -185,7 +186,7 @@ export function SimpleCarpoolEditorModal({
               carId: firstCar?.carId || null,
               customCarName: firstCar?.name || "",
               plate: firstCar?.numberPlate || "",
-              capacity: firstCar?.capacity || 4,
+              capacity: firstCar?.capacity ?? 4,
               isCargo: Boolean(firstCar?.isCargo),
               isBus: Boolean(firstCar?.isBus),
               riders: [],
@@ -252,7 +253,7 @@ export function SimpleCarpoolEditorModal({
             carId: firstCar?.carId || null,
             customCarName: firstCar?.name || "",
             plate: firstCar?.numberPlate || "",
-            capacity: firstCar?.capacity || 4,
+            capacity: firstCar?.capacity ?? 4,
             isCargo: Boolean(firstCar?.isCargo),
             isBus: Boolean(firstCar?.isBus),
             riders: [],
@@ -266,17 +267,21 @@ export function SimpleCarpoolEditorModal({
   );
 
   // ==========================================
-  // 排他制御マップ（どの選手・大人が何号車に割当済みか）
+  // 排他制御マップ（どの選手・大人・共有車両が何号車に割当済みか）
   // ==========================================
   const assignmentLookup = useMemo(() => {
     const driverCarNumByMemberId = new Map<string, number>();
     const playerCarNumById = new Map<string, number>();
     const adultRiderCarNumById = new Map<string, number>();
+    const carNumBySelectedCarId = new Map<string, number>();
 
     draftCars.forEach((slot, idx) => {
       const carNum = idx + 1;
       if (slot.driverMemberId && slot.driverMemberId !== "__custom__") {
         driverCarNumByMemberId.set(slot.driverMemberId, carNum);
+      }
+      if (slot.carId) {
+        carNumBySelectedCarId.set(slot.carId, carNum);
       }
       slot.riders.forEach((r) => {
         if (r.type === "player") {
@@ -291,8 +296,15 @@ export function SimpleCarpoolEditorModal({
       driverCarNumByMemberId,
       playerCarNumById,
       adultRiderCarNumById,
+      carNumBySelectedCarId,
     };
   }, [draftCars]);
+
+  const unassignedSharedCars = useMemo<SimpleCarpoolSharedCarItem[]>(() => {
+    return (ctx?.sharedCars || []).filter(
+      (sc) => !assignmentLookup.carNumBySelectedCarId.has(sc.carId)
+    );
+  }, [ctx?.sharedCars, assignmentLookup.carNumBySelectedCarId]);
 
   // 出席回答者が1人以上いれば出席選手を優先対象、未回答イベントなら全在籍選手を対象として未乗車数を算出
   const targetPlayersForCheck = useMemo<SimpleCarpoolPlayerCandidate[]>(() => {
@@ -344,13 +356,55 @@ export function SimpleCarpoolEditorModal({
         carId: preferredCar?.carId || null,
         customCarName: preferredCar?.name || "",
         plate: preferredCar?.numberPlate || "",
-        capacity: preferredCar?.capacity || 4,
+        capacity: preferredCar?.capacity ?? 4,
         isCargo: Boolean(preferredCar?.isCargo),
         isBus: Boolean(preferredCar?.isBus),
         riders: [],
       },
     ]);
   }, [ctx?.drivers, assignmentLookup]);
+
+  const handleAddSharedCarSlot = useCallback(
+    (sharedCar: SimpleCarpoolSharedCarItem) => {
+      const drivers = ctx?.drivers || [];
+      const unusedStaffDriver =
+        drivers.find(
+          (d) =>
+            d.roleLabel === "指導者" &&
+            !assignmentLookup.driverCarNumByMemberId.has(d.memberId) &&
+            !assignmentLookup.adultRiderCarNumById.has(d.memberId)
+        ) ||
+        drivers.find(
+          (d) =>
+            !assignmentLookup.driverCarNumByMemberId.has(d.memberId) &&
+            !assignmentLookup.adultRiderCarNumById.has(d.memberId)
+        ) ||
+        null;
+
+      const newKey = makeLocalKey();
+      setDraftCars((prev) => [
+        ...prev,
+        {
+          localKey: newKey,
+          driverMemberId: unusedStaffDriver
+            ? unusedStaffDriver.memberId
+            : "__custom__",
+          customDriverName: "",
+          carId: sharedCar.carId,
+          customCarName: sharedCar.name,
+          plate: sharedCar.numberPlate || "",
+          capacity: sharedCar.capacity,
+          isCargo: Boolean(sharedCar.isCargo),
+          isBus: Boolean(sharedCar.isBus),
+          riders: [],
+        },
+      ]);
+      toast.success(
+        `チーム共有の「${sharedCar.name}」を追加しました。当日の運転手を確認してください`
+      );
+    },
+    [ctx?.drivers, assignmentLookup]
+  );
 
   const handleRemoveCarSlot = useCallback((localKey: string) => {
     setDraftCars((prev) => prev.filter((c) => c.localKey !== localKey));
@@ -375,20 +429,20 @@ export function SimpleCarpoolEditorModal({
           const filteredRiders = slot.riders.filter(
             (r) => !(r.type === "adult" && r.id === nextDriverMemberId)
           );
+          // 既にチーム共有車両（バス・共有道具車等）を選択中の場合はその車両を維持
+          const isKeepingSharedVehicle = Boolean(
+            slot.carId &&
+              ctx?.sharedCars?.some((sc) => sc.carId === slot.carId)
+          );
           if (nextDriverMemberId === "__custom__") {
             return {
               ...slot,
               driverMemberId: "__custom__",
-              carId: slot.isBus ? slot.carId : null,
+              carId: isKeepingSharedVehicle || slot.isBus ? slot.carId : null,
               riders: filteredRiders,
             };
           }
-          // 既にチーム共有バスを選択中の場合はその車両を維持
-          const isKeepingSharedBus =
-            slot.isBus &&
-            slot.carId &&
-            Boolean(ctx?.sharedCars?.some((sc) => sc.carId === slot.carId));
-          if (isKeepingSharedBus) {
+          if (isKeepingSharedVehicle) {
             return {
               ...slot,
               driverMemberId: nextDriverMemberId,
@@ -403,7 +457,7 @@ export function SimpleCarpoolEditorModal({
             carId: preferredCar?.carId || null,
             customCarName: preferredCar?.name || slot.customCarName,
             plate: preferredCar?.numberPlate || slot.plate,
-            capacity: preferredCar?.capacity || slot.capacity,
+            capacity: preferredCar ? preferredCar.capacity : slot.capacity,
             isCargo: preferredCar ? preferredCar.isCargo : slot.isCargo,
             isBus: preferredCar ? Boolean(preferredCar.isBus) : slot.isBus,
             riders: filteredRiders,
@@ -1064,8 +1118,9 @@ export function SimpleCarpoolEditorModal({
                                             carId: val,
                                             customCarName: chosen?.name || "",
                                             plate: chosen?.numberPlate || "",
-                                            capacity:
-                                              chosen?.capacity || c.capacity,
+                                            capacity: chosen
+                                              ? chosen.capacity
+                                              : c.capacity,
                                             isCargo: chosen
                                               ? Boolean(chosen.isCargo)
                                               : c.isCargo,
@@ -1080,7 +1135,10 @@ export function SimpleCarpoolEditorModal({
                                 options={[
                                   ...driverCars.map((mc) => ({
                                     value: mc.carId,
-                                    label: `${mc.name}（定員${mc.capacity}）`,
+                                    label:
+                                      mc.capacity === 0
+                                        ? `${mc.name}（荷物専用・0席）`
+                                        : `${mc.name}（定員${mc.capacity}）`,
                                     badge: mc.isBus
                                       ? "バス"
                                       : mc.isCargo
@@ -1094,22 +1152,41 @@ export function SimpleCarpoolEditorModal({
                                       : undefined,
                                     group: "運転手の登録車両",
                                   })),
-                                  ...extraSharedCars.map((sc) => ({
-                                    value: sc.carId,
-                                    label: `${sc.name}（定員${sc.capacity}）`,
-                                    badge: sc.isBus
-                                      ? "バス・共有車"
-                                      : sc.isCargo
-                                      ? "共有道具車"
-                                      : "チーム共有車",
-                                    badgeTone: (sc.isBus
-                                      ? "teal"
-                                      : "amber") as LiffSelectBadgeTone,
-                                    sublabel: sc.numberPlate
-                                      ? `ナンバー: ${sc.numberPlate}`
-                                      : "チーム共有登録車両",
-                                    group: "🚌 チーム共有車両・マイクロバス",
-                                  })),
+                                  ...extraSharedCars.map((sc) => {
+                                    const usedInNum =
+                                      assignmentLookup.carNumBySelectedCarId.get(
+                                        sc.carId
+                                      );
+                                    const lockedOther = Boolean(
+                                      usedInNum && usedInNum !== carNumber
+                                    );
+                                    return {
+                                      value: sc.carId,
+                                      label:
+                                        sc.capacity === 0
+                                          ? `${sc.name}（荷物専用・0席）`
+                                          : `${sc.name}（定員${sc.capacity}）`,
+                                      badge: lockedOther
+                                        ? `${usedInNum}号車で選択中`
+                                        : sc.isBus
+                                        ? "バス・共有車"
+                                        : sc.isCargo
+                                        ? "共有道具車"
+                                        : "チーム共有車",
+                                      badgeTone: (lockedOther
+                                        ? "slate"
+                                        : sc.isBus
+                                        ? "teal"
+                                        : "amber") as LiffSelectBadgeTone,
+                                      sublabel: lockedOther
+                                        ? `他の号車（${usedInNum}号車）で使用中`
+                                        : sc.numberPlate
+                                        ? `ナンバー: ${sc.numberPlate}`
+                                        : "チーム共有登録車両",
+                                      disabled: lockedOther,
+                                      group: "🏢 チーム共有車両（バス・共有道具車）",
+                                    };
+                                  }),
                                   {
                                     value: "__manual__",
                                     label: "＋ 車両名を手入力する",
@@ -1148,6 +1225,8 @@ export function SimpleCarpoolEditorModal({
                                 placeholder={
                                   slot.isBus
                                     ? "例: マイクロバス 1号車"
+                                    : slot.isCargo
+                                    ? "例: ハイエース（道具車）"
                                     : "例: ミニバン (白)"
                                 }
                                 className="w-full h-9 px-2.5 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
@@ -1169,7 +1248,7 @@ export function SimpleCarpoolEditorModal({
                                         ? {
                                             ...c,
                                             capacity: Math.max(
-                                              1,
+                                              c.isCargo ? 0 : 1,
                                               c.capacity - 1
                                             ),
                                           }
@@ -1182,7 +1261,9 @@ export function SimpleCarpoolEditorModal({
                                 <Minus className="w-3.5 h-3.5" />
                               </button>
                               <span className="text-xs font-black tabular-nums">
-                                {slot.capacity}名
+                                {slot.capacity === 0
+                                  ? "0名(荷専)"
+                                  : `${slot.capacity}名`}
                               </span>
                               <button
                                 type="button"
@@ -1235,6 +1316,39 @@ export function SimpleCarpoolEditorModal({
                                 }`}
                               >
                                 {presetCap}席
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 道具車選択時のワンタップ定員プリセット */}
+                        {slot.isCargo && (
+                          <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                            <span className="text-[11px] font-black text-muted-foreground">
+                              📦 道具車プリセット:
+                            </span>
+                            {[0, 1, 2, 4, 5].map((presetCap) => (
+                              <button
+                                key={presetCap}
+                                type="button"
+                                onClick={() =>
+                                  setDraftCars((prev) =>
+                                    prev.map((c) =>
+                                      c.localKey === slot.localKey
+                                        ? { ...c, capacity: presetCap }
+                                        : c
+                                    )
+                                  )
+                                }
+                                className={`px-2 py-0.5 rounded-lg border text-[11px] font-black tabular-nums cursor-pointer transition-colors ${
+                                  slot.capacity === presetCap
+                                    ? "bg-amber-500 text-slate-950 border-amber-500"
+                                    : "bg-muted text-foreground border-border hover:bg-muted/80"
+                                }`}
+                              >
+                                {presetCap === 0
+                                  ? "荷物専用(0席)"
+                                  : `${presetCap}席`}
                               </button>
                             ))}
                           </div>
@@ -1435,6 +1549,45 @@ export function SimpleCarpoolEditorModal({
                     </section>
                   );
                 })}
+
+                {/* 登録済みチーム共有車両（バス・共有道具車）のワンタップ号車追加 */}
+                {unassignedSharedCars.length > 0 && (
+                  <div className="p-3 rounded-2xl border border-border bg-card space-y-2">
+                    <span className="block text-[11px] font-black text-muted-foreground">
+                      チーム共有車両（バス・共有道具車）を号車としてワンタップ追加
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {unassignedSharedCars.map((sc) => (
+                        <button
+                          key={sc.carId}
+                          type="button"
+                          onClick={() => handleAddSharedCarSlot(sc)}
+                          className={`h-9 px-3 rounded-xl border text-xs font-black inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                            sc.isBus
+                              ? "bg-teal-600 hover:bg-teal-700 text-white border-teal-600"
+                              : sc.isCargo
+                              ? "bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-500"
+                              : "bg-[#0f172a] hover:bg-slate-800 text-white border-[#0f172a]"
+                          }`}
+                        >
+                          {sc.isBus ? (
+                            <Bus className="w-3.5 h-3.5 shrink-0" />
+                          ) : sc.isCargo ? (
+                            <Package className="w-3.5 h-3.5 shrink-0" />
+                          ) : (
+                            <Car className="w-3.5 h-3.5 shrink-0" />
+                          )}
+                          <span>
+                            ＋ {sc.name}
+                            {sc.capacity === 0
+                              ? "（荷専）"
+                              : `（${sc.capacity}席）`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* 号車追加ボタン */}
                 <button

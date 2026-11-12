@@ -115,6 +115,7 @@ export interface AdminCarsResponse {
     busCount: number;
     cargoCount: number;
     normalCount: number;
+    sharedCount?: number;
     totalCapacity: number;
   };
   error?: string;
@@ -1089,18 +1090,33 @@ liffAdminMgmtRouter.get("/cars", async (c) => {
         carType: "bus",
       },
       {
+        id: "demo-car-cargo-shared",
+        teamId: "demo-team",
+        ownerId: null,
+        ownerName: null,
+        ownerId2: null,
+        ownerName2: null,
+        name: "チーム道具車（ハイエース）",
+        color: "シルバー",
+        colorCode: "#94a3b8",
+        numberPlate: "・・55",
+        capacity: 2,
+        fuelEfficiency: 9,
+        carType: "cargo",
+      },
+      {
         id: "demo-car-cargo-1",
         teamId: "demo-team",
         ownerId: "demo-mem-3",
         ownerName: "高橋 コーチ",
         ownerId2: null,
         ownerName2: null,
-        name: "ハイエース（道具積載車）",
-        color: "シルバー",
-        colorCode: "#64748b",
+        name: "軽バン（防具・バット積載）",
+        color: "ホワイト",
+        colorCode: "#f8fafc",
         numberPlate: "56-78",
-        capacity: 5,
-        fuelEfficiency: 9,
+        capacity: 1,
+        fuelEfficiency: 14,
         carType: "cargo",
       },
       {
@@ -1132,11 +1148,12 @@ liffAdminMgmtRouter.get("/cars", async (c) => {
         { memberId: "demo-mem-5", name: "伊藤 母", role: "parent", memberType: "parent" },
       ],
       summary: {
-        totalCars: 3,
+        totalCars: 4,
         busCount: 1,
-        cargoCount: 1,
+        cargoCount: 2,
         normalCount: 1,
-        totalCapacity: 35,
+        sharedCount: 2,
+        totalCapacity: 33,
       },
     };
     return c.json(payload);
@@ -1187,24 +1204,35 @@ liffAdminMgmtRouter.get("/cars", async (c) => {
   };
 
   const cars: AdminCarItem[] = carRows
-    .map((r) => ({
-      id: r.id,
-      teamId: r.teamId,
-      ownerId: r.ownerId || null,
-      ownerName: r.ownerName || null,
-      ownerId2: r.ownerId2 || null,
-      ownerName2: r.ownerName2 || null,
-      name: r.name,
-      color: r.color || null,
-      colorCode: r.colorCode || null,
-      numberPlate: r.numberPlate || null,
-      capacity: Number(r.capacity) || 4,
-      fuelEfficiency: Number(r.fuelEfficiency) || 10,
-      carType: sanitizeCarType(r.carType),
-    }))
+    .map((r) => {
+      const sanitizedType = sanitizeCarType(r.carType);
+      const rawCap =
+        r.capacity !== null && r.capacity !== undefined
+          ? Number(r.capacity)
+          : NaN;
+      const defaultCap = sanitizedType === "bus" ? 20 : 4;
+      return {
+        id: r.id,
+        teamId: r.teamId,
+        ownerId: r.ownerId || null,
+        ownerName: r.ownerName || null,
+        ownerId2: r.ownerId2 || null,
+        ownerName2: r.ownerName2 || null,
+        name: r.name,
+        color: r.color || null,
+        colorCode: r.colorCode || null,
+        numberPlate: r.numberPlate || null,
+        capacity: Number.isFinite(rawCap) ? Math.max(0, rawCap) : defaultCap,
+        fuelEfficiency: Number(r.fuelEfficiency) || 10,
+        carType: sanitizedType,
+      };
+    })
     .sort((a, b) => {
       const diff = typeOrder[a.carType] - typeOrder[b.carType];
       if (diff !== 0) return diff;
+      const aShared = !a.ownerId;
+      const bShared = !b.ownerId;
+      if (aShared !== bShared) return aShared ? -1 : 1;
       return (a.ownerName || a.name).localeCompare(b.ownerName || b.name, "ja");
     });
 
@@ -1228,6 +1256,7 @@ liffAdminMgmtRouter.get("/cars", async (c) => {
     busCount: cars.filter((x) => x.carType === "bus").length,
     cargoCount: cars.filter((x) => x.carType === "cargo").length,
     normalCount: cars.filter((x) => x.carType === "normal").length,
+    sharedCount: cars.filter((x) => !x.ownerId).length,
     totalCapacity: cars.reduce((sum, x) => sum + x.capacity, 0),
   };
 
@@ -1285,13 +1314,26 @@ liffAdminMgmtRouter.post("/cars", async (c) => {
   const rawOwner1 =
     body.ownerId && body.ownerId !== "__shared__" ? body.ownerId.trim() : "";
   const rawOwner2 =
+    rawOwner1 &&
     body.ownerId2 &&
     body.ownerId2 !== "__none__" &&
     body.ownerId2 !== rawOwner1
       ? body.ownerId2.trim()
       : "";
 
-  const capacity = Math.min(60, Math.max(1, Number(body.capacity) || (carType === "bus" ? 20 : 4)));
+  const minCap = carType === "cargo" ? 0 : 1;
+  const parsedCap =
+    body.capacity !== undefined && body.capacity !== null
+      ? Number(body.capacity)
+      : NaN;
+  const defaultCap = carType === "bus" ? 20 : 4;
+  const capacity = Math.min(
+    60,
+    Math.max(
+      minCap,
+      Number.isFinite(parsedCap) ? Math.trunc(parsedCap) : defaultCap
+    )
+  );
   const fuelEfficiency = Math.min(50, Math.max(1, Number(body.fuelEfficiency) || 10));
 
   const db = drizzle(c.env.DB);

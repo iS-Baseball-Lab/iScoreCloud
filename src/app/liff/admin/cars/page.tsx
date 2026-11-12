@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
+  Building2,
   Bus,
   Car,
   Check,
@@ -18,6 +19,7 @@ import {
   Plus,
   Search,
   Trash2,
+  User,
   Users,
   X,
 } from "lucide-react";
@@ -47,6 +49,7 @@ const COLOR_PRESETS = [
 ] as const;
 
 const BUS_CAPACITY_PRESETS = [14, 18, 22, 24, 28, 45, 55] as const;
+const CARGO_CAPACITY_PRESETS = [0, 1, 2, 4, 5, 8] as const;
 
 export default function LiffAdminCarsPage() {
   const { currentTeam, profile } = useLiff();
@@ -65,7 +68,9 @@ export default function LiffAdminCarsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // フィルタ ＆ 検索
-  const [filterType, setFilterType] = useState<"all" | AdminCarType>("all");
+  const [filterType, setFilterType] = useState<
+    "all" | "shared" | AdminCarType
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // 追加・編集モーダル state
@@ -127,12 +132,21 @@ export default function LiffAdminCarsPage() {
     void loadCars(false);
   }, [loadCars]);
 
-  const openCreateModal = (presetType: AdminCarType = "normal") => {
+  const openCreateModal = (
+    presetType: AdminCarType = "normal",
+    presetShared: boolean = presetType === "bus"
+  ) => {
     setEditingCarId(null);
     setCarType(presetType);
-    setCarName(presetType === "bus" ? "チーム マイクロバス" : "");
-    setOwnerId(
+    setCarName(
       presetType === "bus"
+        ? "チーム マイクロバス"
+        : presetType === "cargo" && presetShared
+        ? "チーム 道具車"
+        : ""
+    );
+    setOwnerId(
+      presetShared
         ? "__shared__"
         : data?.adultMembers[0]?.memberId || "__shared__"
     );
@@ -141,7 +155,9 @@ export default function LiffAdminCarsPage() {
     setNumberPlate("");
     setColorLabel("ホワイト");
     setColorCode("#f8fafc");
-    setFuelEfficiency(presetType === "bus" ? "8" : "12");
+    setFuelEfficiency(
+      presetType === "bus" ? "8" : presetType === "cargo" ? "9" : "12"
+    );
     setIsModalOpen(true);
   };
 
@@ -163,9 +179,14 @@ export default function LiffAdminCarsPage() {
     setCarType(nextType);
     if (nextType === "bus") {
       if (capacity <= 8) setCapacity(22);
-      if (!editingCarId) setOwnerId("__shared__");
-    } else if (capacity >= 15) {
-      setCapacity(nextType === "cargo" ? 4 : 6);
+      if (!editingCarId) {
+        setOwnerId("__shared__");
+        setOwnerId2("__none__");
+      }
+    } else if (nextType === "cargo") {
+      if (capacity >= 15) setCapacity(4);
+    } else {
+      if (capacity >= 15 || capacity === 0) setCapacity(6);
     }
   };
 
@@ -174,7 +195,9 @@ export default function LiffAdminCarsPage() {
       toast.error(
         carType === "bus"
           ? "バス名称（例: マイクロバス 1号車）を入力してください"
-          : "車両名（例: セレナ・ハイエース等）を入力してください"
+          : carType === "cargo"
+          ? "道具車の名称（例: チーム道具車・ハイエース等）を入力してください"
+          : "車両名（例: セレナ・アルファード等）を入力してください"
       );
       return;
     }
@@ -256,11 +279,22 @@ export default function LiffAdminCarsPage() {
     }
   };
 
+  const sharedCount = useMemo(
+    () =>
+      data?.summary?.sharedCount ??
+      (data?.cars || []).filter((c) => !c.ownerId).length,
+    [data?.summary?.sharedCount, data?.cars]
+  );
+
   const filteredCars = useMemo(() => {
     const list = data?.cars || [];
     const q = searchQuery.trim().toLowerCase();
     return list.filter((c) => {
-      if (filterType !== "all" && c.carType !== filterType) return false;
+      if (filterType === "shared") {
+        if (c.ownerId) return false;
+      } else if (filterType !== "all" && c.carType !== filterType) {
+        return false;
+      }
       if (!q) return true;
       const hay = `${c.name} ${c.ownerName || "チーム共有車両"} ${
         c.ownerName2 || ""
@@ -367,22 +401,32 @@ export default function LiffAdminCarsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openCreateModal("bus", true)}
+                className="h-10 px-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+              >
+                <Bus className="w-4 h-4 shrink-0" />
+                <span>＋ マイクロ・バス</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openCreateModal("cargo", true)}
+                className="h-10 px-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+              >
+                <Package className="w-4 h-4 shrink-0" />
+                <span>＋ 共有の道具車</span>
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => openCreateModal("bus")}
-              className="h-10 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
-            >
-              <Bus className="w-4 h-4 shrink-0" />
-              <span>＋ マイクロ・バス登録</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => openCreateModal("normal")}
-              className="h-10 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+              onClick={() => openCreateModal("normal", false)}
+              className="w-full h-10 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-xs"
             >
               <Plus className="w-4 h-4 text-teal-400 shrink-0" />
-              <span>＋ 道具車・保護者車両</span>
+              <span>＋ 保護者・指導者の車両を登録（普通車・個人道具車）</span>
             </button>
           </div>
         </div>
@@ -393,6 +437,10 @@ export default function LiffAdminCarsPage() {
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {[
             { key: "all" as const, label: `すべて (${summary.totalCars})` },
+            {
+              key: "shared" as const,
+              label: `🏢 チーム共有 (${sharedCount})`,
+            },
             { key: "bus" as const, label: `🚌 バス (${summary.busCount})` },
             {
               key: "cargo" as const,
@@ -437,7 +485,7 @@ export default function LiffAdminCarsPage() {
             該当する車両がまだ登録されていません
           </p>
           <p className="text-[11px] font-bold text-muted-foreground">
-            チームのマイクロバスや道具車・保護者車両を登録しておくと、遠征の配車作成でワンタップ選択できるようになります。
+            チーム共有のマイクロバス・道具車や保護者車両を登録しておくと、遠征の配車作成でワンタップ選択できるようになります。
           </p>
         </div>
       ) : (
@@ -445,6 +493,7 @@ export default function LiffAdminCarsPage() {
           {filteredCars.map((car) => {
             const isBus = car.carType === "bus";
             const isCargo = car.carType === "cargo";
+            const isShared = !car.ownerId;
             const accentBorder = isBus
               ? "border-teal-500"
               : isCargo
@@ -459,7 +508,7 @@ export default function LiffAdminCarsPage() {
                 <div
                   className={`px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] ${accentBorder} flex items-center justify-between gap-2`}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${
                         isBus
@@ -470,11 +519,16 @@ export default function LiffAdminCarsPage() {
                       }`}
                     >
                       {isBus
-                        ? "🚌 バス・共有"
+                        ? "🚌 バス"
                         : isCargo
                         ? "📦 道具車"
                         : "🚗 普通車"}
                     </span>
+                    {isShared && (
+                      <span className="px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-200 border border-teal-400/40 text-[10px] font-black shrink-0">
+                        チーム共有
+                      </span>
+                    )}
                     <h3 className="text-xs sm:text-sm font-black text-white truncate">
                       {car.name}
                     </h3>
@@ -482,7 +536,9 @@ export default function LiffAdminCarsPage() {
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-100 text-xs font-black tabular-nums">
-                      定員 {car.capacity}席
+                      {car.capacity === 0
+                        ? "荷物専用(0席)"
+                        : `定員 ${car.capacity}席`}
                     </span>
                     <button
                       type="button"
@@ -505,16 +561,21 @@ export default function LiffAdminCarsPage() {
 
                 <div className="p-3.5 flex flex-wrap items-center justify-between gap-2 text-xs">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted border border-border font-black text-foreground">
-                      <Users className="w-3.5 h-3.5 text-teal-600" />
-                      <span>
-                        {car.ownerName
-                          ? car.ownerName2
-                            ? `${car.ownerName} / ${car.ownerName2}`
-                            : car.ownerName
-                          : "🚌 チーム共有車両（運転手自由割当）"}
+                    {isShared ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-500/10 border border-teal-500/30 font-black text-teal-800 dark:text-teal-300">
+                        <Building2 className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span>チーム共有車両（運転手を自由割当）</span>
                       </span>
-                    </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted border border-border font-black text-foreground">
+                        <Users className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                        <span>
+                          {car.ownerName2
+                            ? `${car.ownerName} / ${car.ownerName2}`
+                            : car.ownerName}
+                        </span>
+                      </span>
+                    )}
                     {car.color && (
                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-background border border-border text-[11px] font-bold text-foreground">
                         {car.colorCode && (
@@ -562,6 +623,8 @@ export default function LiffAdminCarsPage() {
                 <div className="flex items-center gap-2">
                   {carType === "bus" ? (
                     <Bus className="w-4 h-4 text-teal-400" />
+                  ) : carType === "cargo" ? (
+                    <Package className="w-4 h-4 text-amber-400" />
                   ) : (
                     <Car className="w-4 h-4 text-teal-400" />
                   )}
@@ -597,7 +660,7 @@ export default function LiffAdminCarsPage() {
                       {
                         type: "cargo" as const,
                         label: "道具車",
-                        sub: "防具・テント積載",
+                        sub: "共有・個人どちらも可",
                         icon: Package,
                         activeCls:
                           "bg-amber-500 text-slate-950 border-amber-500 font-black",
@@ -643,6 +706,154 @@ export default function LiffAdminCarsPage() {
                   </div>
                 </div>
 
+                {/* 所有・運用形態 2択トグル（チーム共有 vs 個人所有） */}
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-black text-foreground">
+                    所有・運用形態
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOwnerId("__shared__");
+                        setOwnerId2("__none__");
+                      }}
+                      className={`p-2.5 rounded-xl border text-left space-y-0.5 cursor-pointer transition-colors ${
+                        ownerId === "__shared__"
+                          ? "bg-teal-600 text-white border-teal-600 font-black"
+                          : "bg-background text-foreground border-border hover:bg-muted font-bold"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-xs font-black truncate">
+                          チーム共有車両
+                        </span>
+                      </div>
+                      <span
+                        className={`block text-[10px] truncate ${
+                          ownerId === "__shared__"
+                            ? "opacity-90"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        バス・共有の道具車・軽トラ等
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (ownerId === "__shared__") {
+                          const firstMemberId =
+                            data?.adultMembers[0]?.memberId || "";
+                          if (!firstMemberId) {
+                            toast.info(
+                              "個人所有として紐付ける保護者・指導者がまだ登録されていません"
+                            );
+                            return;
+                          }
+                          setOwnerId(firstMemberId);
+                        }
+                      }}
+                      className={`p-2.5 rounded-xl border text-left space-y-0.5 cursor-pointer transition-colors ${
+                        ownerId !== "__shared__"
+                          ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                          : "bg-background text-foreground border-border hover:bg-muted font-bold"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-xs font-black truncate">
+                          個人所有（マイカー）
+                        </span>
+                      </div>
+                      <span
+                        className={`block text-[10px] truncate ${
+                          ownerId !== "__shared__"
+                            ? "opacity-90"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        保護者・指導者の車両
+                      </span>
+                    </button>
+                  </div>
+
+                  {ownerId === "__shared__" ? (
+                    <div className="p-2.5 rounded-xl bg-teal-500/10 border border-teal-500/30 text-[11px] font-bold text-teal-900 dark:text-teal-200 leading-relaxed">
+                      特定の所有者を固定せずチーム共有として登録します。配車作成（簡易配車）の際に、当日運転する指導者・スタッフ・保護者へ自由に割り当てられます。
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 pt-0.5">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-black text-muted-foreground">
+                          所有者・メイン運転手
+                        </label>
+                        <LiffSelect
+                          value={ownerId}
+                          onChange={(val) => {
+                            setOwnerId(val);
+                            if (val === "__shared__") setOwnerId2("__none__");
+                          }}
+                          options={[
+                            ...(data?.adultMembers || []).map((m) => ({
+                              value: m.memberId,
+                              label: m.name,
+                              badge:
+                                m.memberType === "staff"
+                                  ? "指導者・スタッフ"
+                                  : "保護者",
+                              badgeTone: (m.memberType === "staff"
+                                ? "primary"
+                                : "slate") as "primary" | "slate",
+                              group: "登録メンバー",
+                            })),
+                            {
+                              value: "__shared__",
+                              label: "🏢 チーム共有車両に切り替える",
+                              sublabel:
+                                "特定の所有者を外してチーム共有の車両にします",
+                              badge: "チーム共有",
+                              badgeTone: "teal" as const,
+                              group: "その他",
+                            },
+                          ]}
+                          title="所有者・メイン運転手を選択"
+                          accent="teal"
+                          size="md"
+                          searchable={true}
+                          className="w-full bg-background"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-black text-muted-foreground">
+                          第2運転手（任意・ご夫婦で1台の車を共有する場合）
+                        </label>
+                        <LiffSelect
+                          value={ownerId2}
+                          onChange={(val) => setOwnerId2(val)}
+                          options={[
+                            { value: "__none__", label: "設定なし（1名のみ）" },
+                            ...(data?.adultMembers || [])
+                              .filter((m) => m.memberId !== ownerId)
+                              .map((m) => ({
+                                value: m.memberId,
+                                label: m.name,
+                              })),
+                          ]}
+                          title="第2運転手を選択"
+                          accent="slate"
+                          size="md"
+                          searchable={true}
+                          className="w-full bg-background"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* 車両名 */}
                 <div className="space-y-1">
                   <label className="block text-[11px] font-black text-foreground">
@@ -656,89 +867,30 @@ export default function LiffAdminCarsPage() {
                       carType === "bus"
                         ? "例: チーム1号マイクロバス（コースター）"
                         : carType === "cargo"
-                        ? "例: ハイエース（道具車）"
+                        ? ownerId === "__shared__"
+                          ? "例: チーム道具車（ハイエース）/ 軽トラ"
+                          : "例: ハイエース / 軽バン（道具車）"
                         : "例: セレナ / アルファード"
                     }
                     className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
                   />
                 </div>
 
-                {/* 所有者・メイン運転者 */}
-                <div className="space-y-1.5">
-                  <label className="block text-[11px] font-black text-muted-foreground">
-                    所有者・メイン運転手（マイクロバス等は「チーム共有車両」を選択）
-                  </label>
-                  <LiffSelect
-                    value={ownerId}
-                    onChange={(val) => {
-                      setOwnerId(val);
-                      if (val === "__shared__") setOwnerId2("__none__");
-                    }}
-                    options={[
-                      {
-                        value: "__shared__",
-                        label: "🚌 チーム共有車両（特定の所有者なし）",
-                        sublabel:
-                          "配車作成時にどの指導者・スタッフ・運転手にも割り当てられます",
-                        badge: "共有車・バス推奨",
-                        badgeTone: "teal" as const,
-                        group: "チーム共有",
-                      },
-                      ...(data?.adultMembers || []).map((m) => ({
-                        value: m.memberId,
-                        label: m.name,
-                        badge:
-                          m.memberType === "staff" ? "指導者・スタッフ" : "保護者",
-                        badgeTone: (m.memberType === "staff"
-                          ? "primary"
-                          : "slate") as "primary" | "slate",
-                        group: "登録メンバー",
-                      })),
-                    ]}
-                    title="所有者・メイン運転手を選択"
-                    accent="teal"
-                    size="md"
-                    searchable={true}
-                    className="w-full bg-background"
-                  />
-                </div>
-
-                {/* 第2運転者（夫婦共有） */}
-                {ownerId !== "__shared__" && (
-                  <div className="space-y-1.5">
-                    <label className="block text-[11px] font-black text-muted-foreground">
-                      第2運転手（任意・ご夫婦で1台の車を共有する場合）
-                    </label>
-                    <LiffSelect
-                      value={ownerId2}
-                      onChange={(val) => setOwnerId2(val)}
-                      options={[
-                        { value: "__none__", label: "設定なし（1名のみ）" },
-                        ...(data?.adultMembers || [])
-                          .filter((m) => m.memberId !== ownerId)
-                          .map((m) => ({
-                            value: m.memberId,
-                            label: m.name,
-                          })),
-                      ]}
-                      title="第2運転手を選択"
-                      accent="slate"
-                      size="md"
-                      searchable={true}
-                      className="w-full bg-background"
-                    />
-                  </div>
-                )}
-
                 {/* 乗車定員（運転手除く） */}
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-black text-foreground">
-                    乗車定員（運転手を除く同乗可能人数: 1〜60席）
+                    {carType === "cargo"
+                      ? "乗車定員（運転手を除く同乗枠: 0〜60席 ※荷物専用は0席）"
+                      : "乗車定員（運転手を除く同乗可能人数: 1〜60席）"}
                   </label>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setCapacity((p) => Math.max(1, p - 1))}
+                      onClick={() =>
+                        setCapacity((p) =>
+                          Math.max(carType === "cargo" ? 0 : 1, p - 1)
+                        )
+                      }
                       className="w-10 h-10 rounded-xl border border-border bg-muted text-foreground flex items-center justify-center cursor-pointer"
                     >
                       <Minus className="w-4 h-4" />
@@ -746,17 +898,22 @@ export default function LiffAdminCarsPage() {
                     <input
                       type="number"
                       inputMode="numeric"
-                      min={1}
+                      min={carType === "cargo" ? 0 : 1}
                       max={60}
                       value={capacity}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const minCap = carType === "cargo" ? 0 : 1;
+                        const parsed = parseInt(e.target.value, 10);
                         setCapacity(
                           Math.min(
                             60,
-                            Math.max(1, parseInt(e.target.value, 10) || 1)
+                            Math.max(
+                              minCap,
+                              Number.isNaN(parsed) ? minCap : parsed
+                            )
                           )
-                        )
-                      }
+                        );
+                      }}
                       className="w-24 h-10 px-3 rounded-xl border border-border bg-background text-center text-sm font-black tabular-nums"
                     />
                     <button
@@ -767,7 +924,9 @@ export default function LiffAdminCarsPage() {
                       <Plus className="w-4 h-4" />
                     </button>
                     <span className="text-xs font-bold text-muted-foreground">
-                      席（選手・同乗者枠）
+                      {capacity === 0
+                        ? "席（荷物専用・運転手のみ）"
+                        : "席（選手・同乗者枠）"}
                     </span>
                   </div>
 
@@ -788,6 +947,28 @@ export default function LiffAdminCarsPage() {
                           }`}
                         >
                           {cap}席
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {carType === "cargo" && (
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                      <span className="text-[11px] font-bold text-muted-foreground">
+                        ワンタップ定員:
+                      </span>
+                      {CARGO_CAPACITY_PRESETS.map((cap) => (
+                        <button
+                          key={cap}
+                          type="button"
+                          onClick={() => setCapacity(cap)}
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-black tabular-nums cursor-pointer ${
+                            capacity === cap
+                              ? "bg-amber-500 text-slate-950 border-amber-500"
+                              : "bg-muted text-foreground border-border"
+                          }`}
+                        >
+                          {cap === 0 ? "荷物専用(0席)" : `${cap}席`}
                         </button>
                       ))}
                     </div>

@@ -284,6 +284,15 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         isCargo: false,
         isBus: true,
       },
+      {
+        carId: "demo-car-cargo-shared",
+        name: "チーム道具車（ハイエース）",
+        color: "シルバー",
+        numberPlate: "・・55",
+        capacity: 2,
+        isCargo: true,
+        isBus: false,
+      },
     ],
     players: [
       { playerId: "demo-p-1", name: "鈴木 翔太", uniformNumber: "1", attendanceStatus: "present", isAttending: true },
@@ -528,7 +537,12 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         name: car.name,
         color: car.color || null,
         numberPlate: car.numberPlate || null,
-        capacity: car.capacity || (isBus ? 20 : 4),
+        capacity:
+          car.capacity !== null && car.capacity !== undefined
+            ? Math.max(0, Number(car.capacity))
+            : isBus
+            ? 20
+            : 4,
         isCargo,
         isBus,
       };
@@ -685,7 +699,10 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         carId: cp.carId || null,
         carName: cp.carName || "",
         plate: cp.numberPlate || "",
-        capacity: cp.capacity || 4,
+        capacity:
+          cp.capacity !== null && cp.capacity !== undefined
+            ? Math.max(0, Number(cp.capacity))
+            : 4,
         isCargo: cp.carType === "cargo",
         isBus: cp.carType === "bus",
         riders: ridersMap.get(cp.id) || [],
@@ -902,7 +919,6 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       }
       usedDriverIds.add(resolvedDriverId);
 
-      const capacity = Math.min(60, Math.max(1, Number(rawCar.capacity) || 4));
       const matchedMasterCar =
         rawCar.carId && validCarById.has(rawCar.carId)
           ? validCarById.get(rawCar.carId)
@@ -910,9 +926,25 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       const carType: "normal" | "cargo" | "bus" =
         rawCar.isBus || matchedMasterCar?.carType === "bus"
           ? "bus"
-          : rawCar.isCargo
+          : rawCar.isCargo || matchedMasterCar?.carType === "cargo"
           ? "cargo"
           : "normal";
+      const minCap = carType === "cargo" ? 0 : 1;
+      const parsedRawCap =
+        rawCar.capacity !== undefined && rawCar.capacity !== null
+          ? Number(rawCar.capacity)
+          : NaN;
+      const capacity = Math.min(
+        60,
+        Math.max(
+          minCap,
+          Number.isFinite(parsedRawCap)
+            ? Math.trunc(parsedRawCap)
+            : carType === "bus"
+            ? 20
+            : 4
+        )
+      );
 
       // 車両マスタの解決または手入力車両の自動登録
       let resolvedCarId: string | null =
@@ -925,7 +957,7 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
         await db.insert(memberCars).values({
           id: newCarId,
           teamId,
-          ownerId: resolvedDriverId,
+          ownerId: carType === "bus" ? null : resolvedDriverId,
           name: customCarName,
           numberPlate: customPlate || null,
           capacity,

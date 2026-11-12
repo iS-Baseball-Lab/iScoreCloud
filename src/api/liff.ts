@@ -765,7 +765,7 @@ async function buildScheduledMatchCarpoolSyncMap(
             ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}`
             : "登録車",
           plate: car.numberPlate || "未登録",
-          capacity: car.capacity || 4,
+          capacity: car.capacity ?? 4,
           isCargo: car.carType === "cargo",
           isBus: car.carType === "bus",
           passengers,
@@ -4281,7 +4281,7 @@ app.get("/carpool", async (c) => {
         driverName: car.driverName || "ドライバー",
         carModel: car.carName ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}` : "登録車",
         plate: car.numberPlate || "未登録",
-        capacity: car.capacity || 4,
+        capacity: car.capacity ?? 4,
         isCargo: car.carType === "cargo",
         isBus: car.carType === "bus",
         passengers,
@@ -4596,7 +4596,7 @@ app.get("/match-ops-context", async (c) => {
             ? `${car.carName}${car.carColor ? ` (${car.carColor})` : ""}`
             : "登録車",
           plate: car.numberPlate || "未登録",
-          capacity: car.capacity || 4,
+          capacity: car.capacity ?? 4,
           isCargo: car.carType === "cargo",
           isBus: car.carType === "bus",
           passengers,

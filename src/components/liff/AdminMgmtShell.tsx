@@ -52,7 +52,7 @@ export const ADMIN_MGMT_NAV_ITEMS: ReadonlyArray<AdminNavItem> = [
     label: "車両・バス管理",
     shortLabel: "車管理",
     href: "/liff/admin/cars",
-    desc: "マイクロバス・道具車・保護者車両の一元登録",
+    desc: "マイクロバス・共有道具車・保護者車両の一元登録",
     icon: Bus,
   },
   {
