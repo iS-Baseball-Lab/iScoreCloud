@@ -6,14 +6,14 @@ import { cn } from "@/lib/utils";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { DensityProvider } from "@/components/providers/density-provider";
-import { TeamProvider } from "@/contexts/TeamContext"; // 💡 追加
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://iscorecloud.com"),
-  title: "iScoreCloud",
-  description: "Next-gen baseball scoring and analytics platform.",
+  title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
+  description:
+    "スマホ片手のベンチ入力から伝統的な早稲田式スコアブックの清書出力、出欠・配車・1球速報まで。いつものLINEミニアプリで完結する草野球・学童野球チーム向けプラットフォーム。",
   icons: {
     icon: [
       { url: "/liff-logo.png", type: "image/png" },
@@ -23,8 +23,9 @@ export const metadata: Metadata = {
     apple: "/channel-icon-640x640.png",
   },
   openGraph: {
-    title: "iScoreCloud",
-    description: "LINEで出欠回答・配車表・予定確認・試合動画・スコアブックが完結する野球チーム運営アプリ",
+    title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
+    description:
+      "LINEで出欠回答・配車表・予定確認・試合動画・早稲田式清書スコアブックが完結する野球チーム運営アプリ",
     siteName: "iScoreCloud",
     type: "website",
     images: [
@@ -38,7 +39,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary",
-    title: "iScoreCloud",
+    title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
     images: ["/channel-icon-640x640.png"],
   },
   manifest: "/manifest.json",
@@ -72,21 +73,14 @@ export default function RootLayout({
             enableSystem={true}
             disableTransitionOnChange={false}
           >
-            {/* 💡 TeamProvider を追加：アプリ全体で「どのチームを操作しているか」を共有 */}
-            <TeamProvider>
-              <Toaster
-                position="top-center"
-                toastOptions={{
-                  className: "rounded-2xl border-border bg-card text-foreground font-bold shadow-xs",
-                }}
-              />
-
-              {/* 💡 ここに children を配置。
-                AppShell を children の中で使っている場合はこのままでOKです。
-                もし AppShell をここで使いたい場合は、TeamProvider の内側に配置します。
-              */}
-              {children}
-            </TeamProvider>
+            <Toaster
+              position="top-center"
+              toastOptions={{
+                className:
+                  "rounded-2xl border-border bg-card text-foreground font-bold shadow-xs",
+              }}
+            />
+            {children}
           </ThemeProvider>
         </DensityProvider>
       </body>

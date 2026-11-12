@@ -145,6 +145,14 @@ export default {
       return apiRes
     }
 
+    // 🔗 旧Web版廃止後の規約・プライバシーポリシーURL互換リダイレクト（OAuth同意画面・LINE審査リンク保護）
+    if (url.pathname === '/terms' || url.pathname === '/terms/') {
+      return Response.redirect(`${url.origin}/liff/terms${url.search}`, 302)
+    }
+    if (url.pathname === '/privacy' || url.pathname === '/privacy/') {
+      return Response.redirect(`${url.origin}/liff/privacy${url.search}`, 302)
+    }
+
     let assetRes = await env.ASSETS.fetch(request)
 
     // 🛡️ セーフティネット: Windows ビルドの Next.js RSC セグメント（/__next.a.b.__PAGE__.txt）が万一 404 の場合、スラッシュ階層側へフォールバック
