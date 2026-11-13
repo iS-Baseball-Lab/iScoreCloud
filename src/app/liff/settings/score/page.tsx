@@ -674,8 +674,8 @@ export default function LiffScoreSettingsPage() {
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
-          title="スコア設定"
-          subtitle="SCORE & AI IMPORT SETTINGS"
+          title="スコア・試合規定"
+          subtitle="規定回数・コールド・スコア記号・早見表"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <BookOpen className="w-4 h-4" />

@@ -158,10 +158,22 @@ export interface LiffTeamItem {
   logoImageUrl?: string;
   coverImageUrl?: string;
   role?: string;
+  canManage?: boolean;
   isDemo?: boolean;
   isMember?: boolean;
   scoreTeamNameMode?: ScoreTeamNameDisplayMode;
   practiceMatchLabel?: string;
+}
+
+export function canManageCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canManage === "boolean") return team.canManage;
+  const r = (team.role || "").toLowerCase();
+  return r === "admin" || r === "manager";
 }
 
 export interface LiffPendingTeamItem {

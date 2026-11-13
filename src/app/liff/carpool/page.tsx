@@ -203,8 +203,8 @@ function LiffCarpoolContent() {
       <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="配車表 & 集合案内"
-          subtitle={carpoolInfo?.date || "次回の配車情報"}
+          title="配車・送迎"
+          subtitle={carpoolInfo?.date || "号車割・集合案内・遠征ライブマップ"}
           icon={
             <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <Car className="w-4 h-4" />

@@ -84,7 +84,7 @@ export function HubQuickNav() {
           <EmptyState
             icon={LayoutGrid}
             title="クイックメニューが未設定です"
-            description="QUICK MENU EMPTY"
+            description="「メニュー設定」からよく使う機能を追加できます"
             className="p-6"
           />
           <Link
@@ -92,7 +92,7 @@ export function HubQuickNav() {
             className="w-full py-2.5 px-4 rounded-2xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-[0.98] transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>アプリ設定でメニューを追加する</span>
+            <span>画面・メニュー設定で追加する</span>
           </Link>
         </div>
       ) : config.layout === "compact" ? (

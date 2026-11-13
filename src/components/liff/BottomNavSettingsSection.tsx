@@ -58,7 +58,7 @@ export function BottomNavSettingsSection() {
   );
   const [editingSlot, setEditingSlot] = useState<BottomNavSlotKey>("center");
   const [activeCategory, setActiveCategory] =
-    useState<QuickMenuCategoryId>("match_team");
+    useState<QuickMenuCategoryId>("schedule_match");
 
   useEffect(() => {
     const sync = () => {
@@ -456,7 +456,7 @@ export function BottomNavSettingsSection() {
           </div>
 
           {/* カテゴリ切替タブ */}
-          <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
+          <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
             {QUICK_MENU_CATEGORIES.map((cat) => {
               const isTabActive = activeCategory === cat.id;
               const assignedCount = QUICK_MENU_CATALOG.filter(
@@ -522,9 +522,16 @@ export function BottomNavSettingsSection() {
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-black text-foreground truncate">
-                      {navShort}
-                    </p>
+                    <div className="flex items-center gap-1 min-w-0">
+                      <p className="text-xs font-black text-foreground truncate">
+                        {navShort}
+                      </p>
+                      {item.adminOnly && (
+                        <span className="px-1 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[8.5px] font-black shrink-0">
+                          管理者専用
+                        </span>
+                      )}
+                    </div>
                     <p
                       className={`text-[10px] font-bold truncate ${
                         assignedSlot

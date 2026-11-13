@@ -819,6 +819,7 @@ const DEMO_TEAM = {
   coverImageUrl: undefined as string | undefined,
   year: 2026,
   isDemo: true,
+  canManage: true,
 };
 
 const DEMO_NEXT_EVENT = {
@@ -1008,6 +1009,7 @@ app.get("/my-status", async (c) => {
         logoImageUrl: t.logoImageUrl || undefined,
         coverImageUrl: t.coverImageUrl || undefined,
         role: roleByTeamId.get(t.id) || (access.canManageTeamId(t.id) ? "admin" : "member"),
+        canManage: access.canManageTeamId(t.id),
       }));
 
     const pendingTeams = memberships
@@ -1396,6 +1398,10 @@ app.get("/hub", async (c) => {
         shortName: t.shortName,
         logoImageUrl: t.logoImageUrl || undefined,
         coverImageUrl: t.coverImageUrl || undefined,
+        role:
+          access.teamRoles.get(t.id)?.role ||
+          (access.canManageTeamId(t.id) ? "admin" : "parent"),
+        canManage: access.canManageTeamId(t.id),
         scoreTeamNameMode: extractScoreTeamNameModeFromJson(
           t.scorebookSymbolRules
         ),

@@ -1325,8 +1325,8 @@ function LiffGalleryContent() {
              ========================================== */
           <>
             <LiffPageHeader
-              title="フォトギャラリー"
-              subtitle="TEAM PHOTO GALLERY & BULK DOWNLOAD"
+              title="写真アルバム"
+              subtitle="試合写真の共有・一括保存"
               icon={
                 <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
                   <Camera className="w-4 h-4" />

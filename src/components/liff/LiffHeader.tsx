@@ -17,10 +17,10 @@ import {
   Users,
   UserCircle,
   Settings,
-  BookOpen,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useLiff } from "./LiffProvider";
+import { canManageCurrentTeam, useLiff } from "./LiffProvider";
 import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
 import {
@@ -423,7 +423,7 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
 
               <DropdownMenuSeparator className="bg-border" />
 
-              {/* 👤 プロフィール & ⚙️ アプリ設定へのダイレクトリンク */}
+              {/* 👤 マイプロフィール & ⚙️ 画面・メニュー設定（＋管理者のみチーム管理） */}
               <div className="space-y-1">
                 <DropdownMenuItem asChild>
                   <Link
@@ -439,32 +439,10 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
                       </span>
                       <div className="flex flex-col min-w-0">
                         <span className="text-xs font-black text-foreground">
-                          プロフィール
+                          マイプロフィール
                         </span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
-                          表示名・お子様・マイカー設定
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-                  </Link>
-                </DropdownMenuItem>
-
-                <DropdownMenuItem asChild>
-                  <Link
-                    href="/liff/settings/score"
-                    className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="w-8 h-8 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4 h-4" />
-                      </span>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-xs font-black text-foreground">
-                          スコア設定
-                        </span>
-                        <span className="text-[10px] font-bold text-muted-foreground truncate">
-                          記号早見表の登録・AI読取設定
+                          表示名・お子様紐付け・マイカー登録
                         </span>
                       </div>
                     </div>
@@ -483,16 +461,43 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
                       </span>
                       <div className="flex flex-col min-w-0">
                         <span className="text-xs font-black text-foreground">
-                          アプリ設定
+                          画面・メニュー設定
                         </span>
                         <span className="text-[10px] font-bold text-muted-foreground truncate">
-                          クイックメニュー・カラー・表示設定
+                          ホーム・下部ナビ・外観カスタム
                         </span>
                       </div>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                   </Link>
                 </DropdownMenuItem>
+
+                {canManageCurrentTeam(currentTeam, isDemo) && (
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/liff/admin"
+                      onPointerDown={() =>
+                        warmupLiffEndpointForHref("/liff/admin", currentTeam?.id)
+                      }
+                      className="flex items-center justify-between p-2 cursor-pointer rounded-xl hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-8 h-8 rounded-lg bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center shrink-0">
+                          <ShieldCheck className="w-4 h-4" />
+                        </span>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-black text-foreground">
+                            チーム管理
+                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground truncate">
+                            参加承認・編成・権限・車両マスタ
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                    </Link>
+                  </DropdownMenuItem>
+                )}
               </div>
 
               <DropdownMenuSeparator className="bg-border" />

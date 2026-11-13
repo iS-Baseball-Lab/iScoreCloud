@@ -15,8 +15,8 @@ export default function LiffToolsIndexPage() {
 
       <div className="p-4 space-y-4">
         <LiffPageHeader
-          title="便利ツール一覧"
-          subtitle="TEAM UTILITY TOOLS"
+          title="試合・応援ツール"
+          subtitle="LINE試合速報・スコアAI取込・応援歌"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Wrench className="w-4 h-4" />
@@ -29,18 +29,18 @@ export default function LiffToolsIndexPage() {
           <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
             <span className="text-xs font-black flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>TEAM UTILITY LAB</span>
+              <span>試合・応援の便利ツール</span>
             </span>
             <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
-              {LIFF_TOOLS.length} TOOLS
+              全{LIFF_TOOLS.length}機能
             </span>
           </div>
           <div className="p-4 space-y-1">
             <h2 className="text-xs font-black text-foreground">
-              現場で使える便利ツール（順次拡張中）
+              グラウンドのベンチ・応援席ですぐ使える専用ツール
             </h2>
             <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-              「スコアブック取り込み v2」と「試合速報ジェネレータ v2」が稼働中です。応援歌・配車支援ツールも順次公開予定です。
+              「LINE試合速報」と「スコアAI取込」が稼働中です。配車の作成・編集は「配車・送迎」からご利用いただけます。
             </p>
           </div>
         </div>
@@ -48,8 +48,7 @@ export default function LiffToolsIndexPage() {
         <div className="space-y-2.5">
           {LIFF_TOOLS.map((tool) => {
             const Icon = tool.icon;
-            const isCarpool =
-              tool.id === "carpool-generator" || tool.href.includes("carpool");
+            const isCarpool = tool.href.includes("carpool");
             const isLiveTool =
               tool.id === "scorebook-import" || tool.id === "news-generator";
             return (

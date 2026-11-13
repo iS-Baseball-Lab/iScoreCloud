@@ -114,15 +114,15 @@ export default function LiffSettingsPage() {
     <div className="flex flex-col flex-1">
       <LiffHeader
         shareData={{
-          title: "アプリ設定 - iScoreCloud LINEミニアプリ",
-          text: "クイックメニュー・ボトムナビ・カラーテーマ・表示サイズのカスタマイズ設定",
+          title: "画面・メニュー設定 - iScoreCloud LINEミニアプリ",
+          text: "クイックメニュー・下部ナビ・カラーテーマ・表示サイズのカスタマイズ設定",
         }}
       />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
-          title="アプリ設定"
-          subtitle="クイックメニュー・ボトムナビ・カラー・表示サイズ"
+          title="画面・メニュー設定"
+          subtitle="ホーム・下部ナビ・カラー・表示サイズ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <Settings className="w-4 h-4" />
@@ -130,12 +130,12 @@ export default function LiffSettingsPage() {
           }
           showBack
           shareData={{
-            title: "アプリ設定 - iScoreCloud LINEミニアプリ",
-            text: "クイックメニュー・ボトムナビ・カラーテーマ・表示サイズのカスタマイズ設定",
+            title: "画面・メニュー設定 - iScoreCloud LINEミニアプリ",
+            text: "クイックメニュー・下部ナビ・カラーテーマ・表示サイズのカスタマイズ設定",
           }}
         />
 
-        {/* ━━━ ショートカット: 👤 プロフィール設定はこちら ━━━ */}
+        {/* ━━━ ショートカット: 👤 マイプロフィールはこちら ━━━ */}
         <Link
           href="/liff/profile"
           className="p-4 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
@@ -146,10 +146,10 @@ export default function LiffSettingsPage() {
             </span>
             <div className="min-w-0">
               <p className="text-xs sm:text-sm font-black text-foreground truncate">
-                プロフィール・個人設定はこちら
+                マイプロフィールはこちら
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                チーム内表示名・役割・お子様紐付け・マイカー登録
+                表示名・お子様紐付け・マイカー登録
               </p>
             </div>
           </div>
@@ -320,27 +320,7 @@ export default function LiffSettingsPage() {
           </div>
         </section>
 
-        {/* ━━━ セクション 2: 📘 スコア設定・🛡️ チーム設定へのショートカット案内 ━━━ */}
-        <Link
-          href="/liff/settings/score"
-          className="p-4 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-2xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
-              <BookOpen className="w-5 h-5" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs font-black text-foreground truncate">
-                スコア設定はこちら
-              </p>
-              <p className="text-[10px] text-muted-foreground font-bold truncate">
-                規定イニング・コールド・守備表記・スコア記号早見表の登録
-              </p>
-            </div>
-          </div>
-          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
-        </Link>
-
+        {/* ━━━ セクション 2: 運用・規定（チーム表示・予定設定 / スコア・試合規定）へのショートカット案内 ━━━ */}
         <Link
           href="/liff/settings/team"
           className="p-4 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
@@ -351,10 +331,30 @@ export default function LiffSettingsPage() {
             </span>
             <div className="min-w-0">
               <p className="text-xs font-black text-foreground truncate">
-                チーム設定はこちら
+                チーム表示・予定設定はこちら
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                チーム基本情報・活動班・球場マスタ・LINE連携
+                ロゴ・背景写真・練習試合呼称・予定の標準時間
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all shrink-0" />
+        </Link>
+
+        <Link
+          href="/liff/settings/score"
+          className="p-4 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all flex items-center justify-between group active:scale-[0.99]"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 rounded-2xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black group-hover:scale-105 transition-transform shrink-0">
+              <BookOpen className="w-5 h-5" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-black text-foreground truncate">
+                スコア・試合規定はこちら
+              </p>
+              <p className="text-[10px] text-muted-foreground font-bold truncate">
+                規定回数・コールド・守備表記・スコア記号早見表の登録
               </p>
             </div>
           </div>
@@ -405,7 +405,7 @@ export default function LiffSettingsPage() {
             <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center">
               <AlertTriangle className="w-4 h-4" />
             </span>
-            <span>ルール & 注意事項</span>
+            <span>チームルール・心得</span>
           </Link>
 
           <Link

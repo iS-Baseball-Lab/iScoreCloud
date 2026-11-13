@@ -46,7 +46,7 @@ export function QuickMenuSettingsSection() {
     getDefaultQuickMenuConfig(),
   );
   const [activeCategory, setActiveCategory] =
-    useState<QuickMenuCategoryId>("match_team");
+    useState<QuickMenuCategoryId>("schedule_match");
 
   useEffect(() => {
     const sync = () => {
@@ -213,7 +213,7 @@ export function QuickMenuSettingsSection() {
           <Sparkles className="w-3.5 h-3.5 text-primary" />
           <span>おすすめプリセット（1タップ反映）</span>
         </label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
           {QUICK_MENU_PRESETS.map((preset) => {
             const isMatchingPreset =
               config.itemIds.length === preset.itemIds.length &&
@@ -262,7 +262,7 @@ export function QuickMenuSettingsSection() {
           <EmptyState
             icon={LayoutGrid}
             title="選択中のメニューがありません"
-            description="NO QUICK MENU ITEMS"
+            description="下のリストから表示したいメニューをタップして追加してください"
             className="p-6"
           />
         ) : (
@@ -342,7 +342,7 @@ export function QuickMenuSettingsSection() {
         </div>
 
         {/* カテゴリ切替タブ */}
-        <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
+        <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted/80 dark:bg-muted/50 border border-border">
           {QUICK_MENU_CATEGORIES.map((cat) => {
             const isTabActive = activeCategory === cat.id;
             const enabledInCat = QUICK_MENU_CATALOG.filter(
@@ -405,9 +405,16 @@ export function QuickMenuSettingsSection() {
                 </span>
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-black text-foreground truncate">
-                    {item.label}
-                  </p>
+                  <div className="flex items-center gap-1 min-w-0">
+                    <p className="text-xs font-black text-foreground truncate">
+                      {item.label}
+                    </p>
+                    {item.adminOnly && (
+                      <span className="px-1 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[8.5px] font-black shrink-0">
+                        管理者専用
+                      </span>
+                    )}
+                  </div>
                   <p
                     className={`text-[10px] font-bold truncate ${
                       isSelected && orderIdx >= 0

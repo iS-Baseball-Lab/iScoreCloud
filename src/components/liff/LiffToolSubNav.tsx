@@ -8,13 +8,12 @@ import {
   ScanLine,
   Megaphone,
   Music,
-  Wand2,
   Wrench,
   ChevronRight,
 } from "lucide-react";
 
 export interface LiffToolMeta {
-  id: "scorebook-import" | "news-generator" | "cheer-songs" | "carpool-generator";
+  id: "news-generator" | "scorebook-import" | "cheer-songs";
   title: string;
   shortTitle: string;
   subtitle: string;
@@ -27,30 +26,30 @@ export interface LiffToolMeta {
 
 export const LIFF_TOOLS: LiffToolMeta[] = [
   {
-    id: "scorebook-import",
-    title: "スコアブック取り込み",
-    shortTitle: "スコア取込",
-    subtitle: "手書きのスコアブック画像を高精度AIでデータ化",
-    href: "/liff/tools/scorebook-import",
-    statusLabel: "v2稼働中",
-    statusTone: "indigo",
-    icon: ScanLine,
-    iconColorClass: "bg-primary/12 text-primary",
-  },
-  {
     id: "news-generator",
-    title: "試合速報ジェネレータ",
-    shortTitle: "速報生成",
-    subtitle: "試合・スタメン連携＆片手タップで本格LINE速報を作成",
+    title: "LINE試合速報",
+    shortTitle: "LINE速報",
+    subtitle: "試合・スタメン連携＆片手タップでLINE速報を作成",
     href: "/liff/tools/news-generator",
-    statusLabel: "v2稼働中",
+    statusLabel: "稼働中",
     statusTone: "emerald",
     icon: Megaphone,
     iconColorClass: "bg-primary/12 text-primary",
   },
   {
+    id: "scorebook-import",
+    title: "スコアAI取込",
+    shortTitle: "スコア取込",
+    subtitle: "紙スコアブックの撮影画像を高精度AIでデータ化",
+    href: "/liff/tools/scorebook-import",
+    statusLabel: "稼働中",
+    statusTone: "indigo",
+    icon: ScanLine,
+    iconColorClass: "bg-primary/12 text-primary",
+  },
+  {
     id: "cheer-songs",
-    title: "応援歌あんちょこ",
+    title: "応援歌・コール",
     shortTitle: "応援歌",
     subtitle: "選手名を自動差し込んだ応援歌・コール歌詞を表示",
     href: "/liff/tools/cheer-songs",
@@ -59,24 +58,13 @@ export const LIFF_TOOLS: LiffToolMeta[] = [
     icon: Music,
     iconColorClass: "bg-primary/12 text-primary",
   },
-  {
-    id: "carpool-generator",
-    title: "配車ジェネレータ",
-    shortTitle: "配車生成",
-    subtitle: "配車係の作業を軽減する乗車割り支援（新規検討・要MTG）",
-    href: "/liff/tools/carpool-generator",
-    statusLabel: "要MTG・検討中",
-    statusTone: "emerald",
-    icon: Wand2,
-    iconColorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
-  },
 ];
 
 export function LiffToolSubNav() {
   const pathname = usePathname();
 
   return (
-    <div className="grid grid-cols-4 gap-1 p-1 rounded-2xl bg-muted border border-border">
+    <div className="grid grid-cols-3 gap-1 p-1 rounded-2xl bg-muted border border-border">
       {LIFF_TOOLS.map((tool) => {
         const Icon = tool.icon;
         const isActive = pathname === tool.href;
@@ -114,9 +102,9 @@ export function LiffToolOtherLinks() {
             <Wrench className="w-4 h-4" />
           </span>
           <div>
-            <h2 className="text-xs font-black text-white">その他の開発予定ツール</h2>
+            <h2 className="text-xs font-black text-white">その他の試合・応援ツール</h2>
             <p className="text-[10px] font-bold text-slate-300">
-              タップして各ツールの構成枠を確認できます
+              タップして各ツールへ切り替えられます
             </p>
           </div>
         </div>
@@ -128,13 +116,8 @@ export function LiffToolOtherLinks() {
           const statusBadgeClass =
             tool.id === "scorebook-import" || tool.id === "news-generator"
               ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25"
-              : tool.id === "carpool-generator"
-              ? "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/30"
               : "bg-card text-muted-foreground border-border";
-          const hoverBorderClass =
-            tool.id === "carpool-generator"
-              ? "hover:border-teal-500/40"
-              : "hover:border-primary/40";
+          const hoverBorderClass = "hover:border-primary/40";
 
           return (
             <Link

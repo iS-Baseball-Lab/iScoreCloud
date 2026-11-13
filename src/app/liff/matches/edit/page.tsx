@@ -676,7 +676,7 @@ function LiffMatchEditContent() {
         <div className="p-4 space-y-4">
           <LiffPageHeader
             title="試合の基本情報を編集"
-            subtitle="EDIT MATCH INFO"
+            subtitle="対戦相手・日時・会場・大会区分の編集"
             showBack
           />
           <EmptyState
@@ -698,7 +698,7 @@ function LiffMatchEditContent() {
       <div className="p-4 space-y-5">
         <LiffPageHeader
           title="試合の基本情報を編集"
-          subtitle="EDIT MATCH INFO"
+          subtitle="対戦相手・日時・会場・大会区分の編集"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Calendar className="w-4 h-4" />

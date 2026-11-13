@@ -452,8 +452,8 @@ export default function LiffRulesPage() {
       <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="ルール & 注意事項"
-          subtitle="安全で円滑なチーム活動のためのガイドライン"
+          title="チームルール・心得"
+          subtitle="活動ルール・当番・配車の決まり"
           icon={
             <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <AlertTriangle className="w-4 h-4" />
@@ -461,8 +461,8 @@ export default function LiffRulesPage() {
           }
           showBack
           shareData={{
-            title: `【ルール & 注意事項】${currentTeam?.name || "チーム"} 活動ガイドライン一覧`,
-            text: `試合・遠征・配車マナー・当番・用具規定・熱中症対策などのルール & 注意事項はこちらから確認できます`,
+            title: `【チームルール・心得】${currentTeam?.name || "チーム"} 活動ガイドライン一覧`,
+            text: `試合・遠征・配車マナー・当番・用具規定・熱中症対策などのルール・心得はこちらから確認できます`,
           }}
         />
 

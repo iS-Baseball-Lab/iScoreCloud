@@ -722,7 +722,7 @@ function LiffAdminDashboardContent() {
       {/* 🌟 ヘッダー */}
       <LiffHeader
         shareData={{
-          title: `IT管理コンソール - ${data?.team?.name || "チーム"}`,
+          title: `チーム管理（参加承認・LINE招待） - ${data?.team?.name || "チーム"}`,
           text: `参加承認・メンバー管理はこちらから行えます。`,
         }}
       />
@@ -731,8 +731,8 @@ function LiffAdminDashboardContent() {
         {/* ページタイトル */}
         <div className="flex items-center justify-between">
           <LiffPageHeader 
-            title="参加承認・管理ハブ" 
-            subtitle="TEAM ADMIN CONSOLE" 
+            title="参加承認・LINE招待" 
+            subtitle="参加申請の承認・重複統合・招待コード共有" 
             icon={
               <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 border border-slate-500/25 flex items-center justify-center font-black">
                 <ShieldCheck className="w-4 h-4" />
@@ -783,7 +783,7 @@ function LiffAdminDashboardContent() {
           })}
         </nav>
 
-        {/* 🔒 権限エラー表示（IT管理者・監督でない場合） */}
+        {/* 🔒 権限エラー表示（監督・管理者でない場合） */}
         {!isLoading && !isAuthorized && (
           <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
             <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-center gap-2.5">
@@ -792,12 +792,12 @@ function LiffAdminDashboardContent() {
               </span>
               <div>
                 <h3 className="text-sm font-black text-white">権限がありません</h3>
-                <p className="text-[10px] font-bold text-slate-300">アクセス制限エリア</p>
+                <p className="text-[10px] font-bold text-slate-300">管理者専用メニュー</p>
               </div>
             </div>
             <div className="p-6 text-center space-y-3">
               <p className="text-xs text-muted-foreground font-bold">
-                この画面はチームの「IT管理者」または「監督・代表」に指定されたメンバーのみ利用可能です。
+                この画面はチームの「監督・代表」または「管理者」に指定されたメンバーのみ利用可能です。
               </p>
               <Link
                 href="/liff"
@@ -818,7 +818,7 @@ function LiffAdminDashboardContent() {
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
                   <span className="text-[10px] font-black uppercase tracking-wider text-primary">
-                    {data?.myRole === "admin" ? "IT管理者権限" : data?.myRole === "manager" ? "監督・代表権限" : "管理者モード"}
+                    {data?.myRole === "admin" ? "管理者権限" : data?.myRole === "manager" ? "監督・代表権限" : "管理者モード"}
                   </span>
                 </div>
                 <h2 className="text-sm font-black truncate text-foreground">
@@ -853,14 +853,14 @@ function LiffAdminDashboardContent() {
               </div>
             </div>
 
-            {/* 🛠️ 管理メニュー一覧（専用管理ページへの2列カードグリッド） */}
+            {/* 🛠️ チーム管理メニュー一覧（専用管理ページへの2列カードグリッド） */}
             <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
               <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between">
                 <span className="text-xs font-black text-white">
-                  管理メニュー（チーム・車両・権限・マスタ）
+                  チーム管理メニュー（組織・権限・車両・マスタ）
                 </span>
                 <span className="text-[10px] font-bold text-slate-300">
-                  監督・IT管理者共通
+                  管理者専用
                 </span>
               </div>
               <div className="p-3 grid grid-cols-2 gap-2">

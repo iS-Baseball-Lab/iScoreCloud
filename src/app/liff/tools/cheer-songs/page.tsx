@@ -41,8 +41,8 @@ export default function LiffCheerSongsPage() {
 
       <div className="p-4 space-y-4">
         <LiffPageHeader
-          title="応援歌あんちょこ"
-          subtitle="CHEER SONG LYRICS"
+          title="応援歌・コール"
+          subtitle="選手名入り歌詞・応援コール集"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Music className="w-4 h-4" />

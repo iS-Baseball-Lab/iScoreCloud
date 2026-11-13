@@ -2,6 +2,7 @@
 import {
   QUICK_MENU_CATALOG,
   getQuickMenuItemById,
+  normalizeQuickMenuItemId,
   type QuickMenuItemDef,
   type QuickMenuItemId,
 } from "./quick-menu-settings";
@@ -55,7 +56,7 @@ export const BOTTOM_NAV_PRESETS: readonly BottomNavPreset[] = [
   {
     id: "default",
     label: "標準バランス",
-    description: "活動予定・試合情報・出欠一覧表",
+    description: "活動予定・試合/スコア・出欠一覧表",
     leftId: "schedule",
     centerId: "matches",
     rightId: "board",
@@ -71,7 +72,7 @@ export const BOTTOM_NAV_PRESETS: readonly BottomNavPreset[] = [
   {
     id: "live_reporter",
     label: "当日・LINE速報",
-    description: "スタメン・試合速報・試合情報",
+    description: "スタメン編成・LINE速報・試合/スコア",
     leftId: "lineup",
     centerId: "news_generator",
     rightId: "matches",
@@ -79,7 +80,7 @@ export const BOTTOM_NAV_PRESETS: readonly BottomNavPreset[] = [
   {
     id: "scorer",
     label: "監督・スコアラー",
-    description: "スタメン・スコア取込・チーム成績",
+    description: "スタメン編成・スコアAI取込・チーム成績",
     leftId: "lineup",
     centerId: "scorebook_import",
     rightId: "stats",
@@ -90,37 +91,32 @@ export const BOTTOM_NAV_PRESETS: readonly BottomNavPreset[] = [
  * 5分割ボトムナビの狭い横幅でも1行で美しく収まる専用短縮ラベル
  */
 export const BOTTOM_NAV_SHORT_LABELS: Readonly<Record<QuickMenuItemId, string>> = {
-  matches: "試合情報",
-  lineup: "スタメン",
-  stats: "チーム成績",
-  players: "選手名鑑",
-  player_growth: "個人成長",
-  gallery: "ギャラリー",
   schedule: "活動予定",
   board: "出欠一覧表",
   carpool: "配車表",
-  grounds: "球場・施設",
-  rules: "ルール",
-  faq: "よくある質問",
-  documents: "資料・書類",
-  links: "関連リンク",
+  grounds: "球場マップ",
+  matches: "試合・スコア",
+  lineup: "スタメン",
+  news_generator: "LINE速報",
   scorebook_import: "スコア取込",
-  tools_index: "便利ツール",
-  news_generator: "試合速報",
+  players: "選手名鑑",
+  stats: "チーム成績",
+  player_growth: "個人成長",
+  gallery: "写真アルバム",
   cheer_songs: "応援歌",
-  carpool_generator: "配車生成",
+  rules: "チームルール",
+  faq: "よくある質問",
+  documents: "配布資料",
+  links: "関連リンク",
   profile: "プロフィール",
-  score_settings: "スコア設定",
-  team_settings: "チーム設定",
-  admin: "IT管理",
+  app_settings: "画面設定",
+  team_settings: "表示・予定",
+  score_settings: "スコア規定",
+  admin: "チーム管理",
 };
 
 export const LIFF_BOTTOM_NAV_STORAGE_KEY = "iscore-liff-bottom-nav-v1";
 export const LIFF_BOTTOM_NAV_CHANGE_EVENT = "iscore-liff-bottom-nav-change";
-
-const VALID_ITEM_ID_SET: ReadonlySet<string> = new Set(
-  QUICK_MENU_CATALOG.map((item) => item.id)
-);
 
 const VALID_STYLE_SET: ReadonlySet<string> = new Set(
   BOTTOM_NAV_STYLE_OPTIONS.map((opt) => opt.id)
@@ -164,9 +160,7 @@ function sanitizeDistinctTriple(
   ];
 
   const pickValid = (val: unknown, def: QuickMenuItemId): QuickMenuItemId =>
-    typeof val === "string" && VALID_ITEM_ID_SET.has(val)
-      ? (val as QuickMenuItemId)
-      : def;
+    normalizeQuickMenuItemId(val) ?? def;
 
   const chosen: QuickMenuItemId[] = [];
   const candidates: QuickMenuItemId[] = [
@@ -179,9 +173,10 @@ function sanitizeDistinctTriple(
     if (!chosen.includes(c)) {
       chosen.push(c);
     } else {
-      const replacement = fallbackPool.find(
-        (fb) => !chosen.includes(fb) && !candidates.includes(fb)
-      ) || fallbackPool.find((fb) => !chosen.includes(fb));
+      const replacement =
+        fallbackPool.find(
+          (fb) => !chosen.includes(fb) && !candidates.includes(fb)
+        ) || fallbackPool.find((fb) => !chosen.includes(fb));
       if (replacement) chosen.push(replacement);
     }
   }
@@ -307,12 +302,14 @@ export function isBottomNavItemActive(
       );
     case "player_growth":
       return pathname.startsWith("/liff/players/growth");
-    case "tools_index":
-      return pathname === "/liff/tools";
+    case "app_settings":
+      return pathname === "/liff/settings";
     case "score_settings":
       return pathname.startsWith("/liff/settings/score");
     case "team_settings":
       return pathname.startsWith("/liff/settings/team");
+    case "admin":
+      return pathname === "/liff/admin" || pathname.startsWith("/liff/admin/");
     default: {
       const def = getQuickMenuItemById(itemId);
       if (!def) return false;
@@ -320,4 +317,3 @@ export function isBottomNavItemActive(
     }
   }
 }
-

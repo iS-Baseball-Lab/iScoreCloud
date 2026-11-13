@@ -1238,7 +1238,7 @@ function PlayerGrowthContent() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="個人成長レポート"
-          subtitle="PLAYER GROWTH & ANALYTICS"
+          subtitle="打撃・投球・守備の成長推移グラフ"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <TrendingUp className="w-4.5 h-4.5" />

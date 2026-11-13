@@ -1516,7 +1516,7 @@ function MatchesContent() {
         <div className="flex flex-col flex-1">
           <LiffHeader />
           <div className="p-4 space-y-4">
-            <LiffPageHeader title="試合情報" showBack />
+            <LiffPageHeader title="試合・スコア" showBack />
             <EmptyState
               icon={Shield}
               title="試合が見つかりませんでした"
@@ -2887,12 +2887,12 @@ function MatchesContent() {
         <LiffHeader />
 
         <div className="p-4 space-y-5">
-          {/* ページ内ヘッダー（「試合情報」固定タイトル＋前後切替ピル） */}
+          {/* ページ内ヘッダー（「試合・スコア」固定タイトル＋前後切替ピル） */}
           <LiffPageHeader
-            title="試合情報"
+            title="試合・スコア"
             icon={
               <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
-                <Video className="w-4 h-4" />
+                <Trophy className="w-4 h-4" />
               </span>
             }
             showBack
@@ -3610,11 +3610,11 @@ function MatchesContent() {
       <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="試合情報 & ハイライト"
-          subtitle="スコア速報・スタメン登録・ハイライト動画"
+          title="試合・スコア"
+          subtitle="試合予定・結果・スコアブック・動画"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
-              <Video className="w-4 h-4" />
+              <Trophy className="w-4 h-4" />
             </span>
           }
           showBack
@@ -3624,12 +3624,12 @@ function MatchesContent() {
               className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
             >
               <Users className="w-3.5 h-3.5" />
-              <span>スタメン登録</span>
+              <span>スタメン編成</span>
             </Link>
           }
           shareData={{
-            title: `【試合情報】${scoreTeamName} 試合一覧`,
-            text: `試合ハイライト動画・スコアボードはこちらから確認できます！`,
+            title: `【試合・スコア】${scoreTeamName} 試合一覧`,
+            text: `試合結果・スコアブック・ハイライト動画はこちらから確認できます！`,
           }}
         />
 

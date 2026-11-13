@@ -2968,8 +2968,8 @@ export default function LiffScorebookImportPage() {
 
       <div className="p-4 space-y-4">
         <LiffPageHeader
-          title="スコアブック取り込み"
-          subtitle="SCOREBOOK AI IMPORT v2"
+          title="スコアAI取込"
+          subtitle="紙スコアブックの撮影・AIデータ化"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <ScanLine className="w-4 h-4" />

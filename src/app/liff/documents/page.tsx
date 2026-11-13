@@ -530,8 +530,8 @@ export default function LiffDocumentsPage() {
       <div className="p-4 space-y-4">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="資料ダウンロード"
-          subtitle="チーム規約・配車マニュアル・合宿のしおり"
+          title="配布資料・書類"
+          subtitle="規約・マニュアル・各種様式"
           icon={
             <span className="w-8 h-8 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center font-black">
               <FileText className="w-4 h-4" />
@@ -539,8 +539,8 @@ export default function LiffDocumentsPage() {
           }
           showBack
           shareData={{
-            title: `【チーム資料】各種規約・マニュアル一覧`,
-            text: `チーム規約、配車ガイド、用具規定などの資料はこちらから閲覧できます`,
+            title: `【配布資料・書類】各種規約・マニュアル一覧`,
+            text: `チーム規約、配車ガイド、用具規定などの配布資料はこちらから閲覧できます`,
           }}
         />
 

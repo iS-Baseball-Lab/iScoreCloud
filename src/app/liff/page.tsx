@@ -7,7 +7,11 @@ import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
-import { useLiff, useScoreTeamDisplayName } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+  useScoreTeamDisplayName,
+} from "@/components/liff/LiffProvider";
 import {
   LIFF_CACHE_INVALIDATED_EVENT,
   buildLiffHubUrl,
@@ -263,13 +267,15 @@ export default function LiffHubPage() {
             </h2>
 
             <div className="flex items-center gap-1.5">
-              <Link
-                href="/liff/admin"
-                className="px-3 py-1.5 rounded-full bg-slate-500/12 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-500/25 active:scale-95 font-black text-[11px] shadow-2xs transition-all flex items-center gap-1 shrink-0"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>IT管理</span>
-              </Link>
+              {canManageCurrentTeam(currentTeam, isDemo) && (
+                <Link
+                  href="/liff/admin"
+                  className="px-3 py-1.5 rounded-full bg-slate-500/12 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 border border-slate-500/25 active:scale-95 font-black text-[11px] shadow-2xs transition-all flex items-center gap-1 shrink-0"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>チーム管理</span>
+                </Link>
+              )}
 
               {isDemo && (
                 <button

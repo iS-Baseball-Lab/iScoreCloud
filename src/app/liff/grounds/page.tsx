@@ -877,8 +877,8 @@ export default function LiffGroundsPage() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         {/* ページ内ヘッダー */}
         <LiffPageHeader
-          title="球場 & 施設"
-          subtitle="グラウンド情報・アクセス・駐車場ルール"
+          title="球場・施設マップ"
+          subtitle="アクセス・駐車場・スパイク規定"
           icon={
             <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
               <MapPin className="w-4 h-4" />
@@ -886,7 +886,7 @@ export default function LiffGroundsPage() {
           }
           showBack
           shareData={{
-            title: `【球場 & 施設】チーム利用グラウンド・施設一覧`,
+            title: `【球場・施設マップ】チーム利用グラウンド・施設一覧`,
             text: `球場アクセス・駐車場ルール・スパイク指定の確認用です`,
           }}
         />

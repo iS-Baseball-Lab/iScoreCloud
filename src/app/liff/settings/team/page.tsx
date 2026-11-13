@@ -6,13 +6,14 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { 
   ShieldCheck, 
+  SlidersHorizontal,
+  KeyRound,
   MapPin, 
   Car, 
   Save, 
   ChevronRight, 
   Layers,
   Building,
-  Bell,
   BookOpen,
   ImagePlus,
   Image as ImageIcon,
@@ -151,19 +152,6 @@ async function compressTeamLogoImage(file: File): Promise<{
   return { dataUrl, mimeType: outputMime };
 }
 
-const ORGANIZATION_CATEGORIES = [
-  { id: "gakudou", label: "学童・少年野球 (小学生)" },
-  { id: "junior_high", label: "中学軟式・シニア・ボーイズ" },
-  { id: "high_school", label: "高校・ユース" },
-  { id: "general_rubber", label: "一般軟式・草野球" },
-  { id: "general_hard", label: "一般硬式・大学・社会人" },
-];
-
-const ORGANIZATION_CATEGORY_OPTIONS: LiffSelectOption[] = ORGANIZATION_CATEGORIES.map((c) => ({
-  value: c.id,
-  label: c.label,
-}));
-
 const MONTH_SELECT_OPTIONS: LiffSelectOption[] = Array.from({ length: 12 }, (_, idx) => {
   const m = idx + 1;
   return {
@@ -191,9 +179,7 @@ export default function LiffTeamSettingsPage() {
   const activePracticeLabel = usePracticeMatchLabel();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // チーム基本情報ステート
-  const [teamName, setTeamName] = useState(currentTeam?.name || "");
-  const [category, setCategory] = useState("gakudou");
+  // チーム表示設定ステート
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(
     currentTeam?.logoImageUrl || null
   );
@@ -232,8 +218,6 @@ export default function LiffTeamSettingsPage() {
     if (typeof window === "undefined") return;
 
     const tid = currentTeam?.id || "demo-team";
-    const savedName = localStorage.getItem(`iscore_team_name_${tid}`);
-    setTeamName(currentTeam?.name || savedName || "");
     setLogoPreviewUrl(currentTeam?.logoImageUrl || null);
     setCoverPreviewUrl(currentTeam?.coverImageUrl || null);
     setScheduleTimes(loadCachedTeamScheduleDefaultTimes(tid));
@@ -274,13 +258,9 @@ export default function LiffTeamSettingsPage() {
       } else {
         setTargetGroups(DEFAULT_TARGET_GROUPS);
       }
-
-      const savedCategory = localStorage.getItem(`iscore_team_category_${tid}`);
-      setCategory(savedCategory || "gakudou");
     } catch (e) {
       console.error("Failed to load team settings", e);
       setTargetGroups(DEFAULT_TARGET_GROUPS);
-      setCategory("gakudou");
     }
 
     return () => {
@@ -289,7 +269,6 @@ export default function LiffTeamSettingsPage() {
   }, [
     currentTeam?.id,
     currentTeam?.isDemo,
-    currentTeam?.name,
     currentTeam?.logoImageUrl,
     currentTeam?.coverImageUrl,
   ]);
@@ -515,34 +494,13 @@ export default function LiffTeamSettingsPage() {
 
   const handleSaveAll = () => {
     const tid = currentTeam?.id || "demo-team";
-    saveSetting(`iscore_team_name_${tid}`, teamName);
-    saveSetting(`iscore_team_category_${tid}`, category);
     saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
     const trimmedPractice = customPracticeLabelInput.trim();
     if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
       void persistPracticeMatchLabel(trimmedPractice, true);
     }
     void persistScheduleDefaultTimes(scheduleTimes, true);
-    if (tid !== "demo-team" && !currentTeam?.isDemo && teamName.trim()) {
-      void fetch("/api/liff/admin/mgmt/teams/current", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teamId: tid,
-          userId: profile?.userId || undefined,
-          orgName: teamName.trim(),
-          category,
-        }),
-      })
-        .then((res) => {
-          if (res.ok) {
-            invalidateLiffApiCache();
-            void refreshTeams();
-          }
-        })
-        .catch(() => {});
-    }
-    toast.success("チーム設定を保存しました");
+    toast.success("チーム表示・予定設定を保存しました");
   };
 
   const handleAddGroup = () => {
@@ -574,31 +532,31 @@ export default function LiffTeamSettingsPage() {
     <div className="flex flex-col flex-1">
       <LiffHeader
         shareData={{
-          title: "チーム設定 - iScoreCloud LINEミニアプリ",
-          text: "チーム基本情報・競技規定・各種マスタ設定",
+          title: "チーム表示・予定設定 - iScoreCloud LINEミニアプリ",
+          text: "ロゴ・背景写真・練習試合呼称・予定の標準時間設定",
         }}
       />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
-          title="チーム設定"
-          subtitle="ロゴ・背景写真・予定初期時間・表示呼称"
+          title="チーム表示・予定設定"
+          subtitle="ロゴ・背景写真・練習試合呼称・予定の標準時間"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
-              <ShieldCheck className="w-4 h-4" />
+              <SlidersHorizontal className="w-4 h-4" />
             </span>
           }
           showBack
         />
 
-        {/* 管理メニュー（編成追加・マイクロバス管理・権限管理）への直通ショートカット */}
+        {/* チーム管理メニュー（組織・権限・車両）への直通ショートカット */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
           <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
             <span className="text-xs font-black text-white">
-              管理者メニュー（編成追加・車両・権限管理）
+              チーム管理マスタ（組織・権限・車両）
             </span>
-            <span className="text-[10px] font-bold text-slate-300">
-              監督・IT管理者
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9.5px] font-black">
+              管理者専用
             </span>
           </div>
           <div className="p-3 grid grid-cols-3 gap-2 text-xs">
@@ -612,7 +570,20 @@ export default function LiffTeamSettingsPage() {
               </div>
               <span className="font-black text-foreground">チーム・編成</span>
               <span className="text-[10px] font-bold text-muted-foreground">
-                A/B編成・新設
+                名称・A/B編成
+              </span>
+            </Link>
+            <Link
+              href="/liff/admin/roles"
+              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+            >
+              <div className="flex items-center justify-between">
+                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              </div>
+              <span className="font-black text-foreground">権限・役職</span>
+              <span className="text-[10px] font-bold text-muted-foreground">
+                兼務・役職呼称
               </span>
             </Link>
             <Link
@@ -628,33 +599,20 @@ export default function LiffTeamSettingsPage() {
                 マイクロ・道具車
               </span>
             </Link>
-            <Link
-              href="/liff/admin/roles"
-              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
-            >
-              <div className="flex items-center justify-between">
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
-                <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <span className="font-black text-foreground">権限・役職</span>
-              <span className="text-[10px] font-bold text-muted-foreground">
-                兼務・役職呼称
-              </span>
-            </Link>
           </div>
         </section>
 
-        {/* ━━━ セクション 1: 🛡️ チーム基本情報 ━━━ */}
+        {/* ━━━ セクション 1: 🛡️ チームロゴ・背景・表示呼称 ━━━ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
           <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
                 <Building className="w-4 h-4" />
               </span>
-              <h2 className="text-sm font-black text-white truncate">チーム基本情報</h2>
+              <h2 className="text-sm font-black text-white truncate">ロゴ・背景写真・表示呼称</h2>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
-              ID: {currentTeam?.id || "team_1"}
+              チーム共通
             </span>
           </div>
 
@@ -846,45 +804,21 @@ export default function LiffTeamSettingsPage() {
               </div>
             </div>
 
-            {/* チーム名 */}
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">チーム名称</label>
-              <input
-                type="text"
-                value={teamName}
-                onChange={(e) => setTeamName(e.target.value)}
-                placeholder="チーム名を入力"
-                className="w-full px-3 py-2 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-              />
-            </div>
-
-            {/* 年代・所属カテゴリ */}
-            <div className="space-y-1">
-              <label className="text-xs font-black text-foreground">所属カテゴリー（年代区分）</label>
-              <LiffSelect
-                value={category}
-                onChange={(nextCat) => {
-                  setCategory(nextCat);
-                  // カテゴリに応じてスコア設定の規定イニング初期値を最適化
-                  const nextInnings =
-                    nextCat === "gakudou"
-                      ? 6
-                      : nextCat === "high_school" || nextCat === "general_hard"
-                      ? 9
-                      : 7;
-                  saveSetting("iscore_setting_default_innings", String(nextInnings));
-                }}
-                options={ORGANIZATION_CATEGORY_OPTIONS}
-                title="所属カテゴリー（年代区分）を選択"
-                accent="slate"
-                size="md"
-                searchable={false}
-                className="w-full bg-muted/35"
-              />
-              <p className="text-[10px] text-muted-foreground font-bold">
-                ※ 規定イニング・コールド・守備表記などの詳細な試合規定は「スコア設定」から変更できます
-              </p>
-            </div>
+            {/* クラブ名称・カテゴリー・編成変更への案内（重複排除） */}
+            <Link
+              href="/liff/admin/teams"
+              className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-muted/40 hover:bg-muted border border-border transition-colors"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-black text-foreground truncate">
+                  現在の表示チーム：{currentTeam?.name || "チーム"}
+                </p>
+                <p className="text-[10.5px] font-bold text-muted-foreground leading-snug mt-0.5">
+                  クラブ名称・所属カテゴリー・A/B編成の追加は「チーム・編成管理」で行えます
+                </p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+            </Link>
 
             {/* 練習試合の呼称設定（練習試合 / OP戦 / オープン戦 / 自由入力） */}
             <div className="space-y-2.5 pt-3 border-t border-border">
@@ -1307,10 +1241,10 @@ export default function LiffTeamSettingsPage() {
           );
         })()}
 
-        {/* ━━━ セクション 4: 🏟️ 各種マスタ管理へのクイックアクセス ━━━ */}
+        {/* ━━━ セクション 4: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
         <section className="space-y-2.5">
-          <p className="text-[11px] font-black text-muted-foreground uppercase tracking-widest pl-1">
-            チームマスタ管理（専用画面）
+          <p className="text-[11px] font-black text-muted-foreground tracking-wide pl-1">
+            関連する規定・管理メニュー
           </p>
 
           <Link
@@ -1322,10 +1256,10 @@ export default function LiffTeamSettingsPage() {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-black text-foreground truncate">
-                スコア設定（試合規定・記号早見表）
+                スコア・試合規定（記号流儀・早見表）
               </p>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                規定イニング・コールド・守備表記・AI読取の早見表登録
+                規定イニング・コールド・守備表記・スコア記号早見表の登録
               </p>
             </div>
             <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
@@ -1340,8 +1274,8 @@ export default function LiffTeamSettingsPage() {
                 <MapPin className="w-5 h-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-black text-foreground truncate">球場 & 施設</p>
-                <p className="text-[10px] text-muted-foreground font-bold truncate">ホーム・練習場</p>
+                <p className="text-xs font-black text-foreground truncate">球場・施設マップ</p>
+                <p className="text-[10px] text-muted-foreground font-bold truncate">アクセス・駐車規定</p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 shrink-0" />
             </Link>
@@ -1354,8 +1288,8 @@ export default function LiffTeamSettingsPage() {
                 <Car className="w-5 h-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-black text-foreground truncate">配車 & 登録車両</p>
-                <p className="text-[10px] text-muted-foreground font-bold truncate">乗車割り・定員</p>
+                <p className="text-xs font-black text-foreground truncate">配車表</p>
+                <p className="text-[10px] text-muted-foreground font-bold truncate">号車割り・隊列マップ</p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-teal-600 dark:group-hover:text-teal-400 shrink-0" />
             </Link>
@@ -1369,46 +1303,20 @@ export default function LiffTeamSettingsPage() {
               <ShieldCheck className="w-5 h-5" />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-black text-foreground truncate">
-                IT管理コンソール（参加承認・Google Maps API連携）
-              </p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-black text-foreground truncate">
+                  参加承認・LINE招待（Google Maps連携）
+                </p>
+                <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[9px] font-black shrink-0">
+                  管理者専用
+                </span>
+              </div>
               <p className="text-[10px] text-muted-foreground font-bold truncate">
-                招待コード共有・メンバー役割変更・隊列マップAPIキー設定
+                招待リンク共有・参加承認・隊列マップAPIキー設定
               </p>
             </div>
             <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
           </Link>
-        </section>
-
-        {/* ━━━ セクション 5: 🔔 LINE通知・連携ステータス ━━━ */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
-                <Bell className="w-4 h-4" />
-              </span>
-              <h2 className="text-sm font-black text-white truncate">LINE速報配信・通知連携</h2>
-            </div>
-            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 shrink-0">
-              連携稼働中
-            </span>
-          </div>
-
-          <div className="p-4 space-y-3">
-            <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-muted-foreground">配信先LINEグループ</span>
-                <span className="text-foreground font-black">チーム連絡網 (公式)</span>
-              </div>
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-muted-foreground">試合速報自動配信</span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-black">有効 (イニング毎)</span>
-              </div>
-            </div>
-            <p className="text-[10px] text-muted-foreground font-bold">
-              ※ LINEグループの変更やBot設定はWeb管理画面（ダッシュボード）から実施できます
-            </p>
-          </div>
         </section>
 
         {/* 💾 一括保存ボタン */}
@@ -1419,7 +1327,7 @@ export default function LiffTeamSettingsPage() {
             className="w-full py-3.5 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>チーム設定を保存する</span>
+            <span>表示・予定設定を保存する</span>
           </button>
         </div>
 

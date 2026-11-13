@@ -698,7 +698,7 @@ export default function LiffProfilePage() {
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
-          title="プロフィール"
+          title="マイプロフィール"
           subtitle="表示名・お子様紐付け・マイカー登録"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">

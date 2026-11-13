@@ -1169,8 +1169,8 @@ function LiffLineupContent() {
 
       <div className="p-4 space-y-4">
         <LiffPageHeader
-          title="スタメン・出欠登録"
-          subtitle="打順・守備位置・控え・欠席の設定"
+          title="スタメン・ベンチ編成"
+          subtitle="打順・守備位置・ベンチ入り・欠席の設定"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Users className="w-4 h-4" />
