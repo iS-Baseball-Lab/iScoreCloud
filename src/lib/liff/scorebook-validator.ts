@@ -115,6 +115,16 @@ export function inferCanonicalResultCode(
     ) {
       return "double_play";
     }
+    if (
+      rawCode === "flyout" &&
+      !label.includes("妨害") &&
+      (label.includes("インフィールド") ||
+        /\bIFF\b/i.test(upper) ||
+        /^(?:[⌒︵︶∩^傘()\s]*)(?:[1-9]\s*)?I\.?F\.?F?(?:\s*\))?$/i.test(upper) ||
+        /\((?:[1-9]\s*)?I\.?F\.?F?\)/i.test(upper))
+    ) {
+      return "infield_fly";
+    }
   }
 
   if (rawCode && validCodes.has(rawCode as CanonicalAtBatResult)) {
@@ -248,8 +258,8 @@ export function inferCanonicalResultCode(
   if (
     label.includes("インフィールド") ||
     upper.includes("IFF") ||
-    /\bIF\b/.test(upper) ||
-    /^[1-9]IF$/i.test(upper)
+    /\bI\.?F\.?\b/.test(upper) ||
+    /^[1-9]I\.?F\.?$/i.test(upper)
   ) {
     return "infield_fly";
   }
@@ -971,7 +981,8 @@ export function validateScorebookSheet(
 
   // イニング別に整列（イニング昇順 -> columnIndex昇順 -> 元の出現順）
   const inningsMap = new Map<number, ScorebookV2AtBat[]>();
-  for (const ab of atBats) {
+  for (const rawAb of atBats) {
+    const ab = normalizeLegacyForceOutAtBat(rawAb);
     const list = inningsMap.get(ab.inning) || [];
     list.push(ab);
     inningsMap.set(ab.inning, list);

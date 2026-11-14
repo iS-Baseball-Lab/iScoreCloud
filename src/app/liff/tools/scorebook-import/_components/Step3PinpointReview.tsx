@@ -3650,6 +3650,10 @@ export function Step3PinpointReview({
                               <span className="px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-black">
                                 {editingAtBat.battedDirection}
                               </span>
+                            ) : rc === "infield_fly" ? (
+                              <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-[10px] font-black">
+                                指定なし（IF）
+                              </span>
                             ) : !isNonFielded && rc !== "other" ? (
                               <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary text-[10px] font-black">
                                 1〜9を選択してください
@@ -3723,31 +3727,37 @@ export function Step3PinpointReview({
                           </p>
                         ) : (
                           <>
-                            {/* 外野 7左・8中・9右（グラウンド視点の上段3列） */}
-                            <div className="grid grid-cols-3 gap-1">
-                              {outfieldPositions.map((pos) => {
-                                const isSelected =
-                                  fMeta.primaryPos === pos.code &&
-                                  fMeta.hitZone !== "gap_lc" &&
-                                  fMeta.hitZone !== "gap_rc";
-                                return (
-                                  <button
-                                    key={pos.code}
-                                    type="button"
-                                    onClick={() =>
-                                      applyPositionSelection(pos.code)
-                                    }
-                                    className={`py-1.5 px-2 rounded-xl text-[11px] border transition-all cursor-pointer ${
-                                      isSelected
-                                        ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
-                                        : "bg-card border-border text-foreground font-black hover:bg-accent"
-                                    }`}
-                                  >
-                                    {pos.code} {pos.shortJa}（{pos.fullJa}）
-                                  </button>
-                                );
-                              })}
-                            </div>
+                            {rc === "infield_fly" ? (
+                              <p className="text-[10px] font-bold text-muted-foreground">
+                                ※インフィールドフライは内野（1投〜6遊）を選択するか、守備位置指定なし（IF）のまま記録できます（外野7〜9は対象外）
+                              </p>
+                            ) : (
+                              /* 外野 7左・8中・9右（グラウンド視点の上段3列） */
+                              <div className="grid grid-cols-3 gap-1">
+                                {outfieldPositions.map((pos) => {
+                                  const isSelected =
+                                    fMeta.primaryPos === pos.code &&
+                                    fMeta.hitZone !== "gap_lc" &&
+                                    fMeta.hitZone !== "gap_rc";
+                                  return (
+                                    <button
+                                      key={pos.code}
+                                      type="button"
+                                      onClick={() =>
+                                        applyPositionSelection(pos.code)
+                                      }
+                                      className={`py-1.5 px-2 rounded-xl text-[11px] border transition-all cursor-pointer ${
+                                        isSelected
+                                          ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
+                                          : "bg-card border-border text-foreground font-black hover:bg-accent"
+                                      }`}
+                                    >
+                                      {pos.code} {pos.shortJa}（{pos.fullJa}）
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
 
                             {/* 内野・バッテリー 1投〜6遊（下段6列） */}
                             <div className="grid grid-cols-6 gap-1">

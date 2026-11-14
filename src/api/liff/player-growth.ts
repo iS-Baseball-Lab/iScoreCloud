@@ -273,7 +273,17 @@ function translateAtBatChipLabel(
       kind: "out",
     };
   }
-  if (res === "flyout" || res === "infield_fly") {
+  if (res === "infield_fly") {
+    const safeInfieldShort =
+      dirShort && !["左", "中", "右"].includes(dirShort) ? dirShort : "";
+    return {
+      label:
+        cleanSnap ||
+        (safeInfieldShort ? `${safeInfieldShort}インフィールド飛` : "インフィールド飛"),
+      kind: "out",
+    };
+  }
+  if (res === "flyout") {
     return {
       label: cleanSnap || (dirShort ? `${dirShort}飛` : "飛球"),
       kind: "out",

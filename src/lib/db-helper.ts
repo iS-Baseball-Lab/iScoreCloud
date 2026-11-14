@@ -348,13 +348,33 @@ async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> 
       d1.prepare(
         `SELECT match_id, top_at_bats_json, bottom_at_bats_json
          FROM match_scorebook_snapshots
-         WHERE top_at_bats_json LIKE '%"fc"%' OR bottom_at_bats_json LIKE '%"fc"%'`
+         WHERE top_at_bats_json LIKE '%"fc"%'
+            OR bottom_at_bats_json LIKE '%"fc"%'
+            OR top_at_bats_json LIKE '%infield_fly%'
+            OR bottom_at_bats_json LIKE '%infield_fly%'
+            OR top_at_bats_json LIKE '%インフィールド%'
+            OR bottom_at_bats_json LIKE '%インフィールド%'
+            OR top_at_bats_json LIKE '%"IF"%'
+            OR bottom_at_bats_json LIKE '%"IF"%'`
       ),
       d1.prepare(
         `SELECT id, match_id, at_bat_id, description
          FROM play_logs
-         WHERE (description LIKE '%野選%' OR description LIKE '%FC%')
-           AND description LIKE '%アウト%'`
+         WHERE ((description LIKE '%野選%' OR description LIKE '%FC%')
+                AND description LIKE '%アウト%')
+            OR (description LIKE '%インフィールド%'
+                AND (description LIKE '%中インフィールド%'
+                  OR description LIKE '%左インフィールド%'
+                  OR description LIKE '%右インフィールド%'
+                  OR description LIKE '%センターインフィールド%'
+                  OR description LIKE '%レフトインフィールド%'
+                  OR description LIKE '%ライトインフィールド%'
+                  OR description LIKE '%8IF%'
+                  OR description LIKE '%7IF%'
+                  OR description LIKE '%9IF%'
+                  OR description LIKE '%(8)%'
+                  OR description LIKE '%(7)%'
+                  OR description LIKE '%(9)%'))`
       ),
     ]);
 
@@ -471,8 +491,9 @@ async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> 
         const matchedSnap = snapByDbAtBatId.get(dbAb.id);
         if (
           matchedSnap &&
-          dbAb.result === "fc" &&
-          matchedSnap.resultCode !== "fc"
+          ((dbAb.result === "fc" && matchedSnap.resultCode !== "fc") ||
+            (dbAb.result === "flyout" &&
+              matchedSnap.resultCode === "infield_fly"))
         ) {
           updatedAtBatIds.add(dbAb.id);
           writeStatements.push(
@@ -514,13 +535,23 @@ async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> 
         );
         if (pl.at_bat_id && !updatedAtBatIds.has(pl.at_bat_id)) {
           updatedAtBatIds.add(pl.at_bat_id);
-          writeStatements.push(
-            d1
-              .prepare(
-                `UPDATE at_bats SET result = 'groundout' WHERE id = ? AND result = 'fc'`
-              )
-              .bind(pl.at_bat_id)
-          );
+          if (nextDesc.includes("インフィールド")) {
+            writeStatements.push(
+              d1
+                .prepare(
+                  `UPDATE at_bats SET result = 'infield_fly' WHERE id = ? AND result = 'flyout'`
+                )
+                .bind(pl.at_bat_id)
+            );
+          } else {
+            writeStatements.push(
+              d1
+                .prepare(
+                  `UPDATE at_bats SET result = 'groundout' WHERE id = ? AND result = 'fc'`
+                )
+                .bind(pl.at_bat_id)
+            );
+          }
         }
       }
     }

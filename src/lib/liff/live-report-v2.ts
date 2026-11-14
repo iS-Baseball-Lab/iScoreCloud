@@ -1037,7 +1037,14 @@ export function buildBattedPlayCandidates(
     let baseWord: string;
     if (outcome === "flyout") {
       if (variant === "infield_fly") {
-        baseWord = `${normDir}インフィールドフライ`;
+        const isOutfieldWord =
+          /^(?:[左中右]|左翼|中堅|右翼|左中間|右中間|レフト|センター|ライト)/.test(
+            normDir
+          );
+        baseWord =
+          normDir && !isOutfieldWord
+            ? `${normDir}インフィールドフライ`
+            : "インフィールドフライ";
       } else if (variant === "fly_shallow" || dir.endsWith("浅")) {
         const cleanHead = dir.endsWith("浅") ? dir.slice(0, -1) : normDir;
         baseWord = `${cleanHead}浅いフライ`;

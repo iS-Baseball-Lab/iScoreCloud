@@ -968,7 +968,24 @@ function buildResultSection(
           : "外野フライ等の捕球後に走者がタッチアップでホームインした「犠牲フライ」を表します（打数には含まれず打点がつきます）。",
     });
   } else if (rc === "flyout" || rc === "infield_fly") {
-    if (
+    const isStandaloneInfieldFly =
+      rc === "infield_fly" && notation.subText !== "IF";
+
+    if (isStandaloneInfieldFly) {
+      if (notation.decorator === "umbrella") {
+        decoratorLabel = "︵ 傘マーク（インフィールドフライ）";
+      }
+      rows.push({
+        badge:
+          notation.decorator === "umbrella"
+            ? `︵${notation.mainText}`
+            : notation.mainText,
+        badgeTone: "amber",
+        title: "IF ＝ インフィールドフライ宣告（守備位置指定なし）",
+        description:
+          "無死または一死で走者一・二塁（または満塁）の場面で内野フェア飛球に宣告されるインフィールドフライ（打者即アウト）を表します。落球時や野手番号を記載しない単独「IF」記帳の表示です。",
+      });
+    } else if (
       notation.decorator === "umbrella" ||
       notation.decorator === "bunt_fly_square_umbrella"
     ) {
@@ -983,7 +1000,7 @@ function buildResultSection(
         description:
           notation.decorator === "bunt_fly_square_umbrella"
             ? "四角枠「□（バント）」と上の曲線「︵（傘マーク＝フライ）」で、バントが小フライになって捕球されたことを表します。"
-            : "守備番号の上にある曲線「︵（傘マーク）」は、高く上がったフライ（飛球）をノーバウンド捕球してアウトにしたことを表します。",
+            : "守備番号の上にある曲線「︵（傘マーク）」は、高く上がったフライ（飛球）を捕球してアウトにしたことを表します。",
       });
     } else if (notation.decorator === "overline") {
       decoratorLabel = "￣ 上線マーク（ライナー）";
@@ -999,7 +1016,7 @@ function buildResultSection(
         badge: notation.mainText,
         badgeTone: "dark",
         title: headlineResult,
-        description: `「${notation.mainText}」は飛球またはライナーを直接捕球してアウトにしたことを表します。`,
+        description: `「${notation.mainText}」は飛球またはライナーでアウトになったことを表します。`,
       });
     }
 

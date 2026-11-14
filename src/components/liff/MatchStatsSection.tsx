@@ -1271,6 +1271,23 @@ function attachScorebookCellsToTimelineEntries(
         ab.battedDirection && !ab.resultLabel.includes(ab.battedDirection)
           ? `${ab.resultLabel} (${ab.battedDirection})`
           : ab.resultLabel;
+    } else if (
+      ab &&
+      ab.resultCode === "infield_fly" &&
+      ab.resultLabel &&
+      (!resolvedMainResult.includes("インフィールド") ||
+        /(?:^[左中右]|左翼|中堅|右翼|レフト|センター|ライト)/.test(
+          resolvedMainResult
+        ) ||
+        /\((?:[789](?:IF)?|IF\s*[789])\)/i.test(resolvedMainResult))
+    ) {
+      const hasParen = /\([^()]+\)/.test(resolvedMainResult);
+      resolvedMainResult =
+        ab.battedDirection &&
+        (hasParen || /^[1-6]IF$/i.test(ab.battedDirection)) &&
+        !ab.resultLabel.includes(ab.battedDirection)
+          ? `${ab.resultLabel} (${ab.battedDirection})`
+          : ab.resultLabel;
     }
     const canonicalTone = ab
       ? classifyResultTone(resolvedMainResult, undefined, ab.resultCode)

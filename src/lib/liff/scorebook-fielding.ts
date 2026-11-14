@@ -454,6 +454,14 @@ export function parseFieldingMeta(
     }
   }
 
+  // インフィールドフライは公認野球規則上「内野手（1〜6）」の飛球に限定されるため、外野番号（7〜9）は保持しない
+  if (
+    resultCode === "infield_fly" &&
+    (primaryPos === "7" || primaryPos === "8" || primaryPos === "9")
+  ) {
+    primaryPos = "";
+  }
+
   // 6. 打球ゾーン・飛球種別・エラー種別の推定
   if (hitZone !== "gap_lc" && hitZone !== "gap_rc") {
     if (
@@ -1030,6 +1038,12 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     }
 
     case "infield_fly": {
+      if (isOutfield) {
+        return {
+          battedDirection: "IF",
+          resultLabel: "インフィールドフライ",
+        };
+      }
       return {
         battedDirection: `${code}IF`,
         resultLabel: `${shortJa}インフィールドフライ`,
@@ -1470,6 +1484,12 @@ export function harmonizeOcrFieldingAndLabel(
 
   const parsed = parseFieldingMeta(resultCode, cleanDir, cleanLabel);
   if (!parsed.primaryPos) {
+    if (resultCode === "infield_fly") {
+      return {
+        battedDirection: "IF",
+        resultLabel: "インフィールドフライ",
+      };
+    }
     const fallbackDir = defaultGenericDirection(resultCode, {
       flyStyle: parsed.flyStyle,
     });
@@ -1535,10 +1555,15 @@ export function harmonizeOcrFieldingAndLabel(
     parsed.isBunt &&
     resultCode !== "sac_bunt" &&
     !cleanLabel.includes("バント");
+  const needsInfieldFlyLabelUpgrade =
+    resultCode === "infield_fly" &&
+    (!cleanLabel.includes("インフィールド") ||
+      /(?:^[左中右]|左翼|中堅|右翼|レフト|センター|ライト)/.test(cleanLabel));
 
   const finalLabel =
     genericSet.has(cleanLabel) ||
     needsBuntLabelUpgrade ||
+    needsInfieldFlyLabelUpgrade ||
     /^[0-9EFCLKSBH⌒︵︶∩^~〜￣ー\-△▲□◇()（），,\s\u0304\u0305]+$/i.test(
       cleanLabel
     )
@@ -1555,6 +1580,8 @@ export function harmonizeOcrFieldingAndLabel(
     resultCode === "error" && /^E[1-9]-[1-9]$/i.test(normCleanDir);
   const isNonCanonicalFcDir =
     resultCode === "fc" && !/^FC[1-9](?:-[1-9])?$/.test(normCleanDir);
+  const isNonCanonicalInfieldFlyDir =
+    resultCode === "infield_fly" && !/^[1-6]IF$/i.test(normCleanDir);
   const isNonCanonicalBuntHitDir =
     resultCode === "single" &&
     parsed.isBunt &&
@@ -1566,6 +1593,7 @@ export function harmonizeOcrFieldingAndLabel(
       hasRawDecorGlyph ||
       isPrefixThrowErr ||
       isNonCanonicalFcDir ||
+      isNonCanonicalInfieldFlyDir ||
       isNonCanonicalBuntHitDir
         ? composed.battedDirection
         : normCleanDir,
@@ -1624,10 +1652,75 @@ function defaultGenericLabel(code: CanonicalAtBatResult): string {
 }
 
 /**
+ * 過去データ互換補正（インフィールドフライ）:
+ * 1) 旧OCR/再構築処理で resultCode: "flyout" のまま dir: "IF" / "6IF" や label: "インフィールドフライ" で保存された打席を
+ *    正式な resultCode: "infield_fly" へ昇格する。
+ * 2) 守備位置指定がないのに外野番号（7/8/9: 特に旧フォールバックの "8" や "中インフィールドフライ"）が混入していたデータを
+ *    汎用表記（battedDirection: "IF", resultLabel: "インフィールドフライ"）へ自動正規化する。
+ * ※内野手（1〜6）が明記されている正当なデータ（例: "6IF" / "遊インフィールドフライ"）はそのまま保持する。
+ */
+export function normalizeLegacyInfieldFlyAtBat<
+  T extends Pick<
+    ScorebookV2AtBat,
+    "resultCode" | "battedDirection" | "resultLabel"
+  >,
+>(ab: T): T {
+  if (!ab) return ab;
+  if (ab.resultCode !== "infield_fly" && ab.resultCode !== "flyout") {
+    return ab;
+  }
+
+  const rawDir = (ab.battedDirection || "").trim();
+  const rawLabel = (ab.resultLabel || "").trim();
+  const normDir = normalizeFieldingAscii(rawDir);
+  const strippedDir = normDir
+    .replace(/^[⌒︵︶∩^傘()\s]+|\s*[()]+$/g, "")
+    .trim();
+
+  if (ab.resultCode === "flyout") {
+    const isInterferenceLike =
+      rawLabel.includes("妨害") || /^INT/i.test(strippedDir);
+    const hasInfieldFlyMarker =
+      !isInterferenceLike &&
+      (rawLabel.includes("インフィールド") ||
+        /\bIFF\b/i.test(rawLabel) ||
+        /\bIFF\b/i.test(strippedDir) ||
+        /^(?:[1-9])?I\.?F\.?F?$/i.test(strippedDir) ||
+        /\((?:[1-9])?I\.?F\.?F?\)/i.test(rawLabel));
+    if (!hasInfieldFlyMarker) {
+      return ab;
+    }
+  }
+
+  const sanitizedSeedLabel = rawLabel.includes("インフィールド") ? rawLabel : "";
+  const harmonized = harmonizeOcrFieldingAndLabel(
+    "infield_fly",
+    rawDir,
+    sanitizedSeedLabel
+  );
+
+  if (
+    ab.resultCode === "infield_fly" &&
+    ab.battedDirection === harmonized.battedDirection &&
+    ab.resultLabel === harmonized.resultLabel
+  ) {
+    return ab;
+  }
+
+  return {
+    ...ab,
+    resultCode: "infield_fly",
+    battedDirection: harmonized.battedDirection,
+    resultLabel: harmonized.resultLabel,
+  };
+}
+
+/**
  * 過去データ互換補正:
  * 先行走者が封殺・アウト（二封・三封・本封: 6-4, 4-6, 5-4, 6-5, 5-2, 6B, 5C, 2H 等）となって
  * 1アウトが記録されているにもかかわらず、旧ロジックで resultCode: "fc"（野選）として保存された打席を
  * 公式野球規則に準拠したゴロ封殺（resultCode: "groundout" 等）へ自動正規化する。
+ * あわせて旧インフィールドフライの外野番号（"8" 等）混入・"flyout" 残留データも正規化する。
  * ※先行走者もセーフになった本物のオールセーフ野選（outsInPlay === 0 等）はそのまま "fc" として保持する。
  */
 export function normalizeLegacyForceOutAtBat<
@@ -1636,7 +1729,11 @@ export function normalizeLegacyForceOutAtBat<
     "resultCode" | "battedDirection" | "resultLabel" | "outsInPlay" | "advances"
   >,
 >(ab: T): T {
-  if (!ab || ab.resultCode !== "fc") return ab;
+  if (!ab) return ab;
+  if (ab.resultCode === "infield_fly" || ab.resultCode === "flyout") {
+    return normalizeLegacyInfieldFlyAtBat(ab);
+  }
+  if (ab.resultCode !== "fc") return ab;
 
   const rawDir = (ab.battedDirection || "").trim();
   // 早見表・設定プレビュー用の残塁イニング終了サンプル表記（"6-" 等）はそのまま保持
@@ -1771,9 +1868,71 @@ export function normalizeLegacyForceOutAtBat<
   };
 }
 
+function repairPlayLogInfieldFlyDescription(
+  description: string,
+  repairedAb?: Pick<
+    ScorebookV2AtBat,
+    "resultCode" | "battedDirection" | "resultLabel"
+  > | null
+): string {
+  if (!description) return description;
+  const isMatchedInfieldFly = repairedAb?.resultCode === "infield_fly";
+  if (!isMatchedInfieldFly && !description.includes("インフィールド")) {
+    return description;
+  }
+
+  const pitchMarker = "\n===PITCHES===\n";
+  const markerIdx = description.indexOf(pitchMarker);
+  const headPart = markerIdx >= 0 ? description.slice(0, markerIdx) : description;
+  const tailPart = markerIdx >= 0 ? description.slice(markerIdx) : "";
+
+  const headMatch = headPart.match(
+    /^([^:：]+[:：]\s*)(.+?)(\s*(?:（(?:打点|得点)[^）]*）)?\s*(?:［[^］]*］)?\s*(?:\[B:\d+,\s*S:\d+,\s*O:\d+\])?)$/
+  );
+  if (!headMatch) return description;
+
+  const prefix = headMatch[1];
+  const oldResultText = headMatch[2].trim();
+  const suffix = headMatch[3] || "";
+
+  const hasOutfieldNoise =
+    /(?:^[左中右]|左翼|中堅|右翼|レフト|センター|ライト)/.test(oldResultText) ||
+    /\((?:[789](?:I\.?F\.?F?)?|I\.?F\.?\s*[789])\)/i.test(oldResultText);
+  const missingInfieldFlyWord =
+    isMatchedInfieldFly && !oldResultText.includes("インフィールド");
+
+  if (!hasOutfieldNoise && !missingInfieldFlyWord) {
+    return description;
+  }
+
+  const hasParenInOld = /\([^()]+\)/.test(oldResultText);
+  let nextResultText = "";
+  if (isMatchedInfieldFly && repairedAb) {
+    const baseLabel = (repairedAb.resultLabel || "インフィールドフライ").trim();
+    const dir = (repairedAb.battedDirection || "IF").trim();
+    nextResultText =
+      dir &&
+      (hasParenInOld || /^[1-6]IF$/i.test(dir)) &&
+      !baseLabel.includes(dir)
+        ? `${baseLabel} (${dir})`
+        : baseLabel;
+  } else {
+    nextResultText = hasParenInOld
+      ? "インフィールドフライ (IF)"
+      : "インフィールドフライ";
+  }
+
+  if (!nextResultText || nextResultText === oldResultText) {
+    return description;
+  }
+
+  return `${prefix}${nextResultText}${suffix}${tailPart}`;
+}
+
 /**
  * play_logs.description 内の旧「〇〇野選 (FC6-4)」等の見出しを、
  * 走者封殺アウトが記録されている打席に限り「〇〇ゴロ二封 (6-4)」等へ安全に補正する
+ * （あわせてインフィールドフライの外野番号 "8" / "中インフィールドフライ" 混入も除去する）
  */
 export function repairPlayLogForceOutDescription(
   description: string,
@@ -1782,7 +1941,17 @@ export function repairPlayLogForceOutDescription(
     "resultCode" | "battedDirection" | "resultLabel"
   > | null
 ): string {
-  if (!description || (!description.includes("野選") && !description.includes("FC"))) {
+  if (!description) return description;
+
+  const afterInfieldFly = repairPlayLogInfieldFlyDescription(
+    description,
+    repairedAb
+  );
+  if (afterInfieldFly !== description) {
+    return afterInfieldFly;
+  }
+
+  if (!description.includes("野選") && !description.includes("FC")) {
     return description;
   }
 

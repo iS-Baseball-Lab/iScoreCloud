@@ -1998,12 +1998,8 @@ export function formatAtBatPlayNotation(
 
   // 6. フライ・ライナー・インフィールドフライ
   if (rc === "flyout" || rc === "infield_fly") {
-    const f = inferFielderToken(dir, label, "8").slice(0, 2);
-    const isFoulFly =
-      /邪|ファール|ファウル/.test(label) ||
-      /^F[1-9]|[1-9]F$|^FF[1-9]|[1-9]FF$/i.test(dir);
     const isIf = rc === "infield_fly";
-    const liner = !isIf && isLinerPlay(ab);
+    const rawFielder = inferFielderToken(dir, label, "").slice(0, 2);
     const shouldEmbedAerialDp =
       ab.outsInPlay >= 2 &&
       (rules.doublePlayMark === "dp_only" ||
@@ -2015,11 +2011,129 @@ export function formatAtBatPlayNotation(
         : "DP"
       : undefined;
 
+    if (isIf) {
+      // インフィールドフライは内野手（1〜6）のみ有効とし、守備位置未指定時は勝手に "8"（中）を補完せず単独 "IF" を描画する
+      const infielder = /^[1-6]$/.test(rawFielder.slice(0, 1))
+        ? rawFielder.slice(0, 1)
+        : "";
+      if (!infielder) {
+        if (
+          rules.flyLiner === "umbrella_f_prefix_ground_arc" ||
+          rules.flyLiner === "umbrella"
+        ) {
+          return {
+            mainText: "IF",
+            subText: aerialDpSub,
+            decorator: "umbrella",
+            isRedInk: false,
+          };
+        }
+        if (rules.flyLiner === "paren") {
+          return {
+            mainText: "(IF)",
+            subText: aerialDpSub,
+            decorator: "none",
+            isRedInk: false,
+          };
+        }
+        return {
+          mainText: "IF",
+          subText: aerialDpSub,
+          decorator: "none",
+          isRedInk: false,
+        };
+      }
+
+      if (
+        rules.flyLiner === "umbrella_f_prefix_ground_arc" ||
+        rules.flyLiner === "umbrella"
+      ) {
+        return {
+          mainText: infielder,
+          subText: "IF",
+          decorator: "umbrella",
+          isRedInk: false,
+        };
+      }
+      if (rules.flyLiner === "paren") {
+        return {
+          mainText: `(${infielder})`,
+          subText: "IF",
+          decorator: "none",
+          isRedInk: false,
+        };
+      }
+      return {
+        mainText: `${infielder}F`,
+        subText: "IF",
+        decorator: "none",
+        isRedInk: false,
+      };
+    }
+
+    const isFoulFly =
+      /邪|ファール|ファウル/.test(label) ||
+      /^F[1-9]|[1-9]F$|^FF[1-9]|[1-9]FF$/i.test(dir);
+    const liner = isLinerPlay(ab);
+
+    // 通常のフライ・ライナーで守備位置未入力の場合も "8"（中堅手）を捏造せず F / FF / L 記号で表現する
+    if (!rawFielder) {
+      const genericAerialToken = liner ? "L" : isFoulFly ? "FF" : "F";
+      if (
+        rules.flyLiner === "umbrella_f_prefix_ground_arc" ||
+        rules.flyLiner === "umbrella"
+      ) {
+        if (isBuntPlay && rules.buntMark === "square_all_bh" && !liner) {
+          return {
+            mainText: isFoulFly ? "FF" : "F",
+            subText: aerialDpSub,
+            decorator: "bunt_fly_square_umbrella",
+            isRedInk: false,
+          };
+        }
+        return {
+          mainText: genericAerialToken,
+          subText:
+            isBuntPlay && rules.buntMark === "b_prefix" ? "B" : aerialDpSub,
+          decorator: liner ? "overline" : "umbrella",
+          isRedInk: false,
+        };
+      }
+      if (rules.flyLiner === "paren") {
+        const baseText = liner ? "[L]" : isFoulFly ? "(FF)" : "(F)";
+        return {
+          mainText:
+            isBuntPlay && rules.buntMark === "b_prefix"
+              ? `B${baseText}`
+              : baseText,
+          subText: aerialDpSub,
+          decorator:
+            isBuntPlay && rules.buntMark === "square_all_bh"
+              ? "sac_square"
+              : "none",
+          isRedInk: false,
+        };
+      }
+      return {
+        mainText:
+          isBuntPlay && rules.buntMark === "b_prefix"
+            ? `B${genericAerialToken}`
+            : genericAerialToken,
+        subText: aerialDpSub,
+        decorator:
+          isBuntPlay && rules.buntMark === "square_all_bh"
+            ? "sac_square"
+            : "none",
+        isRedInk: false,
+      };
+    }
+
+    const f = rawFielder;
     if (rules.flyLiner === "umbrella_f_prefix_ground_arc") {
       if (liner) {
         return {
           mainText: f,
-          subText: isIf ? "IF" : aerialDpSub,
+          subText: aerialDpSub,
           decorator: "overline",
           isRedInk: false,
         };
@@ -2027,14 +2141,14 @@ export function formatAtBatPlayNotation(
       if (isFoulFly) {
         return {
           mainText: `F${f}`,
-          subText: isIf ? "IF" : aerialDpSub,
+          subText: aerialDpSub,
           decorator: "umbrella",
           isRedInk: false,
         };
       }
       return {
         mainText: f,
-        subText: isIf ? "IF" : aerialDpSub,
+        subText: aerialDpSub,
         decorator: "umbrella",
         isRedInk: false,
       };
@@ -2044,22 +2158,21 @@ export function formatAtBatPlayNotation(
       if (isBuntPlay && rules.buntMark === "square_all_bh" && !liner) {
         return {
           mainText: f,
-          subText: isIf ? "IF" : isFoulFly ? "F" : aerialDpSub,
+          subText: isFoulFly ? "F" : aerialDpSub,
           decorator: "bunt_fly_square_umbrella",
           isRedInk: false,
         };
       }
       return {
         mainText: f,
-        subText: isIf
-          ? "IF"
-          : isBuntPlay && rules.buntMark === "b_prefix"
-          ? isFoulFly
-            ? "BF"
-            : "B"
-          : isFoulFly
-          ? "F"
-          : aerialDpSub,
+        subText:
+          isBuntPlay && rules.buntMark === "b_prefix"
+            ? isFoulFly
+              ? "BF"
+              : "B"
+            : isFoulFly
+            ? "F"
+            : aerialDpSub,
         decorator: liner ? "overline" : "umbrella",
         isRedInk: false,
       };
@@ -2071,7 +2184,7 @@ export function formatAtBatPlayNotation(
           isBuntPlay && rules.buntMark === "b_prefix"
             ? `B${baseText}`
             : baseText,
-        subText: isIf ? "IF" : isFoulFly ? "F" : aerialDpSub,
+        subText: isFoulFly ? "F" : aerialDpSub,
         decorator:
           isBuntPlay && rules.buntMark === "square_all_bh"
             ? "sac_square"
@@ -2085,7 +2198,7 @@ export function formatAtBatPlayNotation(
         isBuntPlay && rules.buntMark === "b_prefix"
           ? `B${alphaText}`
           : alphaText,
-      subText: isIf ? "IF" : aerialDpSub,
+      subText: aerialDpSub,
       decorator:
         isBuntPlay && rules.buntMark === "square_all_bh"
           ? "sac_square"
