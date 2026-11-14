@@ -2,12 +2,13 @@
 import {
   classifyAtBatResultToken,
   classifyDroppedThirdStrikeReach,
-  evaluateHalfInningPitcherCharges,
+  evaluateHalfInningEarnedRunDetails,
   extractFieldingCreditsForAtBat,
   formatOfficialBaseballRate,
   hasCompanionCaughtStealingOnSameStealAttempt,
   isAerialMultiOutAtBat,
   mapSnapshotAdvancesToPitchingEvents,
+  type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
 } from "@/lib/liff/baseball-official-rules";
 import {
@@ -18,6 +19,7 @@ import {
 import {
   isPrePlayAdvanceMethod,
   simulateSheetRunners,
+  type AtBatRunnerSnapshot,
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
 import {
@@ -1127,22 +1129,31 @@ export function compileScorebookSheetModel(
       const playErrCredits = extractFieldingCreditsForAtBat(ab);
       innErrors += playErrCredits.teamErrorCount;
 
-      if (ab.resultCode === "error" || ab.resultCode === "interference") {
-        virtualErrorSavedOuts += 1;
-      } else if (ab.resultCode === "dropped_third_strike") {
-        const dts = classifyDroppedThirdStrikeReach(
-          ab.battedDirection,
-          ab.resultLabel
-        );
-        if (dts.kind !== "wp") {
-          virtualErrorSavedOuts += 1;
-        }
-      }
-
       const snap = runnerSnapshots.get(ab.id);
       if (!snap) {
+        if (ab.resultCode === "error") {
+          virtualErrorSavedOuts += 1;
+        } else if (ab.resultCode === "dropped_third_strike") {
+          const dts = classifyDroppedThirdStrikeReach(
+            ab.battedDirection,
+            ab.resultLabel
+          );
+          if (dts.kind !== "wp") {
+            virtualErrorSavedOuts += 1;
+          }
+        }
         continue;
       }
+
+      const errorSavedOutThisPlay = !snap.batterSummary.isOutOnBases
+        ? ab.resultCode === "error"
+          ? 1
+          : ab.resultCode === "dropped_third_strike" &&
+            classifyDroppedThirdStrikeReach(ab.battedDirection, ab.resultLabel)
+              .kind !== "wp"
+          ? 1
+          : 0
+        : 0;
 
       const innRunsBeforePlay = innRuns;
       if (idx === 0 && outsTracker === 0 && snap.outsBefore > 0) {
@@ -1860,6 +1871,7 @@ export function compileScorebookSheetModel(
       } else {
         originByBase = nextOrigins;
       }
+      virtualErrorSavedOuts += errorSavedOutThisPlay;
     }
   }
 
@@ -2313,13 +2325,30 @@ export function compileScorebookSheetModel(
     }
   }
 
-  // 4. 相手（守備側）投手ごとの登板成績集計（空表示の8・9回枠ではなく実プレイ最終回を上限とする）
-  const { pitcherRows, pitcherTotals } = compilePitcherRows(
+  // 4. 相手（守備側）投手ごとの登板成績集計 ＆ 公認野球規則 9.16 イニング再構成に基づく各得点セル（●自責／○非自責）の完全同期
+  const {
+    pitcherRows,
+    pitcherTotals,
+    earnedOriginAtBatIds,
+    unearnedOriginAtBatIds,
+  } = compilePitcherRows(
     structure.pitchers,
     atBats,
     Math.max(1, maxPlayedInning),
-    inningSummaries
+    inningSummaries,
+    runnerSnapshots
   );
+
+  for (const c of Object.values(cellsByKey)) {
+    if (!c.runScored) continue;
+    if (c.isTiebreakRunnerOnly) {
+      c.isUnearnedRun = true;
+    } else if (c.atBat && earnedOriginAtBatIds.has(c.atBat.id)) {
+      c.isUnearnedRun = false;
+    } else if (c.atBat && unearnedOriginAtBatIds.has(c.atBat.id)) {
+      c.isUnearnedRun = true;
+    }
+  }
 
   const batterRows = normalizedSlots.map((s) => {
     const row = batterStatsMap.get(s.battingOrder)!;
@@ -2420,14 +2449,92 @@ function cellsByBaseLookup(
   return map[key];
 }
 
+function buildPitchingEventsFromRunnerSnapshot(
+  ab: ScorebookV2AtBat,
+  snap: AtBatRunnerSnapshot | undefined,
+  isFirstAtBatOfInning: boolean
+): HalfInningAdvanceEventInput[] {
+  if (!snap) {
+    return mapSnapshotAdvancesToPitchingEvents(ab.advances, ab.batterName);
+  }
+
+  const events: HalfInningAdvanceEventInput[] = [];
+  const placedTiebreakBases = new Set<OccupiedBaseKey>();
+
+  for (const a of ab.advances) {
+    if (
+      a.method === "tiebreak" &&
+      !a.isOut &&
+      (a.to === "1B" || a.to === "2B" || a.to === "3B")
+    ) {
+      placedTiebreakBases.add(a.to);
+      events.push({
+        fromBase: 0,
+        toBase: baseToLevel(a.to) as 1 | 2 | 3,
+        isOut: false,
+        reason: "tiebreak",
+        runnerName: a.runnerName || undefined,
+      });
+    }
+  }
+
+  if (isFirstAtBatOfInning) {
+    for (const bKey of ["3B", "2B", "1B"] as const) {
+      const tbRunner = snap.basesBefore[bKey];
+      if (tbRunner && !placedTiebreakBases.has(bKey)) {
+        events.push({
+          fromBase: 0,
+          toBase: baseToLevel(bKey) as 1 | 2 | 3,
+          isOut: false,
+          reason: "tiebreak",
+          runnerName: tbRunner.name || undefined,
+        });
+      }
+    }
+  }
+
+  for (const m of snap.precedingRunnerMoves) {
+    if (m.from !== "BAT" && !m.isOut && m.from === m.to) continue;
+    events.push({
+      fromBase: baseToLevel(m.from) as 0 | 1 | 2 | 3,
+      toBase: baseToLevel(m.to) as 1 | 2 | 3 | 4,
+      isOut: m.isOut,
+      reason: m.method,
+      pitchNumber: m.pitchNumber,
+      runnerName: m.runnerName || undefined,
+    });
+  }
+
+  if (snap.batterSummary.finalBase !== null) {
+    const cleanInit =
+      snap.batterSummary.initialBase &&
+      snap.batterSummary.initialBase !== "HP"
+        ? (baseToLevel(snap.batterSummary.initialBase) as 1 | 2 | 3)
+        : undefined;
+    events.push({
+      fromBase: 0,
+      toBase: baseToLevel(snap.batterSummary.finalBase) as 1 | 2 | 3 | 4,
+      isOut: snap.batterSummary.isOutOnBases,
+      reason: snap.batterSummary.effectiveMethod,
+      runnerName: ab.batterName || undefined,
+      batterCleanBase: cleanInit,
+    });
+  }
+
+  return events;
+}
+
 function compilePitcherRows(
   stints: ScorebookPitcherStint[],
   atBats: ScorebookV2AtBat[],
   maxInning: number,
-  inningSummaries: ReadonlyArray<CompiledInningSummary>
+  inningSummaries: ReadonlyArray<CompiledInningSummary>,
+  runnerSnapshots: ReadonlyMap<string, AtBatRunnerSnapshot>
 ): {
   pitcherRows: CompiledPitcherRowStats[];
   pitcherTotals: CompiledPitcherTotals;
+  earnedOriginAtBatIds: Set<string>;
+  unearnedOriginAtBatIds: Set<string>;
 } {
   interface MutablePitcherAcc {
     order: number;
@@ -2540,7 +2647,7 @@ function compilePitcherRows(
     return accList.length - 1;
   };
 
-  // ハーフイニング単位で公認野球規則 9.16（救援登板時の前任責任走者帰属・2死後失策・タイブレーク非自責・振り逃げ暴投等）を評価
+  // ハーフイニング単位で公認野球規則 9.16（イニング再構成・救援登板時の前任責任走者帰属・2死後失策・タイブレーク非自責・振り逃げ暴投等）を評価
   const absByInning = new Map<number, ScorebookV2AtBat[]>();
   for (const ab of atBats) {
     const arr = absByInning.get(ab.inning) || [];
@@ -2548,11 +2655,15 @@ function compilePitcherRows(
     absByInning.set(ab.inning, arr);
   }
 
+  const earnedOriginAtBatIds = new Set<string>();
+  const unearnedOriginAtBatIds = new Set<string>();
+
   for (const [inn, innAbs] of absByInning.entries()) {
     const halfInningPlays: HalfInningAtBatPitchingInput[] = [];
     let lastPitcherIdxInInn = 0;
 
-    for (const ab of innAbs) {
+    for (let abIdx = 0; abIdx < innAbs.length; abIdx++) {
+      const ab = innAbs[abIdx]!;
       const pIdx = findOrCreatePitcherIndex(ab);
       lastPitcherIdxInInn = pIdx;
       const target = accList[pIdx]!;
@@ -2630,19 +2741,43 @@ function compilePitcherRows(
         target.balks += balkKeys.size;
       }
 
+      const snap = runnerSnapshots.get(ab.id);
+      const simRunsOnAb = snap
+        ? snap.precedingRunners.filter(
+            (pr) =>
+              (!pr.isOut && pr.finalBase === "HP") ||
+              pr.prePlayMoves.some((pm) => !pm.isOut && pm.to === "HP")
+          ).length +
+          (!snap.batterSummary.isOutOnBases &&
+          snap.batterSummary.finalBase === "HP"
+            ? 1
+            : 0)
+        : 0;
+
       halfInningPlays.push({
         atBatId: ab.id,
         pitcherKey: String(pIdx),
         rawResult: ab.resultCode,
-        runsInPlay: ab.runsInPlay || 0,
+        runsInPlay: Math.max(ab.runsInPlay || 0, simRunsOnAb),
         snapAb: ab,
-        advances: mapSnapshotAdvancesToPitchingEvents(ab.advances),
+        advances: buildPitchingEventsFromRunnerSnapshot(
+          ab,
+          snap,
+          abIdx === 0
+        ),
       });
     }
 
-    const inningCharges = evaluateHalfInningPitcherCharges(halfInningPlays);
+    const inningDetails = evaluateHalfInningEarnedRunDetails(halfInningPlays);
+    for (const id of inningDetails.earnedOriginAtBatIds) {
+      earnedOriginAtBatIds.add(id);
+    }
+    for (const id of inningDetails.unearnedOriginAtBatIds) {
+      unearnedOriginAtBatIds.add(id);
+    }
+
     let chargedRunsInInn = 0;
-    for (const [pKey, ch] of inningCharges.entries()) {
+    for (const [pKey, ch] of inningDetails.pitcherCharges.entries()) {
       const idxNum = Number(pKey);
       const target = accList[idxNum];
       if (!target) continue;
@@ -2715,7 +2850,12 @@ function compilePitcherRows(
     eraDisplay: formatRegulationEra(totEarned, totOuts),
   };
 
-  return { pitcherRows, pitcherTotals };
+  return {
+    pitcherRows,
+    pitcherTotals,
+    earnedOriginAtBatIds,
+    unearnedOriginAtBatIds,
+  };
 }
 
 export function formatSubstitutionRoleShort(
