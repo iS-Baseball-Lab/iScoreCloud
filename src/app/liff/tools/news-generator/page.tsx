@@ -10,6 +10,7 @@ import React, {
   useRef,
 } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -30,6 +31,9 @@ import {
   Plus,
   PenLine,
   Users,
+  Megaphone,
+  Loader2,
+  ArrowRight,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -326,6 +330,31 @@ function formatSyncTimeLabel(ts: number | null): string {
   return `${hh}:${mm}`;
 }
 
+function pickRecommendedMatchId(
+  list: ReadonlyArray<MatchOptionWithDraft>
+): string {
+  if (list.length === 0) return "";
+  const liveMatch = list.find((m) => m.status === "live");
+  if (liveMatch) return liveMatch.id;
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(now.getDate()).padStart(2, "0")}`;
+
+  const scheduledList = list.filter((m) => m.status === "scheduled");
+  if (scheduledList.length > 0) {
+    const upcoming = scheduledList
+      .filter((m) => m.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (upcoming.length > 0) return upcoming[0].id;
+    return scheduledList[0].id;
+  }
+
+  return list[0].id;
+}
+
 function LiffNewsGeneratorContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -340,9 +369,23 @@ function LiffNewsGeneratorContent() {
   const [mounted, setMounted] = useState(false);
   const [openLineupSignal, setOpenLineupSignal] = useState(0);
 
+  // 起動時モード選択ダイアログ（個別試合カードから ?matchId=... 指定で開いた場合のみスキップ）
+  const [showEntryModeModal, setShowEntryModeModal] = useState<boolean>(
+    () => !queryMatchId
+  );
+  const [entryMatchId, setEntryMatchId] = useState<string>("");
+  const [entryFreeId, setEntryFreeId] = useState<string>("");
+  const [isApplyingEntryChoice, setIsApplyingEntryChoice] = useState(false);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (queryMatchId) {
+      setShowEntryModeModal(false);
+    }
+  }, [queryMatchId]);
 
   const resolvedTeamId = useMemo(() => {
     if (isDemo || currentTeam?.id === "demo-team") return "demo-team";
@@ -681,13 +724,16 @@ function LiffNewsGeneratorContent() {
           ? "free"
           : "match";
 
+        const recommendedDemoMatchId = pickRecommendedMatchId(demoMatches);
+        const liveDemoMatch = demoMatches.find((m) => m.status === "live");
         const initialMatchKey =
           (queryMatchId && demoMatches.some((m) => m.id === queryMatchId)
             ? queryMatchId
             : "") ||
+          liveDemoMatch?.id ||
           (savedSel && demoMatches.some((m) => m.id === savedSel)
             ? savedSel
-            : demoMatches[0]?.id || "");
+            : recommendedDemoMatchId);
 
         const initialFreeEntry =
           mergedFreeList.find((f) => f.id === savedFreeId) || mergedFreeList[0];
@@ -747,8 +793,10 @@ function LiffNewsGeneratorContent() {
           setRosterPlayers(demoRoster);
           setFreeEntries(mergedFreeList);
           setSelectedFreeId(initialFreeEntry.id);
+          setEntryFreeId(initialFreeEntry.id);
           setReportMode(initialMode);
           setSelectedMatchKey(initialMatchKey);
+          setEntryMatchId(initialMatchKey);
           setActiveBundle(bundle);
           setDoc(initialDemoDoc);
           setIsLoadingContext(false);
@@ -832,15 +880,19 @@ function LiffNewsGeneratorContent() {
         const initialFreeEntry =
           mergedFreeList.find((f) => f.id === savedFreeId) || mergedFreeList[0];
         setSelectedFreeId(initialFreeEntry.id);
+        setEntryFreeId(initialFreeEntry.id);
         selectedFreeIdRef.current = initialFreeEntry.id;
 
+        const recommendedMatchId = pickRecommendedMatchId(fetchedMatches);
+        const liveFetchedMatch = fetchedMatches.find((m) => m.status === "live");
         const resolvedMatchKey =
           (queryMatchId && fetchedMatches.some((m) => m.id === queryMatchId)
             ? queryMatchId
             : "") ||
+          liveFetchedMatch?.id ||
           (savedSel && fetchedMatches.some((m) => m.id === savedSel)
             ? savedSel
-            : fetchedMatches[0]?.id || "");
+            : recommendedMatchId);
 
         const initialMode: ReportSourceMode = queryMatchId
           ? "match"
@@ -851,6 +903,7 @@ function LiffNewsGeneratorContent() {
         setReportMode(initialMode);
         reportModeRef.current = initialMode;
         setSelectedMatchKey(resolvedMatchKey);
+        setEntryMatchId(resolvedMatchKey);
 
         let bundle: MatchBundlePayload | null = null;
         if (initialMode === "match" && resolvedMatchKey) {
@@ -1749,9 +1802,10 @@ function LiffNewsGeneratorContent() {
     await pullLatestFromCloud(false);
   };
 
-  // バックグラウンド自動同期（試合連動モード時のみ稼働）
+  // バックグラウンド自動同期（試合連動モード時のみ稼働・起動ダイアログ表示中は停止）
   useEffect(() => {
     if (
+      showEntryModeModal ||
       resolvedTeamId === "demo-team" ||
       reportMode === "free" ||
       typeof window === "undefined"
@@ -1836,7 +1890,13 @@ function LiffNewsGeneratorContent() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [resolvedTeamId, reportMode, pullLatestFromCloud, flushPendingSaveNow]);
+  }, [
+    showEntryModeModal,
+    resolvedTeamId,
+    reportMode,
+    pullLatestFromCloud,
+    flushPendingSaveNow,
+  ]);
 
   // 5. 登録済みスタメン・記録済みスコアブックの再取込
   const handleReloadMatchLineup = () => {
@@ -2156,6 +2216,133 @@ function LiffNewsGeneratorContent() {
     } else {
       navigateToLiffRoot(router, pathname);
     }
+  };
+
+  const hasSavedFreeWork = useMemo(
+    () =>
+      freeEntries.length > 1 ||
+      freeEntries.some(
+        (entry) =>
+          entry.doc.opponentName.trim().length > 0 ||
+          entry.doc.halfInnings.some((h) => h.entries.length > 0) ||
+          entry.doc.lineup.some((s) => s.playerName.trim().length > 0)
+      ),
+    [freeEntries]
+  );
+
+  const handleConfirmEntryMatch = async () => {
+    const targetKey =
+      entryMatchId || selectedMatchKey || pickRecommendedMatchId(matches);
+    if (!targetKey) return;
+
+    setIsApplyingEntryChoice(true);
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), "match");
+        localStorage.setItem(
+          getLocalActiveSelectionKey(resolvedTeamId),
+          targetKey
+        );
+      }
+
+      const alreadyLoaded =
+        reportMode === "match" &&
+        targetKey === selectedMatchKey &&
+        (resolvedTeamId === "demo-team" || activeBundle?.matchId === targetKey);
+
+      setActiveTab("pad");
+      setShowEntryModeModal(false);
+
+      if (!alreadyLoaded) {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        isHydratingRef.current = true;
+        hasPendingLocalSaveRef.current = false;
+        queuedPushRef.current = false;
+        baseDocRef.current = null;
+        baseUpdatedAtRef.current = null;
+        setReportMode("match");
+        reportModeRef.current = "match";
+        setSelectedMatchKey(targetKey);
+        setManualEditedText(null);
+        setShowResetConfirm(false);
+        await loadMatchSelection(targetKey);
+      }
+    } finally {
+      setIsApplyingEntryChoice(false);
+    }
+  };
+
+  const handleConfirmEntryFree = () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), "free");
+    }
+
+    const targetId = entryFreeId || selectedFreeId || freeEntries[0]?.id || "";
+    const found =
+      freeEntries.find((f) => f.id === targetId) || freeEntries[0] || null;
+
+    isHydratingRef.current = true;
+    hasPendingLocalSaveRef.current = false;
+    queuedPushRef.current = false;
+    setReportMode("free");
+    reportModeRef.current = "free";
+    setActiveBundle(null);
+    setManualEditedText(null);
+    setShowResetConfirm(false);
+
+    if (found) {
+      const draftId = getDraftIdForMode(
+        resolvedTeamId,
+        "free",
+        selectedMatchKey,
+        personalOwnerKey,
+        found.id
+      );
+      activeDraftIdRef.current = draftId;
+      selectedFreeIdRef.current = found.id;
+      setSelectedFreeId(found.id);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          getLocalFreeActiveIdKey(resolvedTeamId, personalOwnerKey),
+          found.id
+        );
+      }
+      baseDocRef.current = found.doc;
+      baseUpdatedAtRef.current = found.updatedAt;
+      docRef.current = found.doc;
+      setDoc(found.doc);
+      setLastSyncedAt(found.updatedAt);
+      setLastSyncedBy(null);
+
+      const isBlankEntry =
+        !found.doc.opponentName.trim() &&
+        found.doc.halfInnings.every((h) => h.entries.length === 0);
+      setActiveTab(isBlankEntry ? "setup" : "pad");
+    } else {
+      setActiveTab("setup");
+    }
+
+    isHydratingRef.current = false;
+    setShowEntryModeModal(false);
+  };
+
+  const handleConfirmEntryCreateNewFree = () => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), "free");
+    }
+    setReportMode("free");
+    reportModeRef.current = "free";
+    setActiveBundle(null);
+    handleCreateNewFreeEntry();
+    setShowEntryModeModal(false);
   };
 
   return (
@@ -2715,6 +2902,223 @@ function LiffNewsGeneratorContent() {
           </div>
         )}
       </div>
+
+      {/* 起動時モード選択ダイアログ：試合連動 vs フリー作成（createPortal + z-[9999]） */}
+      {mounted &&
+        showEntryModeModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 animate-in fade-in duration-150"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="live-report-entry-mode-title"
+          >
+            <div
+              className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden text-foreground max-h-[90dvh] flex flex-col animate-in slide-in-from-bottom-4 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* A-3 上帯ダークキャップ */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-primary/20 text-sky-300 border border-primary/40 flex items-center justify-center shrink-0">
+                    <Megaphone className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2
+                      id="live-report-entry-mode-title"
+                      className="text-sm font-black text-white truncate"
+                    >
+                      LINE試合速報を開始
+                    </h2>
+                    <p className="text-[10.5px] font-bold text-slate-300 truncate mt-0.5">
+                      試合連動（共同編集）かフリー作成を選択してください
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* 選択ボディ（クールスレートトレイ × 純白カード） */}
+              <div className="p-3.5 sm:p-4 space-y-3 overflow-y-auto flex-1 min-h-0 bg-[#eef2f6] dark:bg-slate-900">
+                {isLoadingContext ? (
+                  <div className="rounded-2xl border border-border bg-card p-8 flex flex-col items-center justify-center gap-2.5 shadow-xs">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <p className="text-xs font-black text-muted-foreground">
+                      試合・速報データを準備中...
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* ① 試合連動カード */}
+                    <section className="relative rounded-2xl border border-border bg-card p-3.5 pt-4 space-y-3 shadow-xs overflow-hidden">
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-primary"
+                      />
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-9 h-9 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
+                          <Calendar className="w-4.5 h-4.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="text-sm font-black text-foreground">
+                              試合連動で速報する
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 text-[10px] font-black">
+                              チーム共有・共同編集
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed mt-0.5">
+                            登録済みの試合日程・スタメン・スコアと自動連携し、複数の担当者で同時編集できます。
+                          </p>
+                        </div>
+                      </div>
+
+                      {matchSelectOptions.length > 0 ? (
+                        <div className="space-y-2.5 pt-0.5">
+                          <div className="space-y-1">
+                            <span className="block text-[10.5px] font-black text-muted-foreground">
+                              対象の試合を選択
+                            </span>
+                            <LiffSelect
+                              value={entryMatchId}
+                              onChange={(val) => setEntryMatchId(val)}
+                              options={matchSelectOptions}
+                              title="連動する試合を選択"
+                              subtitle="登録済みの予定・試合中・終了試合と連携します"
+                              searchable={true}
+                              searchPlaceholder="対戦相手・日付・会場名で検索..."
+                              size="md"
+                              accent="primary"
+                              className="w-full"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isApplyingEntryChoice || !entryMatchId}
+                            onClick={() => void handleConfirmEntryMatch()}
+                            className="w-full h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
+                          >
+                            {isApplyingEntryChoice ? (
+                              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                            ) : (
+                              <Zap className="w-4 h-4 text-amber-300 shrink-0" />
+                            )}
+                            <span>この試合で速報を始める</span>
+                            <ArrowRight className="w-4 h-4 shrink-0" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-border bg-muted/60 p-3 space-y-2">
+                          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                            現在チームに登録されている試合がありません。下の「フリー作成」ですぐ始めるか、先に試合日程を登録してください。
+                          </p>
+                          <Link
+                            href="/liff/matches"
+                            className="inline-flex items-center gap-1 text-[11px] font-black text-primary hover:underline"
+                          >
+                            <span>試合・スコア画面を確認する</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Link>
+                        </div>
+                      )}
+                    </section>
+
+                    {/* ② フリー作成カード */}
+                    <section className="relative rounded-2xl border border-border bg-card p-3.5 pt-4 space-y-3 shadow-xs overflow-hidden">
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-amber-500"
+                      />
+                      <div className="flex items-start gap-2.5">
+                        <span className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                          <PenLine className="w-4.5 h-4.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h3 className="text-sm font-black text-foreground">
+                              フリーで作成する
+                            </h3>
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black">
+                              個人用・非共有
+                            </span>
+                          </div>
+                          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed mt-0.5">
+                            急な練習試合やテスト入力向け。相手名・スタメンを自由に入力でき、他メンバーには共有されません。
+                          </p>
+                        </div>
+                      </div>
+
+                      {hasSavedFreeWork ? (
+                        <div className="space-y-2 pt-0.5">
+                          <div className="space-y-1">
+                            <span className="block text-[10.5px] font-black text-muted-foreground">
+                              保存済みのフリー速報
+                            </span>
+                            <LiffSelect
+                              value={entryFreeId}
+                              onChange={(val) => setEntryFreeId(val)}
+                              options={freeSelectOptions}
+                              title="個別保存したフリー速報を選択"
+                              subtitle={`個人専用（非共有・現在${freeEntries.length}件）`}
+                              searchable={false}
+                              size="md"
+                              accent="amber"
+                              className="w-full"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={handleConfirmEntryFree}
+                              className="h-11 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-98 cursor-pointer"
+                            >
+                              <PenLine className="w-4 h-4 shrink-0" />
+                              <span>選択した速報を再開</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleConfirmEntryCreateNewFree}
+                              className="h-11 px-3 rounded-xl border border-amber-500/45 bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 dark:text-amber-200 text-xs font-black flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+                            >
+                              <Plus className="w-4 h-4 shrink-0" />
+                              <span>新しくフリー作成</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleConfirmEntryFree}
+                          className="w-full h-11 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
+                        >
+                          <PenLine className="w-4 h-4 shrink-0" />
+                          <span>フリー速報を始める</span>
+                          <ArrowRight className="w-4 h-4 shrink-0" />
+                        </button>
+                      )}
+                    </section>
+                  </>
+                )}
+              </div>
+
+              {/* Safe Area 対応フッター */}
+              <div className="border-t border-border bg-card px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleBackNavigation}
+                  className="w-full h-10 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4 shrink-0" />
+                  <span>前の画面へ戻る</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 初期化・フリー速報削除の確認モーダル（createPortal + z-[9999]） */}
       {mounted &&

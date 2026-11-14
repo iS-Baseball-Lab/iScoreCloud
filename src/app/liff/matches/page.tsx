@@ -3092,7 +3092,7 @@ function MatchesContent() {
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-card border border-border hover:border-primary/40 text-xs font-black text-primary shrink-0 transition-all active:scale-95 shadow-2xs"
                     >
                       <Megaphone className="w-3.5 h-3.5" />
-                      <span>速報ジェネレータv2</span>
+                      <span>LINE試合速報</span>
                     </Link>
                   </div>
                 </div>
