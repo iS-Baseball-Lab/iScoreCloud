@@ -34,6 +34,10 @@ import {
   Megaphone,
   Loader2,
   ArrowRight,
+  Eye,
+  Lock,
+  UserCheck,
+  ArrowLeftRight,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -60,7 +64,6 @@ import { loadDemoPlayerConditionOverrides } from "@/lib/liff/player-condition";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
-  compareHalfInningOrder,
   computeScoreboardSummary,
   createDefaultEmptyLineup,
   createInitialLiveReportDocument,
@@ -68,7 +71,6 @@ import {
   formatLiveReportText,
   hydrateLiveReportFromLegacyLogsAndScores,
   hydrateLiveReportFromScorebookSnapshot,
-  mergeLiveReportDocuments,
   normalizeReportPositionCode,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
@@ -89,7 +91,14 @@ import { LiveAtBatPadCard } from "./_components/LiveAtBatPadCard";
 import { InningLogTimelineCard } from "./_components/InningLogTimelineCard";
 
 type ReportSourceMode = "match" | "free";
+type MatchAccessMode = "edit" | "view";
 type WorkspaceTab = "pad" | "preview" | "timeline" | "setup";
+
+interface CallerReporterInfo {
+  memberName: string | null;
+  displayName: string | null;
+  canManageOrScore: boolean;
+}
 
 interface PersonalFreeReportEntry {
   id: string;
@@ -120,6 +129,7 @@ interface MatchBundlePayload {
   cloudDraft: {
     draftId: string;
     report: LiveReportV2Document;
+    editorOwnerKey?: string | null;
     updatedByName: string | null;
     updatedAt: number;
   } | null;
@@ -137,6 +147,7 @@ interface ContextApiResponse {
   success: boolean;
   isDemo?: boolean;
   error?: string;
+  callerReporter?: CallerReporterInfo;
   matches?: MatchOptionWithDraft[];
   players?: LiveReportRosterPlayer[];
   matchBundle?: MatchBundlePayload | null;
@@ -155,10 +166,53 @@ interface DraftApiResponse {
   error?: string;
   unchanged?: boolean;
   merged?: boolean;
-  report?: LiveReportV2Document;
+  conflict?: boolean;
+  forbiddenViewerOnly?: boolean;
+  editorOwnerKey?: string | null;
+  report?: LiveReportV2Document | null;
   cloudDraft?: MatchBundlePayload["cloudDraft"];
   updatedAt?: number;
   updatedByName?: string | null;
+}
+
+interface EditorLockApiResponse {
+  success: boolean;
+  error?: string;
+  conflict?: boolean;
+  forbiddenViewerOnly?: boolean;
+  editorOwnerKey?: string | null;
+  updatedByName?: string | null;
+  updatedAt?: number;
+  cloudDraft?: MatchBundlePayload["cloudDraft"];
+}
+
+function resolveInitialMatchAccessMode(params: {
+  matchOpt: MatchOptionWithDraft | null;
+  draftEditorOwnerKey: string | null | undefined;
+  myOwnerKey: string;
+  canManageOrScore: boolean;
+  isDemoTeam?: boolean;
+}): MatchAccessMode {
+  const {
+    matchOpt,
+    draftEditorOwnerKey,
+    myOwnerKey,
+    canManageOrScore,
+    isDemoTeam,
+  } = params;
+  if (draftEditorOwnerKey && draftEditorOwnerKey !== myOwnerKey) {
+    return "view";
+  }
+  if (draftEditorOwnerKey && draftEditorOwnerKey === myOwnerKey) {
+    return "edit";
+  }
+  if (isDemoTeam) {
+    return "edit";
+  }
+  if (matchOpt && matchOpt.lineLiveAssignees.length > 0) {
+    return matchOpt.isMyLineLiveAssigned ? "edit" : "view";
+  }
+  return canManageOrScore ? "edit" : "view";
 }
 
 function getDraftIdForMode(
@@ -403,7 +457,29 @@ function LiffNewsGeneratorContent() {
   );
 
   const [reportMode, setReportMode] = useState<ReportSourceMode>("match");
+  const [matchAccessMode, setMatchAccessMode] =
+    useState<MatchAccessMode>("edit");
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("pad");
+
+  const [callerReporter, setCallerReporter] = useState<CallerReporterInfo>({
+    memberName: null,
+    displayName: null,
+    canManageOrScore: false,
+  });
+  const [cloudEditorOwnerKey, setCloudEditorOwnerKey] = useState<string | null>(
+    null
+  );
+  const [cloudEditorName, setCloudEditorName] = useState<string | null>(null);
+  const [viewerHalfOverride, setViewerHalfOverride] = useState<{
+    inning: number;
+    isBottom: boolean;
+  } | null>(null);
+  const [showTakeoverConfirmModal, setShowTakeoverConfirmModal] =
+    useState(false);
+  const [takeoverTargetMatchId, setTakeoverTargetMatchId] = useState<
+    string | null
+  >(null);
+  const [isClaimingLock, setIsClaimingLock] = useState(false);
 
   const [matches, setMatches] = useState<MatchOptionWithDraft[]>([]);
   const [rosterPlayers, setRosterPlayers] = useState<LiveReportRosterPlayer[]>(
@@ -436,6 +512,8 @@ function LiffNewsGeneratorContent() {
   const isHydratingRef = useRef<boolean>(true);
   const docRef = useRef<LiveReportV2Document>(doc);
   const reportModeRef = useRef<ReportSourceMode>(reportMode);
+  const matchAccessModeRef = useRef<MatchAccessMode>(matchAccessMode);
+  const callerReporterRef = useRef<CallerReporterInfo>(callerReporter);
   const selectedFreeIdRef = useRef<string>(selectedFreeId);
   const baseDocRef = useRef<LiveReportV2Document | null>(null);
   const baseUpdatedAtRef = useRef<number | null>(null);
@@ -452,6 +530,11 @@ function LiffNewsGeneratorContent() {
         : null,
     [reportMode, matches, selectedMatchKey]
   );
+
+  const isReadOnlyViewer =
+    reportMode === "match" &&
+    Boolean(selectedMatchKey) &&
+    matchAccessMode === "view";
 
   const activeDraftId = useMemo(
     () =>
@@ -482,8 +565,173 @@ function LiffNewsGeneratorContent() {
     reportModeRef.current = reportMode;
   }, [reportMode]);
   useEffect(() => {
+    matchAccessModeRef.current = matchAccessMode;
+  }, [matchAccessMode]);
+  useEffect(() => {
+    callerReporterRef.current = callerReporter;
+  }, [callerReporter]);
+  useEffect(() => {
     selectedFreeIdRef.current = selectedFreeId;
   }, [selectedFreeId]);
+
+  const syncMatchLockMetaInList = useCallback(
+    (
+      matchId: string,
+      meta: {
+        editorOwnerKey: string | null;
+        editorName: string | null;
+        editorUpdatedAt?: number | null;
+        hasCloudDraft?: boolean;
+      }
+    ) => {
+      if (!matchId) return;
+      setMatches((prev) =>
+        prev.map((m) =>
+          m.id === matchId
+            ? {
+                ...m,
+                editorOwnerKey: meta.editorOwnerKey,
+                editorName: meta.editorName,
+                editorUpdatedAt:
+                  meta.editorUpdatedAt !== undefined
+                    ? meta.editorUpdatedAt
+                    : m.editorUpdatedAt,
+                hasCloudDraft:
+                  meta.hasCloudDraft !== undefined
+                    ? meta.hasCloudDraft
+                    : m.hasCloudDraft,
+              }
+            : m
+        )
+      );
+    },
+    []
+  );
+
+  const resolveMyReporterDisplayName = useCallback((): string | null => {
+    return (
+      callerReporterRef.current.memberName?.trim() ||
+      callerReporterRef.current.displayName?.trim() ||
+      profile?.displayName?.trim() ||
+      docRef.current.reporterNames.trim() ||
+      null
+    );
+  }, [profile?.displayName]);
+
+  // 入力担当ロックの明示取得・引き継ぎ
+  const claimMatchEditorLock = useCallback(
+    async (
+      targetMatchId: string,
+      takeover: boolean,
+      silent = false
+    ): Promise<boolean> => {
+      if (!targetMatchId) return false;
+      if (resolvedTeamId === "demo-team") {
+        const myName = resolveMyReporterDisplayName() || "体験担当";
+        matchAccessModeRef.current = "edit";
+        setMatchAccessMode("edit");
+        setViewerHalfOverride(null);
+        setCloudEditorOwnerKey(personalOwnerKey);
+        setCloudEditorName(myName);
+        syncMatchLockMetaInList(targetMatchId, {
+          editorOwnerKey: personalOwnerKey,
+          editorName: myName,
+          editorUpdatedAt: Date.now(),
+        });
+        return true;
+      }
+
+      setIsClaimingLock(true);
+      try {
+        const res = await fetch("/api/liff/news-generator/editor-lock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId,
+            matchId: targetMatchId,
+            ownerKey: personalOwnerKey,
+            editorName: resolveMyReporterDisplayName(),
+            action: "claim",
+            takeover,
+          }),
+        });
+        const json = (await res.json()) as EditorLockApiResponse;
+
+        if (!res.ok || !json.success) {
+          const remoteOwner = json.editorOwnerKey ?? null;
+          const remoteName = json.updatedByName ?? null;
+          setCloudEditorOwnerKey(remoteOwner);
+          setCloudEditorName(remoteName);
+          syncMatchLockMetaInList(targetMatchId, {
+            editorOwnerKey: remoteOwner,
+            editorName: remoteName,
+            editorUpdatedAt: json.updatedAt ?? undefined,
+          });
+          matchAccessModeRef.current = "view";
+          setMatchAccessMode("view");
+          setViewerHalfOverride(null);
+          if (!silent) {
+            toast.info(
+              json.error || "担当外または他メンバー入力中のため閲覧モードで開きました"
+            );
+          }
+          return false;
+        }
+
+        const effectiveOwner = json.editorOwnerKey ?? personalOwnerKey;
+        const effectiveName =
+          json.updatedByName ?? resolveMyReporterDisplayName();
+        matchAccessModeRef.current = "edit";
+        setMatchAccessMode("edit");
+        setViewerHalfOverride(null);
+        setCloudEditorOwnerKey(effectiveOwner);
+        setCloudEditorName(effectiveName);
+        syncMatchLockMetaInList(targetMatchId, {
+          editorOwnerKey: effectiveOwner,
+          editorName: effectiveName,
+          editorUpdatedAt: json.updatedAt ?? Date.now(),
+          hasCloudDraft: json.cloudDraft ? true : undefined,
+        });
+
+        const expectedDraftId = getDraftIdForMode(
+          resolvedTeamId,
+          "match",
+          targetMatchId,
+          personalOwnerKey,
+          selectedFreeIdRef.current
+        );
+        if (json.cloudDraft && activeDraftIdRef.current === expectedDraftId) {
+          baseDocRef.current = json.cloudDraft.report;
+          baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
+          docRef.current = json.cloudDraft.report;
+          setDoc(json.cloudDraft.report);
+          setLastSyncedAt(json.cloudDraft.updatedAt);
+          setLastSyncedBy(json.cloudDraft.updatedByName);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(
+              getLocalDraftStorageKey(resolvedTeamId, expectedDraftId),
+              JSON.stringify(json.cloudDraft.report)
+            );
+          }
+        }
+        return true;
+      } catch (err) {
+        console.error(err);
+        if (!silent) {
+          toast.error("入力担当の取得に失敗しました");
+        }
+        return false;
+      } finally {
+        setIsClaimingLock(false);
+      }
+    },
+    [
+      resolvedTeamId,
+      personalOwnerKey,
+      resolveMyReporterDisplayName,
+      syncMatchLockMetaInList,
+    ]
+  );
 
   // 指定試合＋バンドルから初期 LiveReportV2Document を組み立てる
   const buildDocumentFromMatchAndBundle = useCallback(
@@ -630,8 +878,12 @@ function LiffNewsGeneratorContent() {
     setIsLoadingContext(true);
     setManualEditedText(null);
     setShowResetConfirm(false);
+    setShowTakeoverConfirmModal(false);
+    setViewerHalfOverride(null);
     setLastSyncedAt(null);
     setLastSyncedBy(null);
+    setCloudEditorOwnerKey(null);
+    setCloudEditorName(null);
 
     const savedReporter =
       typeof window !== "undefined"
@@ -682,6 +934,10 @@ function LiffNewsGeneratorContent() {
             hasScorebook: Boolean(m.hasScorebook || m.status === "finished"),
             hasLineup: Boolean(m.hasLineup || m.status === "finished"),
             lineLiveAssignees: assignees,
+            isMyLineLiveAssigned: true,
+            editorOwnerKey: null,
+            editorName: null,
+            editorUpdatedAt: null,
             hasCloudDraft: false,
           };
         });
@@ -772,6 +1028,16 @@ function LiffNewsGeneratorContent() {
           : null;
 
         if (!cancelled) {
+          const demoCaller: CallerReporterInfo = {
+            memberName: null,
+            displayName: profile?.displayName || null,
+            canManageOrScore: true,
+          };
+          callerReporterRef.current = demoCaller;
+          setCallerReporter(demoCaller);
+          matchAccessModeRef.current = "edit";
+          setMatchAccessMode("edit");
+
           const initialDemoDoc =
             initialMode === "free"
               ? initialFreeEntry.doc
@@ -840,6 +1106,14 @@ function LiffNewsGeneratorContent() {
         if (!res.ok || !json.success) {
           throw new Error(json.error || "初期データの取得に失敗しました");
         }
+
+        const fetchedCaller: CallerReporterInfo = json.callerReporter || {
+          memberName: null,
+          displayName: profile?.displayName || null,
+          canManageOrScore: false,
+        };
+        callerReporterRef.current = fetchedCaller;
+        setCallerReporter(fetchedCaller);
 
         const fetchedMatches = json.matches || [];
         const fetchedPlayers = json.players || [];
@@ -933,6 +1207,8 @@ function LiffNewsGeneratorContent() {
         activeDraftIdRef.current = draftId;
 
         if (initialMode === "free") {
+          matchAccessModeRef.current = "edit";
+          setMatchAccessMode("edit");
           baseDocRef.current = initialFreeEntry.doc;
           baseUpdatedAtRef.current = initialFreeEntry.updatedAt;
           docRef.current = initialFreeEntry.doc;
@@ -941,6 +1217,25 @@ function LiffNewsGeneratorContent() {
           setLastSyncedBy(null);
         } else {
           const cloudDraft = bundle?.cloudDraft || null;
+          const targetMatch =
+            fetchedMatches.find((m) => m.id === resolvedMatchKey) || null;
+          const draftOwnerKey =
+            cloudDraft?.editorOwnerKey ?? targetMatch?.editorOwnerKey ?? null;
+          const draftEditorName =
+            cloudDraft?.updatedByName ?? targetMatch?.editorName ?? null;
+
+          const initialAccess = resolveInitialMatchAccessMode({
+            matchOpt: targetMatch,
+            draftEditorOwnerKey: draftOwnerKey,
+            myOwnerKey: personalOwnerKey,
+            canManageOrScore: fetchedCaller.canManageOrScore,
+            isDemoTeam: false,
+          });
+          matchAccessModeRef.current = initialAccess;
+          setMatchAccessMode(initialAccess);
+          setCloudEditorOwnerKey(draftOwnerKey);
+          setCloudEditorName(draftEditorName);
+
           const localRaw =
             typeof window !== "undefined"
               ? localStorage.getItem(
@@ -960,9 +1255,6 @@ function LiffNewsGeneratorContent() {
               )
             : null;
 
-          const targetMatch =
-            fetchedMatches.find((m) => m.id === resolvedMatchKey) || null;
-
           if (cloudDraft) {
             baseDocRef.current = cloudDraft.report;
             baseUpdatedAtRef.current = cloudDraft.updatedAt;
@@ -970,13 +1262,13 @@ function LiffNewsGeneratorContent() {
             setDoc(cloudDraft.report);
             setLastSyncedAt(cloudDraft.updatedAt);
             setLastSyncedBy(cloudDraft.updatedByName);
-            if (typeof window !== "undefined") {
+            if (initialAccess === "edit" && typeof window !== "undefined") {
               localStorage.setItem(
                 getLocalDraftStorageKey(resolvedTeamId, draftId),
                 JSON.stringify(cloudDraft.report)
               );
             }
-          } else if (localParsed) {
+          } else if (initialAccess === "edit" && localParsed) {
             baseDocRef.current = null;
             baseUpdatedAtRef.current = null;
             docRef.current = localParsed;
@@ -991,6 +1283,19 @@ function LiffNewsGeneratorContent() {
             baseUpdatedAtRef.current = null;
             docRef.current = built;
             setDoc(built);
+          }
+
+          // ?matchId=... で直接試合を開いた場合、担当モードならロック取得、閲覧モードなら通知
+          if (queryMatchId && resolvedMatchKey === queryMatchId) {
+            if (initialAccess === "edit" && !draftOwnerKey) {
+              void claimMatchEditorLock(resolvedMatchKey, false, true);
+            } else if (initialAccess === "view") {
+              toast.info(
+                draftEditorName
+                  ? `${draftEditorName}さんが入力担当のため、閲覧モードで表示しています`
+                  : "担当以外のメンバーのため、閲覧モードで表示しています"
+              );
+            }
           }
         }
       } catch (err) {
@@ -1015,8 +1320,10 @@ function LiffNewsGeneratorContent() {
     personalOwnerKey,
     queryMatchId,
     scoreTeamName,
+    profile?.displayName,
     buildDemoBundle,
     buildDocumentFromMatchAndBundle,
+    claimMatchEditorLock,
   ]);
 
   // 2A. モード切替ハンドラ（⚾ 試合連動 ⇔ ✏️ フリー作成）
@@ -1037,12 +1344,16 @@ function LiffNewsGeneratorContent() {
     reportModeRef.current = nextMode;
     setManualEditedText(null);
     setShowResetConfirm(false);
+    setShowTakeoverConfirmModal(false);
+    setViewerHalfOverride(null);
 
     if (typeof window !== "undefined") {
       localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), nextMode);
     }
 
     if (nextMode === "free") {
+      matchAccessModeRef.current = "edit";
+      setMatchAccessMode("edit");
       setActiveBundle(null);
       const currentFree =
         freeEntries.find((f) => f.id === selectedFreeId) || freeEntries[0];
@@ -1079,7 +1390,13 @@ function LiffNewsGeneratorContent() {
   };
 
   // 2B. 試合セレクタ手動切替ハンドラ（試合連動モード専用）
-  const loadMatchSelection = async (nextKey: string) => {
+  const loadMatchSelection = async (
+    nextKey: string,
+    options?: {
+      desiredMode?: MatchAccessMode;
+      takeover?: boolean;
+    }
+  ) => {
     const savedReporter =
       typeof window !== "undefined"
         ? localStorage.getItem(getLocalReporterStorageKey(resolvedTeamId)) ||
@@ -1095,6 +1412,7 @@ function LiffNewsGeneratorContent() {
       selectedFreeIdRef.current
     );
     activeDraftIdRef.current = draftId;
+    setViewerHalfOverride(null);
 
     const localRaw =
       typeof window !== "undefined"
@@ -1114,20 +1432,18 @@ function LiffNewsGeneratorContent() {
       : null;
 
     if (resolvedTeamId === "demo-team") {
+      const nextDemoAccess: MatchAccessMode = options?.desiredMode ?? "edit";
+      matchAccessModeRef.current = nextDemoAccess;
+      setMatchAccessMode(nextDemoAccess);
       const bundle = buildDemoBundle(nextKey, targetMatch);
       const nextDemoDoc =
-        localParsed ||
+        (nextDemoAccess === "edit" ? localParsed : null) ||
         buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter);
       setActiveBundle(bundle);
       docRef.current = nextDemoDoc;
       setDoc(nextDemoDoc);
       isHydratingRef.current = false;
       return;
-    }
-
-    if (localParsed) {
-      docRef.current = localParsed;
-      setDoc(localParsed);
     }
 
     try {
@@ -1144,6 +1460,44 @@ function LiffNewsGeneratorContent() {
       const bundle = bJson.matchBundle || null;
       setActiveBundle(bundle);
 
+      const draftOwnerKey =
+        bundle?.cloudDraft?.editorOwnerKey ??
+        targetMatch?.editorOwnerKey ??
+        null;
+      const draftEditorName =
+        bundle?.cloudDraft?.updatedByName ?? targetMatch?.editorName ?? null;
+
+      let resolvedAccess: MatchAccessMode;
+      if (options?.desiredMode === "view") {
+        resolvedAccess = "view";
+        setCloudEditorOwnerKey(draftOwnerKey);
+        setCloudEditorName(draftEditorName);
+      } else if (options?.desiredMode === "edit") {
+        const claimed = await claimMatchEditorLock(
+          nextKey,
+          Boolean(options.takeover),
+          false
+        );
+        resolvedAccess = claimed ? "edit" : "view";
+      } else {
+        resolvedAccess = resolveInitialMatchAccessMode({
+          matchOpt: targetMatch,
+          draftEditorOwnerKey: draftOwnerKey,
+          myOwnerKey: personalOwnerKey,
+          canManageOrScore: callerReporterRef.current.canManageOrScore,
+          isDemoTeam: false,
+        });
+        setCloudEditorOwnerKey(draftOwnerKey);
+        setCloudEditorName(draftEditorName);
+        if (resolvedAccess === "edit" && !draftOwnerKey) {
+          const claimed = await claimMatchEditorLock(nextKey, false, true);
+          resolvedAccess = claimed ? "edit" : "view";
+        }
+      }
+
+      matchAccessModeRef.current = resolvedAccess;
+      setMatchAccessMode(resolvedAccess);
+
       if (bundle?.cloudDraft) {
         baseDocRef.current = bundle.cloudDraft.report;
         baseUpdatedAtRef.current = bundle.cloudDraft.updatedAt;
@@ -1151,13 +1505,18 @@ function LiffNewsGeneratorContent() {
         setDoc(bundle.cloudDraft.report);
         setLastSyncedAt(bundle.cloudDraft.updatedAt);
         setLastSyncedBy(bundle.cloudDraft.updatedByName);
-        if (typeof window !== "undefined") {
+        if (resolvedAccess === "edit" && typeof window !== "undefined") {
           localStorage.setItem(
             getLocalDraftStorageKey(resolvedTeamId, draftId),
             JSON.stringify(bundle.cloudDraft.report)
           );
         }
-      } else if (!localParsed) {
+      } else if (resolvedAccess === "edit" && localParsed) {
+        docRef.current = localParsed;
+        setDoc(localParsed);
+        setLastSyncedAt(null);
+        setLastSyncedBy(null);
+      } else {
         const built = buildDocumentFromMatchAndBundle(
           targetMatch,
           bundle,
@@ -1196,6 +1555,8 @@ function LiffNewsGeneratorContent() {
     setSelectedMatchKey(nextKey);
     setManualEditedText(null);
     setShowResetConfirm(false);
+    setShowTakeoverConfirmModal(false);
+    setViewerHalfOverride(null);
 
     if (typeof window !== "undefined") {
       localStorage.setItem(getLocalActiveSelectionKey(resolvedTeamId), nextKey);
@@ -1324,7 +1685,9 @@ function LiffNewsGeneratorContent() {
       await fetch(
         `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
           resolvedTeamId
-        )}&draftId=${encodeURIComponent(targetDraftId)}`,
+        )}&draftId=${encodeURIComponent(
+          targetDraftId
+        )}&ownerKey=${encodeURIComponent(personalOwnerKey)}`,
         { method: "DELETE" }
       ).catch(() => null);
     }
@@ -1390,19 +1753,23 @@ function LiffNewsGeneratorContent() {
     );
   };
 
-  // 3. 端末自動保存 ＆ クラウド保存（試合連動時は3-Way共同編集マージ、フリー作成時は個人専用保存）
+  // 3. 端末自動保存 ＆ クラウド排他保存（試合連動時は単一担当者排他保存・閲覧モードは完全遮断）
   const pushDraftToCloud = useCallback(
     async (options?: {
       silent?: boolean;
-      forceOverwrite?: boolean;
+      takeoverEditor?: boolean;
       preferKeepalive?: boolean;
     }) => {
       const silent = options?.silent ?? true;
       const isFreeMode = reportModeRef.current === "free";
-      const forceOverwrite = isFreeMode
-        ? true
-        : options?.forceOverwrite ?? false;
       const preferKeepalive = options?.preferKeepalive ?? false;
+
+      // 閲覧モード（担当外）では一切クラウドへ書き込まない
+      if (!isFreeMode && matchAccessModeRef.current === "view") {
+        hasPendingLocalSaveRef.current = false;
+        queuedPushRef.current = false;
+        return;
+      }
 
       if (resolvedTeamId === "demo-team") {
         hasPendingLocalSaveRef.current = false;
@@ -1419,14 +1786,12 @@ function LiffNewsGeneratorContent() {
       const requestMatchId =
         !isFreeMode && selectedMatchKey ? selectedMatchKey : null;
       const snapshotSent = docRef.current;
-      const baseSent = baseDocRef.current;
-      const baseTsSent = baseUpdatedAtRef.current;
 
       isPushingRef.current = true;
       try {
         setIsSyncingCloud(true);
         const updaterName =
-          profile?.displayName?.trim() ||
+          resolveMyReporterDisplayName() ||
           snapshotSent.reporterNames.trim() ||
           null;
 
@@ -1434,10 +1799,9 @@ function LiffNewsGeneratorContent() {
           teamId: resolvedTeamId,
           draftId: requestDraftId,
           matchId: requestMatchId,
+          ownerKey: personalOwnerKey,
+          takeoverEditor: options?.takeoverEditor ?? false,
           report: snapshotSent,
-          baseUpdatedAt: baseTsSent,
-          baseReport: baseSent,
-          forceOverwrite,
           updatedByName: updaterName,
         });
 
@@ -1455,64 +1819,84 @@ function LiffNewsGeneratorContent() {
           return;
         }
 
+        // 他メンバーが入力担当保持中(409) または 担当外(403) の場合は上書きせず閲覧モードへ安全降格
+        if (res.status === 409 || res.status === 403) {
+          hasPendingLocalSaveRef.current = false;
+          queuedPushRef.current = false;
+          matchAccessModeRef.current = "view";
+          setMatchAccessMode("view");
+          setViewerHalfOverride(null);
+          const remoteOwner = json.editorOwnerKey ?? null;
+          const remoteName = json.updatedByName ?? null;
+          setCloudEditorOwnerKey(remoteOwner);
+          setCloudEditorName(remoteName);
+          if (requestMatchId) {
+            syncMatchLockMetaInList(requestMatchId, {
+              editorOwnerKey: remoteOwner,
+              editorName: remoteName,
+              editorUpdatedAt: json.updatedAt ?? undefined,
+              hasCloudDraft: json.report ? true : undefined,
+            });
+          }
+          if (json.report) {
+            const remoteDoc = sanitizeLiveReportDocument(
+              json.report,
+              scoreTeamName
+            );
+            if (remoteDoc) {
+              baseDocRef.current = remoteDoc;
+              baseUpdatedAtRef.current = json.updatedAt ?? Date.now();
+              docRef.current = remoteDoc;
+              setDoc(remoteDoc);
+              setLastSyncedAt(json.updatedAt ?? Date.now());
+              setLastSyncedBy(remoteName);
+            }
+          }
+          toast.info(
+            json.error ||
+              `${
+                remoteName || "担当者"
+              }さんが入力担当のため、閲覧モードへ切り替えました`
+          );
+          return;
+        }
+
         if (res.ok && json.success) {
           const serverDoc =
             (json.report
               ? sanitizeLiveReportDocument(json.report, scoreTeamName)
               : null) || snapshotSent;
           const nextUpdatedAt = json.updatedAt || Date.now();
+          const effectiveEditorName = isFreeMode
+            ? null
+            : json.updatedByName ?? updaterName;
 
           baseDocRef.current = serverDoc;
           baseUpdatedAtRef.current = nextUpdatedAt;
           setLastSyncedAt(nextUpdatedAt);
-          setLastSyncedBy(isFreeMode ? null : json.updatedByName ?? updaterName);
+          setLastSyncedBy(effectiveEditorName);
+
+          if (!isFreeMode) {
+            const effectiveOwner = json.editorOwnerKey ?? personalOwnerKey;
+            setCloudEditorOwnerKey(effectiveOwner);
+            setCloudEditorName(effectiveEditorName);
+            if (requestMatchId) {
+              syncMatchLockMetaInList(requestMatchId, {
+                editorOwnerKey: effectiveOwner,
+                editorName: effectiveEditorName,
+                editorUpdatedAt: nextUpdatedAt,
+                hasCloudDraft: true,
+              });
+            }
+          }
 
           if (docRef.current === snapshotSent) {
             hasPendingLocalSaveRef.current = false;
-            if (!isFreeMode && json.merged && json.report) {
-              const reconciled = mergeLiveReportDocuments({
-                base: baseSent,
-                remote: serverDoc,
-                local: snapshotSent,
-                clientSideCursorFollow: true,
-              });
-              docRef.current = reconciled;
-              setDoc(reconciled);
-              if (typeof window !== "undefined") {
-                localStorage.setItem(
-                  getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
-                  JSON.stringify(reconciled)
-                );
-              }
-            }
           } else {
             hasPendingLocalSaveRef.current = true;
             queuedPushRef.current = true;
-            if (!isFreeMode && json.merged && json.report) {
-              const rebased = mergeLiveReportDocuments({
-                base: snapshotSent,
-                remote: serverDoc,
-                local: docRef.current,
-                clientSideCursorFollow: true,
-              });
-              docRef.current = rebased;
-              setDoc(rebased);
-              if (typeof window !== "undefined") {
-                localStorage.setItem(
-                  getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
-                  JSON.stringify(rebased)
-                );
-              }
-            }
           }
 
-          if (requestMatchId) {
-            setMatches((prev) =>
-              prev.map((m) =>
-                m.id === requestMatchId ? { ...m, hasCloudDraft: true } : m
-              )
-            );
-          }
           if (!silent) {
             toast.success(
               isFreeMode
@@ -1531,7 +1915,9 @@ function LiffNewsGeneratorContent() {
         setIsSyncingCloud(false);
         if (
           queuedPushRef.current &&
-          activeDraftIdRef.current === requestDraftId
+          activeDraftIdRef.current === requestDraftId &&
+          (reportModeRef.current === "free" ||
+            matchAccessModeRef.current === "edit")
         ) {
           queuedPushRef.current = false;
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -1542,7 +1928,14 @@ function LiffNewsGeneratorContent() {
         }
       }
     },
-    [resolvedTeamId, selectedMatchKey, profile?.displayName, scoreTeamName]
+    [
+      resolvedTeamId,
+      selectedMatchKey,
+      personalOwnerKey,
+      resolveMyReporterDisplayName,
+      scoreTeamName,
+      syncMatchLockMetaInList,
+    ]
   );
 
   const flushPendingSaveNow = useCallback(
@@ -1550,6 +1943,13 @@ function LiffNewsGeneratorContent() {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = null;
+      }
+      if (
+        reportModeRef.current === "match" &&
+        matchAccessModeRef.current === "view"
+      ) {
+        hasPendingLocalSaveRef.current = false;
+        return;
       }
       if (hasPendingLocalSaveRef.current && !isHydratingRef.current) {
         void pushDraftToCloud({
@@ -1561,8 +1961,59 @@ function LiffNewsGeneratorContent() {
     [pushDraftToCloud]
   );
 
+  // 担当入力モードから閲覧モードへ自主的に切り替え（ロック解放）
+  const releaseMatchEditorLockAndSwitchToView = useCallback(async () => {
+    if (reportModeRef.current !== "match" || !selectedMatchKey) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (hasPendingLocalSaveRef.current) {
+      await pushDraftToCloud({ silent: true });
+    }
+
+    matchAccessModeRef.current = "view";
+    setMatchAccessMode("view");
+    setViewerHalfOverride(null);
+
+    if (resolvedTeamId !== "demo-team") {
+      await fetch("/api/liff/news-generator/editor-lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: resolvedTeamId,
+          matchId: selectedMatchKey,
+          ownerKey: personalOwnerKey,
+          action: "release",
+        }),
+      }).catch(() => null);
+    }
+
+    setCloudEditorOwnerKey(null);
+    syncMatchLockMetaInList(selectedMatchKey, {
+      editorOwnerKey: null,
+      editorName: cloudEditorName,
+    });
+    toast.info("閲覧モードに切り替えました（入力ロックを解除しました）");
+  }, [
+    selectedMatchKey,
+    resolvedTeamId,
+    personalOwnerKey,
+    cloudEditorName,
+    pushDraftToCloud,
+    syncMatchLockMetaInList,
+  ]);
+
   const handleUpdateDoc = useCallback(
     (updater: (prev: LiveReportV2Document) => LiveReportV2Document) => {
+      // 閲覧モード中は一切ドキュメントを更新しない
+      if (
+        reportModeRef.current === "match" &&
+        matchAccessModeRef.current === "view"
+      ) {
+        return;
+      }
+
       setDoc((prev) => {
         const next = updater(prev);
         docRef.current = next;
@@ -1631,7 +2082,7 @@ function LiffNewsGeneratorContent() {
     };
   }, []);
 
-  // 4. クラウドから最新状態を同期（試合連動モード専用 — フリー作成モードでは他者との共有・ポーリングを行わない）
+  // 4. クラウドから最新状態を同期（閲覧モードのリアルタイム自動更新 ＆ 担当引き継ぎ検知）
   const pullLatestFromCloud = useCallback(
     async (silent: boolean) => {
       if (reportModeRef.current === "free") {
@@ -1663,6 +2114,7 @@ function LiffNewsGeneratorContent() {
       }
 
       const requestDraftId = activeDraftIdRef.current;
+      const requestMatchId = selectedMatchKey;
       const knownTs = silent ? baseUpdatedAtRef.current || 0 : 0;
 
       isPollingRef.current = true;
@@ -1698,10 +2150,74 @@ function LiffNewsGeneratorContent() {
         }
 
         if (json.unchanged) {
+          const remoteOwner = json.editorOwnerKey ?? null;
+          const remoteName = json.updatedByName ?? null;
+          setCloudEditorOwnerKey(remoteOwner);
+          setCloudEditorName(remoteName);
+          if (requestMatchId) {
+            syncMatchLockMetaInList(requestMatchId, {
+              editorOwnerKey: remoteOwner,
+              editorName: remoteName,
+              editorUpdatedAt: json.updatedAt ?? undefined,
+            });
+          }
+          // 自分が入力モード中に他メンバーが引き継いだ場合は即座に閲覧モードへ切替
+          if (
+            matchAccessModeRef.current === "edit" &&
+            remoteOwner &&
+            remoteOwner !== personalOwnerKey
+          ) {
+            hasPendingLocalSaveRef.current = false;
+            queuedPushRef.current = false;
+            matchAccessModeRef.current = "view";
+            setMatchAccessMode("view");
+            setViewerHalfOverride(null);
+            toast.info(
+              `${remoteName || "他の担当者"}さんが入力を引き継ぎました（閲覧モードへ切替）`
+            );
+          }
           return;
         }
 
         if (json.cloudDraft) {
+          const remoteOwner = json.cloudDraft.editorOwnerKey ?? null;
+          const remoteName = json.cloudDraft.updatedByName ?? null;
+          const remoteDoc = json.cloudDraft.report;
+
+          setCloudEditorOwnerKey(remoteOwner);
+          setCloudEditorName(remoteName);
+          if (requestMatchId) {
+            syncMatchLockMetaInList(requestMatchId, {
+              editorOwnerKey: remoteOwner,
+              editorName: remoteName,
+              editorUpdatedAt: json.cloudDraft.updatedAt,
+              hasCloudDraft: true,
+            });
+          }
+
+          // 他メンバーが引き継いでいた場合は閲覧モードへ降格して最新状態を反映
+          if (
+            matchAccessModeRef.current === "edit" &&
+            remoteOwner &&
+            remoteOwner !== personalOwnerKey
+          ) {
+            hasPendingLocalSaveRef.current = false;
+            queuedPushRef.current = false;
+            matchAccessModeRef.current = "view";
+            setMatchAccessMode("view");
+            setViewerHalfOverride(null);
+            baseDocRef.current = remoteDoc;
+            baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
+            docRef.current = remoteDoc;
+            setDoc(remoteDoc);
+            setLastSyncedAt(json.cloudDraft.updatedAt);
+            setLastSyncedBy(remoteName);
+            toast.info(
+              `${remoteName || "他の担当者"}さんが入力を引き継ぎました（閲覧モードへ切替）`
+            );
+            return;
+          }
+
           if (
             silent &&
             baseUpdatedAtRef.current !== null &&
@@ -1710,63 +2226,43 @@ function LiffNewsGeneratorContent() {
             return;
           }
 
-          const prevBase = baseDocRef.current;
-          const remoteDoc = json.cloudDraft.report;
-          let nextDoc: LiveReportV2Document;
-
-          if (hasPendingLocalSaveRef.current) {
-            nextDoc = mergeLiveReportDocuments({
-              base: prevBase,
-              remote: remoteDoc,
-              local: docRef.current,
-              clientSideCursorFollow: silent,
-            });
-          } else if (silent && prevBase) {
-            const localWasAtBase =
-              docRef.current.activeInning === prevBase.activeInning &&
-              docRef.current.activeIsBottom === prevBase.activeIsBottom;
-            const remoteAdvanced =
-              compareHalfInningOrder(
-                remoteDoc.activeInning,
-                remoteDoc.activeIsBottom,
-                prevBase.activeInning,
-                prevBase.activeIsBottom
-              ) > 0;
-
-            if (localWasAtBase && remoteAdvanced) {
-              nextDoc = remoteDoc;
-            } else if (!localWasAtBase) {
-              nextDoc = {
-                ...remoteDoc,
-                activeInning: docRef.current.activeInning,
-                activeIsBottom: docRef.current.activeIsBottom,
-              };
-            } else {
-              nextDoc = remoteDoc;
-            }
-          } else {
-            nextDoc = remoteDoc;
+          // 自分が担当入力中で未送信の変更がある場合は自分の入力状態を絶対に崩さない
+          if (
+            matchAccessModeRef.current === "edit" &&
+            hasPendingLocalSaveRef.current &&
+            silent
+          ) {
+            return;
           }
 
           baseDocRef.current = remoteDoc;
           baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
-          lastSyncActivityAtRef.current = Date.now();
-          docRef.current = nextDoc;
-          setDoc(nextDoc);
+          docRef.current = remoteDoc;
+          setDoc(remoteDoc);
           if (!silent) {
             setManualEditedText(null);
           }
           setLastSyncedAt(json.cloudDraft.updatedAt);
-          setLastSyncedBy(json.cloudDraft.updatedByName);
+          setLastSyncedBy(remoteName);
 
-          if (typeof window !== "undefined") {
+          // 閲覧モードで過去回を見ていた場合でも、進行中の最新回と一致したら自動追従へ戻す
+          if (matchAccessModeRef.current === "view") {
+            setViewerHalfOverride((prev) =>
+              prev &&
+              prev.inning === remoteDoc.activeInning &&
+              prev.isBottom === remoteDoc.activeIsBottom
+                ? null
+                : prev
+            );
+          } else if (typeof window !== "undefined") {
             localStorage.setItem(
               getLocalDraftStorageKey(resolvedTeamId, requestDraftId),
-              JSON.stringify(nextDoc)
+              JSON.stringify(remoteDoc)
             );
           }
+
           if (!silent) {
-            toast.success("クラウドから最新の速報データを同期しました！");
+            toast.success("クラウドから最新の速報データを更新しました！");
           }
         } else {
           if (
@@ -1777,9 +2273,11 @@ function LiffNewsGeneratorContent() {
             baseUpdatedAtRef.current = null;
             setLastSyncedAt(null);
             setLastSyncedBy(null);
+            setCloudEditorOwnerKey(null);
+            setCloudEditorName(null);
           }
           if (!silent) {
-            toast.info("まだクラウド上に他メンバーの下書きはありません");
+            toast.info("まだこの試合のライブ速報データは送信されていません");
           }
         }
       } catch (err) {
@@ -1794,7 +2292,12 @@ function LiffNewsGeneratorContent() {
         }
       }
     },
-    [resolvedTeamId]
+    [
+      resolvedTeamId,
+      selectedMatchKey,
+      personalOwnerKey,
+      syncMatchLockMetaInList,
+    ]
   );
 
   const handlePullLatestCloudDraft = async () => {
@@ -1802,7 +2305,7 @@ function LiffNewsGeneratorContent() {
     await pullLatestFromCloud(false);
   };
 
-  // バックグラウンド自動同期（試合連動モード時のみ稼働・起動ダイアログ表示中は停止）
+  // バックグラウンド自動同期（閲覧モードは4.5秒間隔でリアルタイム追従・担当入力中は引継検知の軽量チェック）
   useEffect(() => {
     if (
       showEntryModeModal ||
@@ -1815,7 +2318,7 @@ function LiffNewsGeneratorContent() {
 
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
-    let currentIntervalMs = 4500;
+    let currentIntervalMs = matchAccessMode === "view" ? 4500 : 10_000;
 
     const clearPollTimer = () => {
       if (timerId !== null) {
@@ -1826,9 +2329,15 @@ function LiffNewsGeneratorContent() {
 
     const computeAdaptiveDelayMs = (): number | null => {
       const idleMs = Date.now() - lastSyncActivityAtRef.current;
-      if (idleMs < 3 * 60_000) return 4500;
-      if (idleMs < 10 * 60_000) return 12_000;
-      if (idleMs < 20 * 60_000) return 25_000;
+      if (matchAccessModeRef.current === "view") {
+        // 閲覧モードは画面を開いて見ている間、操作しなくても自動更新を維持する
+        if (idleMs < 15 * 60_000) return 4500;
+        if (idleMs < 45 * 60_000) return 12_000;
+        return 25_000;
+      }
+      // 担当入力中は引継検知用の軽量ポーリングのみ
+      if (idleMs < 5 * 60_000) return 10_000;
+      if (idleMs < 15 * 60_000) return 25_000;
       return null;
     };
 
@@ -1850,7 +2359,10 @@ function LiffNewsGeneratorContent() {
     scheduleNextPoll();
 
     const handleUserActivity = () => {
-      const wasSlowOrPaused = timerId === null || currentIntervalMs > 4500;
+      const targetFastMs =
+        matchAccessModeRef.current === "view" ? 4500 : 10_000;
+      const wasSlowOrPaused =
+        timerId === null || currentIntervalMs > targetFastMs;
       lastSyncActivityAtRef.current = Date.now();
       if (wasSlowOrPaused && document.visibilityState === "visible") {
         void pullLatestFromCloud(true);
@@ -1894,12 +2406,14 @@ function LiffNewsGeneratorContent() {
     showEntryModeModal,
     resolvedTeamId,
     reportMode,
+    matchAccessMode,
     pullLatestFromCloud,
     flushPendingSaveNow,
   ]);
 
-  // 5. 登録済みスタメン・記録済みスコアブックの再取込
+  // 5. 登録済みスタメン・記録済みスコアブックの再取込（担当入力モード限定）
   const handleReloadMatchLineup = () => {
+    if (isReadOnlyViewer) return;
     if (!activeBundle || activeBundle.lineup.length === 0) return;
     handleUpdateDoc((prev) => {
       const slots: LiveReportLineupSlot[] = activeBundle.lineup.map(
@@ -1926,6 +2440,7 @@ function LiffNewsGeneratorContent() {
   };
 
   const handleImportFromSavedScorebook = () => {
+    if (isReadOnlyViewer) return;
     if (!activeBundle) return;
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -1961,15 +2476,19 @@ function LiffNewsGeneratorContent() {
       return imported;
     });
 
-    void pushDraftToCloud({ silent: true, forceOverwrite: true });
+    void pushDraftToCloud({ silent: true });
     setManualEditedText(null);
     toast.success("記録済みスコアデータから全イニング経過を生成しました！");
   };
 
-  // 6. この試合の速報データを初期化リセット
+  // 6. この試合の速報データを初期化リセット（担当入力モード or フリー作成限定）
   const handleConfirmResetReport = async () => {
     if (reportMode === "free") {
       await handleDeleteCurrentFreeEntry();
+      return;
+    }
+    if (isReadOnlyViewer) {
+      setShowResetConfirm(false);
       return;
     }
 
@@ -1982,19 +2501,27 @@ function LiffNewsGeneratorContent() {
     baseDocRef.current = null;
     baseUpdatedAtRef.current = null;
 
+    if (resolvedTeamId !== "demo-team") {
+      const delRes = await fetch(
+        `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
+          resolvedTeamId
+        )}&draftId=${encodeURIComponent(
+          activeDraftId
+        )}&ownerKey=${encodeURIComponent(personalOwnerKey)}`,
+        { method: "DELETE" }
+      ).catch(() => null);
+      if (delRes && delRes.status === 409) {
+        toast.error("他の担当者が入力中のため初期化できません");
+        setShowResetConfirm(false);
+        void pullLatestFromCloud(false);
+        return;
+      }
+    }
+
     if (typeof window !== "undefined") {
       localStorage.removeItem(
         getLocalDraftStorageKey(resolvedTeamId, activeDraftId)
       );
-    }
-
-    if (resolvedTeamId !== "demo-team") {
-      await fetch(
-        `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
-          resolvedTeamId
-        )}&draftId=${encodeURIComponent(activeDraftId)}`,
-        { method: "DELETE" }
-      ).catch(() => null);
     }
 
     const freshDoc = selectedMatch
@@ -2093,10 +2620,24 @@ function LiffNewsGeneratorContent() {
   };
 
   const canImportSavedScore = Boolean(
-    reportMode === "match" &&
+    !isReadOnlyViewer &&
+      reportMode === "match" &&
       activeBundle &&
       (activeBundle.scorebookSnapshot || activeBundle.playLogs.length > 0)
   );
+
+  const effectiveEditorDisplayName = useMemo(() => {
+    if (cloudEditorName && cloudEditorName.trim()) {
+      return cloudEditorName.trim();
+    }
+    if (selectedMatch && selectedMatch.lineLiveAssignees.length > 0) {
+      return selectedMatch.lineLiveAssignees.join("・");
+    }
+    if (doc.reporterNames.trim()) {
+      return doc.reporterNames.trim();
+    }
+    return null;
+  }, [cloudEditorName, selectedMatch, doc.reporterNames]);
 
   // 試合連動用オプション（フリーは完全に除外し、登録済み試合のみを表示）
   const matchSelectOptions = useMemo<LiffSelectOption[]>(() => {
@@ -2139,9 +2680,17 @@ function LiffNewsGeneratorContent() {
         group = "終了した試合";
       }
 
+      const assigneeHint =
+        m.editorOwnerKey && m.editorName
+          ? `✍️入力中:${m.editorName}`
+          : m.lineLiveAssignees.length > 0
+          ? `📢担当:${m.lineLiveAssignees.join("・")}`
+          : "";
+
       const subParts = [
         tournDisp,
         venueDisp ? `@${venueDisp}` : "",
+        assigneeHint,
         m.hasCloudDraft
           ? "☁️速報記録あり"
           : m.hasScorebook
@@ -2156,7 +2705,9 @@ function LiffNewsGeneratorContent() {
         badge,
         badgeTone,
         group,
-        keywords: `${m.opponent} ${m.date} ${dateDisp} ${venueDisp} ${tournDisp}`,
+        keywords: `${m.opponent} ${m.date} ${dateDisp} ${venueDisp} ${tournDisp} ${m.lineLiveAssignees.join(
+          " "
+        )}`,
       };
     });
   }, [matches, practiceMatchLabel]);
@@ -2191,22 +2742,37 @@ function LiffNewsGeneratorContent() {
       ? `${resolvedTeamId}:free:${selectedFreeId}`
       : `${resolvedTeamId}:match:${selectedMatchKey}`;
 
-  // SKILL.md 規約5: コンテキスト切替時に確認モーダルを安全にリセット
+  // SKILL.md 規約5: コンテキスト切替時にモーダル・オーバーレイ状態を安全にリセット
   useEffect(() => {
     setShowResetConfirm(false);
+    setShowTakeoverConfirmModal(false);
+    setViewerHalfOverride(null);
   }, [activeContextKey, reportMode]);
 
   const scoreboardSummary = useMemo(() => computeScoreboardSummary(doc), [doc]);
 
   const handleSelectHalfInning = useCallback(
     (inning: number, isBottom: boolean) => {
+      const safeInn = Math.max(1, inning);
+      if (isReadOnlyViewer) {
+        setViewerHalfOverride((prev) => {
+          if (safeInn === doc.activeInning && isBottom === doc.activeIsBottom) {
+            return null;
+          }
+          if (prev && prev.inning === safeInn && prev.isBottom === isBottom) {
+            return null;
+          }
+          return { inning: safeInn, isBottom };
+        });
+        return;
+      }
       handleUpdateDoc((prev) => ({
         ...prev,
-        activeInning: Math.max(1, inning),
+        activeInning: safeInn,
         activeIsBottom: isBottom,
       }));
     },
-    [handleUpdateDoc]
+    [isReadOnlyViewer, doc.activeInning, doc.activeIsBottom, handleUpdateDoc]
   );
 
   const handleBackNavigation = () => {
@@ -2230,7 +2796,33 @@ function LiffNewsGeneratorContent() {
     [freeEntries]
   );
 
-  const handleConfirmEntryMatch = async () => {
+  const entrySelectedMatch = useMemo(
+    () => matches.find((m) => m.id === entryMatchId) || null,
+    [matches, entryMatchId]
+  );
+
+  const entryLockedByOther = Boolean(
+    entrySelectedMatch?.editorOwnerKey &&
+      entrySelectedMatch.editorOwnerKey !== personalOwnerKey
+  );
+  const entryLockedByMe = Boolean(
+    entrySelectedMatch?.editorOwnerKey &&
+      entrySelectedMatch.editorOwnerKey === personalOwnerKey
+  );
+  const entryHasAssignees =
+    (entrySelectedMatch?.lineLiveAssignees.length ?? 0) > 0;
+  const entryIsMyAssigned = Boolean(entrySelectedMatch?.isMyLineLiveAssigned);
+  const entryShouldDefaultToViewer =
+    entryLockedByOther ||
+    (resolvedTeamId !== "demo-team" &&
+      entryHasAssignees &&
+      !entryIsMyAssigned &&
+      !entryLockedByMe);
+
+  const handleConfirmEntryMatch = async (
+    desiredMode: MatchAccessMode,
+    takeover = false
+  ) => {
     const targetKey =
       entryMatchId || selectedMatchKey || pickRecommendedMatchId(matches);
     if (!targetKey) return;
@@ -2251,9 +2843,18 @@ function LiffNewsGeneratorContent() {
         (resolvedTeamId === "demo-team" || activeBundle?.matchId === targetKey);
 
       setActiveTab("pad");
+      setViewerHalfOverride(null);
       setShowEntryModeModal(false);
 
-      if (!alreadyLoaded) {
+      if (alreadyLoaded) {
+        if (desiredMode === "view") {
+          matchAccessModeRef.current = "view";
+          setMatchAccessMode("view");
+          void pullLatestFromCloud(true);
+        } else {
+          await claimMatchEditorLock(targetKey, takeover, false);
+        }
+      } else {
         if (saveTimerRef.current) {
           clearTimeout(saveTimerRef.current);
           saveTimerRef.current = null;
@@ -2268,12 +2869,43 @@ function LiffNewsGeneratorContent() {
         setSelectedMatchKey(targetKey);
         setManualEditedText(null);
         setShowResetConfirm(false);
-        await loadMatchSelection(targetKey);
+        await loadMatchSelection(targetKey, { desiredMode, takeover });
       }
     } finally {
       setIsApplyingEntryChoice(false);
     }
   };
+
+  const handleOpenTakeoverModal = (targetMatchId: string) => {
+    if (!targetMatchId) return;
+    setTakeoverTargetMatchId(targetMatchId);
+    setShowTakeoverConfirmModal(true);
+  };
+
+  const handleExecuteTakeover = async () => {
+    const targetId = takeoverTargetMatchId || selectedMatchKey || entryMatchId;
+    if (!targetId) {
+      setShowTakeoverConfirmModal(false);
+      return;
+    }
+
+    if (showEntryModeModal) {
+      setShowTakeoverConfirmModal(false);
+      await handleConfirmEntryMatch("edit", true);
+      return;
+    }
+
+    const ok = await claimMatchEditorLock(targetId, true, false);
+    setShowTakeoverConfirmModal(false);
+    if (ok) {
+      toast.success("速報の入力担当を引き継ぎました！");
+    }
+  };
+
+  const takeoverTargetMatch = useMemo(() => {
+    const id = takeoverTargetMatchId || selectedMatchKey || entryMatchId;
+    return matches.find((m) => m.id === id) || null;
+  }, [matches, takeoverTargetMatchId, selectedMatchKey, entryMatchId]);
 
   const handleConfirmEntryFree = () => {
     if (saveTimerRef.current) {
@@ -2292,6 +2924,9 @@ function LiffNewsGeneratorContent() {
     isHydratingRef.current = true;
     hasPendingLocalSaveRef.current = false;
     queuedPushRef.current = false;
+    matchAccessModeRef.current = "edit";
+    setMatchAccessMode("edit");
+    setViewerHalfOverride(null);
     setReportMode("free");
     reportModeRef.current = "free";
     setActiveBundle(null);
@@ -2338,6 +2973,9 @@ function LiffNewsGeneratorContent() {
     if (typeof window !== "undefined") {
       localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), "free");
     }
+    matchAccessModeRef.current = "edit";
+    setMatchAccessMode("edit");
+    setViewerHalfOverride(null);
     setReportMode("free");
     reportModeRef.current = "free";
     setActiveBundle(null);
@@ -2354,7 +2992,7 @@ function LiffNewsGeneratorContent() {
         <LiffHeader compact />
 
         <section className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[2px] border-primary px-2.5 py-1.5 space-y-1.5">
-          {/* 1段目: 戻るボタン ＋ [連動|フリー] ＋ 対象セレクタ ＋ 同期/新規アクション */}
+          {/* 1段目: 戻るボタン ＋ [連動|フリー] ＋ 対象セレクタ ＋ 担当/閲覧・同期アクション */}
           <div className="flex items-center gap-1.5 min-w-0">
             <button
               type="button"
@@ -2407,7 +3045,7 @@ function LiffNewsGeneratorContent() {
                     onChange={(val) => void handleSelectMatchKey(val)}
                     options={matchSelectOptions}
                     title="連動する試合を選択"
-                    subtitle="登録済みの予定・試合中・終了試合と連携します"
+                    subtitle="担当者は排他入力・担当外メンバーは閲覧モードで参照します"
                     searchable={true}
                     searchPlaceholder="対戦相手・日付・会場名で検索..."
                     size="xs"
@@ -2442,6 +3080,31 @@ function LiffNewsGeneratorContent() {
             {/* 右端クイック操作ボタン */}
             {reportMode === "match" ? (
               <div className="flex items-center gap-1 shrink-0">
+                {selectedMatchKey &&
+                  (isReadOnlyViewer ? (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTakeoverModal(selectedMatchKey)}
+                      className="h-7 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-400/50 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                      title="閲覧モード中（タップで担当引き継ぎ）"
+                    >
+                      <Eye className="w-3 h-3 shrink-0" />
+                      <span>閲覧</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void releaseMatchEditorLockAndSwitchToView()
+                      }
+                      className="h-7 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                      title="あなたが入力担当中（タップで閲覧モードへ切替）"
+                    >
+                      <UserCheck className="w-3 h-3 shrink-0" />
+                      <span>担当</span>
+                    </button>
+                  ))}
+
                 {canImportSavedScore && (
                   <button
                     type="button"
@@ -2453,6 +3116,7 @@ function LiffNewsGeneratorContent() {
                     <span>取込</span>
                   </button>
                 )}
+
                 <button
                   type="button"
                   onClick={handlePullLatestCloudDraft}
@@ -2462,10 +3126,10 @@ function LiffNewsGeneratorContent() {
                     resolvedTeamId === "demo-team"
                       ? "体験デモ端末保持"
                       : lastSyncedAt
-                      ? `最終同期 ${formatSyncTimeLabel(lastSyncedAt)}${
+                      ? `最終更新 ${formatSyncTimeLabel(lastSyncedAt)}${
                           lastSyncedBy ? ` (${lastSyncedBy})` : ""
-                        } — タップで手動同期`
-                      : "他の速報担当者の最新データを手動同期"
+                        } — タップで最新取得`
+                      : "クラウドから最新データを手動取得"
                   }
                 >
                   {isSyncingCloud ? (
@@ -2513,8 +3177,17 @@ function LiffNewsGeneratorContent() {
                   : "text-slate-300 hover:text-white"
               )}
             >
-              <Zap className="w-3 h-3 text-amber-300 shrink-0" />
-              <span className="truncate">入力・速報</span>
+              {isReadOnlyViewer ? (
+                <>
+                  <Eye className="w-3 h-3 text-sky-300 shrink-0" />
+                  <span className="truncate">ライブ閲覧</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3 h-3 text-amber-300 shrink-0" />
+                  <span className="truncate">入力・速報</span>
+                </>
+              )}
             </button>
 
             <button
@@ -2556,7 +3229,11 @@ function LiffNewsGeneratorContent() {
               )}
             >
               <Settings2 className="w-3 h-3 text-amber-300 shrink-0" />
-              <span className="truncate">設定({filledLineupCount}/9)</span>
+              <span className="truncate">
+                {isReadOnlyViewer
+                  ? `情報(${filledLineupCount}/9)`
+                  : `設定(${filledLineupCount}/9)`}
+              </span>
             </button>
           </div>
 
@@ -2598,6 +3275,12 @@ function LiffNewsGeneratorContent() {
                       const inn = idx + 1;
                       const isActiveCell =
                         doc.activeInning === inn && !doc.activeIsBottom;
+                      const isViewerOverrideCell = Boolean(
+                        isReadOnlyViewer &&
+                          viewerHalfOverride &&
+                          viewerHalfOverride.inning === inn &&
+                          !viewerHalfOverride.isBottom
+                      );
                       return (
                         <td key={`t-${inn}`} className="p-0.5">
                           <button
@@ -2605,7 +3288,9 @@ function LiffNewsGeneratorContent() {
                             onClick={() => handleSelectHalfInning(inn, false)}
                             className={cn(
                               "w-full py-0.5 rounded font-black transition-all cursor-pointer leading-tight",
-                              isActiveCell
+                              isViewerOverrideCell
+                                ? "bg-sky-600 text-white ring-1 ring-amber-300"
+                                : isActiveCell
                                 ? "bg-primary text-white ring-1 ring-sky-300"
                                 : "hover:bg-slate-800 text-slate-100"
                             )}
@@ -2629,6 +3314,12 @@ function LiffNewsGeneratorContent() {
                       const inn = idx + 1;
                       const isActiveCell =
                         doc.activeInning === inn && doc.activeIsBottom;
+                      const isViewerOverrideCell = Boolean(
+                        isReadOnlyViewer &&
+                          viewerHalfOverride &&
+                          viewerHalfOverride.inning === inn &&
+                          viewerHalfOverride.isBottom
+                      );
                       return (
                         <td key={`b-${inn}`} className="p-0.5">
                           <button
@@ -2636,7 +3327,9 @@ function LiffNewsGeneratorContent() {
                             onClick={() => handleSelectHalfInning(inn, true)}
                             className={cn(
                               "w-full py-0.5 rounded font-black transition-all cursor-pointer leading-tight",
-                              isActiveCell
+                              isViewerOverrideCell
+                                ? "bg-sky-600 text-white ring-1 ring-amber-300"
+                                : isActiveCell
                                 ? "bg-primary text-white ring-1 ring-sky-300"
                                 : "hover:bg-slate-800 text-slate-100"
                             )}
@@ -2657,7 +3350,7 @@ function LiffNewsGeneratorContent() {
         </section>
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 1 (デフォルト): ゼロスクロール・中央ライブモニター ＋ 下部固定入力パッド
+            TAB 1 (デフォルト): ゼロスクロール・中央ライブモニター ＋ 下部固定入力パッド / 閲覧ビュー
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "pad" && (
           <LiveAtBatPadCard
@@ -2674,6 +3367,11 @@ function LiffNewsGeneratorContent() {
             onShareLine={handleShareLine}
             copied={copied}
             onOpenFullPreview={() => setActiveTab("preview")}
+            readOnly={isReadOnlyViewer}
+            editorDisplayName={effectiveEditorDisplayName}
+            viewerHalfOverride={viewerHalfOverride}
+            onChangeViewerHalfOverride={setViewerHalfOverride}
+            onRequestTakeover={() => handleOpenTakeoverModal(selectedMatchKey)}
           />
         )}
 
@@ -2685,7 +3383,9 @@ function LiffNewsGeneratorContent() {
             <div className="flex-1 min-h-0 flex flex-col p-2.5 gap-2 overflow-hidden">
               <div className="shrink-0 flex items-center justify-between gap-2">
                 <span className="text-xs font-black text-foreground truncate">
-                  LINE速報テキスト確認・直接手直し
+                  {isReadOnlyViewer
+                    ? "LINE速報テキスト確認・コピー（閲覧モード）"
+                    : "LINE速報テキスト確認・直接手直し"}
                 </span>
                 {manualEditedText !== null ? (
                   <button
@@ -2738,9 +3438,14 @@ function LiffNewsGeneratorContent() {
               {/* 残り縦幅いっぱいに伸縮するプレビューテキストエリア（16pxでiOSズーム防止） */}
               <textarea
                 value={displayedText}
-                onChange={(e) => setManualEditedText(e.target.value)}
+                readOnly={isReadOnlyViewer}
+                onChange={(e) => {
+                  if (!isReadOnlyViewer) {
+                    setManualEditedText(e.target.value);
+                  }
+                }}
                 className="flex-1 min-h-0 w-full rounded-xl border border-border bg-card focus:border-primary p-3 text-base sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-none font-sans"
-                placeholder="ここにLINE速報テキストが自動生成されます（直接手直しも可能です）"
+                placeholder="ここにLINE速報テキストが自動生成されます"
               />
             </div>
 
@@ -2751,8 +3456,17 @@ function LiffNewsGeneratorContent() {
                 onClick={() => setActiveTab("pad")}
                 className="h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground inline-flex items-center justify-center gap-1 shrink-0 cursor-pointer active:scale-95"
               >
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                <span>入力へ</span>
+                {isReadOnlyViewer ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-sky-600" />
+                    <span>ライブへ</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span>入力へ</span>
+                  </>
+                )}
               </button>
 
               <button
@@ -2782,14 +3496,16 @@ function LiffNewsGeneratorContent() {
                 <span>LINEで送る</span>
               </button>
 
-              <button
-                type="button"
-                onClick={() => setShowResetConfirm(true)}
-                className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
-                title="この速報データを初期化"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              {!isReadOnlyViewer && (
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirm(true)}
+                  className="w-10 h-10 rounded-xl border border-border bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 flex items-center justify-center shrink-0 cursor-pointer active:scale-95"
+                  title="この速報データを初期化"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -2805,6 +3521,15 @@ function LiffNewsGeneratorContent() {
                 onChangeDoc={handleUpdateDoc}
                 activeContextKey={activeContextKey}
                 onStartRecording={() => setActiveTab("pad")}
+                readOnly={isReadOnlyViewer}
+                onSelectHalfForView={(inn, isBottom) => {
+                  setViewerHalfOverride(
+                    inn === doc.activeInning && isBottom === doc.activeIsBottom
+                      ? null
+                      : { inning: inn, isBottom }
+                  );
+                  setActiveTab("pad");
+                }}
               />
             </div>
 
@@ -2814,8 +3539,17 @@ function LiffNewsGeneratorContent() {
                 onClick={() => setActiveTab("pad")}
                 className="flex-1 h-10 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
               >
-                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>入力パッドへ</span>
+                {isReadOnlyViewer ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>ライブ閲覧へ</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>入力パッドへ</span>
+                  </>
+                )}
               </button>
 
               <button
@@ -2868,6 +3602,7 @@ function LiffNewsGeneratorContent() {
                 activeContextKey={activeContextKey}
                 defaultExpanded={true}
                 openLineupSignal={openLineupSignal}
+                readOnly={isReadOnlyViewer}
               />
             </div>
 
@@ -2878,7 +3613,11 @@ function LiffNewsGeneratorContent() {
                 className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
               >
                 <Users className="w-3.5 h-3.5 text-primary shrink-0" />
-                <span>オーダー編集 ({filledLineupCount}/9)</span>
+                <span>
+                  {isReadOnlyViewer
+                    ? `スタメン確認 (${filledLineupCount}/9)`
+                    : `オーダー編集 (${filledLineupCount}/9)`}
+                </span>
               </button>
 
               <button
@@ -2886,8 +3625,17 @@ function LiffNewsGeneratorContent() {
                 onClick={() => setActiveTab("pad")}
                 className="flex-1 h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
               >
-                <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                <span>入力パッドへ</span>
+                {isReadOnlyViewer ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-sky-200 shrink-0" />
+                    <span>ライブ閲覧へ</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>入力パッドへ</span>
+                  </>
+                )}
               </button>
 
               <button
@@ -2903,7 +3651,7 @@ function LiffNewsGeneratorContent() {
         )}
       </div>
 
-      {/* 起動時モード選択ダイアログ：試合連動 vs フリー作成（createPortal + z-[9999]） */}
+      {/* 起動時モード選択ダイアログ：試合連動（担当排他入力 / 閲覧モード） vs フリー作成 */}
       {mounted &&
         showEntryModeModal &&
         createPortal(
@@ -2931,7 +3679,7 @@ function LiffNewsGeneratorContent() {
                       LINE試合速報を開始
                     </h2>
                     <p className="text-[10.5px] font-bold text-slate-300 truncate mt-0.5">
-                      試合連動（共同編集）かフリー作成を選択してください
+                      試合連動（担当入力・閲覧）かフリー作成を選択してください
                     </p>
                   </div>
                 </div>
@@ -2961,14 +3709,14 @@ function LiffNewsGeneratorContent() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <h3 className="text-sm font-black text-foreground">
-                              試合連動で速報する
+                              試合連動で開く
                             </h3>
                             <span className="px-2 py-0.5 rounded-full bg-primary/12 text-primary border border-primary/25 text-[10px] font-black">
-                              チーム共有・共同編集
+                              担当入力・チーム閲覧
                             </span>
                           </div>
                           <p className="text-[11px] font-bold text-muted-foreground leading-relaxed mt-0.5">
-                            登録済みの試合日程・スタメン・スコアと自動連携し、複数の担当者で同時編集できます。
+                            入力崩れ防止のため、速報担当1名が入力し、担当以外のメンバーは閲覧モードでリアルタイム参照できます。
                           </p>
                         </div>
                       </div>
@@ -2993,20 +3741,116 @@ function LiffNewsGeneratorContent() {
                             />
                           </div>
 
-                          <button
-                            type="button"
-                            disabled={isApplyingEntryChoice || !entryMatchId}
-                            onClick={() => void handleConfirmEntryMatch()}
-                            className="w-full h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
-                          >
-                            {isApplyingEntryChoice ? (
-                              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                            ) : (
-                              <Zap className="w-4 h-4 text-amber-300 shrink-0" />
-                            )}
-                            <span>この試合で速報を始める</span>
-                            <ArrowRight className="w-4 h-4 shrink-0" />
-                          </button>
+                          {/* 選択中試合の担当者・ロック状態インジケーター */}
+                          {entrySelectedMatch && (
+                            <div
+                              className={cn(
+                                "rounded-xl border px-3 py-2 flex items-center justify-between gap-2 text-[11px]",
+                                entryLockedByOther
+                                  ? "bg-sky-500/10 border-sky-500/35 text-sky-900 dark:text-sky-200"
+                                  : entryIsMyAssigned || entryLockedByMe
+                                  ? "bg-emerald-500/10 border-emerald-500/35 text-emerald-900 dark:text-emerald-200"
+                                  : "bg-muted/70 border-border text-foreground"
+                              )}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {entryLockedByOther ? (
+                                  <Lock className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                                ) : (
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                )}
+                                <span className="font-black truncate">
+                                  {entryLockedByOther
+                                    ? `現在 ${
+                                        entrySelectedMatch.editorName || "担当者"
+                                      } さんが入力中`
+                                    : entryHasAssignees
+                                    ? `LINE速報担当: ${entrySelectedMatch.lineLiveAssignees.join(
+                                        "・"
+                                      )}`
+                                    : "LINE速報担当: 未設定"}
+                                </span>
+                              </div>
+                              <span
+                                className={cn(
+                                  "px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 border",
+                                  entryShouldDefaultToViewer
+                                    ? "bg-sky-600 text-white border-sky-600"
+                                    : "bg-emerald-600 text-white border-emerald-600"
+                                )}
+                              >
+                                {entryShouldDefaultToViewer
+                                  ? "閲覧対象"
+                                  : entryHasAssignees && entryIsMyAssigned
+                                  ? "あなたが担当"
+                                  : "入力可能"}
+                              </span>
+                            </div>
+                          )}
+
+                          {entryShouldDefaultToViewer ? (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                disabled={isApplyingEntryChoice || !entryMatchId}
+                                onClick={() =>
+                                  void handleConfirmEntryMatch("view", false)
+                                }
+                                className="w-full h-11 px-4 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
+                              >
+                                {isApplyingEntryChoice ? (
+                                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                ) : (
+                                  <Eye className="w-4 h-4 shrink-0" />
+                                )}
+                                <span>閲覧モードでライブ速報を見る</span>
+                                <ArrowRight className="w-4 h-4 shrink-0" />
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={isApplyingEntryChoice || !entryMatchId}
+                                onClick={() =>
+                                  handleOpenTakeoverModal(entryMatchId)
+                                }
+                                className="w-full h-9 px-3 rounded-xl border border-border bg-muted/70 hover:bg-accent text-[11px] font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+                              >
+                                <ArrowLeftRight className="w-3.5 h-3.5 text-primary shrink-0" />
+                                <span>担当変更・引き継いで自分が入力する</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                disabled={isApplyingEntryChoice || !entryMatchId}
+                                onClick={() =>
+                                  void handleConfirmEntryMatch("edit", false)
+                                }
+                                className="w-full h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-2 shadow-xs transition-all active:scale-98 cursor-pointer"
+                              >
+                                {isApplyingEntryChoice ? (
+                                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                                ) : (
+                                  <Zap className="w-4 h-4 text-amber-300 shrink-0" />
+                                )}
+                                <span>担当として速報を入力する</span>
+                                <ArrowRight className="w-4 h-4 shrink-0" />
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={isApplyingEntryChoice || !entryMatchId}
+                                onClick={() =>
+                                  void handleConfirmEntryMatch("view", false)
+                                }
+                                className="w-full h-9 px-3 rounded-xl border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-[11px] font-black text-sky-800 dark:text-sky-200 flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5 shrink-0" />
+                                <span>閲覧モードで見る（参照専用）</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="rounded-xl border border-border bg-muted/60 p-3 space-y-2">
@@ -3113,6 +3957,84 @@ function LiffNewsGeneratorContent() {
                 >
                   <ChevronLeft className="w-4 h-4 shrink-0" />
                   <span>前の画面へ戻る</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* 速報担当の引き継ぎ確認モーダル（createPortal + z-[10200]） */}
+      {mounted &&
+        showTakeoverConfirmModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/75 animate-in fade-in duration-150"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => {
+              if (!isClaimingLock) setShowTakeoverConfirmModal(false);
+            }}
+          >
+            <div
+              className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden text-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ArrowLeftRight className="w-4 h-4 text-sky-400 shrink-0" />
+                  <h3 className="text-sm font-black text-white">
+                    速報の入力担当を引き継ぐ
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  disabled={isClaimingLock}
+                  onClick={() => setShowTakeoverConfirmModal(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-2.5">
+                <p className="text-xs font-black text-foreground leading-relaxed">
+                  この試合のLINE速報の入力担当をあなたに切り替えますか？
+                </p>
+                {(takeoverTargetMatch?.editorName ||
+                  (takeoverTargetMatch?.lineLiveAssignees.length ?? 0) > 0) && (
+                  <div className="rounded-xl border border-border bg-muted/60 px-3 py-2 text-[11px] font-bold text-foreground">
+                    現在の担当:{" "}
+                    <span className="font-black text-primary">
+                      {takeoverTargetMatch?.editorName ||
+                        takeoverTargetMatch?.lineLiveAssignees.join("・")}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                  ※引き継ぐと、これまでの記録を引き継いだままあなたが入力できるようになり、前の担当者の画面は自動的に「閲覧モード」へ切り替わります。
+                </p>
+              </div>
+
+              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex gap-2">
+                <button
+                  type="button"
+                  disabled={isClaimingLock}
+                  onClick={() => setShowTakeoverConfirmModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isClaimingLock}
+                  onClick={() => void handleExecuteTakeover()}
+                  className="flex-1 py-2.5 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  {isClaimingLock && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  )}
+                  <span>引き継いで入力する</span>
                 </button>
               </div>
             </div>

@@ -90,6 +90,9 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "color_code", ddl: "ALTER TABLE member_cars ADD COLUMN color_code text" },
     { name: "car_type", ddl: "ALTER TABLE member_cars ADD COLUMN car_type text DEFAULT 'normal'" },
   ],
+  match_live_reports: [
+    { name: "editor_owner_key", ddl: "ALTER TABLE match_live_reports ADD COLUMN editor_owner_key text" },
+  ],
 };
 
 const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
@@ -160,6 +163,7 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       team_id text NOT NULL,
       match_id text,
       report_json text NOT NULL,
+      editor_owner_key text,
       updated_by_name text,
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,

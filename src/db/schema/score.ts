@@ -115,6 +115,7 @@ export const matchLiveReports = sqliteTable("match_live_reports", {
     teamId: text("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
     matchId: text("match_id").references(() => matches.id, { onDelete: "cascade" }),
     reportJson: text("report_json").notNull(),
+    editorOwnerKey: text("editor_owner_key"),
     updatedByName: text("updated_by_name"),
     updatedAt: integer("updated_at").notNull(),
 }, (table) => ({

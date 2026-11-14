@@ -31,6 +31,8 @@ interface InningLogTimelineCardProps {
   ) => void;
   activeContextKey: string;
   onStartRecording?: () => void;
+  readOnly?: boolean;
+  onSelectHalfForView?: (inning: number, isBottom: boolean) => void;
 }
 
 interface EditingEntryTarget {
@@ -44,6 +46,8 @@ export function InningLogTimelineCard({
   onChangeDoc,
   activeContextKey,
   onStartRecording,
+  readOnly = false,
+  onSelectHalfForView,
 }: InningLogTimelineCardProps) {
   const [mounted, setMounted] = useState(false);
   const [editingTarget, setEditingTarget] = useState<EditingEntryTarget | null>(
@@ -54,10 +58,10 @@ export function InningLogTimelineCard({
     setMounted(true);
   }, []);
 
-  // SKILL.md 規約5: 対象試合切替時にモーダルを安全にリセット
+  // SKILL.md 規約5: 対象試合切替・閲覧モード切替時にモーダルを安全にリセット
   useEffect(() => {
     setEditingTarget(null);
-  }, [activeContextKey]);
+  }, [activeContextKey, readOnly]);
 
   const sortedHalves: LiveReportHalfInning[] = [...doc.halfInnings]
     .filter((h) => h.entries.length > 0 || h.manualRunsOverride !== null)
@@ -91,7 +95,9 @@ export function InningLogTimelineCard({
             まだ打席・イニング経過の記録がありません
           </p>
           <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-            「入力・速報」タブの下部キーパッドから打席結果を確定すると、ここにイニングごとの経過一覧が並び、タップで1行ずつ修正・削除できます。
+            {readOnly
+              ? "速報担当者が打席結果を入力すると、ここにイニングごとの経過一覧が自動で反映されます。"
+              : "「入力・速報」タブの下部キーパッドから打席結果を確定すると、ここにイニングごとの経過一覧が並び、タップで1行ずつ修正・削除できます。"}
           </p>
           {onStartRecording && (
             <button
@@ -100,7 +106,7 @@ export function InningLogTimelineCard({
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer"
             >
               <Zap className="w-3.5 h-3.5 text-amber-300" />
-              <span>入力・速報パッドを開く</span>
+              <span>{readOnly ? "ライブ速報画面へ戻る" : "入力・速報パッドを開く"}</span>
             </button>
           )}
         </div>
@@ -109,7 +115,7 @@ export function InningLogTimelineCard({
   }
 
   const handleSaveEntryEdit = () => {
-    if (!editingTarget) return;
+    if (readOnly || !editingTarget) return;
     const { inning, isBottom, entry } = editingTarget;
     onChangeDoc((prev) => ({
       ...prev,
@@ -129,6 +135,7 @@ export function InningLogTimelineCard({
     isBottom: boolean,
     entryId: string
   ) => {
+    if (readOnly) return;
     onChangeDoc((prev) => ({
       ...prev,
       halfInnings: prev.halfInnings
@@ -154,7 +161,9 @@ export function InningLogTimelineCard({
           <div className="flex items-center gap-2 min-w-0">
             <ListOrdered className="w-4 h-4 text-sky-400 shrink-0" />
             <h2 className="text-xs font-black text-white truncate">
-              記録済みイニング経過（行タップで修正・削除）
+              {readOnly
+                ? "記録済みイニング経過（閲覧モード）"
+                : "記録済みイニング経過（行タップで修正・削除）"}
             </h2>
           </div>
           <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono shrink-0">
@@ -163,59 +172,64 @@ export function InningLogTimelineCard({
         </div>
 
         <div className="divide-y divide-border">
-            {sortedHalves.map((half) => {
-              const runs = getHalfInningRuns(half);
-              if (!half.isBottom) runningFirst += runs;
-              else runningSecond += runs;
+          {sortedHalves.map((half) => {
+            const runs = getHalfInningRuns(half);
+            if (!half.isBottom) runningFirst += runs;
+            else runningSecond += runs;
 
-              const isMyAttack = isMyTeamBattingHalf(
-                doc.battingOrder,
-                half.isBottom
-              );
-              const isActiveHalf =
-                doc.activeInning === half.inning &&
-                doc.activeIsBottom === half.isBottom;
+            const isMyAttack = isMyTeamBattingHalf(
+              doc.battingOrder,
+              half.isBottom
+            );
+            const isActiveHalf =
+              doc.activeInning === half.inning &&
+              doc.activeIsBottom === half.isBottom;
 
-              return (
-                <div
-                  key={`${half.inning}-${half.isBottom ? "b" : "t"}`}
-                  className={cn(
-                    "p-3 space-y-2",
-                    isActiveHalf && "bg-primary/[0.04]"
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onChangeDoc((p) => ({
-                          ...p,
-                          activeInning: half.inning,
-                          activeIsBottom: half.isBottom,
-                        }))
+            return (
+              <div
+                key={`${half.inning}-${half.isBottom ? "b" : "t"}`}
+                className={cn(
+                  "p-3 space-y-2",
+                  isActiveHalf && "bg-primary/[0.04]"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (readOnly) {
+                        onSelectHalfForView?.(half.inning, half.isBottom);
+                        return;
                       }
-                      className="inline-flex items-center gap-1.5 text-left cursor-pointer"
+                      onChangeDoc((p) => ({
+                        ...p,
+                        activeInning: half.inning,
+                        activeIsBottom: half.isBottom,
+                      }));
+                    }}
+                    className="inline-flex items-center gap-1.5 text-left cursor-pointer"
+                  >
+                    <span
+                      className={cn(
+                        "px-2 py-0.5 rounded-md text-[11px] font-black",
+                        isActiveHalf
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-slate-900 text-white"
+                      )}
                     >
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded-md text-[11px] font-black",
-                          isActiveHalf
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-slate-900 text-white"
-                        )}
-                      >
-                        {half.inning}回{half.isBottom ? "裏" : "表"}
-                      </span>
-                      <span className="text-[10.5px] font-bold text-muted-foreground">
-                        {isMyAttack ? "自チーム攻撃" : "相手攻撃"}
-                      </span>
-                    </button>
+                      {half.inning}回{half.isBottom ? "裏" : "表"}
+                    </span>
+                    <span className="text-[10.5px] font-bold text-muted-foreground">
+                      {isMyAttack ? "自チーム攻撃" : "相手攻撃"}
+                    </span>
+                  </button>
 
-                    {/* イニング得点の確認・手動補正 */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10.5px] font-black text-muted-foreground">
-                        得点
-                      </span>
+                  {/* イニング得点の確認・手動補正（閲覧モード時は参照のみ） */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10.5px] font-black text-muted-foreground">
+                      得点
+                    </span>
+                    {!readOnly && (
                       <button
                         type="button"
                         onClick={() =>
@@ -236,9 +250,11 @@ export function InningLogTimelineCard({
                       >
                         -
                       </button>
-                      <span className="font-mono text-xs font-black text-foreground min-w-[16px] text-center">
-                        {runs}
-                      </span>
+                    )}
+                    <span className="font-mono text-xs font-black text-foreground min-w-[16px] text-center">
+                      {runs}
+                    </span>
+                    {!readOnly && (
                       <button
                         type="button"
                         onClick={() =>
@@ -256,52 +272,66 @@ export function InningLogTimelineCard({
                       >
                         +
                       </button>
-                      <span className="ml-1 px-1.5 py-0.5 rounded bg-muted font-mono text-[10.5px] font-black text-foreground">
-                        {runningFirst}-{runningSecond}
-                      </span>
-                    </div>
+                    )}
+                    <span className="ml-1 px-1.5 py-0.5 rounded bg-muted font-mono text-[10.5px] font-black text-foreground">
+                      {runningFirst}-{runningSecond}
+                    </span>
                   </div>
+                </div>
 
-                  <div className="space-y-1">
-                    {half.entries.map((entry) => {
-                      const line = formatSinglePlayEntryLine(
-                        entry,
-                        isMyAttack,
-                        doc.showSurnameOnly
-                      );
+                <div className="space-y-1">
+                  {half.entries.map((entry) => {
+                    const line = formatSinglePlayEntryLine(
+                      entry,
+                      isMyAttack,
+                      doc.showSurnameOnly
+                    );
+                    if (readOnly) {
                       return (
-                        <button
+                        <div
                           key={entry.id}
-                          type="button"
-                          onClick={() =>
-                            setEditingTarget({
-                              inning: half.inning,
-                              isBottom: half.isBottom,
-                              entry: {
-                                ...entry,
-                                runnersAfter: [...entry.runnersAfter],
-                                chainedPlays: [...entry.chainedPlays],
-                              },
-                            })
-                          }
-                          className="w-full text-left px-2.5 py-1.5 rounded-lg border border-border/70 bg-card hover:bg-muted/60 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
+                          className="w-full text-left px-2.5 py-1.5 rounded-lg border border-border/70 bg-card flex items-center justify-between gap-2"
                         >
                           <span className="text-xs font-bold text-foreground break-all">
                             {line}
                           </span>
-                          <Edit3 className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
-                        </button>
+                        </div>
                       );
-                    })}
-                  </div>
+                    }
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() =>
+                          setEditingTarget({
+                            inning: half.inning,
+                            isBottom: half.isBottom,
+                            entry: {
+                              ...entry,
+                              runnersAfter: [...entry.runnersAfter],
+                              chainedPlays: [...entry.chainedPlays],
+                            },
+                          })
+                        }
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg border border-border/70 bg-card hover:bg-muted/60 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
+                      >
+                        <span className="text-xs font-bold text-foreground break-all">
+                          {line}
+                        </span>
+                        <Edit3 className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
         </div>
       </section>
 
       {/* 個別行編集・削除モーダル（createPortal + z-[9999]） */}
       {mounted &&
+        !readOnly &&
         editingTarget &&
         createPortal(
           <div

@@ -41,6 +41,7 @@ interface MatchAndHeaderSetupCardProps {
   activeContextKey: string;
   defaultExpanded?: boolean;
   openLineupSignal?: number;
+  readOnly?: boolean;
 }
 
 export function MatchAndHeaderSetupCard({
@@ -53,6 +54,7 @@ export function MatchAndHeaderSetupCard({
   activeContextKey,
   defaultExpanded = false,
   openLineupSignal = 0,
+  readOnly = false,
 }: MatchAndHeaderSetupCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLineupModalOpen, setIsLineupModalOpen] = useState(false);
@@ -68,16 +70,20 @@ export function MatchAndHeaderSetupCard({
     }
   }, [openLineupSignal]);
 
-  // SKILL.md 規約5: 対象試合切替時にモーダルを安全にリセット
+  // SKILL.md 規約5: 対象試合切替・閲覧モード切替時にモーダルを安全にリセット
   useEffect(() => {
     setIsLineupModalOpen(false);
-  }, [activeContextKey]);
+    if (readOnly) {
+      setIsExpanded(false);
+    }
+  }, [activeContextKey, readOnly]);
 
   const filledLineupCount = doc.lineup.filter(
     (s) => s.playerName.trim().length > 0
   ).length;
 
   const handleSwapBattingOrder = () => {
+    if (readOnly) return;
     onChangeDoc((prev) => ({
       ...prev,
       battingOrder: prev.battingOrder === "first" ? "second" : "first",
@@ -87,6 +93,7 @@ export function MatchAndHeaderSetupCard({
   };
 
   const handleOpponentChange = (nextOpponent: string) => {
+    if (readOnly) return;
     onChangeDoc((prev) => {
       const prevAutoShort = prev.opponentName
         ? deriveScoreboardShortName(prev.opponentName)
@@ -127,7 +134,9 @@ export function MatchAndHeaderSetupCard({
           <div className="flex items-center gap-2 min-w-0">
             <Settings2 className="w-4 h-4 text-sky-400 shrink-0" />
             <h2 className="text-xs font-black text-white truncate">
-              1. 試合情報・スタメン・速報担当
+              {readOnly
+                ? "試合情報・スタメン・速報担当（参照専用）"
+                : "1. 試合情報・スタメン・速報担当"}
             </h2>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -139,18 +148,20 @@ export function MatchAndHeaderSetupCard({
               <Users className="w-3 h-3 text-sky-400" />
               <span>スタメン {filledLineupCount}名</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsExpanded((v) => !v)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10.5px] font-black transition-all active:scale-95 cursor-pointer"
-            >
-              <span>{isExpanded ? "閉じる" : "詳細編集"}</span>
-              {isExpanded ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
-              )}
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded((v) => !v)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10.5px] font-black transition-all active:scale-95 cursor-pointer"
+              >
+                <span>{isExpanded ? "閉じる" : "詳細編集"}</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
+            )}
           </div>
         </div>
 
@@ -177,14 +188,16 @@ export function MatchAndHeaderSetupCard({
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSwapBattingOrder}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-[11px] font-black text-foreground transition-all active:scale-95 cursor-pointer shrink-0"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
-              <span>先攻⇄後攻</span>
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleSwapBattingOrder}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-[11px] font-black text-foreground transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
+                <span>先攻⇄後攻</span>
+              </button>
+            )}
           </div>
 
           {/* 開始・終了時刻ワンタップ打刻 ＆ 速報担当者クイック入力 */}
@@ -194,24 +207,32 @@ export function MatchAndHeaderSetupCard({
               <span className="text-[10.5px] font-black text-muted-foreground shrink-0">
                 開始
               </span>
-              <input
-                type="text"
-                value={doc.startTime}
-                onChange={(e) =>
-                  onChangeDoc((p) => ({ ...p, startTime: e.target.value }))
-                }
-                placeholder="11:57"
-                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onChangeDoc((p) => ({ ...p, startTime: getCurrentHmText() }))
-                }
-                className="px-2 py-0.5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-primary shrink-0 cursor-pointer active:scale-95"
-              >
-                現在
-              </button>
+              {readOnly ? (
+                <span className="text-xs font-mono font-black text-foreground">
+                  {doc.startTime || "未設定"}
+                </span>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={doc.startTime}
+                    onChange={(e) =>
+                      onChangeDoc((p) => ({ ...p, startTime: e.target.value }))
+                    }
+                    placeholder="11:57"
+                    className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeDoc((p) => ({ ...p, startTime: getCurrentHmText() }))
+                    }
+                    className="px-2 py-0.5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-primary shrink-0 cursor-pointer active:scale-95"
+                  >
+                    現在
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/50 px-2.5 py-1.5">
@@ -219,24 +240,32 @@ export function MatchAndHeaderSetupCard({
               <span className="text-[10.5px] font-black text-muted-foreground shrink-0">
                 終了
               </span>
-              <input
-                type="text"
-                value={doc.endTime}
-                onChange={(e) =>
-                  onChangeDoc((p) => ({ ...p, endTime: e.target.value }))
-                }
-                placeholder="13:17"
-                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onChangeDoc((p) => ({ ...p, endTime: getCurrentHmText() }))
-                }
-                className="px-2 py-0.5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-foreground shrink-0 cursor-pointer active:scale-95"
-              >
-                現在
-              </button>
+              {readOnly ? (
+                <span className="text-xs font-mono font-black text-foreground">
+                  {doc.endTime || "未設定"}
+                </span>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    value={doc.endTime}
+                    onChange={(e) =>
+                      onChangeDoc((p) => ({ ...p, endTime: e.target.value }))
+                    }
+                    placeholder="13:17"
+                    className="w-full min-w-0 bg-transparent text-base sm:text-xs font-mono font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeDoc((p) => ({ ...p, endTime: getCurrentHmText() }))
+                    }
+                    className="px-2 py-0.5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-foreground shrink-0 cursor-pointer active:scale-95"
+                  >
+                    現在
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/50 px-2.5 py-1.5">
@@ -244,19 +273,26 @@ export function MatchAndHeaderSetupCard({
               <span className="text-[10.5px] font-black text-muted-foreground shrink-0">
                 速報
               </span>
-              <input
-                type="text"
-                value={doc.reporterNames}
-                onChange={(e) =>
-                  onChangeDoc((p) => ({ ...p, reporterNames: e.target.value }))
-                }
-                placeholder="例: 山田、佐藤"
-                className="w-full min-w-0 bg-transparent text-base sm:text-xs font-black text-foreground outline-none placeholder:text-muted-foreground/60"
-              />
+              {readOnly ? (
+                <span className="text-xs font-black text-foreground truncate">
+                  {doc.reporterNames || suggestedReporters.join("、") || "未設定"}
+                </span>
+              ) : (
+                <input
+                  type="text"
+                  value={doc.reporterNames}
+                  onChange={(e) =>
+                    onChangeDoc((p) => ({ ...p, reporterNames: e.target.value }))
+                  }
+                  placeholder="例: 山田、佐藤"
+                  className="w-full min-w-0 bg-transparent text-base sm:text-xs font-black text-foreground outline-none placeholder:text-muted-foreground/60"
+                />
+              )}
             </div>
           </div>
 
-          {suggestedReporters.length > 0 &&
+          {!readOnly &&
+            suggestedReporters.length > 0 &&
             doc.reporterNames.trim() !== suggestedReporters.join("、") && (
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[10px] font-bold text-muted-foreground">
@@ -277,7 +313,7 @@ export function MatchAndHeaderSetupCard({
               </div>
             )}
 
-          {/* スタメン横プレビュー＆編集ボタン */}
+          {/* スタメン横プレビュー＆編集/確認ボタン */}
           <div className="rounded-xl border border-border bg-muted/40 p-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               {filledLineupCount > 0 ? (
@@ -297,7 +333,9 @@ export function MatchAndHeaderSetupCard({
                 </p>
               ) : (
                 <p className="text-[11px] font-bold text-muted-foreground">
-                  スタメン未設定（タップして名簿から選択または手入力できます）
+                  {readOnly
+                    ? "スタメンはまだ登録されていません"
+                    : "スタメン未設定（タップして名簿から選択または手入力できます）"}
                 </p>
               )}
             </div>
@@ -306,12 +344,12 @@ export function MatchAndHeaderSetupCard({
               onClick={() => setIsLineupModalOpen(true)}
               className="px-2.5 py-1 rounded-lg bg-card border border-border hover:bg-muted text-[11px] font-black text-primary shrink-0 cursor-pointer active:scale-95"
             >
-              オーダー編集
+              {readOnly ? "オーダー確認" : "オーダー編集"}
             </button>
           </div>
 
           {/* 展開時：ヘッダー・スコアボード詳細設定 */}
-          {isExpanded && (
+          {!readOnly && isExpanded && (
             <div className="pt-3 border-t border-border space-y-3 animate-in fade-in duration-150">
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
@@ -553,10 +591,12 @@ export function MatchAndHeaderSetupCard({
                   <Users className="w-4 h-4 text-sky-400 shrink-0" />
                   <div>
                     <h3 className="text-sm font-black text-white">
-                      自チーム スタメン設定
+                      {readOnly ? "自チーム スタメン一覧（閲覧）" : "自チーム スタメン設定"}
                     </h3>
                     <p className="text-[10px] font-bold text-slate-300">
-                      例: 1.9 関本（打順 . 守備番号 選手名）
+                      {readOnly
+                        ? "担当者が設定したオーダーと途中交代一覧です"
+                        : "例: 1.9 関本（打順 . 守備番号 選手名）"}
                     </p>
                   </div>
                 </div>
@@ -570,7 +610,7 @@ export function MatchAndHeaderSetupCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
-                {hasSavedMatchLineup && (
+                {!readOnly && hasSavedMatchLineup && (
                   <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/8 px-3 py-2">
                     <span className="text-[11px] font-bold text-foreground">
                       試合データの登録済みオーダーを再反映できます
@@ -586,139 +626,179 @@ export function MatchAndHeaderSetupCard({
                   </div>
                 )}
 
-                {doc.lineup.map((slot, index) => (
-                  <div
-                    key={slot.order}
-                    className="flex items-center gap-2 rounded-xl border border-border bg-muted/35 p-2"
-                  >
-                    <span className="w-6 h-7 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black flex items-center justify-center shrink-0">
-                      {slot.order}
-                    </span>
+                {doc.lineup.map((slot, index) => {
+                  const posObj = POSITION_OPTIONS.find(
+                    (p) => p.code === normalizeReportPositionCode(slot.position)
+                  );
+                  if (readOnly) {
+                    return (
+                      <div
+                        key={slot.order}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/35 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-6 h-6 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black flex items-center justify-center shrink-0">
+                            {slot.order}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-card border border-border text-[11px] font-black text-primary shrink-0">
+                            {posObj?.shortLabel ||
+                              normalizeReportPositionCode(slot.position)}
+                          </span>
+                          <span className="text-xs font-black text-foreground truncate">
+                            {slot.playerName || "（未登録）"}
+                          </span>
+                        </div>
+                        {slot.substitutions.length > 0 && (
+                          <span className="text-[10.5px] font-bold text-muted-foreground truncate">
+                            →{" "}
+                            {slot.substitutions
+                              .map((sub) => sub.newName)
+                              .join(" → ")}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
 
-                    <LiffSelect
-                      value={normalizeReportPositionCode(slot.position)}
-                      onChange={(val) => {
-                        onChangeDoc((prev) => {
-                          const next = [...prev.lineup];
-                          next[index] = { ...next[index], position: val };
-                          return { ...prev, lineup: next };
-                        });
-                      }}
-                      options={[
-                        ...POSITION_OPTIONS.map((p) => ({
-                          value: p.code,
-                          label: p.shortLabel,
-                        })),
-                        { value: "打", label: "打" },
-                      ]}
-                      title={`${slot.order}番の守備位置を選択`}
-                      size="xs"
-                      searchable={false}
-                      className="h-8 w-20 shrink-0"
-                    />
+                  return (
+                    <div
+                      key={slot.order}
+                      className="flex items-center gap-2 rounded-xl border border-border bg-muted/35 p-2"
+                    >
+                      <span className="w-6 h-7 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black flex items-center justify-center shrink-0">
+                        {slot.order}
+                      </span>
 
-                    {rosterPlayers.length > 0 && (
                       <LiffSelect
-                        value={slot.playerId || ""}
-                        onChange={(pid) => {
-                          const matched = rosterPlayers.find(
-                            (rp) => rp.id === pid
-                          );
+                        value={normalizeReportPositionCode(slot.position)}
+                        onChange={(val) => {
                           onChangeDoc((prev) => {
                             const next = [...prev.lineup];
-                            next[index] = {
-                              ...next[index],
-                              playerId: matched ? matched.id : null,
-                              playerName: matched
-                                ? matched.name
-                                : next[index].playerName,
-                            };
+                            next[index] = { ...next[index], position: val };
                             return { ...prev, lineup: next };
                           });
                         }}
                         options={[
-                          {
-                            value: "",
-                            label: "名簿から選択",
-                            sublabel: "手入力のままにする場合はこちら",
-                          },
-                          ...rosterPlayers.map((rp) => ({
-                            value: rp.id,
-                            label: `${
-                              rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
-                            }${rp.name}`,
-                            badge: rp.mainPosition || undefined,
-                            badgeTone: "slate" as const,
-                            keywords: `${rp.uniformNumber || ""} ${rp.name}`,
+                          ...POSITION_OPTIONS.map((p) => ({
+                            value: p.code,
+                            label: p.shortLabel,
                           })),
+                          { value: "打", label: "打" },
                         ]}
-                        placeholder="名簿から選択"
-                        title={`${slot.order}番の選手を名簿から選択`}
+                        title={`${slot.order}番の守備位置を選択`}
                         size="xs"
-                        searchable={true}
-                        searchPlaceholder="選手名・背番号で検索..."
-                        className="h-8 w-28 sm:w-36 shrink-0"
+                        searchable={false}
+                        className="h-8 w-20 shrink-0"
                       />
-                    )}
 
-                    <input
-                      type="text"
-                      value={slot.playerName}
-                      onChange={(e) => {
-                        const nameVal = e.target.value;
+                      {rosterPlayers.length > 0 && (
+                        <LiffSelect
+                          value={slot.playerId || ""}
+                          onChange={(pid) => {
+                            const matched = rosterPlayers.find(
+                              (rp) => rp.id === pid
+                            );
+                            onChangeDoc((prev) => {
+                              const next = [...prev.lineup];
+                              next[index] = {
+                                ...next[index],
+                                playerId: matched ? matched.id : null,
+                                playerName: matched
+                                  ? matched.name
+                                  : next[index].playerName,
+                              };
+                              return { ...prev, lineup: next };
+                            });
+                          }}
+                          options={[
+                            {
+                              value: "",
+                              label: "名簿から選択",
+                              sublabel: "手入力のままにする場合はこちら",
+                            },
+                            ...rosterPlayers.map((rp) => ({
+                              value: rp.id,
+                              label: `${
+                                rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
+                              }${rp.name}`,
+                              badge: rp.mainPosition || undefined,
+                              badgeTone: "slate" as const,
+                              keywords: `${rp.uniformNumber || ""} ${rp.name}`,
+                            })),
+                          ]}
+                          placeholder="名簿から選択"
+                          title={`${slot.order}番の選手を名簿から選択`}
+                          size="xs"
+                          searchable={true}
+                          searchPlaceholder="選手名・背番号で検索..."
+                          className="h-8 w-28 sm:w-36 shrink-0"
+                        />
+                      )}
+
+                      <input
+                        type="text"
+                        value={slot.playerName}
+                        onChange={(e) => {
+                          const nameVal = e.target.value;
+                          onChangeDoc((prev) => {
+                            const next = [...prev.lineup];
+                            next[index] = {
+                              ...next[index],
+                              playerName: nameVal,
+                            };
+                            return { ...prev, lineup: next };
+                          });
+                        }}
+                        placeholder="選手名を入力"
+                        className="h-8 flex-1 min-w-0 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                      />
+
+                      {doc.lineup.length > 9 &&
+                        index === doc.lineup.length - 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onChangeDoc((prev) => ({
+                                ...prev,
+                                lineup: prev.lineup.slice(0, -1),
+                              }))
+                            }
+                            className="w-7 h-7 rounded-lg bg-rose-500/12 text-rose-600 flex items-center justify-center shrink-0 cursor-pointer"
+                            title="最終打順枠を削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                    </div>
+                  );
+                })}
+
+                {!readOnly && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() =>
                         onChangeDoc((prev) => {
-                          const next = [...prev.lineup];
-                          next[index] = {
-                            ...next[index],
-                            playerName: nameVal,
+                          const nextOrder = prev.lineup.length + 1;
+                          const added: LiveReportLineupSlot = {
+                            order: nextOrder,
+                            position: "D",
+                            playerId: null,
+                            playerName: "",
+                            substitutions: [],
                           };
-                          return { ...prev, lineup: next };
-                        });
-                      }}
-                      placeholder="選手名を入力"
-                      className="h-8 flex-1 min-w-0 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
-                    />
-
-                    {doc.lineup.length > 9 && index === doc.lineup.length - 1 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onChangeDoc((prev) => ({
-                            ...prev,
-                            lineup: prev.lineup.slice(0, -1),
-                          }))
-                        }
-                        className="w-7 h-7 rounded-lg bg-rose-500/12 text-rose-600 flex items-center justify-center shrink-0 cursor-pointer"
-                        title="最終打順枠を削除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                          return { ...prev, lineup: [...prev.lineup, added] };
+                        })
+                      }
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-primary" />
+                      <span>
+                        {doc.lineup.length + 1}番打者を追加（全員打制・DP等）
+                      </span>
+                    </button>
                   </div>
-                ))}
-
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChangeDoc((prev) => {
-                        const nextOrder = prev.lineup.length + 1;
-                        const added: LiveReportLineupSlot = {
-                          order: nextOrder,
-                          position: "D",
-                          playerId: null,
-                          playerName: "",
-                          substitutions: [],
-                        };
-                        return { ...prev, lineup: [...prev.lineup, added] };
-                      })
-                    }
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-primary" />
-                    <span>{doc.lineup.length + 1}番打者を追加（全員打制・DP等）</span>
-                  </button>
-                </div>
+                )}
               </div>
 
               <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex justify-end shrink-0">
@@ -727,7 +807,7 @@ export function MatchAndHeaderSetupCard({
                   onClick={() => setIsLineupModalOpen(false)}
                   className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black cursor-pointer active:scale-95"
                 >
-                  完了して閉じる
+                  {readOnly ? "閉じる" : "完了して閉じる"}
                 </button>
               </div>
             </div>

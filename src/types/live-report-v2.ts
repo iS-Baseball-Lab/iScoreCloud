@@ -116,6 +116,10 @@ export interface LiveReportMatchOption {
   hasScorebook: boolean;
   hasLineup: boolean;
   lineLiveAssignees: string[];
+  isMyLineLiveAssigned?: boolean;
+  editorOwnerKey?: string | null;
+  editorName?: string | null;
+  editorUpdatedAt?: number | null;
 }
 
 export interface LiveReportRosterPlayer {
@@ -124,4 +128,5 @@ export interface LiveReportRosterPlayer {
   uniformNumber: string;
   mainPosition: string | null;
 }
+
 

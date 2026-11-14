@@ -21,9 +21,15 @@ import {
   Clock,
   RotateCcw,
   Pencil,
+  Eye,
+  ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffSelect } from "@/components/liff/LiffSelect";
+import {
+  FlickPadButton,
+  type FlickSubOption,
+} from "./FlickPadButton";
 import {
   POSITION_OPTIONS,
   buildBattedPlayCandidates,
@@ -32,6 +38,7 @@ import {
   findActiveDefenderByDirection,
   formatLiveReportText,
   formatPlayerReportName,
+  formatRunnersLabel,
   formatSinglePlayEntryLine,
   getCurrentHmText,
   isMyTeamBattingHalf,
@@ -39,8 +46,12 @@ import {
   normalizeRunnersList,
   resolveActiveLineupAtInning,
   simulateDirectOutcome,
+  simulateQuickBaserunningPlay,
   type BattedOutcomeCode,
+  type BattedPlayVariant,
   type DirectOutcomeCode,
+  type DirectPlayVariant,
+  type QuickBaserunningCode,
   type SimulatedPlayCandidate,
 } from "@/lib/liff/live-report-v2";
 import type {
@@ -66,10 +77,593 @@ interface LiveAtBatPadCardProps {
   onShareLine?: () => void;
   copied?: boolean;
   onOpenFullPreview?: () => void;
+  /** 担当外メンバーの閲覧モード（入力パッド非表示・ドキュメント変更0） */
+  readOnly?: boolean;
+  editorDisplayName?: string | null;
+  viewerHalfOverride?: { inning: number; isBottom: boolean } | null;
+  onChangeViewerHalfOverride?: (
+    override: { inning: number; isBottom: boolean } | null
+  ) => void;
+  onRequestTakeover?: () => void;
 }
 
 const INFIELD_DIRECTIONS = ["投", "捕", "一", "二", "三", "遊"] as const;
 const OUTFIELD_DIRECTIONS = ["左", "左中", "中", "右中", "右"] as const;
+
+const DIRECTION_FLICK_OPTIONS: Record<
+  string,
+  ReadonlyArray<FlickSubOption<string>>
+> = {
+  投: [
+    { id: "p_std", label: "投（標準）", value: "投" },
+    { id: "p_hard", label: "投強襲", sublabel: "ピッチャー強襲", value: "投強襲" },
+    { id: "p_front", label: "投前", sublabel: "ピッチャー前", value: "投前" },
+    { id: "p_1b", label: "一塁側", sublabel: "投手一塁側", value: "投一側" },
+    { id: "p_3b", label: "三塁側", sublabel: "投手三塁側", value: "投三側" },
+  ],
+  捕: [
+    { id: "c_std", label: "捕（標準）", value: "捕" },
+    { id: "c_front", label: "捕前", sublabel: "ホーム前", value: "捕前" },
+    { id: "c_foul", label: "捕邪", sublabel: "キャッチャーファウル", value: "捕邪" },
+  ],
+  一: [
+    { id: "1b_std", label: "一（標準）", value: "一" },
+    { id: "1b_line", label: "一線（ライン際）", sublabel: "一塁線", value: "一線" },
+    { id: "1b_12", label: "一二間", sublabel: "一二塁間", value: "一二間" },
+    { id: "1b_hard", label: "一強襲", sublabel: "ファースト強襲", value: "一強襲" },
+    { id: "1b_foul", label: "一邪", sublabel: "一塁ファウル側", value: "一邪" },
+  ],
+  二: [
+    { id: "2b_std", label: "二（標準）", value: "二" },
+    { id: "2b_12", label: "一二間", sublabel: "一二塁間", value: "一二間" },
+    { id: "2b_26", label: "二遊間", sublabel: "センター抜け方向", value: "二遊間" },
+    { id: "2b_back", label: "二後方", sublabel: "セカンド後方", value: "二後方" },
+    { id: "2b_hard", label: "二強襲", sublabel: "セカンド強襲", value: "二強襲" },
+  ],
+  三: [
+    { id: "3b_std", label: "三（標準）", value: "三" },
+    { id: "3b_line", label: "三線（ライン際）", sublabel: "三塁線", value: "三線" },
+    { id: "3b_56", label: "三遊間", sublabel: "三遊間方向", value: "三遊間" },
+    { id: "3b_front", label: "三前", sublabel: "サード前", value: "三前" },
+    { id: "3b_hard", label: "三強襲", sublabel: "サード強襲", value: "三強襲" },
+    { id: "3b_foul", label: "三邪", sublabel: "三塁ファウル側", value: "三邪" },
+  ],
+  遊: [
+    { id: "ss_std", label: "遊（標準）", value: "遊" },
+    { id: "ss_56", label: "三遊間", sublabel: "三遊間方向", value: "三遊間" },
+    { id: "ss_26", label: "二遊間", sublabel: "二遊間方向", value: "二遊間" },
+    { id: "ss_back", label: "遊後方", sublabel: "ショート後方", value: "遊後方" },
+    { id: "ss_hard", label: "遊強襲", sublabel: "ショート強襲", value: "遊強襲" },
+  ],
+  左: [
+    { id: "lf_front", label: "左前（手前）", sublabel: "レフト前", value: "左前" },
+    { id: "lf_line", label: "左線（ライン際）", sublabel: "レフト線", value: "左線" },
+    { id: "lf_over", label: "左越（オーバー）", sublabel: "レフト越え", value: "左越" },
+    { id: "lf_shallow", label: "左浅（浅め）", sublabel: "ポテン・浅飛球", value: "左浅" },
+    { id: "lf_deep", label: "左深（後方）", sublabel: "深い当たり", value: "左深" },
+    { id: "lf_std", label: "左（標準）", value: "左" },
+  ],
+  左中: [
+    { id: "lcf_std", label: "左中間（標準）", value: "左中" },
+    { id: "lcf_break", label: "左中間破る", sublabel: "長打コース", value: "左中間破る" },
+    { id: "lcf_shallow", label: "左中間浅め", value: "左中浅" },
+    { id: "lcf_deep", label: "左中間深め", value: "左中深" },
+  ],
+  中: [
+    { id: "cf_front", label: "中前（手前）", sublabel: "センター前", value: "中前" },
+    { id: "cf_over", label: "中越（オーバー）", sublabel: "センター越え", value: "中越" },
+    { id: "cf_shallow", label: "中浅（浅め）", sublabel: "ポテン・浅飛球", value: "中浅" },
+    { id: "cf_deep", label: "中深（後方）", sublabel: "バックスクリーン方向", value: "中深" },
+    { id: "cf_std", label: "中（標準）", value: "中" },
+  ],
+  右中: [
+    { id: "rcf_std", label: "右中間（標準）", value: "右中" },
+    { id: "rcf_break", label: "右中間破る", sublabel: "長打コース", value: "右中間破る" },
+    { id: "rcf_shallow", label: "右中間浅め", value: "右中浅" },
+    { id: "rcf_deep", label: "右中間深め", value: "右中深" },
+  ],
+  右: [
+    { id: "rf_front", label: "右前（手前）", sublabel: "ライト前", value: "右前" },
+    { id: "rf_line", label: "右線（ライン際）", sublabel: "ライト線", value: "右線" },
+    { id: "rf_over", label: "右越（オーバー）", sublabel: "ライト越え", value: "右越" },
+    { id: "rf_shallow", label: "右浅（浅め）", sublabel: "ポテン・浅飛球", value: "右浅" },
+    { id: "rf_deep", label: "右深（後方）", sublabel: "深い当たり", value: "右深" },
+    { id: "rf_std", label: "右（標準）", value: "右" },
+  ],
+};
+
+interface BattedFlickPayload {
+  code: BattedOutcomeCode;
+  variant: BattedPlayVariant | null;
+  activeChip?: string;
+}
+
+const BATTED_FLICK_OPTIONS: Partial<
+  Record<BattedOutcomeCode, ReadonlyArray<FlickSubOption<BattedFlickPayload>>>
+> = {
+  groundout: [
+    {
+      id: "go_std",
+      label: "通常ゴロ",
+      value: { code: "groundout", variant: null },
+    },
+    {
+      id: "go_bote",
+      label: "ボテボテゴロ",
+      shortActiveLabel: "ボテゴロ",
+      value: { code: "groundout", variant: "ground_botebote", activeChip: "ボテゴロ" },
+    },
+    {
+      id: "go_high",
+      label: "高いバウンド",
+      shortActiveLabel: "高バウンド",
+      value: { code: "groundout", variant: "ground_high_bound", activeChip: "高バウンド" },
+    },
+    {
+      id: "go_fc2",
+      label: "二塁封殺",
+      shortActiveLabel: "二封ゴロ",
+      value: { code: "groundout", variant: "ground_force_2b", activeChip: "二封ゴロ" },
+    },
+    {
+      id: "go_fch",
+      label: "本塁封殺",
+      shortActiveLabel: "本封ゴロ",
+      value: { code: "groundout", variant: "ground_force_home", activeChip: "本封ゴロ" },
+    },
+    {
+      id: "go_tag",
+      label: "タッチアウト",
+      shortActiveLabel: "タッチ死",
+      value: { code: "groundout", variant: "ground_tag_out", activeChip: "タッチ死" },
+    },
+  ],
+  flyout: [
+    {
+      id: "fly_std",
+      label: "通常フライ",
+      value: { code: "flyout", variant: null },
+    },
+    {
+      id: "fly_shallow",
+      label: "浅いフライ",
+      shortActiveLabel: "浅フライ",
+      value: { code: "flyout", variant: "fly_shallow", activeChip: "浅フライ" },
+    },
+    {
+      id: "fly_deep",
+      label: "深い大飛球",
+      shortActiveLabel: "深フライ",
+      value: { code: "flyout", variant: "fly_deep", activeChip: "深フライ" },
+    },
+    {
+      id: "fly_iff",
+      label: "インフィールド飛",
+      shortActiveLabel: "IFフライ",
+      value: { code: "flyout", variant: "infield_fly", activeChip: "IFフライ" },
+    },
+  ],
+  double_play: [
+    {
+      id: "dp_ground",
+      label: "ゴロ併殺",
+      value: { code: "double_play", variant: null },
+    },
+    {
+      id: "dp_liner",
+      label: "ライナー併殺",
+      shortActiveLabel: "直併殺",
+      value: { code: "double_play", variant: "dp_liner", activeChip: "直併殺" },
+    },
+    {
+      id: "dp_fly",
+      label: "フライ併殺",
+      shortActiveLabel: "飛併殺",
+      value: { code: "double_play", variant: "dp_fly_tag", activeChip: "飛併殺" },
+    },
+    {
+      id: "dp_k_cs",
+      label: "三振＋盗塁死併殺",
+      shortActiveLabel: "三振併殺",
+      value: { code: "double_play", variant: "dp_strikeout_cs", activeChip: "三振併殺" },
+    },
+  ],
+  front_hit: [
+    {
+      id: "fh_std",
+      label: "前ヒット（手前）",
+      sublabel: "左前・中前・右前",
+      value: { code: "front_hit", variant: "hit_front" },
+    },
+    {
+      id: "fh_poten",
+      label: "ポテンヒット",
+      sublabel: "手前に落ちる安打",
+      shortActiveLabel: "ポテンH",
+      value: { code: "front_hit", variant: "hit_poten", activeChip: "ポテンH" },
+    },
+    {
+      id: "fh_clean",
+      label: "クリーンヒット",
+      shortActiveLabel: "クリーンH",
+      value: { code: "front_hit", variant: "hit_clean", activeChip: "クリーンH" },
+    },
+    {
+      id: "fh_liner",
+      label: "ライナーヒット",
+      shortActiveLabel: "ライナーH",
+      value: { code: "front_hit", variant: "hit_liner", activeChip: "ライナーH" },
+    },
+  ],
+  hit: [
+    {
+      id: "h_front",
+      label: "手前（前ヒット）",
+      sublabel: "外野手前へ抜ける安打",
+      shortActiveLabel: "前ヒット",
+      value: { code: "hit", variant: "hit_front", activeChip: "前ヒット" },
+    },
+    {
+      id: "h_poten",
+      label: "ポテン（手前落ち）",
+      sublabel: "浅い位置に落ちる安打",
+      shortActiveLabel: "ポテンH",
+      value: { code: "hit", variant: "hit_poten", activeChip: "ポテンH" },
+    },
+    {
+      id: "h_line",
+      label: "ライン際（線ヒット）",
+      sublabel: "左線・右線・一線・三線",
+      shortActiveLabel: "線ヒット",
+      value: { code: "hit", variant: "hit_line", activeChip: "線ヒット" },
+    },
+    {
+      id: "h_gap",
+      label: "外野の間",
+      sublabel: "左中間・右中間",
+      shortActiveLabel: "間ヒット",
+      value: { code: "hit", variant: "hit_gap", activeChip: "間ヒット" },
+    },
+    {
+      id: "h_hard",
+      label: "強襲ヒット",
+      shortActiveLabel: "強襲H",
+      value: { code: "hit", variant: "hit_hard", activeChip: "強襲H" },
+    },
+    {
+      id: "h_liner",
+      label: "ライナーヒット",
+      shortActiveLabel: "ライナーH",
+      value: { code: "hit", variant: "hit_liner", activeChip: "ライナーH" },
+    },
+  ],
+  infield_hit: [
+    {
+      id: "ih_std",
+      label: "内野安打（標準）",
+      value: { code: "infield_hit", variant: null },
+    },
+    {
+      id: "ih_bote",
+      label: "ボテボテ内野安打",
+      shortActiveLabel: "ボテ安打",
+      value: { code: "infield_hit", variant: "infield_botebote", activeChip: "ボテ安打" },
+    },
+    {
+      id: "ih_bunt",
+      label: "バント安打",
+      shortActiveLabel: "バント安",
+      value: { code: "infield_hit", variant: "bunt_hit", activeChip: "バント安" },
+    },
+    {
+      id: "ih_safety",
+      label: "セーフティバント安",
+      shortActiveLabel: "セーフティ",
+      value: { code: "infield_hit", variant: "safety_bunt_hit", activeChip: "セーフティ" },
+    },
+    {
+      id: "ih_hard",
+      label: "強襲内野安打",
+      shortActiveLabel: "強襲内安",
+      value: { code: "infield_hit", variant: "hit_hard", activeChip: "強襲内安" },
+    },
+  ],
+  double: [
+    {
+      id: "2b_over",
+      label: "越え（オーバー）",
+      sublabel: "左越・中越・右越",
+      shortActiveLabel: "越二塁打",
+      value: { code: "double", variant: "hit_over", activeChip: "越二塁打" },
+    },
+    {
+      id: "2b_line",
+      label: "ライン際（線二塁打）",
+      sublabel: "左線・右線・三線・一線",
+      shortActiveLabel: "線二塁打",
+      value: { code: "double", variant: "hit_line", activeChip: "線二塁打" },
+    },
+    {
+      id: "2b_gap",
+      label: "間破る二塁打",
+      sublabel: "左中間・右中間破る",
+      shortActiveLabel: "間二塁打",
+      value: { code: "double", variant: "hit_gap", activeChip: "間二塁打" },
+    },
+    {
+      id: "2b_poten",
+      label: "手前ポテン二塁打",
+      shortActiveLabel: "ポテン二",
+      value: { code: "double", variant: "hit_poten", activeChip: "ポテン二" },
+    },
+    {
+      id: "2b_entitle",
+      label: "エンタイトル二塁打",
+      shortActiveLabel: "エンタイトル",
+      value: { code: "double", variant: "entitle_double", activeChip: "エンタイトル" },
+    },
+  ],
+  triple: [
+    {
+      id: "3b_over",
+      label: "越え三塁打",
+      value: { code: "triple", variant: null },
+    },
+    {
+      id: "3b_line",
+      label: "ライン際三塁打",
+      shortActiveLabel: "線三塁打",
+      value: { code: "triple", variant: "hit_line", activeChip: "線三塁打" },
+    },
+    {
+      id: "3b_gap",
+      label: "間破る三塁打",
+      shortActiveLabel: "間三塁打",
+      value: { code: "triple", variant: "hit_gap", activeChip: "間三塁打" },
+    },
+  ],
+  homerun: [
+    {
+      id: "hr_over",
+      label: "柵越え本塁打",
+      value: { code: "homerun", variant: null },
+    },
+    {
+      id: "hr_line",
+      label: "ポール・ライン際",
+      shortActiveLabel: "線本塁打",
+      value: { code: "homerun", variant: "hit_line", activeChip: "線本塁打" },
+    },
+    {
+      id: "hr_inside",
+      label: "ランニング本塁打",
+      shortActiveLabel: "走本塁打",
+      value: { code: "homerun", variant: "inside_park_hr", activeChip: "走本塁打" },
+    },
+  ],
+  sac_bunt: [
+    {
+      id: "sb_std",
+      label: "送りバント成功",
+      value: { code: "sac_bunt", variant: null },
+    },
+    {
+      id: "sb_sq",
+      label: "スクイズ成功",
+      badge: "+1点",
+      shortActiveLabel: "スクイズ",
+      value: { code: "sac_bunt", variant: "squeeze_score", activeChip: "スクイズ" },
+    },
+    {
+      id: "sb_ssq",
+      label: "セーフティスクイズ",
+      badge: "+1点",
+      shortActiveLabel: "Sスクイズ",
+      value: { code: "sac_bunt", variant: "safety_squeeze", activeChip: "Sスクイズ" },
+    },
+    {
+      id: "sb_fc",
+      label: "バント失敗（封殺）",
+      shortActiveLabel: "バント封殺",
+      value: { code: "sac_bunt", variant: "bunt_fc_out", activeChip: "バント封殺" },
+    },
+    {
+      id: "sb_pop",
+      label: "バント小飛球死",
+      shortActiveLabel: "バント飛",
+      value: { code: "sac_bunt", variant: "bunt_popup_out", activeChip: "バント飛" },
+    },
+    {
+      id: "sb_sq_fail",
+      label: "スクイズ失敗",
+      shortActiveLabel: "スクイズ死",
+      value: { code: "sac_bunt", variant: "squeeze_fail_out", activeChip: "スクイズ死" },
+    },
+  ],
+  error: [
+    {
+      id: "err_std",
+      label: "エラー（標準）",
+      value: { code: "error", variant: null },
+    },
+    {
+      id: "err_catch",
+      label: "捕球エラー",
+      shortActiveLabel: "捕球E",
+      value: { code: "error", variant: "error_catch", activeChip: "捕球E" },
+    },
+    {
+      id: "err_throw",
+      label: "悪送球エラー",
+      shortActiveLabel: "悪送球E",
+      value: { code: "error", variant: "error_throw", activeChip: "悪送球E" },
+    },
+    {
+      id: "err_drop",
+      label: "落球エラー",
+      shortActiveLabel: "落球E",
+      value: { code: "error", variant: "error_drop", activeChip: "落球E" },
+    },
+    {
+      id: "err_pass2",
+      label: "後逸エラー（2塁へ）",
+      shortActiveLabel: "後逸2塁",
+      value: { code: "error", variant: "error_pass_2b", activeChip: "後逸2塁" },
+    },
+  ],
+  fc: [
+    {
+      id: "fc_std",
+      label: "野選（標準）",
+      value: { code: "fc", variant: null },
+    },
+    {
+      id: "fc_home",
+      label: "本塁野選",
+      shortActiveLabel: "本塁野選",
+      value: { code: "fc", variant: "fc_home_safe", activeChip: "本塁野選" },
+    },
+    {
+      id: "fc_bunt",
+      label: "バント野選",
+      shortActiveLabel: "バント野選",
+      value: { code: "fc", variant: "fc_bunt_safe", activeChip: "バント野選" },
+    },
+  ],
+};
+
+interface DirectFlickPayload {
+  code: DirectOutcomeCode;
+  variant: DirectPlayVariant | null;
+  activeChip?: string;
+}
+
+const DIRECT_FLICK_OPTIONS: Partial<
+  Record<DirectOutcomeCode, ReadonlyArray<FlickSubOption<DirectFlickPayload>>>
+> = {
+  strikeout_swing: [
+    {
+      id: "so_std",
+      label: "空振り三振",
+      value: { code: "strikeout_swing", variant: null },
+    },
+    {
+      id: "so_tip",
+      label: "ファウルチップ三振",
+      shortActiveLabel: "チップ三振",
+      value: { code: "strikeout_swing", variant: "so_foul_tip", activeChip: "チップ三振" },
+    },
+  ],
+  walk: [
+    {
+      id: "bb_std",
+      label: "四球（標準）",
+      value: { code: "walk", variant: null },
+    },
+    {
+      id: "bb_4p",
+      label: "ストレート四球",
+      shortActiveLabel: "スト四球",
+      value: { code: "walk", variant: "walk_four_pitch", activeChip: "スト四球" },
+    },
+    {
+      id: "bb_full",
+      label: "粘って四球",
+      shortActiveLabel: "粘り四球",
+      value: { code: "walk", variant: "walk_full_count", activeChip: "粘り四球" },
+    },
+    {
+      id: "bb_wp2",
+      label: "四球＋暴投二進",
+      shortActiveLabel: "四球二進",
+      value: { code: "walk", variant: "walk_wp_2b", activeChip: "四球二進" },
+    },
+  ],
+  dropped_3rd_safe: [
+    {
+      id: "dts_std",
+      label: "振逃出塁",
+      value: { code: "dropped_3rd_safe", variant: null },
+    },
+    {
+      id: "dts_wp",
+      label: "暴投振逃出塁",
+      shortActiveLabel: "暴投振逃",
+      value: { code: "dropped_3rd_safe", variant: "dts_wp_safe", activeChip: "暴投振逃" },
+    },
+  ],
+};
+
+const QUICK_BASERUNNING_OPTIONS: ReadonlyArray<
+  FlickSubOption<QuickBaserunningCode>
+> = [
+  {
+    id: "br_double_steal",
+    label: "ダブルスチール（重盗）",
+    badge: "重盗",
+    sublabel: "1・2塁➔2・3塁 / 1・3塁➔+1点",
+    value: "double_steal",
+  },
+  {
+    id: "br_steal_2b",
+    label: "二盗成功",
+    sublabel: "1塁走者 ➔ 2塁へ",
+    value: "steal_2b",
+  },
+  {
+    id: "br_steal_3b",
+    label: "三盗成功",
+    sublabel: "2塁走者 ➔ 3塁へ",
+    value: "steal_3b",
+  },
+  {
+    id: "br_home_steal",
+    label: "本盗（ホームスチール）",
+    badge: "+1点",
+    sublabel: "3塁走者 ➔ 本塁生還",
+    value: "home_steal",
+  },
+  {
+    id: "br_wp",
+    label: "暴投進塁",
+    sublabel: "ワイルドピッチ",
+    value: "wp_advance",
+  },
+  {
+    id: "br_pb",
+    label: "捕逸進塁",
+    sublabel: "パスボール",
+    value: "pb_advance",
+  },
+  {
+    id: "br_delayed",
+    label: "ディレードスチール",
+    value: "delayed_steal",
+  },
+  {
+    id: "br_balk",
+    label: "ボーク進塁",
+    value: "balk_advance",
+  },
+  {
+    id: "br_cs",
+    label: "盗塁死",
+    badge: "+1死",
+    value: "caught_stealing",
+  },
+  {
+    id: "br_pickoff",
+    label: "牽制死",
+    badge: "+1死",
+    value: "pickoff_out",
+  },
+  {
+    id: "br_rundown",
+    label: "飛び出し挟殺アウト",
+    badge: "+1死",
+    value: "rundown_out",
+  },
+];
 
 const DIRECT_OUTCOMES: ReadonlyArray<{
   code: DirectOutcomeCode;
@@ -141,10 +735,16 @@ export function LiveAtBatPadCard({
   onShareLine,
   copied = false,
   onOpenFullPreview,
+  readOnly = false,
+  editorDisplayName,
+  viewerHalfOverride = null,
+  onChangeViewerHalfOverride,
+  onRequestTakeover,
 }: LiveAtBatPadCardProps) {
   const [mounted, setMounted] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"inning" | "full">("inning");
   const monitorScrollRef = useRef<HTMLDivElement | null>(null);
+  const [quickBrFeedback, setQuickBrFeedback] = useState<string | null>(null);
 
   // 状況の手動一時変更（タイブレーク無死1・2塁など）
   const [manualStartOuts, setManualStartOuts] = useState<number | null>(null);
@@ -152,12 +752,24 @@ export function LiveAtBatPadCard({
     LiveReportBaseNum[] | null
   >(null);
 
-  // 打席選択状態
+  // 打席選択状態（通常タップ＋長押しフリック詳細バリエーション）
   const [selectedDirect, setSelectedDirect] =
     useState<DirectOutcomeCode | null>(null);
+  const [selectedDirectVariant, setSelectedDirectVariant] =
+    useState<DirectPlayVariant | null>(null);
+  const [selectedDirectActiveChip, setSelectedDirectActiveChip] = useState<
+    string | null
+  >(null);
   const [selectedDirection, setSelectedDirection] = useState<string>("");
+  const [selectedDirectionAnchor, setSelectedDirectionAnchor] =
+    useState<string>("");
   const [selectedBatted, setSelectedBatted] =
     useState<BattedOutcomeCode | null>(null);
+  const [selectedBattedVariant, setSelectedBattedVariant] =
+    useState<BattedPlayVariant | null>(null);
+  const [selectedBattedActiveChip, setSelectedBattedActiveChip] = useState<
+    string | null
+  >(null);
   const [selectedCandidateIdx, setSelectedCandidateIdx] = useState<number>(0);
   const [reactionText, setReactionText] = useState<string>("");
 
@@ -206,8 +818,13 @@ export function LiveAtBatPadCard({
 
   const resetPadSelection = () => {
     setSelectedDirect(null);
+    setSelectedDirectVariant(null);
+    setSelectedDirectActiveChip(null);
     setSelectedDirection("");
+    setSelectedDirectionAnchor("");
     setSelectedBatted(null);
+    setSelectedBattedVariant(null);
+    setSelectedBattedActiveChip(null);
     setSelectedCandidateIdx(0);
     setReactionText("");
     setCustomPlayText("");
@@ -225,16 +842,23 @@ export function LiveAtBatPadCard({
     setIsBatterQuickModalOpen(false);
     setManualStartOuts(null);
     setManualStartRunners(null);
+    setQuickBrFeedback(null);
     resetPadSelection();
-  }, [activeContextKey, doc.activeInning, doc.activeIsBottom]);
+  }, [activeContextKey, doc.activeInning, doc.activeIsBottom, readOnly]);
+
+  const viewedInning =
+    readOnly && viewerHalfOverride ? viewerHalfOverride.inning : doc.activeInning;
+  const viewedIsBottom =
+    readOnly && viewerHalfOverride
+      ? viewerHalfOverride.isBottom
+      : doc.activeIsBottom;
 
   const currentHalf = useMemo(
     () =>
       doc.halfInnings.find(
-        (h) =>
-          h.inning === doc.activeInning && h.isBottom === doc.activeIsBottom
+        (h) => h.inning === viewedInning && h.isBottom === viewedIsBottom
       ),
-    [doc.halfInnings, doc.activeInning, doc.activeIsBottom]
+    [doc.halfInnings, viewedInning, viewedIsBottom]
   );
 
   const autoSituation = useMemo(
@@ -247,15 +871,11 @@ export function LiveAtBatPadCard({
   const effectiveRunnersBefore =
     manualStartRunners !== null ? manualStartRunners : autoSituation.runners;
 
-  const isMyAttack = isMyTeamBattingHalf(doc.battingOrder, doc.activeIsBottom);
+  const isMyAttack = isMyTeamBattingHalf(doc.battingOrder, viewedIsBottom);
   const activeLineup = useMemo(
     () =>
-      resolveActiveLineupAtInning(
-        doc.lineup,
-        doc.activeInning,
-        doc.activeIsBottom
-      ),
-    [doc.lineup, doc.activeInning, doc.activeIsBottom]
+      resolveActiveLineupAtInning(doc.lineup, viewedInning, viewedIsBottom),
+    [doc.lineup, viewedInning, viewedIsBottom]
   );
 
   const currentOrder = isMyAttack ? doc.nextMyOrder : doc.nextOpponentOrder;
@@ -288,7 +908,8 @@ export function LiveAtBatPadCard({
         simulateDirectOutcome(
           selectedDirect,
           startOuts,
-          effectiveRunnersBefore
+          effectiveRunnersBefore,
+          selectedDirectVariant
         ),
       ];
     }
@@ -297,14 +918,17 @@ export function LiveAtBatPadCard({
         selectedDirection,
         selectedBatted,
         startOuts,
-        effectiveRunnersBefore
+        effectiveRunnersBefore,
+        selectedBattedVariant
       );
     }
     return [];
   }, [
     selectedDirect,
+    selectedDirectVariant,
     selectedDirection,
     selectedBatted,
+    selectedBattedVariant,
     effectiveOutsBefore,
     effectiveRunnersBefore,
   ]);
@@ -337,21 +961,22 @@ export function LiveAtBatPadCard({
       ? customRunsScored
       : activeCandidate?.runsScored ?? 0;
 
-  const previewEntry: LiveReportPlayEntry | null = finalPlayText
-    ? {
-        id: "preview",
-        entryType: "batter",
-        battingOrder: currentOrder,
-        batterName: isMyAttack ? activeBatterSlot?.playerName || "" : "",
-        playText: finalPlayText,
-        reactionText,
-        outsAfter: finalOutsAfter,
-        runnersAfter: finalRunnersAfter,
-        runsScored: finalRunsScored,
-        chainedPlays: [],
-        eventText: "",
-      }
-    : null;
+  const previewEntry: LiveReportPlayEntry | null =
+    !readOnly && finalPlayText
+      ? {
+          id: "preview",
+          entryType: "batter",
+          battingOrder: currentOrder,
+          batterName: isMyAttack ? activeBatterSlot?.playerName || "" : "",
+          playText: finalPlayText,
+          reactionText,
+          outsAfter: finalOutsAfter,
+          runnersAfter: finalRunnersAfter,
+          runsScored: finalRunsScored,
+          chainedPlays: [],
+          eventText: "",
+        }
+      : null;
 
   const previewLine = previewEntry
     ? formatSinglePlayEntryLine(previewEntry, isMyAttack, doc.showSurnameOnly)
@@ -360,6 +985,42 @@ export function LiveAtBatPadCard({
   const scoreboardSummary = useMemo(() => computeScoreboardSummary(doc), [doc]);
 
   const handleStepHalfInning = (delta: -1 | 1) => {
+    if (readOnly) {
+      if (!onChangeViewerHalfOverride) return;
+      if (delta === 1) {
+        const next = !viewedIsBottom
+          ? { inning: viewedInning, isBottom: true }
+          : { inning: viewedInning + 1, isBottom: false };
+        if (
+          next.inning === doc.activeInning &&
+          next.isBottom === doc.activeIsBottom
+        ) {
+          onChangeViewerHalfOverride(null);
+        } else {
+          onChangeViewerHalfOverride(next);
+        }
+        return;
+      }
+      if (viewedIsBottom) {
+        const prev = { inning: viewedInning, isBottom: false };
+        onChangeViewerHalfOverride(
+          prev.inning === doc.activeInning &&
+            prev.isBottom === doc.activeIsBottom
+            ? null
+            : prev
+        );
+      } else if (viewedInning > 1) {
+        const prev = { inning: viewedInning - 1, isBottom: true };
+        onChangeViewerHalfOverride(
+          prev.inning === doc.activeInning &&
+            prev.isBottom === doc.activeIsBottom
+            ? null
+            : prev
+        );
+      }
+      return;
+    }
+
     onChangeDoc((prev) => {
       if (delta === 1) {
         if (!prev.activeIsBottom) {
@@ -386,6 +1047,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleShiftOrder = (delta: -1 | 1) => {
+    if (readOnly) return;
     onChangeDoc((prev) => {
       if (isMyAttack) {
         const limit = Math.max(9, prev.lineup.length);
@@ -398,7 +1060,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleRecordAtBat = () => {
-    if (!finalPlayText) return;
+    if (readOnly || !finalPlayText) return;
     const newEntry: LiveReportPlayEntry = {
       id: `ab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       entryType: "batter",
@@ -454,7 +1116,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleUndoLastEntry = () => {
-    if (!currentHalf || currentHalf.entries.length === 0) return;
+    if (readOnly || !currentHalf || currentHalf.entries.length === 0) return;
     const lastEntry = currentHalf.entries[currentHalf.entries.length - 1];
 
     onChangeDoc((prev) => {
@@ -487,7 +1149,7 @@ export function LiveAtBatPadCard({
 
   // 現在打者のクイック設定モーダルを開く
   const openBatterQuickModal = () => {
-    if (!isMyAttack) return;
+    if (readOnly || !isMyAttack) return;
     setQuickBatterPlayerId(activeBatterSlot?.playerId || "");
     setQuickBatterName(activeBatterSlot?.playerName || "");
     setQuickBatterPos(
@@ -497,6 +1159,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleSaveQuickBatter = () => {
+    if (readOnly) return;
     const trimmedName = quickBatterName.trim();
     const normPos = normalizeReportPositionCode(quickBatterPos || "打");
 
@@ -537,8 +1200,101 @@ export function LiveAtBatPadCard({
     return null;
   }, [currentHalf]);
 
+  const handleQuickBaserunningFlick = (code: QuickBaserunningCode) => {
+    if (readOnly) return;
+    const startOuts = effectiveOutsBefore >= 3 ? 0 : effectiveOutsBefore;
+    const sim = simulateQuickBaserunningPlay(
+      code,
+      startOuts,
+      effectiveRunnersBefore
+    );
+
+    if (lastBatterEntry) {
+      onChangeDoc((prev) => {
+        const halves = prev.halfInnings.map((h) => {
+          if (
+            h.inning !== prev.activeInning ||
+            h.isBottom !== prev.activeIsBottom
+          ) {
+            return h;
+          }
+          const entries = h.entries.map((e) => {
+            if (e.id !== lastBatterEntry.id) return e;
+            return {
+              ...e,
+              runsScored: e.runsScored + sim.runsScored,
+              chainedPlays: [
+                ...e.chainedPlays,
+                {
+                  id: `cp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                  playText: sim.playText,
+                  outsAfter: sim.outsAfter,
+                  runnersAfter: sim.outsAfter >= 3 ? [] : sim.runnersAfter,
+                  runsScored: sim.runsScored,
+                },
+              ],
+            };
+          });
+          return { ...h, entries };
+        });
+        return { ...prev, halfInnings: halves };
+      });
+      setManualStartOuts(null);
+      setManualStartRunners(null);
+    } else {
+      // タイブレーク開始直後などイニング初球前に走塁が起きた場合
+      const situStr = formatRunnersLabel(sim.runnersAfter, sim.outsAfter);
+      const noteText = situStr
+        ? `${sim.playText}　${situStr}`
+        : sim.playText;
+      const noteEntry: LiveReportPlayEntry = {
+        id: `br-${Date.now()}`,
+        entryType: "note",
+        battingOrder: 0,
+        batterName: "",
+        playText: "",
+        reactionText: "",
+        outsAfter: sim.outsAfter,
+        runnersAfter: sim.runnersAfter,
+        runsScored: sim.runsScored,
+        chainedPlays: [],
+        eventText: noteText,
+      };
+      onChangeDoc((prev) => {
+        const halves = [...prev.halfInnings];
+        const idx = halves.findIndex(
+          (h) =>
+            h.inning === prev.activeInning && h.isBottom === prev.activeIsBottom
+        );
+        if (idx >= 0) {
+          halves[idx] = {
+            ...halves[idx],
+            entries: [...halves[idx].entries, noteEntry],
+          };
+        } else {
+          halves.push({
+            inning: prev.activeInning,
+            isBottom: prev.activeIsBottom,
+            entries: [noteEntry],
+            manualRunsOverride: null,
+          });
+        }
+        return { ...prev, halfInnings: halves };
+      });
+      setManualStartOuts(sim.outsAfter);
+      setManualStartRunners(sim.outsAfter >= 3 ? [] : sim.runnersAfter);
+    }
+
+    setQuickBrFeedback(`🏃‍♂️「${sim.playText}」を記録しました`);
+    setTimeout(() => {
+      setQuickBrFeedback((cur) =>
+        cur === `🏃‍♂️「${sim.playText}」を記録しました` ? null : cur
+      );
+    }, 2200);
+  };
+
   const openFollowUpModal = () => {
-    if (!lastBatterEntry) return;
+    if (readOnly || !lastBatterEntry) return;
     const lastChain =
       lastBatterEntry.chainedPlays[lastBatterEntry.chainedPlays.length - 1];
     const curOuts = lastChain ? lastChain.outsAfter : lastBatterEntry.outsAfter;
@@ -601,7 +1357,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleCommitFollowUp = () => {
-    if (!lastBatterEntry || !followUpText.trim()) return;
+    if (readOnly || !lastBatterEntry || !followUpText.trim()) return;
     const cleanText = followUpText.trim();
 
     onChangeDoc((prev) => {
@@ -648,6 +1404,7 @@ export function LiveAtBatPadCard({
 
   // 選手交代モーダルを開く
   const openSubstitutionModal = () => {
+    if (readOnly) return;
     if (isMyAttack) {
       setSubType("PH");
       setSubSlotOrder(currentOrder);
@@ -669,6 +1426,7 @@ export function LiveAtBatPadCard({
   };
 
   const handleCommitSubstitution = () => {
+    if (readOnly) return;
     if (subType === "NOTE") {
       if (!subCustomNote.trim()) return;
       const noteEntry: LiveReportPlayEntry = {
@@ -816,10 +1574,10 @@ export function LiveAtBatPadCard({
 
   const liveFirstTotal =
     scoreboardSummary.firstTotal +
-    (!doc.activeIsBottom ? finalRunsScored : 0);
+    (!readOnly && !doc.activeIsBottom ? finalRunsScored : 0);
   const liveSecondTotal =
     scoreboardSummary.secondTotal +
-    (doc.activeIsBottom ? finalRunsScored : 0);
+    (!readOnly && doc.activeIsBottom ? finalRunsScored : 0);
 
   useEffect(() => {
     if (monitorMode === "inning" && monitorScrollRef.current) {
@@ -830,19 +1588,48 @@ export function LiveAtBatPadCard({
     monitorMode,
     currentInningLines.length,
     previewLine,
-    doc.activeInning,
-    doc.activeIsBottom,
+    viewedInning,
+    viewedIsBottom,
   ]);
 
-  const selectDirection = (dir: string) => {
-    setSelectedDirection((prev) => (prev === dir ? "" : dir));
+  const selectDirection = (anchorDir: string, exactDir?: string) => {
+    const targetDir = exactDir ?? anchorDir;
+    if (!exactDir && selectedDirection === targetDir) {
+      setSelectedDirection("");
+      setSelectedDirectionAnchor("");
+    } else {
+      setSelectedDirection(targetDir);
+      setSelectedDirectionAnchor(anchorDir);
+    }
     setSelectedDirect(null);
+    setSelectedDirectVariant(null);
+    setSelectedDirectActiveChip(null);
     setSelectedCandidateIdx(0);
   };
 
-  const selectBattedOutcome = (code: BattedOutcomeCode) => {
-    setSelectedBatted((prev) => (prev === code ? null : code));
+  const selectBattedOutcome = (
+    code: BattedOutcomeCode,
+    variant: BattedPlayVariant | null = null,
+    activeChip: string | null = null,
+    forceSelect = false
+  ) => {
+    if (
+      !forceSelect &&
+      selectedBatted === code &&
+      selectedBattedVariant === null &&
+      variant === null
+    ) {
+      setSelectedBatted(null);
+      setSelectedBattedVariant(null);
+      setSelectedBattedActiveChip(null);
+    } else {
+      setSelectedBatted(code);
+      setSelectedBattedVariant(variant);
+      setSelectedBattedActiveChip(activeChip);
+    }
     setSelectedDirect(null);
+    setSelectedDirectVariant(null);
+    setSelectedDirectActiveChip(null);
     setSelectedCandidateIdx(0);
     setCustomPlayText("");
     setCustomOutsAfter(null);
@@ -850,15 +1637,304 @@ export function LiveAtBatPadCard({
     setCustomRunsScored(null);
   };
 
-  const selectDirectOutcome = (code: DirectOutcomeCode) => {
-    setSelectedDirect((prev) => (prev === code ? null : code));
+  const selectDirectOutcome = (
+    code: DirectOutcomeCode,
+    variant: DirectPlayVariant | null = null,
+    activeChip: string | null = null,
+    forceSelect = false
+  ) => {
+    if (
+      !forceSelect &&
+      selectedDirect === code &&
+      selectedDirectVariant === null &&
+      variant === null
+    ) {
+      setSelectedDirect(null);
+      setSelectedDirectVariant(null);
+      setSelectedDirectActiveChip(null);
+    } else {
+      setSelectedDirect(code);
+      setSelectedDirectVariant(variant);
+      setSelectedDirectActiveChip(activeChip);
+    }
     setSelectedBatted(null);
+    setSelectedBattedVariant(null);
+    setSelectedBattedActiveChip(null);
     setSelectedCandidateIdx(0);
     setCustomPlayText("");
     setCustomOutsAfter(null);
     setCustomRunnersAfter(null);
     setCustomRunsScored(null);
   };
+
+  const padContextKey = `${activeContextKey}-${doc.activeInning}-${
+    doc.activeIsBottom ? "b" : "t"
+  }`;
+
+  // ════════════════════════════════════════════════════════════════
+  // 👀 閲覧モード（担当以外のメンバー向けライブ速報ビューア — 入力パッド完全非表示・書き込み0）
+  // ════════════════════════════════════════════════════════════════
+  if (readOnly) {
+    const isFollowingLive = viewerHalfOverride === null;
+    const reporterLabel =
+      editorDisplayName?.trim() || doc.reporterNames.trim() || "速報担当";
+
+    return (
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col bg-slate-900 text-slate-100 overflow-hidden">
+          {/* 閲覧モニター上部バー */}
+          <div className="shrink-0 px-2.5 py-1.5 bg-slate-950 border-b border-slate-800 flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1 min-w-0">
+              <button
+                type="button"
+                onClick={() => handleStepHalfInning(-1)}
+                disabled={viewedInning === 1 && !viewedIsBottom}
+                className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-35 text-slate-200 flex items-center justify-center shrink-0 cursor-pointer"
+                title="前のイニングを見る"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setMonitorMode("inning")}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[11px] font-black transition-all cursor-pointer shrink-0",
+                  monitorMode === "inning"
+                    ? "bg-primary text-white"
+                    : "bg-slate-800 text-slate-300 hover:text-white"
+                )}
+              >
+                {viewedInning}回{viewedIsBottom ? "裏" : "表"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleStepHalfInning(1)}
+                className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center shrink-0 cursor-pointer"
+                title="次のイニングを見る"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMonitorMode("full")}
+                className={cn(
+                  "px-2 py-0.5 rounded-md text-[11px] font-black transition-all cursor-pointer shrink-0",
+                  monitorMode === "full"
+                    ? "bg-primary text-white"
+                    : "bg-slate-800 text-slate-300 hover:text-white"
+                )}
+              >
+                全文表示
+              </button>
+
+              {!isFollowingLive && onChangeViewerHalfOverride && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChangeViewerHalfOverride(null);
+                    setMonitorMode("inning");
+                  }}
+                  className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black shrink-0 cursor-pointer"
+                >
+                  最新({doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"})へ
+                </button>
+              )}
+
+              {monitorMode === "full" && onChangeOutputMode && (
+                <div className="flex items-center gap-0.5 ml-0.5 bg-slate-900 rounded-md p-0.5 border border-slate-800 shrink-0">
+                  {(
+                    [
+                      { id: "full", label: "全文" },
+                      { id: "latest_inning", label: "直近" },
+                      { id: "lineup", label: "スタメン" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => onChangeOutputMode(m.id)}
+                      className={cn(
+                        "px-1.5 py-0.5 rounded text-[9.5px] font-black cursor-pointer",
+                        outputMode === m.id
+                          ? "bg-amber-400 text-slate-950"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              {onOpenFullPreview && (
+                <button
+                  type="button"
+                  onClick={onOpenFullPreview}
+                  title="出力形式を選択して確認"
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 cursor-pointer"
+                >
+                  <FileText className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ライブ状況サマリー帯（アウト・走者・現在打席） */}
+          <div className="shrink-0 px-3 py-1.5 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 font-black text-slate-100 shrink-0">
+                <span>
+                  {autoSituation.outs >= 3
+                    ? "3死チェンジ"
+                    : `${autoSituation.outs}死`}
+                </span>
+                <span className="text-amber-300">
+                  {autoSituation.outs >= 3
+                    ? ""
+                    : autoSituation.runners.length > 0
+                    ? `${autoSituation.runners.join("・")}塁`
+                    : "走者なし"}
+                </span>
+              </span>
+
+              {isFollowingLive && autoSituation.outs < 3 && (
+                <span className="font-bold text-slate-300 truncate">
+                  {isMyAttack ? (
+                    <>
+                      打席: {currentOrder}番{" "}
+                      {activeBatterSlot?.playerName
+                        ? formatPlayerReportName(
+                            activeBatterSlot.playerName,
+                            doc.showSurnameOnly
+                          )
+                        : ""}
+                    </>
+                  ) : (
+                    <>相手攻撃: {currentOrder}番</>
+                  )}
+                </span>
+              )}
+            </div>
+
+            <span className="text-[10.5px] font-bold text-sky-300 shrink-0">
+              入力担当: {reporterLabel}
+            </span>
+          </div>
+
+          {/* 速報本文（画面いっぱいにゆったり表示） */}
+          <div
+            ref={monitorScrollRef}
+            className="flex-1 min-h-0 overflow-y-auto px-3.5 py-2.5"
+          >
+            {monitorMode === "inning" ? (
+              <div className="space-y-1 font-sans text-xs leading-relaxed">
+                <div className="flex items-center justify-between gap-2 text-[11px] font-black text-slate-400 pb-1 border-b border-slate-800/80">
+                  <span>
+                    {viewedInning}回{viewedIsBottom ? "裏" : "表"}（
+                    {isMyAttack ? "自チーム攻撃" : "相手攻撃"}）｜ この回{" "}
+                    {autoSituation.runs}点
+                  </span>
+                  {doc.isGameFinished && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-black">
+                      試合終了
+                    </span>
+                  )}
+                </div>
+
+                {currentInningLines.length === 0 ? (
+                  <div className="py-6 text-center space-y-2">
+                    <p className="text-xs font-black text-slate-300">
+                      このイニングの速報はまだ入力されていません
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-400">
+                      担当者が入力すると自動で画面に反映されます（上のスコアボードの回をタップして過去の回も確認できます）
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setMonitorMode("full")}
+                      className="mt-1 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 text-[11px] font-black cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>ここまでの全文速報を見る</span>
+                    </button>
+                  </div>
+                ) : (
+                  currentInningLines.map((line) => (
+                    <p
+                      key={line.id}
+                      className="py-0.5 text-[12.5px] font-bold text-slate-100 break-all"
+                    >
+                      {line.text}
+                    </p>
+                  ))
+                )}
+              </div>
+            ) : (
+              <div className="font-sans text-xs leading-relaxed text-slate-100 whitespace-pre-wrap">
+                {fullFormattedText}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 閲覧モード専用ボトムバー（入力キーパッドなし・コピー＆LINE共有＋必要時のみ担当引継） */}
+        <div className="shrink-0 bg-card border-t-2 border-[#0f172a] px-3 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/30 text-[10.5px] font-black shrink-0">
+              <Eye className="w-3.5 h-3.5" />
+              <span>閲覧モード（参照専用）</span>
+            </span>
+            {onRequestTakeover && (
+              <button
+                type="button"
+                onClick={onRequestTakeover}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-border bg-muted hover:bg-accent text-[10.5px] font-black text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                title="担当者交代時などに自分が入力担当を引き継ぎます"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>担当引継</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onCopyText && (
+              <button
+                type="button"
+                onClick={onCopyText}
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black cursor-pointer active:scale-95"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>コピー済</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-primary" />
+                    <span>全文コピー</span>
+                  </>
+                )}
+              </button>
+            )}
+            {onShareLine && (
+              <button
+                type="button"
+                onClick={onShareLine}
+                className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black cursor-pointer active:scale-95"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>LINE共有</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -993,7 +2069,7 @@ export function LiveAtBatPadCard({
 
                 {currentInningLines.length === 0 && !previewLine ? (
                   <p className="text-[11px] font-bold text-slate-400 py-1">
-                    下のキーパッドで結果を選択 ➔「記録確定」でここに速報行が追加されます
+                    下のボタンを選択（長押し・スライドで重盗や手前/ライン際等も選択可）➔「記録確定」
                   </p>
                 ) : (
                   currentInningLines.map((line) => (
@@ -1004,6 +2080,12 @@ export function LiveAtBatPadCard({
                       {line.text}
                     </p>
                   ))
+                )}
+
+                {quickBrFeedback && (
+                  <div className="mt-1 px-2 py-0.5 rounded-md bg-teal-500/20 border border-teal-400/50 text-[10.5px] font-black text-teal-200">
+                    {quickBrFeedback}
+                  </div>
                 )}
 
                 {previewLine && (
@@ -1045,7 +2127,7 @@ export function LiveAtBatPadCard({
         <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] space-y-1 select-none">
           {/* ① 状況・打者・サブ操作コンパクトボックス */}
           <div className="rounded-xl border border-border bg-muted/50 px-2 py-1 space-y-1">
-            {/* 上段: 回送り ＋ アウト ＋ 走者 ＋ 走塁追記/戻す */}
+            {/* 上段: 回送り ＋ アウト ＋ 走者 ＋ 走塁追記(長押し重盗対応)/戻す */}
             <div className="flex items-center justify-between gap-1">
               <div className="inline-flex items-center gap-0.5 shrink-0">
                 <button
@@ -1129,18 +2211,30 @@ export function LiveAtBatPadCard({
                 })}
               </div>
 
-              {/* 直前走塁追記 ＆ 1つ戻す */}
+              {/* 直前走塁追記（短押し＝モーダル / 長押しスライド＝重盗・二盗・三盗・暴投等を即記録！） ＆ 1つ戻す */}
               <div className="inline-flex items-center gap-1 ml-auto shrink-0">
-                <button
-                  type="button"
-                  disabled={!lastBatterEntry}
-                  onClick={openFollowUpModal}
-                  className="px-1.5 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
-                  title="直前の打席行に盗塁・暴投・走塁死などを追記"
-                >
-                  <Footprints className="w-3 h-3 text-teal-600 shrink-0" />
-                  <span>走塁</span>
-                </button>
+                <FlickPadButton
+                  label="走塁"
+                  disabled={
+                    !lastBatterEntry && effectiveRunnersBefore.length === 0
+                  }
+                  title="タップで走塁追記モーダル / 長押しスライドで重盗・二盗・暴投などを即記録"
+                  popupTitle="走塁プレー（スライドして離すと即記録）"
+                  options={QUICK_BASERUNNING_OPTIONS}
+                  onShortTap={() => {
+                    if (lastBatterEntry) {
+                      openFollowUpModal();
+                    }
+                  }}
+                  onSelectOption={(opt) =>
+                    handleQuickBaserunningFlick(opt.value)
+                  }
+                  contextKey={padContextKey}
+                  leadingIcon={
+                    <Footprints className="w-3 h-3 text-teal-600 shrink-0" />
+                  }
+                  className="px-1.5 pr-2.5 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                />
                 <button
                   type="button"
                   disabled={!currentHalf || currentHalf.entries.length === 0}
@@ -1317,8 +2411,8 @@ export function LiveAtBatPadCard({
                 ) : (
                   <p className="text-[10.5px] font-bold text-muted-foreground truncate">
                     {selectedDirection
-                      ? `方向「${selectedDirection}」を選択中 ➔ 打球結果を選択`
-                      : "下のボタンを選択 ➔ 右の「記録確定」をタップ"}
+                      ? `方向「${selectedDirection}」選択中 ➔ 結果を選択（長押しで詳細）`
+                      : "ボタン選択（長押しスライドで詳細打球・重盗）➔「記録確定」"}
                   </p>
                 )}
               </div>
@@ -1350,46 +2444,62 @@ export function LiveAtBatPadCard({
             </div>
           </div>
 
-          {/* ③ 片手親指キーパッド（方向2段 ＋ 結果4段 ＋ 一言リアクション1段） */}
+          {/* ③ 片手親指キーパッド（全主要ボタンで長押しフリック選択に対応！） */}
           <div className="space-y-1">
             {/* 打球方向（内野6列 ＋ 外野5列） */}
             <div className="grid grid-cols-6 gap-1">
               {INFIELD_DIRECTIONS.map((dir) => {
-                const isSelected = selectedDirection === dir;
+                const isSelected =
+                  selectedDirection !== "" &&
+                  (selectedDirectionAnchor
+                    ? selectedDirectionAnchor === dir
+                    : selectedDirection === dir);
                 return (
-                  <button
+                  <FlickPadButton
                     key={dir}
-                    type="button"
-                    onClick={() => selectDirection(dir)}
+                    label={dir}
+                    activeLabel={isSelected ? selectedDirection : null}
+                    isSelected={isSelected}
+                    popupTitle={`打球方向「${dir}」の詳細（前・線・間・強襲）`}
+                    options={DIRECTION_FLICK_OPTIONS[dir] || []}
+                    onShortTap={() => selectDirection(dir)}
+                    onSelectOption={(opt) => selectDirection(dir, opt.value)}
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95",
+                      "h-[30px] px-0.5 rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-primary text-primary-foreground border-primary shadow-2xs"
                         : "bg-muted/65 text-foreground border-border hover:bg-muted"
                     )}
-                  >
-                    {dir}
-                  </button>
+                  />
                 );
               })}
             </div>
             <div className="grid grid-cols-5 gap-1">
               {OUTFIELD_DIRECTIONS.map((dir) => {
-                const isSelected = selectedDirection === dir;
+                const isSelected =
+                  selectedDirection !== "" &&
+                  (selectedDirectionAnchor
+                    ? selectedDirectionAnchor === dir
+                    : selectedDirection === dir);
                 return (
-                  <button
+                  <FlickPadButton
                     key={dir}
-                    type="button"
-                    onClick={() => selectDirection(dir)}
+                    label={dir}
+                    activeLabel={isSelected ? selectedDirection : null}
+                    isSelected={isSelected}
+                    popupTitle={`外野方向「${dir}」の詳細（手前・ライン際・越え）`}
+                    options={DIRECTION_FLICK_OPTIONS[dir] || []}
+                    onShortTap={() => selectDirection(dir)}
+                    onSelectOption={(opt) => selectDirection(dir, opt.value)}
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95",
+                      "h-[30px] px-0.5 rounded-lg border text-xs font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-primary text-primary-foreground border-primary shadow-2xs"
                         : "bg-muted/65 text-foreground border-border hover:bg-muted"
                     )}
-                  >
-                    {dir}
-                  </button>
+                  />
                 );
               })}
             </div>
@@ -1399,46 +2509,68 @@ export function LiveAtBatPadCard({
               {OUT_BATTED_OUTCOMES.map((item) => {
                 const isSelected = selectedBatted === item.code;
                 return (
-                  <button
+                  <FlickPadButton
                     key={item.code}
-                    type="button"
-                    onClick={() => selectBattedOutcome(item.code)}
+                    label={item.label}
+                    activeLabel={isSelected ? selectedBattedActiveChip : null}
+                    isSelected={isSelected}
+                    popupTitle={`「${item.label}」の詳細選択`}
+                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    onShortTap={() => selectBattedOutcome(item.code)}
+                    onSelectOption={(opt) =>
+                      selectBattedOutcome(
+                        opt.value.code,
+                        opt.value.variant,
+                        opt.value.activeChip ?? opt.shortActiveLabel ?? null,
+                        true
+                      )
+                    }
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : "bg-card text-foreground border-border hover:bg-muted"
                     )}
-                  >
-                    {item.label}
-                  </button>
+                  />
                 );
               })}
             </div>
 
-            {/* Row B: 安打系（6列） */}
+            {/* Row B: 安打系（6列 — 手前・ポテン・ライン際・越え・バント安打など長押し対応） */}
             <div className="grid grid-cols-6 gap-1">
               {HIT_BATTED_OUTCOMES.map((item) => {
                 const isSelected = selectedBatted === item.code;
                 return (
-                  <button
+                  <FlickPadButton
                     key={item.code}
-                    type="button"
-                    onClick={() => selectBattedOutcome(item.code)}
+                    label={item.label}
+                    activeLabel={isSelected ? selectedBattedActiveChip : null}
+                    isSelected={isSelected}
+                    popupTitle={`「${item.label}」の打球ニュアンス選択`}
+                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    onShortTap={() => selectBattedOutcome(item.code)}
+                    onSelectOption={(opt) =>
+                      selectBattedOutcome(
+                        opt.value.code,
+                        opt.value.variant,
+                        opt.value.activeChip ?? opt.shortActiveLabel ?? null,
+                        true
+                      )
+                    }
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/15"
                     )}
-                  >
-                    {item.label}
-                  </button>
+                  />
                 );
               })}
             </div>
 
-            {/* Row C: 犠打・走本・エラー・野選（5列） */}
+            {/* Row C: 犠打・走本・エラー・野選（5列 — スクイズ・捕球/悪送球Eなど長押し対応） */}
             <div className="grid grid-cols-5 gap-1">
               {OTHER_BATTED_OUTCOMES.map((item) => {
                 const isSelected = selectedBatted === item.code;
@@ -1449,43 +2581,65 @@ export function LiveAtBatPadCard({
                     ? "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30 hover:bg-rose-500/15"
                     : "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/15";
                 return (
-                  <button
+                  <FlickPadButton
                     key={item.code}
-                    type="button"
-                    onClick={() => selectBattedOutcome(item.code)}
+                    label={item.label}
+                    activeLabel={isSelected ? selectedBattedActiveChip : null}
+                    isSelected={isSelected}
+                    popupTitle={`「${item.label}」の詳細選択`}
+                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    onShortTap={() => selectBattedOutcome(item.code)}
+                    onSelectOption={(opt) =>
+                      selectBattedOutcome(
+                        opt.value.code,
+                        opt.value.variant,
+                        opt.value.activeChip ?? opt.shortActiveLabel ?? null,
+                        true
+                      )
+                    }
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : toneClass
                     )}
-                  >
-                    {item.label}
-                  </button>
+                  />
                 );
               })}
             </div>
 
-            {/* Row D: 1タップ三振・四死球（7列） */}
+            {/* Row D: 1タップ三振・四死球（7列 — ストレート四球・四球暴投二進など長押し対応） */}
             <div className="grid grid-cols-7 gap-1">
               {DIRECT_OUTCOMES.map((item) => {
                 const isSelected = selectedDirect === item.code;
                 return (
-                  <button
+                  <FlickPadButton
                     key={item.code}
-                    type="button"
-                    onClick={() => selectDirectOutcome(item.code)}
+                    label={item.label}
+                    activeLabel={isSelected ? selectedDirectActiveChip : null}
+                    isSelected={isSelected}
+                    popupTitle={`「${item.label}」の詳細選択`}
+                    options={DIRECT_FLICK_OPTIONS[item.code] || []}
+                    onShortTap={() => selectDirectOutcome(item.code)}
+                    onSelectOption={(opt) =>
+                      selectDirectOutcome(
+                        opt.value.code,
+                        opt.value.variant,
+                        opt.value.activeChip ?? opt.shortActiveLabel ?? null,
+                        true
+                      )
+                    }
+                    contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[10.5px] font-black transition-all cursor-pointer active:scale-95 truncate",
+                      "h-[30px] px-0.5 rounded-lg border text-[10.5px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : item.tone === "reach"
                         ? "bg-sky-500/10 text-sky-800 dark:text-sky-300 border-sky-500/30 hover:bg-sky-500/15"
                         : "bg-slate-100 dark:bg-slate-800 text-foreground border-border hover:bg-muted"
                     )}
-                  >
-                    {item.label}
-                  </button>
+                  />
                 );
               })}
             </div>
@@ -2276,10 +3430,38 @@ export function LiveAtBatPadCard({
 
                 <div className="space-y-1.5">
                   <span className="block text-[11px] font-black text-muted-foreground">
-                    1タップ定型プリセット:
+                    1タップ定型プリセット（走塁ボタンの長押しスライドでも即記録できます）:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {[
+                      {
+                        label: "ダブルスチール（重盗）",
+                        mode: "chained" as const,
+                        text: "重盗",
+                        outDelta: 0,
+                        advanceAll: true,
+                      },
+                      {
+                        label: "二盗成功",
+                        mode: "chained" as const,
+                        text: "二盗",
+                        outDelta: 0,
+                        advanceAll: true,
+                      },
+                      {
+                        label: "三盗成功",
+                        mode: "chained" as const,
+                        text: "三盗",
+                        outDelta: 0,
+                        advanceAll: true,
+                      },
+                      {
+                        label: "本盗（ホームスチール）",
+                        mode: "chained" as const,
+                        text: "本盗",
+                        outDelta: 0,
+                        advanceAll: true,
+                      },
                       {
                         label: "中暴投（進塁）",
                         mode: "inline" as const,
@@ -2302,9 +3484,9 @@ export function LiveAtBatPadCard({
                         advanceAll: true,
                       },
                       {
-                        label: "盗塁成功",
+                        label: "ボーク（進塁）",
                         mode: "chained" as const,
-                        text: "盗塁",
+                        text: "ボーク進塁",
                         outDelta: 0,
                         advanceAll: true,
                       },
