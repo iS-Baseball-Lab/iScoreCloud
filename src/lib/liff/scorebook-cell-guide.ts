@@ -8,6 +8,7 @@ import {
   type CanonicalPitchResult,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
+import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
   isPrePlayAdvanceMethod,
@@ -756,8 +757,8 @@ function buildResultSection(
   resultDecoratorLabel?: string;
   resultRows: ResultBreakdownRow[];
 } {
-  const ab = cell.atBat;
-  if (!ab) {
+  const rawAb = cell.atBat;
+  if (!rawAb) {
     const startBaseJa =
       cell.tiebreakStartBase === "1B"
         ? "一塁"
@@ -778,6 +779,7 @@ function buildResultSection(
     };
   }
 
+  const ab = normalizeLegacyForceOutAtBat(rawAb);
   const notation = formatAtBatPlayNotation(ab, rules, {
     standaloneSingleCell: true,
   });
@@ -1035,9 +1037,13 @@ function buildResultSection(
       badgeTone: "amber",
       title: `野手選択（フィルダースチョイス：${headlineResult}）`,
       description:
-        "野手が打者走者ではなく先行走者をアウトにしようと送球した結果、打者走者が一塁に生きたプレイを表します。",
+        "野手が打者走者ではなく先行走者をアウトにしようと送球した結果、先行走者もアウトにならずオールセーフ（失策なし）で打者走者が一塁に生きたプレイを表します。",
     });
   } else if (rc === "groundout" || rc === "double_play" || rc === "triple_play") {
+    const isForceOut =
+      /二封|三封|本封|封殺|本塁憤死|本塁アウト/.test(headlineResult) ||
+      /^(?:BH|B)?[1-9]-[2456](?:[BCH]|TO)?$/i.test(ab.battedDirection || "") ||
+      /^(?:BH|B)?[1-9][BCH]$/i.test(ab.battedDirection || "");
     if (notation.decorator === "under_arc") {
       decoratorLabel = "⏝ 下弧マーク（ゴロ）";
     }
@@ -1048,10 +1054,11 @@ function buildResultSection(
           : notation.mainText,
       badgeTone: "dark",
       title: headlineResult,
-      description:
-        notation.decorator === "under_arc"
-          ? "守備番号の下にある曲線「⏝（下弧マーク）」は、内野へのゴロ打球であることを表します。"
-          : "ゴロを捕球した野手の番号から送球先の野手の番号へハイフン「-」でつなぎ、ゴロ送球アウトを表します。",
+      description: isForceOut
+        ? "内野ゴロで先行走者を先の塁で封殺（フォースアウト等）にし、打者走者が一塁に残ったプレイを表します（先行走者がアウトになっているためFC記号は付けず通常のゴロ送球番号で記録します）。"
+        : notation.decorator === "under_arc"
+        ? "守備番号の下にある曲線「⏝（下弧マーク）」は、内野へのゴロ打球であることを表します。"
+        : "ゴロを捕球した野手の番号から送球先の野手の番号へハイフン「-」でつなぎ、ゴロ送球アウトを表します。",
     });
     if (notation.subText === "DP" || rc === "double_play") {
       rows.push({

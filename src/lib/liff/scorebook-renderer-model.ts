@@ -1,4 +1,5 @@
 // filepath: src/lib/liff/scorebook-renderer-model.ts
+import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   isPrePlayAdvanceMethod,
   simulateSheetRunners,
@@ -487,10 +488,11 @@ function isOriginCellReachedByErrorOrUncharged(
  */
 export function compileScorebookSheetModel(
   structure: ScorebookSheetStructure,
-  atBats: ScorebookV2AtBat[],
+  rawAtBats: ScorebookV2AtBat[],
   matchMeta: ScorebookMatchHeaderMeta,
   defenseContext?: ScorebookDefenseContext
 ): CompiledScorebookSheetModel {
+  const atBats = rawAtBats.map((ab) => normalizeLegacyForceOutAtBat(ab));
   const isTop = structure.isTop;
   const battingTeamName = isTop
     ? matchMeta.topTeamName
@@ -2001,7 +2003,9 @@ export function compileScorebookSheetModel(
   }
 
   // 3C. 守備回データ（反対ハーフイニング）からの個人守備成績（失策・捕殺・刺殺）集計
-  const oppAtBats = defenseContext?.opponentAtBats ?? [];
+  const oppAtBats = (defenseContext?.opponentAtBats ?? []).map((ab) =>
+    normalizeLegacyForceOutAtBat(ab)
+  );
   const oppPitchers = defenseContext?.opponentStructure?.pitchers ?? [];
   if (oppAtBats.length > 0) {
     const findLineupSlotForPitcher = (
@@ -2224,7 +2228,8 @@ export function compileScorebookSheetModel(
           rc === "sac_bunt" ||
           rc === "double_play" ||
           rc === "triple_play" ||
-          rc === "interference_out")
+          rc === "interference_out" ||
+          (rc === "fc" && outsRecorded >= 1))
       ) {
         creditFielderStat(segments[0]!, oppAb, "putouts");
       }

@@ -83,6 +83,7 @@ import {
   extractRawTimeHHMM,
   normalizeTeamScheduleDefaultTimes,
 } from "@/lib/liff/schedule-default-times";
+import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   extractPracticeMatchLabelFromJson,
@@ -5621,10 +5622,18 @@ app.get("/stats", async (c) => {
       let mySnapAbs: ScorebookV2AtBat[] = [];
       let oppSnapAbs: ScorebookV2AtBat[] = [];
       try {
-        if (myAtBatsJson) mySnapAbs = JSON.parse(myAtBatsJson) as ScorebookV2AtBat[];
+        if (myAtBatsJson) {
+          mySnapAbs = (JSON.parse(myAtBatsJson) as ScorebookV2AtBat[]).map(
+            (ab) => normalizeLegacyForceOutAtBat(ab)
+          );
+        }
       } catch {}
       try {
-        if (oppAtBatsJson) oppSnapAbs = JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[];
+        if (oppAtBatsJson) {
+          oppSnapAbs = (JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[]).map(
+            (ab) => normalizeLegacyForceOutAtBat(ab)
+          );
+        }
       } catch {}
       try {
         if (myStructJson) {
@@ -5906,7 +5915,10 @@ app.get("/stats", async (c) => {
 
         const isMyAttack = ab.isTop === mMeta.isMyTeamTop;
         const snapAb = snapMapByDbAtBatId.get(ab.id);
-        const res = ab.result || "";
+        const res =
+          ab.result === "fc" && snapAb && snapAb.resultCode !== "fc"
+            ? snapAb.resultCode
+            : ab.result || "";
 
         if (isMyAttack) {
           const fallbackName =
@@ -6185,6 +6197,7 @@ app.get("/stats", async (c) => {
                 rStr === "interference_out" ||
                 rStr === "appeal_out" ||
                 rStr === "out_on_base" ||
+                (!isOut && rStr === "fc") ||
                 rStr.includes("盗塁") ||
                 rStr.includes("牽制"))
             ) {

@@ -15,6 +15,10 @@ import {
 } from "@/db/schema/score";
 import { matches, matchLineups } from "@/db/schema/match";
 import { players } from "@/db/schema/team";
+import {
+  normalizeLegacyForceOutAtBat,
+  repairPlayLogForceOutDescription,
+} from "@/lib/liff/scorebook-fielding";
 import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
 import type { WorkerEnv } from "@/types/api";
 import type {
@@ -838,6 +842,7 @@ app.get("/:id/stats", async (c) => {
   const matchId = c.req.param("id");
 
   try {
+    await ensureMatchLineupColumns(c.env.DB);
     const [
       match,
       dbAtBats,
@@ -947,8 +952,12 @@ app.get("/:id/stats", async (c) => {
     if (snapRow) {
       const topStruct = safeParseJson<ScorebookSheetStructure>(snapRow.topStructureJson);
       const botStruct = safeParseJson<ScorebookSheetStructure>(snapRow.bottomStructureJson);
-      const topAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || [];
-      const botAbs = safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || [];
+      const topAbs = (
+        safeParseJson<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || []
+      ).map((ab) => normalizeLegacyForceOutAtBat(ab));
+      const botAbs = (
+        safeParseJson<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || []
+      ).map((ab) => normalizeLegacyForceOutAtBat(ab));
       myStructure = isMyTeamTop ? topStruct : botStruct;
       oppStructure = isMyTeamTop ? botStruct : topStruct;
       mySnapAtBats = isMyTeamTop ? topAbs : botAbs;
@@ -959,7 +968,10 @@ app.get("/:id/stats", async (c) => {
     const playLogDescByAtBatId = new Map<string, string>();
     for (const pl of dbPlayLogs) {
       if (!pl.atBatId || !pl.description) continue;
-      playLogDescByAtBatId.set(pl.atBatId, pl.description);
+      playLogDescByAtBatId.set(
+        pl.atBatId,
+        repairPlayLogForceOutDescription(pl.description)
+      );
       const rbiMatch = pl.description.match(/打点(\d+)/);
       if (rbiMatch) {
         explicitRbiByAtBatId.set(pl.atBatId, Number(rbiMatch[1]));
@@ -1210,7 +1222,10 @@ app.get("/:id/stats", async (c) => {
         snapAb?.battingOrder
       );
 
-      const res = ab.result || "";
+      const res =
+        ab.result === "fc" && snapAb && snapAb.resultCode !== "fc"
+          ? snapAb.resultCode
+          : ab.result || "";
       if (res === "other" || res.includes("途中断")) {
         continue;
       }
@@ -1451,6 +1466,12 @@ app.get("/:id/stats", async (c) => {
           }
           if (!batterHasFromZeroAdv && ab.batterId) {
             const res = ab.result || "";
+            const hasForceRunnerOut = abAdvs.some(
+              (a) =>
+                a.isOut &&
+                a.fromBase > 0 &&
+                String(a.reason || "") === "fc"
+            );
             if (res === "triple" || res.includes("3B") || res.includes("三塁打")) {
               runnerOnBaseByKey.set(ab.batterId, 3);
             } else if (res === "double" || res.includes("2B") || res.includes("二塁打")) {
@@ -1466,7 +1487,9 @@ app.get("/:id/stats", async (c) => {
               res === "fc" ||
               res === "dropped_third_strike" ||
               res.includes("四球") ||
-              res.includes("死球")
+              res.includes("死球") ||
+              hasForceRunnerOut ||
+              /二封|三封|本封|封殺/.test(res)
             ) {
               runnerOnBaseByKey.set(ab.batterId, 1);
             }
@@ -1483,6 +1506,7 @@ app.get("/:id/stats", async (c) => {
     // --- 投手成績集計（未登録投手のスナップショット補完対応） ---
     const pitcherMap = new Map<string, PitcherStatsAccumulator>();
     const pitcherKeyByAtBatId = new Map<string, string>();
+    const countedAtBatOutIds = new Set<string>();
     let pitcherOrderSeq = 0;
 
     for (const ab of dbAtBats) {
@@ -1542,7 +1566,10 @@ app.get("/:id/stats", async (c) => {
       }
 
       const p = pitcherMap.get(pitcherKey)!;
-      const res = ab.result || "";
+      const res =
+        ab.result === "fc" && snapAb && snapAb.resultCode !== "fc"
+          ? snapAb.resultCode
+          : ab.result || "";
 
       // 投球数 (牽制球・ボークを除いた実投球数をカウント)
       const pitchCountForAtBat = dbPitches.filter(
@@ -1651,6 +1678,7 @@ app.get("/:id/stats", async (c) => {
         res.includes("TP");
 
       if (isOut) {
+        countedAtBatOutIds.add(ab.id);
         if (res === "triple_play" || res.includes("三重殺") || res.includes("TP")) {
           p.outs += 3;
         } else if (res === "double_play" || res.includes("併殺") || res.includes("DP")) {
@@ -1708,6 +1736,7 @@ app.get("/:id/stats", async (c) => {
             reasonStr === "interference_out" ||
             reasonStr === "appeal_out" ||
             reasonStr === "out_on_base" ||
+            (reasonStr === "fc" && !countedAtBatOutIds.has(adv.atBatId)) ||
             reasonStr.includes("盗塁") ||
             reasonStr.includes("牽制"))
         ) {
@@ -1938,7 +1967,8 @@ app.get("/:id/stats", async (c) => {
             rc === "sac_bunt" ||
             rc === "double_play" ||
             rc === "triple_play" ||
-            rc === "interference_out")
+            rc === "interference_out" ||
+            (rc === "fc" && outsRecorded >= 1))
         ) {
           const poKey = resolveFielderKeyAtInning(
             segments[0],

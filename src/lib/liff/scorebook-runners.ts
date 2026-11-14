@@ -6,6 +6,7 @@ import {
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
+import { normalizeLegacyForceOutAtBat } from "./scorebook-fielding";
 
 export type OccupiedBaseKey = "1B" | "2B" | "3B";
 
@@ -331,9 +332,9 @@ export function isForceOutGroundout(
   if (resultCode !== "groundout") return false;
   const dir = (battedDirection || "").trim();
   const label = (resultLabel || "").trim();
-  if (/^[1-9]-[2456]$/.test(dir)) return true;
-  if (/^[1-9][BCH]$/i.test(dir)) return true;
-  if (/二封|三封|本封|封殺/.test(label)) return true;
+  if (/^(?:BH|B)?[1-9]-[2456](?:[BCH]|TO)?$/i.test(dir)) return true;
+  if (/^(?:BH|B)?[1-9][BCH]$/i.test(dir)) return true;
+  if (/二封|三封|本封|封殺|本塁憤死|本塁アウト/.test(label)) return true;
   return false;
 }
 
@@ -596,7 +597,8 @@ export function simulateSheetRunners(
   if (atBats.length === 0) return resultMap;
 
   const byInning = new Map<number, ScorebookV2AtBat[]>();
-  for (const ab of atBats) {
+  for (const rawAb of atBats) {
+    const ab = normalizeLegacyForceOutAtBat(rawAb);
     const inn = Math.max(1, ab.inning || 1);
     const list = byInning.get(inn) || [];
     list.push(ab);
@@ -2858,8 +2860,7 @@ export function buildSmartAdvancesForResultChange(params: {
         nextBattedDirection.match(/FC[1-9]-([1-9])/i) ||
         nextBattedDirection.match(/^[1-9]-([1-9])$/);
       const fcTarget = fcThrowMatch ? fcThrowMatch[1] : "";
-      const makeForceOut =
-        prevAb.resultCode === "fc" && defaultPresetOuts >= 1 && outsBefore < 3;
+      const makeForceOut = false;
 
       if (fcTarget === "2" && r3) {
         generated.push({

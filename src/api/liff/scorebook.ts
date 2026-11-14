@@ -22,9 +22,11 @@ import {
 import {
   defaultGenericDirection,
   harmonizeOcrFieldingAndLabel,
+  normalizeLegacyForceOutAtBat,
 } from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
+  isForceOutGroundout,
   materializeSheetRunnerAdvances,
 } from "@/lib/liff/scorebook-runners";
 import {
@@ -1996,7 +1998,7 @@ ${targetInningMetaLines.join("\n")}
      ② 早稲田式の打球方向線（本塁からダイヤモンド外へ伸びる線＋先端の点『・』や山『⌒』）で書かれている場合: ダイヤモンドの向きに合わせて **左上（三遊間〜レフト側）="7"**、**真上（二塁ベース上〜センター側）="8"**、**右上（一二塁間〜ライト側）="9"**、**左斜め上中間="7-8"**、**右斜め上中間="8-9"** と正確に判定してください（左上7と右上9を絶対に逆にしないこと）！
 5. **犠打・バント凡退・失策・野選・四死球・その他**:
    - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], [5-3], ◇1-3, ◇5-4**）➔ 走者進塁を伴う送りバントなら **rc: "sac_bunt"**, dir: "1-3" 等。**無走者時**にバントを四角『□』等で囲むチーム表記（例: 無走者で **[5-3]**）は犠打ではなくバントゴロ凡退なので **rc: "groundout"**, dir: "5-3", rl: "三バントゴロ" とすること！三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
-   - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。野選 **『FC』『4FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』** および本塁→1塁が実線（b1: true）で先行走者が二塁・三塁・本塁封殺されたベースアウト記号 **『6B』『5C』『2H』『6-4B』** ➔ **rc: "fc"**, dir: "FC6" / "5" 等（o: 1、先行走者の封殺アウトのみ計上）。一塁ベースアウト **『1A』『3A』**（b1: false）➔ **rc: "groundout"**, dir: "1A" / "3A"（o: 1）。
+   - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。本塁→1塁が実線（b1: true）で**先行走者が二塁・三塁・本塁封殺（アウト）されたゴロ** **『6-4』『4-6』『5-4』『6-5』『5-2』『6B』『5C』『2H』『6-4B』** ➔ **rc: "groundout"**, dir: "6-4" / "6B" / "5C" / "2H" 等, rl: "遊ゴロ二封" 等（**o: 1**、先行走者の封殺アウト1つを計上。野選 fc にはしないこと！）。**先行走者もセーフになったオールセーフの野手選択『FC』『4FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』のみ** ➔ **rc: "fc"**, dir: "FC4" / "FC6-2" 等（**o: 0**）。一塁ベースアウト **『1A』『3A』**（b1: false）➔ **rc: "groundout"**, dir: "1A" / "3A"（o: 1）。
    - 四球は**BSOにボール4球かつ右下英字『B』（b1: true、点線維持式では本塁→1塁が点線のままでも可）**のとき ➔ **rc: "walk"**。死球『DB』『D』『HBP』➔ **rc: "hit_by_pitch"**, dir: "DB"（※手書きの『DB』は下のループが潰れると『DP』に似て見えますが、守備番号 6-4-3 等が無く本塁→1塁実線 b1: true または後続打席での進塁・得点・残塁・封殺がある単独『DB』は 100% 死球 hit_by_pitch であり、絶対に併殺打 DP と誤読しないこと！）。敬遠 ➔ **rc: "intentional_walk"**。
    - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
    - 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マスのみ ➔ **rc: "other"**, rl: "打席途中断（走塁死チェンジ）", o: 1（白紙マスには絶対に使わないこと！）。
@@ -2177,13 +2179,6 @@ ${targetInningMetaLines.join("\n")}
         rawResultCode,
         rawResultLabel || rawDir
       );
-      if (
-        ab.b1 === true &&
-        resultCode === "groundout" &&
-        /^[1-6]-[2456]$/.test((rawDir || "").trim())
-      ) {
-        resultCode = "fc";
-      }
 
       const rawAdvances = reconciled.rawAdvances;
       let advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
@@ -2255,7 +2250,7 @@ ${targetInningMetaLines.join("\n")}
           : "groundout";
       }
 
-      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+      let harmonizedFielding = harmonizeOcrFieldingAndLabel(
         resultCode,
         rawDir,
         rawResultLabel
@@ -2297,6 +2292,17 @@ ${targetInningMetaLines.join("\n")}
         outsVal = 2;
       } else if (isDefiniteBatterOut) {
         if (
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
+        ) {
+          outsVal =
+            occupiedBaseRunnerOuts >= 2
+              ? Math.min(3 - runningInningOuts, occupiedBaseRunnerOuts)
+              : 1;
+        } else if (
           occupiedBaseRunnerOuts === 0 &&
           rawOutsVal >= 2 &&
           activeRunnersCount >= 1 &&
@@ -2321,6 +2327,22 @@ ${targetInningMetaLines.join("\n")}
         outsVal = Math.min(2, occupiedBaseRunnerOuts + batterOverrunOut);
       } else if (resultCode === "fc") {
         outsVal = rawOutsVal >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+        if (outsVal >= 1) {
+          const repairedFc = normalizeLegacyForceOutAtBat({
+            resultCode,
+            battedDirection: harmonizedFielding.battedDirection,
+            resultLabel: harmonizedFielding.resultLabel,
+            outsInPlay: outsVal,
+            advances,
+          });
+          if (repairedFc.resultCode !== "fc") {
+            resultCode = repairedFc.resultCode;
+            harmonizedFielding = {
+              battedDirection: repairedFc.battedDirection,
+              resultLabel: repairedFc.resultLabel,
+            };
+          }
+        }
       } else if (resultCode === "other") {
         outsVal =
           occupiedBaseRunnerOuts > 0
@@ -2390,7 +2412,11 @@ ${targetInningMetaLines.join("\n")}
           activeBases[adv.to] = true;
         }
       }
-      if (advances.filter((a) => a.from === "BAT").length === 0 && outsVal === 0) {
+      if (
+        runningInningOuts + outsVal < 3 &&
+        batterOverrunOut === 0 &&
+        advances.filter((a) => a.from === "BAT").length === 0
+      ) {
         if (
           resultCode === "single" ||
           resultCode === "walk" ||
@@ -2399,7 +2425,12 @@ ${targetInningMetaLines.join("\n")}
           resultCode === "interference" ||
           resultCode === "error" ||
           resultCode === "fc" ||
-          resultCode === "dropped_third_strike"
+          resultCode === "dropped_third_strike" ||
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
         ) {
           activeBases["1B"] = true;
         } else if (resultCode === "double") {
@@ -2611,16 +2642,16 @@ ${pitcherSpecLines.join("\n")}
    - 候補Aと候補Bを見比べ、**実際に手書きの投球記号・進塁実線・守備番号・アウト記号が書かれている側のイニング番号 "i" と列番号 "c" を採用**してください！
    - ⚠️**切り線・封殺の見分け方**:
      ・片方が「印刷点線だけの白紙」または「斜め1本のイニング終了切り線『／』『∟』のみ（投球記号も守備番号も無し）」であれば、もう片方の手書き記録がある側が正解です！
-     ・前イニングの4番で走者3アウト『Ⅲ』が書かれ、候補A（前イニング5番マス）に遊ゴロ封殺『6-4』『4-6』『FC』等の手書き記録があり、その下または右下隅に切り線『／』がある場合は、**候補A（前イニング末尾）が正解（封殺チェンジ rc:"fc", o:1, eo:3 等）**です！
+     ・前イニングの4番で走者3アウト『Ⅲ』が書かれ、候補A（前イニング5番マス）に遊ゴロ封殺『6-4』『4-6』『5C』等の手書き記録があり、その下または右下隅に切り線『／』がある場合は、**候補A（前イニング末尾）が正解（封殺チェンジ rc:"groundout", dir:"6-4" 等, rl:"遊ゴロ二封", o:1, eo:3 等）**です！
 2. **1マス内の記号読取ルール（投球記号の読み飛ばし厳禁！）**:
    - 左BSO拡大: 『○』（中が白い丸）="S"、『●』（黒塗り丸）/『／』="W"、『ー』『-』（短い横棒）/『・』（点）="B"、『△』（白三角）="F"、『▲』（黒三角）="BF"、B段・S段の球数番号『1,2,3...』も番号順に "B"/"S"/"F" として漏れなく全抽出（手書き球があるのに ["X"]/["H"] のみに省略するのは厳禁！）。インプレー打球なら末尾に "X"（安打なら "H"）を付与。
-   - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、悪送球『4E-3』『6E-3』『4E』や捕球失策『E4』『E6』は失策（rc:"error", dir:"4E-3"/"E4", o:0）、二塁・三塁封殺『6-4』『4-6』『5-4』『FC』（本塁→1塁実線 b1:true）は野選封殺（rc:"fc", o:1）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
+   - 中央・右下拡大: 傘マーク接触『︵4』〜『︵9』はフライアウト（rc:"flyout", dir:"4"〜"9"、四球Bと誤読厳禁！）、送球ハイフン『6-3』『4-3』『5-3』はゴロ（rc:"groundout"）、悪送球『4E-3』『6E-3』『4E』や捕球失策『E4』『E6』は失策（rc:"error", dir:"4E-3"/"E4", o:0）、二塁・三塁・本塁封殺『6-4』『4-6』『5-4』『6B』『5C』『2H』（本塁→1塁実線 b1:true、先行走者アウト）は封殺ゴロ（rc:"groundout", dir:"6-4"等, rl:"遊ゴロ二封"等, o:1）、オールセーフの野選『FC』『4FC』（o:0）のみ野選（rc:"fc", o:0）、本一実線＋外野7/8/9は単打（rc:"single", o:0）、『K』/3ストライクは三振（rc:"strikeout", o:1）、ボール4球＋右下『B』＋本一実線は四球（rc:"walk", o:0）。
    - 万一、打席途中に先行走者が盗塁死・牽制死してチェンジとなり次イニング先頭で打ち直しになった痕跡がある場合のみ、候補B（完了した打席側）を優先採用してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に全${body.gaps.length
       }件の "gid" を漏れなく出力！）】
 {"items":[{"gid":"${firstGap.gapId}","i":${exInning},"c":${exCol},"bo":${firstGap.battingOrder
-      },"pt":"${exPitcher}","obs":"左:ー,○/中:無/本一:実線/右下:6-4","b1":true,"p":["B","S","X"],"eo":3,"o":1,"dir":"6-4","rc":"fc","rl":"遊ゴロ野選","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
+      },"pt":"${exPitcher}","obs":"左:ー,○/中:無/本一:実線/右下:6-4","b1":true,"p":["B","S","X"],"eo":3,"o":1,"dir":"6-4","rc":"groundout","rl":"遊ゴロ二封","rbi":0,"ru":0,"a":[],"cf":"h"}]}`;
 
     const validateReconcileOutput = (
       parsed: RawReconcileMissingResponse
@@ -2715,17 +2746,7 @@ ${pitcherSpecLines.join("\n")}
         reconciled.rawResultLabel || reconciled.rawDir
       );
 
-      // 本塁→1塁が実線(b1: true)で二塁/三塁/本塁への封殺送球（6-4, 4-6, 5-4, 5-2 等）の場合は野選・封殺(fc, 1アウト)として確定
-      const cleanDir = (reconciled.rawDir || "").trim();
-      if (
-        matchedRaw.b1 === true &&
-        resultCode === "groundout" &&
-        /^[1-6]-[2456]$/.test(cleanDir)
-      ) {
-        resultCode = "fc";
-      }
-
-      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+      let harmonizedFielding = harmonizeOcrFieldingAndLabel(
         resultCode,
         reconciled.rawDir,
         reconciled.rawResultLabel
@@ -2783,7 +2804,20 @@ ${pitcherSpecLines.join("\n")}
       } else if (resultCode === "double_play") {
         outsVal = priorOutsEstimate >= 2 ? 1 : 2;
       } else if (isDefiniteBatterOut) {
-        outsVal = Math.min(3, 1 + Math.min(1, runnerOutsInPlay));
+        if (
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
+        ) {
+          outsVal =
+            runnerOutsInPlay >= 2
+              ? Math.min(3 - priorOutsEstimate, runnerOutsInPlay)
+              : 1;
+        } else {
+          outsVal = Math.min(3, 1 + Math.min(1, runnerOutsInPlay));
+        }
       } else if (isSafeBatterReach) {
         outsVal = batterOutInAdvances ? 1 : 0;
       } else if (resultCode === "fc") {
@@ -2793,6 +2827,22 @@ ${pitcherSpecLines.join("\n")}
             (gap.kind === "inter_inning" && inning === gap.prevInning)
             ? 1
             : 0;
+        if (outsVal >= 1) {
+          const repairedFc = normalizeLegacyForceOutAtBat({
+            resultCode,
+            battedDirection: harmonizedFielding.battedDirection,
+            resultLabel: harmonizedFielding.resultLabel,
+            outsInPlay: outsVal,
+            advances,
+          });
+          if (repairedFc.resultCode !== "fc") {
+            resultCode = repairedFc.resultCode;
+            harmonizedFielding = {
+              battedDirection: repairedFc.battedDirection,
+              resultLabel: repairedFc.resultLabel,
+            };
+          }
+        }
       } else if (resultCode === "other") {
         outsVal = runnerOutsInPlay > 0 || rawOutsVal > 0 ? 1 : 0;
       }
@@ -3072,7 +3122,7 @@ ${batterRowsDesc.join("\n")}
      ・本塁→1塁が太い実線/赤線で、右下に斜線『/』や守備番号『7』『8』『9』『6』等がある **単打（rc:"single", o:0）**・二塁打・三塁打
      ・本塁→1塁が実線で、左BSOにボール4球・右下に『B』『D』がある **四球（rc:"walk", o:0）・死球（rc:"hit_by_pitch", o:0）**
      ・右下に『E6』『E4』『4E-3』『6E-3』『4E』等がある **失策・悪送球出塁（rc:"error", dir:"4E-3"等, o:0）**、または『K』でも本塁→1塁が実線の **振り逃げ出塁（rc:"dropped_third_strike", o:0）**
-     ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺打者（6-4/4-6/FC等）側のみを **"o": 1** としてください！
+     ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺ゴロ打者（rc:"groundout", dir:"6-4"/"4-6"/"5C"等）側のみを **"o": 1**（オールセーフの野選 rc:"fc" は **"o": 0**）としてください！
 3. **パターンB（3アウト目『Ⅲ』『③』完了直後のマスが「イニング終了切り線 ／・∟」または「白紙空欄」または「次イニング重複」だったケース）**:
    - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
 4. **"o" と "eo" の厳密区別・早稲田式「●（個人得点）」の分離・左BSO拡大の全球保持**:
@@ -3164,13 +3214,6 @@ ${batterRowsDesc.join("\n")}
         reconciled.rawResultCode,
         reconciled.rawResultLabel || reconciled.rawDir
       );
-      if (
-        matched.b1 === true &&
-        resultCode === "groundout" &&
-        /^[1-6]-[2456]$/.test((reconciled.rawDir || "").trim())
-      ) {
-        resultCode = "fc";
-      }
 
       const activeRunnersCount =
         (activeBases["1B"] ? 1 : 0) +
@@ -3188,7 +3231,7 @@ ${batterRowsDesc.join("\n")}
           : "groundout";
       }
 
-      const harmonizedFielding = harmonizeOcrFieldingAndLabel(
+      let harmonizedFielding = harmonizeOcrFieldingAndLabel(
         resultCode,
         reconciled.rawDir,
         reconciled.rawResultLabel
@@ -3232,6 +3275,14 @@ ${batterRowsDesc.join("\n")}
           (a) => a.isOut && a.from !== "BAT" && activeBases[a.from]
         ).length
       );
+      const batterOverrunOut = advances.some(
+        (a) =>
+          a.isOut &&
+          (a.from === "BAT" || !activeBases[a.from as "1B" | "2B" | "3B"]) &&
+          (a.method === "hit" || a.method === "out_on_base")
+      )
+        ? 1
+        : 0;
       const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
 
       const isDefiniteBatterOut =
@@ -3254,6 +3305,17 @@ ${batterRowsDesc.join("\n")}
         outsVal = 2;
       } else if (isDefiniteBatterOut) {
         if (
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
+        ) {
+          outsVal =
+            occupiedBaseRunnerOuts >= 2
+              ? Math.min(3 - runningOuts, occupiedBaseRunnerOuts)
+              : 1;
+        } else if (
           occupiedBaseRunnerOuts === 0 &&
           rawOutsVal >= 2 &&
           activeRunnersCount >= 1 &&
@@ -3275,9 +3337,25 @@ ${batterRowsDesc.join("\n")}
           outsVal = Math.min(3, 1 + occupiedBaseRunnerOuts);
         }
       } else if (isSafeBatterReach) {
-        outsVal = Math.min(2, occupiedBaseRunnerOuts);
+        outsVal = Math.min(2, occupiedBaseRunnerOuts + batterOverrunOut);
       } else if (resultCode === "fc") {
         outsVal = rawOutsVal >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+        if (outsVal >= 1) {
+          const repairedFc = normalizeLegacyForceOutAtBat({
+            resultCode,
+            battedDirection: harmonizedFielding.battedDirection,
+            resultLabel: harmonizedFielding.resultLabel,
+            outsInPlay: outsVal,
+            advances,
+          });
+          if (repairedFc.resultCode !== "fc") {
+            resultCode = repairedFc.resultCode;
+            harmonizedFielding = {
+              battedDirection: repairedFc.battedDirection,
+              resultLabel: repairedFc.resultLabel,
+            };
+          }
+        }
       } else if (resultCode === "other") {
         outsVal =
           occupiedBaseRunnerOuts > 0
@@ -3337,8 +3415,9 @@ ${batterRowsDesc.join("\n")}
         }
       }
       if (
-        advances.filter((a) => a.from === "BAT").length === 0 &&
-        outsVal === 0
+        runningOuts + outsVal < 3 &&
+        batterOverrunOut === 0 &&
+        advances.filter((a) => a.from === "BAT").length === 0
       ) {
         if (
           resultCode === "single" ||
@@ -3348,7 +3427,12 @@ ${batterRowsDesc.join("\n")}
           resultCode === "interference" ||
           resultCode === "error" ||
           resultCode === "fc" ||
-          resultCode === "dropped_third_strike"
+          resultCode === "dropped_third_strike" ||
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
         ) {
           activeBases["1B"] = true;
         } else if (resultCode === "double") {
@@ -3581,15 +3665,15 @@ liffScorebookRouter.post("/save", async (c) => {
 
     const incomingTop = includeTop
       ? materializeSheetRunnerAdvances(
-        body.topAtBats || [],
+        (body.topAtBats || []).map(normalizeLegacyForceOutAtBat),
         body.topStructure
-      )
+      ).map(normalizeLegacyForceOutAtBat)
       : [];
     const incomingBottom = includeBottom
       ? materializeSheetRunnerAdvances(
-        body.bottomAtBats || [],
+        (body.bottomAtBats || []).map(normalizeLegacyForceOutAtBat),
         body.bottomStructure
-      )
+      ).map(normalizeLegacyForceOutAtBat)
       : [];
 
     // バリデーションメッセージ生成
@@ -4442,22 +4526,25 @@ liffScorebookRouter.get("/saved", async (c) => {
     let topAtBats =
       topDbAbs.length > 0
         ? (safeParseJsonValue<ScorebookV2AtBat[]>(snap?.topAtBatsJson) || []).map(
-          (ab) => ({
-            ...ab,
-            battedDirection:
-              ab.battedDirection || defaultGenericDirection(ab.resultCode),
-          })
+          (ab) =>
+            normalizeLegacyForceOutAtBat({
+              ...ab,
+              battedDirection:
+                ab.battedDirection || defaultGenericDirection(ab.resultCode),
+            })
         )
         : [];
     let bottomAtBats =
       bottomDbAbs.length > 0
         ? (
           safeParseJsonValue<ScorebookV2AtBat[]>(snap?.bottomAtBatsJson) || []
-        ).map((ab) => ({
-          ...ab,
-          battedDirection:
-            ab.battedDirection || defaultGenericDirection(ab.resultCode),
-        }))
+        ).map((ab) =>
+          normalizeLegacyForceOutAtBat({
+            ...ab,
+            battedDirection:
+              ab.battedDirection || defaultGenericDirection(ab.resultCode),
+          })
+        )
         : [];
 
     const needReconstructTop =
@@ -4892,7 +4979,13 @@ liffScorebookRouter.get("/saved", async (c) => {
             resultCode === "sac_fly" ||
             resultCode === "interference_out"
           ) {
-            outsInPlay = Math.min(3 - runningOuts, 1 + runnerOutAdvCount);
+            outsInPlay = isForceOutGroundout(
+              resultCode,
+              harmonized.battedDirection,
+              harmonized.resultLabel
+            )
+              ? Math.min(3 - runningOuts, Math.max(1, runnerOutAdvCount))
+              : Math.min(3 - runningOuts, 1 + runnerOutAdvCount);
           } else if (resultCode === "fc") {
             outsInPlay =
               runnerOutAdvCount > 0
@@ -4918,29 +5011,31 @@ liffScorebookRouter.get("/saved", async (c) => {
 
           const cnt = computeCountFromPitches(parsedPitches);
 
-          rebuiltAtBats.push({
-            id: dbAb.id,
-            inning: dbAb.inning,
-            isTop,
-            columnIndex: nextColIdx,
-            battingOrder,
-            batterName,
-            batterPlayerId: linkedBatter?.id || dbAb.batterId || null,
-            pitcherName: linkedPitcher?.name || (isMyTeamBatting ? "相手投手" : ""),
-            pitcherPlayerId: linkedPitcher?.id || dbAb.pitcherId || null,
-            resultCode,
-            resultLabel: harmonized.resultLabel,
-            battedDirection: harmonized.battedDirection,
-            rbi: parsedRbi !== undefined ? parsedRbi : runsInPlay,
-            outsInPlay,
-            endingOuts: runningOuts,
-            runsInPlay,
-            balls: cnt.balls,
-            strikes: cnt.strikes,
-            pitches: parsedPitches,
-            advances: mappedAdvances,
-            confidence: "high",
-          });
+          rebuiltAtBats.push(
+            normalizeLegacyForceOutAtBat({
+              id: dbAb.id,
+              inning: dbAb.inning,
+              isTop,
+              columnIndex: nextColIdx,
+              battingOrder,
+              batterName,
+              batterPlayerId: linkedBatter?.id || dbAb.batterId || null,
+              pitcherName: linkedPitcher?.name || (isMyTeamBatting ? "相手投手" : ""),
+              pitcherPlayerId: linkedPitcher?.id || dbAb.pitcherId || null,
+              resultCode,
+              resultLabel: harmonized.resultLabel,
+              battedDirection: harmonized.battedDirection,
+              rbi: parsedRbi !== undefined ? parsedRbi : runsInPlay,
+              outsInPlay,
+              endingOuts: runningOuts,
+              runsInPlay,
+              balls: cnt.balls,
+              strikes: cnt.strikes,
+              pitches: parsedPitches,
+              advances: mappedAdvances,
+              confidence: "high",
+            })
+          );
         }
 
         // 打順1〜9番の空きスロット補完
@@ -6149,7 +6244,8 @@ function sanitizeMappedInningAtBats(
       ab.resultCode === "intentional_walk" ||
       ab.resultCode === "hit_by_pitch" ||
       ab.resultCode === "strikeout" ||
-      ab.resultCode === "fc"
+      ab.resultCode === "fc" ||
+      isForceOutGroundout(ab.resultCode, ab.battedDirection, ab.resultLabel)
     );
   };
 
@@ -6175,6 +6271,7 @@ function sanitizeMappedInningAtBats(
     ) {
       tailAb.outsInPlay = 1;
       tailAb.endingOuts = 3;
+      Object.assign(tailAb, normalizeLegacyForceOutAtBat(tailAb));
     }
 
     let cumOuts = 0;
@@ -6205,6 +6302,11 @@ function sanitizeMappedInningAtBats(
         (x) =>
           isSafeReachResult(x.resultCode) ||
           x.resultCode === "fc" ||
+          isForceOutGroundout(
+            x.resultCode,
+            x.battedDirection,
+            x.resultLabel
+          ) ||
           x.outsInPlay === 0 ||
           x.advances.some((a) => !a.isOut && a.to !== "HP")
       );
@@ -6682,18 +6784,17 @@ function reconcileRawAtBatEvidence(
         rawPitches = [...rawPitches, "D"];
       }
     } else if (
-      // 3-A3. 『5C』『6B』『2H』『6-4B』等の二塁・三塁・本塁ベースアウト野選マス（b1: true）の下端境界に
-      // 次打者の併殺打用の『DP』が書かれているために、この出塁マス自身が2アウト(double_play/groundout)と誤読されたケースの補正
+      // 3-A3. 『5C』『6B』『2H』『6-4B』等の二塁・三塁・本塁ベースアウト封殺ゴロマス（b1: true）の下端境界に
+      // 次打者の併殺打用の『DP』が書かれているために、この1塁残りマス自身が2アウト(double_play)と誤読されたケースの補正
       hasAnyActiveRunner &&
       effectiveB1 === true &&
       /^(?:[1-9]-)?[1-9][BCH](?:\s*DP)?$/i.test(normDir)
     ) {
-      const cleanedFcDir = normDir.replace(/\s*DP$/i, "").trim();
-      const leadFielder = cleanedFcDir.match(/[1-9]/)?.[0] || "";
-      rawResultCode = "fc";
-      rawDir = leadFielder || cleanedFcDir;
+      const cleanedForceDir = normDir.replace(/\s*DP$/i, "").trim();
+      rawResultCode = "groundout";
+      rawDir = cleanedForceDir;
       rawResultLabel = "";
-      outsInPlay = hasRunnerOutAdvance ? 1 : Math.min(1, outsInPlay);
+      outsInPlay = 1;
       endingOuts = Math.min(3, runningInningOuts + outsInPlay);
     } else if (
       // 3-A4. 『4E-3』『6E-3』『4E』『6-3E』等の失策・悪送球記号があるのにゴロ等と誤出力されたケースの補正

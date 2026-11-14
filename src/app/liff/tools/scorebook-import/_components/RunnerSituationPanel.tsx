@@ -27,6 +27,7 @@ import {
   formatOccupiedRunnersShort,
   formatOutsAndBasesLabel,
   formatRunnerBadgeName,
+  isForceOutGroundout,
   isPrePlayAdvanceMethod,
   sortAdvancesClosestToHomeFirst,
   sortPrecedingRunnersClosestToHomeFirst,
@@ -36,6 +37,10 @@ import {
   type OccupiedBaseKey,
   type PrecedingRunnerSummary,
 } from "@/lib/liff/scorebook-runners";
+import {
+  harmonizeOcrFieldingAndLabel,
+  normalizeLegacyForceOutAtBat,
+} from "@/lib/liff/scorebook-fielding";
 import {
   LiffSelect,
   type LiffSelectOption,
@@ -431,7 +436,7 @@ const IN_PLAY_OUT_REASON_CHIPS: ReadonlyArray<{
   code: AdvanceMethodCode;
   label: string;
 }> = [
-  { code: "fc", label: "封殺・野選(FC)" },
+  { code: "fc", label: "封殺アウト" },
   { code: "out_on_base", label: "走塁死・タッチアウト" },
   { code: "caught_stealing", label: "盗塁死(CS)" },
   { code: "pickoff_out", label: "牽制死(PO)" },
@@ -597,7 +602,49 @@ export function AtBatModalRunnerEditor({
         outsBefore,
         basesBefore,
       });
-      return {
+
+      const hasAnyInPlayRunnerOut = res.advances.some(
+        (a) => a.isOut && a.from !== "BAT" && !isPrePlayAdvanceMethod(a.method)
+      );
+
+      // 封殺ゴロ（二封・三封・本封）で先行走者を全員セーフに切り替えた場合は、自動的にオールセーフ野選（FC）へ昇格
+      if (
+        !isOut &&
+        !hasAnyInPlayRunnerOut &&
+        isForceOutGroundout(
+          prev.resultCode,
+          prev.battedDirection,
+          prev.resultLabel
+        )
+      ) {
+        const fcHarmonized = harmonizeOcrFieldingAndLabel(
+          "fc",
+          prev.battedDirection,
+          ""
+        );
+        const fcCandidate: ScorebookV2AtBat = {
+          ...prev,
+          resultCode: "fc",
+          battedDirection: fcHarmonized.battedDirection,
+          resultLabel: fcHarmonized.resultLabel,
+          advances: res.advances,
+        };
+        const fcSynced = computeSyncedStatsFromAdvances(
+          fcCandidate,
+          res.advances,
+          outsBefore,
+          basesBefore
+        );
+        return {
+          ...fcCandidate,
+          outsInPlay: fcSynced.outsInPlay,
+          runsInPlay: fcSynced.runsInPlay,
+          rbi: fcSynced.rbi,
+          confidence: "high",
+        };
+      }
+
+      const nextAb: ScorebookV2AtBat = {
         ...prev,
         advances: res.advances,
         outsInPlay: res.outsInPlay,
@@ -605,6 +652,7 @@ export function AtBatModalRunnerEditor({
         rbi: res.rbi,
         confidence: "high",
       };
+      return normalizeLegacyForceOutAtBat(nextAb);
     });
   };
 

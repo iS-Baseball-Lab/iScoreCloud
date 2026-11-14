@@ -1,5 +1,9 @@
 // filepath: src/lib/liff/scorebook-fielding.ts
-import type { CanonicalAtBatResult } from "@/types/scorebook-v2";
+import type {
+  CanonicalAtBatResult,
+  ScorebookV2Advance,
+  ScorebookV2AtBat,
+} from "@/types/scorebook-v2";
 
 export type DefensivePosNumber =
   | "1"
@@ -334,7 +338,7 @@ export function parseFieldingMeta(
     }
   }
 
-  // 3. 2連送球（6-3, 3-1, 〜6-3, [1-3], ◇5-3, B1-3, BH5-3, K 2-3 等 ※7-8/8-9の安打は除外）
+  // 3. 2連送球（6-3, 3-1, 6-4B, 6-5C, 5-2H, 〜6-3, [1-3], ◇5-3, B1-3, BH5-3, K 2-3 等 ※7-8/8-9の安打は除外）
   const twoRelayMatch =
     !threeRelayMatch &&
     !throwingErrorRelayMatch &&
@@ -342,7 +346,7 @@ export function parseFieldingMeta(
     !fcRelayMatch &&
     !(isHitCode && (hitZone === "gap_lc" || hitZone === "gap_rc"))
       ? combined.match(
-          /(?:(?<![0-9A-Za-z-])|(?<=\bBH|\bB))([1-9])-([1-9])(?![0-9A-Za-z-])/i
+          /(?:(?<![0-9A-Za-z-])|(?<=\bBH|\bB))([1-9])-([1-9])(?:A|B|C|H|TO)?(?![0-9A-Za-z-])/i
         )
       : null;
   if (twoRelayMatch) {
@@ -1618,4 +1622,268 @@ function defaultGenericLabel(code: CanonicalAtBatResult): string {
       return "打席途中断（走塁死チェンジ）";
   }
 }
+
+/**
+ * 過去データ互換補正:
+ * 先行走者が封殺・アウト（二封・三封・本封: 6-4, 4-6, 5-4, 6-5, 5-2, 6B, 5C, 2H 等）となって
+ * 1アウトが記録されているにもかかわらず、旧ロジックで resultCode: "fc"（野選）として保存された打席を
+ * 公式野球規則に準拠したゴロ封殺（resultCode: "groundout" 等）へ自動正規化する。
+ * ※先行走者もセーフになった本物のオールセーフ野選（outsInPlay === 0 等）はそのまま "fc" として保持する。
+ */
+export function normalizeLegacyForceOutAtBat<
+  T extends Pick<
+    ScorebookV2AtBat,
+    "resultCode" | "battedDirection" | "resultLabel" | "outsInPlay" | "advances"
+  >,
+>(ab: T): T {
+  if (!ab || ab.resultCode !== "fc") return ab;
+
+  const rawDir = (ab.battedDirection || "").trim();
+  // 早見表・設定プレビュー用の残塁イニング終了サンプル表記（"6-" 等）はそのまま保持
+  if (/^[1-9]-$/.test(rawDir)) return ab;
+
+  const advances: ScorebookV2Advance[] = Array.isArray(ab.advances)
+    ? ab.advances
+    : [];
+  const prePlayOuts = advances.filter(
+    (a) =>
+      a.isOut &&
+      (a.method === "caught_stealing" ||
+        a.method === "pickoff_out" ||
+        a.method === "appeal_out")
+  ).length;
+  const inPlayRunnerOuts = advances.filter(
+    (a) =>
+      a.isOut &&
+      a.from !== "BAT" &&
+      a.method !== "caught_stealing" &&
+      a.method !== "pickoff_out" &&
+      a.method !== "appeal_out"
+  );
+  const netInPlayOuts = Math.max(0, (ab.outsInPlay ?? 0) - prePlayOuts);
+
+  // インプレーでの走者アウトが 0（本物のオールセーフ野選）なら変更しない
+  if (inPlayRunnerOuts.length === 0 && netInPlayOuts === 0) {
+    return ab;
+  }
+
+  // 本塁送球（-2 等）で三塁走者がセーフ生還し、後続走者のみ別塁タッチアウトになった本物の野選＋走塁死は保持
+  const hasSafeRunnerScore = advances.some(
+    (a) => !a.isOut && a.from !== "BAT" && a.to === "HP"
+  );
+  if (
+    hasSafeRunnerScore &&
+    inPlayRunnerOuts.length > 0 &&
+    inPlayRunnerOuts.every((a) => a.to !== "HP") &&
+    /(?:-2|2H)/i.test(rawDir)
+  ) {
+    return ab;
+  }
+
+  const rawLabel = (ab.resultLabel || "").trim();
+  const normDir = normalizeFieldingAscii(rawDir);
+  const parenMatch = rawLabel.match(/\(([^()]+)\)/);
+  const fallbackFromLabel = parenMatch
+    ? normalizeFieldingAscii(parenMatch[1])
+    : "";
+  const sourceToken = normDir || fallbackFromLabel;
+
+  const isBunt =
+    /^B(?!H)/i.test(sourceToken) || rawLabel.includes("バント");
+
+  let core = sourceToken
+    .replace(/^B(?!H)/i, "")
+    .replace(/O\.?B\.?/gi, "")
+    .replace(/FC/gi, "")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+
+  if (!core) {
+    const labelPosMatch = rawLabel.match(/^([投捕一二三遊左中右])/);
+    const posMap: Record<string, string> = {
+      投: "1",
+      捕: "2",
+      一: "3",
+      二: "4",
+      三: "5",
+      遊: "6",
+      左: "7",
+      中: "8",
+      右: "9",
+    };
+    if (labelPosMatch && posMap[labelPosMatch[1]]) {
+      core = posMap[labelPosMatch[1]];
+    }
+  }
+
+  // 旧処理で 5C / 6B / 4B / 2H 等の末尾ベース記号が削られて単独数字（"5", "6" 等）になっていた場合を復元
+  if (/^[1-9]$/.test(core)) {
+    const outTargetBase = inPlayRunnerOuts[0]?.to;
+    if (outTargetBase === "3B") {
+      core = core === "5" ? "5C" : `${core}-5`;
+    } else if (outTargetBase === "HP") {
+      core = core === "2" ? "2H" : `${core}-2`;
+    } else if (outTargetBase === "2B") {
+      core =
+        core === "4" || core === "6"
+          ? `${core}B`
+          : core === "3"
+          ? "3-6"
+          : `${core}-4`;
+    } else {
+      core =
+        core === "6"
+          ? "6-4"
+          : core === "4"
+          ? "4-6"
+          : core === "5"
+          ? "5-4"
+          : core === "3"
+          ? "3-6"
+          : core === "1"
+          ? "1-4"
+          : core === "2"
+          ? "2-4"
+          : `${core}-4`;
+    }
+  }
+
+  const candidateDir =
+    isBunt && core && !/^B/i.test(core) ? `B${core}` : core || "6-4";
+  const targetCode: CanonicalAtBatResult =
+    netInPlayOuts >= 3
+      ? "triple_play"
+      : netInPlayOuts >= 2
+      ? "double_play"
+      : "groundout";
+
+  const harmonized = harmonizeOcrFieldingAndLabel(
+    targetCode,
+    candidateDir,
+    isBunt ? "バント" : ""
+  );
+
+  return {
+    ...ab,
+    resultCode: targetCode,
+    battedDirection: harmonized.battedDirection,
+    resultLabel: harmonized.resultLabel,
+  };
+}
+
+/**
+ * play_logs.description 内の旧「〇〇野選 (FC6-4)」等の見出しを、
+ * 走者封殺アウトが記録されている打席に限り「〇〇ゴロ二封 (6-4)」等へ安全に補正する
+ */
+export function repairPlayLogForceOutDescription(
+  description: string,
+  repairedAb?: Pick<
+    ScorebookV2AtBat,
+    "resultCode" | "battedDirection" | "resultLabel"
+  > | null
+): string {
+  if (!description || (!description.includes("野選") && !description.includes("FC"))) {
+    return description;
+  }
+
+  if (repairedAb && repairedAb.resultCode === "fc") {
+    return description;
+  }
+
+  const outCountMatch = description.match(/\[B:\d+,\s*S:\d+,\s*O:(\d+)\]/);
+  const recordedOuts = outCountMatch ? Number(outCountMatch[1]) : 0;
+
+  const runnerBracketMatch = description.match(/［([^］]*)］/);
+  const runnerBracket = runnerBracketMatch ? runnerBracketMatch[1] : "";
+
+  if (!repairedAb) {
+    if (recordedOuts <= 0) return description;
+    const segments = runnerBracket
+      ? runnerBracket.split("、").map((s) => s.trim()).filter(Boolean)
+      : [];
+    const inPlayOutSegs = segments.filter(
+      (s) =>
+        s.includes("アウト") &&
+        !s.includes("@投球外") &&
+        !s.includes("盗塁") &&
+        !s.includes("牽制")
+    );
+    const hasSafeHomeScore = segments.some((s) => s.includes("本塁生還"));
+    if (segments.length > 0 && inPlayOutSegs.length === 0) {
+      return description;
+    }
+    if (hasSafeHomeScore && inPlayOutSegs.every((s) => !s.includes("→本塁アウト"))) {
+      return description;
+    }
+  }
+
+  const pitchMarker = "\n===PITCHES===\n";
+  const markerIdx = description.indexOf(pitchMarker);
+  const headPart = markerIdx >= 0 ? description.slice(0, markerIdx) : description;
+  const tailPart = markerIdx >= 0 ? description.slice(markerIdx) : "";
+
+  const headMatch = headPart.match(
+    /^([^:：]+[:：]\s*)(.+?)(\s*(?:（(?:打点|得点)[^）]*）)?\s*(?:［[^］]*］)?\s*(?:\[B:\d+,\s*S:\d+,\s*O:\d+\])?)$/
+  );
+  if (!headMatch) return description;
+
+  const prefix = headMatch[1];
+  const oldResultText = headMatch[2].trim();
+  const suffix = headMatch[3] || "";
+
+  let nextResultText = repairedAb?.resultLabel?.trim() || "";
+  if (!nextResultText) {
+    const inferredAdvances: ScorebookV2Advance[] = [];
+    if (runnerBracket.includes("→2塁アウト")) {
+      inferredAdvances.push({
+        id: "r",
+        from: "1B",
+        to: "2B",
+        method: "fc",
+        isOut: true,
+        runnerName: "",
+      });
+    } else if (runnerBracket.includes("→3塁アウト")) {
+      inferredAdvances.push({
+        id: "r",
+        from: "2B",
+        to: "3B",
+        method: "fc",
+        isOut: true,
+        runnerName: "",
+      });
+    } else if (runnerBracket.includes("→本塁アウト")) {
+      inferredAdvances.push({
+        id: "r",
+        from: "3B",
+        to: "HP",
+        method: "fc",
+        isOut: true,
+        runnerName: "",
+      });
+    }
+    const parenCodeMatch = oldResultText.match(/\(([^()]+)\)/);
+    const normalized = normalizeLegacyForceOutAtBat({
+      resultCode: "fc",
+      battedDirection: parenCodeMatch ? parenCodeMatch[1] : "",
+      resultLabel: oldResultText,
+      outsInPlay: Math.max(1, recordedOuts),
+      advances: inferredAdvances,
+    });
+    if (normalized.resultCode === "fc") return description;
+    nextResultText = normalized.resultLabel;
+  } else if (
+    repairedAb?.battedDirection &&
+    !nextResultText.includes(repairedAb.battedDirection)
+  ) {
+    nextResultText = `${nextResultText} (${repairedAb.battedDirection})`;
+  }
+
+  if (!nextResultText || nextResultText === oldResultText) {
+    return description;
+  }
+
+  return `${prefix}${nextResultText}${suffix}${tailPart}`;
+}
+
 

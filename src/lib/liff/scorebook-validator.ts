@@ -1,5 +1,8 @@
 // filepath: src/lib/liff/scorebook-validator.ts
-import { harmonizeOcrFieldingAndLabel } from "@/lib/liff/scorebook-fielding";
+import {
+  harmonizeOcrFieldingAndLabel,
+  normalizeLegacyForceOutAtBat,
+} from "@/lib/liff/scorebook-fielding";
 import {
   getCellQuadInStructure,
   quadToBoundingBox,
@@ -7,6 +10,7 @@ import {
 import {
   computeBasesAtInPlayFromAdvances,
   createEmptyBaseMap,
+  isForceOutGroundout,
   reconcileSheetRunsAndRbi,
   simulateSheetRunners,
 } from "@/lib/liff/scorebook-runners";
@@ -272,8 +276,7 @@ export function inferCanonicalResultCode(
     upper.includes("FC") ||
     upper === "OB" ||
     upper === "O.B." ||
-    label.includes("野選") ||
-    /^(?:[1-9]-)[1-9][BCH]$|^[1-9][CH]$|^[4-6]B$/i.test(normErrToken)
+    label.includes("野選")
   ) {
     return "fc";
   }
@@ -296,9 +299,12 @@ export function inferCanonicalResultCode(
   if (
     label.includes("ゴロ") ||
     label.includes("封殺") ||
+    label.includes("二封") ||
+    label.includes("三封") ||
+    label.includes("本封") ||
     label.includes("タッチアウト") ||
     /^[1-9]-[1-9]/.test(upper) ||
-    /^[1-9](?:A|TO)$/i.test(normErrToken) ||
+    /^(?:[1-9]-)?[1-9](?:A|B|C|H|TO)$/i.test(normErrToken) ||
     /^[~〜][1-9]$/.test(label)
   ) {
     return "groundout";
@@ -1786,6 +1792,7 @@ function rebalanceInningOutsAfterRecovery(
   const last = cloned[cloned.length - 1];
   if (totalOuts === 2 && last && last.resultCode === "fc" && last.outsInPlay === 0) {
     last.outsInPlay = 1;
+    Object.assign(last, normalizeLegacyForceOutAtBat(last));
     totalOuts = 3;
   }
 
@@ -2251,7 +2258,12 @@ function reconcileCyclicInningLeadOffs(
                 leadItem.resultCode === "double_play" ||
                 leadItem.resultCode === "triple_play" ||
                 leadItem.resultCode === "infield_fly" ||
-                leadItem.resultCode === "fc")
+                leadItem.resultCode === "fc" ||
+                isForceOutGroundout(
+                  leadItem.resultCode,
+                  leadItem.battedDirection,
+                  leadItem.resultLabel
+                ))
             ) {
               score -= 30;
             }
@@ -2443,20 +2455,28 @@ export function reconcileSheetExcessOutsDeterministically(
   const lineupCycle = maxOrder >= 10 ? maxOrder : 9;
   const stepOrder = (bo: number): number => (bo % lineupCycle) + 1;
 
+  let changed = false;
   const inningsMap = new Map<number, ScorebookV2AtBat[]>();
   for (const ab of atBats) {
-    const cloned: ScorebookV2AtBat = {
+    const rawCloned: ScorebookV2AtBat = {
       ...ab,
       pitches: [...ab.pitches],
       advances: ab.advances.map((a) => ({ ...a })),
     };
+    const cloned = normalizeLegacyForceOutAtBat(rawCloned);
+    if (
+      cloned.resultCode !== rawCloned.resultCode ||
+      cloned.battedDirection !== rawCloned.battedDirection ||
+      cloned.resultLabel !== rawCloned.resultLabel
+    ) {
+      changed = true;
+    }
     const arr = inningsMap.get(ab.inning) || [];
     arr.push(cloned);
     inningsMap.set(ab.inning, arr);
   }
 
   const sortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
-  let changed = false;
 
   // Pass 0: 1イニング9人（打者一巡・二巡）が埋まっているイニングの先頭打者ズレを先に循環回転補正
   // （※これをPass 1/Pass 2の前に実行することで、正しい走者順での併殺判定＆誤トリミング防止を保証！）
@@ -2572,13 +2592,21 @@ export function reconcileSheetExcessOutsDeterministically(
           changed = true;
         }
       } else if (isSingleBatterOutCode(ab.resultCode)) {
-        const preservedMultiOuts =
-          occupiedBaseRunnerOuts === 0 &&
-          ab.outsInPlay >= 2 &&
-          activeRunnersCount >= 1 &&
-          runningOuts <= 1
-            ? Math.min(3 - runningOuts, 1 + activeRunnersCount, ab.outsInPlay)
-            : Math.min(3, 1 + occupiedBaseRunnerOuts);
+        const isForceGround = isForceOutGroundout(
+          ab.resultCode,
+          ab.battedDirection,
+          ab.resultLabel
+        );
+        const preservedMultiOuts = isForceGround
+          ? occupiedBaseRunnerOuts >= 2
+            ? Math.min(3 - runningOuts, occupiedBaseRunnerOuts)
+            : 1
+          : occupiedBaseRunnerOuts === 0 &&
+            ab.outsInPlay >= 2 &&
+            activeRunnersCount >= 1 &&
+            runningOuts <= 1
+          ? Math.min(3 - runningOuts, 1 + activeRunnersCount, ab.outsInPlay)
+          : Math.min(3, 1 + occupiedBaseRunnerOuts);
         if (ab.outsInPlay !== preservedMultiOuts) {
           ab.outsInPlay = preservedMultiOuts;
           changed = true;
@@ -2599,6 +2627,15 @@ export function reconcileSheetExcessOutsDeterministically(
         if (ab.outsInPlay !== exactOuts) {
           ab.outsInPlay = exactOuts;
           changed = true;
+        }
+        if (ab.outsInPlay >= 1) {
+          const repaired = normalizeLegacyForceOutAtBat(ab);
+          if (repaired.resultCode !== ab.resultCode) {
+            ab.resultCode = repaired.resultCode;
+            ab.battedDirection = repaired.battedDirection;
+            ab.resultLabel = repaired.resultLabel;
+            changed = true;
+          }
         }
       } else if (ab.resultCode === "other") {
         const exactOuts =
@@ -2629,8 +2666,9 @@ export function reconcileSheetExcessOutsDeterministically(
         }
       }
       if (
-        ab.advances.filter((a) => a.from === "BAT").length === 0 &&
-        ab.outsInPlay === 0
+        runningOuts < 3 &&
+        batterOverrunOut === 0 &&
+        ab.advances.filter((a) => a.from === "BAT").length === 0
       ) {
         if (
           ab.resultCode === "single" ||
@@ -2640,7 +2678,12 @@ export function reconcileSheetExcessOutsDeterministically(
           ab.resultCode === "interference" ||
           ab.resultCode === "error" ||
           ab.resultCode === "fc" ||
-          ab.resultCode === "dropped_third_strike"
+          ab.resultCode === "dropped_third_strike" ||
+          isForceOutGroundout(
+            ab.resultCode,
+            ab.battedDirection,
+            ab.resultLabel
+          )
         ) {
           activeBases["1B"] = true;
         } else if (ab.resultCode === "double") {
@@ -2731,6 +2774,11 @@ export function reconcileSheetExcessOutsDeterministically(
           (x) =>
             isSafeBatterReachCode(x.resultCode) ||
             x.resultCode === "fc" ||
+            isForceOutGroundout(
+              x.resultCode,
+              x.battedDirection,
+              x.resultLabel
+            ) ||
             x.outsInPlay === 0
         );
         const tailPhantom = tail.every(

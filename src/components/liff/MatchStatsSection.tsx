@@ -17,6 +17,7 @@ import {
 import { EmptyState } from "@/components/layout/EmptyState";
 import { ScorebookSingleCellThumbnail } from "@/components/liff/ScorebookCellGuideModal";
 import { getPositionBadgeInfo } from "@/lib/liff/demo-lineup";
+import { repairPlayLogForceOutDescription } from "@/lib/liff/scorebook-fielding";
 import {
   getChronologicalMergedGameCells,
   getChronologicalSheetCells,
@@ -654,12 +655,34 @@ function enrichTimelineEntriesWithSituation(
         else if (nextBases["2B"]) nextBases["2B"] = false;
       }
     } else {
-      // 三振・ゴロ・フライ等の通常アウト（走塁死単独ログの場合は二重加算しない）
-      const runnerOnlyOut =
+      // 三振・ゴロ・フライ等の通常アウト（封殺ゴロ・走塁死単独ログの場合は二重加算せず封殺ゴロは打者を1塁へ残す）
+      const isForceOutPlay =
+        /二封|三封|本封|封殺|本塁憤死|本塁アウト/.test(text) ||
+        /^(?:BH|B)?[1-9]-[2456](?:[BCH]|TO)?$/i.test(text) ||
+        /^(?:BH|B)?[1-9][BCH]$/i.test(text);
+      const hadRunnerOutChip =
         hadExplicitRunnerMoves &&
-        entry.runnerChips.some((c) => c.kind === "out") &&
-        /盗塁死|牽制死|走塁死/.test(text);
-      if (!runnerOnlyOut) {
+        entry.runnerChips.some((c) => c.kind === "out");
+      const runnerOnlyOut =
+        hadRunnerOutChip && /盗塁死|牽制死|走塁死/.test(text);
+
+      if (isForceOutPlay) {
+        if (!hadRunnerOutChip) {
+          nextOuts = Math.min(3, runningOuts + 1);
+          if (!hadExplicitRunnerMoves) {
+            if (nextBases["3B"] && /本封|本塁/.test(text)) {
+              nextBases["3B"] = false;
+            } else if (nextBases["2B"] && /三封/.test(text)) {
+              nextBases["2B"] = false;
+            } else if (nextBases["1B"]) {
+              nextBases["1B"] = false;
+            }
+          }
+        }
+        if (nextOuts < 3) {
+          nextBases["1B"] = true;
+        }
+      } else if (!runnerOnlyOut) {
         nextOuts = Math.min(3, runningOuts + 1);
       }
     }
@@ -931,7 +954,9 @@ function parseTimelineEntries(
       offsets.set(sideKey, idx + 1);
       const matchedBox = boxQueueByInnSide.get(sideKey)?.[idx];
 
-      let working = (log.description || "").trim();
+      let working = repairPlayLogForceOutDescription(
+        log.description || ""
+      ).trim();
       let balls = 0;
       let strikes = 0;
       let outs = 0;
@@ -1235,8 +1260,20 @@ function attachScorebookCellsToTimelineEntries(
 
     const ab = matchedCell.atBat;
     const sit = matchedCell.situation;
+    let resolvedMainResult = entry.mainResult;
+    if (
+      ab &&
+      ab.resultCode !== "fc" &&
+      (resolvedMainResult.includes("野選") || resolvedMainResult.includes("FC")) &&
+      ab.resultLabel
+    ) {
+      resolvedMainResult =
+        ab.battedDirection && !ab.resultLabel.includes(ab.battedDirection)
+          ? `${ab.resultLabel} (${ab.battedDirection})`
+          : ab.resultLabel;
+    }
     const canonicalTone = ab
-      ? classifyResultTone(entry.mainResult, undefined, ab.resultCode)
+      ? classifyResultTone(resolvedMainResult, undefined, ab.resultCode)
       : entry.badgeTone;
 
     let resolvedRunnerChips = entry.runnerChips;
@@ -1289,6 +1326,7 @@ function attachScorebookCellsToTimelineEntries(
 
     return {
       ...entry,
+      mainResult: resolvedMainResult,
       orderLabel: entry.orderLabel || String(matchedCell.battingOrder),
       pitcherName: entry.pitcherName || ab?.pitcherName || "",
       runnerNote: resolvedRunnerNote,

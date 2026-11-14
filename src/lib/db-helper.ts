@@ -1,4 +1,9 @@
 // filepath: src/lib/db-helper.ts
+import {
+  normalizeLegacyForceOutAtBat,
+  repairPlayLogForceOutDescription,
+} from "@/lib/liff/scorebook-fielding";
+import type { ScorebookV2AtBat } from "@/types/scorebook-v2";
 
 /**
  * ⚡ 高速・ゼロ書き込みロックのスキーマ整合性チェックヘルパー
@@ -14,6 +19,26 @@ interface SqliteMasterRow {
 
 interface PragmaColumnRow {
   name?: string;
+}
+
+interface SnapshotRepairRow {
+  match_id: string;
+  top_at_bats_json: string | null;
+  bottom_at_bats_json: string | null;
+}
+
+interface DbAtBatRepairRow {
+  id: string;
+  inning: number;
+  is_top: number;
+  result: string | null;
+}
+
+interface DbPlayLogRepairRow {
+  id: string;
+  match_id: string;
+  at_bat_id: string | null;
+  description: string;
 }
 
 let isAllSchemaVerified = false;
@@ -301,6 +326,9 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
             await d1.prepare(ddl).run().catch(() => {});
           } catch {}
         }
+
+        // 既存保存データに「先行走者封殺ゴロ（outsInPlay >= 1）なのに resultCode='fc'」が混入している場合のみ自動修復（べき等・修復後は書き込み0回）
+        await repairLegacyForceOutScorebookData(d1);
       }
       isAllSchemaVerified = true;
     } catch {
@@ -312,6 +340,200 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
   })();
 
   await schemaVerificationPromise;
+}
+
+async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> {
+  try {
+    const [snapQueryRes, standaloneLogRes] = await d1.batch([
+      d1.prepare(
+        `SELECT match_id, top_at_bats_json, bottom_at_bats_json
+         FROM match_scorebook_snapshots
+         WHERE top_at_bats_json LIKE '%"fc"%' OR bottom_at_bats_json LIKE '%"fc"%'`
+      ),
+      d1.prepare(
+        `SELECT id, match_id, at_bat_id, description
+         FROM play_logs
+         WHERE (description LIKE '%野選%' OR description LIKE '%FC%')
+           AND description LIKE '%アウト%'`
+      ),
+    ]);
+
+    const snapRows = (snapQueryRes?.results || []) as SnapshotRepairRow[];
+    const standaloneLogRows = (standaloneLogRes?.results || []) as DbPlayLogRepairRow[];
+
+    const writeStatements: D1PreparedStatement[] = [];
+    const updatedPlayLogIds = new Set<string>();
+    const updatedAtBatIds = new Set<string>();
+
+    const normalizeSideArray = (
+      rawJson: string | null
+    ): { parsed: ScorebookV2AtBat[] | null; changed: boolean } => {
+      if (!rawJson) return { parsed: null, changed: false };
+      try {
+        const arr = JSON.parse(rawJson) as ScorebookV2AtBat[];
+        if (!Array.isArray(arr)) return { parsed: null, changed: false };
+        let changed = false;
+        const nextArr = arr.map((item) => {
+          const norm = normalizeLegacyForceOutAtBat(item);
+          if (
+            norm.resultCode !== item.resultCode ||
+            norm.battedDirection !== item.battedDirection ||
+            norm.resultLabel !== item.resultLabel
+          ) {
+            changed = true;
+          }
+          return norm;
+        });
+        return { parsed: nextArr, changed };
+      } catch {
+        return { parsed: null, changed: false };
+      }
+    };
+
+    for (const row of snapRows) {
+      const topNorm = normalizeSideArray(row.top_at_bats_json);
+      const botNorm = normalizeSideArray(row.bottom_at_bats_json);
+      if (!topNorm.changed && !botNorm.changed) {
+        continue;
+      }
+
+      const nextTopJson =
+        topNorm.changed && topNorm.parsed
+          ? JSON.stringify(topNorm.parsed)
+          : row.top_at_bats_json;
+      const nextBotJson =
+        botNorm.changed && botNorm.parsed
+          ? JSON.stringify(botNorm.parsed)
+          : row.bottom_at_bats_json;
+
+      writeStatements.push(
+        d1
+          .prepare(
+            `UPDATE match_scorebook_snapshots
+             SET top_at_bats_json = ?, bottom_at_bats_json = ?
+             WHERE match_id = ?`
+          )
+          .bind(nextTopJson, nextBotJson, row.match_id)
+      );
+
+      const [abRes, plRes] = await d1.batch([
+        d1
+          .prepare(
+            `SELECT id, inning, is_top, result
+             FROM at_bats
+             WHERE match_id = ?
+             ORDER BY inning ASC, created_at ASC`
+          )
+          .bind(row.match_id),
+        d1
+          .prepare(
+            `SELECT id, match_id, at_bat_id, description
+             FROM play_logs
+             WHERE match_id = ?`
+          )
+          .bind(row.match_id),
+      ]);
+
+      const dbAtBats = (abRes?.results || []) as DbAtBatRepairRow[];
+      const dbPlayLogs = (plRes?.results || []) as DbPlayLogRepairRow[];
+
+      const topQueue = new Map<number, ScorebookV2AtBat[]>();
+      for (const sAb of topNorm.parsed || []) {
+        const q = topQueue.get(sAb.inning) || [];
+        q.push(sAb);
+        topQueue.set(sAb.inning, q);
+      }
+      const botQueue = new Map<number, ScorebookV2AtBat[]>();
+      for (const sAb of botNorm.parsed || []) {
+        const q = botQueue.get(sAb.inning) || [];
+        q.push(sAb);
+        botQueue.set(sAb.inning, q);
+      }
+
+      const topOffsets = new Map<number, number>();
+      const botOffsets = new Map<number, number>();
+      const snapByDbAtBatId = new Map<string, ScorebookV2AtBat>();
+
+      for (const dbAb of dbAtBats) {
+        const isTop = Boolean(dbAb.is_top);
+        if (isTop) {
+          const idx = topOffsets.get(dbAb.inning) || 0;
+          topOffsets.set(dbAb.inning, idx + 1);
+          const sAb = topQueue.get(dbAb.inning)?.[idx];
+          if (sAb) snapByDbAtBatId.set(dbAb.id, sAb);
+        } else {
+          const idx = botOffsets.get(dbAb.inning) || 0;
+          botOffsets.set(dbAb.inning, idx + 1);
+          const sAb = botQueue.get(dbAb.inning)?.[idx];
+          if (sAb) snapByDbAtBatId.set(dbAb.id, sAb);
+        }
+
+        const matchedSnap = snapByDbAtBatId.get(dbAb.id);
+        if (
+          matchedSnap &&
+          dbAb.result === "fc" &&
+          matchedSnap.resultCode !== "fc"
+        ) {
+          updatedAtBatIds.add(dbAb.id);
+          writeStatements.push(
+            d1
+              .prepare(`UPDATE at_bats SET result = ? WHERE id = ?`)
+              .bind(matchedSnap.resultCode, dbAb.id)
+          );
+        }
+      }
+
+      for (const pl of dbPlayLogs) {
+        const matchedSnap = pl.at_bat_id
+          ? snapByDbAtBatId.get(pl.at_bat_id)
+          : undefined;
+        const nextDesc = repairPlayLogForceOutDescription(
+          pl.description,
+          matchedSnap
+        );
+        if (nextDesc !== pl.description) {
+          updatedPlayLogIds.add(pl.id);
+          writeStatements.push(
+            d1
+              .prepare(`UPDATE play_logs SET description = ? WHERE id = ?`)
+              .bind(nextDesc, pl.id)
+          );
+        }
+      }
+    }
+
+    for (const pl of standaloneLogRows) {
+      if (updatedPlayLogIds.has(pl.id)) continue;
+      const nextDesc = repairPlayLogForceOutDescription(pl.description);
+      if (nextDesc !== pl.description) {
+        updatedPlayLogIds.add(pl.id);
+        writeStatements.push(
+          d1
+            .prepare(`UPDATE play_logs SET description = ? WHERE id = ?`)
+            .bind(nextDesc, pl.id)
+        );
+        if (pl.at_bat_id && !updatedAtBatIds.has(pl.at_bat_id)) {
+          updatedAtBatIds.add(pl.at_bat_id);
+          writeStatements.push(
+            d1
+              .prepare(
+                `UPDATE at_bats SET result = 'groundout' WHERE id = ? AND result = 'fc'`
+              )
+              .bind(pl.at_bat_id)
+          );
+        }
+      }
+    }
+
+    for (let i = 0; i < writeStatements.length; i += 50) {
+      const chunk = writeStatements.slice(i, i + 50);
+      if (chunk.length > 0) {
+        await d1.batch(chunk);
+      }
+    }
+  } catch {
+    // 修復処理中に例外が発生しても通常リクエストは一切阻害しない
+  }
 }
 
 export async function ensureEventColumns(d1?: D1Database | null): Promise<void> {

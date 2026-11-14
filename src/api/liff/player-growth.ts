@@ -26,6 +26,7 @@ import {
   type PlayerRecentFormComparison,
   type TeamMatchBriefForGrowth,
 } from "@/lib/liff/player-positions-and-growth";
+import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   isNonPitchMoundEvent,
   type CanonicalPitchResult,
@@ -2026,12 +2027,16 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       let oppSnapAbs: ScorebookV2AtBat[] = [];
       try {
         if (myAtBatsJson) {
-          mySnapAbs = JSON.parse(myAtBatsJson) as ScorebookV2AtBat[];
+          mySnapAbs = (JSON.parse(myAtBatsJson) as ScorebookV2AtBat[]).map(
+            (ab) => normalizeLegacyForceOutAtBat(ab)
+          );
         }
       } catch {}
       try {
         if (oppAtBatsJson) {
-          oppSnapAbs = JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[];
+          oppSnapAbs = (JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[]).map(
+            (ab) => normalizeLegacyForceOutAtBat(ab)
+          );
         }
       } catch {}
       try {
@@ -2147,7 +2152,10 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       for (const ab of mAbs) {
         const isMyAttack = ab.isTop === isMyTop;
         const snapAb = snapMapByDbAtBatId.get(ab.id);
-        const res = ab.result || "";
+        const res =
+          ab.result === "fc" && snapAb && snapAb.resultCode !== "fc"
+            ? snapAb.resultCode
+            : ab.result || "";
         const logDesc = playLogDescByAtBatId.get(ab.id);
 
         if (isMyAttack) {
@@ -2434,6 +2442,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
                   rStr === "interference_out" ||
                   rStr === "appeal_out" ||
                   rStr === "out_on_base" ||
+                  (!isOut && rStr === "fc") ||
                   rStr.includes("盗塁") ||
                   rStr.includes("牽制"))
               ) {

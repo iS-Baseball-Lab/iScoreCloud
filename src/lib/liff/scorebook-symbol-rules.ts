@@ -1,4 +1,5 @@
 // filepath: src/lib/liff/scorebook-symbol-rules.ts
+import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import type {
   AdvanceMethodCode,
   CanonicalAtBatResult,
@@ -1698,10 +1699,11 @@ export interface FormatAtBatPlayNotationOptions {
  * 1打席の結果・打球方向・投球履歴を、指定された記号ルール（標準 or チームルール）の表記へ変換する
  */
 export function formatAtBatPlayNotation(
-  ab: ScorebookV2AtBat,
+  rawAb: ScorebookV2AtBat,
   rules: ScorebookSymbolRules,
   options?: FormatAtBatPlayNotationOptions
 ): FormattedPlayNotation {
+  const ab = normalizeLegacyForceOutAtBat(rawAb);
   const rc: CanonicalAtBatResult = ab.resultCode;
   const dir = (ab.battedDirection || "").trim();
   const label = (ab.resultLabel || "").trim();
