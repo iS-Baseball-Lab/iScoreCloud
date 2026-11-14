@@ -6,7 +6,11 @@ import {
   type ScorebookV2Advance,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
-import { normalizeLegacyForceOutAtBat } from "./scorebook-fielding";
+import {
+  extractRelayChainFromHitDirection,
+  normalizeLegacyForceOutAtBat,
+  normalizeThrowChainToken,
+} from "./scorebook-fielding";
 import {
   classifyDroppedThirdStrikeReach,
   isAerialMultiOutAtBat,
@@ -37,6 +41,7 @@ export interface EffectiveRunnerMove {
   isOut: boolean;
   isImplicit: boolean;
   pitchNumber?: number;
+  throwChain?: string;
 }
 
 export interface PrecedingRunnerSummary {
@@ -1011,6 +1016,13 @@ export function simulateSheetRunners(
             continue;
           }
           const curBase = tr.currentBase;
+          const hitSafeBaseForCollision = getBatterInitialSafeBase(ab, false);
+          const candidateUnnamedAtCurBase = inPlayRunnerPool.filter(
+            (a) =>
+              !usedAdvIds.has(a.id) &&
+              a.from === curBase &&
+              !belongsToDifferentActivePerson(a.runnerName, tr.runner.name)
+          );
           const matchAdv =
             inPlayRunnerPool.find(
               (a) =>
@@ -1019,12 +1031,12 @@ export function simulateSheetRunners(
                 a.runnerName &&
                 namesLikelyMatch(a.runnerName, tr.runner.name)
             ) ||
-            inPlayRunnerPool.find(
-              (a) =>
-                !usedAdvIds.has(a.id) &&
-                a.from === curBase &&
-                !belongsToDifferentActivePerson(a.runnerName, tr.runner.name)
-            );
+            (curBase === hitSafeBaseForCollision &&
+            candidateUnnamedAtCurBase.length >= 2
+              ? candidateUnnamedAtCurBase.find(
+                  (a) => !(a.isOut && a.method === "out_on_base")
+                ) || candidateUnnamedAtCurBase[0]
+              : candidateUnnamedAtCurBase[0]);
 
           if (matchAdv) {
             usedAdvIds.add(matchAdv.id);
@@ -1140,8 +1152,9 @@ export function simulateSheetRunners(
         ab.resultCode === "sac_fly" ||
         ab.resultCode === "infield_fly" ||
         ((ab.resultCode === "double_play" || ab.resultCode === "triple_play") &&
-          (/飛|フライ|直|ライナー|[⌒︵]/.test(rawLabelTrimmed) ||
-            /^[1-9][FL](?:-[1-9])?$/i.test(rawDirTrimmed)));
+          (/飛|フライ|直|ライナー|[⌒︵￣ˉ¯]/.test(rawLabelTrimmed) ||
+            /[⌒︵￣ˉ¯]/.test(rawDirTrimmed) ||
+            /^(?:[1-9][FL]|[FL][1-9])(?:-[1-9])*$/i.test(rawDirTrimmed)));
 
       const expectedTotalRunnerOuts = !isThirdOutBatterPlay
         ? ab.resultCode === "triple_play"
@@ -1179,10 +1192,26 @@ export function simulateSheetRunners(
         hasImplicitRunnerForceOut || explicitRunnerOutsCount > 0
       );
 
-      // 打者の明示的進塁（単打＋送球間2塁、または単打→2塁タッチアウト等）を確認
-      const batterExplicitAdvances = nonTiebreakAdvances.filter(
-        (a) => a.from === "BAT" || !usedAdvIds.has(a.id)
-      );
+      const batterProgressionRank = (
+        base: ScorebookV2Advance["from"] | ScorebookV2Advance["to"]
+      ): number => {
+        if (base === "BAT") return 0;
+        if (base === "1B") return 1;
+        if (base === "2B") return 2;
+        if (base === "3B") return 3;
+        return 4;
+      };
+
+      // 打者の明示的進塁（単打＋送球間2塁、または単打→2塁タッチアウト等）を時系列順（BAT → 1B → 2B → 3B）に確認
+      const batterExplicitAdvances = nonTiebreakAdvances
+        .filter((a) => a.from === "BAT" || !usedAdvIds.has(a.id))
+        .slice()
+        .sort((a, b) => {
+          const fromDiff =
+            batterProgressionRank(a.from) - batterProgressionRank(b.from);
+          if (fromDiff !== 0) return fromDiff;
+          return batterProgressionRank(a.to) - batterProgressionRank(b.to);
+        });
       let batterFinalBase: OccupiedBaseKey | "HP" | null = batterInitialBase;
       let batterOutOnBases = false;
       let batterEffectiveMethod: AdvanceMethodCode =
@@ -1190,6 +1219,7 @@ export function simulateSheetRunners(
       let batterExtraExplicit: ScorebookV2Advance | null = null;
 
       for (const bAdv of batterExplicitAdvances) {
+        if (batterOutOnBases) break;
         const isDirectBatAdv = bAdv.from === "BAT";
         const isValidSamePlayBatterStretch =
           !isDirectBatAdv &&
@@ -1339,10 +1369,17 @@ export function simulateSheetRunners(
             }
 
             if (forcedTargetRunner) {
+              const isReverseFirstBaseDp =
+                (ab.resultCode === "double_play" ||
+                  (ab.resultCode === "groundout" && ab.outsInPlay >= 2)) &&
+                /^3A?-[46](?:-[1-9])?$/i.test(dir) &&
+                outAtBase === "2B";
               forcedTargetRunner.isOut = true;
               forcedTargetRunner.finalBase = outAtBase;
               forcedTargetRunner.currentBase = null;
-              forcedTargetRunner.effectiveMethod = "fc";
+              forcedTargetRunner.effectiveMethod = isReverseFirstBaseDp
+                ? "out_on_base"
+                : "fc";
               forcedTargetRunner.isImplicit = true;
             }
           }
@@ -1933,6 +1970,7 @@ export function simulateSheetRunners(
             isOut: pm.isOut,
             isImplicit: false,
             pitchNumber: pm.pitchNumber,
+            throwChain: normalizeThrowChainToken(pm.throwChain),
           });
         }
 
@@ -1958,6 +1996,9 @@ export function simulateSheetRunners(
               isOut: tr.isOut,
               isImplicit: false,
               pitchNumber: tr.inPlayExplicitMove.pitchNumber,
+              throwChain: normalizeThrowChainToken(
+                tr.inPlayExplicitMove.throwChain
+              ),
             });
           } else if (tr.isImplicit && (tr.isOut || tr.finalBase !== inPlayStart)) {
             precedingRunnerMoves.push({
@@ -2219,11 +2260,35 @@ export function materializeSheetRunnerAdvances(
     for (const a of ab.advances) {
       if (isNoOpHoldAdvance(a)) continue;
       if (a.from === "BAT") {
-        cleanedExplicit.push(
-          ab.batterName.trim() !== ""
-            ? { ...a, runnerName: ab.batterName }
-            : a
-        );
+        const resolvedBatChain =
+          normalizeThrowChainToken(a.throwChain) ||
+          (a.isOut
+            ? extractRelayChainFromHitDirection(
+                ab.resultCode,
+                ab.battedDirection
+              )
+            : undefined);
+        cleanedExplicit.push({
+          ...a,
+          runnerName: ab.batterName.trim() !== "" ? ab.batterName : a.runnerName,
+          ...(resolvedBatChain ? { throwChain: resolvedBatChain } : {}),
+        });
+        continue;
+      }
+      if (snap.batterSummary.extraExplicitMove?.id === a.id) {
+        const resolvedBatterChain =
+          normalizeThrowChainToken(a.throwChain) ||
+          (a.isOut
+            ? extractRelayChainFromHitDirection(
+                ab.resultCode,
+                ab.battedDirection
+              )
+            : undefined);
+        cleanedExplicit.push({
+          ...a,
+          runnerName: ab.batterName.trim() !== "" ? ab.batterName : a.runnerName,
+          ...(resolvedBatterChain ? { throwChain: resolvedBatterChain } : {}),
+        });
         continue;
       }
       const matchedPr = snap.precedingRunners.find(
@@ -2237,6 +2302,7 @@ export function materializeSheetRunnerAdvances(
         if (!matchedPr.isOut && matchedPr.finalBase === startFrom) {
           continue;
         }
+        const prChain = normalizeThrowChainToken(a.throwChain);
         cleanedExplicit.push({
           ...a,
           runnerName: matchedPr.runner.name || a.runnerName,
@@ -2244,6 +2310,7 @@ export function materializeSheetRunnerAdvances(
           to: matchedPr.finalBase,
           method: matchedPr.effectiveMethod,
           isOut: matchedPr.isOut,
+          ...(prChain ? { throwChain: prChain } : {}),
         });
         continue;
       }
@@ -2251,9 +2318,11 @@ export function materializeSheetRunnerAdvances(
         pr.prePlayMoves.some((pm) => pm.id === a.id)
       );
       if (matchedPrePlayPr && a.method !== "tiebreak") {
+        const preChain = normalizeThrowChainToken(a.throwChain);
         cleanedExplicit.push({
           ...a,
           runnerName: matchedPrePlayPr.runner.name || a.runnerName,
+          ...(preChain ? { throwChain: preChain } : {}),
         });
         continue;
       }
@@ -2573,6 +2642,14 @@ export function applyPrecedingRunnerSelection(params: {
         ? summary.inPlayExplicitMove.method
         : getDefaultInPlayMethodForResult(ab.resultCode, isOut));
 
+    const preservedThrowChain =
+      summary.inPlayExplicitMove &&
+      summary.inPlayExplicitMove.isOut === isOut &&
+      summary.inPlayExplicitMove.to === targetBase &&
+      (isOut || resolvedMethod === "error" || resolvedMethod === "obstruction")
+        ? normalizeThrowChainToken(summary.inPlayExplicitMove.throwChain)
+        : undefined;
+
     const updatedAdv: ScorebookV2Advance = {
       id: existingInPlayId || crypto.randomUUID(),
       runnerName: summary.runner.name,
@@ -2580,6 +2657,7 @@ export function applyPrecedingRunnerSelection(params: {
       to: targetBase,
       method: resolvedMethod,
       isOut,
+      ...(preservedThrowChain ? { throwChain: preservedThrowChain } : {}),
     };
     nextAdvances = [...preserved, updatedAdv];
   }
@@ -3567,6 +3645,24 @@ export function reconcileSheetRunsAndRbi(
         }
 
         // adv.from === "1B" | "2B" | "3B"
+        const occupantBefore = effectiveBasesBefore[adv.from];
+        const isExplicitBatterNamedStretch =
+          !isAwardedFirstBaseResult(ab.resultCode) &&
+          initSafeBase === adv.from &&
+          (adv.method === "throw_advance" ||
+            adv.method === "error" ||
+            adv.isOut) &&
+          (adv.to !== "HP" || adv.isOut || adv.method === "error") &&
+          Boolean(adv.runnerName.trim()) &&
+          Boolean(ab.batterName.trim()) &&
+          namesLikelyMatch(adv.runnerName, ab.batterName) &&
+          (!occupantBefore?.name.trim() ||
+            !namesLikelyMatch(adv.runnerName, occupantBefore.name));
+        if (isExplicitBatterNamedStretch) {
+          prelimAdvances.push(adv);
+          continue;
+        }
+
         if (reachablePreceding.has(adv.from)) {
           prelimAdvances.push(adv);
           if (
@@ -4453,19 +4549,53 @@ export function pruneStaleSheetRunnerAdvances(
 
           const fromBase = adv.from;
           const rName = adv.runnerName.trim();
+          const batterTrimmed = ab.batterName.trim();
+          const occupantAtFrom = validBases[fromBase];
+          const isExplicitBatterNamedOnOccupiedBase =
+            Boolean(occupantAtFrom) &&
+            Boolean(rName) &&
+            Boolean(batterTrimmed) &&
+            namesLikelyMatch(rName, batterTrimmed) &&
+            (!occupantAtFrom!.name.trim() ||
+              !namesLikelyMatch(rName, occupantAtFrom!.name));
+          const isUnnamedSecondMoveFromOccupiedHitBase =
+            Boolean(occupantAtFrom) &&
+            !rName &&
+            adv.isOut &&
+            adv.method === "out_on_base" &&
+            ab.advances.some(
+              (other) =>
+                other.id !== adv.id &&
+                !isNoOpHoldAdvance(other) &&
+                other.from === fromBase &&
+                !isPrePlayAdvanceMethod(other.method) &&
+                other.method !== "tiebreak"
+            );
 
-          // 打者自身の同一プレー内オーバーラン・進塁（1B->2B 送球間等）
+          // 打者自身の同一プレー内オーバーラン・進塁（1B->2B 送球間・タッチアウト等。先行1塁走者がいた場合も打者名一致なら保護）
           const isSamePlayBatterStretch =
             !isNoOpHoldAdvance(adv) &&
             !isAwardedFirstBaseResult(ab.resultCode) &&
             initSafeBase === fromBase &&
-            !validBases[fromBase] &&
-            (!rName || namesLikelyMatch(rName, ab.batterName)) &&
+            ((!occupantAtFrom &&
+              (!rName ||
+                (Boolean(batterTrimmed) &&
+                  namesLikelyMatch(rName, batterTrimmed)))) ||
+              isExplicitBatterNamedOnOccupiedBase ||
+              isUnnamedSecondMoveFromOccupiedHitBase) &&
             (adv.method === "throw_advance" ||
               adv.method === "error" ||
               adv.isOut);
           if (isSamePlayBatterStretch) {
-            nextAdvances.push(adv);
+            if (batterTrimmed && adv.runnerName !== batterTrimmed) {
+              nextAdvances.push({
+                ...adv,
+                runnerName: batterTrimmed,
+              });
+              abModified = true;
+            } else {
+              nextAdvances.push(adv);
+            }
             continue;
           }
 

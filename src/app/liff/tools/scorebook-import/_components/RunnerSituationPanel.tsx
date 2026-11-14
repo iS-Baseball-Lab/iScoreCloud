@@ -39,13 +39,285 @@ import {
   type PrecedingRunnerSummary,
 } from "@/lib/liff/scorebook-runners";
 import {
+  extractRelayChainFromHitDirection,
   harmonizeOcrFieldingAndLabel,
   normalizeLegacyForceOutAtBat,
+  normalizeThrowChainToken,
 } from "@/lib/liff/scorebook-fielding";
 import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
+
+function sanitizeThrowChainDraft(raw: string): string {
+  return raw
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/[－ー―‐=＝→⇒・\s]+/g, "-")
+    .replace(/[^1-9-]/g, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-/, "")
+    .slice(0, 11);
+}
+
+function buildSuggestedThrowChains(params: {
+  battedDirection?: string;
+  targetBase: OccupiedBaseKey | "HP";
+  isOut: boolean;
+  method: AdvanceMethodCode;
+  isBatterStretch: boolean;
+}): string[] {
+  const { battedDirection, targetBase, isOut, method, isBatterStretch } =
+    params;
+  const rawDir = (battedDirection || "").trim();
+  const isLeftCenterGap = /^7[-・]8$/.test(rawDir);
+  const isRightCenterGap = /^8[-・]9$/.test(rawDir);
+  const digits = rawDir.match(/[1-9]/g) || [];
+  const primaryFielder = isLeftCenterGap
+    ? "8"
+    : isRightCenterGap
+    ? "8"
+    : digits[0] || "";
+  const secondaryGapFielder = isLeftCenterGap
+    ? "7"
+    : isRightCenterGap
+    ? "9"
+    : "";
+
+  const pushUnique = (list: string[], token: string) => {
+    const norm = normalizeThrowChainToken(token);
+    if (!norm) return;
+    const parts = norm.split("-");
+    if (parts.length === 2 && parts[0] === parts[1]) return;
+    if (!list.includes(norm)) list.push(norm);
+  };
+
+  const out: string[] = [];
+
+  if (!isOut) {
+    if (method === "obstruction") {
+      const defaults =
+        targetBase === "2B"
+          ? ["6", "4", "3", "5"]
+          : targetBase === "3B"
+          ? ["5", "6", "4"]
+          : ["2", "5", "3", "1"];
+      for (const d of defaults) pushUnique(out, d);
+      return out;
+    }
+    if (method === "pickoff_error") {
+      for (const d of ["1", "2", "3", "6", "4", "5"]) pushUnique(out, d);
+      return out;
+    }
+    if (method === "error") {
+      if (primaryFielder) pushUnique(out, primaryFielder);
+      if (secondaryGapFielder) pushUnique(out, secondaryGapFielder);
+      for (const d of ["8", "7", "9", "6", "4", "5", "3", "2", "1"]) {
+        pushUnique(out, d);
+      }
+      return out.slice(0, 6);
+    }
+    return out;
+  }
+
+  if (method === "caught_stealing") {
+    const csDefaults =
+      targetBase === "2B"
+        ? ["2-6", "2-4", "1-3-6", "1-6", "2-3-6"]
+        : targetBase === "3B"
+        ? ["2-5", "2-6-5", "1-5", "1-4-5"]
+        : ["2", "1-2", "2-5-2", "2-6-2"];
+    for (const d of csDefaults) pushUnique(out, d);
+    return out;
+  }
+
+  if (method === "pickoff_out" || method === "appeal_out") {
+    const poDefaults =
+      targetBase === "1B"
+        ? ["1-3", "2-3", "1-3-6"]
+        : targetBase === "2B"
+        ? ["1-6", "1-4", "2-6", "2-4"]
+        : ["1-5", "2-5", "1-6-5"];
+    for (const d of poDefaults) pushUnique(out, d);
+    return out;
+  }
+
+  const isOutfielder =
+    primaryFielder === "7" || primaryFielder === "8" || primaryFielder === "9";
+
+  if (targetBase === "1B") {
+    if (primaryFielder && primaryFielder !== "3") {
+      pushUnique(out, `${primaryFielder}-3`);
+    }
+    if (isOutfielder) {
+      pushUnique(out, `${primaryFielder}-6-3`);
+      pushUnique(out, `${primaryFielder}-4-3`);
+    }
+    for (const d of ["6-3", "4-3", "5-3", "8-3", "9-3", "3"]) {
+      pushUnique(out, d);
+    }
+    return out.slice(0, 6);
+  }
+
+  if (targetBase === "2B") {
+    if (isOutfielder) {
+      pushUnique(out, `${primaryFielder}-6`);
+      pushUnique(out, `${primaryFielder}-4`);
+      if (secondaryGapFielder) {
+        pushUnique(out, `${secondaryGapFielder}-6`);
+        pushUnique(out, `${secondaryGapFielder}-4`);
+      }
+      pushUnique(out, `${primaryFielder}-6-4`);
+      pushUnique(out, `${primaryFielder}-4-6`);
+      return out.slice(0, 6);
+    }
+    if (primaryFielder) {
+      pushUnique(out, `${primaryFielder}-6`);
+      pushUnique(out, `${primaryFielder}-4`);
+    }
+    const base2Defaults = isBatterStretch
+      ? ["8-6", "8-4", "7-6", "9-4", "9-6"]
+      : ["6-4", "4-6", "5-4", "3-6", "8-6", "8-4"];
+    for (const d of base2Defaults) pushUnique(out, d);
+    return out.slice(0, 6);
+  }
+
+  if (targetBase === "3B") {
+    if (isOutfielder) {
+      pushUnique(out, `${primaryFielder}-5`);
+      pushUnique(out, `${primaryFielder}-6-5`);
+      pushUnique(out, `${primaryFielder}-4-5`);
+      if (secondaryGapFielder) {
+        pushUnique(out, `${secondaryGapFielder}-5`);
+        pushUnique(out, `${secondaryGapFielder}-6-5`);
+      }
+      return out.slice(0, 6);
+    }
+    if (primaryFielder) {
+      pushUnique(out, `${primaryFielder}-5`);
+    }
+    for (const d of ["8-5", "9-5", "7-5", "6-5", "5", "4-5"]) {
+      pushUnique(out, d);
+    }
+    return out.slice(0, 6);
+  }
+
+  // targetBase === "HP"
+  if (isOutfielder) {
+    pushUnique(out, `${primaryFielder}-2`);
+    pushUnique(out, `${primaryFielder}-6-2`);
+    pushUnique(out, `${primaryFielder}-4-2`);
+    pushUnique(out, `${primaryFielder}-3-2`);
+    if (secondaryGapFielder) {
+      pushUnique(out, `${secondaryGapFielder}-6-2`);
+    }
+    return out.slice(0, 6);
+  }
+  if (primaryFielder) {
+    pushUnique(out, `${primaryFielder}-2`);
+  }
+  for (const d of ["8-2", "8-6-2", "9-4-2", "6-2", "4-2", "5-2"]) {
+    pushUnique(out, d);
+  }
+  return out.slice(0, 6);
+}
+
+interface ThrowChainSelectorRowProps {
+  value?: string;
+  isOut: boolean;
+  method: AdvanceMethodCode;
+  suggestions: readonly string[];
+  onSelect: (nextChain: string | undefined) => void;
+}
+
+function ThrowChainSelectorRow({
+  value,
+  isOut,
+  method,
+  suggestions,
+  onSelect,
+}: ThrowChainSelectorRowProps) {
+  const normalizedCurrent = normalizeThrowChainToken(value);
+  const titleLabel = isOut
+    ? "送球経路（補殺-刺殺）:"
+    : method === "obstruction"
+    ? "妨害野手番号（OB）:"
+    : "失策野手番号（E）:";
+
+  const formatChipDisplay = (tok: string): string => {
+    if (!isOut && method === "obstruction") return `OB${tok}`;
+    if (!isOut && (method === "error" || method === "pickoff_error")) {
+      return `${tok}E`;
+    }
+    return tok;
+  };
+
+  return (
+    <div className="pt-1 border-t border-border/60 space-y-1">
+      <div className="flex items-center justify-between gap-1.5">
+        <span className="text-[9px] font-black text-muted-foreground">
+          {titleLabel}
+        </span>
+        {normalizedCurrent && (
+          <span className="text-[9px] font-black text-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
+            清書表記:{" "}
+            {isOut
+              ? method === "caught_stealing"
+                ? `${normalizedCurrent}CS`
+                : `${normalizedCurrent}TO`
+              : formatChipDisplay(normalizedCurrent)}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center flex-wrap gap-1">
+        <button
+          type="button"
+          onClick={() => onSelect(undefined)}
+          className={`px-2 py-0.5 rounded-lg border text-[10px] font-black cursor-pointer ${
+            !value
+              ? "bg-slate-800 text-white border-slate-800"
+              : "bg-card text-muted-foreground border-border"
+          }`}
+        >
+          指定なし
+        </button>
+        {suggestions.map((sug) => {
+          const active = normalizedCurrent === sug;
+          return (
+            <button
+              key={sug}
+              type="button"
+              onClick={() => onSelect(active ? undefined : sug)}
+              className={`px-2 py-0.5 rounded-lg border text-[10px] font-black cursor-pointer ${
+                active
+                  ? isOut
+                    ? "bg-destructive text-white border-destructive"
+                    : "bg-primary text-primary-foreground border-primary"
+                  : "bg-card text-foreground border-border"
+              }`}
+            >
+              {formatChipDisplay(sug)}
+            </button>
+          );
+        })}
+        <input
+          type="text"
+          inputMode="text"
+          value={value ?? ""}
+          onChange={(e) => {
+            const draft = sanitizeThrowChainDraft(e.target.value);
+            onSelect(draft || undefined);
+          }}
+          onBlur={(e) => {
+            onSelect(normalizeThrowChainToken(e.target.value));
+          }}
+          placeholder={isOut ? "手入力 例:8-6" : "例:8"}
+          aria-label={titleLabel}
+          className="h-6 w-24 px-1.5 rounded-lg border border-border bg-card text-[10px] font-black text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+        />
+      </div>
+    </div>
+  );
+}
 
 interface MiniBaseDiamondProps {
   bases: BaseRunnerMap;
@@ -785,25 +1057,59 @@ export function AtBatModalRunnerEditor({
     if (!initialBase || initialBase === "HP") return;
 
     onUpdateAtBat((prev) => {
-      const withoutBatterExtra = prev.advances.filter(
-        (a) =>
-          !(
-            a.from === "BAT" ||
-            (a.from === initialBase &&
-              (!a.runnerName || a.runnerName === prev.batterName))
-          )
-      );
+      const existingExtraId = batterSummary?.extraExplicitMove?.id;
+      const prevBatterTrimmed = prev.batterName.trim();
+      const occupiedAtInit = Boolean(basesBefore[initialBase]);
+      const preservedThrowChain =
+        targetBase &&
+        batterSummary?.extraExplicitMove &&
+        batterSummary.extraExplicitMove.to === targetBase &&
+        batterSummary.extraExplicitMove.isOut === isOut &&
+        (isOut || method === "error" || method === "obstruction")
+          ? normalizeThrowChainToken(
+              batterSummary.extraExplicitMove.throwChain
+            )
+          : undefined;
+      const defaultRelayChain =
+        targetBase && isOut && !preservedThrowChain
+          ? extractRelayChainFromHitDirection(
+              prev.resultCode,
+              prev.battedDirection
+            )
+          : undefined;
+
+      const withoutBatterExtra = prev.advances.filter((a) => {
+        if (a.from === "BAT") return false;
+        if (existingExtraId && a.id === existingExtraId) return false;
+        if (
+          a.from === initialBase &&
+          !isPrePlayAdvanceMethod(a.method) &&
+          a.method !== "tiebreak"
+        ) {
+          const rTrim = a.runnerName.trim();
+          if (rTrim && prevBatterTrimmed && rTrim === prevBatterTrimmed) {
+            return false;
+          }
+          if (!occupiedAtInit && !rTrim) {
+            return false;
+          }
+        }
+        return true;
+      });
+
       let nextAdvances = withoutBatterExtra;
       if (targetBase && (isOut || targetBase !== initialBase)) {
+        const effectiveChain = preservedThrowChain || defaultRelayChain;
         nextAdvances = [
           ...withoutBatterExtra,
           {
-            id: crypto.randomUUID(),
+            id: existingExtraId || crypto.randomUUID(),
             runnerName: prev.batterName,
-            from: "BAT",
+            from: initialBase,
             to: targetBase,
             method,
             isOut,
+            ...(effectiveChain ? { throwChain: effectiveChain } : {}),
           },
         ];
       }
@@ -820,6 +1126,62 @@ export function AtBatModalRunnerEditor({
         outsInPlay: synced.outsInPlay,
         runsInPlay: synced.runsInPlay,
         rbi: synced.rbi,
+        confidence: "high",
+      };
+    });
+  };
+
+  const handleSetBatterExtraThrowChain = (nextChain: string | undefined) => {
+    const extraMove = batterSummary?.extraExplicitMove;
+    if (!extraMove) return;
+    handleUpdateExplicitAdvanceRow(extraMove.id, (cur) => ({
+      ...cur,
+      throwChain: nextChain,
+    }));
+  };
+
+  const handleSetRunnerThrowChain = (
+    summary: PrecedingRunnerSummary,
+    nextChain: string | undefined
+  ) => {
+    if (summary.inPlayExplicitMove) {
+      handleUpdateExplicitAdvanceRow(summary.inPlayExplicitMove.id, (cur) => ({
+        ...cur,
+        throwChain: nextChain,
+      }));
+      return;
+    }
+    onUpdateAtBat((prev) => {
+      const res = applyPrecedingRunnerSelection({
+        ab: prev,
+        summary,
+        allSummaries: precedingRunners,
+        targetBase: summary.finalBase,
+        isOut: summary.isOut,
+        preferredMethod: summary.effectiveMethod,
+        outsBefore,
+        basesBefore,
+      });
+      const inPlayStartBase: OccupiedBaseKey =
+        summary.baseAtInPlay && summary.baseAtInPlay !== "HP"
+          ? summary.baseAtInPlay
+          : summary.startBase;
+      const patchedAdvances = res.advances.map((a) => {
+        const matchesRunner =
+          a.from === inPlayStartBase &&
+          a.to === summary.finalBase &&
+          a.isOut === summary.isOut &&
+          (!a.runnerName.trim() ||
+            !summary.runner.name.trim() ||
+            a.runnerName.trim() === summary.runner.name.trim());
+        return matchesRunner ? { ...a, throwChain: nextChain } : a;
+      });
+      return {
+        ...prev,
+        advances: patchedAdvances,
+        outsInPlay: res.outsInPlay,
+        runsInPlay: res.runsInPlay,
+        rbi: res.rbi,
         confidence: "high",
       };
     });
@@ -1607,6 +1969,28 @@ export function AtBatModalRunnerEditor({
                               })}
                             </div>
                           </div>
+                          {(pm.isOut ||
+                            pm.method === "error" ||
+                            pm.method === "pickoff_error") && (
+                            <ThrowChainSelectorRow
+                              value={pm.throwChain}
+                              isOut={pm.isOut}
+                              method={pm.method}
+                              suggestions={buildSuggestedThrowChains({
+                                battedDirection: "",
+                                targetBase: pm.to,
+                                isOut: pm.isOut,
+                                method: pm.method,
+                                isBatterStretch: false,
+                              })}
+                              onSelect={(nextChain) =>
+                                handleUpdateExplicitAdvanceRow(pm.id, (cur) => ({
+                                  ...cur,
+                                  throwChain: nextChain,
+                                }))
+                              }
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -1714,10 +2098,28 @@ export function AtBatModalRunnerEditor({
                             );
                           })}
                         </div>
+                        {(pr.effectiveMethod === "error" ||
+                          pr.effectiveMethod === "obstruction") && (
+                          <ThrowChainSelectorRow
+                            value={pr.inPlayExplicitMove?.throwChain}
+                            isOut={false}
+                            method={pr.effectiveMethod}
+                            suggestions={buildSuggestedThrowChains({
+                              battedDirection: atBat.battedDirection,
+                              targetBase: pr.finalBase,
+                              isOut: false,
+                              method: pr.effectiveMethod,
+                              isBatterStretch: false,
+                            })}
+                            onSelect={(nextChain) =>
+                              handleSetRunnerThrowChain(pr, nextChain)
+                            }
+                          />
+                        )}
                       </div>
                     )}
 
-                    {/* アウト時のアウト塁＆アウト理由ワンタップ選択 */}
+                    {/* アウト時のアウト塁＆アウト理由＆送球経路ワンタップ選択 */}
                     {pr.isOut && (
                       <div className="pt-1 space-y-1.5">
                         <div className="flex items-center flex-wrap gap-1">
@@ -1769,6 +2171,21 @@ export function AtBatModalRunnerEditor({
                             </button>
                           ))}
                         </div>
+                        <ThrowChainSelectorRow
+                          value={pr.inPlayExplicitMove?.throwChain}
+                          isOut={true}
+                          method={pr.effectiveMethod}
+                          suggestions={buildSuggestedThrowChains({
+                            battedDirection: atBat.battedDirection,
+                            targetBase: pr.finalBase,
+                            isOut: true,
+                            method: pr.effectiveMethod,
+                            isBatterStretch: false,
+                          })}
+                          onSelect={(nextChain) =>
+                            handleSetRunnerThrowChain(pr, nextChain)
+                          }
+                        />
                       </div>
                     )}
                   </>
@@ -2089,6 +2506,26 @@ export function AtBatModalRunnerEditor({
               });
             })()}
           </div>
+          {batterSummary.extraExplicitMove &&
+            (batterSummary.extraExplicitMove.isOut ||
+              batterSummary.extraExplicitMove.method === "error" ||
+              batterSummary.extraExplicitMove.method === "obstruction") && (
+              <ThrowChainSelectorRow
+                value={batterSummary.extraExplicitMove.throwChain}
+                isOut={batterSummary.extraExplicitMove.isOut}
+                method={batterSummary.extraExplicitMove.method}
+                suggestions={buildSuggestedThrowChains({
+                  battedDirection: atBat.battedDirection,
+                  targetBase: batterSummary.extraExplicitMove.to,
+                  isOut: batterSummary.extraExplicitMove.isOut,
+                  method: batterSummary.extraExplicitMove.method,
+                  isBatterStretch: true,
+                })}
+                onSelect={(nextChain) =>
+                  handleSetBatterExtraThrowChain(nextChain)
+                }
+              />
+            )}
         </div>
       )}
 
@@ -2330,6 +2767,59 @@ export function AtBatModalRunnerEditor({
                       }))}
                     />
                   </div>
+
+                  {/* 送球経路 / 対象守備番号（走塁死・盗塁死・牽制死・失策・走塁妨害時） */}
+                  {(adv.isOut ||
+                    adv.method === "error" ||
+                    adv.method === "pickoff_error" ||
+                    adv.method === "obstruction") && (
+                    <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
+                      <span className="text-[9px] font-black text-muted-foreground shrink-0">
+                        {adv.isOut ? "送球経路(補殺-刺殺):" : "対象守備番号:"}
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="text"
+                        value={adv.throwChain ?? ""}
+                        onChange={(e) => {
+                          const draft = sanitizeThrowChainDraft(e.target.value);
+                          handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
+                            ...cur,
+                            throwChain: draft || undefined,
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const norm = normalizeThrowChainToken(e.target.value);
+                          handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
+                            ...cur,
+                            throwChain: norm,
+                          }));
+                        }}
+                        placeholder={
+                          adv.isOut
+                            ? "例: 8-6 / 2-6 / 1-3"
+                            : adv.method === "obstruction"
+                            ? "例: 6 (OB6)"
+                            : "例: 8 (8E)"
+                        }
+                        className="h-6 min-w-0 flex-1 px-2 rounded-lg border border-border bg-card text-[10px] font-black text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                      />
+                      {adv.throwChain && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
+                              ...cur,
+                              throwChain: undefined,
+                            }))
+                          }
+                          className="h-6 px-2 rounded-lg border border-border bg-muted text-[9px] font-black text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                        >
+                          解除
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* 3段目: 投球間・投球外イベント（盗塁・盗塁死・暴投・捕逸・牽制死・ボーク等）の場合のタイミング選択 */}
                   {isPrePlayAdvanceMethod(adv.method) && (

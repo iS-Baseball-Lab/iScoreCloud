@@ -1496,6 +1496,9 @@ export function formatAdvanceMethodByRules(
       method === "sac" ||
       method === "other")
   ) {
+    if (chain) {
+      return isKanji ? `${chain}走死` : `${chain} T.O`;
+    }
     return isKanji ? "走死" : "T.O";
   }
 
@@ -1508,10 +1511,16 @@ export function formatAdvanceMethodByRules(
     case "indifference":
       return isKanji ? "無関心" : "O";
     case "caught_stealing":
+      if (chain) {
+        return isKanji ? `${chain}盗死` : `${chain}CS`;
+      }
       return isKanji ? "盗死" : "CS";
     case "pickoff_out":
       if (rules.forceOutMark === "base_letter_abch" && chain) {
         return `${chain}TO`;
+      }
+      if (chain) {
+        return isKanji ? `${chain}牽死` : `${chain}PO`;
       }
       return isKanji ? "牽死" : "PO";
     case "pickoff_error":
@@ -1548,6 +1557,9 @@ export function formatAdvanceMethodByRules(
       }
       return isKanji ? "守妨" : "INT";
     case "appeal_out":
+      if (chain) {
+        return isKanji ? `${chain}離死` : `${chain}AP`;
+      }
       return isKanji ? "離死" : "AP";
     case "tiebreak":
       return "TB";
@@ -1562,6 +1574,9 @@ export function formatAdvanceMethodByRules(
         ? "送"
         : "T";
     case "out_on_base":
+      if (chain) {
+        return isKanji ? `${chain}走死` : `${chain} T.O`;
+      }
       return isKanji ? "走死" : "T.O";
     case "hit":
     case "sac":
@@ -1721,6 +1736,18 @@ export function formatAtBatPlayNotation(
   ) {
     const fielder = inferFielderToken(dir, label, "");
     const isGroundArcMode = rules.flyLiner === "umbrella_f_prefix_ground_arc";
+    // 安打の右下に送球中継（例: "8-6", "9-4-5"）が混在している場合、第1セグメント右下には最初の捕球野手("8", "9")のみを表示し、中継は走塁死セグメント("8-6TO")側へ分離する
+    const isOutfieldGapToken =
+      fielder === "78" ||
+      fielder === "89" ||
+      fielder === "7-8" ||
+      fielder === "8-9";
+    const primaryHitFielder =
+      !isOutfieldGapToken &&
+      /^[1-9](?:-[1-9])+$/.test(fielder) &&
+      /[1-6]$/.test(fielder)
+        ? fielder[0]!
+        : fielder;
 
     if (rc === "home_run") {
       const isRunningHr =
@@ -1729,7 +1756,7 @@ export function formatAtBatPlayNotation(
         const useUmbrella =
           rules.flyLiner === "umbrella" || isGroundArcMode;
         return {
-          mainText: fielder ? `RH${fielder}` : "RH",
+          mainText: primaryHitFielder ? `RH${primaryHitFielder}` : "RH",
           decorator: useUmbrella ? "umbrella" : "hit",
           isRedInk: false,
           isRunningHomeRun: true,
@@ -1737,13 +1764,13 @@ export function formatAtBatPlayNotation(
       }
       if (rules.hitLine === "red_edge_infield_arc") {
         return {
-          mainText: fielder || "HR",
+          mainText: primaryHitFielder || "HR",
           decorator: "hit",
           isRedInk: false,
         };
       }
       return {
-        mainText: fielder ? `HR(${fielder})` : "HR",
+        mainText: primaryHitFielder ? `HR(${primaryHitFielder})` : "HR",
         decorator: "hit",
         isRedInk: false,
       };
@@ -1752,7 +1779,7 @@ export function formatAtBatPlayNotation(
     // ポテンヒット（T9 等）
     const bloopMatch = dir.match(/^T([1-9])/i);
     if (bloopMatch || /ポテン/.test(label)) {
-      const bf = bloopMatch?.[1] || fielder || "9";
+      const bf = bloopMatch?.[1] || primaryHitFielder || "9";
       return {
         mainText: `T${bf}`,
         decorator: "hit",
@@ -1763,7 +1790,7 @@ export function formatAtBatPlayNotation(
     // バントヒット（BH5 等）
     if (isBuntPlay && rules.buntMark !== "diamond_sac") {
       return {
-        mainText: fielder ? `BH${fielder}` : "BH",
+        mainText: primaryHitFielder ? `BH${primaryHitFielder}` : "BH",
         decorator: "hit",
         isRedInk: false,
         infieldHitArc:
@@ -1778,11 +1805,11 @@ export function formatAtBatPlayNotation(
       rc === "single" &&
       rules.hitLine === "red_edge_infield_arc" &&
       (isExplicitInfieldHit ||
-        (/^[1-6](?:-[1-9])?$/.test(fielder) && !isOutfieldTrajectory));
+        (/^[1-6]$/.test(primaryHitFielder) && !isOutfieldTrajectory));
 
     if (isInfieldSingle) {
       return {
-        mainText: fielder || "H",
+        mainText: primaryHitFielder || "H",
         decorator: "hit",
         isRedInk: false,
         infieldHitArc: true,
@@ -1792,15 +1819,27 @@ export function formatAtBatPlayNotation(
     const formattedFielder =
       dir.includes("・") && /^[1-9]・[1-9]$/.test(dir)
         ? dir
-        : isGroundArcMode && (fielder === "78" || fielder === "89")
-        ? `${fielder[0]}・${fielder[1]}`
-        : fielder;
+        : isGroundArcMode && isOutfieldGapToken
+        ? fielder.startsWith("7")
+          ? "7・8"
+          : "8・9"
+        : primaryHitFielder;
 
     let hitDecorator: FormattedPlayNotation["decorator"] = "hit";
-    if (isGroundArcMode && formattedFielder) {
-      if (/ゴロ|⏝/.test(`${dir} ${label}`)) {
+    const combinedHitHint = `${dir} ${label}`;
+    if (formattedFielder) {
+      if (isGroundArcMode && /ゴロ|⏝/.test(combinedHitHint)) {
         hitDecorator = "under_arc";
-      } else if (/飛|越|中間|︵/.test(`${dir} ${label}`)) {
+      } else if (
+        (isGroundArcMode || rules.flyLiner === "umbrella") &&
+        /[￣¯]|ライナー|直|[1-9]L\b|^L[1-9]/i.test(combinedHitHint)
+      ) {
+        hitDecorator = "overline";
+      } else if (
+        isGroundArcMode &&
+        (/[︵⌒]/.test(dir) || /飛/.test(label))
+      ) {
+        // 「中越」「右中間」等の長打表現だけでフライ傘(︵)が付かないよう、明示的な傘記号または飛球系のみ対象とする
         hitDecorator = "umbrella";
       }
     }

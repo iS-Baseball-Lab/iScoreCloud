@@ -174,6 +174,72 @@ function normalizeFieldingAscii(raw: string): string {
 }
 
 /**
+ * 走塁死・封殺・盗塁死・牽制死・送球失策・走塁妨害の送球経路（例: "8-6", "8-6TO", "6-3", "2-6", "OB6", "8E"）を
+ * 正規の数字ハイフン列（"8-6", "6-3", "6" 等）へ正規化する
+ */
+export function normalizeThrowChainToken(
+  raw: string | undefined | null
+): string | undefined {
+  if (!raw) return undefined;
+  let cleaned = raw
+    .replace(/[０-９]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .trim()
+    .replace(/^[()（）[\]]+|[()（）[\]]+$/g, "")
+    .replace(/^(?:OB|OBS|POE|PO|CS|TO|T\.O\.?|E|FC)\s*/i, "")
+    .replace(/\s*(?:T\.O\.?|TO|CS|POE|PO|OB|OBS|AP|E|[ABCH])$/i, "")
+    .replace(/\s*[－ー―‐=＝→⇒➡・-]\s*/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+
+  // "8-6-4" 等の3連以上でもスペース区切り・矢印区切りが残っていれば再連結
+  cleaned = cleaned.replace(/\s*[－ー―‐=＝→⇒➡-]\s*/g, "-");
+  if (/^[1-9](?:-[1-9])*$/.test(cleaned)) {
+    return cleaned;
+  }
+  return undefined;
+}
+
+/**
+ * 安打（単打・二塁打・三塁打）の battedDirection に「8-6」「8-4」「9-4-5」等の返球中継が直接入っている場合、
+ * 左中間("7-8")・右中間("8-9")と厳密に区別した上で送球中継経路のみを抽出する
+ */
+export function extractRelayChainFromHitDirection(
+  resultCode: CanonicalAtBatResult,
+  battedDirection: string | undefined | null
+): string | undefined {
+  if (
+    resultCode !== "single" &&
+    resultCode !== "double" &&
+    resultCode !== "triple"
+  ) {
+    return undefined;
+  }
+  if (!battedDirection) return undefined;
+  const ascii = battedDirection
+    .replace(/[０-９]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .replace(/^BH/i, "")
+    .replace(/^T(?=[1-9])/i, "")
+    .replace(/[⌒︵︶∩^~〜￣¯⏝]/g, "")
+    .trim();
+  const chain = normalizeThrowChainToken(ascii);
+  if (!chain || !chain.includes("-")) return undefined;
+  if (chain === "7-8" || chain === "8-9") return undefined;
+  // 最終捕球者が内野手（1〜6: 投・捕・一・二・三・遊）である中継のみ走塁アウト送球経路とみなす
+  if (!/[1-6]$/.test(chain)) return undefined;
+  return chain;
+}
+
+/**
  * 既存の battedDirection と resultLabel から守備位置番号（1〜9）・送球先・打球性質を逆解析する
  */
 export function parseFieldingMeta(

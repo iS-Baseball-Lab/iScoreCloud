@@ -10,7 +10,11 @@ import {
   mapSnapshotAdvancesToPitchingEvents,
   type HalfInningAtBatPitchingInput,
 } from "@/lib/liff/baseball-official-rules";
-import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
+import {
+  extractRelayChainFromHitDirection,
+  normalizeLegacyForceOutAtBat,
+  normalizeThrowChainToken,
+} from "@/lib/liff/scorebook-fielding";
 import {
   isPrePlayAdvanceMethod,
   simulateSheetRunners,
@@ -469,25 +473,79 @@ function applyRunnerStepSegments(
 function inferRunnerOutThrowChain(
   ab: ScorebookV2AtBat,
   targetLv: BaseSegmentIndex,
-  isForceOut: boolean
+  isForceOut: boolean,
+  explicitThrowChain?: string
 ): string {
+  const normalizedExplicit = normalizeThrowChainToken(explicitThrowChain);
+  if (normalizedExplicit) {
+    return normalizedExplicit;
+  }
+
   const raw = (ab.battedDirection || "").trim();
   const digits = raw.match(/[1-9]/g) || [];
   if (digits.length === 0) return "";
-  if (digits.length === 1) return digits[0]!;
+
+  if (digits.length === 1) {
+    const solo = digits[0]!;
+    if (isForceOut) {
+      return solo;
+    }
+    // 非フォースアウト（タッチアウト・飛球/ライナー帰塁アウト等）:
+    // 外野手（7/8/9）単独の無補殺タッチアウト（"8TO" 等）は打球方向 "8" からの誤推論であるため自動付与しない
+    if (solo === "7" || solo === "8" || solo === "9") {
+      return "";
+    }
+    // 内野手（1〜6）単独も、明示的に "3TO"/"6TO" や「無補殺」と書かれている場合のみ採用する
+    if (
+      new RegExp(`^${solo}\\s*T\\.?O\\.?$`, "i").test(raw) ||
+      /無補殺/.test(ab.resultLabel || "")
+    ) {
+      return solo;
+    }
+    return "";
+  }
+
+  // 外野間ギャップ表記（左中間 "7-8" / 右中間 "8-9"）は中継送球ではないため除外
+  const compactChain = digits.join("-");
+  if (compactChain === "7-8" || compactChain === "8-9") {
+    return "";
+  }
 
   if (isForceOut) {
     if (targetLv === 3 && digits[0] === "5") {
       return "5";
     }
-    if (targetLv === 2 && (digits[0] === "4" || digits[0] === "6") && digits[1] === "3") {
+    if (
+      targetLv === 2 &&
+      (digits[0] === "4" || digits[0] === "6") &&
+      digits[1] === "3"
+    ) {
       return digits[0]!;
     }
     if (digits.length >= 3) {
       return `${digits[0]}-${digits[1]}`;
     }
+    return digits.slice(0, 2).join("-");
   }
-  return digits.slice(0, 2).join("-");
+
+  // タッチアウトで安打・外野飛球・犠飛の3連中継（例: 8-6-2 本塁タッチアウト、9-4-5 三塁タッチアウト）は全経路を保持
+  if (
+    digits.length >= 3 &&
+    (ab.resultCode === "single" ||
+      ab.resultCode === "double" ||
+      ab.resultCode === "triple" ||
+      ab.resultCode === "sac_fly" ||
+      ab.resultCode === "flyout") &&
+    /[1-6]$/.test(compactChain)
+  ) {
+    return compactChain;
+  }
+
+  const twoDigit = digits.slice(0, 2).join("-");
+  if (!/[1-6]$/.test(twoDigit)) {
+    return "";
+  }
+  return twoDigit;
 }
 
 function isOriginCellReachedByErrorOrUncharged(
@@ -1303,6 +1361,7 @@ export function compileScorebookSheetModel(
             }
           }
           if (originCell && pm.from !== "BAT") {
+            const explicitPreChain = normalizeThrowChainToken(pm.throwChain);
             const defaultPickoffChain =
               pm.isOut && pm.method === "pickoff_out"
                 ? pm.from === "1B"
@@ -1319,7 +1378,7 @@ export function compileScorebookSheetModel(
               method: pm.method,
               isPrePlay: true,
               isForceOut: false,
-              throwChain: defaultPickoffChain,
+              throwChain: explicitPreChain || defaultPickoffChain,
               isDoubleSteal:
                 !pm.isOut && pm.method === "steal" && stealRunnersInAtBat >= 2,
               pitchNumber: pm.pitchNumber,
@@ -1357,7 +1416,7 @@ export function compileScorebookSheetModel(
         }
       }
 
-      // B) インプレーアウト順序の決定（フライ・ライナー併殺等は打者先アウト、ゴロ封殺・併殺は先行走者先アウト）
+      // B) インプレーアウト順序の決定（フライ・ライナー併殺および一塁ベース先踏み3-6/3-4逆順併殺は打者先アウト、通常ゴロ封殺・併殺は先行走者先アウト）
       const isAerialDpOrTp =
         (ab.resultCode === "double_play" || ab.resultCode === "triple_play") &&
         isAerialMultiOutAtBat(
@@ -1365,6 +1424,11 @@ export function compileScorebookSheetModel(
           ab.battedDirection,
           ab.resultLabel
         );
+      // 公認野球規則 5.09(b)(6): 一塁手が先に一塁を踏んでから二塁へ送球した逆順併殺（3-6, 3-4, 3A-6 等 ※3-6-3/3-6-1は除く）は打者先アウト＆一塁走者のフォース解除（タッチアウト 3-6TO）
+      const isReverseFirstBaseDp =
+        (ab.resultCode === "double_play" ||
+          (ab.resultCode === "groundout" && ab.outsInPlay >= 2)) &&
+        /^(?:3|3A)-[46]$/i.test((ab.battedDirection || "").trim());
 
       const batterFirstOut =
         ab.resultCode === "flyout" ||
@@ -1373,7 +1437,8 @@ export function compileScorebookSheetModel(
         ab.resultCode === "infield_fly" ||
         ab.resultCode === "strikeout" ||
         ab.resultCode === "dropped_third_strike_out" ||
-        isAerialDpOrTp;
+        isAerialDpOrTp ||
+        isReverseFirstBaseDp;
 
       const isBatterIntrinsicOut =
         isIntrinsicBatterOutCode(ab.resultCode) &&
@@ -1428,18 +1493,23 @@ export function compileScorebookSheetModel(
                 !isAerialDpOrTp;
               const isRunnerForced =
                 isNonFlyPlay &&
-                ((inPlayFrom === "1B" && pr.finalBase === "2B") ||
+                ((inPlayFrom === "1B" &&
+                  pr.finalBase === "2B" &&
+                  !isReverseFirstBaseDp) ||
                   (inPlayFrom === "2B" &&
                     pr.finalBase === "3B" &&
-                    Boolean(snap.basesBefore["1B"])) ||
+                    Boolean(snap.basesBefore["1B"]) &&
+                    !isReverseFirstBaseDp) ||
                   (inPlayFrom === "3B" &&
                     pr.finalBase === "HP" &&
                     Boolean(snap.basesBefore["1B"]) &&
-                    Boolean(snap.basesBefore["2B"])));
+                    Boolean(snap.basesBefore["2B"]) &&
+                    !isReverseFirstBaseDp));
               const runnerThrowChain = inferRunnerOutThrowChain(
                 ab,
                 endLv,
-                isRunnerForced
+                isRunnerForced,
+                pr.inPlayExplicitMove?.throwChain
               );
               applyRunnerStepSegments(
                 originCell,
@@ -1494,6 +1564,9 @@ export function compileScorebookSheetModel(
                     ? undefined
                     : ab.battingOrder,
                   isPrePlay: isPrePlayAdvanceMethod(pr.effectiveMethod),
+                  throwChain: normalizeThrowChainToken(
+                    pr.inPlayExplicitMove?.throwChain
+                  ),
                 }
               );
             }
@@ -1543,7 +1616,8 @@ export function compileScorebookSheetModel(
           playOutCellKeys.length >= 2) ||
         (ab.resultCode === "groundout" &&
           playOutCellKeys.length >= 2 &&
-          /[1-9]-[1-9]-[1-9]/.test(ab.battedDirection || ""));
+          (/[1-9]-[1-9]-[1-9]/.test(ab.battedDirection || "") ||
+            isReverseFirstBaseDp));
 
       if (isGenuineDoubleOrTriplePlay) {
         const resolvedOutCellKeys = [...playOutCellKeys];
@@ -1580,6 +1654,13 @@ export function compileScorebookSheetModel(
       const hitBases = getHitBasesForResult(ab.resultCode);
 
       if (initBase) {
+        const explicitExtraChain = normalizeThrowChainToken(
+          snap.batterSummary.extraExplicitMove?.throwChain
+        );
+        const inferredHitRelayChain = snap.batterSummary.isOutOnBases
+          ? extractRelayChainFromHitDirection(ab.resultCode, ab.battedDirection)
+          : undefined;
+        const batterExtraChain = explicitExtraChain || inferredHitRelayChain;
         const isDirectOutWithoutSafeInit =
           snap.batterSummary.isOutOnBases && finalBase === initBase;
         applyRunnerStepSegments(
@@ -1595,6 +1676,10 @@ export function compileScorebookSheetModel(
                 ? "hit"
                 : snap.batterSummary.effectiveMethod,
             isPrePlay: false,
+            isForceOut: isDirectOutWithoutSafeInit ? false : undefined,
+            throwChain: isDirectOutWithoutSafeInit
+              ? batterExtraChain
+              : undefined,
           }
         );
 
@@ -1613,6 +1698,8 @@ export function compileScorebookSheetModel(
               hitBases: 0,
               method: snap.batterSummary.effectiveMethod,
               isPrePlay: false,
+              isForceOut: snap.batterSummary.isOutOnBases ? false : undefined,
+              throwChain: batterExtraChain,
             }
           );
         }

@@ -188,6 +188,8 @@ export interface ScorebookV2Advance {
   isOut: boolean;
   /** 発生タイミング（1以上＝1始まりの正式投球番号、0＝投球外［牽制・返球間・投球前・ディレイドスチール等］、undefined＝未指定） */
   pitchNumber?: number;
+  /** 送球・守備中継経路（例: "8-6", "8-4", "6-3", "2-6", "1-3", "6" 等・任意） */
+  throwChain?: string;
 }
 
 export interface ScorebookV2AtBat {

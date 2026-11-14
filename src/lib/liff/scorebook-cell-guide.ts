@@ -686,14 +686,48 @@ function buildFielderExplanationRow(
   ab: ScorebookV2AtBat
 ): ResultBreakdownRow | null {
   const cleanDir = (ab.battedDirection || "").trim();
+  const isHitResult =
+    ab.resultCode === "single" ||
+    ab.resultCode === "double" ||
+    ab.resultCode === "triple" ||
+    ab.resultCode === "home_run";
   const sourceToken =
+    /^[1-9]・[1-9]$/.test(mainText) ||
     /^[1-9](?:-[1-9])+$/.test(mainText) ||
     /^[1-9]{1,2}$/.test(mainText) ||
     /78|89/.test(mainText)
       ? mainText
       : cleanDir || mainText;
 
-  // 1. 送球経路（例: 6-3, 6-4-3, 1-2-3）
+  // 1. 左中間(78 / 7-8 / 7・8)・右中間(89 / 8-9 / 8・9)
+  if (
+    sourceToken.includes("78") ||
+    sourceToken.includes("7・8") ||
+    (isHitResult && sourceToken === "7-8")
+  ) {
+    return {
+      badge: mainText.includes("7・8") ? "7・8" : sourceToken.includes("7-8") ? "7-8" : "78",
+      badgeTone: "blue",
+      title: "打球方向：左中間（レフト・センター間）",
+      description:
+        "7（左翼手）と 8（中堅手）の間を抜ける左中間方向への打球を表します（送球中継ではなく外野間のコース表記です）。",
+    };
+  }
+  if (
+    sourceToken.includes("89") ||
+    sourceToken.includes("8・9") ||
+    (isHitResult && sourceToken === "8-9")
+  ) {
+    return {
+      badge: mainText.includes("8・9") ? "8・9" : sourceToken.includes("8-9") ? "8-9" : "89",
+      badgeTone: "blue",
+      title: "打球方向：右中間（センター・ライト間）",
+      description:
+        "8（中堅手）と 9（右翼手）の間を抜ける右中間方向への打球を表します（送球中継ではなく外野間のコース表記です）。",
+    };
+  }
+
+  // 2. 送球経路（例: 6-3, 6-4-3, 1-2-3）
   const chainMatch = sourceToken.match(/[1-9](?:-[1-9])+/);
   if (chainMatch) {
     const nums = chainMatch[0].split("-");
@@ -706,26 +740,6 @@ function buildFielderExplanationRow(
       badgeTone: "blue",
       title: "守備番号と送球ルート",
       description: `${stepsJa.join(" → ")} の順にボールが渡ってアウトにしたことを表します。`,
-    };
-  }
-
-  // 2. 左中間(78)・右中間(89)
-  if (sourceToken.includes("78")) {
-    return {
-      badge: "78",
-      badgeTone: "blue",
-      title: "打球方向：左中間（レフト・センター間）",
-      description:
-        "7（左翼手）と 8（中堅手）の間を抜ける左中間方向への打球を表します。",
-    };
-  }
-  if (sourceToken.includes("89")) {
-    return {
-      badge: "89",
-      badgeTone: "blue",
-      title: "打球方向：右中間（センター・ライト間）",
-      description:
-        "8（中堅手）と 9（右翼手）の間を抜ける右中間方向への打球を表します。",
     };
   }
 
@@ -1220,9 +1234,30 @@ function describeAdvanceMethodMeaning(
     const driverJa =
       seg.drivingBatterOrder && seg.drivingBatterOrder > 0
         ? `${resolveDrivingBatterText(seg.drivingBatterOrder, cell.inning, model)} の打席時に`
+        : "打撃直後の走塁で";
+
+    const chainDigits = (seg.throwChain || "").match(/[1-9]/g) || [];
+    const chainStepsJa =
+      chainDigits.length > 0
+        ? chainDigits
+            .map((d) => {
+              const info = POSITION_NAME_JA[d];
+              return info ? `${info.short}(${d})` : d;
+            })
+            .join(" → ")
+        : "";
+    const chainDescJa =
+      chainDigits.length >= 2
+        ? ` 送球経路「${seg.throwChain}」は ${chainStepsJa} の中継送球（補殺:${chainDigits
+            .slice(0, -1)
+            .join("・")}、刺殺:${chainDigits[chainDigits.length - 1]}）を表します。`
+        : chainDigits.length === 1
+        ? ` 守備番号「${chainDigits[0]}」は ${chainStepsJa} がベース（または走者）に触れて直接アウト（刺殺:${chainDigits[0]}）にしたことを表します。`
         : "";
 
-    let reasonJa = "進塁を試みてタッチアウト（またはフォースアウト）";
+    let reasonJa = seg.isForceOut
+      ? "進塁時にフォースアウト（封殺）"
+      : "進塁を試みてタッチアウト";
     if (seg.method === "caught_stealing") reasonJa = "盗塁を試みてタッチアウト（盗塁死）";
     else if (seg.method === "pickoff_out") reasonJa = "牽制球でタッチアウト（牽制死）";
     else if (seg.method === "appeal_out") reasonJa = "アピールプレイによる離塁アウト";
@@ -1239,7 +1274,7 @@ function describeAdvanceMethodMeaning(
       symbolText: outLineSymbol,
       tone: "dark",
       title: `${rangeJa}：${reasonJa}${prePlayTimingTitleSuffix}`,
-      description: `${driverJa}${rangeJa}の間でアウトになりました。${prePlayTimingDescSuffix}${lineStyleJa}`,
+      description: `${driverJa}${rangeJa}の間でアウトになりました。${chainDescJa}${prePlayTimingDescSuffix}${lineStyleJa}`,
     };
   }
 
@@ -1327,13 +1362,28 @@ function describeAdvanceMethodMeaning(
   }
 
   if (seg.method === "error" || seg.method === "pickoff_error") {
+    const errPosInfo = seg.throwChain ? POSITION_NAME_JA[seg.throwChain] : undefined;
+    const errFielderJa = errPosInfo ? `${errPosInfo.short}(${seg.throwChain})の` : "";
     return {
       symbolText: advSymbol || "E",
       tone: "blue",
       title: `${rangeJa}：相手の失策（エラー）で進塁`,
       description: `「${advSymbol || "E"}」は${
-        seg.method === "pickoff_error" ? "悪送球（牽制エラー）" : "相手守備のエラー"
+        seg.method === "pickoff_error"
+          ? `${errFielderJa}悪送球（牽制エラー）`
+          : `${errFielderJa}相手守備のエラー`
       }によって進塁したことを表します。${dottedNote}`,
+    };
+  }
+
+  if (seg.method === "obstruction") {
+    const obPosInfo = seg.throwChain ? POSITION_NAME_JA[seg.throwChain] : undefined;
+    const obFielderJa = obPosInfo ? `（${obPosInfo.short}:${seg.throwChain}）` : "";
+    return {
+      symbolText: advSymbol || "OB",
+      tone: "blue",
+      title: `${rangeJa}：走塁妨害（オブストラクション）で進塁`,
+      description: `「${advSymbol || "OB"}」は野手${obFielderJa}による走塁妨害が宣告され、安全進塁権が与えられたことを表します。${dottedNote}`,
     };
   }
 

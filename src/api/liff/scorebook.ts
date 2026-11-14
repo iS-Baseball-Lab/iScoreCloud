@@ -22,8 +22,10 @@ import {
 import { extractFieldingCreditsForAtBat } from "@/lib/liff/baseball-official-rules";
 import {
   defaultGenericDirection,
+  extractRelayChainFromHitDirection,
   harmonizeOcrFieldingAndLabel,
   normalizeLegacyForceOutAtBat,
+  normalizeThrowChainToken,
 } from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
@@ -189,6 +191,45 @@ interface RawGeminiAdvance {
   io?: boolean;
   pitchNumber?: number;
   pn?: number;
+  throwChain?: string;
+  tc?: string;
+}
+
+function isOcrBatterStretchOutAdvance(
+  adv: ScorebookV2Advance,
+  batterName: string,
+  resultCode: string,
+  activeBases: Record<"1B" | "2B" | "3B", boolean>,
+  allAdvances: readonly ScorebookV2Advance[]
+): boolean {
+  if (!adv.isOut) return false;
+  if (
+    adv.method !== "hit" &&
+    adv.method !== "out_on_base" &&
+    adv.method !== "throw_advance"
+  ) {
+    return false;
+  }
+  if (adv.from === "BAT") return true;
+  const expectedHitBase: "1B" | "2B" | "3B" | null =
+    resultCode === "single" || resultCode === "error"
+      ? "1B"
+      : resultCode === "double"
+        ? "2B"
+        : resultCode === "triple"
+          ? "3B"
+          : null;
+  if (!expectedHitBase || adv.from !== expectedHitBase) return false;
+  if (!activeBases[expectedHitBase]) return true;
+  const normAdvName = adv.runnerName.replace(/\s+/g, "");
+  const normBatterName = batterName.replace(/\s+/g, "");
+  if (normAdvName && normBatterName && normAdvName === normBatterName) {
+    return true;
+  }
+  const sameFromCount = allAdvances.filter(
+    (x) => x.from === expectedHitBase
+  ).length;
+  return !normAdvName && sameFromCount >= 2;
 }
 
 interface RawGeminiAtBat {
@@ -2008,6 +2049,8 @@ ${targetInningMetaLines.join("\n")}
 【超重要 4: 投手交代波線・進塁（a）・早稲田式の「●（個人得点）」と得点（ru）・打点（rbi）の厳密分離・確信度（cf）】
 - 回途中の継投がある場合は横波線『〜〜』や二重線『══』の前後で正しい投手名を pt に設定してください。${multiColumnRuleBlock}
 - 進塁 a には盗塁(m:"steal")・守備無関心(m:"indifference")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク(m:"balk")・送球間(m:"throw_advance")・走塁死(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を記録し、凡退無進塁は a:[]。
+  ・**走塁アウト・盗塁死・牽制死・失策進塁の送球経路（tc）**: 右上・左上・左下の進塁区画に『8-6TO』『8-4TO』『9-4-5TO』『2-6CS』『1-3TO』『8E』『OB6』等の守備送球番号が書かれている場合、その進塁オブジェクトに **"tc":"8-6"**（または "2-6", "1-3", "8" 等、ハイフン区切り数字）を必ず含めてください（※外野単独『8TO』は誤記しやすいため中継相手 6/4/5/2 まで丁寧に精読すること！また安打の左中間 7-8・右中間 8-9 は打球方向 dir であり送球経路 tc ではありません）。
+  ・**安打で出塁した打者自身がそのまま次の塁を狙ってタッチアウトになったプレー（公認野球規則 9.09/9.10）**: 例えば中前安打（右下赤斜線『/』＋『8』、本一実線 b1: true）を打った打者がそのまま二塁を狙って『8-6TO』タッチアウト（中央に『Ⅰ/Ⅱ/Ⅲ』）になった場合、安打は成立しているため **rc: "single", dir: "8", o: 1** とし、a には [{"rn":"打者名","f":"BAT","t":"1B","m":"hit","io":false},{"rn":"打者名","f":"1B","t":"2B","m":"out_on_base","io":true,"tc":"8-6"}] のように出力してください（後続打者の打席で封殺・盗塁死した o: 0 とは区別すること）。
 - **「●（個人得点）」と打席得点（ru）・打点（rbi）の厳密区別（最重要！）**:
   1. 早稲田式・成美堂式では、出塁した走者（例: 1番の四球や単打）が**後続打者の打撃で本塁生還した際、その出塁走者のマス中央に黒丸『●』（や◎・赤丸）とダイヤモンド1周線が書かれます**。これをその出塁打席自身の得点・打点にしてはいけません！無走者時の四球・単打・失策や、満塁でない四死球では **必ず ru: 0, rbi: 0** とし、進塁 a にも t:"HP" を入れず出塁塁（t:"1B" 等）までに留めてください。
   2. **"ru"（その打席で本塁生還した人数）と t:"HP", io:false の進塁は「その得点が実際に入った後続打者の打席」にのみ計上**し、イニング内の全打席の ru 合計が確定得点と完全一致するようにしてください。
@@ -2183,17 +2226,26 @@ ${targetInningMetaLines.join("\n")}
       );
 
       const rawAdvances = reconciled.rawAdvances;
+      const hitRelayChainP1 = extractRelayChainFromHitDirection(
+        resultCode,
+        rawDir
+      );
       let advances: ScorebookV2Advance[] = rawAdvances.map((adv) => {
         const pnVal = adv.pn ?? adv.pitchNumber;
+        const isOutAdv = Boolean(adv.io ?? adv.isOut);
+        const normTc =
+          normalizeThrowChainToken(adv.tc ?? adv.throwChain) ||
+          (isOutAdv ? hitRelayChainP1 : undefined);
         return {
           id: crypto.randomUUID(),
           runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
           from: normalizeFromBase(adv.f ?? adv.from),
           to: normalizeToBase(adv.t ?? adv.to),
           method: normalizeAdvanceMethod(adv.m ?? adv.method),
-          isOut: Boolean(adv.io ?? adv.isOut),
+          isOut: isOutAdv,
           pitchNumber:
             typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+          ...(normTc ? { throwChain: normTc } : {}),
         };
       });
 
@@ -2259,20 +2311,33 @@ ${targetInningMetaLines.join("\n")}
       );
 
       const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
-      const occupiedBaseRunnerOuts = Math.min(
-        activeRunnersCount,
-        advances.filter(
-          (a) => a.isOut && a.from !== "BAT" && activeBases[a.from]
-        ).length
-      );
-      const batterOverrunOut = advances.some(
-        (a) =>
-          a.isOut &&
-          (a.from === "BAT" || !activeBases[a.from as "1B" | "2B" | "3B"]) &&
-          (a.method === "hit" || a.method === "out_on_base")
+      const batterOverrunOut = advances.some((a) =>
+        isOcrBatterStretchOutAdvance(
+          a,
+          resolved.batterName,
+          resultCode,
+          activeBases,
+          advances
+        )
       )
         ? 1
         : 0;
+      const occupiedBaseRunnerOuts = Math.min(
+        activeRunnersCount,
+        advances.filter(
+          (a) =>
+            a.isOut &&
+            a.from !== "BAT" &&
+            activeBases[a.from] &&
+            !isOcrBatterStretchOutAdvance(
+              a,
+              resolved.batterName,
+              resultCode,
+              activeBases,
+              advances
+            )
+        ).length
+      );
 
       const isDefiniteBatterOut =
         resultCode === "groundout" ||
@@ -2410,35 +2475,52 @@ ${targetInningMetaLines.join("\n")}
         }
       }
       for (const adv of advances) {
-        if (!adv.isOut && (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")) {
+        if (
+          adv.from !== "BAT" &&
+          !adv.isOut &&
+          (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")
+        ) {
           activeBases[adv.to] = true;
         }
       }
-      if (
-        runningInningOuts + outsVal < 3 &&
-        batterOverrunOut === 0 &&
-        advances.filter((a) => a.from === "BAT").length === 0
-      ) {
-        if (
-          resultCode === "single" ||
-          resultCode === "walk" ||
-          resultCode === "intentional_walk" ||
-          resultCode === "hit_by_pitch" ||
-          resultCode === "interference" ||
-          resultCode === "error" ||
-          resultCode === "fc" ||
-          resultCode === "dropped_third_strike" ||
-          isForceOutGroundout(
-            resultCode,
-            harmonizedFielding.battedDirection,
-            harmonizedFielding.resultLabel
-          )
-        ) {
-          activeBases["1B"] = true;
-        } else if (resultCode === "double") {
-          activeBases["2B"] = true;
-        } else if (resultCode === "triple") {
-          activeBases["3B"] = true;
+      if (runningInningOuts + outsVal < 3 && batterOverrunOut === 0) {
+        const safeBatAdv = advances.find((a) => a.from === "BAT" && !a.isOut);
+        if (safeBatAdv) {
+          if (
+            (safeBatAdv.to === "1B" ||
+              safeBatAdv.to === "2B" ||
+              safeBatAdv.to === "3B") &&
+            !advances.some(
+              (other) =>
+                other.id !== safeBatAdv.id &&
+                other.from === safeBatAdv.to &&
+                !other.isOut
+            )
+          ) {
+            activeBases[safeBatAdv.to] = true;
+          }
+        } else if (advances.filter((a) => a.from === "BAT").length === 0) {
+          if (
+            resultCode === "single" ||
+            resultCode === "walk" ||
+            resultCode === "intentional_walk" ||
+            resultCode === "hit_by_pitch" ||
+            resultCode === "interference" ||
+            resultCode === "error" ||
+            resultCode === "fc" ||
+            resultCode === "dropped_third_strike" ||
+            isForceOutGroundout(
+              resultCode,
+              harmonizedFielding.battedDirection,
+              harmonizedFielding.resultLabel
+            )
+          ) {
+            activeBases["1B"] = true;
+          } else if (resultCode === "double") {
+            activeBases["2B"] = true;
+          } else if (resultCode === "triple") {
+            activeBases["3B"] = true;
+          }
         }
       }
 
@@ -2754,18 +2836,27 @@ ${pitcherSpecLines.join("\n")}
         reconciled.rawResultLabel
       );
 
+      const hitRelayChainGap = extractRelayChainFromHitDirection(
+        resultCode,
+        reconciled.rawDir
+      );
       const advances: ScorebookV2Advance[] = reconciled.rawAdvances.map(
         (adv) => {
           const pnVal = adv.pn ?? adv.pitchNumber;
+          const isOutAdv = Boolean(adv.io ?? adv.isOut);
+          const normTc =
+            normalizeThrowChainToken(adv.tc ?? adv.throwChain) ||
+            (isOutAdv ? hitRelayChainGap : undefined);
           return {
             id: crypto.randomUUID(),
             runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
             from: normalizeFromBase(adv.f ?? adv.from),
             to: normalizeToBase(adv.t ?? adv.to),
             method: normalizeAdvanceMethod(adv.m ?? adv.method),
-            isOut: Boolean(adv.io ?? adv.isOut),
+            isOut: isOutAdv,
             pitchNumber:
               typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+            ...(normTc ? { throwChain: normTc } : {}),
           };
         }
       );
@@ -2821,7 +2912,10 @@ ${pitcherSpecLines.join("\n")}
           outsVal = Math.min(3, 1 + Math.min(1, runnerOutsInPlay));
         }
       } else if (isSafeBatterReach) {
-        outsVal = batterOutInAdvances ? 1 : 0;
+        outsVal = Math.min(
+          2,
+          runnerOutsInPlay + (batterOutInAdvances ? 1 : 0)
+        );
       } else if (resultCode === "fc") {
         outsVal =
           rawOutsVal >= 1 ||
@@ -3124,11 +3218,11 @@ ${batterRowsDesc.join("\n")}
      ・本塁→1塁が太い実線/赤線で、右下に斜線『/』や守備番号『7』『8』『9』『6』等がある **単打（rc:"single", o:0）**・二塁打・三塁打
      ・本塁→1塁が実線で、左BSOにボール4球・右下に『B』『D』がある **四球（rc:"walk", o:0）・死球（rc:"hit_by_pitch", o:0）**
      ・右下に『E6』『E4』『4E-3』『6E-3』『4E』等がある **失策・悪送球出塁（rc:"error", dir:"4E-3"等, o:0）**、または『K』でも本塁→1塁が実線の **振り逃げ出塁（rc:"dropped_third_strike", o:0）**
-     ・**先行走者の封殺・盗塁死の二重計上**: 出塁した打者の中央に後続打席での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺ゴロ打者（rc:"groundout", dir:"6-4"/"4-6"/"5C"等）側のみを **"o": 1**（オールセーフの野選 rc:"fc" は **"o": 0**）としてください！
+     ・**先行走者の封殺・盗塁死の二重計上 vs 同一プレーでの進塁タッチアウト**: 出塁した打者の中央に**後続打席**での封殺・盗塁死『Ⅰ/Ⅱ/Ⅲ』が書かれている場合、**その出塁打者自身は "o": 0** であり、後続の封殺ゴロ打者（rc:"groundout", dir:"6-4"/"4-6"/"5C"等）側のみを **"o": 1**（オールセーフの野選 rc:"fc" は **"o": 0**）としてください。ただし、単打（右下に赤斜線『/』と『8』等）を打った**その同一プレーで二塁等を狙ってタッチアウト**（右上に『8-6TO』『9-4TO』等があり後続打者が別イニング/次打順から始まる等）になった場合は **rc:"single", dir:"8", "o": 1** とし、a に {"rn":"打者名","f":"1B","t":"2B","m":"out_on_base","io":true,"tc":"8-6"}（送球経路 tc 付き）を入れてください！
 3. **パターンB（3アウト目『Ⅲ』『③』完了直後のマスが「イニング終了切り線 ／・∟」または「白紙空欄」または「次イニング重複」だったケース）**:
    - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
 4. **"o" と "eo" の厳密区別・早稲田式「●（個人得点）」の分離・左BSO拡大の全球保持**:
-   - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！
+   - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！また走塁死・盗塁死・牽制死・悪送球進塁で守備送球番号（例: 8-6, 2-6, 1-3, 8E）が書かれている場合は進塁要素に "tc":"8-6" 等を付与してください。
    - 出塁した打者（先頭四球や無走者安打など）の中央に後続打席での生還『●』があっても、その出塁打席は **ru: 0, rbi: 0** とし、実際に生還させた後続打者の打席にのみ ru を計上してください（満塁以外の四死球や失策・内野ゴロ併殺・暴投生還は必ず rbi: 0）。
    - 各マスの **[BSO拡大]** にある手書き投球記号（○/●/ー/・/△ や球数番号 1,2,3...）も省略せず obs と p に全件出力してください。
 
@@ -3239,17 +3333,26 @@ ${batterRowsDesc.join("\n")}
         reconciled.rawResultLabel
       );
 
+      const hitRelayChainP2 = extractRelayChainFromHitDirection(
+        resultCode,
+        reconciled.rawDir
+      );
       let advances: ScorebookV2Advance[] = reconciled.rawAdvances.map((adv) => {
         const pnVal = adv.pn ?? adv.pitchNumber;
+        const isOutAdv = Boolean(adv.io ?? adv.isOut);
+        const normTc =
+          normalizeThrowChainToken(adv.tc ?? adv.throwChain) ||
+          (isOutAdv ? hitRelayChainP2 : undefined);
         return {
           id: crypto.randomUUID(),
           runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
           from: normalizeFromBase(adv.f ?? adv.from),
           to: normalizeToBase(adv.t ?? adv.to),
           method: normalizeAdvanceMethod(adv.m ?? adv.method),
-          isOut: Boolean(adv.io ?? adv.isOut),
+          isOut: isOutAdv,
           pitchNumber:
             typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+          ...(normTc ? { throwChain: normTc } : {}),
         };
       });
 
@@ -3266,25 +3369,58 @@ ${batterRowsDesc.join("\n")}
         resultCode === "error";
 
       if (isSafeBatterReach && advances.length > 0) {
-        advances = advances.filter(
-          (adv) => !adv.isOut || adv.from === "BAT" || activeBases[adv.from]
-        );
+        advances = advances.filter((adv) => {
+          if (!adv.isOut || adv.from === "BAT") return true;
+          const occupiedBefore = activeBases[adv.from];
+          if (
+            !occupiedBefore &&
+            (adv.method === "caught_stealing" ||
+              adv.method === "pickoff_out" ||
+              adv.method === "fc" ||
+              adv.method === "appeal_out")
+          ) {
+            return false;
+          }
+          if (
+            (resultCode === "walk" ||
+              resultCode === "intentional_walk" ||
+              resultCode === "hit_by_pitch" ||
+              resultCode === "interference") &&
+            !occupiedBefore
+          ) {
+            return false;
+          }
+          return true;
+        });
       }
 
-      const occupiedBaseRunnerOuts = Math.min(
-        activeRunnersCount,
-        advances.filter(
-          (a) => a.isOut && a.from !== "BAT" && activeBases[a.from]
-        ).length
-      );
-      const batterOverrunOut = advances.some(
-        (a) =>
-          a.isOut &&
-          (a.from === "BAT" || !activeBases[a.from as "1B" | "2B" | "3B"]) &&
-          (a.method === "hit" || a.method === "out_on_base")
+      const batterOverrunOut = advances.some((a) =>
+        isOcrBatterStretchOutAdvance(
+          a,
+          matchup.batterName,
+          resultCode,
+          activeBases,
+          advances
+        )
       )
         ? 1
         : 0;
+      const occupiedBaseRunnerOuts = Math.min(
+        activeRunnersCount,
+        advances.filter(
+          (a) =>
+            a.isOut &&
+            a.from !== "BAT" &&
+            activeBases[a.from] &&
+            !isOcrBatterStretchOutAdvance(
+              a,
+              matchup.batterName,
+              resultCode,
+              activeBases,
+              advances
+            )
+        ).length
+      );
       const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
 
       const isDefiniteBatterOut =
@@ -3410,37 +3546,51 @@ ${batterRowsDesc.join("\n")}
       }
       for (const adv of advances) {
         if (
+          adv.from !== "BAT" &&
           !adv.isOut &&
           (adv.to === "1B" || adv.to === "2B" || adv.to === "3B")
         ) {
           activeBases[adv.to] = true;
         }
       }
-      if (
-        runningOuts + outsVal < 3 &&
-        batterOverrunOut === 0 &&
-        advances.filter((a) => a.from === "BAT").length === 0
-      ) {
-        if (
-          resultCode === "single" ||
-          resultCode === "walk" ||
-          resultCode === "intentional_walk" ||
-          resultCode === "hit_by_pitch" ||
-          resultCode === "interference" ||
-          resultCode === "error" ||
-          resultCode === "fc" ||
-          resultCode === "dropped_third_strike" ||
-          isForceOutGroundout(
-            resultCode,
-            harmonizedFielding.battedDirection,
-            harmonizedFielding.resultLabel
-          )
-        ) {
-          activeBases["1B"] = true;
-        } else if (resultCode === "double") {
-          activeBases["2B"] = true;
-        } else if (resultCode === "triple") {
-          activeBases["3B"] = true;
+      if (runningOuts + outsVal < 3 && batterOverrunOut === 0) {
+        const safeBatAdv = advances.find((a) => a.from === "BAT" && !a.isOut);
+        if (safeBatAdv) {
+          if (
+            (safeBatAdv.to === "1B" ||
+              safeBatAdv.to === "2B" ||
+              safeBatAdv.to === "3B") &&
+            !advances.some(
+              (other) =>
+                other.id !== safeBatAdv.id &&
+                other.from === safeBatAdv.to &&
+                !other.isOut
+            )
+          ) {
+            activeBases[safeBatAdv.to] = true;
+          }
+        } else if (advances.filter((a) => a.from === "BAT").length === 0) {
+          if (
+            resultCode === "single" ||
+            resultCode === "walk" ||
+            resultCode === "intentional_walk" ||
+            resultCode === "hit_by_pitch" ||
+            resultCode === "interference" ||
+            resultCode === "error" ||
+            resultCode === "fc" ||
+            resultCode === "dropped_third_strike" ||
+            isForceOutGroundout(
+              resultCode,
+              harmonizedFielding.battedDirection,
+              harmonizedFielding.resultLabel
+            )
+          ) {
+            activeBases["1B"] = true;
+          } else if (resultCode === "double") {
+            activeBases["2B"] = true;
+          } else if (resultCode === "triple") {
+            activeBases["3B"] = true;
+          }
         }
       }
 
@@ -4034,11 +4184,21 @@ liffScorebookRouter.post("/save", async (c) => {
             ? `（得点${ab.runsInPlay}・打点0）`
             : "";
       const runnerMovesText = safeAdvances
-        .filter((a) => a.from !== "BAT" && (a.isOut || a.from !== a.to))
+        .filter(
+          (a) =>
+            (a.from !== "BAT" && (a.isOut || a.from !== a.to)) ||
+            (a.from === "BAT" && a.isOut)
+        )
         .map((a) => {
-          const rLabel = a.runnerName ? a.runnerName : "走者";
+          const rLabel = a.runnerName
+            ? a.runnerName
+            : a.from === "BAT"
+              ? ab.batterName || "打者"
+              : "走者";
           const fJa = formatBaseJa(a.from);
           const tJa = formatBaseJa(a.to);
+          const normChain = normalizeThrowChainToken(a.throwChain);
+          const chainTag = normChain ? `(${normChain})` : "";
           const pitchTag =
             typeof a.pitchNumber === "number"
               ? a.pitchNumber === 0
@@ -4047,7 +4207,7 @@ liffScorebookRouter.post("/save", async (c) => {
               : "";
           return `${rLabel}:${fJa}→${tJa}${
             a.isOut ? "アウト" : a.to === "HP" ? "生還" : ""
-          }${pitchTag}`;
+          }${chainTag}${pitchTag}`;
         });
       const runnerSuffix =
         runnerMovesText.length > 0 ? ` ［${runnerMovesText.join("、")}］` : "";
@@ -4726,7 +4886,9 @@ liffScorebookRouter.get("/saved", async (c) => {
           let parsedRbi: number | undefined;
           let parsedOuts: number | undefined;
           const runnerNameByFromBase = new Map<string, string>();
+          const runnerNameByFromTo = new Map<string, string>();
           const runnerPitchNumByFromTo = new Map<string, number>();
+          const runnerChainByFromTo = new Map<string, string>();
           let parsedPitches: CanonicalPitchResult[] = [];
 
           if (linkedLog?.description) {
@@ -4762,13 +4924,13 @@ liffScorebookRouter.get("/saved", async (c) => {
               playBody = headMatch[3].trim();
             }
 
-            // ［走者名:1塁→2塁@2球目、...］の解析・除去
+            // ［走者名:1塁→2塁アウト(8-6)@2球目、...］の解析・除去
             const runnerBracketMatch = playBody.match(/\s*［([^］]+)］\s*$/);
             if (runnerBracketMatch) {
               const segs = runnerBracketMatch[1].split("、");
               for (const seg of segs) {
                 const rm = seg.match(
-                  /^([^:]+):(1塁|2塁|3塁)→(1塁|2塁|3塁|本塁)(?:アウト|生還)?(?:@(投球外|\d+球目))?/
+                  /^([^:]+):(打席|本塁|1塁|2塁|3塁)→(1塁|2塁|3塁|本塁)(?:アウト|生還)?(?:\(([1-9](?:-[1-9])*)\))?(?:@(投球外|\d+球目))?/
                 );
                 if (rm) {
                   const baseCode =
@@ -4776,7 +4938,9 @@ liffScorebookRouter.get("/saved", async (c) => {
                       ? "1B"
                       : rm[2] === "2塁"
                         ? "2B"
-                        : "3B";
+                        : rm[2] === "3塁"
+                          ? "3B"
+                          : "BAT";
                   const toBaseCode =
                     rm[3] === "1塁"
                       ? "1B"
@@ -4785,17 +4949,25 @@ liffScorebookRouter.get("/saved", async (c) => {
                         : rm[3] === "3塁"
                           ? "3B"
                           : "HP";
-                  runnerNameByFromBase.set(baseCode, rm[1].trim());
+                  const fromToKey = `${baseCode}->${toBaseCode}`;
+                  const trimmedRName = rm[1].trim();
+                  runnerNameByFromTo.set(fromToKey, trimmedRName);
+                  if (baseCode !== "BAT" && !runnerNameByFromBase.has(baseCode)) {
+                    runnerNameByFromBase.set(baseCode, trimmedRName);
+                  }
                   if (rm[4]) {
+                    const normChain = normalizeThrowChainToken(rm[4]);
+                    if (normChain) {
+                      runnerChainByFromTo.set(fromToKey, normChain);
+                    }
+                  }
+                  if (rm[5]) {
                     const parsedPitchTag =
-                      rm[4] === "投球外"
+                      rm[5] === "投球外"
                         ? 0
-                        : Number(rm[4].replace("球目", ""));
+                        : Number(rm[5].replace("球目", ""));
                     if (!Number.isNaN(parsedPitchTag)) {
-                      runnerPitchNumByFromTo.set(
-                        `${baseCode}->${toBaseCode}`,
-                        parsedPitchTag
-                      );
+                      runnerPitchNumByFromTo.set(fromToKey, parsedPitchTag);
                     }
                   }
                 }
@@ -4922,17 +5094,25 @@ liffScorebookRouter.get("/saved", async (c) => {
                   : adv.toBase === 3
                     ? "3B"
                     : "HP";
+            const fromToKey = `${from}->${to}`;
             const rPlayer = adv.runnerId
               ? rosterById.get(adv.runnerId)
               : undefined;
             const resolvedRunnerName =
               rPlayer?.name ||
+              runnerNameByFromTo.get(fromToKey) ||
               runnerNameByFromBase.get(from) ||
               (from === "BAT" ? batterName : "");
 
             const resolvedPitchNumber =
-              runnerPitchNumByFromTo.get(`${from}->${to}`) ??
+              runnerPitchNumByFromTo.get(fromToKey) ??
               (adv.pitchId ? pitchNumberById.get(adv.pitchId) : undefined);
+
+            const resolvedThrowChain =
+              runnerChainByFromTo.get(fromToKey) ||
+              (adv.isOut
+                ? extractRelayChainFromHitDirection(resultCode, parsedDir)
+                : undefined);
 
             return {
               id: adv.id || crypto.randomUUID(),
@@ -4942,6 +5122,7 @@ liffScorebookRouter.get("/saved", async (c) => {
               method: normalizeAdvanceMethod(adv.reason),
               isOut: Boolean(adv.isOut),
               pitchNumber: resolvedPitchNumber,
+              ...(resolvedThrowChain ? { throwChain: resolvedThrowChain } : {}),
             };
           });
 

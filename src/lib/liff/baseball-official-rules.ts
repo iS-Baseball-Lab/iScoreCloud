@@ -566,11 +566,60 @@ export function extractFieldingCreditsForAtBat(
   const rc = ab.resultCode;
   const advances = Array.isArray(ab.advances) ? ab.advances : [];
 
+  const applyChainPutoutAndAssists = (rawChain: string | undefined): boolean => {
+    if (!rawChain) return false;
+    const chainDigits = rawChain
+      .replace(/[０-９]/g, (ch) =>
+        String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+      )
+      .split(/[^1-9]+/)
+      .filter((d) => /^[1-9]$/.test(d));
+    if (chainDigits.length === 0) return false;
+    const finalPos = chainDigits[chainDigits.length - 1]!;
+    putouts.push(finalPos);
+    if (chainDigits.length >= 2) {
+      const seenA = new Set<string>();
+      for (let i = 0; i < chainDigits.length - 1; i++) {
+        const aPos = chainDigits[i]!;
+        if (chainDigits.length === 2 && aPos === finalPos) continue;
+        if (seenA.has(aPos)) continue;
+        seenA.add(aPos);
+        assists.push(aPos);
+      }
+    }
+    return true;
+  };
+
+  const dirSegments = rawDir
+    .split("-")
+    .map((seg) => seg.replace(/[^1-9]/g, ""))
+    .filter((seg) => seg.length === 1);
+  const compactDirChain = dirSegments.join("-");
+  const isOutfieldGapDir =
+    compactDirChain === "7-8" || compactDirChain === "8-9";
+  const isHitResult =
+    rc === "single" ||
+    rc === "double" ||
+    rc === "triple" ||
+    rc === "home_run";
+
   // 1) 投球間・走塁上の非打球アウト（盗塁死・牽制死等）の刺殺・捕殺を抽出
   let nonBattedRunnerOutsCount = 0;
   for (const adv of advances) {
     if (!isNonBattedRunnerOutAdvance(adv)) continue;
     nonBattedRunnerOutsCount += 1;
+    if (applyChainPutoutAndAssists(adv.throwChain)) {
+      continue;
+    }
+    if (
+      adv.method === "out_on_base" &&
+      isHitResult &&
+      dirSegments.length >= 2 &&
+      !isOutfieldGapDir
+    ) {
+      applyChainPutoutAndAssists(compactDirChain);
+      continue;
+    }
     if (adv.method === "caught_stealing" || adv.method === "steal") {
       if (adv.to === "2B") {
         assists.push("2");
@@ -673,7 +722,11 @@ export function extractFieldingCreditsForAtBat(
       advances.some((a) => !a.isOut && a.method === "error") &&
       errors.length === 0
     ) {
-      errors.push("2");
+      const explicitErrAdv = advances.find(
+        (a) => !a.isOut && a.method === "error" && a.throwChain
+      );
+      const errDigit = explicitErrAdv?.throwChain?.match(/([1-9])/);
+      errors.push(errDigit?.[1] || "2");
     }
     return {
       putouts,
@@ -780,60 +833,118 @@ export function extractFieldingCreditsForAtBat(
   // 6) 打者安打・四死球等に付随する悪送球進塁・牽制悪送球（1つの失策で複数走者が進んでも失策数は1：規則 9.12(d) 原注）
   let extraPlayErrors = 0;
   if (advances.some((a) => !a.isOut && a.method === "pickoff_error")) {
-    errors.push("1");
+    const pickErrAdv = advances.find(
+      (a) => !a.isOut && a.method === "pickoff_error" && a.throwChain
+    );
+    const pickErrDigit = pickErrAdv?.throwChain?.match(/([1-9])/);
+    errors.push(pickErrDigit?.[1] || "1");
     extraPlayErrors = 1;
   } else if (advances.some((a) => !a.isOut && a.method === "error")) {
     extraPlayErrors = 1;
+    const explicitErrAdv = advances.find(
+      (a) => !a.isOut && a.method === "error" && a.throwChain
+    );
+    const explicitErrDigit = explicitErrAdv?.throwChain?.match(/([1-9])/);
     const hitThrowPos = rawDir.match(/^([1-9])$/);
-    if (hitThrowPos?.[1]) {
+    if (explicitErrDigit?.[1]) {
+      errors.push(explicitErrDigit[1]);
+    } else if (hitThrowPos?.[1]) {
       errors.push(hitThrowPos[1]);
     }
   }
 
-  // 7) 通常の打球アウト（ゴロ・飛球・ライナー・犠打・犠飛・封殺・併殺・三重殺）の刺殺・捕殺
+  // 7) 通常の打球アウトおよび走塁死送球中継（8-6TO / ￣6 + 6-3TO 等）の刺殺・捕殺（公認野球規則 9.09, 9.10）
   if (battedOutsRecorded > 0) {
-    const segments = rawDir
-      .split("-")
-      .map((seg) => seg.replace(/[^1-9]/g, ""))
-      .filter((seg) => seg.length === 1);
+    const explicitInPlayOutChains = advances
+      .filter(
+        (adv) =>
+          adv.isOut && !isNonBattedRunnerOutAdvance(adv) && Boolean(adv.throwChain)
+      )
+      .map((adv) =>
+        (adv.throwChain || "")
+          .replace(/[０-９]/g, (ch) =>
+            String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+          )
+          .split(/[^1-9]+/)
+          .filter((d) => /^[1-9]$/.test(d))
+          .join("-")
+      )
+      .filter((c) => c.length > 0);
 
-    if (segments.length >= 2) {
-      const finalPos = segments[segments.length - 1]!;
+    if (dirSegments.length >= 2 && !isOutfieldGapDir) {
+      const extraRunnerChains = explicitInPlayOutChains.filter(
+        (chain) => !compactDirChain.includes(chain)
+      );
+      const dirOutsCount = Math.max(
+        1,
+        battedOutsRecorded - extraRunnerChains.length
+      );
+      const finalPos = dirSegments[dirSegments.length - 1]!;
       putouts.push(finalPos);
 
-      if (battedOutsRecorded >= 2) {
+      if (dirOutsCount >= 2) {
         const dpPivotPos =
-          segments.length >= 3 ? segments[segments.length - 2]! : segments[0]!;
+          dirSegments.length >= 3
+            ? dirSegments[dirSegments.length - 2]!
+            : dirSegments[0]!;
         putouts.push(dpPivotPos);
       }
-      if (battedOutsRecorded >= 3) {
+      if (dirOutsCount >= 3) {
         const tpFirstPos =
-          segments.length >= 3 ? segments[segments.length - 3]! : segments[0]!;
+          dirSegments.length >= 3
+            ? dirSegments[dirSegments.length - 3]!
+            : dirSegments[0]!;
         putouts.push(tpFirstPos);
       }
 
       const creditedAssistPositions = new Set<string>();
-      for (let i = 0; i < segments.length - 1; i++) {
-        const aPos = segments[i]!;
-        if (segments.length === 2 && aPos === finalPos) continue;
+      for (let i = 0; i < dirSegments.length - 1; i++) {
+        const aPos = dirSegments[i]!;
+        if (dirSegments.length === 2 && aPos === finalPos) continue;
         if (creditedAssistPositions.has(aPos)) continue;
         creditedAssistPositions.add(aPos);
         assists.push(aPos);
       }
-    } else if (
-      segments.length === 1 &&
-      (rc === "flyout" ||
-        rc === "infield_fly" ||
-        rc === "sac_fly" ||
-        rc === "groundout" ||
-        rc === "sac_bunt" ||
-        rc === "double_play" ||
-        rc === "triple_play" ||
-        rc === "interference_out")
-    ) {
-      const soloPos = segments[0]!;
-      for (let k = 0; k < battedOutsRecorded; k++) {
-        putouts.push(soloPos);
+
+      let remainingExtra = Math.max(0, battedOutsRecorded - dirOutsCount);
+      for (const extraChain of extraRunnerChains) {
+        if (remainingExtra <= 0) break;
+        if (applyChainPutoutAndAssists(extraChain)) {
+          remainingExtra -= 1;
+        }
+      }
+    } else {
+      const chainCap = Math.min(
+        battedOutsRecorded,
+        explicitInPlayOutChains.length
+      );
+      const primarySoloOuts = Math.max(0, battedOutsRecorded - chainCap);
+
+      if (
+        primarySoloOuts > 0 &&
+        dirSegments.length === 1 &&
+        (rc === "flyout" ||
+          rc === "infield_fly" ||
+          rc === "sac_fly" ||
+          rc === "groundout" ||
+          rc === "sac_bunt" ||
+          rc === "double_play" ||
+          rc === "triple_play" ||
+          rc === "interference_out")
+      ) {
+        const soloPos = dirSegments[0]!;
+        // 外野手（7/8/9）が飛球捕球後に送球先不明で併殺になった場合、飛球捕球の1刺殺のみを記録し架空の無補殺帰塁刺殺は付与しない
+        const maxSoloPutouts =
+          soloPos === "7" || soloPos === "8" || soloPos === "9"
+            ? 1
+            : primarySoloOuts;
+        for (let k = 0; k < maxSoloPutouts; k++) {
+          putouts.push(soloPos);
+        }
+      }
+
+      for (let idx = 0; idx < chainCap; idx++) {
+        applyChainPutoutAndAssists(explicitInPlayOutChains[idx]);
       }
     }
   }
