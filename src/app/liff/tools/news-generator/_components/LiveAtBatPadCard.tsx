@@ -1200,14 +1200,115 @@ export function LiveAtBatPadCard({
     return null;
   }, [currentHalf]);
 
+  const padStartOuts = effectiveOutsBefore >= 3 ? 0 : effectiveOutsBefore;
+  const padHas1 = effectiveRunnersBefore.includes(1);
+  const padHas2 = effectiveRunnersBefore.includes(2);
+  const padHas3 = effectiveRunnersBefore.includes(3);
+  const padRunnerCount = effectiveRunnersBefore.length;
+
+  const isBattedOutcomeDisabled = (code: BattedOutcomeCode): boolean => {
+    if (code === "double_play") {
+      return padStartOuts >= 2 || padRunnerCount === 0;
+    }
+    if (code === "sac_bunt") {
+      return padStartOuts >= 2 || padRunnerCount === 0;
+    }
+    if (code === "sac_fly") {
+      return padStartOuts >= 2 || !padHas3;
+    }
+    if (code === "fc") {
+      return padRunnerCount === 0;
+    }
+    return false;
+  };
+
+  const isDirectOutcomeDisabled = (code: DirectOutcomeCode): boolean => {
+    // 野球規則 5.05(a)(2): 無死または一死で一塁走者ありのときは振り逃げ不可（自動的に三振アウト）
+    if (code === "dropped_3rd_out" || code === "dropped_3rd_safe") {
+      return padStartOuts < 2 && padHas1;
+    }
+    return false;
+  };
+
+  const getBattedFlickOptionsForSituation = (
+    code: BattedOutcomeCode
+  ): ReadonlyArray<FlickSubOption<BattedFlickPayload>> => {
+    const raw = BATTED_FLICK_OPTIONS[code] || [];
+    if (raw.length === 0) return raw;
+    return raw.map((opt) => {
+      const v = opt.value.variant;
+      let optDisabled = Boolean(opt.disabled);
+      if (v === "ground_force_2b" && !padHas1) optDisabled = true;
+      if (v === "ground_force_home" && !padHas3) optDisabled = true;
+      if (v === "infield_fly" && (padStartOuts >= 2 || !(padHas1 && padHas2))) {
+        optDisabled = true;
+      }
+      if (
+        (v === "squeeze_score" ||
+          v === "safety_squeeze" ||
+          v === "squeeze_fail_out") &&
+        !padHas3
+      ) {
+        optDisabled = true;
+      }
+      if (v === "fc_home_safe" && !padHas3) optDisabled = true;
+      return optDisabled === Boolean(opt.disabled)
+        ? opt
+        : { ...opt, disabled: optDisabled };
+    });
+  };
+
+  const quickBaserunningOptions = useMemo<
+    ReadonlyArray<FlickSubOption<QuickBaserunningCode>>
+  >(() => {
+    const noRunnersOrThreeOuts =
+      effectiveOutsBefore >= 3 || padRunnerCount === 0;
+    return QUICK_BASERUNNING_OPTIONS.map((opt) => {
+      let optDisabled = noRunnersOrThreeOuts;
+      if (opt.value === "double_steal" && padRunnerCount < 2) {
+        optDisabled = true;
+      } else if (opt.value === "steal_2b" && (!padHas1 || padHas2)) {
+        optDisabled = true;
+      } else if (opt.value === "steal_3b" && (!padHas2 || padHas3)) {
+        optDisabled = true;
+      } else if (opt.value === "home_steal" && !padHas3) {
+        optDisabled = true;
+      }
+      return optDisabled ? { ...opt, disabled: true } : opt;
+    });
+  }, [effectiveOutsBefore, padRunnerCount, padHas1, padHas2, padHas3]);
+
+  useEffect(() => {
+    if (selectedBatted && isBattedOutcomeDisabled(selectedBatted)) {
+      setSelectedBatted(null);
+      setSelectedBattedVariant(null);
+      setSelectedBattedActiveChip(null);
+    } else if (
+      selectedBatted === "flyout" &&
+      selectedBattedVariant === "infield_fly" &&
+      (padStartOuts >= 2 || !(padHas1 && padHas2))
+    ) {
+      setSelectedBattedVariant(null);
+      setSelectedBattedActiveChip(null);
+    }
+    if (selectedDirect && isDirectOutcomeDisabled(selectedDirect)) {
+      setSelectedDirect(null);
+      setSelectedDirectVariant(null);
+      setSelectedDirectActiveChip(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [padStartOuts, padRunnerCount, padHas1, padHas2, padHas3]);
+
   const handleQuickBaserunningFlick = (code: QuickBaserunningCode) => {
     if (readOnly) return;
-    const startOuts = effectiveOutsBefore >= 3 ? 0 : effectiveOutsBefore;
+    if (effectiveOutsBefore >= 3 || effectiveRunnersBefore.length === 0) return;
+    const startOuts = effectiveOutsBefore;
     const sim = simulateQuickBaserunningPlay(
       code,
       startOuts,
       effectiveRunnersBefore
     );
+    if (!sim.playText) return;
 
     if (lastBatterEntry) {
       onChangeDoc((prev) => {
@@ -1293,18 +1394,26 @@ export function LiveAtBatPadCard({
     }, 2200);
   };
 
-  const openFollowUpModal = () => {
-    if (readOnly || !lastBatterEntry) return;
+  const followUpBaseState = useMemo(() => {
+    if (!lastBatterEntry) {
+      return { outs: 0, runners: [] as LiveReportBaseNum[] };
+    }
     const lastChain =
       lastBatterEntry.chainedPlays[lastBatterEntry.chainedPlays.length - 1];
-    const curOuts = lastChain ? lastChain.outsAfter : lastBatterEntry.outsAfter;
-    const curRunners = lastChain
-      ? lastChain.runnersAfter
-      : lastBatterEntry.runnersAfter;
+    return {
+      outs: lastChain ? lastChain.outsAfter : lastBatterEntry.outsAfter,
+      runners: lastChain
+        ? lastChain.runnersAfter
+        : lastBatterEntry.runnersAfter,
+    };
+  }, [lastBatterEntry]);
+
+  const openFollowUpModal = () => {
+    if (readOnly || !lastBatterEntry) return;
     setFollowUpMode("chained");
     setFollowUpText("");
-    setFollowUpOuts(curOuts);
-    setFollowUpRunners(curRunners);
+    setFollowUpOuts(followUpBaseState.outs);
+    setFollowUpRunners(followUpBaseState.runners);
     setFollowUpAddRuns(0);
     setIsFollowUpModalOpen(true);
   };
@@ -1313,47 +1422,94 @@ export function LiveAtBatPadCard({
     mode: "inline" | "chained";
     text: string;
     outDelta: number;
-    advanceAll: boolean;
-    clearOutBase?: LiveReportBaseNum;
+    kind:
+      | "double_steal"
+      | "steal_2b"
+      | "steal_3b"
+      | "home_steal"
+      | "advance_all"
+      | "out_1b"
+      | "out_2b"
+      | "out_3b"
+      | "out_auto";
   }) => {
     if (!lastBatterEntry) return;
-    const lastChain =
-      lastBatterEntry.chainedPlays[lastBatterEntry.chainedPlays.length - 1];
-    const baseOuts = lastChain
-      ? lastChain.outsAfter
-      : lastBatterEntry.outsAfter;
-    const baseRunners = lastChain
-      ? lastChain.runnersAfter
-      : lastBatterEntry.runnersAfter;
+    const baseOuts = followUpBaseState.outs;
+    const baseRunners = followUpBaseState.runners;
 
     setFollowUpMode(preset.mode);
-    setFollowUpText(preset.text);
 
     const nextOuts = Math.min(3, baseOuts + preset.outDelta);
     setFollowUpOuts(nextOuts);
 
     if (nextOuts >= 3) {
+      setFollowUpText(preset.text);
       setFollowUpRunners([]);
       setFollowUpAddRuns(0);
       return;
     }
 
-    if (preset.advanceAll) {
+    if (preset.kind === "steal_2b") {
+      const nextR = normalizeRunnersList(
+        baseRunners.map((r) => (r === 1 ? 2 : r)) as LiveReportBaseNum[]
+      );
+      setFollowUpText(preset.text);
+      setFollowUpRunners(nextR);
+      setFollowUpAddRuns(0);
+      return;
+    }
+
+    if (preset.kind === "steal_3b") {
+      const nextR = normalizeRunnersList(
+        baseRunners.map((r) => (r === 2 ? 3 : r)) as LiveReportBaseNum[]
+      );
+      setFollowUpText(preset.text);
+      setFollowUpRunners(nextR);
+      setFollowUpAddRuns(0);
+      return;
+    }
+
+    if (preset.kind === "home_steal") {
+      const scored = baseRunners.includes(3) ? 1 : 0;
+      setFollowUpText(scored > 0 ? "本盗1点" : preset.text);
+      setFollowUpRunners(baseRunners.filter((r) => r !== 3));
+      setFollowUpAddRuns(scored);
+      return;
+    }
+
+    if (preset.kind === "double_steal" || preset.kind === "advance_all") {
       const nextR: LiveReportBaseNum[] = [];
       let scored = 0;
       for (const r of baseRunners) {
         if (r === 3) scored += 1;
         else nextR.push((r + 1) as LiveReportBaseNum);
       }
+      const textWithRuns =
+        scored > 0 && preset.kind === "double_steal"
+          ? `重盗${scored}点`
+          : preset.text;
+      setFollowUpText(textWithRuns);
       setFollowUpRunners(normalizeRunnersList(nextR));
       setFollowUpAddRuns(scored);
-    } else if (preset.clearOutBase) {
-      setFollowUpRunners(baseRunners.filter((r) => r !== preset.clearOutBase));
-      setFollowUpAddRuns(0);
-    } else {
-      setFollowUpRunners(baseRunners);
-      setFollowUpAddRuns(0);
+      return;
     }
+
+    const targetOutBase: LiveReportBaseNum =
+      preset.kind === "out_1b"
+        ? 1
+        : preset.kind === "out_2b"
+        ? 2
+        : preset.kind === "out_3b"
+        ? 3
+        : baseRunners.includes(1)
+        ? 1
+        : baseRunners.includes(2)
+        ? 2
+        : 3;
+
+    setFollowUpText(preset.text);
+    setFollowUpRunners(baseRunners.filter((r) => r !== targetOutBase));
+    setFollowUpAddRuns(0);
   };
 
   const handleCommitFollowUp = () => {
@@ -2216,11 +2372,12 @@ export function LiveAtBatPadCard({
                 <FlickPadButton
                   label="走塁"
                   disabled={
-                    !lastBatterEntry && effectiveRunnersBefore.length === 0
+                    (!lastBatterEntry && effectiveRunnersBefore.length === 0) ||
+                    (effectiveOutsBefore >= 3 && !lastBatterEntry)
                   }
                   title="タップで走塁追記モーダル / 長押しスライドで重盗・二盗・暴投などを即記録"
                   popupTitle="走塁プレー（スライドして離すと即記録）"
-                  options={QUICK_BASERUNNING_OPTIONS}
+                  options={quickBaserunningOptions}
                   onShortTap={() => {
                     if (lastBatterEntry) {
                       openFollowUpModal();
@@ -2508,14 +2665,16 @@ export function LiveAtBatPadCard({
             <div className="grid grid-cols-6 gap-1">
               {OUT_BATTED_OUTCOMES.map((item) => {
                 const isSelected = selectedBatted === item.code;
+                const isBtnDisabled = isBattedOutcomeDisabled(item.code);
                 return (
                   <FlickPadButton
                     key={item.code}
                     label={item.label}
+                    disabled={isBtnDisabled}
                     activeLabel={isSelected ? selectedBattedActiveChip : null}
                     isSelected={isSelected}
                     popupTitle={`「${item.label}」の詳細選択`}
-                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    options={getBattedFlickOptionsForSituation(item.code)}
                     onShortTap={() => selectBattedOutcome(item.code)}
                     onSelectOption={(opt) =>
                       selectBattedOutcome(
@@ -2527,7 +2686,7 @@ export function LiveAtBatPadCard({
                     }
                     contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
+                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : "bg-card text-foreground border-border hover:bg-muted"
@@ -2548,7 +2707,7 @@ export function LiveAtBatPadCard({
                     activeLabel={isSelected ? selectedBattedActiveChip : null}
                     isSelected={isSelected}
                     popupTitle={`「${item.label}」の打球ニュアンス選択`}
-                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    options={getBattedFlickOptionsForSituation(item.code)}
                     onShortTap={() => selectBattedOutcome(item.code)}
                     onSelectOption={(opt) =>
                       selectBattedOutcome(
@@ -2574,6 +2733,7 @@ export function LiveAtBatPadCard({
             <div className="grid grid-cols-5 gap-1">
               {OTHER_BATTED_OUTCOMES.map((item) => {
                 const isSelected = selectedBatted === item.code;
+                const isBtnDisabled = isBattedOutcomeDisabled(item.code);
                 const toneClass =
                   item.group === "sac"
                     ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/35 hover:bg-amber-500/20"
@@ -2584,10 +2744,11 @@ export function LiveAtBatPadCard({
                   <FlickPadButton
                     key={item.code}
                     label={item.label}
+                    disabled={isBtnDisabled}
                     activeLabel={isSelected ? selectedBattedActiveChip : null}
                     isSelected={isSelected}
                     popupTitle={`「${item.label}」の詳細選択`}
-                    options={BATTED_FLICK_OPTIONS[item.code] || []}
+                    options={getBattedFlickOptionsForSituation(item.code)}
                     onShortTap={() => selectBattedOutcome(item.code)}
                     onSelectOption={(opt) =>
                       selectBattedOutcome(
@@ -2599,7 +2760,7 @@ export function LiveAtBatPadCard({
                     }
                     contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
+                      "h-[30px] px-0.5 rounded-lg border text-[11px] font-black transition-all cursor-pointer active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : toneClass
@@ -2613,10 +2774,12 @@ export function LiveAtBatPadCard({
             <div className="grid grid-cols-7 gap-1">
               {DIRECT_OUTCOMES.map((item) => {
                 const isSelected = selectedDirect === item.code;
+                const isBtnDisabled = isDirectOutcomeDisabled(item.code);
                 return (
                   <FlickPadButton
                     key={item.code}
                     label={item.label}
+                    disabled={isBtnDisabled}
                     activeLabel={isSelected ? selectedDirectActiveChip : null}
                     isSelected={isSelected}
                     popupTitle={`「${item.label}」の詳細選択`}
@@ -2632,7 +2795,7 @@ export function LiveAtBatPadCard({
                     }
                     contextKey={padContextKey}
                     className={cn(
-                      "h-[30px] px-0.5 rounded-lg border text-[10.5px] font-black transition-all cursor-pointer active:scale-95 flex items-center justify-center",
+                      "h-[30px] px-0.5 rounded-lg border text-[10.5px] font-black transition-all cursor-pointer active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center justify-center",
                       isSelected
                         ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
                         : item.tone === "reach"
@@ -3439,95 +3602,130 @@ export function LiveAtBatPadCard({
                         mode: "chained" as const,
                         text: "重盗",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "double_steal" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length < 2,
                       },
                       {
                         label: "二盗成功",
                         mode: "chained" as const,
                         text: "二盗",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "steal_2b" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          !followUpBaseState.runners.includes(1) ||
+                          followUpBaseState.runners.includes(2),
                       },
                       {
                         label: "三盗成功",
                         mode: "chained" as const,
                         text: "三盗",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "steal_3b" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          !followUpBaseState.runners.includes(2) ||
+                          followUpBaseState.runners.includes(3),
                       },
                       {
                         label: "本盗（ホームスチール）",
                         mode: "chained" as const,
                         text: "本盗",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "home_steal" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          !followUpBaseState.runners.includes(3),
                       },
                       {
                         label: "中暴投（進塁）",
                         mode: "inline" as const,
                         text: "中暴投",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "advance_all" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                       {
                         label: "暴投（進塁）",
                         mode: "chained" as const,
                         text: "暴投進塁",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "advance_all" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                       {
                         label: "捕逸（進塁）",
                         mode: "chained" as const,
                         text: "捕逸進塁",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "advance_all" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                       {
                         label: "ボーク（進塁）",
                         mode: "chained" as const,
                         text: "ボーク進塁",
                         outDelta: 0,
-                        advanceAll: true,
+                        kind: "advance_all" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                       {
                         label: "二塁走者飛び出し封殺",
                         mode: "chained" as const,
                         text: "二塁走者飛び出し封殺",
                         outDelta: 1,
-                        advanceAll: false,
-                        clearOutBase: 2 as LiveReportBaseNum,
+                        kind: "out_2b" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          !followUpBaseState.runners.includes(2),
                       },
                       {
                         label: "一塁走者飛び出し封殺",
                         mode: "chained" as const,
                         text: "一塁走者飛び出し封殺",
                         outDelta: 1,
-                        advanceAll: false,
-                        clearOutBase: 1 as LiveReportBaseNum,
+                        kind: "out_1b" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          !followUpBaseState.runners.includes(1),
                       },
                       {
                         label: "盗塁死",
                         mode: "chained" as const,
                         text: "盗塁死",
                         outDelta: 1,
-                        advanceAll: false,
-                        clearOutBase: 1 as LiveReportBaseNum,
+                        kind: "out_auto" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                       {
                         label: "牽制死",
                         mode: "chained" as const,
                         text: "牽制死",
                         outDelta: 1,
-                        advanceAll: false,
-                        clearOutBase: 1 as LiveReportBaseNum,
+                        kind: "out_auto" as const,
+                        disabled:
+                          followUpBaseState.outs >= 3 ||
+                          followUpBaseState.runners.length === 0,
                       },
                     ].map((p) => (
                       <button
                         key={p.label}
                         type="button"
+                        disabled={p.disabled}
                         onClick={() => applyFollowUpPreset(p)}
-                        className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-black text-foreground cursor-pointer"
+                        className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-35 disabled:cursor-not-allowed text-[11px] font-black text-foreground cursor-pointer"
                       >
                         {p.label}
                       </button>

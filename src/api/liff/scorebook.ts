@@ -19,6 +19,7 @@ import {
   type ScorebookSymbolRules,
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { extractFieldingCreditsForAtBat } from "@/lib/liff/baseball-official-rules";
 import {
   defaultGenericDirection,
   harmonizeOcrFieldingAndLabel,
@@ -1939,7 +1940,7 @@ ${targetInningMetaLines.join("\n")}
    同じ列の中で「印刷された点線ダイヤモンドと薄いBSO枠線だけがある白紙マス」と「鉛筆や赤ペンで投球・進塁線・アウト数字・守備番号が書かれた記入済みマス」を必ず比較してください。手書き記録の無い白紙マスには架空のプレーを絶対に作らないでください！
 3. **⚠️最頻出の打順抜け防止：封殺・野選・盗塁死で3アウト目『Ⅲ』『③』が先行走者のマスにある場合の最終打者保持！**:
    - 早稲田式・成美堂式では、たとえば4番打者が出塁した後に**5番打者が遊ゴロ二塁封殺（6-4・4-6・FC）を打った場合や5番打席中に4番走者が盗塁死・牽制死した場合、3アウト目の『Ⅲ』（または『③』）はアウトになった走者である「4番」の中央ダイヤモンドに書かれ、実際のイニング最終打者である「5番」のマス（4番のすぐ下）には投球記号と『6-4』『FC』等の打球記録（または打席途中記号）が書かれます**！
-   - したがって、「4番の中央に『Ⅲ』が見えたから4番で読取を打ち切る」のは重大な誤りです！**必ずその1つ下のマス（5番）も確認し、投球記号・進塁実線・守備番号などの手書きプレー記録があれば、4番は出塁（o: 0）、5番こそがこのイニングの最終打者（封殺 rc: "fc", o: 1, eo: 3 等）として必ず5番まで出力**してください！
+   - したがって、「4番の中央に『Ⅲ』が見えたから4番で読取を打ち切る」のは重大な誤りです！**必ずその1つ下のマス（5番）も確認し、投球記号・進塁実線・守備番号などの手書きプレー記録があれば、4番は出塁（o: 0）、5番こそがこのイニングの最終打者（先行走者封殺ゴロなら rc: "groundout", dir: "6-4" 等, o: 1, eo: 3）として必ず5番まで出力**してください！
    - 一方で、**投球記号も守備番号も一切無く、斜め1本で引かれたイニング終了斜線『／』『＼』やカギ線『∟』だけがあるマス**は区切り印ですので、打席として出力しないでください！
 
 【🔥最重要 1: 左ゾーン（BSO投球記号欄）の1球順序（p）完全抽出 — 「["X"]/["H"]のみの投球欠落」絶対防止！】
@@ -2001,16 +2002,16 @@ ${targetInningMetaLines.join("\n")}
    - 四角『□』やダイヤ『◇』で囲まれた送球番号（例: **[1-3], [5-3], ◇1-3, ◇5-4**）➔ 走者進塁を伴う送りバントなら **rc: "sac_bunt"**, dir: "1-3" 等。**無走者時**にバントを四角『□』等で囲むチーム表記（例: 無走者で **[5-3]**）は犠打ではなくバントゴロ凡退なので **rc: "groundout"**, dir: "5-3", rl: "三バントゴロ" とすること！三塁走者生還の外野飛球 ➔ **rc: "sac_fly"**。
    - 捕球失策 **『E6』『E4』『E5』** ➔ **rc: "error"**, dir: "E6" 等（b1: true, o: 0）。内野ゴロ等の悪送球 **『4E-3』『6E-3』『5E-3』『6E-4』** や送球先なし悪送球 **『4E』『6E』** ➔ **rc: "error"**, dir: "4E-3" / "4E" 等（b1: true, o: 0、絶対にゴロアウト groundout と混同しないこと！）。送球先落球 **『6-3E』『6-E3』** ➔ **rc: "error"**, dir: "6-3E"。本塁→1塁が実線（b1: true）で**先行走者が二塁・三塁・本塁封殺（アウト）されたゴロ** **『6-4』『4-6』『5-4』『6-5』『5-2』『6B』『5C』『2H』『6-4B』** ➔ **rc: "groundout"**, dir: "6-4" / "6B" / "5C" / "2H" 等, rl: "遊ゴロ二封" 等（**o: 1**、先行走者の封殺アウト1つを計上。野選 fc にはしないこと！）。**先行走者もセーフになったオールセーフの野手選択『FC』『4FC』『FC6-2』『FC5-2』『FC4-6』『O.B.』のみ** ➔ **rc: "fc"**, dir: "FC4" / "FC6-2" 等（**o: 0**）。一塁ベースアウト **『1A』『3A』**（b1: false）➔ **rc: "groundout"**, dir: "1A" / "3A"（o: 1）。
    - 四球は**BSOにボール4球かつ右下英字『B』（b1: true、点線維持式では本塁→1塁が点線のままでも可）**のとき ➔ **rc: "walk"**。死球『DB』『D』『HBP』➔ **rc: "hit_by_pitch"**, dir: "DB"（※手書きの『DB』は下のループが潰れると『DP』に似て見えますが、守備番号 6-4-3 等が無く本塁→1塁実線 b1: true または後続打席での進塁・得点・残塁・封殺がある単独『DB』は 100% 死球 hit_by_pitch であり、絶対に併殺打 DP と誤読しないこと！）。敬遠 ➔ **rc: "intentional_walk"**。
-   - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, o: 1。振り逃げ出塁『K-E2』➔ **rc: "dropped_third_strike"**, o: 0。
+   - 振り逃げアウト『K 2-3』➔ **rc: "dropped_third_strike_out"**, dir: "K 2-3", o: 1。振り逃げ出塁『K WP』（暴投が標準）・捕逸『K PB』・捕悪送球『K 2E-3』・一落球『K 2-3E』➔ **rc: "dropped_third_strike"**, dir: "K WP" / "K PB" / "K 2E-3" / "K 2-3E", o: 0（※単なる捕球失敗の振り逃げに E2 失策を付けないこと！）。
    - 打席途中に走者が盗塁死・牽制死等で3アウトチェンジになった未完了マスのみ ➔ **rc: "other"**, rl: "打席途中断（走塁死チェンジ）", o: 1（白紙マスには絶対に使わないこと！）。
 
 【超重要 4: 投手交代波線・進塁（a）・早稲田式の「●（個人得点）」と得点（ru）・打点（rbi）の厳密分離・確信度（cf）】
 - 回途中の継投がある場合は横波線『〜〜』や二重線『══』の前後で正しい投手名を pt に設定してください。${multiColumnRuleBlock}
-- 進塁 a には盗塁(m:"steal")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク(m:"balk")・送球間(m:"throw_advance")・走塁死(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を記録し、凡退無進塁は a:[]。
+- 進塁 a には盗塁(m:"steal")・守備無関心(m:"indifference")・盗塁死(m:"caught_stealing",io:true)・牽制死(m:"pickoff_out",io:true)・牽制悪送球(m:"pickoff_error")・暴投(m:"wp")・捕逸(m:"pb")・ボーク(m:"balk")・送球間(m:"throw_advance")・走塁死(m:"out_on_base",io:true)・打撃進塁(m:"hit"/"sac"/"fc"/"error"/"walk")を記録し、凡退無進塁は a:[]。
 - **「●（個人得点）」と打席得点（ru）・打点（rbi）の厳密区別（最重要！）**:
   1. 早稲田式・成美堂式では、出塁した走者（例: 1番の四球や単打）が**後続打者の打撃で本塁生還した際、その出塁走者のマス中央に黒丸『●』（や◎・赤丸）とダイヤモンド1周線が書かれます**。これをその出塁打席自身の得点・打点にしてはいけません！無走者時の四球・単打・失策や、満塁でない四死球では **必ず ru: 0, rbi: 0** とし、進塁 a にも t:"HP" を入れず出塁塁（t:"1B" 等）までに留めてください。
   2. **"ru"（その打席で本塁生還した人数）と t:"HP", io:false の進塁は「その得点が実際に入った後続打者の打席」にのみ計上**し、イニング内の全打席の ru 合計が確定得点と完全一致するようにしてください。
-  3. **打点（rbi）の公認野球規則**: 満塁以外の四死球・打撃妨害は **必ず rbi: 0**（満塁押し出しのみ rbi: 1）。失策（rc:"error"）・併殺打（rc:"double_play"）・三振/振り逃げ・暴投(m:"wp")/捕逸(m:"pb")/ボーク(m:"balk")/盗塁での生還は、得点（ru >= 1）が入っても **必ず rbi: 0** としてください！
+  3. **打点（rbi）の公認野球規則**: 満塁以外の四死球・打撃妨害は **必ず rbi: 0**（満塁押し出しのみ rbi: 1）。失策（rc:"error"）・内野ゴロ併殺打（rc:"double_play" ※外野飛球タッチアップ生還後の併殺タイムプレイを除く）・三振/振り逃げ・暴投(m:"wp")/捕逸(m:"pb")/ボーク(m:"balk")/盗塁/守備無関心での生還は、得点（ru >= 1）が入っても **必ず rbi: 0** としてください！
 - **確信度 cf の基準**: 手書き特有の多少のにじみ・接触があっても、拡大パネルやイニング内のアウト推移（1死→2死→3死）・カウント整合からプレー内容が論理的に判読できる場合は **"cf":"h" または "cf":"m"** とし、インク潰れ等で本当に判読不能なマスのみ **"cf":"l"** としてください。
 - 投球コード p は "B"|"S"|"W"|"BS"|"F"|"BF"|"P1"|"P2"|"P3"|"BK"|"H"|"X"|"D" のみ使用。
 
@@ -3128,7 +3129,7 @@ ${batterRowsDesc.join("\n")}
    - 先行する打席で既に『Ⅰ → Ⅱ → Ⅲ（または ① → ② → ③）』の3アウトが完了しており、末尾のマスには投球記号も守備番号も無く斜線『／』『∟』だけがある（または白紙）場合は、その末尾マスの **"drop": true** にして除外してください！
 4. **"o" と "eo" の厳密区別・早稲田式「●（個人得点）」の分離・左BSO拡大の全球保持**:
    - "o" はその1打席で増えたアウト数（出塁=0, 単一アウト=1, 併殺打のみ=2）です。2死目・3死目の単一アウトで "o": 2 や "o": 3 と書くのは絶対厳禁です！
-   - 出塁した打者（先頭四球や無走者安打など）の中央に後続打席での生還『●』があっても、その出塁打席は **ru: 0, rbi: 0** とし、実際に生還させた後続打者の打席にのみ ru を計上してください（満塁以外の四死球や失策・併殺・暴投生還は必ず rbi: 0）。
+   - 出塁した打者（先頭四球や無走者安打など）の中央に後続打席での生還『●』があっても、その出塁打席は **ru: 0, rbi: 0** とし、実際に生還させた後続打者の打席にのみ ru を計上してください（満塁以外の四死球や失策・内野ゴロ併殺・暴投生還は必ず rbi: 0）。
    - 各マスの **[BSO拡大]** にある手書き投球記号（○/●/ー/・/△ や球数番号 1,2,3...）も省略せず obs と p に全件出力してください。
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${spec.batters
@@ -4172,22 +4173,13 @@ liffScorebookRouter.post("/save", async (c) => {
     const myHits = isMyTeamFirst ? topHits : bottomHits;
     const opponentHits = isMyTeamFirst ? bottomHits : topHits;
 
-    // 守備側エラー数の再集計（表の攻撃での失策出塁/失策進塁＝裏チームのエラー）
+    // 守備側エラー数の再集計（表の攻撃での失策出塁/失策進塁/打撃妨害/振逃悪送球＝裏チームのエラー、同一送球複数進塁は重複加算しない）
     const countOpponentSideErrorsOnAtBats = (
       sideAtBats: ScorebookV2AtBat[]
     ): number => {
       let errs = 0;
       for (const ab of sideAtBats) {
-        if (ab.resultCode === "error") errs += 1;
-        for (const adv of ab.advances) {
-          if (
-            adv.method === "pickoff_error" ||
-            (adv.method === "error" &&
-              !(ab.resultCode === "error" && adv.from === "BAT"))
-          ) {
-            errs += 1;
-          }
-        }
+        errs += extractFieldingCreditsForAtBat(ab).teamErrorCount;
       }
       return errs;
     };
@@ -6873,10 +6865,9 @@ function reconcileRawAtBatEvidence(
         rawResultLabel = "";
       }
     } else if (
-      // 3-D2. 無走者時に四角枠 [5-3] 等のバント表記が犠打("sac_bunt")と出力された場合、公認野球規則に基づきバントゴロ/バント飛へ自動補正
+      // 3-D2. 無走者時または2アウト時に四角枠 [5-3] 等のバント表記が犠打("sac_bunt")と出力された場合、公認野球規則 9.08 に基づきバントゴロ/バント飛へ自動補正
       prelimCode === "sac_bunt" &&
-      !hasAnyActiveRunner &&
-      rawRuns === 0 &&
+      ((!hasAnyActiveRunner && rawRuns === 0) || runningInningOuts >= 2) &&
       effectiveB1 !== true
     ) {
       if (
@@ -6893,6 +6884,62 @@ function reconcileRawAtBatEvidence(
         rawResultLabel = "バントゴロ";
       }
       outsInPlay = Math.max(1, outsInPlay);
+    } else if (
+      // 3-D3. 2アウト時・無走者時・無得点時（二塁→三塁タッチアップのみ等）に犠飛("sac_fly")と出力された場合、公認野球規則 9.08(d) に基づき通常の飛球アウト("flyout")へ補正
+      prelimCode === "sac_fly" &&
+      (runningInningOuts >= 2 || (!hasAnyActiveRunner && rawRuns === 0) || rawRuns === 0) &&
+      effectiveB1 !== true
+    ) {
+      rawResultCode = "flyout";
+      if (rawResultLabel && /犠飛/.test(rawResultLabel)) {
+        rawResultLabel = rawResultLabel.replace(/犠飛/g, "飛");
+      }
+      outsInPlay = Math.max(1, outsInPlay);
+    } else if (
+      // 3-D4. 三重殺("triple_play")は無死かつ走者2人以上でのみ成立
+      prelimCode === "triple_play" &&
+      (runningInningOuts >= 1 ||
+        (activeBases["1B"] ? 1 : 0) +
+          (activeBases["2B"] ? 1 : 0) +
+          (activeBases["3B"] ? 1 : 0) <
+          2)
+    ) {
+      const canBeDoublePlay =
+        runningInningOuts <= 1 && hasAnyActiveRunner;
+      rawResultCode = canBeDoublePlay
+        ? "double_play"
+        : /^[⌒︵︶∩^傘]/.test(normDir) || /[1-9][FL]$/i.test(normDir)
+        ? "flyout"
+        : "groundout";
+      outsInPlay = Math.min(3 - runningInningOuts, canBeDoublePlay ? 2 : 1);
+      if (rawResultLabel && /三重殺|トリプル/.test(rawResultLabel)) {
+        rawResultLabel = canBeDoublePlay ? "併殺打" : "";
+      }
+    } else if (
+      // 3-D5. 無死・一死かつ一塁走者あり（投球間の盗塁/暴投等で一塁が空いていない）の場面では振り逃げ不成立（公認野球規則 5.05(a)(2)）
+      (prelimCode === "dropped_third_strike" ||
+        prelimCode === "dropped_third_strike_out") &&
+      runningInningOuts < 2 &&
+      activeBases["1B"] &&
+      !rawAdvances.some((adv) => {
+        const f = normalizeFromBase(adv.f ?? adv.from);
+        const m = String(adv.m ?? adv.method ?? "").trim();
+        return (
+          f === "1B" &&
+          /^(?:steal|s|wp|pb|balk|bk|indifference|o|盗塁|暴投|捕逸|ボーク|無関心)$/i.test(
+            m
+          )
+        );
+      })
+    ) {
+      rawResultCode = "strikeout";
+      rawResultLabel = "三振";
+      rawDir = "K";
+      outsInPlay = Math.max(1, outsInPlay);
+      rawAdvances = rawAdvances.filter((adv) => {
+        const f = normalizeFromBase(adv.f ?? adv.from);
+        return f !== "BAT";
+      });
     }
 
     // 3-E. obs の左BSO観察記号と rawPitches の整合チェック:
@@ -7245,6 +7292,15 @@ function normalizeAdvanceMethod(raw?: string): AdvanceMethodCode {
   const u = s.toUpperCase();
   if (u === "STEAL" || u === "S" || (s.includes("盗塁") && !s.includes("死"))) {
     return "steal";
+  }
+  if (
+    u === "INDIFFERENCE" ||
+    u === "DI" ||
+    u === "O" ||
+    u === "(O)" ||
+    s.includes("無関心")
+  ) {
+    return "indifference";
   }
   if (u === "CAUGHT_STEALING" || u === "CS" || s.includes("盗塁死")) {
     return "caught_stealing";

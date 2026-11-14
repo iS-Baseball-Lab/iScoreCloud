@@ -22,6 +22,7 @@ import {
 } from "@/types/scorebook-v2";
 import {
   applyPrecedingRunnerSelection,
+  computeBasesAtInPlayFromAdvances,
   computeSyncedStatsFromAdvances,
   formatBaseJa,
   formatOccupiedRunnersShort,
@@ -676,6 +677,62 @@ export function AtBatModalRunnerEditor({
         : undefined;
 
     onUpdateAtBat((prev) => {
+      if (method === "balk" && !isOut) {
+        const activeAtBalk = computeBasesAtInPlayFromAdvances(
+          basesBefore,
+          prev.advances
+        );
+        const balkGroup: ScorebookV2Advance[] = [];
+        const movedFromSet = new Set<OccupiedBaseKey>();
+        for (const bKey of ["3B", "2B", "1B"] as const) {
+          const occupant = activeAtBalk[bKey];
+          if (!occupant) continue;
+          const dest: OccupiedBaseKey | "HP" =
+            bKey === "3B" ? "HP" : bKey === "2B" ? "3B" : "2B";
+          movedFromSet.add(bKey);
+          balkGroup.push({
+            id: crypto.randomUUID(),
+            runnerName: occupant.name,
+            from: bKey,
+            to: dest,
+            method: "balk",
+            isOut: false,
+            ...(resolvedPitchNumber !== undefined
+              ? { pitchNumber: resolvedPitchNumber }
+              : {}),
+          });
+        }
+        if (balkGroup.length > 0) {
+          const cleaned = prev.advances.filter(
+            (a) =>
+              !(
+                !isPrePlayAdvanceMethod(a.method) &&
+                a.method !== "tiebreak" &&
+                a.from !== "BAT" &&
+                movedFromSet.has(a.from)
+              )
+          );
+          const nextAdvances = sortAdvancesClosestToHomeFirst([
+            ...cleaned,
+            ...balkGroup,
+          ]);
+          const synced = computeSyncedStatsFromAdvances(
+            prev,
+            nextAdvances,
+            outsBefore,
+            basesBefore
+          );
+          return {
+            ...prev,
+            advances: nextAdvances,
+            outsInPlay: synced.outsInPlay,
+            runsInPlay: synced.runsInPlay,
+            rbi: synced.rbi,
+            confidence: "high",
+          };
+        }
+      }
+
       const newAdv: ScorebookV2Advance = {
         id: crypto.randomUUID(),
         runnerName: summary.runner.name,
@@ -806,6 +863,59 @@ export function AtBatModalRunnerEditor({
     preset: (typeof QUICK_EVENT_PRESETS)[number]
   ) => {
     onUpdateAtBat((prev) => {
+      if (preset.method === "balk" && !preset.isOut) {
+        const activeAtBalk = computeBasesAtInPlayFromAdvances(
+          basesBefore,
+          prev.advances
+        );
+        const balkGroup: ScorebookV2Advance[] = [];
+        const movedFromSet = new Set<OccupiedBaseKey>();
+        for (const bKey of ["3B", "2B", "1B"] as const) {
+          const occupant = activeAtBalk[bKey];
+          if (!occupant) continue;
+          const dest: OccupiedBaseKey | "HP" =
+            bKey === "3B" ? "HP" : bKey === "2B" ? "3B" : "2B";
+          movedFromSet.add(bKey);
+          balkGroup.push({
+            id: crypto.randomUUID(),
+            runnerName: occupant.name,
+            from: bKey,
+            to: dest,
+            method: "balk",
+            isOut: false,
+          });
+        }
+        if (balkGroup.length > 0) {
+          const cleaned = prev.advances.filter(
+            (a) =>
+              !(
+                !isPrePlayAdvanceMethod(a.method) &&
+                a.method !== "tiebreak" &&
+                a.from !== "BAT" &&
+                movedFromSet.has(a.from)
+              )
+          );
+          const nextAdvances = sortAdvancesClosestToHomeFirst([
+            ...cleaned,
+            ...balkGroup,
+          ]);
+          const synced = computeSyncedStatsFromAdvances(
+            prev,
+            nextAdvances,
+            outsBefore,
+            basesBefore
+          );
+          return {
+            ...prev,
+            advances: nextAdvances,
+            outsInPlay: synced.outsInPlay,
+            runsInPlay: synced.runsInPlay,
+            rbi: synced.rbi,
+            confidence: "high",
+          };
+        }
+      }
+
       let resolvedFrom: "1B" | "2B" | "3B" = preset.from;
       let resolvedTo: "1B" | "2B" | "3B" | "HP" = preset.to;
       if (preset.method !== "steal" && preset.method !== "tiebreak") {
@@ -1789,9 +1899,15 @@ export function AtBatModalRunnerEditor({
                                 isOut: false,
                               },
                               {
-                                label: `ボーク (→${formatBaseJa(nextB)})`,
+                                label: `ボーク (全走者進塁)`,
                                 to: nextB,
                                 method: "balk",
+                                isOut: false,
+                              },
+                              {
+                                label: `守備無関心O (→${formatBaseJa(nextB)})`,
+                                to: nextB,
+                                method: "indifference",
                                 isOut: false,
                               },
                             ];
@@ -2183,6 +2299,7 @@ export function AtBatModalRunnerEditor({
                           m === "out_on_base";
                         const forceSafeMethod =
                           m === "steal" ||
+                          m === "indifference" ||
                           m === "walk" ||
                           m === "wp" ||
                           m === "pb" ||

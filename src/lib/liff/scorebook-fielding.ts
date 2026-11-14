@@ -1,4 +1,8 @@
 // filepath: src/lib/liff/scorebook-fielding.ts
+import {
+  classifyDroppedThirdStrikeReach,
+  normalizeLegacyDroppedThirdStrikeAtBat,
+} from "@/lib/liff/baseball-official-rules";
 import type {
   CanonicalAtBatResult,
   ScorebookV2Advance,
@@ -586,7 +590,7 @@ export function defaultGenericDirection(
     case "dropped_third_strike_out":
       return "K 2-3";
     case "dropped_third_strike":
-      return "K-E2";
+      return "K WP";
     case "interference":
       return options?.clearPos ? "INT" : "INT2";
     case "interference_out":
@@ -1129,9 +1133,37 @@ export function composeFieldingResult(params: ComposeFieldingParams): {
     }
 
     case "dropped_third_strike": {
+      if (params.errorStyle === "throwing") {
+        return {
+          battedDirection: `K ${code}E-3`,
+          resultLabel: `振り逃げ出塁 (${shortJa}悪送球)`,
+        };
+      }
+      const dtsCls = classifyDroppedThirdStrikeReach(
+        undefined,
+        params.fallbackLabel
+      );
+      if (dtsCls.kind === "pb") {
+        return {
+          battedDirection: "K PB",
+          resultLabel: "振り逃げ出塁 (捕逸)",
+        };
+      }
+      if (dtsCls.kind === "receiving_error") {
+        return {
+          battedDirection: `K 2-${dtsCls.errorPos || "3"}E`,
+          resultLabel: "振り逃げ出塁 (一落球失策)",
+        };
+      }
+      if (dtsCls.kind === "throwing_error") {
+        return {
+          battedDirection: `K ${dtsCls.errorPos || code}E-3`,
+          resultLabel: `振り逃げ出塁 (${shortJa}悪送球)`,
+        };
+      }
       return {
-        battedDirection: `K-E${code}`,
-        resultLabel: "振り逃げ出塁",
+        battedDirection: "K WP",
+        resultLabel: "振り逃げ出塁 (暴投)",
       };
     }
 
@@ -1155,7 +1187,7 @@ export interface ResolveFieldingTransitionParams {
 }
 
 /**
- * 打撃結果プリセット切替時・投球連動時に、守備記号（B / IBB / D / K / K 2-3 / K-E2 / INT2 / HR / E / FC 等）が
+ * 打撃結果プリセット切替時・投球連動時に、守備記号（B / IBB / D / K / K 2-3 / K WP / INT2 / HR / E / FC 等）が
  * 空白化せず、かつ直前に選んでいた妥当な野手番号（1〜9）を安全に復元・変換する。
  */
 export function resolveFieldingOnResultChange(
@@ -1196,15 +1228,55 @@ export function resolveFieldingOnResultChange(
     };
   }
 
-  // 2. 捕手起点の特殊プレー（振逃アウト / 振逃セーフ / 打撃妨害）はデフォルト捕手(2)を自動適用
+  // 2-A. 振り逃げ出塁（dropped_third_strike）：標準は暴投扱い（K WP・無失策）、既存の捕逸/悪送球指定があれば保持
+  if (nextResultCode === "dropped_third_strike") {
+    if (prevResultCode === "dropped_third_strike") {
+      const prevDts = classifyDroppedThirdStrikeReach(
+        prevBattedDirection,
+        presetDefaultLabel || prevResultLabel
+      );
+      if (prevDts.kind === "pb") {
+        return {
+          battedDirection: "K PB",
+          resultLabel: "振り逃げ出塁 (捕逸)",
+        };
+      }
+      if (prevDts.kind === "throwing_error") {
+        return {
+          battedDirection: `K ${prevDts.errorPos || "2"}E-3`,
+          resultLabel: "振り逃げ出塁 (捕悪送球)",
+        };
+      }
+      if (prevDts.kind === "receiving_error") {
+        return {
+          battedDirection: `K ${prevDts.assistPos || "2"}-${prevDts.errorPos || "3"}E`,
+          resultLabel: "振り逃げ出塁 (一落球失策)",
+        };
+      }
+    }
+    const presetDts = classifyDroppedThirdStrikeReach(
+      undefined,
+      presetDefaultLabel
+    );
+    if (presetDts.kind === "pb") {
+      return {
+        battedDirection: "K PB",
+        resultLabel: "振り逃げ出塁 (捕逸)",
+      };
+    }
+    return {
+      battedDirection: "K WP",
+      resultLabel: "振り逃げ出塁 (暴投)",
+    };
+  }
+
+  // 2-B. 捕手起点の特殊プレー（振逃アウト / 打撃妨害）はデフォルト捕手(2)を自動適用
   if (
     nextResultCode === "dropped_third_strike_out" ||
-    nextResultCode === "dropped_third_strike" ||
     nextResultCode === "interference"
   ) {
     const wasSameCatcherGroup =
       prevResultCode === "dropped_third_strike_out" ||
-      prevResultCode === "dropped_third_strike" ||
       prevResultCode === "interference";
     const prevParsed = wasSameCatcherGroup
       ? parseFieldingMeta(prevResultCode, prevBattedDirection, prevResultLabel)
@@ -1465,6 +1537,47 @@ export function harmonizeOcrFieldingAndLabel(
     };
   }
 
+  if (resultCode === "dropped_third_strike") {
+    const dts = classifyDroppedThirdStrikeReach(cleanDir, cleanLabel);
+    if (dts.kind === "pb") {
+      return {
+        battedDirection: "K PB",
+        resultLabel:
+          cleanLabel && cleanLabel.includes("捕逸")
+            ? cleanLabel
+            : "振り逃げ出塁 (捕逸)",
+      };
+    }
+    if (dts.kind === "throwing_error") {
+      return {
+        battedDirection: `K ${dts.errorPos || "2"}E-3`,
+        resultLabel:
+          cleanLabel && /悪送球|失策|エラー/.test(cleanLabel)
+            ? cleanLabel
+            : "振り逃げ出塁 (捕悪送球)",
+      };
+    }
+    if (dts.kind === "receiving_error") {
+      return {
+        battedDirection: `K ${dts.assistPos || "2"}-${dts.errorPos || "3"}E`,
+        resultLabel:
+          cleanLabel && /落球|失策|エラー/.test(cleanLabel)
+            ? cleanLabel
+            : "振り逃げ出塁 (一落球失策)",
+      };
+    }
+    return {
+      battedDirection: "K WP",
+      resultLabel:
+        cleanLabel &&
+        cleanLabel !== "振り逃げ出塁" &&
+        cleanLabel !== "振逃" &&
+        !/K\s*-\s*E2/i.test(cleanLabel)
+          ? cleanLabel
+          : "振り逃げ出塁 (暴投)",
+    };
+  }
+
   if (
     resultCode === "walk" ||
     resultCode === "intentional_walk" ||
@@ -1634,7 +1747,7 @@ function defaultGenericLabel(code: CanonicalAtBatResult): string {
     case "dropped_third_strike_out":
       return "振り逃げアウト (K 2-3)";
     case "dropped_third_strike":
-      return "振り逃げ出塁";
+      return "振り逃げ出塁 (暴投)";
     case "double_play":
       return "併殺打";
     case "triple_play":
@@ -1720,8 +1833,8 @@ export function normalizeLegacyInfieldFlyAtBat<
  * 先行走者が封殺・アウト（二封・三封・本封: 6-4, 4-6, 5-4, 6-5, 5-2, 6B, 5C, 2H 等）となって
  * 1アウトが記録されているにもかかわらず、旧ロジックで resultCode: "fc"（野選）として保存された打席を
  * 公式野球規則に準拠したゴロ封殺（resultCode: "groundout" 等）へ自動正規化する。
- * あわせて旧インフィールドフライの外野番号（"8" 等）混入・"flyout" 残留データも正規化する。
- * ※先行走者もセーフになった本物のオールセーフ野選（outsInPlay === 0 等）はそのまま "fc" として保持する。
+ * あわせて旧インフィールドフライの外野番号（"8" 等）混入・"flyout" 残留データ、および
+ * 旧振り逃げ出塁の機械的な "K-E2" 失策誤付与データも無失策・暴投扱い（"K WP"）へ正規化する。
  */
 export function normalizeLegacyForceOutAtBat<
   T extends Pick<
@@ -1730,6 +1843,9 @@ export function normalizeLegacyForceOutAtBat<
   >,
 >(ab: T): T {
   if (!ab) return ab;
+  if (ab.resultCode === "dropped_third_strike") {
+    return normalizeLegacyDroppedThirdStrikeAtBat(ab);
+  }
   if (ab.resultCode === "infield_fly" || ab.resultCode === "flyout") {
     return normalizeLegacyInfieldFlyAtBat(ab);
   }
@@ -1949,6 +2065,14 @@ export function repairPlayLogForceOutDescription(
   );
   if (afterInfieldFly !== description) {
     return afterInfieldFly;
+  }
+
+  if (
+    /振り?逃げ/.test(description) &&
+    /\(K\s*-\s*E2\)/i.test(description) &&
+    !/悪送球|失策|エラー|捕失|落球/.test(description)
+  ) {
+    return description.replace(/\(K\s*-\s*E2\)/gi, "(K WP)");
   }
 
   if (!description.includes("野選") && !description.includes("FC")) {

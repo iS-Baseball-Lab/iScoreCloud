@@ -723,6 +723,17 @@ export function simulateDirectOutcome(
   }
   if (code === "dropped_3rd_out") {
     const nextOuts = Math.min(3, outsBefore + 1);
+    // 野球規則 5.05(a)(2): 無死または一死で一塁に走者がいる場合、第3ストライク落球でも打者は自動的にアウト（振り逃げ不可）
+    if (outsBefore < 2 && runners.includes(1)) {
+      return {
+        id: "dts_auto_out",
+        chipLabel: "三振 (1塁走者あり自動アウト)",
+        playText: "三振",
+        outsAfter: nextOuts,
+        runnersAfter: nextOuts >= 3 ? [] : runners,
+        runsScored: 0,
+      };
+    }
     return {
       id: "dts_out",
       chipLabel: "振逃アウト",
@@ -733,6 +744,35 @@ export function simulateDirectOutcome(
     };
   }
   if (code === "dropped_3rd_safe") {
+    // 野球規則 5.05(a)(2): 無死または一死で一塁に走者がいる場合、打者は自動アウト（暴投時は既存走者のみ進塁可）
+    if (outsBefore < 2 && runners.includes(1)) {
+      const nextOuts = Math.min(3, outsBefore + 1);
+      if (variant === "dts_wp_safe" && nextOuts < 3) {
+        const nextR: LiveReportBaseNum[] = [];
+        let scored = 0;
+        for (const r of runners) {
+          if (r === 3) scored += 1;
+          else nextR.push((r + 1) as LiveReportBaseNum);
+        }
+        return {
+          id: "dts_wp_batter_out",
+          chipLabel: "三振＋暴投進塁 (打者アウト)",
+          playText: scored > 0 ? `三振暴投${scored}点` : "三振暴投進塁",
+          outsAfter: nextOuts,
+          runnersAfter: normalizeRunnersList(nextR),
+          runsScored: scored,
+        };
+      }
+      return {
+        id: "dts_auto_out",
+        chipLabel: "三振 (1塁走者あり自動アウト)",
+        playText: "三振",
+        outsAfter: nextOuts,
+        runnersAfter: nextOuts >= 3 ? [] : runners,
+        runsScored: 0,
+      };
+    }
+
     if (variant === "dts_wp_safe") {
       const nextR: LiveReportBaseNum[] = [1];
       let scored = 0;
@@ -833,6 +873,19 @@ export function buildBattedPlayCandidates(
 
     const nextOuts = Math.min(3, outsBefore + 1);
 
+    if (variant === "ground_force_home" && has1 && has2 && has3) {
+      return [
+        {
+          id: "go_fc_home",
+          chipLabel: "本塁封殺 (無得点)",
+          playText: `${normDir}ゴロ本塁封殺`,
+          outsAfter: nextOuts,
+          runnersAfter: nextOuts >= 3 ? [] : [1, 2, 3],
+          runsScored: 0,
+        },
+      ];
+    }
+
     if (variant === "ground_force_home" && has3) {
       const rem: LiveReportBaseNum[] = [1];
       if (has1) rem.push(2);
@@ -840,8 +893,8 @@ export function buildBattedPlayCandidates(
       return [
         {
           id: "go_fc_home",
-          chipLabel: "本塁封殺 (無得点)",
-          playText: `${normDir}ゴロ本塁封殺`,
+          chipLabel: "本塁タッチアウト (無得点)",
+          playText: `${normDir}ゴロ本塁憤死`,
           outsAfter: nextOuts,
           runnersAfter: nextOuts >= 3 ? [] : normalizeRunnersList(rem),
           runsScored: 0,
@@ -849,22 +902,52 @@ export function buildBattedPlayCandidates(
       ];
     }
 
-    if (variant === "ground_force_2b") {
-      const rem: LiveReportBaseNum[] = [1];
-      if (has2) rem.push(3);
+    if (variant === "ground_force_2b" && has1) {
+      const remAfterScore: LiveReportBaseNum[] = [1];
+      if (has2) remAfterScore.push(3);
+      if (nextOuts >= 3) {
+        return [
+          {
+            id: "go_fc_2b_var",
+            chipLabel: "二塁封殺 (3死)",
+            playText: `${normDir}ゴロ二塁封殺`,
+            outsAfter: nextOuts,
+            runnersAfter: [],
+            runsScored: 0,
+          },
+        ];
+      }
+      if (has3) {
+        const fcCandidates: SimulatedPlayCandidate[] = [
+          {
+            id: "go_fc_2b_score",
+            chipLabel: "二塁封殺・3塁走者生還 (+1点)",
+            playText: `${normDir}ゴロ二塁封殺の間1点`,
+            outsAfter: nextOuts,
+            runnersAfter: normalizeRunnersList(remAfterScore),
+            runsScored: 1,
+          },
+        ];
+        if (!has2) {
+          fcCandidates.push({
+            id: "go_fc_2b_hold3",
+            chipLabel: "二塁封殺 (1.3塁・無得点)",
+            playText: `${normDir}ゴロ二塁封殺`,
+            outsAfter: nextOuts,
+            runnersAfter: [1, 3],
+            runsScored: 0,
+          });
+        }
+        return fcCandidates;
+      }
       return [
         {
           id: "go_fc_2b_var",
           chipLabel: "二塁封殺",
           playText: `${normDir}ゴロ二塁封殺`,
           outsAfter: nextOuts,
-          runnersAfter:
-            nextOuts >= 3
-              ? []
-              : normalizeRunnersList(
-                  has3 && nextOuts < 3 ? rem : rem
-                ),
-          runsScored: has3 && nextOuts < 3 ? 1 : 0,
+          runnersAfter: normalizeRunnersList(remAfterScore),
+          runsScored: 0,
         },
       ];
     }
@@ -940,7 +1023,7 @@ export function buildBattedPlayCandidates(
     });
 
     // 封殺で1塁に残るケース（例: 2塁走者3塁アウトや2塁フォースアウト）
-    if (has1 && has2) {
+    if (has1 && has2 && !has3) {
       candidates.push({
         id: "go_fc_2b",
         chipLabel: "二塁封殺 (1.3塁)",
@@ -954,16 +1037,35 @@ export function buildBattedPlayCandidates(
     // 併殺打パターン（2アウト未満）
     if (outsBefore <= 1 && has1) {
       const dpOuts = Math.min(3, outsBefore + 2);
-      const dpRem: LiveReportBaseNum[] = [];
-      if (dpOuts < 3 && has2) dpRem.push(3);
-      candidates.push({
-        id: "go_dp",
-        chipLabel: "併殺 (ダブルプレー)",
-        playText: `${groundPrefix}併殺`,
-        outsAfter: dpOuts,
-        runnersAfter: dpRem,
-        runsScored: 0,
-      });
+      if (dpOuts < 3 && has3) {
+        candidates.push({
+          id: "go_dp_score",
+          chipLabel: "併殺・3塁生還 (+1点)",
+          playText: `${groundPrefix}併殺の間1点`,
+          outsAfter: dpOuts,
+          runnersAfter: has2 ? [3] : [],
+          runsScored: 1,
+        });
+        candidates.push({
+          id: "go_dp",
+          chipLabel: "併殺・無得点",
+          playText: `${groundPrefix}併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: has2 ? [2, 3] : [3],
+          runsScored: 0,
+        });
+      } else {
+        const dpRem: LiveReportBaseNum[] =
+          dpOuts < 3 && has2 ? [3] : [];
+        candidates.push({
+          id: "go_dp",
+          chipLabel: "併殺 (ダブルプレー)",
+          playText: `${groundPrefix}併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: dpRem,
+          runsScored: 0,
+        });
+      }
     }
 
     return candidates;
@@ -971,9 +1073,33 @@ export function buildBattedPlayCandidates(
 
   // 2. 併殺（直接選択）
   if (outcome === "double_play") {
+    // 2死または走者なしでは併殺不可のため通常1アウトへ安全フォールバック
+    if (outsBefore >= 2 || runners.length === 0) {
+      const fallbackOuts = Math.min(3, outsBefore + 1);
+      const fallbackText =
+        variant === "dp_liner"
+          ? `${normDir}ライナー`
+          : variant === "dp_fly_tag"
+          ? `${normDir}フライ`
+          : variant === "dp_strikeout_cs"
+          ? "三振"
+          : `${normDir}ゴロ`;
+      return [
+        {
+          id: "dp_fallback_single_out",
+          chipLabel: `${fallbackText} (1アウト)`,
+          playText: fallbackText,
+          outsAfter: fallbackOuts,
+          runnersAfter: fallbackOuts >= 3 ? [] : runners,
+          runsScored: 0,
+        },
+      ];
+    }
+
     const dpOuts = Math.min(3, outsBefore + 2);
-    const dpRem: LiveReportBaseNum[] = [];
-    if (dpOuts < 3 && has2 && !has3) dpRem.push(3);
+    // ライナー併殺・フライ併殺・三振盗塁死併殺では打者＋走者1名がアウトとなり、残りの走者は塁上に残る
+    const remAfterAerialOrCsDp: LiveReportBaseNum[] =
+      dpOuts >= 3 ? [] : runners.slice(1);
 
     if (variant === "dp_strikeout_cs") {
       return [
@@ -982,7 +1108,7 @@ export function buildBattedPlayCandidates(
           chipLabel: "三振＋盗塁死併殺",
           playText: "三振併殺",
           outsAfter: dpOuts,
-          runnersAfter: dpRem,
+          runnersAfter: remAfterAerialOrCsDp,
           runsScored: 0,
         },
       ];
@@ -994,31 +1120,88 @@ export function buildBattedPlayCandidates(
           chipLabel: `${normDir}ライナー併殺`,
           playText: `${normDir}ライナー併殺`,
           outsAfter: dpOuts,
-          runnersAfter: dpRem,
+          runnersAfter: remAfterAerialOrCsDp,
           runsScored: 0,
         },
       ];
     }
     if (variant === "dp_fly_tag") {
+      const remAfterFlyDp: LiveReportBaseNum[] =
+        dpOuts >= 3
+          ? []
+          : has3
+          ? runners.filter((r) => r !== 3)
+          : runners.slice(1);
       return [
         {
           id: "dp_fly_var",
           chipLabel: `${normDir}フライ併殺`,
           playText: `${normDir}フライ併殺`,
           outsAfter: dpOuts,
-          runnersAfter: dpRem,
+          runnersAfter: remAfterFlyDp,
           runsScored: 0,
         },
       ];
     }
 
+    if (!has1) {
+      return [
+        {
+          id: "dp_liner",
+          chipLabel: `${normDir}ライナー併殺`,
+          playText: `${normDir}ライナー併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: remAfterAerialOrCsDp,
+          runsScored: 0,
+        },
+        {
+          id: "dp_std",
+          chipLabel: `${normDir}ゴロ併殺`,
+          playText: `${normDir}ゴロ併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: remAfterAerialOrCsDp,
+          runsScored: 0,
+        },
+      ];
+    }
+
+    if (dpOuts < 3 && has3) {
+      return [
+        {
+          id: "dp_std_score",
+          chipLabel: `${normDir}ゴロ併殺・3塁生還 (+1点)`,
+          playText: `${normDir}ゴロ併殺の間1点`,
+          outsAfter: dpOuts,
+          runnersAfter: has2 ? [3] : [],
+          runsScored: 1,
+        },
+        {
+          id: "dp_std",
+          chipLabel: `${normDir}ゴロ併殺 (無得点)`,
+          playText: `${normDir}ゴロ併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: has2 ? [2, 3] : [3],
+          runsScored: 0,
+        },
+        {
+          id: "dp_liner",
+          chipLabel: `${normDir}ライナー併殺`,
+          playText: `${normDir}ライナー併殺`,
+          outsAfter: dpOuts,
+          runnersAfter: remAfterAerialOrCsDp,
+          runsScored: 0,
+        },
+      ];
+    }
+
+    const gdpRem: LiveReportBaseNum[] = dpOuts < 3 && has2 ? [3] : [];
     return [
       {
         id: "dp_std",
         chipLabel: `${normDir}ゴロ併殺`,
         playText: `${normDir}ゴロ併殺`,
         outsAfter: dpOuts,
-        runnersAfter: dpRem,
+        runnersAfter: gdpRem,
         runsScored: 0,
       },
       {
@@ -1026,7 +1209,7 @@ export function buildBattedPlayCandidates(
         chipLabel: `${normDir}ライナー併殺`,
         playText: `${normDir}ライナー併殺`,
         outsAfter: dpOuts,
-        runnersAfter: dpRem,
+        runnersAfter: remAfterAerialOrCsDp,
         runsScored: 0,
       },
     ];
@@ -1034,9 +1217,12 @@ export function buildBattedPlayCandidates(
 
   // 3. フライ・ライナー・邪飛
   if (outcome === "flyout" || outcome === "liner" || outcome === "foul_fly") {
+    // 野球規則 Definition of Infield Fly: 無死または一死で一・二塁または満塁のときのみ成立
+    const isLegalInfieldFly =
+      variant === "infield_fly" && outsBefore < 2 && has1 && has2;
     let baseWord: string;
     if (outcome === "flyout") {
-      if (variant === "infield_fly") {
+      if (isLegalInfieldFly) {
         const isOutfieldWord =
           /^(?:[左中右]|左翼|中堅|右翼|左中間|右中間|レフト|センター|ライト)/.test(
             normDir
@@ -1079,7 +1265,7 @@ export function buildBattedPlayCandidates(
       nextOuts < 3 &&
       has3 &&
       outcome !== "liner" &&
-      variant !== "infield_fly"
+      !isLegalInfieldFly
     ) {
       const rem = runners.filter((r) => r !== 3);
       list.push({
@@ -1092,7 +1278,7 @@ export function buildBattedPlayCandidates(
       });
     }
 
-    if (nextOuts < 3 && has2 && !has3 && variant !== "infield_fly") {
+    if (nextOuts < 3 && has2 && !has3 && !isLegalInfieldFly) {
       const rem = normalizeRunnersList(
         runners.map((r) => (r === 2 ? 3 : r)) as LiveReportBaseNum[]
       );
@@ -1113,9 +1299,27 @@ export function buildBattedPlayCandidates(
   if (outcome === "sac_bunt") {
     const nextOuts = Math.min(3, outsBefore + 1);
 
+    // 野球規則 9.08(a): 2死または走者なしでは犠打は成立しないためバントゴロ（凡打）扱い
+    if (outsBefore >= 2 || runners.length === 0) {
+      return [
+        {
+          id: "bunt_groundout",
+          chipLabel: "バントゴロアウト",
+          playText:
+            variant === "bunt_popup_out"
+              ? `${normDir}バント飛球`
+              : `${normDir}バントゴロ`,
+          outsAfter: nextOuts,
+          runnersAfter: nextOuts >= 3 ? [] : runners,
+          runsScored: 0,
+        },
+      ];
+    }
+
     if (variant === "bunt_fc_out") {
       const fcRunners: LiveReportBaseNum[] = [1];
       if (has1 && has2 && !has3) fcRunners.push(2);
+      else if (has1 && has2 && has3) fcRunners.push(2, 3);
       return [
         {
           id: "bunt_fc_out",
@@ -1141,7 +1345,7 @@ export function buildBattedPlayCandidates(
       ];
     }
 
-    if (variant === "squeeze_fail_out") {
+    if (variant === "squeeze_fail_out" && has3) {
       const rem: LiveReportBaseNum[] = [1];
       for (const r of runners) {
         if (r !== 3) rem.push(r);
@@ -1158,7 +1362,7 @@ export function buildBattedPlayCandidates(
       ];
     }
 
-    if (variant === "squeeze_score" || variant === "safety_squeeze") {
+    if ((variant === "squeeze_score" || variant === "safety_squeeze") && has3) {
       const rem: LiveReportBaseNum[] = [];
       for (const r of runners) {
         if (r !== 3) rem.push((r + 1) as LiveReportBaseNum);
@@ -1216,16 +1420,43 @@ export function buildBattedPlayCandidates(
 
   if (outcome === "sac_fly") {
     const nextOuts = Math.min(3, outsBefore + 1);
+    // 野球規則 9.08(d): 2死または本塁生還走者なしでは犠飛は成立しないため通常の飛球凡退扱い
+    if (nextOuts >= 3 || !has3) {
+      const fallbackList: SimulatedPlayCandidate[] = [
+        {
+          id: "sf_flyout",
+          chipLabel: `${normDir}フライ (無得点)`,
+          playText: `${normDir}フライ`,
+          outsAfter: nextOuts,
+          runnersAfter: nextOuts >= 3 ? [] : runners,
+          runsScored: 0,
+        },
+      ];
+      if (nextOuts < 3 && has2) {
+        const remTag3 = normalizeRunnersList(
+          runners.map((r) => (r === 2 ? 3 : r)) as LiveReportBaseNum[]
+        );
+        fallbackList.push({
+          id: "sf_tag3",
+          chipLabel: "二塁走者タッチアップ (3塁へ)",
+          playText: `${normDir}フライ二塁走者三進`,
+          outsAfter: nextOuts,
+          runnersAfter: remTag3,
+          runsScored: 0,
+        });
+      }
+      return fallbackList;
+    }
+
     const rem = runners.filter((r) => r !== 3);
-    const scored = nextOuts < 3 && has3 ? 1 : 0;
     return [
       {
         id: "sf_std",
         chipLabel: "犠飛 (+1点)",
-        playText: scored > 0 ? `${normDir}犠飛1点` : `${normDir}フライ`,
+        playText: `${normDir}犠飛1点`,
         outsAfter: nextOuts,
-        runnersAfter: nextOuts >= 3 ? [] : rem,
-        runsScored: scored,
+        runnersAfter: rem,
+        runsScored: 1,
       },
     ];
   }
@@ -1682,70 +1913,104 @@ export function simulateQuickBaserunningPlay(
   const has2 = runners.includes(2);
   const has3 = runners.includes(3);
 
+  // 走者なし または 3死時点では架空の走者・得点を生成しない
+  if (outsBefore >= 3 || runners.length === 0) {
+    return {
+      mode: "chained",
+      playText: "",
+      outsAfter: outsBefore,
+      runnersAfter: outsBefore >= 3 ? [] : runners,
+      runsScored: 0,
+    };
+  }
+
   if (code === "steal_2b") {
-    const nextR = has1
-      ? normalizeRunnersList(
-          runners.map((r) => (r === 1 ? 2 : r)) as LiveReportBaseNum[]
-        )
-      : normalizeRunnersList([2, ...runners]);
+    if (!has1 || has2) {
+      return {
+        mode: "chained",
+        playText: "",
+        outsAfter: outsBefore,
+        runnersAfter: runners,
+        runsScored: 0,
+      };
+    }
+    const nextR = normalizeRunnersList(
+      runners.map((r) => (r === 1 ? 2 : r)) as LiveReportBaseNum[]
+    );
     return {
       mode: "chained",
       playText: "二盗",
       outsAfter: outsBefore,
-      runnersAfter: outsBefore >= 3 ? [] : nextR,
+      runnersAfter: nextR,
       runsScored: 0,
     };
   }
 
   if (code === "steal_3b") {
-    const nextR: LiveReportBaseNum[] = has2
-      ? normalizeRunnersList(
-          runners.map((r) => (r === 2 ? 3 : r)) as LiveReportBaseNum[]
-        )
-      : has1
-      ? [3]
-      : normalizeRunnersList([3, ...runners]);
+    if (!has2 || has3) {
+      return {
+        mode: "chained",
+        playText: "",
+        outsAfter: outsBefore,
+        runnersAfter: runners,
+        runsScored: 0,
+      };
+    }
+    const nextR = normalizeRunnersList(
+      runners.map((r) => (r === 2 ? 3 : r)) as LiveReportBaseNum[]
+    );
     return {
       mode: "chained",
       playText: "三盗",
       outsAfter: outsBefore,
-      runnersAfter: outsBefore >= 3 ? [] : nextR,
+      runnersAfter: nextR,
       runsScored: 0,
     };
   }
 
   if (code === "double_steal") {
-    // ダブルスチール（重盗）：1・2塁➔2・3塁、1・3塁➔2塁＆1点生還、満塁➔2・3塁＆1点生還
+    // ダブルスチール（重盗）：走者2名以上が必要（1・2塁➔2・3塁、1・3塁➔2塁＆1点生還、満塁➔2・3塁＆1点生還 等）
+    if (runners.length < 2) {
+      return {
+        mode: "chained",
+        playText: "",
+        outsAfter: outsBefore,
+        runnersAfter: runners,
+        runsScored: 0,
+      };
+    }
     const nextR: LiveReportBaseNum[] = [];
     let runs = 0;
-    if (runners.length === 0) {
-      nextR.push(2, 3);
-    } else if (runners.length === 1 && has1) {
-      nextR.push(2, 3);
-    } else {
-      for (const r of runners) {
-        if (r === 3) runs += 1;
-        else nextR.push((r + 1) as LiveReportBaseNum);
-      }
+    for (const r of runners) {
+      if (r === 3) runs += 1;
+      else nextR.push((r + 1) as LiveReportBaseNum);
     }
     return {
       mode: "chained",
       playText: runs > 0 ? `重盗${runs}点` : "重盗",
       outsAfter: outsBefore,
-      runnersAfter: outsBefore >= 3 ? [] : normalizeRunnersList(nextR),
-      runsScored: outsBefore >= 3 ? 0 : runs,
+      runnersAfter: normalizeRunnersList(nextR),
+      runsScored: runs,
     };
   }
 
   if (code === "home_steal") {
+    if (!has3) {
+      return {
+        mode: "chained",
+        playText: "",
+        outsAfter: outsBefore,
+        runnersAfter: runners,
+        runsScored: 0,
+      };
+    }
     const rem = runners.filter((r) => r !== 3);
-    const scored = outsBefore >= 3 ? 0 : 1;
     return {
       mode: "chained",
-      playText: scored > 0 ? "本盗1点" : "本盗",
+      playText: "本盗1点",
       outsAfter: outsBefore,
-      runnersAfter: outsBefore >= 3 ? [] : rem,
-      runsScored: scored,
+      runnersAfter: rem,
+      runsScored: 1,
     };
   }
 
@@ -1779,8 +2044,8 @@ export function simulateQuickBaserunningPlay(
       mode: "chained",
       playText: runs > 0 ? `${baseWord}${runs}点` : baseWord,
       outsAfter: outsBefore,
-      runnersAfter: outsBefore >= 3 ? [] : normalizeRunnersList(nextR),
-      runsScored: outsBefore >= 3 ? 0 : runs,
+      runnersAfter: normalizeRunnersList(nextR),
+      runsScored: runs,
     };
   }
 
@@ -1854,11 +2119,17 @@ function mapV2AtBatToReportPlayText(ab: ScorebookV2AtBat): string {
     sac_fly: "犠飛",
     groundout: "ゴロ",
     flyout: "フライ",
+    lineout: "ライナー",
     infield_fly: "インフィールドフライ",
     strikeout: "三振",
+    dropped_third_strike: "振逃",
+    dropped_third_strike_out: "振逃",
     double_play: "併殺",
+    triple_play: "三重殺",
     error: "エラー",
     fc: "野選",
+    interference: "打撃妨害",
+    interference_out: "守備妨害",
   };
   return `${codeFallback[ab.resultCode] || "プレー"}${runSuffix}`;
 }
@@ -1936,6 +2207,8 @@ function buildHalfInningEntriesFromScorebookSheet(
         ab.resultCode === "walk" ||
         ab.resultCode === "intentional_walk" ||
         ab.resultCode === "hit_by_pitch" ||
+        ab.resultCode === "dropped_third_strike" ||
+        ab.resultCode === "interference" ||
         ab.resultCode === "error" ||
         ab.resultCode === "fc"
       ) {
@@ -2169,9 +2442,26 @@ export function formatScoreboardBlock(
       ss === null &&
       summary.secondTotal > summary.firstTotal;
 
+    const botHalf = doc.halfInnings.find((h) => h.inning === inn && h.isBottom);
+    const botHasEntries = Boolean(botHalf && botHalf.entries.length > 0);
+    const isPlayedWalkoffBottom =
+      doc.isGameFinished &&
+      doc.showWalkoffX &&
+      inn === summary.maxInning &&
+      ss !== null &&
+      ss !== undefined &&
+      ss > 0 &&
+      summary.secondTotal > summary.firstTotal &&
+      summary.secondTotal - ss <= summary.firstTotal &&
+      (botHasEntries
+        ? computeHalfInningSituation(botHalf).outs < 3
+        : inn >= doc.regulationInnings);
+
     const sRaw =
       ss !== null && ss !== undefined
-        ? toFullWidthDigits(ss)
+        ? isPlayedWalkoffBottom
+          ? `${toFullWidthDigits(ss)}ｘ`
+          : toFullWidthDigits(ss)
         : isUnplayedFinalBottom && doc.showWalkoffX
         ? "ｘ"
         : "－";

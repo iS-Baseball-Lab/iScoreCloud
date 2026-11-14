@@ -1,4 +1,15 @@
 // filepath: src/lib/liff/scorebook-renderer-model.ts
+import {
+  classifyAtBatResultToken,
+  classifyDroppedThirdStrikeReach,
+  evaluateHalfInningPitcherCharges,
+  extractFieldingCreditsForAtBat,
+  formatOfficialBaseballRate,
+  hasCompanionCaughtStealingOnSameStealAttempt,
+  isAerialMultiOutAtBat,
+  mapSnapshotAdvancesToPitchingEvents,
+  type HalfInningAtBatPitchingInput,
+} from "@/lib/liff/baseball-official-rules";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   isPrePlayAdvanceMethod,
@@ -258,14 +269,19 @@ export interface CompiledScorebookSheetModel {
   };
   pitcherRows: CompiledPitcherRowStats[];
   pitcherTotals: CompiledPitcherTotals;
+  /** 公認野球規則 9.03(c) 三者均衡（打席＋タイブレーク配置走者 ＝ 得点＋相手刺殺＋残塁）が一致しているか */
+  paBalanceVerified: boolean;
 }
 
 function formatBattingAvg(hits: number, atBats: number): string {
-  if (atBats <= 0) return ".000";
-  const raw = (hits / atBats).toFixed(3);
-  if (raw.startsWith("0.")) return raw.slice(1);
-  if (raw === "1.000") return "1.00";
-  return raw;
+  return formatOfficialBaseballRate(hits, atBats, ".000");
+}
+
+function isUnfinishedAtBatCode(
+  rc: CanonicalAtBatResult | string | null | undefined
+): boolean {
+  const s = String(rc || "").trim();
+  return !s || s === "other" || s === "runner_out";
 }
 
 function formatRegulationEra(earnedRuns: number, outs: number): string {
@@ -306,14 +322,14 @@ function getHitBasesForResult(rc: CanonicalAtBatResult): 0 | 1 | 2 | 3 | 4 {
 }
 
 function isOfficialAtBatResult(rc: CanonicalAtBatResult): boolean {
+  if (isUnfinishedAtBatCode(rc)) return false;
   return (
     rc !== "walk" &&
     rc !== "intentional_walk" &&
     rc !== "hit_by_pitch" &&
     rc !== "interference" &&
     rc !== "sac_bunt" &&
-    rc !== "sac_fly" &&
-    rc !== "other"
+    rc !== "sac_fly"
   );
 }
 
@@ -334,9 +350,11 @@ function isStrikeoutResult(rc: CanonicalAtBatResult): boolean {
 }
 
 function isIntrinsicBatterOutCode(rc: CanonicalAtBatResult): boolean {
+  const s = String(rc || "").trim();
   return (
     rc === "groundout" ||
     rc === "flyout" ||
+    s === "lineout" ||
     rc === "infield_fly" ||
     rc === "strikeout" ||
     rc === "dropped_third_strike_out" ||
@@ -475,12 +493,21 @@ function inferRunnerOutThrowChain(
 function isOriginCellReachedByErrorOrUncharged(
   originCell: CompiledScorebookCell | undefined
 ): boolean {
-  const rc = originCell?.atBat?.resultCode;
-  return (
-    rc === "error" ||
-    rc === "dropped_third_strike" ||
-    rc === "interference"
-  );
+  if (!originCell) return false;
+  if (originCell.isTiebreakRunnerOnly) return true;
+  const ab = originCell.atBat;
+  const rc = ab?.resultCode;
+  if (rc === "error" || rc === "interference") {
+    return true;
+  }
+  if (rc === "dropped_third_strike") {
+    const dts = classifyDroppedThirdStrikeReach(
+      ab?.battedDirection,
+      ab?.resultLabel
+    );
+    return dts.kind !== "wp";
+  }
+  return false;
 }
 
 /**
@@ -866,10 +893,9 @@ export function compileScorebookSheetModel(
     });
   };
 
-  const atBatPitcherCharges = new Map<
-    string,
-    { runs: number; earnedRuns: number; outs: number }
-  >();
+  let totalTiebreakPlacedRunners = 0;
+  let unslottedSb = 0;
+  let unslottedCs = 0;
 
   let prevPitcherKey: string | null = null;
   const doublePlayLinks: CompiledDoublePlayLink[] = [];
@@ -922,6 +948,8 @@ export function compileScorebookSheetModel(
     };
     let outsTracker = 0;
     const assignedOutCellKeysInInning = new Set<string>();
+    const countedTiebreakStartBases = new Set<OccupiedBaseKey>();
+    let inningLobAndSummaryRecorded = false;
     let virtualErrorSavedOuts = 0;
     let innRuns = 0;
     let innHits = 0;
@@ -976,8 +1004,8 @@ export function compileScorebookSheetModel(
         prevPitcherKey = curPitcherKey;
       }
 
-      // 打者個人成績の加算（走塁死による打席途中断 resultCode==="other" は打席・打数に含めない）
-      if (ab.resultCode !== "other") {
+      // 打者個人成績の加算（走塁死による打席途中断 other / runner_out は打席・打数に含めない）
+      if (!isUnfinishedAtBatCode(ab.resultCode)) {
         innPa += 1;
         const hb = getHitBasesForResult(ab.resultCode);
         if (hb > 0) {
@@ -986,6 +1014,7 @@ export function compileScorebookSheetModel(
         if (isWalkOrHbpResult(ab.resultCode)) {
           innWalksHbp += 1;
         }
+        const clsAb = classifyAtBatResultToken(ab.resultCode, ab);
         const batterSubIdx = resolveSubRowIdxForPlayer(
           ab.battingOrder,
           ab.batterPlayerId,
@@ -1029,19 +1058,27 @@ export function compileScorebookSheetModel(
           } else if (ab.resultCode === "sac_fly") {
             t.sacFlies += 1;
           }
-          if (
-            ab.resultCode === "double_play" ||
-            ab.resultCode === "triple_play"
-          ) {
+          // 公認野球規則 9.02(a)(16): 併殺打はゴロ併殺のみ計上（飛球・ライナー・三振併殺を除外）
+          if (clsAb.isGroundedIntoDoublePlay) {
             t.doublePlays += 1;
           }
         });
       }
-      if (ab.resultCode === "error") {
-        innErrors += 1;
+
+      // 相手チーム失策数（打撃妨害失策を含み、1悪送球での複数走者進塁は1失策に集約、WP/PB振り逃げは0失策）
+      const playErrCredits = extractFieldingCreditsForAtBat(ab);
+      innErrors += playErrCredits.teamErrorCount;
+
+      if (ab.resultCode === "error" || ab.resultCode === "interference") {
         virtualErrorSavedOuts += 1;
       } else if (ab.resultCode === "dropped_third_strike") {
-        virtualErrorSavedOuts += 1;
+        const dts = classifyDroppedThirdStrikeReach(
+          ab.battedDirection,
+          ab.resultLabel
+        );
+        if (dts.kind !== "wp") {
+          virtualErrorSavedOuts += 1;
+        }
       }
 
       const snap = runnerSnapshots.get(ab.id);
@@ -1050,15 +1087,18 @@ export function compileScorebookSheetModel(
       }
 
       const innRunsBeforePlay = innRuns;
-      let unearnedRunsInPlay = 0;
       if (idx === 0 && outsTracker === 0 && snap.outsBefore > 0) {
         outsTracker = Math.min(2, snap.outsBefore);
       }
 
-      // タイブレーク等で打席開始前に突如ベースに出現した先行走者の起点マスを確保
+      // タイブレーク等で打席開始前にベースへ配置された先行走者の起点マスを確保
       for (const bKey of ["3B", "2B", "1B"] as const) {
         const beforeRunner = snap.basesBefore[bKey];
         if (beforeRunner && !originByBase[bKey]) {
+          if (!countedTiebreakStartBases.has(bKey)) {
+            countedTiebreakStartBases.add(bKey);
+            totalTiebreakPlacedRunners += 1;
+          }
           const rOrder = beforeRunner.battingOrder;
           if (rOrder >= 1 && rOrder <= maxOrder && !col1BatterOrders.has(rOrder)) {
             const tbKey = `${inn}-1-${rOrder}`;
@@ -1172,12 +1212,19 @@ export function compileScorebookSheetModel(
         return outsTracker as 1 | 2 | 3;
       };
 
-      // 同一打席中の盗塁数（2人以上ならダブルスチール DS）および発生球数タイミングの抽出
+      // 同一打席中の有効盗塁数（重盗時に盗塁死を伴うものは規則 9.07(d) により除外）および発生球数タイミングの抽出
       let stealRunnersInAtBat = 0;
       const explicitStealPitchNums: number[] = [];
       let hasExplicitNonPitchSteal = false;
       for (const pr of snap.precedingRunners) {
-        if (pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal")) {
+        if (
+          pr.prePlayMoves.some(
+            (pm) =>
+              !pm.isOut &&
+              pm.method === "steal" &&
+              !hasCompanionCaughtStealingOnSameStealAttempt(pm, ab.advances)
+          )
+        ) {
           stealRunnersInAtBat += 1;
         }
         for (const pm of pr.prePlayMoves) {
@@ -1225,27 +1272,35 @@ export function compileScorebookSheetModel(
         const originCell = originKey ? cellsByKey[originKey] : undefined;
 
         for (const pm of pr.prePlayMoves) {
-          if (!pm.isOut && pm.method === "steal" && pr.runner.battingOrder > 0) {
-            addStealToRunner(
-              pr.runner.battingOrder,
-              pr.runner.playerId,
-              pr.runner.name,
-              inn
-            );
-          } else if (
-            pr.runner.battingOrder > 0 &&
-            ((pm.isOut && pm.method === "steal") ||
-              pm.method === "caught_stealing")
+          if (
+            !pm.isOut &&
+            pm.method === "steal" &&
+            !hasCompanionCaughtStealingOnSameStealAttempt(pm, ab.advances)
           ) {
-            addCaughtStealingToRunner(
-              pr.runner.battingOrder,
-              pr.runner.playerId,
-              pr.runner.name,
-              inn
-            );
-          }
-          if (pm.method === "error" || pm.method === "pickoff_error") {
-            innErrors += 1;
+            if (pr.runner.battingOrder > 0) {
+              addStealToRunner(
+                pr.runner.battingOrder,
+                pr.runner.playerId,
+                pr.runner.name,
+                inn
+              );
+            } else {
+              unslottedSb += 1;
+            }
+          } else if (
+            (pm.isOut && pm.method === "steal") ||
+            pm.method === "caught_stealing"
+          ) {
+            if (pr.runner.battingOrder > 0) {
+              addCaughtStealingToRunner(
+                pr.runner.battingOrder,
+                pr.runner.playerId,
+                pr.runner.name,
+                inn
+              );
+            } else {
+              unslottedCs += 1;
+            }
           }
           if (originCell && pm.from !== "BAT") {
             const defaultPickoffChain =
@@ -1284,12 +1339,10 @@ export function compileScorebookSheetModel(
               pm.method === "error" ||
               pm.method === "pb" ||
               pm.method === "pickoff_error" ||
+              pm.method === "tiebreak" ||
               isOriginCellReachedByErrorOrUncharged(originCell) ||
               (virtualErrorSavedOuts > 0 &&
                 outsTracker + virtualErrorSavedOuts >= 3);
-            if (isUnearnedPrePlay) {
-              unearnedRunsInPlay += 1;
-            }
             if (originCell) {
               originCell.runScored = true;
               if (isUnearnedPrePlay) {
@@ -1307,11 +1360,15 @@ export function compileScorebookSheetModel(
       // B) インプレーアウト順序の決定（フライ・ライナー併殺等は打者先アウト、ゴロ封殺・併殺は先行走者先アウト）
       const isAerialDpOrTp =
         (ab.resultCode === "double_play" || ab.resultCode === "triple_play") &&
-        (/飛|フライ|直|ライナー|[⌒︵]/.test(ab.resultLabel || "") ||
-          /^[1-9][FL](?:-[1-9])?$/i.test((ab.battedDirection || "").trim()));
+        isAerialMultiOutAtBat(
+          ab.resultCode,
+          ab.battedDirection,
+          ab.resultLabel
+        );
 
       const batterFirstOut =
         ab.resultCode === "flyout" ||
+        String(ab.resultCode) === "lineout" ||
         ab.resultCode === "sac_fly" ||
         ab.resultCode === "infield_fly" ||
         ab.resultCode === "strikeout" ||
@@ -1321,6 +1378,17 @@ export function compileScorebookSheetModel(
       const isBatterIntrinsicOut =
         isIntrinsicBatterOutCode(ab.resultCode) &&
         snap.batterSummary.initialBase === null;
+
+      // 公認野球規則 9.16(a): ゴロ・犠飛・併殺打等の打者アウトにより仮想3アウトに達する場合、そのプレー中の生還も非自責（○）とする
+      const outsBeforeInPlay = outsTracker;
+      const prePlayOutsInAb = snap.precedingRunners.filter(
+        (r) => r.isOutPrePlay
+      ).length;
+      const intrinsicInPlayOutsForVirtual = isBatterIntrinsicOut
+        ? Math.max(1, (ab.outsInPlay || 1) - prePlayOutsInAb)
+        : 0;
+      const virtualOutsForInPlayScoring =
+        outsBeforeInPlay + intrinsicInPlayOutsForVirtual + virtualErrorSavedOuts;
 
       const assignBatterOutIfApplicable = () => {
         if (isBatterIntrinsicOut || snap.batterSummary.isOutOnBases) {
@@ -1337,21 +1405,23 @@ export function compileScorebookSheetModel(
           if (!inPlayFrom || inPlayFrom === "HP") continue;
 
           if (pr.isOut) {
-            if (
-              pr.runner.battingOrder > 0 &&
-              pr.effectiveMethod === "caught_stealing"
-            ) {
-              addCaughtStealingToRunner(
-                pr.runner.battingOrder,
-                pr.runner.playerId,
-                pr.runner.name,
-                inn
-              );
+            if (pr.effectiveMethod === "caught_stealing") {
+              if (pr.runner.battingOrder > 0) {
+                addCaughtStealingToRunner(
+                  pr.runner.battingOrder,
+                  pr.runner.playerId,
+                  pr.runner.name,
+                  inn
+                );
+              } else {
+                unslottedCs += 1;
+              }
             }
             if (originCell) {
               const endLv = baseToLevel(pr.finalBase) as BaseSegmentIndex;
               const isNonFlyPlay =
                 ab.resultCode !== "flyout" &&
+                String(ab.resultCode) !== "lineout" &&
                 ab.resultCode !== "sac_fly" &&
                 ab.resultCode !== "infield_fly" &&
                 ab.resultCode !== "strikeout" &&
@@ -1392,19 +1462,23 @@ export function compileScorebookSheetModel(
             }
           } else if (baseToLevel(pr.finalBase) > baseToLevel(inPlayFrom)) {
             if (
-              pr.runner.battingOrder > 0 &&
               pr.effectiveMethod === "steal" &&
-              !pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal")
+              !pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal") &&
+              !hasCompanionCaughtStealingOnSameStealAttempt(
+                { method: "steal", isOut: false },
+                ab.advances
+              )
             ) {
-              addStealToRunner(
-                pr.runner.battingOrder,
-                pr.runner.playerId,
-                pr.runner.name,
-                inn
-              );
-            }
-            if (pr.effectiveMethod === "error" && ab.resultCode !== "error") {
-              innErrors += 1;
+              if (pr.runner.battingOrder > 0) {
+                addStealToRunner(
+                  pr.runner.battingOrder,
+                  pr.runner.playerId,
+                  pr.runner.name,
+                  inn
+                );
+              } else {
+                unslottedSb += 1;
+              }
             }
             if (originCell) {
               applyRunnerStepSegments(
@@ -1436,13 +1510,11 @@ export function compileScorebookSheetModel(
               const isUnearnedInPlay =
                 pr.effectiveMethod === "error" ||
                 pr.effectiveMethod === "pb" ||
+                pr.effectiveMethod === "tiebreak" ||
                 ab.resultCode === "error" ||
                 isOriginCellReachedByErrorOrUncharged(originCell) ||
                 (virtualErrorSavedOuts > 0 &&
-                  outsTracker + virtualErrorSavedOuts >= 3);
-              if (isUnearnedInPlay) {
-                unearnedRunsInPlay += 1;
-              }
+                  virtualOutsForInPlayScoring >= 3);
               if (originCell) {
                 originCell.runScored = true;
                 if (isUnearnedInPlay) {
@@ -1465,7 +1537,9 @@ export function compileScorebookSheetModel(
       const isGenuineDoubleOrTriplePlay =
         ab.resultCode === "double_play" ||
         ab.resultCode === "triple_play" ||
-        ((ab.resultCode === "flyout" || ab.resultCode === "infield_fly") &&
+        ((ab.resultCode === "flyout" ||
+          String(ab.resultCode) === "lineout" ||
+          ab.resultCode === "infield_fly") &&
           playOutCellKeys.length >= 2) ||
         (ab.resultCode === "groundout" &&
           playOutCellKeys.length >= 2 &&
@@ -1545,7 +1619,11 @@ export function compileScorebookSheetModel(
 
         const extraMove = snap.batterSummary.extraExplicitMove;
         if (extraMove) {
-          if (!extraMove.isOut && extraMove.method === "steal") {
+          if (
+            !extraMove.isOut &&
+            extraMove.method === "steal" &&
+            !hasCompanionCaughtStealingOnSameStealAttempt(extraMove, ab.advances)
+          ) {
             addStealToRunner(
               ab.battingOrder,
               ab.batterPlayerId,
@@ -1572,10 +1650,9 @@ export function compileScorebookSheetModel(
             snap.batterSummary.effectiveMethod === "pb" ||
             isOriginCellReachedByErrorOrUncharged(cell) ||
             (virtualErrorSavedOuts > 0 &&
-              outsTracker + virtualErrorSavedOuts >= 3);
+              virtualOutsForInPlayScoring >= 3);
           if (isBatterRunUnearned) {
             cell.isUnearnedRun = true;
-            unearnedRunsInPlay += 1;
           }
           innRuns += 1;
           addRunToRunner(
@@ -1587,30 +1664,9 @@ export function compileScorebookSheetModel(
         }
       }
 
-      // D) 次打席に向けた塁上起点セルの更新 ＆ 投手失点・自責点チャージ記録
+      // D) 次打席に向けた塁上起点セルの更新
       const simRunsInPlay = innRuns - innRunsBeforePlay;
       const resolvedPlayRuns = Math.max(ab.runsInPlay || 0, simRunsInPlay);
-      const extraUnmodeledRuns = Math.max(0, resolvedPlayRuns - simRunsInPlay);
-      const extraUnearned =
-        extraUnmodeledRuns > 0 &&
-        (ab.resultCode === "error" ||
-          (virtualErrorSavedOuts > 0 &&
-            outsTracker + virtualErrorSavedOuts >= 3))
-          ? extraUnmodeledRuns
-          : 0;
-      const resolvedEarnedRuns = Math.max(
-        0,
-        resolvedPlayRuns - unearnedRunsInPlay - extraUnearned
-      );
-      const resolvedPlayOuts = Math.max(
-        ab.outsInPlay || 0,
-        Math.max(0, snap.outsAfter - snap.outsBefore)
-      );
-      atBatPitcherCharges.set(ab.id, {
-        runs: resolvedPlayRuns,
-        earnedRuns: resolvedEarnedRuns,
-        outs: resolvedPlayOuts,
-      });
 
       cell.situation = {
         outsBefore: snap.outsBefore,
@@ -1656,46 +1712,47 @@ export function compileScorebookSheetModel(
         if (snap.isInningOver) {
           cell.isInningEndCell = true;
         }
-        // 残塁走者マーク (ℓ) 付与 ＆ 個人残塁 (leftOnBase) 計上
-        let lobCount = 0;
-        for (const bKey of ["3B", "2B", "1B"] as const) {
-          const strandedKey = nextOrigins[bKey];
-          const strandedRunner = snap.basesAfterPlay[bKey];
-          if (strandedKey && cellsByKey[strandedKey]) {
-            cellsByKey[strandedKey].isResidual = true;
-            cellsByKey[strandedKey].residualBase = bKey;
-            lobCount += 1;
-            if (isLastPaOfInning) {
+        if (!inningLobAndSummaryRecorded) {
+          inningLobAndSummaryRecorded = true;
+          // 残塁走者マーク (ℓ) 付与 ＆ 個人残塁 (leftOnBase) 計上
+          let lobCount = 0;
+          for (const bKey of ["3B", "2B", "1B"] as const) {
+            const strandedKey = nextOrigins[bKey];
+            const strandedRunner = snap.basesAfterPlay[bKey];
+            if (strandedKey && cellsByKey[strandedKey]) {
+              cellsByKey[strandedKey].isResidual = true;
+              cellsByKey[strandedKey].residualBase = bKey;
+              lobCount += 1;
               const lobOrder =
                 strandedRunner?.battingOrder ||
                 cellsByKey[strandedKey].battingOrder;
-              const lobSubIdx = resolveSubRowIdxForPlayer(
-                lobOrder,
-                strandedRunner?.playerId,
-                strandedRunner?.name,
-                inn
-              );
-              applyStatMutation(lobOrder, lobSubIdx, (t) => {
-                t.leftOnBase += 1;
-              });
-            }
-          } else if (strandedRunner) {
-            lobCount += 1;
-            if (isLastPaOfInning && strandedRunner.battingOrder > 0) {
-              const lobSubIdx = resolveSubRowIdxForPlayer(
-                strandedRunner.battingOrder,
-                strandedRunner.playerId,
-                strandedRunner.name,
-                inn
-              );
-              applyStatMutation(strandedRunner.battingOrder, lobSubIdx, (t) => {
-                t.leftOnBase += 1;
-              });
+              if (lobOrder > 0) {
+                const lobSubIdx = resolveSubRowIdxForPlayer(
+                  lobOrder,
+                  strandedRunner?.playerId,
+                  strandedRunner?.name,
+                  inn
+                );
+                applyStatMutation(lobOrder, lobSubIdx, (t) => {
+                  t.leftOnBase += 1;
+                });
+              }
+            } else if (strandedRunner) {
+              lobCount += 1;
+              if (strandedRunner.battingOrder > 0) {
+                const lobSubIdx = resolveSubRowIdxForPlayer(
+                  strandedRunner.battingOrder,
+                  strandedRunner.playerId,
+                  strandedRunner.name,
+                  inn
+                );
+                applyStatMutation(strandedRunner.battingOrder, lobSubIdx, (t) => {
+                  t.leftOnBase += 1;
+                });
+              }
             }
           }
-        }
 
-        if (isLastPaOfInning) {
           const resolvedRuns =
             innMeta && typeof innMeta.runs === "number"
               ? Math.max(innRuns, innMeta.runs)
@@ -2156,82 +2213,15 @@ export function compileScorebookSheetModel(
     };
 
     for (const oppAb of oppAtBats) {
-      const rawDir = (oppAb.battedDirection || "").trim().toUpperCase();
-      const rc = oppAb.resultCode;
-
-      // 1) 失策（"6E"・"E6"・"4E-3"・単独守備番号＋error）
-      const errorPosMatches = Array.from(
-        rawDir.matchAll(/([1-9])E|E([1-9])/g)
-      );
-      if (errorPosMatches.length > 0) {
-        for (const m of errorPosMatches) {
-          const pos = m[1] || m[2];
-          if (pos) creditFielderStat(pos, oppAb, "errors");
-        }
-      } else if (rc === "error") {
-        const singlePos = rawDir.match(/^([1-9])/);
-        if (singlePos && singlePos[1]) {
-          creditFielderStat(singlePos[1], oppAb, "errors");
-        }
+      const credits = extractFieldingCreditsForAtBat(oppAb);
+      for (const pos of credits.errors) {
+        creditFielderStat(pos, oppAb, "errors");
       }
-
-      // 2) 刺殺・捕殺
-      const outsRecorded = Math.max(0, oppAb.outsInPlay || 0);
-      if (outsRecorded <= 0) continue;
-
-      if (rc === "strikeout" || rc === "dropped_third_strike_out") {
-        const chainMatch = rawDir.match(/([1-9])-([1-9])/);
-        if (chainMatch && chainMatch[1] && chainMatch[2]) {
-          creditFielderStat(chainMatch[1], oppAb, "assists");
-          creditFielderStat(chainMatch[2], oppAb, "putouts");
-        } else {
-          creditFielderStat("2", oppAb, "putouts");
-        }
-        continue;
+      for (const pos of credits.assists) {
+        creditFielderStat(pos, oppAb, "assists");
       }
-
-      if (rawDir.includes("E")) continue;
-      const segments = rawDir
-        .split("-")
-        .map((seg) => seg.replace(/[^1-9]/g, ""))
-        .filter((seg) => seg.length === 1);
-
-      if (segments.length >= 2) {
-        const finalPos = segments[segments.length - 1]!;
-        creditFielderStat(finalPos, oppAb, "putouts");
-
-        if (outsRecorded >= 2) {
-          const dpPivotPos =
-            segments.length >= 3
-              ? segments[segments.length - 2]!
-              : segments[0]!;
-          creditFielderStat(dpPivotPos, oppAb, "putouts");
-        }
-        if (outsRecorded >= 3 && segments.length >= 3) {
-          creditFielderStat(segments[segments.length - 3]!, oppAb, "putouts");
-        }
-
-        const creditedAssistPositions = new Set<string>();
-        for (let i = 0; i < segments.length - 1; i++) {
-          const aPos = segments[i]!;
-          if (segments.length === 2 && aPos === finalPos) continue;
-          if (creditedAssistPositions.has(aPos)) continue;
-          creditedAssistPositions.add(aPos);
-          creditFielderStat(aPos, oppAb, "assists");
-        }
-      } else if (
-        segments.length === 1 &&
-        (rc === "flyout" ||
-          rc === "infield_fly" ||
-          rc === "sac_fly" ||
-          rc === "groundout" ||
-          rc === "sac_bunt" ||
-          rc === "double_play" ||
-          rc === "triple_play" ||
-          rc === "interference_out" ||
-          (rc === "fc" && outsRecorded >= 1))
-      ) {
-        creditFielderStat(segments[0]!, oppAb, "putouts");
+      for (const pos of credits.putouts) {
+        creditFielderStat(pos, oppAb, "putouts");
       }
     }
   }
@@ -2241,7 +2231,7 @@ export function compileScorebookSheetModel(
     structure.pitchers,
     atBats,
     Math.max(1, maxPlayedInning),
-    atBatPitcherCharges
+    inningSummaries
   );
 
   const batterRows = normalizedSlots.map((s) => {
@@ -2273,8 +2263,10 @@ export function compileScorebookSheetModel(
   const totalSo = batterRows.reduce((s, r) => s + r.strikeouts, 0);
   const totalSacBunts = batterRows.reduce((s, r) => s + r.sacBunts, 0);
   const totalSacFlies = batterRows.reduce((s, r) => s + r.sacFlies, 0);
-  const totalSb = batterRows.reduce((s, r) => s + r.stolenBases, 0);
-  const totalCs = batterRows.reduce((s, r) => s + r.caughtStealing, 0);
+  const totalSb =
+    batterRows.reduce((s, r) => s + r.stolenBases, 0) + unslottedSb;
+  const totalCs =
+    batterRows.reduce((s, r) => s + r.caughtStealing, 0) + unslottedCs;
   const totalLob = Math.max(
     batterRows.reduce((s, r) => s + r.leftOnBase, 0),
     inningSummaries.reduce((s, i) => s + i.leftOnBase, 0)
@@ -2287,6 +2279,11 @@ export function compileScorebookSheetModel(
     structure.totalErrors || 0,
     inningSummaries.reduce((s, i) => s + i.errors, 0)
   );
+
+  // 公認野球規則 9.03(c) 三者均衡検証：打席数（＋タイブレーク配置走者数）＝ 得点 ＋ 相手刺殺（投手記録アウト数）＋ 残塁
+  const paBalanceSupply = totalPa + totalTiebreakPlacedRunners;
+  const paBalanceDemand = totalRuns + pitcherTotals.outsRecorded + totalLob;
+  const paBalanceVerified = totalPa > 0 && paBalanceSupply === paBalanceDemand;
 
   return {
     isTop,
@@ -2325,6 +2322,7 @@ export function compileScorebookSheetModel(
     },
     pitcherRows,
     pitcherTotals,
+    paBalanceVerified,
   };
 }
 
@@ -2339,10 +2337,7 @@ function compilePitcherRows(
   stints: ScorebookPitcherStint[],
   atBats: ScorebookV2AtBat[],
   maxInning: number,
-  atBatPitcherCharges: Map<
-    string,
-    { runs: number; earnedRuns: number; outs: number }
-  >
+  inningSummaries: ReadonlyArray<CompiledInningSummary>
 ): {
   pitcherRows: CompiledPitcherRowStats[];
   pitcherTotals: CompiledPitcherTotals;
@@ -2413,33 +2408,37 @@ function compilePitcherRows(
     )
   );
 
-  const findOrCreatePitcher = (ab: ScorebookV2AtBat): MutablePitcherAcc => {
+  const findOrCreatePitcherIndex = (ab: ScorebookV2AtBat): number => {
     if (ab.pitcherPlayerId) {
-      const byId = accList.find((p) => p.playerId === ab.pitcherPlayerId);
-      if (byId) {
+      const byIdIdx = accList.findIndex(
+        (p) => p.playerId === ab.pitcherPlayerId
+      );
+      if (byIdIdx >= 0) {
+        const byId = accList[byIdIdx]!;
         byId.fromInning = Math.min(byId.fromInning, ab.inning);
         byId.toInning = Math.max(byId.toInning, ab.inning);
-        return byId;
+        return byIdIdx;
       }
     }
     const pName = (ab.pitcherName || "").trim();
     if (pName) {
-      const exact = accList.find(
+      const exactIdx = accList.findIndex(
         (p) => p.name.replace(/\s+/g, "") === pName.replace(/\s+/g, "")
       );
-      if (exact) {
+      if (exactIdx >= 0) {
+        const exact = accList[exactIdx]!;
         exact.fromInning = Math.min(exact.fromInning, ab.inning);
         exact.toInning = Math.max(exact.toInning, ab.inning);
-        return exact;
+        return exactIdx;
       }
     }
-    const byInning = accList.find(
+    const byInningIdx = accList.findIndex(
       (p) => ab.inning >= p.fromInning && ab.inning <= p.toInning
     );
-    if (byInning) return byInning;
+    if (byInningIdx >= 0) return byInningIdx;
 
     if (accList.length > 0 && !pName) {
-      return accList[accList.length - 1]!;
+      return accList.length - 1;
     }
 
     const created = createEmptyAcc(
@@ -2451,89 +2450,133 @@ function compilePitcherRows(
       ab.inning
     );
     accList.push(created);
-    return created;
+    return accList.length - 1;
   };
 
+  // ハーフイニング単位で公認野球規則 9.16（救援登板時の前任責任走者帰属・2死後失策・タイブレーク非自責・振り逃げ暴投等）を評価
+  const absByInning = new Map<number, ScorebookV2AtBat[]>();
   for (const ab of atBats) {
-    const target = findOrCreatePitcher(ab);
-    const charge = atBatPitcherCharges.get(ab.id);
+    const arr = absByInning.get(ab.inning) || [];
+    arr.push(ab);
+    absByInning.set(ab.inning, arr);
+  }
 
-    if (ab.resultCode !== "other") {
-      target.battersFaced += 1;
-    }
+  for (const [inn, innAbs] of absByInning.entries()) {
+    const halfInningPlays: HalfInningAtBatPitchingInput[] = [];
+    let lastPitcherIdxInInn = 0;
 
-    target.outsRecorded += charge
-      ? charge.outs
-      : Math.max(0, ab.outsInPlay || 0);
+    for (const ab of innAbs) {
+      const pIdx = findOrCreatePitcherIndex(ab);
+      lastPitcherIdxInInn = pIdx;
+      const target = accList[pIdx]!;
 
-    const realPitchCount = ab.pitches.filter(
-      (p) => !isNonPitchMoundEvent(p)
-    ).length;
-    const countFromBallsStrikes = Math.max(
-      0,
-      (ab.balls || 0) + (ab.strikes || 0)
-    );
-    target.pitchesCount +=
-      realPitchCount > 0 ? realPitchCount : countFromBallsStrikes;
+      const realPitchCount = ab.pitches.filter(
+        (p) => !isNonPitchMoundEvent(p)
+      ).length;
+      const countFromBallsStrikes = Math.max(
+        0,
+        (ab.balls || 0) + (ab.strikes || 0)
+      );
+      target.pitchesCount +=
+        realPitchCount > 0 ? realPitchCount : countFromBallsStrikes;
 
-    if (getHitBasesForResult(ab.resultCode) > 0) {
-      target.hitsAllowed += 1;
-    }
-    if (ab.resultCode === "home_run") {
-      target.homeRunsAllowed += 1;
-    }
-    if (ab.resultCode === "sac_bunt") {
-      target.sacBuntsAllowed += 1;
-    } else if (ab.resultCode === "sac_fly") {
-      target.sacFliesAllowed += 1;
-    }
-    if (isStrikeoutResult(ab.resultCode)) {
-      target.strikeouts += 1;
-    }
-    if (ab.resultCode === "walk" || ab.resultCode === "intentional_walk") {
-      target.walks += 1;
-      target.walksHbp += 1;
-    } else if (ab.resultCode === "hit_by_pitch") {
-      target.hitByPitch += 1;
-      target.walksHbp += 1;
-    }
-
-    // 暴投（同一打席・同一投球での複数走者進塁は1回として計上）
-    const wpKeys = new Set<string>();
-    for (const adv of ab.advances) {
-      if (adv.method === "wp") {
-        wpKeys.add(
-          typeof adv.pitchNumber === "number" ? `p:${adv.pitchNumber}` : "ab"
-        );
+      if (getHitBasesForResult(ab.resultCode) > 0) {
+        target.hitsAllowed += 1;
       }
-    }
-    target.wildPitches += wpKeys.size;
+      if (ab.resultCode === "home_run") {
+        target.homeRunsAllowed += 1;
+      }
+      if (ab.resultCode === "sac_bunt") {
+        target.sacBuntsAllowed += 1;
+      } else if (ab.resultCode === "sac_fly") {
+        target.sacFliesAllowed += 1;
+      }
+      if (isStrikeoutResult(ab.resultCode)) {
+        target.strikeouts += 1;
+      }
+      if (ab.resultCode === "walk" || ab.resultCode === "intentional_walk") {
+        target.walks += 1;
+        target.walksHbp += 1;
+      } else if (ab.resultCode === "hit_by_pitch") {
+        target.hitByPitch += 1;
+        target.walksHbp += 1;
+      }
 
-    // ボーク（投球配列の balk を優先し、未記録時のみ進塁記録から重複除外計上）
-    const pitchBalkCount = ab.pitches.filter((p) => p === "balk").length;
-    if (pitchBalkCount > 0) {
-      target.balks += pitchBalkCount;
-    } else {
-      const balkKeys = new Set<string>();
+      // 暴投（同一打席・同一投球での複数走者進塁は1回として計上＋振り逃げ暴投の補完）
+      const wpKeys = new Set<string>();
+      let hasTerminalAdvWp = false;
       for (const adv of ab.advances) {
-        if (adv.method === "balk") {
-          balkKeys.add(
+        if (adv.method === "wp") {
+          wpKeys.add(
             typeof adv.pitchNumber === "number" ? `p:${adv.pitchNumber}` : "ab"
           );
+          if (adv.from === "BAT" || typeof adv.pitchNumber !== "number") {
+            hasTerminalAdvWp = true;
+          }
         }
       }
-      target.balks += balkKeys.size;
+      if (
+        ab.resultCode === "dropped_third_strike" &&
+        classifyDroppedThirdStrikeReach(ab.battedDirection, ab.resultLabel)
+          .kind === "wp" &&
+        !hasTerminalAdvWp
+      ) {
+        wpKeys.add("dts:wp");
+      }
+      target.wildPitches += wpKeys.size;
+
+      // ボーク（投球配列の balk を優先し、未記録時のみ進塁記録から重複除外計上）
+      const pitchBalkCount = ab.pitches.filter((p) => p === "balk").length;
+      if (pitchBalkCount > 0) {
+        target.balks += pitchBalkCount;
+      } else {
+        const balkKeys = new Set<string>();
+        for (const adv of ab.advances) {
+          if (adv.method === "balk") {
+            balkKeys.add(
+              typeof adv.pitchNumber === "number"
+                ? `p:${adv.pitchNumber}`
+                : "ab"
+            );
+          }
+        }
+        target.balks += balkKeys.size;
+      }
+
+      halfInningPlays.push({
+        atBatId: ab.id,
+        pitcherKey: String(pIdx),
+        rawResult: ab.resultCode,
+        runsInPlay: ab.runsInPlay || 0,
+        snapAb: ab,
+        advances: mapSnapshotAdvancesToPitchingEvents(ab.advances),
+      });
     }
 
-    const fallbackRuns = Math.max(0, ab.runsInPlay || 0);
-    const runsToAdd = charge ? charge.runs : fallbackRuns;
-    const earnedToAdd = charge
-      ? charge.earnedRuns
-      : ab.resultCode === "error"
-      ? 0
-      : fallbackRuns;
-    target.runsAllowed += runsToAdd;
-    target.earnedRuns += earnedToAdd;
+    const inningCharges = evaluateHalfInningPitcherCharges(halfInningPlays);
+    let chargedRunsInInn = 0;
+    for (const [pKey, ch] of inningCharges.entries()) {
+      const idxNum = Number(pKey);
+      const target = accList[idxNum];
+      if (!target) continue;
+      target.outsRecorded += ch.outs;
+      target.battersFaced += ch.battersFaced;
+      target.runsAllowed += ch.runs;
+      target.earnedRuns += ch.earnedRuns;
+      chargedRunsInInn += ch.runs;
+    }
+
+    const summaryRuns =
+      inningSummaries.find((s) => s.inning === inn)?.runs ?? 0;
+    if (summaryRuns > chargedRunsInInn && accList[lastPitcherIdxInInn]) {
+      const diffRuns = summaryRuns - chargedRunsInInn;
+      accList[lastPitcherIdxInInn]!.runsAllowed += diffRuns;
+      const innErrs =
+        inningSummaries.find((s) => s.inning === inn)?.errors ?? 0;
+      if (innErrs === 0) {
+        accList[lastPitcherIdxInInn]!.earnedRuns += diffRuns;
+      }
+    }
   }
 
   const pitcherRows: CompiledPitcherRowStats[] = accList

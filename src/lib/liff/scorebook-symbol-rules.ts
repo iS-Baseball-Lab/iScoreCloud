@@ -1,4 +1,5 @@
 // filepath: src/lib/liff/scorebook-symbol-rules.ts
+import { classifyDroppedThirdStrikeReach } from "@/lib/liff/baseball-official-rules";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import type {
   AdvanceMethodCode,
@@ -1504,6 +1505,8 @@ export function formatAdvanceMethodByRules(
         return extra?.isDoubleSteal ? "DS" : "S′";
       }
       return isKanji ? "盗" : "S";
+    case "indifference":
+      return isKanji ? "無関心" : "O";
     case "caught_stealing":
       return isKanji ? "盗死" : "CS";
     case "pickoff_out":
@@ -1864,6 +1867,20 @@ export function formatAtBatPlayNotation(
     const called = isCalledStrikeout(ab);
     const isThreeBunt = /3バント|スリーバント/.test(label);
 
+    const resolveDtsSafeSubText = (): string => {
+      const dts = classifyDroppedThirdStrikeReach(dir, label);
+      if (dts.kind === "throwing_error") {
+        return `${dts.errorPos || "2"}E-3`;
+      }
+      if (dts.kind === "receiving_error") {
+        return `${dts.assistPos || "2"}-${dts.errorPos || "3"}E`;
+      }
+      if (dts.kind === "pb") {
+        return rules.advanceError === "kanji" ? "捕" : "PB";
+      }
+      return rules.advanceError === "kanji" ? "暴" : "WP";
+    };
+
     if (rules.strikeout === "k_called_so_swing") {
       if (
         rc === "dropped_third_strike" ||
@@ -1872,7 +1889,7 @@ export function formatAtBatPlayNotation(
         const throwSub =
           rc === "dropped_third_strike_out"
             ? inferFielderToken(dir, label, "") || undefined
-            : undefined;
+            : resolveDtsSafeSubText();
         return {
           mainText: "K",
           subText: throwSub,
@@ -1892,9 +1909,7 @@ export function formatAtBatPlayNotation(
       rc === "dropped_third_strike_out"
         ? inferFielderToken(dir, label, "2-3")
         : rc === "dropped_third_strike"
-        ? rules.advanceError === "kanji"
-          ? "振逃"
-          : "D3S"
+        ? resolveDtsSafeSubText()
         : isThreeBunt
         ? "3B"
         : undefined;
@@ -1937,10 +1952,10 @@ export function formatAtBatPlayNotation(
     };
   }
 
-  // 4. 犠打（送りバント）
+  // 4. 犠打（送りバント：一塁ベースアウト A / タッチアウト TO のみ有効。二封 B・三封 C・本封 H は規則 9.08 上 犠打不成立）
   if (rc === "sac_bunt") {
     const explicitBaseStepSac = dir.match(
-      /^([1-9](?:-[1-9])*(?:A|B|C|H|TO))$/i
+      /^([1-9](?:-[1-9])*(?:A|TO))$/i
     );
     const token = explicitBaseStepSac
       ? explicitBaseStepSac[1].toUpperCase()

@@ -195,7 +195,8 @@ function makeSegment(
       method === "pickoff_out" ||
       method === "wp" ||
       method === "pb" ||
-      method === "balk",
+      method === "balk" ||
+      method === "indifference",
     ...extra,
   };
 }
@@ -204,9 +205,11 @@ function buildChartColumns(
   rules: ScorebookSymbolRules,
   samplePlayerSurname: string
 ): SampleChartColumn[] {
-  const isKanjiAdv = rules.advanceError === "kanji";
   const walkSegs = makeEmptySegments();
   walkSegs[1] = makeSegment(1, "safe", "walk");
+
+  const dtsWpSegs = makeEmptySegments();
+  dtsWpSegs[1] = makeSegment(1, "safe", "wp");
 
   const errorSegs = makeEmptySegments();
   errorSegs[1] = makeSegment(1, "safe", "error");
@@ -271,11 +274,13 @@ function buildChartColumns(
     },
     {
       lines: ["三振", "(振逃げ)"],
+      noteLines: ["※暴投出塁の例"],
       cell: makeCell("c1-8", {
-        segments: walkSegs,
+        segments: dtsWpSegs,
         atBatSeed: {
           resultCode: "dropped_third_strike",
-          resultLabel: "振逃げ",
+          resultLabel: "振り逃げ出塁 (暴投)",
+          battedDirection: "K WP",
         },
       }),
     },
@@ -603,6 +608,18 @@ function buildChartColumns(
     throwChain: "6",
   });
 
+  const balkAdvSegs = makeEmptySegments();
+  balkAdvSegs[1] = makeSegment(1, "safe", "walk");
+  balkAdvSegs[2] = makeSegment(2, "safe", "balk");
+
+  const wpAdvSegs = makeEmptySegments();
+  wpAdvSegs[1] = makeSegment(1, "safe", "walk");
+  wpAdvSegs[2] = makeSegment(2, "safe", "wp");
+
+  const pbAdvSegs = makeEmptySegments();
+  pbAdvSegs[1] = makeSegment(1, "safe", "walk");
+  pbAdvSegs[2] = makeSegment(2, "safe", "pb");
+
   const walkForce2bOutSegs = makeEmptySegments();
   walkForce2bOutSegs[1] = makeSegment(1, "safe", "walk");
   walkForce2bOutSegs[2] = makeSegment(2, "out", "fc", {
@@ -676,31 +693,23 @@ function buildChartColumns(
     },
     {
       lines: ["ボーク"],
+      noteLines: ["※走者一斉進塁"],
       cell: makeCell("c4-6", {
-        atBatSeed: {
-          resultCode: "other",
-          battedDirection: isKanjiAdv ? "ボ" : "BK",
-        },
+        segments: balkAdvSegs,
       }),
     },
     {
-      lines: ["暴投", "(ピッチャーのエラー)"],
-      noteLines: ["※ワイルドピッチ"],
+      lines: ["暴投", "(ワイルドピッチ)"],
+      noteLines: ["※失策にはならない"],
       cell: makeCell("c4-7", {
-        atBatSeed: {
-          resultCode: "other",
-          battedDirection: isKanjiAdv ? "暴" : "WP",
-        },
+        segments: wpAdvSegs,
       }),
     },
     {
-      lines: ["捕逸", "(キャッチャーのエラー)"],
-      noteLines: ["※パスボール"],
+      lines: ["捕逸", "(パスボール)"],
+      noteLines: ["※失策にはならない"],
       cell: makeCell("c4-8", {
-        atBatSeed: {
-          resultCode: "other",
-          battedDirection: isKanjiAdv ? "捕" : "PB",
-        },
+        segments: pbAdvSegs,
       }),
     },
     null,

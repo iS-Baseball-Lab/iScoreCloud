@@ -4819,12 +4819,21 @@ export function DigitalScorebookSheet({
                       if (sc.kind === "avg") {
                         const hasHit = band.stats.hits > 0;
                         const hasAb = band.stats.atBats > 0;
+                        const avgText = String(rawVal);
+                        const avgFontSize =
+                          avgText.length >= 5
+                            ? bands.length === 1
+                              ? 8.5
+                              : 7.9
+                            : bands.length === 1
+                            ? 9.8
+                            : 8.9;
                         return (
                           <text
                             key={`st-val-${band.bandIdx}-${sc.key}`}
                             x={sx + sc.w / 2}
                             y={band.textY}
-                            fontSize={bands.length === 1 ? 9.8 : 8.9}
+                            fontSize={avgFontSize}
                             fontWeight={hasHit ? 900 : 700}
                             textAnchor="middle"
                             fill={
@@ -4838,7 +4847,7 @@ export function DigitalScorebookSheet({
                             }
                             fontFamily={FONT_MONO}
                           >
-                            {String(rawVal)}
+                            {avgText}
                           </text>
                         );
                       }
@@ -5117,7 +5126,7 @@ export function DigitalScorebookSheet({
                 >
                   {rIdx === 0
                     ? `計 安打: ${model.totals.hits}本（単${model.totals.singles}・二${model.totals.doubles}・三${model.totals.triples}・本${model.totals.homeRuns}） / チーム打率: ${model.totals.avg}`
-                    : `計 四死球: ${model.totals.walksHbp}（四球${model.totals.walks}・死球${model.totals.hitByPitch}） / 敵失: ${model.totals.opponentErrors} / 残塁: ${model.totals.leftOnBase}（三者均衡確認済）`}
+                    : `計 四死球: ${model.totals.walksHbp}（四球${model.totals.walks}・死球${model.totals.hitByPitch}） / 敵失: ${model.totals.opponentErrors} / 残塁: ${model.totals.leftOnBase}${model.paBalanceVerified ? "（三者均衡確認済）" : ""}`}
                 </text>
                 {rIdx === 1 && (
                   <text
@@ -5221,7 +5230,13 @@ export function DigitalScorebookSheet({
                       <text
                         x={tx + sc.w / 2}
                         y={sy + 15}
-                        fontSize={sc.kind === "avg" ? 9.4 : 9.8}
+                        fontSize={
+                          sc.kind === "avg"
+                            ? String(totVal).length >= 5
+                              ? 8.2
+                              : 9.4
+                            : 9.8
+                        }
                         fontWeight={900}
                         textAnchor="middle"
                         fill={

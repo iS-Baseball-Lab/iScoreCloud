@@ -85,6 +85,14 @@ import {
 } from "@/lib/liff/schedule-default-times";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
+  classifyAtBatResultToken,
+  evaluateHalfInningPitcherCharges,
+  extractFieldingCreditsForAtBat,
+  mapSnapshotAdvancesToPitchingEvents,
+  type HalfInningAdvanceEventInput,
+  type HalfInningAtBatPitchingInput,
+} from "@/lib/liff/baseball-official-rules";
+import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   extractPracticeMatchLabelFromJson,
   extractScoreTeamNameModeFromJson,
@@ -5035,7 +5043,7 @@ interface LiffStatsSectionPayload {
 
 function formatBaseballRate(val: number): string {
   if (!Number.isFinite(val) || val <= 0) return ".000";
-  if (val >= 1) return "1.00";
+  if (val >= 1) return val.toFixed(3);
   return val.toFixed(3).replace(/^0/, "");
 }
 
@@ -5064,12 +5072,17 @@ function isNonRbiAdvanceReasonForSeason(rawReason: string | null | undefined): b
     r === "pickoff_error" ||
     r === "error" ||
     r === "obstruction" ||
+    r === "indifference" ||
+    r === "tiebreak" ||
+    r === "other" ||
     r.includes("暴投") ||
     r.includes("捕逸") ||
     r.includes("ボーク") ||
     r.includes("盗塁") ||
     r.includes("失策") ||
-    r.includes("エラー")
+    r.includes("エラー") ||
+    r.includes("無関心") ||
+    r.includes("タイブレーク")
   );
 }
 
@@ -5689,32 +5702,12 @@ app.get("/stats", async (c) => {
       }
     }
 
-    const classifyHitKind = (res: string) => {
-      const is2B =
-        res === "double" ||
-        res.includes("2B") ||
-        res.includes("二塁打") ||
-        res.includes("２塁打");
-      const is3B =
-        res === "triple" ||
-        res.includes("3B") ||
-        res.includes("三塁打") ||
-        res.includes("３塁打");
-      const isHR =
-        res === "home_run" || res.includes("HR") || res.includes("本塁打");
-      const is1B =
-        res === "single" ||
-        res.includes("1B") ||
-        res.includes("単打") ||
-        (res.includes("安") && !is2B && !is3B && !isHR);
-      return { is1B, is2B, is3B, isHR, isHit: is1B || is2B || is3B || isHR };
-    };
-
-    const isErrorResult = (res: string): boolean =>
-      res === "error" ||
-      res.includes("E") ||
-      res.includes("失策") ||
-      res.includes("エラー");
+    const advancesByAtBatId = new Map<string, Array<typeof baseAdvances.$inferSelect>>();
+    for (const adv of allAdvances) {
+      const arr = advancesByAtBatId.get(adv.atBatId) || [];
+      arr.push(adv);
+      advancesByAtBatId.set(adv.atBatId, arr);
+    }
 
     // 各試合の安打・失策数を打席データからも自動補完し、試合別スコア一覧を生成
     const enrichedMatches: LiffStatsMatchItemPayload[] = finishedRaw.map((m) => {
@@ -5726,15 +5719,35 @@ app.get("/stats", async (c) => {
       let calcOppErrors = 0;
 
       for (const ab of mAbs) {
-        const res = ab.result || "";
-        const { isHit } = classifyHitKind(res);
-        const err = isErrorResult(res);
-        if (ab.isTop === isMyTop) {
-          if (isHit) calcMyHits++;
-          if (err) calcOppErrors++;
+        const snapAb = snapMapByDbAtBatId.get(ab.id);
+        const cls = classifyAtBatResultToken(ab.result, snapAb);
+        let playErrors = 0;
+        if (snapAb) {
+          playErrors = extractFieldingCreditsForAtBat(snapAb).teamErrorCount;
         } else {
-          if (isHit) calcOppHits++;
-          if (err) calcMyErrors++;
+          if (cls.isErrorReach || cls.isInterferenceReach) {
+            playErrors += 1;
+          } else {
+            const abAdvs = advancesByAtBatId.get(ab.id) || [];
+            const hasAdvError = abAdvs.some((a) => {
+              const rs = String(a.reason || "").toLowerCase();
+              return (
+                rs === "error" ||
+                rs === "pickoff_error" ||
+                rs.includes("失策") ||
+                rs.includes("エラー")
+              );
+            });
+            if (hasAdvError) playErrors += 1;
+          }
+        }
+
+        if (ab.isTop === isMyTop) {
+          if (cls.isHit) calcMyHits++;
+          calcOppErrors += playErrors;
+        } else {
+          if (cls.isHit) calcOppHits++;
+          calcMyErrors += playErrors;
         }
       }
 
@@ -5769,14 +5782,6 @@ app.get("/stats", async (c) => {
         hasScorebook: mAbs.length > 0,
       };
     });
-
-    const advancesByAtBatId = new Map<string, Array<typeof baseAdvances.$inferSelect>>();
-    for (const adv of allAdvances) {
-      const arr = advancesByAtBatId.get(adv.atBatId) || [];
-      arr.push(adv);
-      advancesByAtBatId.set(adv.atBatId, arr);
-    }
-    const abById = new Map(allAtBats.map((a) => [a.id, a]));
 
     // スコープ別の集計関数（全体 / 公式戦 / 交流戦 / OP戦）
     const buildSectionForFilter = (filterKey: StatsFilterKey): LiffStatsSectionPayload => {
@@ -5827,6 +5832,7 @@ app.get("/stats", async (c) => {
       const batterMap = new Map<string, BatterAcc>();
       const pitcherMap = new Map<string, PitcherAcc>();
       const pitcherKeyByAtBatId = new Map<string, string>();
+      const defenseAbsByHalfKey = new Map<string, Array<typeof allAtBats[number]>>();
 
       const ensureBatter = (
         key: string,
@@ -5915,10 +5921,7 @@ app.get("/stats", async (c) => {
 
         const isMyAttack = ab.isTop === mMeta.isMyTeamTop;
         const snapAb = snapMapByDbAtBatId.get(ab.id);
-        const res =
-          ab.result === "fc" && snapAb && snapAb.resultCode !== "fc"
-            ? snapAb.resultCode
-            : ab.result || "";
+        const cls = classifyAtBatResultToken(ab.result, snapAb);
 
         if (isMyAttack) {
           const fallbackName =
@@ -5933,81 +5936,39 @@ app.get("/stats", async (c) => {
               ? playerIdByCleanName.get(cleanBatter) || `name:${cleanBatter}`
               : "");
 
-          if (batterKey && res !== "other" && !res.includes("途中断")) {
+          const abAdvances = advancesByAtBatId.get(ab.id) || [];
+
+          if (batterKey && !cls.isUnfinishedRunnerOut) {
             const b = ensureBatter(batterKey, fallbackName);
             b.matchSet.add(ab.matchId);
             b.plateAppearances++;
 
-            const isWalk =
-              res === "walk" ||
-              res === "intentional_walk" ||
-              res.includes("BB") ||
-              res.includes("四球") ||
-              res.includes("敬遠");
-            const isHbp =
-              res === "hit_by_pitch" ||
-              res.includes("HP") ||
-              res.includes("DB") ||
-              res.includes("死球");
-            const isSacBunt =
-              res === "sac_bunt" ||
-              res.includes("SH") ||
-              res.includes("犠打") ||
-              (res.includes("犠") && !res.includes("飛"));
-            const isSacFly =
-              res === "sac_fly" || res.includes("SF") || res.includes("犠飛");
-            const isInterferenceReach =
-              res === "interference" || res.includes("打撃妨害");
+            if (cls.isWalk) b.walks++;
+            if (cls.isHbp) b.hitByPitch++;
+            if (cls.isSacBunt) b.sacBunts++;
+            if (cls.isSacFly) b.sacFlies++;
 
-            if (isWalk) b.walks++;
-            if (isHbp) b.hitByPitch++;
-            if (isSacBunt) b.sacBunts++;
-            if (isSacFly) b.sacFlies++;
-
-            if (
-              !isWalk &&
-              !isHbp &&
-              !isSacBunt &&
-              !isSacFly &&
-              !isInterferenceReach
-            ) {
+            if (cls.isOfficialAtBat) {
               b.atBats++;
             }
 
-            const { is1B, is2B, is3B, isHR } = classifyHitKind(res);
-            if (isHR) {
+            if (cls.isHomeRun) {
               b.homeRuns++;
               b.hits++;
-            } else if (is3B) {
+            } else if (cls.isTriple) {
               b.triples++;
               b.hits++;
-            } else if (is2B) {
+            } else if (cls.isDouble) {
               b.doubles++;
               b.hits++;
-            } else if (is1B) {
+            } else if (cls.isSingle) {
               b.singles++;
               b.hits++;
             }
 
-            const isStrikeoutPlay =
-              res === "strikeout" ||
-              res === "dropped_third_strike" ||
-              res === "dropped_third_strike_out" ||
-              res.includes("K") ||
-              res.includes("三振") ||
-              res.includes("振逃");
-            if (isStrikeoutPlay) b.strikeouts++;
+            if (cls.isStrikeout) b.strikeouts++;
 
-            const isDoublePlay =
-              res === "double_play" ||
-              res === "triple_play" ||
-              res.includes("DP") ||
-              res.includes("併殺") ||
-              res.includes("三重殺") ||
-              res.includes("ゲッツー");
-            const isErr = isErrorResult(res);
-
-            const abSafeRuns = (advancesByAtBatId.get(ab.id) || []).filter(
+            const abSafeRuns = abAdvances.filter(
               (a) => a.toBase === 4 && !a.isOut
             );
             const snapSelfScored = Boolean(
@@ -6021,9 +5982,25 @@ app.get("/stats", async (c) => {
               ) ||
               (abSafeRuns.length > 0 && snapSelfScored);
 
-            if (isHR && !hasBatterSelfRunRow) {
+            if (cls.isHomeRun && !hasBatterSelfRunRow) {
               b.runs++;
             }
+
+            const isForcedWalkRbiEligible =
+              (cls.isWalk || cls.isHbp || cls.isInterferenceReach) &&
+              (abSafeRuns.some((a) => {
+                const r = String(a.reason || "").trim().toLowerCase();
+                return (
+                  r === "walk" ||
+                  r === "hbp" ||
+                  r === "interference" ||
+                  r.includes("押し出し")
+                );
+              }) ||
+                snapAb?.advances?.some(
+                  (a) => !a.isOut && a.to === "HP" && a.method === "walk"
+                ) ||
+                abAdvances.filter((a) => !a.isOut && a.fromBase > 0).length >= 3);
 
             const explicitRbi = explicitRbiByAtBatId.get(ab.id);
             const rbiCount =
@@ -6031,23 +6008,43 @@ app.get("/stats", async (c) => {
                 ? explicitRbi
                 : typeof snapAb?.rbi === "number"
                 ? snapAb.rbi
-                : isDoublePlay || isErr || isStrikeoutPlay
+                : cls.isGroundedIntoDoublePlay || cls.isErrorReach || cls.isStrikeout
                 ? 0
-                : isWalk || isHbp || isInterferenceReach
-                ? Math.min(
-                    1,
-                    abSafeRuns.filter(
-                      (a) => !isNonRbiAdvanceReasonForSeason(a.reason)
-                    ).length
-                  )
+                : cls.isWalk || cls.isHbp || cls.isInterferenceReach
+                ? isForcedWalkRbiEligible
+                  ? Math.min(
+                      1,
+                      abSafeRuns.filter(
+                        (a) => !isNonRbiAdvanceReasonForSeason(a.reason)
+                      ).length
+                    )
+                  : 0
                 : abSafeRuns.filter(
                     (a) => !isNonRbiAdvanceReasonForSeason(a.reason)
-                  ).length + (isHR && !hasBatterSelfRunRow ? 1 : 0);
+                  ).length + (cls.isHomeRun && !hasBatterSelfRunRow ? 1 : 0);
             b.rbi += rbiCount;
           }
 
-          // 走塁（得点・盗塁）集計
-          const abAdvances = advancesByAtBatId.get(ab.id) || [];
+          // 走塁（得点・盗塁）集計（公認野球規則 9.07(d)：重盗時に一方が盗塁刺の場合は他方の盗塁も不成立）
+          const isDbCaughtStealingRow = (row: (typeof abAdvances)[number]): boolean => {
+            const rs = String(row.reason || "");
+            if (
+              rs === "caught_stealing" ||
+              rs.includes("CS") ||
+              rs.includes("盗塁刺") ||
+              rs.includes("盗塁死")
+            ) {
+              return true;
+            }
+            return (
+              Boolean(row.isOut) &&
+              (rs === "steal" ||
+                rs.includes("stolen") ||
+                rs.includes("SB") ||
+                rs.includes("盗塁"))
+            );
+          };
+
           abAdvances.forEach((adv, advIdx) => {
             const snapAdv = snapAb?.advances?.[advIdx];
             const fallbackRunner = snapAdv?.runnerName?.trim() || "";
@@ -6067,16 +6064,26 @@ app.get("/stats", async (c) => {
             const reasonStr = String(adv.reason || "");
             if (
               !adv.isOut &&
+              !isDbCaughtStealingRow(adv) &&
               (reasonStr === "steal" ||
                 reasonStr.includes("stolen") ||
                 reasonStr.includes("SB") ||
                 reasonStr.includes("盗塁"))
             ) {
-              rAcc.stolenBases++;
+              const hasCompanionCs = abAdvances.some((other) => {
+                if (other === adv || !isDbCaughtStealingRow(other)) return false;
+                if (adv.pitchId && other.pitchId) {
+                  return adv.pitchId === other.pitchId;
+                }
+                return true;
+              });
+              if (!hasCompanionCs) {
+                rAcc.stolenBases++;
+              }
             }
           });
         } else {
-          // 自チーム守備イニング（投手成績）
+          // 自チーム守備イニング（投手成績：各試合・各ハーフイニングごとに規則 9.16 自責点・責任走者を再構築）
           const oppSt = oppStructureByMatchId.get(ab.matchId);
           const fallbackPitcher = snapAb?.pitcherName?.trim() || "";
           const cleanPitcher = normalizeNameKey(fallbackPitcher);
@@ -6096,132 +6103,76 @@ app.get("/stats", async (c) => {
               ? playerIdByCleanName.get(cleanPitcher) || `name:${cleanPitcher}`
               : "");
 
-          if (!pitcherKey) continue;
-          pitcherKeyByAtBatId.set(ab.id, pitcherKey);
+          if (pitcherKey) {
+            pitcherKeyByAtBatId.set(ab.id, pitcherKey);
 
-          const p = ensurePitcher(
-            pitcherKey,
-            fallbackPitcher,
-            matchedStint?.uniformNumber?.trim() || "-"
-          );
-          p.matchSet.add(ab.matchId);
+            const p = ensurePitcher(
+              pitcherKey,
+              fallbackPitcher,
+              matchedStint?.uniformNumber?.trim() || "-"
+            );
+            p.matchSet.add(ab.matchId);
 
-          if (res !== "other" && !res.includes("途中断")) {
-            p.battersFaced++;
+            if (cls.isHit) p.hitsAllowed++;
+            if (cls.isHomeRun) p.homeRunsAllowed++;
+            if (cls.isStrikeout) p.strikeouts++;
+            if (cls.isWalk) p.walks++;
+            if (cls.isHbp) p.hitByPitch++;
           }
 
-          const { isHit, isHR } = classifyHitKind(res);
-          if (isHit) p.hitsAllowed++;
-          if (isHR) p.homeRunsAllowed++;
+          const halfKey = `${ab.matchId}:${ab.inning}`;
+          const list = defenseAbsByHalfKey.get(halfKey) || [];
+          list.push(ab);
+          defenseAbsByHalfKey.set(halfKey, list);
+        }
+      }
 
-          if (
-            res === "strikeout" ||
-            res === "dropped_third_strike" ||
-            res === "dropped_third_strike_out" ||
-            res.includes("K") ||
-            res.includes("三振") ||
-            res.includes("振逃")
-          ) {
-            p.strikeouts++;
-          }
-          if (
-            res === "walk" ||
-            res === "intentional_walk" ||
-            res.includes("BB") ||
-            res.includes("四球") ||
-            res.includes("敬遠")
-          ) {
-            p.walks++;
-          }
-          if (
-            res === "hit_by_pitch" ||
-            res.includes("HP") ||
-            res.includes("DB") ||
-            res.includes("死球")
-          ) {
-            p.hitByPitch++;
-          }
-
-          const isOut =
-            res.includes("アウト") ||
-            res.includes("K") ||
-            res.includes("三振") ||
-            res.includes("ゴロ") ||
-            res.includes("フライ") ||
-            res.includes("ライナー") ||
-            res.includes("併殺") ||
-            res.includes("犠") ||
-            /^[1-9]-[1-9]$/.test(res) ||
-            /^[1-9]F$/.test(res) ||
-            /^[1-9]L$/.test(res) ||
-            res === "groundout" ||
-            res === "flyout" ||
-            res === "lineout" ||
-            res === "infield_fly" ||
-            res === "strikeout" ||
-            res === "dropped_third_strike_out" ||
-            res === "sac_bunt" ||
-            res === "sac_fly" ||
-            res === "interference_out" ||
-            res === "double_play" ||
-            res === "triple_play" ||
-            res.includes("DP") ||
-            res.includes("TP");
-
-          if (isOut) {
-            if (
-              res === "triple_play" ||
-              res.includes("三重殺") ||
-              res.includes("TP")
-            ) {
-              p.outs += 3;
-            } else if (
-              res === "double_play" ||
-              res.includes("併殺") ||
-              res.includes("DP")
-            ) {
-              p.outs += 2;
-            } else {
-              p.outs += 1;
-            }
-          }
-
+      for (const [, halfAbs] of defenseAbsByHalfKey.entries()) {
+        const halfPlays: HalfInningAtBatPitchingInput[] = halfAbs.map((ab) => {
+          const snapAb = snapMapByDbAtBatId.get(ab.id);
+          const pKey = pitcherKeyByAtBatId.get(ab.id) || "";
           const defAdvances = advancesByAtBatId.get(ab.id) || [];
-          for (const adv of defAdvances) {
-            const rStr = String(adv.reason || "");
-            if (
-              adv.isOut &&
-              adv.fromBase > 0 &&
-              (rStr === "caught_stealing" ||
-                rStr === "pickoff_out" ||
-                rStr === "interference_out" ||
-                rStr === "appeal_out" ||
-                rStr === "out_on_base" ||
-                (!isOut && rStr === "fc") ||
-                rStr.includes("盗塁") ||
-                rStr.includes("牽制"))
-            ) {
-              p.outs += 1;
-            }
-            if (adv.toBase === 4 && !adv.isOut) {
-              p.runs += 1;
-              const lowReason = rStr.toLowerCase();
-              const lowAbRes = res.toLowerCase();
-              const isUnearned =
-                lowReason === "error" ||
-                lowReason === "pb" ||
-                lowReason === "pickoff_error" ||
-                lowReason.includes("失策") ||
-                lowReason.includes("エラー") ||
-                lowReason.includes("捕逸") ||
-                lowAbRes === "error" ||
-                lowAbRes.includes("失策") ||
-                lowAbRes.includes("エラー");
-              if (!isUnearned) {
-                p.earnedRuns += 1;
-              }
-            }
-          }
+          const mappedDbAdvs: HalfInningAdvanceEventInput[] = defAdvances
+            .filter(
+              (a) =>
+                a.toBase >= 1 &&
+                a.toBase <= 4 &&
+                a.fromBase >= 0 &&
+                a.fromBase <= 3 &&
+                !(a.fromBase > 0 && !a.isOut && a.fromBase === a.toBase)
+            )
+            .map((a) => ({
+              fromBase: a.fromBase as 0 | 1 | 2 | 3,
+              toBase: a.toBase as 1 | 2 | 3 | 4,
+              isOut: Boolean(a.isOut),
+              reason: String(a.reason || ""),
+            }));
+          const effectiveAdvs =
+            snapAb && Array.isArray(snapAb.advances) && snapAb.advances.length > 0
+              ? mapSnapshotAdvancesToPitchingEvents(snapAb.advances)
+              : mappedDbAdvs;
+          const dbSafeRuns = defAdvances.filter(
+            (a) => !a.isOut && a.toBase === 4
+          ).length;
+
+          return {
+            atBatId: ab.id,
+            pitcherKey: pKey,
+            rawResult: ab.result,
+            runsInPlay: Math.max(snapAb?.runsInPlay || 0, dbSafeRuns),
+            snapAb,
+            advances: effectiveAdvs,
+          };
+        });
+
+        const charges = evaluateHalfInningPitcherCharges(halfPlays);
+        for (const [pKey, ch] of charges.entries()) {
+          const target = pitcherMap.get(pKey);
+          if (!target) continue;
+          target.outs += ch.outs;
+          target.battersFaced += ch.battersFaced;
+          target.runs += ch.runs;
+          target.earnedRuns += ch.earnedRuns;
         }
       }
 

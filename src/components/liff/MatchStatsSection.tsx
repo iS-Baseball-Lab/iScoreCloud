@@ -1514,7 +1514,6 @@ export function MatchStatsSection({
     const val = batterTotal.hits / batterTotal.atBats;
     const raw = val.toFixed(3);
     if (raw.startsWith("0.")) return raw.slice(1);
-    if (raw === "1.000") return "1.00";
     return raw;
   }, [batterTotal.atBats, batterTotal.hits]);
 
@@ -1943,7 +1942,9 @@ export function MatchStatsSection({
                       打点
                     </th>
                     <th className="px-1.5 py-2 text-center min-w-[34px]">得点</th>
-                    <th className="px-1.5 py-2 text-center min-w-[34px]">四球</th>
+                    <th className="px-1.5 py-2 text-center min-w-[38px]">
+                      {batterColumnMode === "compact" ? "四死球" : "四球"}
+                    </th>
                     {batterColumnMode === "full" && (
                       <th className="px-1.5 py-2 text-center min-w-[34px]">死球</th>
                     )}

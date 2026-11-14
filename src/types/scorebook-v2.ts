@@ -64,6 +64,7 @@ export type AdvanceMethodCode =
   | "sac"
   | "throw_advance"
   | "steal"
+  | "indifference"
   | "caught_stealing"
   | "pickoff_out"
   | "pickoff_error"
@@ -400,6 +401,7 @@ export const ADVANCE_METHOD_LABELS: Record<AdvanceMethodCode, string> = {
   sac: "犠打・犠飛・タッチアップ",
   throw_advance: "送球間進塁 (T)",
   steal: "盗塁 (S)",
+  indifference: "守備無関心 (O)",
   caught_stealing: "盗塁死 (CS)",
   pickoff_out: "牽制死 (PO)",
   pickoff_error: "牽制悪送球",

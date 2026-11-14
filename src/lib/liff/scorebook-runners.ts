@@ -7,6 +7,10 @@ import {
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
 import { normalizeLegacyForceOutAtBat } from "./scorebook-fielding";
+import {
+  classifyDroppedThirdStrikeReach,
+  isAerialMultiOutAtBat,
+} from "./baseball-official-rules";
 
 export type OccupiedBaseKey = "1B" | "2B" | "3B";
 
@@ -78,6 +82,7 @@ export interface AtBatRunnerSnapshot {
 
 const PRE_PLAY_METHODS: ReadonlySet<AdvanceMethodCode> = new Set([
   "steal",
+  "indifference",
   "caught_stealing",
   "pickoff_out",
   "pickoff_error",
@@ -92,6 +97,7 @@ const RBI_ELIGIBLE_METHODS: ReadonlySet<AdvanceMethodCode> = new Set([
   "sac",
   "walk",
   "fc",
+  "throw_advance",
 ]);
 
 export function isPrePlayAdvanceMethod(method: AdvanceMethodCode): boolean {
@@ -431,6 +437,8 @@ export function getDefaultInPlayMethodForResult(
     case "sac_bunt":
     case "sac_fly":
       return "sac";
+    case "dropped_third_strike":
+      return "wp";
     case "error":
       return "error";
     case "fc":
@@ -1477,11 +1485,18 @@ export function simulateSheetRunners(
               tr.currentBase === "3B")
         );
 
-        // 3-B. 本塁打・三塁打は塁上の非アウト走者全員が必ず本塁生還（古い中間進塁が残っていても残塁化させない）
-        if (
-          (ab.resultCode === "home_run" || ab.resultCode === "triple") &&
-          outsAfterPlay < 3
-        ) {
+        const isWalkOffFinalBottomPlay =
+          structure?.isTop === false &&
+          inning === sortedInnings[sortedInnings.length - 1] &&
+          abIdx === inningAtBats.length - 1 &&
+          outsAfterPlay < 3 &&
+          ab.runsInPlay >= 1 &&
+          ab.resultCode !== "home_run";
+        const canScoreTimePlayOnBatterStretchOut =
+          batterOutOnBases && ab.runsInPlay > 0;
+
+        // 3-B. 本塁打は塁上の非アウト走者全員が必ず本塁生還。三塁打・二塁打はサヨナラ決勝点上限（規則 9.06(f)）および打者走者タッチアウト時のタイムプレイ（規則 5.08(a)）に対応
+        if (ab.resultCode === "home_run" && outsAfterPlay < 3) {
           for (const tr of trackedRunners) {
             if (tr.isOut) continue;
             const wasAtHp = tr.finalBase === "HP";
@@ -1505,21 +1520,75 @@ export function simulateSheetRunners(
               remainingRunsToAssign -= 1;
             }
           }
+        } else if (
+          ab.resultCode === "triple" &&
+          (outsAfterPlay < 3 || canScoreTimePlayOnBatterStretchOut)
+        ) {
+          if (isWalkOffFinalBottomPlay) {
+            for (const tr of stillActiveUnmoved) {
+              if (remainingRunsToAssign > 0) {
+                tr.finalBase = "HP";
+                tr.currentBase = "HP";
+                tr.effectiveMethod = "hit";
+                tr.isImplicit = true;
+                remainingRunsToAssign -= 1;
+              } else {
+                const capDest: OccupiedBaseKey =
+                  !trackedRunners.some(
+                    (o) => o !== tr && !o.isOut && o.currentBase === "3B"
+                  ) && batterFinalBase !== "3B"
+                    ? "3B"
+                    : !trackedRunners.some(
+                        (o) => o !== tr && !o.isOut && o.currentBase === "2B"
+                      )
+                    ? "2B"
+                    : "1B";
+                tr.finalBase = capDest;
+                tr.currentBase = capDest;
+                tr.effectiveMethod = "hit";
+                tr.isImplicit = true;
+              }
+            }
+          } else {
+            for (const tr of trackedRunners) {
+              if (tr.isOut) continue;
+              if (outsAfterPlay >= 3 && remainingRunsToAssign <= 0) break;
+              const wasAtHp = tr.finalBase === "HP";
+              tr.finalBase = "HP";
+              tr.currentBase = "HP";
+              if (
+                !tr.inPlayExplicitMove ||
+                isNoOpHoldAdvance(tr.inPlayExplicitMove)
+              ) {
+                tr.effectiveMethod = "hit";
+                tr.isImplicit = true;
+              } else if (tr.inPlayExplicitMove.to !== "HP") {
+                tr.effectiveMethod = "hit";
+                tr.inPlayExplicitMove = {
+                  ...tr.inPlayExplicitMove,
+                  to: "HP",
+                  method: "hit",
+                };
+              }
+              if (!wasAtHp && remainingRunsToAssign > 0) {
+                remainingRunsToAssign -= 1;
+              }
+            }
+          }
         } else if (ab.resultCode === "double") {
-          // 二塁打: 3B走者は生還、2B走者は得点に応じて生還または3B、1B走者は得点に応じて生還または3B
+          // 二塁打: 3B走者は生還（サヨナラ上限・3アウト時は remainingRunsToAssign 優先）、2B/1B走者は得点に応じて生還または3B
           for (const tr of stillActiveUnmoved) {
-            if (tr.currentBase === "3B") {
+            if (
+              (tr.currentBase === "3B" &&
+                outsAfterPlay < 3 &&
+                (!isWalkOffFinalBottomPlay || remainingRunsToAssign > 0)) ||
+              remainingRunsToAssign > 0
+            ) {
               tr.finalBase = "HP";
               tr.currentBase = "HP";
               tr.effectiveMethod = "hit";
               tr.isImplicit = true;
               if (remainingRunsToAssign > 0) remainingRunsToAssign -= 1;
-            } else if (remainingRunsToAssign > 0) {
-              tr.finalBase = "HP";
-              tr.currentBase = "HP";
-              tr.effectiveMethod = "hit";
-              tr.isImplicit = true;
-              remainingRunsToAssign -= 1;
             } else {
               tr.finalBase = "3B";
               tr.currentBase = "3B";
@@ -1563,11 +1632,18 @@ export function simulateSheetRunners(
             r1.isImplicit = true;
           }
         } else {
-          // 単打・失策・野選・犠打・犠飛・内野ゴロ得点など
-          const defaultMethod = getDefaultInPlayMethodForResult(
-            ab.resultCode,
-            false
-          );
+          // 単打・失策・野選・犠打・犠飛・内野ゴロ得点・振り逃げなど
+          const dtsCls =
+            ab.resultCode === "dropped_third_strike"
+              ? classifyDroppedThirdStrikeReach(ab.battedDirection, ab.resultLabel)
+              : null;
+          const defaultMethod: AdvanceMethodCode = dtsCls
+            ? dtsCls.kind === "pb"
+              ? "pb"
+              : dtsCls.kind === "wp"
+              ? "wp"
+              : "error"
+            : getDefaultInPlayMethodForResult(ab.resultCode, false);
 
           // まず runsInPlay > 0 の未割当得点をリード走者（3B -> 2B -> 1B）から生還させる
           for (const tr of stillActiveUnmoved) {
@@ -1617,7 +1693,10 @@ export function simulateSheetRunners(
 
         // 3-C. 明示的な中間進塁（例: 二塁打での 1B->3B や OCRの 1B->2B）が入っていても、
         // 打席得点 (runsInPlay) に対して本塁生還数が不足している場合はホームに近い走者から確実に本塁生還へ昇格させる
-        if (outsAfterPlay < 3 && ab.resultCode !== "home_run") {
+        if (
+          (outsAfterPlay < 3 || canScoreTimePlayOnBatterStretchOut) &&
+          ab.resultCode !== "home_run"
+        ) {
           const currentSafeHp =
             trackedRunners.filter((r) => !r.isOut && r.finalBase === "HP")
               .length +
@@ -1627,6 +1706,18 @@ export function simulateSheetRunners(
             const isAwardedFirst = isAwardedFirstBaseResult(ab.resultCode);
             const fallbackScoreMethod: AdvanceMethodCode = isAwardedFirst
               ? "wp"
+              : ab.resultCode === "dropped_third_strike"
+              ? classifyDroppedThirdStrikeReach(
+                  ab.battedDirection,
+                  ab.resultLabel
+                ).kind === "pb"
+                ? "pb"
+                : classifyDroppedThirdStrikeReach(
+                    ab.battedDirection,
+                    ab.resultLabel
+                  ).kind === "wp"
+                ? "wp"
+                : "error"
               : getDefaultInPlayMethodForResult(ab.resultCode, false);
             const promoteCandidates = trackedRunners
               .filter((r) => {
@@ -1951,7 +2042,6 @@ export function simulateSheetRunners(
 }
 
 const ZERO_RBI_RESULT_CODES: ReadonlySet<CanonicalAtBatResult> = new Set([
-  "double_play",
   "triple_play",
   "error",
   "strikeout",
@@ -1960,6 +2050,20 @@ const ZERO_RBI_RESULT_CODES: ReadonlySet<CanonicalAtBatResult> = new Set([
   "interference_out",
   "other",
 ]);
+
+function isZeroDefaultRbiPlay(
+  ab: Pick<ScorebookV2AtBat, "resultCode"> &
+    Partial<Pick<ScorebookV2AtBat, "battedDirection" | "resultLabel">>
+): boolean {
+  if (ab.resultCode === "double_play") {
+    return !isAerialMultiOutAtBat(
+      ab.resultCode,
+      ab.battedDirection,
+      ab.resultLabel
+    );
+  }
+  return ZERO_RBI_RESULT_CODES.has(ab.resultCode);
+}
 
 function isAwardedFirstBaseResult(rc: CanonicalAtBatResult): boolean {
   return (
@@ -2056,13 +2160,14 @@ export function computeBasesAtInPlayFromAdvances(
  * 指定された打席結果・進塁内容・打席得点に対する野球規則準拠の標準打点（RBI）を算出する
  */
 export function computeDefaultRbiForAtBat(
-  ab: Pick<ScorebookV2AtBat, "resultCode" | "advances">,
+  ab: Pick<ScorebookV2AtBat, "resultCode" | "advances"> &
+    Partial<Pick<ScorebookV2AtBat, "battedDirection" | "resultLabel">>,
   nextRunsInPlay: number,
   basesBefore: BaseRunnerMap
 ): number {
   const safeRuns = Math.max(0, nextRunsInPlay);
   if (safeRuns === 0) return 0;
-  if (ZERO_RBI_RESULT_CODES.has(ab.resultCode)) {
+  if (isZeroDefaultRbiPlay(ab)) {
     return 0;
   }
 
@@ -2355,7 +2460,7 @@ export function computeSyncedStatsFromAdvances(
 
     runsInPlay = explicitSafeHp.length + implicitRbiHp;
 
-    if (ZERO_RBI_RESULT_CODES.has(ab.resultCode)) {
+    if (isZeroDefaultRbiPlay(ab)) {
       rbi = 0;
     } else if (isAwardedFirst) {
       rbi = isBasesLoadedAtPlay && runsInPlay >= 1 ? 1 : 0;
@@ -2730,7 +2835,17 @@ export function buildSmartAdvancesForResultChange(params: {
       isOut: false,
     });
   } else if (nextResultCode === "sac_bunt" && outsBefore < 2) {
-    if (r2 && !r3) {
+    if (r3) {
+      generated.push({
+        id: crypto.randomUUID(),
+        runnerName: r3.name,
+        from: "3B",
+        to: "HP",
+        method: "sac",
+        isOut: false,
+      });
+    }
+    if (r2) {
       generated.push({
         id: crypto.randomUUID(),
         runnerName: r2.name,
@@ -2740,7 +2855,7 @@ export function buildSmartAdvancesForResultChange(params: {
         isOut: false,
       });
     }
-    if (r1 && (!r2 || !r3)) {
+    if (r1) {
       generated.push({
         id: crypto.randomUUID(),
         runnerName: r1.name,
@@ -2750,11 +2865,44 @@ export function buildSmartAdvancesForResultChange(params: {
         isOut: false,
       });
     }
-  } else if (
-    nextResultCode === "single" ||
-    nextResultCode === "error" ||
-    nextResultCode === "dropped_third_strike"
-  ) {
+  } else if (nextResultCode === "dropped_third_strike") {
+    const dtsCls = classifyDroppedThirdStrikeReach(
+      nextBattedDirection,
+      nextResultLabel
+    );
+    const dtsMethod: AdvanceMethodCode =
+      dtsCls.kind === "pb" ? "pb" : dtsCls.kind === "wp" ? "wp" : "error";
+    if (outsBefore >= 2 && r1) {
+      if (r2 && r3) {
+        generated.push({
+          id: crypto.randomUUID(),
+          runnerName: r3.name,
+          from: "3B",
+          to: "HP",
+          method: dtsMethod,
+          isOut: false,
+        });
+      }
+      if (r2) {
+        generated.push({
+          id: crypto.randomUUID(),
+          runnerName: r2.name,
+          from: "2B",
+          to: "3B",
+          method: dtsMethod,
+          isOut: false,
+        });
+      }
+      generated.push({
+        id: crypto.randomUUID(),
+        runnerName: r1.name,
+        from: "1B",
+        to: "2B",
+        method: dtsMethod,
+        isOut: false,
+      });
+    }
+  } else if (nextResultCode === "single" || nextResultCode === "error") {
     const m: AdvanceMethodCode =
       nextResultCode === "error" ? "error" : "hit";
     if (r1 && r2 && r3) {
@@ -3194,7 +3342,13 @@ function scoreDownstreamRunCandidate(
       if (snap.outsBefore > 0 || inPlayBase !== "3B") return null;
       return {
         score: 54 + baseBonus + deferredBonus,
-        method: "fc",
+        method: isAerialMultiOutAtBat(
+          ab.resultCode,
+          ab.battedDirection,
+          ab.resultLabel
+        )
+          ? "sac"
+          : "fc",
         startFrom: inPlayBase,
       };
     case "flyout":
@@ -3204,13 +3358,19 @@ function scoreDownstreamRunCandidate(
         method: "sac",
         startFrom: inPlayBase,
       };
-    case "dropped_third_strike":
+    case "dropped_third_strike": {
       if (inPlayBase !== "3B") return null;
+      const dtsCls = classifyDroppedThirdStrikeReach(
+        ab.battedDirection,
+        ab.resultLabel
+      );
       return {
         score: 36 + baseBonus + deferredBonus,
-        method: "wp",
+        method:
+          dtsCls.kind === "pb" ? "pb" : dtsCls.kind === "wp" ? "wp" : "error",
         startFrom: pr.startBase,
       };
+    }
     case "strikeout":
     case "dropped_third_strike_out":
     case "infield_fly":
@@ -3467,7 +3627,7 @@ export function reconcileSheetRunsAndRbi(
         advModified = true;
       }
 
-      // A-2. 非満塁時の四死球における不可能な押し出し生還と、3アウト成立打席での無効インプレー生還を除去
+      // A-2. 非満塁時の四死球における不可能な押し出し生還と、3アウト成立打席での無効インプレー生還（公認野球規則 5.08(a)）を除去
       const basesAtPlay = computeBasesAtInPlayFromAdvances(
         effectiveBasesBefore,
         prelimAdvances
@@ -3476,15 +3636,38 @@ export function reconcileSheetRunsAndRbi(
         basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
       );
       const outsAfter = Math.min(3, outsBefore + Math.max(0, ab.outsInPlay));
+      const isForcedRunnerBaseAtPlay = (fromBase: OccupiedBaseKey): boolean => {
+        if (fromBase === "1B") return true;
+        if (fromBase === "2B") return Boolean(basesAtPlay["1B"]);
+        return Boolean(basesAtPlay["1B"] && basesAtPlay["2B"]);
+      };
+      const hasForceOutAmongInPlayRunners = prelimAdvances.some(
+        (a) =>
+          a.isOut &&
+          a.from !== "BAT" &&
+          !isPrePlayAdvanceMethod(a.method) &&
+          (a.method === "fc" ||
+            ((ab.resultCode === "fc" ||
+              ab.resultCode === "groundout" ||
+              ab.resultCode === "double_play" ||
+              ab.resultCode === "triple_play") &&
+              isForcedRunnerBaseAtPlay(a.from)))
+      );
+      const isAerialDp = isAerialMultiOutAtBat(
+        ab.resultCode,
+        ab.battedDirection,
+        ab.resultLabel
+      );
       const invalidatesInPlayRunsOnThirdOut =
         outsAfter >= 3 &&
-        (ab.resultCode === "double_play" ||
-          ab.resultCode === "triple_play" ||
+        (ab.resultCode === "triple_play" ||
+          (ab.resultCode === "double_play" && !isAerialDp) ||
           isForceOutGroundout(
             ab.resultCode,
             ab.battedDirection,
             ab.resultLabel
           ) ||
+          hasForceOutAmongInPlayRunners ||
           (outsBefore >= 2 &&
             isIntrinsicBatterOutResult(
               ab.resultCode,
@@ -3564,6 +3747,21 @@ export function reconcileSheetRunsAndRbi(
       const explicitSafeHp = realClean.filter(
         (a) => !a.isOut && a.to === "HP"
       ).length;
+      const isWalkOffFinalBottomPlay =
+        structure?.isTop === false &&
+        inn === sortedInnings[sortedInnings.length - 1] &&
+        i === innList.length - 1 &&
+        outsAfter < 3 &&
+        ab.runsInPlay >= 1 &&
+        ab.resultCode !== "home_run";
+      const inningMeta = structure?.innings.find((m) => m.inning === inn);
+      const confirmedInningRuns =
+        typeof inningMeta?.runs === "number"
+          ? Math.max(0, inningMeta.runs)
+          : null;
+      const runsScoredBeforeIdx = innList
+        .slice(0, i)
+        .reduce((s, x) => s + Math.max(0, x.runsInPlay), 0);
 
       let minRuns = 0;
       let maxRuns = 0;
@@ -3604,7 +3802,14 @@ export function reconcileSheetRunsAndRbi(
         maxRuns = Math.min(occupiedBeforeCount, explicitSafeHp);
       } else if (ab.resultCode === "triple") {
         minRuns = validPrePlayHp + maxInPlayRunnerHp;
-        maxRuns = minRuns + explicitBatErrorHp;
+        if (isWalkOffFinalBottomPlay) {
+          const walkOffAllowed =
+            confirmedInningRuns !== null
+              ? Math.max(1, confirmedInningRuns - runsScoredBeforeIdx)
+              : Math.max(1, ab.runsInPlay);
+          minRuns = Math.min(minRuns, Math.max(explicitSafeHp, walkOffAllowed));
+        }
+        maxRuns = validPrePlayHp + maxInPlayRunnerHp + explicitBatErrorHp;
       } else if (ab.resultCode === "double") {
         const safe3B =
           basesAtPlay["3B"] &&
@@ -3615,6 +3820,13 @@ export function reconcileSheetRunsAndRbi(
             ? 1
             : 0;
         minRuns = Math.max(explicitSafeHp, validPrePlayHp + safe3B);
+        if (isWalkOffFinalBottomPlay) {
+          const walkOffAllowed =
+            confirmedInningRuns !== null
+              ? Math.max(1, confirmedInningRuns - runsScoredBeforeIdx)
+              : Math.max(1, ab.runsInPlay);
+          minRuns = Math.min(minRuns, Math.max(explicitSafeHp, walkOffAllowed));
+        }
         maxRuns = validPrePlayHp + maxInPlayRunnerHp + explicitBatErrorHp;
       } else {
         minRuns = explicitSafeHp;
@@ -3629,15 +3841,30 @@ export function reconcileSheetRunsAndRbi(
 
       const clampedRuns = Math.max(minRuns, Math.min(maxRuns, ab.runsInPlay));
       const defaultRbi = computeDefaultRbiForAtBat(
-        { resultCode: ab.resultCode, advances: cleanedAdvances },
+        {
+          resultCode: ab.resultCode,
+          battedDirection: ab.battedDirection,
+          resultLabel: ab.resultLabel,
+          advances: cleanedAdvances,
+        },
         clampedRuns,
         effectiveBasesBefore
       );
 
       let nextRbi = defaultRbi;
       if (
+        ab.resultCode === "error" &&
+        outsBefore < 2 &&
+        outsAfter < 3 &&
+        Boolean(basesAtPlay["3B"]) &&
+        clampedRuns >= 1 &&
+        ab.rbi === 1
+      ) {
+        // 公認野球規則 9.04(b)(2): 無死・一死で三塁走者があり、失策がなくても本塁生還できたと記録員が判断した rbi === 1 を保持
+        nextRbi = 1;
+      } else if (
         clampedRuns > 0 &&
-        !ZERO_RBI_RESULT_CODES.has(ab.resultCode) &&
+        !isZeroDefaultRbiPlay(ab) &&
         !isAwardedFirstBaseResult(ab.resultCode) &&
         ab.resultCode !== "home_run" &&
         clampedRuns === ab.runsInPlay &&
@@ -3647,18 +3874,60 @@ export function reconcileSheetRunsAndRbi(
         const mentionsErrorOrBatteryMiss =
           /[Ee失]|暴投|捕逸|ボーク/.test(
             `${ab.battedDirection || ""} ${ab.resultLabel || ""}`
+          ) ||
+          realClean.some(
+            (a) =>
+              !a.isOut &&
+              a.to === "HP" &&
+              (a.method === "error" ||
+                (a.method !== "other" && !RBI_ELIGIBLE_METHODS.has(a.method)))
           );
         nextRbi =
           ab.rbi === 0 && !mentionsErrorOrBatteryMiss ? defaultRbi : ab.rbi;
       }
 
+      // 公認野球規則 9.08(d): 無死・一死での非バント外野飛球（ファウルフライ含む）で捕球後インプレー生還＆打点成立時は犠飛（sac_fly）へ自動昇格
+      let nextResultCode = ab.resultCode;
+      let nextResultLabel = ab.resultLabel;
+      const inPlayRbiHpCount = realClean.filter(
+        (a) =>
+          a.from !== "BAT" &&
+          !a.isOut &&
+          a.to === "HP" &&
+          !isPrePlayAdvanceMethod(a.method) &&
+          (RBI_ELIGIBLE_METHODS.has(a.method) || a.method === "other")
+      ).length;
+      const isBuntFly = /バント|^B/i.test(
+        `${ab.battedDirection || ""} ${ab.resultLabel || ""}`
+      );
+      if (
+        ab.resultCode === "flyout" &&
+        outsBefore < 2 &&
+        outsAfter < 3 &&
+        !isBuntFly &&
+        clampedRuns >= 1 &&
+        nextRbi >= 1 &&
+        (inPlayRbiHpCount >= 1 || validPrePlayHp === 0)
+      ) {
+        nextResultCode = "sac_fly";
+        if (nextResultLabel && !nextResultLabel.includes("犠飛")) {
+          nextResultLabel = nextResultLabel.endsWith("飛")
+            ? `${nextResultLabel.slice(0, -1)}犠飛`
+            : "犠飛";
+        }
+      }
+
       if (
         advModified ||
         clampedRuns !== ab.runsInPlay ||
-        nextRbi !== ab.rbi
+        nextRbi !== ab.rbi ||
+        nextResultCode !== ab.resultCode ||
+        nextResultLabel !== ab.resultLabel
       ) {
         innList[i] = {
           ...ab,
+          resultCode: nextResultCode,
+          resultLabel: nextResultLabel,
           advances: cleanedAdvances,
           runsInPlay: clampedRuns,
           rbi: nextRbi,
@@ -3775,14 +4044,38 @@ export function reconcileSheetRunsAndRbi(
         targetSnap.basesBefore
       );
       const nextRunsInPlay = Math.max(targetAb.runsInPlay + 1, synced.runsInPlay);
+      let promotedCode = targetAb.resultCode;
+      let promotedLabel = targetAb.resultLabel;
+      if (
+        promotedCode === "flyout" &&
+        targetSnap.outsBefore < 2 &&
+        bestPick.method === "sac" &&
+        !/バント|^B/i.test(
+          `${targetAb.battedDirection || ""} ${targetAb.resultLabel || ""}`
+        )
+      ) {
+        promotedCode = "sac_fly";
+        if (promotedLabel && !promotedLabel.includes("犠飛")) {
+          promotedLabel = promotedLabel.endsWith("飛")
+            ? `${promotedLabel.slice(0, -1)}犠飛`
+            : "犠飛";
+        }
+      }
       const nextRbi = computeDefaultRbiForAtBat(
-        { resultCode: targetAb.resultCode, advances: nextAdvances },
+        {
+          resultCode: promotedCode,
+          battedDirection: targetAb.battedDirection,
+          resultLabel: promotedLabel,
+          advances: nextAdvances,
+        },
         nextRunsInPlay,
         targetSnap.basesBefore
       );
 
       innList[bestPick.idx] = {
         ...targetAb,
+        resultCode: promotedCode,
+        resultLabel: promotedLabel,
         advances: nextAdvances,
         runsInPlay: nextRunsInPlay,
         rbi: nextRbi,
@@ -4014,7 +4307,12 @@ export function syncAtBatAdvancesForManualRuns(
     advances: sorted,
     runsInPlay: nextRuns,
     rbi: computeDefaultRbiForAtBat(
-      { resultCode: ab.resultCode, advances: sorted },
+      {
+        resultCode: ab.resultCode,
+        battedDirection: ab.battedDirection,
+        resultLabel: ab.resultLabel,
+        advances: sorted,
+      },
       nextRuns,
       basesBefore
     ),
@@ -4341,7 +4639,12 @@ export function pruneStaleSheetRunnerAdvances(
               );
             }
             nextRbi = computeDefaultRbiForAtBat(
-              { resultCode: ab.resultCode, advances: sortedNextAdvances },
+              {
+                resultCode: ab.resultCode,
+                battedDirection: ab.battedDirection,
+                resultLabel: ab.resultLabel,
+                advances: sortedNextAdvances,
+              },
               nextRunsInPlay,
               validBases
             );

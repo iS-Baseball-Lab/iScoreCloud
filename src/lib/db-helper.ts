@@ -355,13 +355,16 @@ async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> 
             OR top_at_bats_json LIKE '%インフィールド%'
             OR bottom_at_bats_json LIKE '%インフィールド%'
             OR top_at_bats_json LIKE '%"IF"%'
-            OR bottom_at_bats_json LIKE '%"IF"%'`
+            OR bottom_at_bats_json LIKE '%"IF"%'
+            OR top_at_bats_json LIKE '%K-E2%'
+            OR bottom_at_bats_json LIKE '%K-E2%'`
       ),
       d1.prepare(
         `SELECT id, match_id, at_bat_id, description
          FROM play_logs
          WHERE ((description LIKE '%野選%' OR description LIKE '%FC%')
                 AND description LIKE '%アウト%')
+            OR description LIKE '%(K-E2)%'
             OR (description LIKE '%インフィールド%'
                 AND (description LIKE '%中インフィールド%'
                   OR description LIKE '%左インフィールド%'

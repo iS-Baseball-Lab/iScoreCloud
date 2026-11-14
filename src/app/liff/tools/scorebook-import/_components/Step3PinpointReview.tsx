@@ -55,8 +55,10 @@ import {
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
+import { classifyDroppedThirdStrikeReach } from "@/lib/liff/baseball-official-rules";
 import {
   buildSmartAdvancesForResultChange,
+  computeBasesAtInPlayFromAdvances,
   computeDefaultRbiForAtBat,
   computeSyncedStatsFromAdvances,
   createEmptyBaseMap,
@@ -1017,11 +1019,14 @@ export function Step3PinpointReview({
     let nextRunsInPlay = prev.runsInPlay;
     let nextRbi = prev.rbi;
 
-    // ボーク追加時、塁上に走者がいれば全員1つずつ安全進塁を自動付与（重複未登録時のみ）
+    // ボーク追加時、その時点の塁上走者全員（タイブレーク・直前盗塁反映済）に1つずつ安全進塁を自動付与（公認野球規則 6.02(a)）
+    const basesAtBalk =
+      addedCode === "balk"
+        ? computeBasesAtInPlayFromAdvances(basesBefore, nextAdvances)
+        : basesBefore;
     if (
       addedCode === "balk" &&
-      !nextAdvances.some((a) => a.method === "balk") &&
-      (basesBefore["3B"] || basesBefore["2B"] || basesBefore["1B"])
+      (basesAtBalk["3B"] || basesAtBalk["2B"] || basesAtBalk["1B"])
     ) {
       const realPitchCountBeforeBalk = nextPitches
         .slice(0, -1)
@@ -1029,10 +1034,10 @@ export function Step3PinpointReview({
       const pitchNumber =
         realPitchCountBeforeBalk > 0 ? realPitchCountBeforeBalk : undefined;
       const balkEntries: ScorebookV2Advance[] = [];
-      if (basesBefore["3B"]) {
+      if (basesAtBalk["3B"]) {
         balkEntries.push({
           id: `${prev.id}-bk-3b-${Date.now()}`,
-          runnerName: basesBefore["3B"].name,
+          runnerName: basesAtBalk["3B"].name,
           from: "3B",
           to: "HP",
           method: "balk",
@@ -1040,10 +1045,10 @@ export function Step3PinpointReview({
           pitchNumber,
         });
       }
-      if (basesBefore["2B"]) {
+      if (basesAtBalk["2B"]) {
         balkEntries.push({
           id: `${prev.id}-bk-2b-${Date.now()}`,
-          runnerName: basesBefore["2B"].name,
+          runnerName: basesAtBalk["2B"].name,
           from: "2B",
           to: "3B",
           method: "balk",
@@ -1051,10 +1056,10 @@ export function Step3PinpointReview({
           pitchNumber,
         });
       }
-      if (basesBefore["1B"]) {
+      if (basesAtBalk["1B"]) {
         balkEntries.push({
           id: `${prev.id}-bk-1b-${Date.now()}`,
-          runnerName: basesBefore["1B"].name,
+          runnerName: basesAtBalk["1B"].name,
           from: "1B",
           to: "2B",
           method: "balk",
@@ -1230,8 +1235,9 @@ export function Step3PinpointReview({
       (cnt.strikes >= 3 || endedWithThreeBuntFoul)
     ) {
       if (
-        prev.resultCode !== "dropped_third_strike" &&
-        prev.resultCode !== "dropped_third_strike_out"
+        endedWithThreeBuntFoul ||
+        (prev.resultCode !== "dropped_third_strike" &&
+          prev.resultCode !== "dropped_third_strike_out")
       ) {
         const soLabel =
           endedWithThreeBuntFoul || lastBatterPitch === "bunt_foul"
@@ -3725,6 +3731,98 @@ export function Step3PinpointReview({
                           <p className="text-[10px] font-bold text-muted-foreground">
                             ※四死球・三振のため守備位置の指定は不要です（ゴロ・フライ・安打・失策等を選ぶとワンタップで1投〜9右を指定できます）
                           </p>
+                        ) : rc === "dropped_third_strike" ? (
+                          <div className="space-y-1.5">
+                            <span className="text-[10px] font-bold text-muted-foreground block">
+                              振り逃げ出塁の内訳（公認野球規則 9.12(f) / 9.13）:
+                            </span>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              {(
+                                [
+                                  {
+                                    id: "wp",
+                                    dir: "K WP",
+                                    label: "振り逃げ出塁 (暴投)",
+                                    chip: "暴投 (K WP・標準)",
+                                    kind: "wp" as const,
+                                  },
+                                  {
+                                    id: "pb",
+                                    dir: "K PB",
+                                    label: "振り逃げ出塁 (捕逸)",
+                                    chip: "捕逸 (K PB・非自責)",
+                                    kind: "pb" as const,
+                                  },
+                                  {
+                                    id: "throw_error",
+                                    dir: "K 2E-3",
+                                    label: "振り逃げ出塁 (捕悪送球)",
+                                    chip: "捕手悪送球 (K 2E-3)",
+                                    kind: "throw_error" as const,
+                                  },
+                                  {
+                                    id: "catch_error",
+                                    dir: "K 2-3E",
+                                    label: "振り逃げ出塁 (一落球)",
+                                    chip: "一塁手落球 (K 2-3E)",
+                                    kind: "catch_error" as const,
+                                  },
+                                ] as const
+                              ).map((opt) => {
+                                const curDts = classifyDroppedThirdStrikeReach(
+                                  editingAtBat.battedDirection,
+                                  editingAtBat.resultLabel
+                                );
+                                const isActive = curDts.kind === opt.kind;
+                                return (
+                                  <button
+                                    key={opt.id}
+                                    type="button"
+                                    onClick={() =>
+                                      updateSingleAtBat(
+                                        editingAtBat.id,
+                                        (prev) => {
+                                          const curBasesBefore =
+                                            editingRunnerSnapshot?.basesBefore ??
+                                            createEmptyBaseMap();
+                                          const syncedDts =
+                                            buildSmartAdvancesForResultChange({
+                                              prevAb: prev,
+                                              nextResultCode:
+                                                "dropped_third_strike",
+                                              nextBattedDirection: opt.dir,
+                                              nextResultLabel: opt.label,
+                                              defaultPresetOuts: 0,
+                                              outsBefore:
+                                                editingRunnerSnapshot?.outsBefore ??
+                                                0,
+                                              basesBefore: curBasesBefore,
+                                            });
+                                          return {
+                                            ...prev,
+                                            battedDirection: opt.dir,
+                                            resultLabel: opt.label,
+                                            advances: syncedDts.advances,
+                                            outsInPlay: syncedDts.outsInPlay,
+                                            runsInPlay: syncedDts.runsInPlay,
+                                            rbi: syncedDts.rbi,
+                                            confidence: "high",
+                                          };
+                                        }
+                                      )
+                                    }
+                                    className={`py-1.5 px-2 rounded-xl text-[10px] border transition-all cursor-pointer ${
+                                      isActive
+                                        ? "bg-primary text-primary-foreground border-primary font-black shadow-2xs"
+                                        : "bg-card border-border text-foreground font-bold hover:bg-accent"
+                                    }`}
+                                  >
+                                    {opt.chip}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         ) : (
                           <>
                             {rc === "infield_fly" ? (
@@ -3940,81 +4038,119 @@ export function Step3PinpointReview({
                                   送球先・アウト形態（ベース踏み / 送球 / タッチ）:
                                 </span>
                                 <div className="grid grid-cols-3 gap-1">
-                                  {(
-                                    [
-                                      {
-                                        id: "base_a" as const,
-                                        label: `一塁踏み (${fMeta.primaryPos}A)`,
-                                      },
-                                      ...(fMeta.primaryPos !== "3"
-                                        ? [
-                                            {
-                                              id: "3" as const,
-                                              label: `一塁送球 (${fMeta.primaryPos}-3)`,
-                                            },
-                                          ]
-                                        : []),
-                                      ...(fMeta.primaryPos !== "1"
-                                        ? [
-                                            {
-                                              id: "1" as const,
-                                              label: `一塁カバー投 (${fMeta.primaryPos}-1)`,
-                                            },
-                                          ]
-                                        : []),
-                                      ...(fMeta.primaryPos !== "4"
-                                        ? [
-                                            {
-                                              id: "4" as const,
-                                              label: `二封・二塁手 (${fMeta.primaryPos}-4)`,
-                                            },
-                                          ]
-                                        : []),
-                                      ...(fMeta.primaryPos !== "6"
-                                        ? [
-                                            {
-                                              id: "6" as const,
-                                              label: `二封・遊撃手 (${fMeta.primaryPos}-6)`,
-                                            },
-                                          ]
-                                        : []),
-                                      {
-                                        id: "base_b" as const,
-                                        label: `二塁踏み二封 (${fMeta.primaryPos}B)`,
-                                      },
-                                      ...(fMeta.primaryPos !== "5"
-                                        ? [
-                                            {
-                                              id: "5" as const,
-                                              label: `三塁封殺 (${fMeta.primaryPos}-5)`,
-                                            },
-                                          ]
-                                        : []),
-                                      {
-                                        id: "base_c" as const,
-                                        label: `三塁踏み三封 (${fMeta.primaryPos}C)`,
-                                      },
-                                      ...(fMeta.primaryPos !== "2"
-                                        ? [
-                                            {
-                                              id: "2" as const,
-                                              label: `本塁封殺 (${fMeta.primaryPos}-2)`,
-                                            },
-                                          ]
-                                        : []),
-                                      {
-                                        id: "base_h" as const,
-                                        label: `本塁踏み本封 (${fMeta.primaryPos}H)`,
-                                      },
-                                      {
-                                        id: "touch_out" as const,
-                                        label: `タッチアウト (${fMeta.primaryPos}TO)`,
-                                      },
-                                      {
-                                        id: "unassisted" as const,
-                                        label: `単独・記号なし (${fMeta.primaryPos})`,
-                                      },
-                                    ]
+                                  {(rc === "groundout"
+                                    ? [
+                                        {
+                                          id: "base_a" as const,
+                                          label: `一塁踏み (${fMeta.primaryPos}A)`,
+                                        },
+                                        ...(fMeta.primaryPos !== "3"
+                                          ? [
+                                              {
+                                                id: "3" as const,
+                                                label: `一塁送球 (${fMeta.primaryPos}-3)`,
+                                              },
+                                            ]
+                                          : []),
+                                        ...(fMeta.primaryPos !== "1"
+                                          ? [
+                                              {
+                                                id: "1" as const,
+                                                label: `一塁カバー投 (${fMeta.primaryPos}-1)`,
+                                              },
+                                            ]
+                                          : []),
+                                        ...(fMeta.primaryPos !== "4"
+                                          ? [
+                                              {
+                                                id: "4" as const,
+                                                label: `二封・二塁手 (${fMeta.primaryPos}-4)`,
+                                              },
+                                            ]
+                                          : []),
+                                        ...(fMeta.primaryPos !== "6"
+                                          ? [
+                                              {
+                                                id: "6" as const,
+                                                label: `二封・遊撃手 (${fMeta.primaryPos}-6)`,
+                                              },
+                                            ]
+                                          : []),
+                                        {
+                                          id: "base_b" as const,
+                                          label: `二塁踏み二封 (${fMeta.primaryPos}B)`,
+                                        },
+                                        ...(fMeta.primaryPos !== "5"
+                                          ? [
+                                              {
+                                                id: "5" as const,
+                                                label: `三塁封殺 (${fMeta.primaryPos}-5)`,
+                                              },
+                                            ]
+                                          : []),
+                                        {
+                                          id: "base_c" as const,
+                                          label: `三塁踏み三封 (${fMeta.primaryPos}C)`,
+                                        },
+                                        ...(fMeta.primaryPos !== "2"
+                                          ? [
+                                              {
+                                                id: "2" as const,
+                                                label: `本塁封殺 (${fMeta.primaryPos}-2)`,
+                                              },
+                                            ]
+                                          : []),
+                                        {
+                                          id: "base_h" as const,
+                                          label: `本塁踏み本封 (${fMeta.primaryPos}H)`,
+                                        },
+                                        {
+                                          id: "touch_out" as const,
+                                          label: `タッチアウト (${fMeta.primaryPos}TO)`,
+                                        },
+                                        {
+                                          id: "unassisted" as const,
+                                          label: `単独・記号なし (${fMeta.primaryPos})`,
+                                        },
+                                      ]
+                                    : [
+                                        {
+                                          id: "base_a" as const,
+                                          label: `一塁踏み (${fMeta.primaryPos}A)`,
+                                        },
+                                        ...(fMeta.primaryPos !== "3"
+                                          ? [
+                                              {
+                                                id: "3" as const,
+                                                label: `一塁送球 (${fMeta.primaryPos}-3)`,
+                                              },
+                                            ]
+                                          : []),
+                                        ...(fMeta.primaryPos !== "4"
+                                          ? [
+                                              {
+                                                id: "4" as const,
+                                                label: `一塁カバー二塁手 (${fMeta.primaryPos}-4)`,
+                                              },
+                                            ]
+                                          : []),
+                                        ...(fMeta.primaryPos !== "1"
+                                          ? [
+                                              {
+                                                id: "1" as const,
+                                                label: `一塁カバー投 (${fMeta.primaryPos}-1)`,
+                                              },
+                                            ]
+                                          : []),
+                                        {
+                                          id: "touch_out" as const,
+                                          label: `タッチアウト (${fMeta.primaryPos}TO)`,
+                                        },
+                                        {
+                                          id: "unassisted" as const,
+                                          label: `単独・記号なし (${fMeta.primaryPos})`,
+                                        },
+                                      ]
                                   ).map((tgt) => {
                                     const effectiveCurTarget =
                                       fMeta.assistTargetPos ||
