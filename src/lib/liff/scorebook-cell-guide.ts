@@ -8,6 +8,7 @@ import {
   type CanonicalPitchResult,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
+import { classifyDroppedThirdStrikeReach } from "@/lib/liff/baseball-official-rules";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
@@ -62,12 +63,21 @@ export interface ResultBreakdownRow {
   description: string;
 }
 
+export interface EarnedRunReasonBoxData {
+  variant: "unearned" | "earned_note";
+  ruleClause: string;
+  headline: string;
+  detail: string;
+  note?: string;
+}
+
 export interface DiamondBreakdownRow {
   zoneLabel: string;
   symbolText: string;
   tone: "red" | "dark" | "blue" | "muted";
   title: string;
   description: string;
+  earnedRunReasonBox?: EarnedRunReasonBoxData;
 }
 
 export interface ScorebookCellGuideData {
@@ -79,6 +89,10 @@ export interface ScorebookCellGuideData {
   pitcherName: string;
   headlineResult: string;
   rbi: number;
+  runStatusBadge?: {
+    label: string;
+    isUnearned: boolean;
+  };
   pitchSummaryBadge: string;
   pitchEmptyNote: string | null;
   pitches: PitchGuideItem[];
@@ -1430,6 +1444,136 @@ function describeAdvanceMethodMeaning(
   };
 }
 
+/**
+ * 本塁生還セル（runScored === true）に対して、公認野球規則 9.16 共通エンジンの評価結果
+ * （または単体セル表示時のセグメント・打席結果フォールバック）から「非自責点の理由」／「自責点判定の補足」を生成する
+ */
+function resolveCellEarnedRunReasonBox(
+  cell: CompiledScorebookCell
+): EarnedRunReasonBoxData | undefined {
+  if (!cell.runScored) return undefined;
+
+  const exp = cell.earnedRunExplanation;
+  if (exp) {
+    if (!exp.isEarned || cell.isUnearnedRun) {
+      return {
+        variant: "unearned",
+        ruleClause: exp.ruleClause,
+        headline: exp.headline,
+        detail: exp.detail,
+        note: exp.note,
+      };
+    }
+    if (exp.headline.includes("昇格") || Boolean(exp.note)) {
+      return {
+        variant: "earned_note",
+        ruleClause: exp.ruleClause,
+        headline: exp.headline,
+        detail: exp.detail,
+        note: exp.note,
+      };
+    }
+    return undefined;
+  }
+
+  if (!cell.isUnearnedRun) {
+    return undefined;
+  }
+
+  // 単体セル表示等で earnedRunExplanation が未付与だった場合のフォールバック判定
+  if (cell.isTiebreakRunnerOnly) {
+    return {
+      variant: "unearned",
+      ruleClause: "公認野球規則 9.16（タイブレーク規定）",
+      headline: "タイブレーク開始時の配置走者による生還",
+      detail:
+        "タイブレーク規定によりイニング開始時点から塁上に配置された走者のため、投手が許した出塁ではなく、後続の安打等で生還しても常に非自責点となります。",
+    };
+  }
+
+  if (cell.atBat) {
+    const rc = cell.atBat.resultCode;
+    if (rc === "error") {
+      return {
+        variant: "unearned",
+        ruleClause: "公認野球規則 9.16(a)・(d)",
+        headline: "打者自身の相手失策（エラー）による出塁",
+        detail:
+          "この走者自身が相手野手の守備失策（エラー）によって出塁しており、失策がなければアウトになっていたため非自責点となります。",
+      };
+    }
+    if (rc === "interference") {
+      return {
+        variant: "unearned",
+        ruleClause: "公認野球規則 9.16(a)・(b)(2)",
+        headline: "打撃妨害（捕手失策）による出塁走者の生還",
+        detail:
+          "捕手の打撃妨害（捕手に失策記録）によって一塁を与えられた走者のため、本人が本塁へ生還した得点は投手の自責点にはならず非自責点となります。",
+      };
+    }
+    if (rc === "dropped_third_strike") {
+      const dts = classifyDroppedThirdStrikeReach(
+        cell.atBat.battedDirection,
+        cell.atBat.resultLabel
+      );
+      if (dts.kind === "pb") {
+        return {
+          variant: "unearned",
+          ruleClause: "公認野球規則 9.16(a)(3)",
+          headline: "第3ストライクの捕逸（パスボール）による振り逃げ出塁",
+          detail:
+            "第3ストライクを捕手が捕逸（パスボール）して振り逃げ出塁した走者であり、捕逸がなければ三振アウトになっていたため非自責点となります。",
+        };
+      }
+      if (dts.kind === "throwing_error" || dts.kind === "receiving_error") {
+        return {
+          variant: "unearned",
+          ruleClause: "公認野球規則 9.16(a)(3)",
+          headline: "振り逃げ時の一塁送球・捕球失策による出塁",
+          detail:
+            "第3ストライク後の振り逃げで、野手の悪送球または捕球失策（エラー）により一塁へ生きた走者のため非自責点となります。",
+        };
+      }
+    }
+  }
+
+  const segTriggerLabels: string[] = [];
+  for (const sIdx of [1, 2, 3, 4] as const) {
+    const seg = cell.segments[sIdx];
+    if (!seg || seg.status === "out") continue;
+    if (seg.method === "error") {
+      if (!segTriggerLabels.includes("相手失策（エラー）")) {
+        segTriggerLabels.push("相手失策（エラー）");
+      }
+    } else if (seg.method === "pickoff_error") {
+      if (!segTriggerLabels.includes("悪送球（牽制失策）")) {
+        segTriggerLabels.push("悪送球（牽制失策）");
+      }
+    } else if (seg.method === "pb") {
+      if (!segTriggerLabels.includes("捕逸（パスボール）")) {
+        segTriggerLabels.push("捕逸（パスボール）");
+      }
+    }
+  }
+  if (segTriggerLabels.length > 0) {
+    const triggersJa = segTriggerLabels.join("・");
+    return {
+      variant: "unearned",
+      ruleClause: "公認野球規則 9.16(a)・(d)・(f)",
+      headline: `${triggersJa}による進塁・生還`,
+      detail: `途中の進塁または本塁生還に「${triggersJa}」が絡んでおり、そのミスがなければ3アウト終了までに本塁へ生還できていなかったと判定されるため非自責点となります。`,
+    };
+  }
+
+  return {
+    variant: "unearned",
+    ruleClause: "公認野球規則 9.16(a)",
+    headline: "イニング再構成（失策・捕逸絡み／仮想3アウト以降）による非自責点",
+    detail:
+      "この回に記録された相手失策・捕逸を除いてイニングを再構成すると、3アウトチェンジ後または本塁生還前の残塁となるため、公認野球規則 9.16(a) により非自責点となります。",
+  };
+}
+
 function buildDiamondSection(
   cell: CompiledScorebookCell,
   model: CompiledScorebookSheetModel,
@@ -1515,34 +1659,37 @@ function buildDiamondSection(
 
   // 2. ダイヤモンド中央ステータス（得点・アウト番号・残塁）
   if (cell.runScored) {
-    const isUnearnedOpen =
-      rules.runMark === "earned_filled_unearned_open" && Boolean(cell.isUnearnedRun);
-    const runSymbol =
-      rules.runMark === "earned_filled_unearned_open"
-        ? isUnearnedOpen
-          ? "○"
-          : "●"
-        : rules.runMark === "double_circle"
-        ? "◎"
-        : rules.runMark === "kanji_toku"
-        ? "丸得"
-        : "●";
+    const isUnearned = Boolean(cell.isUnearnedRun);
+    const isEarnedSplitMark = rules.runMark === "earned_filled_unearned_open";
+    const runSymbol = isEarnedSplitMark
+      ? isUnearned
+        ? "○"
+        : "●"
+      : rules.runMark === "double_circle"
+      ? "◎"
+      : rules.runMark === "kanji_toku"
+      ? "丸得"
+      : "●";
+    const earnedRunReasonBox = resolveCellEarnedRunReasonBox(cell);
     rows.push({
       zoneLabel: "ダイヤ中央",
       symbolText: runSymbol,
       tone: "red",
-      title:
-        rules.runMark === "earned_filled_unearned_open"
-          ? isUnearnedOpen
-            ? "本塁生還（非自責点：○）"
-            : "本塁生還（自責点：●）"
-          : "本塁生還（1得点）",
-      description:
-        rules.runMark === "earned_filled_unearned_open"
-          ? isUnearnedOpen
-            ? "白抜き丸「○」は、相手エラーや捕逸、2死後の失策絡みなどで入った「非自責点」によるホームインを表します（自責点は塗り丸「●」）。"
-            : "塗り丸「●」は、相手投手の責任となる「自責点」によるホームインを表します（非自責点は白抜き丸「○」）。"
-          : `ダイヤモンド中央の「${runSymbol}」は、この走者がホームベースを踏んで1点が入ったことを表す最も大切なマークです。`,
+      title: isEarnedSplitMark
+        ? isUnearned
+          ? "本塁生還（非自責点：○）"
+          : "本塁生還（自責点：●）"
+        : isUnearned
+        ? "本塁生還（1得点・非自責点）"
+        : "本塁生還（1得点・自責点）",
+      description: isEarnedSplitMark
+        ? isUnearned
+          ? "白抜き丸「○」は、相手エラーや捕逸、2死後の失策絡みなどで入った「非自責点」によるホームインを表します（自責点は塗り丸「●」）。"
+          : "塗り丸「●」は、相手投手の責任となる「自責点」によるホームインを表します（非自責点は白抜き丸「○」）。"
+        : isUnearned
+        ? `ダイヤモンド中央の「${runSymbol}」は本塁生還（1得点）を表します（現在の記号設定では自責・非自責共通で「${runSymbol}」を描画しますが、公式記録上は「非自責点」です）。`
+        : `ダイヤモンド中央の「${runSymbol}」は、この走者がホームベースを踏んで1点が入ったこと（自責点）を表す最も大切なマークです。`,
+      earnedRunReasonBox,
     });
   } else if (cell.outNumber) {
     const outText = formatOutOrdinalText(cell.outNumber, rules);
@@ -1729,6 +1876,21 @@ export function buildScorebookCellGuide(
   const resultSection = buildResultSection(cell, rules);
   const diamondRows = buildDiamondSection(cell, model, rules);
 
+  const isUnearned = Boolean(cell.isUnearnedRun);
+  const isEarnedSplitMark = rules.runMark === "earned_filled_unearned_open";
+  const runStatusBadge = cell.runScored
+    ? {
+        label: isUnearned
+          ? isEarnedSplitMark
+            ? "非自責点（○）"
+            : "得点（非自責点）"
+          : isEarnedSplitMark
+          ? "自責点（●）"
+          : "得点（自責点）",
+        isUnearned,
+      }
+    : undefined;
+
   return {
     inningText,
     teamAttackText,
@@ -1738,6 +1900,7 @@ export function buildScorebookCellGuide(
     pitcherName,
     headlineResult: resultSection.headlineResult,
     rbi: Math.max(0, cell.atBat?.rbi || 0),
+    runStatusBadge,
     pitchSummaryBadge: pitchSection.pitchSummaryBadge,
     pitchEmptyNote: pitchSection.pitchEmptyNote,
     pitches: pitchSection.pitches,

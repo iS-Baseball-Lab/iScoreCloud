@@ -988,6 +988,7 @@ export interface HalfInningAtBatPitchingInput {
     | "advances"
   > & {
     batterName?: string;
+    battingOrder?: number;
     pinchRunners?: ScorebookV2AtBat["pinchRunners"];
     midAtBatPriorPitcher?: MidAtBatPriorPitcherInfo | null;
   }) | null;
@@ -1017,10 +1018,46 @@ export interface HalfInningPitcherEntrySnapshot {
   runsScoredInHalfBeforeEntry: number;
 }
 
+export type UnearnedRunReasonCode =
+  | "tiebreak_runner"
+  | "batter_error_reach"
+  | "relay_error_saved_batter"
+  | "dropped_third_strike_pb"
+  | "dropped_third_strike_error"
+  | "catcher_interference"
+  | "force_swap_from_unearned_runner"
+  | "virtual_three_outs_reached"
+  | "unearned_advance_not_driven_in";
+
+export interface OfficialEarnedRunExplanation {
+  /** 担当投手に自責点が記録されるか（false = 非自責点） */
+  isEarned: boolean;
+  /** チーム全体の自責点に計上されるか（規則 9.16(i) 救援特例識別用） */
+  isTeamEarned: boolean;
+  /** 非自責点の場合の分類コード */
+  reasonCode?: UnearnedRunReasonCode;
+  /** 根拠となる公認野球規則条項（例: "公認野球規則 9.16(a)"） */
+  ruleClause: string;
+  /** 1行の要点見出し */
+  headline: string;
+  /** 具体的なイニング再構成・判定理由の解説文 */
+  detail: string;
+  /** 失点・自責責任を持つ投手の識別キー */
+  responsiblePitcherKey?: string;
+  /** 失点・自責責任を持つ投手の表示名（シートモデル側で解決） */
+  responsiblePitcherName?: string;
+  /** 規則 9.16(g)/(h) により交代前の前任投手に責任が帰属したか */
+  inheritedFromPriorPitcher?: boolean;
+  /** 救援特例（規則 9.16(i)）や前任投手帰属（9.16(g)/(h)）等の補足注記 */
+  note?: string;
+}
+
 export interface HalfInningEarnedRunDetails {
   pitcherCharges: Map<string, PitcherHalfInningCharge>;
   earnedOriginAtBatIds: Set<string>;
   unearnedOriginAtBatIds: Set<string>;
+  /** 出塁元打席IDごとの自責点・非自責点理由解説マップ（スコア1マス解説等で利用） */
+  runExplanationsByAtBatId: Map<string, OfficialEarnedRunExplanation>;
   teamEarnedRuns: number;
   /** このハーフイニングで生還した各得点の時系列リスト（規則 9.17(d) 決勝点・敗戦投手特定用） */
   scoredRunsInOrder: HalfInningChronologicalRunEvent[];
@@ -1030,15 +1067,33 @@ export interface HalfInningEarnedRunDetails {
 
 type HypoBaseState = 0 | 1 | 2 | 3 | 4;
 
+type RunnerOriginCauseKind =
+  | "clean"
+  | "tiebreak"
+  | "error_reach"
+  | "relay_error"
+  | "dts_pb"
+  | "dts_error"
+  | "interference"
+  | "inherited_unearned";
+
 interface TrackedPitchingRunner {
   id: number;
   cellAtBatId: string | null;
   runnerName: string;
   responsiblePitcherKey: string;
+  inheritedFromPriorPitcher: boolean;
   isUnearnedOrigin: boolean;
+  originCauseKind: RunnerOriginCauseKind;
+  originPlayLabel: string;
+  inheritedUnearnedCauseLabel?: string;
+  reachedAfterVirtualThreeOuts: boolean;
+  blockedByVirtualThreeOuts: boolean;
+  unearnedAdvanceTriggers: string[];
   owesErrorLifeFromStint: number | null;
   isRetired: boolean;
   actualScored: boolean;
+  scoredDuringPitcherKey?: string;
   teamHypoBase: HypoBaseState;
   pitcherHypoBase: HypoBaseState;
 }
@@ -1091,6 +1146,62 @@ function isWildPitchReason(reason: string): boolean {
 function isBalkReason(reason: string): boolean {
   const low = reason.trim().toLowerCase();
   return low === "balk" || low.includes("ボーク");
+}
+
+function describeUnearnedReasonLabel(reason: string): string {
+  const low = reason.trim().toLowerCase();
+  if (low === "pb" || low.includes("捕逸")) {
+    return "捕逸（パスボール）";
+  }
+  if (
+    low === "pickoff_error" ||
+    (low.includes("牽制") && (low.includes("失策") || low.includes("エラー")))
+  ) {
+    return "牽制悪送球（失策）";
+  }
+  if (low === "obstruction" || low.includes("走塁妨害")) {
+    return "走塁妨害（オブストラクション）";
+  }
+  if (low === "tiebreak" || low.includes("タイブレーク")) {
+    return "タイブレーク配置";
+  }
+  return "相手の守備・送球失策（エラー）";
+}
+
+function describeRunnerUnearnedOriginShort(tok: TrackedPitchingRunner): string {
+  switch (tok.originCauseKind) {
+    case "tiebreak":
+      return "タイブレーク開始配置走者";
+    case "error_reach":
+    case "relay_error":
+      return "相手失策で出塁した先行走者";
+    case "dts_pb":
+      return "捕逸振り逃げで出塁した先行走者";
+    case "dts_error":
+      return "振り逃げ失策で出塁した先行走者";
+    case "interference":
+      return "打撃妨害で出塁した先行走者";
+    case "inherited_unearned":
+      return tok.inheritedUnearnedCauseLabel || "非自責扱いの先行走者";
+    default:
+      return "非自責扱いの先行走者";
+  }
+}
+
+function formatPlayActorLabel(
+  snapAb: HalfInningAtBatPitchingInput["snapAb"]
+): string {
+  const order =
+    snapAb?.battingOrder && snapAb.battingOrder > 0
+      ? `${snapAb.battingOrder}番`
+      : "";
+  const bName = (snapAb?.batterName || "").trim();
+  if (order && bName && !bName.endsWith("番打者")) {
+    return `${order} ${bName}`;
+  }
+  if (bName) return bName;
+  if (order) return `${order}打者`;
+  return "";
 }
 
 function collapseBatterStretchInPitchingEvents(
@@ -1297,10 +1408,26 @@ export function evaluateHalfInningEarnedRunDetails(
   };
   const allTokens: TrackedPitchingRunner[] = [];
   const scoredTokensInOrder: TrackedPitchingRunner[] = [];
+  const errorSavedPlaySummaries: Array<{ stint: number; summary: string }> = [];
   let nextTokenSeq = 1;
 
-  const markTokenScored = (tok: TrackedPitchingRunner): void => {
+  const addUnearnedTrigger = (
+    tok: TrackedPitchingRunner,
+    triggerLabel: string
+  ): void => {
+    if (triggerLabel && !tok.unearnedAdvanceTriggers.includes(triggerLabel)) {
+      tok.unearnedAdvanceTriggers.push(triggerLabel);
+    }
+  };
+
+  const markTokenScored = (
+    tok: TrackedPitchingRunner,
+    scoringPitcherKey?: string
+  ): void => {
     tok.actualScored = true;
+    if (scoringPitcherKey && !tok.scoredDuringPitcherKey) {
+      tok.scoredDuringPitcherKey = scoringPitcherKey;
+    }
     if (!scoredTokensInOrder.includes(tok)) {
       scoredTokensInOrder.push(tok);
     }
@@ -1310,16 +1437,44 @@ export function evaluateHalfInningEarnedRunDetails(
     cellAtBatId: string | null;
     runnerName: string;
     responsiblePitcherKey: string;
+    inheritedFromPriorPitcher?: boolean;
     isUnearnedOrigin: boolean;
+    originCauseKind?: RunnerOriginCauseKind;
+    originPlayLabel?: string;
+    inheritedUnearnedCauseLabel?: string;
+    reachedAfterVirtualThreeOuts?: boolean;
+    blockedByVirtualThreeOuts?: boolean;
+    unearnedAdvanceTriggers?: string[];
     owesErrorLifeFromStint: number | null;
     actualScored: boolean;
+    scoredDuringPitcherKey?: string;
     teamHypoBase: HypoBaseState;
     pitcherHypoBase: HypoBaseState;
   }): TrackedPitchingRunner => {
     const tok: TrackedPitchingRunner = {
       id: nextTokenSeq++,
       isRetired: false,
-      ...params,
+      inheritedFromPriorPitcher: params.inheritedFromPriorPitcher ?? false,
+      originCauseKind:
+        params.originCauseKind ??
+        (params.isUnearnedOrigin ? "error_reach" : "clean"),
+      originPlayLabel: params.originPlayLabel ?? "",
+      inheritedUnearnedCauseLabel: params.inheritedUnearnedCauseLabel,
+      reachedAfterVirtualThreeOuts:
+        params.reachedAfterVirtualThreeOuts ?? false,
+      blockedByVirtualThreeOuts: params.blockedByVirtualThreeOuts ?? false,
+      unearnedAdvanceTriggers: params.unearnedAdvanceTriggers
+        ? [...params.unearnedAdvanceTriggers]
+        : [],
+      cellAtBatId: params.cellAtBatId,
+      runnerName: params.runnerName,
+      responsiblePitcherKey: params.responsiblePitcherKey,
+      isUnearnedOrigin: params.isUnearnedOrigin,
+      owesErrorLifeFromStint: params.owesErrorLifeFromStint,
+      actualScored: params.actualScored,
+      scoredDuringPitcherKey: params.scoredDuringPitcherKey,
+      teamHypoBase: params.teamHypoBase,
+      pitcherHypoBase: params.pitcherHypoBase,
     };
     allTokens.push(tok);
     if (tok.actualScored) {
@@ -1466,6 +1621,8 @@ export function evaluateHalfInningEarnedRunDetails(
             runnerName: sAdv.runnerName || "",
             responsiblePitcherKey: firstPitcherKey || pKey,
             isUnearnedOrigin: true,
+            originCauseKind: "tiebreak",
+            originPlayLabel: "タイブレーク開始走者",
             owesErrorLifeFromStint: null,
             actualScored: false,
             teamHypoBase: bNum,
@@ -1486,6 +1643,8 @@ export function evaluateHalfInningEarnedRunDetails(
             runnerName: adv.runnerName || "",
             responsiblePitcherKey: firstPitcherKey || pKey,
             isUnearnedOrigin: true,
+            originCauseKind: "tiebreak",
+            originPlayLabel: "タイブレーク開始走者",
             owesErrorLifeFromStint: null,
             actualScored: false,
             teamHypoBase: adv.toBase,
@@ -1523,6 +1682,7 @@ export function evaluateHalfInningEarnedRunDetails(
       const pm = remainingPre.splice(nextIdx, 1)[0]!;
       const fromB = pm.fromBase as 1 | 2 | 3;
       const existingOnBase = bases[fromB];
+      const fallbackPreVirt = getPitcherEffectiveVirtualOuts(pKey, actualOuts);
       const token: TrackedPitchingRunner =
         existingOnBase ||
         createRunnerToken({
@@ -1530,11 +1690,12 @@ export function evaluateHalfInningEarnedRunDetails(
           runnerName: pm.runnerName || "",
           responsiblePitcherKey: pKey,
           isUnearnedOrigin: false,
+          originCauseKind: "clean",
+          reachedAfterVirtualThreeOuts: fallbackPreVirt >= 3,
           owesErrorLifeFromStint: null,
           actualScored: false,
           teamHypoBase: getTeamVirtualOuts(actualOuts) < 3 ? fromB : 0,
-          pitcherHypoBase:
-            getPitcherEffectiveVirtualOuts(pKey, actualOuts) < 3 ? fromB : 0,
+          pitcherHypoBase: fallbackPreVirt < 3 ? fromB : 0,
         });
       if (bases[fromB] === token) {
         bases[fromB] = null;
@@ -1551,12 +1712,14 @@ export function evaluateHalfInningEarnedRunDetails(
       } else {
         if (pm.toBase === 4) {
           modeledRunsInPlay += 1;
-          markTokenScored(token);
+          markTokenScored(token, pKey);
         } else if (pm.toBase === 1 || pm.toBase === 2 || pm.toBase === 3) {
           bases[pm.toBase] = token;
         }
 
-        if (!isUnearnedScoringReason(pm.reason)) {
+        if (isUnearnedScoringReason(pm.reason)) {
+          addUnearnedTrigger(token, describeUnearnedReasonLabel(pm.reason));
+        } else {
           const gain = Math.max(1, pm.toBase - pm.fromBase);
           const teamVirtNow = getTeamVirtualOuts(actualOuts);
           const pitcherVirtNow = getPitcherEffectiveVirtualOuts(
@@ -1565,6 +1728,14 @@ export function evaluateHalfInningEarnedRunDetails(
           );
           const isStealLike =
             !isWildPitchReason(pm.reason) && !isBalkReason(pm.reason);
+
+          if (
+            pitcherVirtNow >= 3 &&
+            token.pitcherHypoBase >= 1 &&
+            token.pitcherHypoBase <= 3
+          ) {
+            token.blockedByVirtualThreeOuts = true;
+          }
 
           if (
             teamVirtNow < 3 &&
@@ -1745,6 +1916,22 @@ export function evaluateHalfInningEarnedRunDetails(
       (cls.isDroppedThirdStrikeSafe && dtsKind !== "wp") ||
       hasRelayErrorSavingBatter;
 
+    if (batterReachedByError) {
+      const errCauseText =
+        cls.isDroppedThirdStrikeSafe && dtsKind === "pb"
+          ? "捕逸による振り逃げ出塁"
+          : cls.isDroppedThirdStrikeSafe
+          ? "振り逃げ時の失策出塁"
+          : hasRelayErrorSavingBatter
+          ? "送球失策による一塁セーフ"
+          : (play.snapAb?.resultLabel || "").trim() || "相手失策出塁";
+      const actor = formatPlayActorLabel(play.snapAb);
+      errorSavedPlaySummaries.push({
+        stint: curStint,
+        summary: actor ? `${actor}の${errCauseText}` : errCauseText,
+      });
+    }
+
     // インプレー開始時点の仮想アウト数をスナップショット保持（同一プレー内の走者退場順序に依存させない）
     const teamVirtBefore = getTeamVirtualOuts(actualOuts);
     const pitcherVirtBeforeByKey = new Map<string, number>();
@@ -1857,6 +2044,7 @@ export function evaluateHalfInningEarnedRunDetails(
       const rm = remainingInPlayRunners.splice(nextIdx, 1)[0]!;
       const fromB = rm.fromBase as 1 | 2 | 3;
       const existingOnBase = bases[fromB];
+      const fallbackInPlayVirt = getSnapshotPitcherVirtBefore(pKey);
       const token: TrackedPitchingRunner =
         existingOnBase ||
         createRunnerToken({
@@ -1864,11 +2052,12 @@ export function evaluateHalfInningEarnedRunDetails(
           runnerName: rm.runnerName || "",
           responsiblePitcherKey: pKey,
           isUnearnedOrigin: false,
+          originCauseKind: "clean",
+          reachedAfterVirtualThreeOuts: fallbackInPlayVirt >= 3,
           owesErrorLifeFromStint: null,
           actualScored: false,
           teamHypoBase: teamVirtBefore < 3 ? fromB : 0,
-          pitcherHypoBase:
-            getSnapshotPitcherVirtBefore(pKey) < 3 ? fromB : 0,
+          pitcherHypoBase: fallbackInPlayVirt < 3 ? fromB : 0,
         });
       if (bases[fromB] === token) {
         bases[fromB] = null;
@@ -1885,7 +2074,7 @@ export function evaluateHalfInningEarnedRunDetails(
       } else {
         if (rm.toBase === 4) {
           modeledRunsInPlay += 1;
-          markTokenScored(token);
+          markTokenScored(token, pKey);
         } else if (rm.toBase === 1 || rm.toBase === 2 || rm.toBase === 3) {
           bases[rm.toBase] = token;
         }
@@ -1894,13 +2083,19 @@ export function evaluateHalfInningEarnedRunDetails(
         const pitcherVirtBefore = getSnapshotPitcherVirtBefore(respKey);
         const pitcherVirtDuringScoring = getPitcherVirtDuringScoring(respKey);
 
-        if (
-          !cls.isErrorReach &&
-          !hasRelayErrorSavingBatter &&
-          !isUnearnedScoringReason(rm.reason) &&
-          !isAwardPushPlay
-        ) {
+        if (isUnearnedScoringReason(rm.reason)) {
+          addUnearnedTrigger(token, describeUnearnedReasonLabel(rm.reason));
+        } else if (cls.isErrorReach || hasRelayErrorSavingBatter) {
+          addUnearnedTrigger(token, "後続打席での相手失策（エラー）");
+        } else if (!isAwardPushPlay) {
           if (cls.isHit && hitBases > 0) {
+            if (
+              pitcherVirtBefore >= 3 &&
+              token.pitcherHypoBase >= 1 &&
+              token.pitcherHypoBase <= 3
+            ) {
+              token.blockedByVirtualThreeOuts = true;
+            }
             if (
               teamVirtBefore < 3 &&
               token.teamHypoBase >= 1 &&
@@ -1926,6 +2121,13 @@ export function evaluateHalfInningEarnedRunDetails(
             }
           } else {
             if (
+              pitcherVirtDuringScoring >= 3 &&
+              token.pitcherHypoBase >= 1 &&
+              token.pitcherHypoBase <= 3
+            ) {
+              token.blockedByVirtualThreeOuts = true;
+            }
+            if (
               teamVirtDuringScoring < 3 &&
               token.teamHypoBase >= 1 &&
               token.teamHypoBase <= 3
@@ -1946,6 +2148,12 @@ export function evaluateHalfInningEarnedRunDetails(
                   : (Math.min(4, token.pitcherHypoBase + 1) as HypoBaseState);
             }
           }
+        } else if (
+          pitcherVirtBefore >= 3 &&
+          token.pitcherHypoBase >= 1 &&
+          token.pitcherHypoBase <= 3
+        ) {
+          token.blockedByVirtualThreeOuts = true;
         }
       }
     }
@@ -2094,6 +2302,25 @@ export function evaluateHalfInningEarnedRunDetails(
     const batterIsUnearnedOrigin = inheritsPrecedingRunner
       ? retiredPrecedingRunnerToken!.isUnearnedOrigin || batterReachedUnearned
       : batterReachedUnearned;
+    const batterOriginCauseKind: RunnerOriginCauseKind = cls.isErrorReach
+      ? "error_reach"
+      : hasRelayErrorSavingBatter
+      ? "relay_error"
+      : cls.isDroppedThirdStrikeSafe && dtsKind === "pb"
+      ? "dts_pb"
+      : cls.isDroppedThirdStrikeSafe && dtsKind !== "wp"
+      ? "dts_error"
+      : cls.isInterferenceReach
+      ? "interference"
+      : inheritsPrecedingRunner && retiredPrecedingRunnerToken?.isUnearnedOrigin
+      ? "inherited_unearned"
+      : "clean";
+    const batterOriginPlayLabel = (play.snapAb?.resultLabel || "").trim();
+    const batterInheritedUnearnedLabel =
+      batterOriginCauseKind === "inherited_unearned" &&
+      retiredPrecedingRunnerToken
+        ? describeRunnerUnearnedOriginShort(retiredPrecedingRunnerToken)
+        : undefined;
     const batterErrorLifeStint: number | null = batterReachedByError
       ? curStint
       : inheritsPrecedingRunner
@@ -2119,7 +2346,7 @@ export function evaluateHalfInningEarnedRunDetails(
           if (!onBase) continue;
           bases[bNum] = null;
           modeledRunsInPlay += 1;
-          markTokenScored(onBase);
+          markTokenScored(onBase, pKey);
           if (teamVirtBefore < 3 && onBase.teamHypoBase >= 1) {
             onBase.teamHypoBase = 4;
           }
@@ -2128,6 +2355,8 @@ export function evaluateHalfInningEarnedRunDetails(
           );
           if (rVirtBefore < 3 && onBase.pitcherHypoBase >= 1) {
             onBase.pitcherHypoBase = 4;
+          } else if (rVirtBefore >= 3 && onBase.pitcherHypoBase >= 1) {
+            onBase.blockedByVirtualThreeOuts = true;
           }
         }
       }
@@ -2143,14 +2372,27 @@ export function evaluateHalfInningEarnedRunDetails(
           (hitBases > 0 ? hitBases : isAwardPushPlay ? 1 : 0);
       const scoredWithoutErr =
         cls.isHomeRun || !isUnearnedScoringReason(batterRunReason);
+      const batterRunTriggers = !scoredWithoutErr
+        ? [describeUnearnedReasonLabel(batterRunReason)]
+        : [];
 
       createRunnerToken({
         cellAtBatId: play.atBatId || null,
         runnerName: play.snapAb?.batterName || "",
         responsiblePitcherKey: batterRespKey,
+        inheritedFromPriorPitcher: Boolean(
+          batterRespKey && pKey && batterRespKey !== pKey
+        ),
         isUnearnedOrigin: batterIsUnearnedOrigin,
+        originCauseKind: batterOriginCauseKind,
+        originPlayLabel: batterOriginPlayLabel,
+        inheritedUnearnedCauseLabel: batterInheritedUnearnedLabel,
+        reachedAfterVirtualThreeOuts:
+          !batterReachedByError && batterPitcherVirtBefore >= 3,
+        unearnedAdvanceTriggers: batterRunTriggers,
         owesErrorLifeFromStint: batterErrorLifeStint,
         actualScored: true,
+        scoredDuringPitcherKey: pKey,
         teamHypoBase:
           batterReachedByError || teamVirtBefore >= 3
             ? 0
@@ -2192,7 +2434,7 @@ export function evaluateHalfInningEarnedRunDetails(
             if (bases[1] && bases[2] && bases[3]) {
               const pushed = bases[3];
               modeledRunsInPlay += 1;
-              markTokenScored(pushed);
+              markTokenScored(pushed, pKey);
               bases[3] = bases[2];
               bases[2] = bases[1];
             } else if (bases[1] && bases[2]) {
@@ -2220,8 +2462,10 @@ export function evaluateHalfInningEarnedRunDetails(
           bases[bNum] = null;
           missing -= 1;
           modeledRunsInPlay += 1;
-          markTokenScored(onBase);
-          if (!cls.isErrorReach && !hasRelayErrorSavingBatter) {
+          markTokenScored(onBase, pKey);
+          if (cls.isErrorReach || hasRelayErrorSavingBatter) {
+            addUnearnedTrigger(onBase, "後続打席での相手失策（エラー）");
+          } else {
             if (
               (cls.isHit ? teamVirtBefore < 3 : teamVirtDuringScoring < 3) &&
               onBase.teamHypoBase >= 1
@@ -2236,6 +2480,8 @@ export function evaluateHalfInningEarnedRunDetails(
               onBase.pitcherHypoBase >= 1
             ) {
               onBase.pitcherHypoBase = 4;
+            } else if (onBase.pitcherHypoBase >= 1) {
+              onBase.blockedByVirtualThreeOuts = true;
             }
           }
         }
@@ -2300,11 +2546,33 @@ export function evaluateHalfInningEarnedRunDetails(
           return destBase;
         };
 
+        const batterReachTriggers =
+          explicitBatterAdv &&
+          isUnearnedScoringReason(explicitBatterAdv.reason) &&
+          !batterIsUnearnedOrigin
+            ? [describeUnearnedReasonLabel(explicitBatterAdv.reason)]
+            : [];
+
+        const reachedAfterVirtThree =
+          !batterReachedByError &&
+          (inheritsPrecedingRunner
+            ? !retiredPrecedingRunnerToken?.isUnearnedOrigin &&
+              batterPitcherVirtAfter >= 3
+            : batterPitcherVirtBefore >= 3);
+
         bases[destBase] = createRunnerToken({
           cellAtBatId: play.atBatId || null,
           runnerName: play.snapAb?.batterName || "",
           responsiblePitcherKey: batterRespKey,
+          inheritedFromPriorPitcher: Boolean(
+            batterRespKey && pKey && batterRespKey !== pKey
+          ),
           isUnearnedOrigin: batterIsUnearnedOrigin,
+          originCauseKind: batterOriginCauseKind,
+          originPlayLabel: batterOriginPlayLabel,
+          inheritedUnearnedCauseLabel: batterInheritedUnearnedLabel,
+          reachedAfterVirtualThreeOuts: reachedAfterVirtThree,
+          unearnedAdvanceTriggers: batterReachTriggers,
           owesErrorLifeFromStint: batterErrorLifeStint,
           actualScored: false,
           teamHypoBase: calcBatterHypo(teamVirtBefore, batterTeamVirtAfter),
@@ -2330,8 +2598,10 @@ export function evaluateHalfInningEarnedRunDetails(
         bases[bNum] = null;
         remaining -= 1;
         modeledRunsInPlay += 1;
-        markTokenScored(onBase);
-        if (!cls.isErrorReach && !hasRelayErrorSavingBatter) {
+        markTokenScored(onBase, pKey);
+        if (cls.isErrorReach || hasRelayErrorSavingBatter) {
+          addUnearnedTrigger(onBase, "後続打席での相手失策（エラー）");
+        } else {
           if (
             (cls.isHit ? teamVirtBefore < 3 : teamVirtDuringScoring < 3) &&
             onBase.teamHypoBase >= 1
@@ -2346,6 +2616,8 @@ export function evaluateHalfInningEarnedRunDetails(
             onBase.pitcherHypoBase >= 1
           ) {
             onBase.pitcherHypoBase = 4;
+          } else if (onBase.pitcherHypoBase >= 1) {
+            onBase.blockedByVirtualThreeOuts = true;
           }
         }
       }
@@ -2358,8 +2630,17 @@ export function evaluateHalfInningEarnedRunDetails(
           runnerName: "",
           responsiblePitcherKey: pKey,
           isUnearnedOrigin: cls.isErrorReach || cls.isInterferenceReach,
+          originCauseKind: cls.isErrorReach
+            ? "error_reach"
+            : cls.isInterferenceReach
+            ? "interference"
+            : "clean",
+          reachedAfterVirtualThreeOuts:
+            !cls.isErrorReach &&
+            (cls.isHit ? pVirtBefore >= 3 : pVirtDuring >= 3),
           owesErrorLifeFromStint: null,
           actualScored: true,
+          scoredDuringPitcherKey: pKey,
           teamHypoBase:
             !cls.isErrorReach &&
             (cls.isHit ? teamVirtBefore < 3 : teamVirtDuringScoring < 3)
@@ -2383,7 +2664,213 @@ export function evaluateHalfInningEarnedRunDetails(
   // G) イニング終了後の最終集計（後続安打・暴投・押し出しで仮想本塁4に到達した走者は自責点に昇格）
   const earnedOriginAtBatIds = new Set<string>();
   const unearnedOriginAtBatIds = new Set<string>();
+  const runExplanationsByAtBatId = new Map<string, OfficialEarnedRunExplanation>();
   let teamEarnedRuns = 0;
+
+  const buildTokenEarnedRunExplanation = (
+    tok: TrackedPitchingRunner,
+    respKey: string,
+    isPitcherEarned: boolean,
+    isTeamEarned: boolean
+  ): OfficialEarnedRunExplanation => {
+    const minStint = pitcherStintByKey.get(respKey) ?? 0;
+    const uniqueErrors = Array.from(
+      new Set(
+        errorSavedPlaySummaries
+          .filter((e) => e.stint >= minStint)
+          .map((e) => e.summary)
+      )
+    );
+    const errorPlaysJa =
+      uniqueErrors.length > 0 ? `（${uniqueErrors.join("・")}）` : "";
+    const hypoBaseJa =
+      tok.pitcherHypoBase === 3
+        ? "三塁"
+        : tok.pitcherHypoBase === 2
+        ? "二塁"
+        : tok.pitcherHypoBase === 1
+        ? "一塁"
+        : "本塁手前";
+    const crossedPitcherChange = Boolean(
+      tok.inheritedFromPriorPitcher ||
+        (tok.scoredDuringPitcherKey &&
+          respKey &&
+          tok.scoredDuringPitcherKey !== respKey)
+    );
+
+    if (isPitcherEarned) {
+      const relieverTeamDiffNote = !isTeamEarned
+        ? "公認野球規則 9.16(i) により、救援投手は登板前の失策による仮想アウトの恩恵を受けないため救援投手個人には自責点（●）が記録されます（チーム全体の自責点では仮想3アウト後のため非自責扱い）。"
+        : undefined;
+
+      if (tok.unearnedAdvanceTriggers.length > 0) {
+        const triggersJa = tok.unearnedAdvanceTriggers.join("・");
+        return {
+          isEarned: true,
+          isTeamEarned,
+          ruleClause: "公認野球規則 9.16(a)・(f)",
+          headline: "失策・捕逸絡みの生還後、後続打席により自責点へ昇格",
+          detail: `進塁・生還の途中には「${triggersJa}」が絡んでいましたが、3アウトになる前の後続打席（安打・四死球・暴投等）によってミスがなくても本塁へ生還できていたと再構成されるため、自責点として記録されます。`,
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+          note: relieverTeamDiffNote,
+        };
+      }
+
+      return {
+        isEarned: true,
+        isTeamEarned,
+        ruleClause: "公認野球規則 9.16",
+        headline: "相手投手の責任による正規生還（自責点）",
+        detail:
+          "安打・四死球・犠打・犠飛・盗塁・暴投・ボークなど守備側の失策や捕逸を介さずに3アウト成立前に生還したため、投手の自責点となります。",
+        responsiblePitcherKey: respKey || undefined,
+        inheritedFromPriorPitcher: crossedPitcherChange,
+        note: relieverTeamDiffNote,
+      };
+    }
+
+    switch (tok.originCauseKind) {
+      case "tiebreak":
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "tiebreak_runner",
+          ruleClause: "公認野球規則 9.16（タイブレーク規定）",
+          headline: "タイブレーク開始時の配置走者による生還",
+          detail:
+            "タイブレーク規定によりイニング開始時点から塁上に配置された走者のため、投手が許した出塁ではなく、後続の安打等で生還しても常に非自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: false,
+        };
+
+      case "error_reach": {
+        const playDesc = tok.originPlayLabel
+          ? `「${tok.originPlayLabel}」`
+          : "相手の守備失策（エラー）";
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "batter_error_reach",
+          ruleClause: "公認野球規則 9.16(a)・(d)",
+          headline: "打者自身の相手失策（エラー）による出塁",
+          detail: `この走者自身が${playDesc}によって出塁しており、失策がなければその打席でアウトになっていた走者のため、後続の安打等で生還しても非自責点となります。`,
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+      }
+
+      case "relay_error":
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "relay_error_saved_batter",
+          ruleClause: "公認野球規則 9.16(a)・(d)",
+          headline: "併殺崩れ・送球失策によりアウトを免れた走者の生還",
+          detail:
+            "先行走者をアウトにした後の悪送球・捕球失策（エラー）によって打者走者がアウトを免れて一塁に残っており、失策がなければ併殺等でアウトになっていたため非自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+
+      case "dts_pb":
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "dropped_third_strike_pb",
+          ruleClause: "公認野球規則 9.16(a)(3)",
+          headline: "第3ストライクの捕逸（パスボール）による振り逃げ出塁",
+          detail:
+            "第3ストライクを捕手が捕逸（パスボール）して振り逃げ出塁した走者であり、捕逸がなければ三振アウトになっていたため非自責点となります（※投手の暴投による振り逃げ出塁のみ自責対象）。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+
+      case "dts_error":
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "dropped_third_strike_error",
+          ruleClause: "公認野球規則 9.16(a)(3)",
+          headline: "振り逃げ時の一塁送球・捕球失策による出塁",
+          detail:
+            "第3ストライク後の振り逃げで、野手の悪送球または捕球失策（エラー）により一塁へ生きた走者のため、失策がなければ三振アウトになっており非自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+
+      case "interference":
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "catcher_interference",
+          ruleClause: "公認野球規則 9.16(a)・(b)(2)",
+          headline: "打撃妨害（捕手失策）による出塁走者の生還",
+          detail:
+            "捕手の打撃妨害（捕手に失策記録）によって一塁を与えられた走者のため、本人が本塁へ生還した得点は投手の自責点にはならず非自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+
+      case "inherited_unearned": {
+        const causeJa =
+          tok.inheritedUnearnedCauseLabel || "非自責扱いの先行走者";
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "force_swap_from_unearned_runner",
+          ruleClause: "公認野球規則 9.16(a)・(g)",
+          headline: "非自責走者との封殺（フォースアウト）入れ替わり",
+          detail: `前の塁にいた「${causeJa}」がフォースアウト等で退き、この打者が入れ替わりで一塁に残ったため、先行走者の非自責扱いをそのまま引き継いで非自責点となります。`,
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+      }
+
+      case "clean":
+      default: {
+        if (tok.reachedAfterVirtualThreeOuts) {
+          return {
+            isEarned: false,
+            isTeamEarned,
+            reasonCode: "virtual_three_outs_reached",
+            ruleClause: "公認野球規則 9.16(a)",
+            headline: "失策・捕逸がなければ既に3アウト終了していた後の得点",
+            detail: `この回に記録された失策・捕逸${errorPlaysJa}がなければ、この打席の時点で既に3アウトチェンジとなっていました。公認野球規則 9.16(a) のイニング再構成により、仮想3アウト到達後の得点は安打・本塁打を含めすべて非自責点となります。`,
+            responsiblePitcherKey: respKey || undefined,
+            inheritedFromPriorPitcher: crossedPitcherChange,
+          };
+        }
+
+        if (tok.unearnedAdvanceTriggers.length === 0) {
+          return {
+            isEarned: false,
+            isTeamEarned,
+            reasonCode: "virtual_three_outs_reached",
+            ruleClause: "公認野球規則 9.16(a)",
+            headline: "失策・捕逸がなければ生還前に3アウト終了していた得点",
+            detail: `この走者自身の出塁は正規でしたが、この回の失策・捕逸${errorPlaysJa}を除いてイニングを再構成すると、本塁へ還る前に3アウトチェンジ（${hypoBaseJa}残塁相当）となっていたため非自責点となります。`,
+            responsiblePitcherKey: respKey || undefined,
+            inheritedFromPriorPitcher: crossedPitcherChange,
+          };
+        }
+
+        const triggersJa = tok.unearnedAdvanceTriggers.join("・");
+        return {
+          isEarned: false,
+          isTeamEarned,
+          reasonCode: "unearned_advance_not_driven_in",
+          ruleClause: "公認野球規則 9.16(a)・(d)・(f)",
+          headline: `${triggersJa}による進塁・生還（自責生還条件を満たさず）`,
+          detail: tok.blockedByVirtualThreeOuts
+            ? `出塁自体は正規でしたが、進塁・本塁生還に「${triggersJa}」が絡んでおり、さらにこの回の失策・捕逸${errorPlaysJa}を除いて再構成すると生還前に3アウトチェンジ（${hypoBaseJa}止まり）となるため非自責点となります。`
+            : `出塁自体は正規でしたが、途中の進塁または本塁生還が「${triggersJa}」によるものであり、後続の打席結果でもミスなしでは本塁まで進めなかった（イニング再構成上の到達塁：${hypoBaseJa}止まり）ため非自責点となります。`,
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+        };
+      }
+    }
+  };
 
   for (const tok of allTokens) {
     if (!tok.actualScored) continue;
@@ -2407,6 +2894,15 @@ export function evaluateHalfInningEarnedRunDetails(
       } else {
         unearnedOriginAtBatIds.add(tok.cellAtBatId);
       }
+      runExplanationsByAtBatId.set(
+        tok.cellAtBatId,
+        buildTokenEarnedRunExplanation(
+          tok,
+          respKey,
+          isPitcherEarned,
+          isTeamEarned
+        )
+      );
     }
   }
 
@@ -2426,6 +2922,7 @@ export function evaluateHalfInningEarnedRunDetails(
     pitcherCharges: charges,
     earnedOriginAtBatIds,
     unearnedOriginAtBatIds,
+    runExplanationsByAtBatId,
     teamEarnedRuns,
     scoredRunsInOrder,
     pitcherEntrySnapshots,

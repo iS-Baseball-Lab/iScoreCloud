@@ -10,6 +10,7 @@ import {
   CircleDot,
   Compass,
   Diamond,
+  Scale,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -503,6 +504,18 @@ export function ScorebookCellGuideModal({
                   {guide.rbi}打点
                 </span>
               )}
+              {guide.runStatusBadge && (
+                <span
+                  className={cn(
+                    "inline-flex items-center px-2 py-0.5 rounded-lg text-[11px] font-black leading-snug",
+                    guide.runStatusBadge.isUnearned
+                      ? "bg-amber-500 text-slate-950"
+                      : "bg-[#0f172a] text-white"
+                  )}
+                >
+                  {guide.runStatusBadge.label}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -687,6 +700,64 @@ export function ScorebookCellGuideModal({
                       <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
                         {row.description}
                       </p>
+                      {row.earnedRunReasonBox && (
+                        <div
+                          className={cn(
+                            "mt-2 rounded-xl border overflow-hidden",
+                            row.earnedRunReasonBox.variant === "unearned"
+                              ? "border-amber-400 bg-amber-50"
+                              : "border-sky-400 bg-sky-50"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "px-2.5 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 flex items-center justify-between gap-2 flex-wrap",
+                              row.earnedRunReasonBox.variant === "unearned"
+                                ? "border-amber-500"
+                                : "border-sky-500"
+                            )}
+                          >
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-wide">
+                              <Scale
+                                className={cn(
+                                  "w-3 h-3 shrink-0",
+                                  row.earnedRunReasonBox.variant === "unearned"
+                                    ? "text-amber-400"
+                                    : "text-sky-400"
+                                )}
+                              />
+                              <span>
+                                {row.earnedRunReasonBox.variant === "unearned"
+                                  ? "非自責点の理由"
+                                  : "自責点判定の補足"}
+                              </span>
+                            </span>
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.5 rounded font-mono text-[9px] font-black leading-none",
+                                row.earnedRunReasonBox.variant === "unearned"
+                                  ? "bg-amber-500 text-slate-950"
+                                  : "bg-sky-500 text-slate-950"
+                              )}
+                            >
+                              {row.earnedRunReasonBox.ruleClause}
+                            </span>
+                          </div>
+                          <div className="p-2.5 space-y-1.5">
+                            <p className="text-[11px] font-black text-slate-950 leading-snug">
+                              {row.earnedRunReasonBox.headline}
+                            </p>
+                            <p className="text-[11px] font-bold text-slate-800 leading-relaxed">
+                              {row.earnedRunReasonBox.detail}
+                            </p>
+                            {row.earnedRunReasonBox.note && (
+                              <div className="rounded-lg bg-white border border-slate-300 px-2 py-1.5 text-[10px] font-bold text-slate-700 leading-relaxed">
+                                {row.earnedRunReasonBox.note}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

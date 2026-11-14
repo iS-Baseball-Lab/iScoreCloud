@@ -14,6 +14,7 @@ import {
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
+  type OfficialEarnedRunExplanation,
 } from "@/lib/liff/baseball-official-rules";
 import {
   extractRelayChainFromHitDirection,
@@ -126,6 +127,8 @@ export interface CompiledScorebookCell {
   runScored: boolean;
   /** 非自責点（失策・捕逸・2死後失策絡み等による得点）か */
   isUnearnedRun?: boolean;
+  /** 公認野球規則 9.16 に基づく自責点・非自責点の理由解説（本塁生還マスに設定） */
+  earnedRunExplanation?: OfficialEarnedRunExplanation;
   /** イニング終了時点で塁上に残った残塁走者か */
   isResidual: boolean;
   residualBase?: OccupiedBaseKey;
@@ -2355,6 +2358,7 @@ export function compileScorebookSheetModel(
     pitcherTotals,
     earnedOriginAtBatIds,
     unearnedOriginAtBatIds,
+    runExplanationsByAtBatId,
   } = compilePitcherRows(
     structure.pitchers,
     atBats,
@@ -2369,10 +2373,32 @@ export function compileScorebookSheetModel(
     if (!c.runScored) continue;
     if (c.isTiebreakRunnerOnly) {
       c.isUnearnedRun = true;
-    } else if (c.atBat && earnedOriginAtBatIds.has(c.atBat.id)) {
-      c.isUnearnedRun = false;
-    } else if (c.atBat && unearnedOriginAtBatIds.has(c.atBat.id)) {
-      c.isUnearnedRun = true;
+      const startBaseJa =
+        c.tiebreakStartBase === "1B"
+          ? "一塁"
+          : c.tiebreakStartBase === "2B"
+          ? "二塁"
+          : c.tiebreakStartBase === "3B"
+          ? "三塁"
+          : "塁上";
+      c.earnedRunExplanation = {
+        isEarned: false,
+        isTeamEarned: false,
+        reasonCode: "tiebreak_runner",
+        ruleClause: "公認野球規則 9.16（タイブレーク規定）",
+        headline: `タイブレーク開始時の配置走者（${startBaseJa}）による生還`,
+        detail: `タイブレーク規定によりイニング開始時点から${startBaseJa}に配置された走者のため、投手が許した出塁ではなく、後続の安打等で生還しても常に非自責点となります。`,
+      };
+    } else if (c.atBat) {
+      const exp = runExplanationsByAtBatId.get(c.atBat.id);
+      if (exp) {
+        c.earnedRunExplanation = exp;
+        c.isUnearnedRun = !exp.isEarned;
+      } else if (earnedOriginAtBatIds.has(c.atBat.id)) {
+        c.isUnearnedRun = false;
+      } else if (unearnedOriginAtBatIds.has(c.atBat.id)) {
+        c.isUnearnedRun = true;
+      }
     }
   }
 
@@ -2563,6 +2589,7 @@ function compilePitcherRows(
   pitcherTotals: CompiledPitcherTotals;
   earnedOriginAtBatIds: Set<string>;
   unearnedOriginAtBatIds: Set<string>;
+  runExplanationsByAtBatId: Map<string, OfficialEarnedRunExplanation>;
 } {
   interface MutablePitcherAcc {
     order: number;
@@ -2694,6 +2721,10 @@ function compilePitcherRows(
 
   const earnedOriginAtBatIds = new Set<string>();
   const unearnedOriginAtBatIds = new Set<string>();
+  const runExplanationsByAtBatId = new Map<
+    string,
+    OfficialEarnedRunExplanation
+  >();
   const defenseInningsChronology: MatchDefenseInningChronologyInput[] = [];
   let totalTeamEarnedRuns = 0;
 
@@ -2854,6 +2885,25 @@ function compilePitcherRows(
     for (const id of inningDetails.unearnedOriginAtBatIds) {
       unearnedOriginAtBatIds.add(id);
     }
+    for (const [abId, exp] of inningDetails.runExplanationsByAtBatId.entries()) {
+      const respIdx =
+        exp.responsiblePitcherKey !== undefined
+          ? Number(exp.responsiblePitcherKey)
+          : NaN;
+      const respName = Number.isFinite(respIdx)
+        ? (accList[respIdx]?.name || "").trim()
+        : "";
+      const inheritedNote =
+        exp.inheritedFromPriorPitcher && respName
+          ? `公認野球規則 9.16(g)・(h) により、投手交代を挟んで生還したこの得点の失点・自責責任は前任投手「${respName}」に記録されます。`
+          : undefined;
+      const combinedNote = [inheritedNote, exp.note].filter(Boolean).join(" ");
+      runExplanationsByAtBatId.set(abId, {
+        ...exp,
+        responsiblePitcherName: respName || undefined,
+        note: combinedNote || undefined,
+      });
+    }
 
     let chargedRunsInInn = 0;
     for (const [pKey, ch] of inningDetails.pitcherCharges.entries()) {
@@ -3006,6 +3056,7 @@ function compilePitcherRows(
     pitcherTotals,
     earnedOriginAtBatIds,
     unearnedOriginAtBatIds,
+    runExplanationsByAtBatId,
   };
 }
 
