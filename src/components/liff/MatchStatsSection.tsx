@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Activity,
@@ -35,6 +36,14 @@ import type {
   OfficialPitcherDecision,
 } from "@/types/scorebook-v2";
 import { cn } from "@/lib/utils";
+
+const OfficialBaseballRulesGuideModal = dynamic(
+  () =>
+    import("@/components/liff/OfficialBaseballRulesGuideModal").then(
+      (m) => m.OfficialBaseballRulesGuideModal
+    ),
+  { ssr: false }
+);
 
 export interface LiffBatterStatItem {
   id: string;
@@ -1425,6 +1434,7 @@ export function MatchStatsSection({
   const [onlyMyAttackLogs, setOnlyMyAttackLogs] = useState<boolean>(false);
   const [showAllTimeline, setShowAllTimeline] = useState<boolean>(false);
   const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
+  const [isRulesGuideOpen, setIsRulesGuideOpen] = useState<boolean>(false);
 
   // SKILL.md 規約5: 試合切替（コンテキスト変化）時に内部の展開・フィルタ状態を自動リセット
   useEffect(() => {
@@ -1432,6 +1442,7 @@ export function MatchStatsSection({
     setOnlyMyAttackLogs(false);
     setShowAllTimeline(false);
     setExpandedLogIds({});
+    setIsRulesGuideOpen(false);
   }, [matchId]);
 
   const needHeroes = displayPart === "all" || displayPart === "heroes";
@@ -1728,11 +1739,26 @@ export function MatchStatsSection({
     }
     return (
       <section className="space-y-2" aria-label="個人成績未登録">
-        <div className="flex items-center justify-between px-1">
+        {isRulesGuideOpen && (
+          <OfficialBaseballRulesGuideModal
+            isOpen={isRulesGuideOpen}
+            onClose={() => setIsRulesGuideOpen(false)}
+            initialTab="chapter9"
+          />
+        )}
+        <div className="flex items-center justify-between gap-2 px-1">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
             <Target className="w-4 h-4 text-primary shrink-0" />
             <span>個人成績・打席経過</span>
           </h2>
+          <button
+            type="button"
+            onClick={() => setIsRulesGuideOpen(true)}
+            className="px-2.5 py-1 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+          >
+            <BookOpen className="w-3 h-3 shrink-0" />
+            <span>野球規則ガイド</span>
+          </button>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4 shadow-xs space-y-3">
           <EmptyState
@@ -1814,6 +1840,14 @@ export function MatchStatsSection({
 
   return (
     <div className="space-y-5">
+      {isRulesGuideOpen && (
+        <OfficialBaseballRulesGuideModal
+          isOpen={isRulesGuideOpen}
+          onClose={() => setIsRulesGuideOpen(false)}
+          initialTab="chapter9"
+        />
+      )}
+
       {/* 🌟 1. 本日の注目選手（Web版 HighlightHero と同一ロジック） */}
       {showHeroes && (
         <section className="space-y-2" aria-label="本日の注目選手">
@@ -1897,37 +1931,48 @@ export function MatchStatsSection({
         <>
           {/* 🎯 2. 打撃・走塁・守備成績（Web版と同一の全22項目＋打率＋チーム合計） */}
           <section className="space-y-2" aria-label="打撃・走塁・守備成績">
-        <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground min-w-0">
             <Target className="w-4 h-4 text-primary shrink-0" />
             <span className="truncate">打撃・走塁・守備成績</span>
           </h2>
 
-          <div className="inline-flex items-center gap-0.5 bg-muted p-1 rounded-2xl border border-border shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => setBatterColumnMode("full")}
-              className={cn(
-                "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
-                batterColumnMode === "full"
-                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-              )}
+              onClick={() => setIsRulesGuideOpen(true)}
+              className="px-2 py-1 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              <span className={batterColumnMode === "full" ? "text-primary" : ""}>全項目</span>
+              <BookOpen className="w-3 h-3 shrink-0" />
+              <span>規則ガイド</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setBatterColumnMode("compact")}
-              className={cn(
-                "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
-                batterColumnMode === "compact"
-                  ? "bg-card text-foreground shadow-sm border border-border font-black"
-                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-              )}
-            >
-              <span className={batterColumnMode === "compact" ? "text-primary" : ""}>主要のみ</span>
-            </button>
+
+            <div className="inline-flex items-center gap-0.5 bg-muted p-1 rounded-2xl border border-border shrink-0">
+              <button
+                type="button"
+                onClick={() => setBatterColumnMode("full")}
+                className={cn(
+                  "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
+                  batterColumnMode === "full"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                )}
+              >
+                <span className={batterColumnMode === "full" ? "text-primary" : ""}>全項目</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatterColumnMode("compact")}
+                className={cn(
+                  "px-2.5 py-0.5 rounded-xl text-[10px] transition-all cursor-pointer",
+                  batterColumnMode === "compact"
+                    ? "bg-card text-foreground shadow-sm border border-border font-black"
+                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                )}
+              >
+                <span className={batterColumnMode === "compact" ? "text-primary" : ""}>主要のみ</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2289,16 +2334,26 @@ export function MatchStatsSection({
 
       {/* ⚡ 3. 投手成績（Web版と同一の全項目＋防御率＋TEAM TOTAL） */}
       <section className="space-y-2" aria-label="投手成績">
-        <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center justify-between gap-2 px-1 flex-wrap">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
             <Zap className="w-4 h-4 text-primary shrink-0" />
             <span>投手成績</span>
           </h2>
-          {pitcherStats.length > 0 && (
-            <span className="text-[10px] font-black font-mono tabular-nums text-muted-foreground">
-              防御率 {teamEraStr}（7回制換算）
-            </span>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {pitcherStats.length > 0 && (
+              <span className="text-[10px] font-black font-mono tabular-nums text-muted-foreground">
+                防御率 {teamEraStr}（7回制換算）
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsRulesGuideOpen(true)}
+              className="px-2 py-1 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+            >
+              <BookOpen className="w-3 h-3 shrink-0" />
+              <span>規則ガイド</span>
+            </button>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">

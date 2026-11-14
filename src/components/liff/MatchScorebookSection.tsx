@@ -3,6 +3,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import {
   BookOpen,
   Download,
@@ -35,6 +36,14 @@ import {
   exportScorebookSvgElementsToPngBlob,
   printScorebookSvgElements,
 } from "@/components/liff/DigitalScorebookSheet";
+
+const OfficialBaseballRulesGuideModal = dynamic(
+  () =>
+    import("@/components/liff/OfficialBaseballRulesGuideModal").then(
+      (m) => m.OfficialBaseballRulesGuideModal
+    ),
+  { ssr: false }
+);
 
 export interface SharedMatchScorebookBundle {
   topModel: CompiledScorebookSheetModel | null;
@@ -94,6 +103,7 @@ export function MatchScorebookSection({
   >(null);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [mountOffscreenSheet, setMountOffscreenSheet] = useState(false);
+  const [isRulesGuideOpen, setIsRulesGuideOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -109,6 +119,7 @@ export function MatchScorebookSection({
   // 背景の試合IDが切り替わった際は開いているモーダルを自動リセット（SKILL.md規約5）
   useEffect(() => {
     setIsFullscreenOpen(false);
+    setIsRulesGuideOpen(false);
     setExportedPreviewDataUrl(null);
     setFullscreenZoom(1);
     setMountOffscreenSheet(false);
@@ -381,12 +392,29 @@ export function MatchScorebookSection({
 
   return (
     <section className="space-y-2" aria-label="デジタルスコアブック">
+      {isRulesGuideOpen && (
+        <OfficialBaseballRulesGuideModal
+          isOpen={isRulesGuideOpen}
+          onClose={() => setIsRulesGuideOpen(false)}
+          initialTab="chapter9"
+        />
+      )}
+
       {/* セクション見出し（他セクションと統一したカード外見出し） */}
-      <div className="flex items-center gap-1.5 px-1">
+      <div className="flex items-center justify-between gap-2 px-1">
         <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
           <FileSpreadsheet className="w-4 h-4 text-primary shrink-0" />
           <span>スコアブック（清書シート）</span>
         </h2>
+
+        <button
+          type="button"
+          onClick={() => setIsRulesGuideOpen(true)}
+          className="px-2.5 py-1 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+        >
+          <BookOpen className="w-3 h-3 shrink-0" />
+          <span>野球規則ガイド</span>
+        </button>
       </div>
 
       <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">

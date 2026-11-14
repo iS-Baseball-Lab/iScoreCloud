@@ -2,9 +2,11 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  BookOpen,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -114,6 +116,14 @@ import {
   removeAtBatPinchRunnerChange,
 } from "./Step3SubstitutionModals";
 
+const OfficialBaseballRulesGuideModal = dynamic(
+  () =>
+    import("@/components/liff/OfficialBaseballRulesGuideModal").then(
+      (m) => m.OfficialBaseballRulesGuideModal
+    ),
+  { ssr: false }
+);
+
 interface Step3PinpointReviewProps {
   importScope: ImportScopeMode;
   opponentName: string;
@@ -188,6 +198,7 @@ export function Step3PinpointReview({
   const [showQuickSubstitutionModal, setShowQuickSubstitutionModal] =
     useState(false);
   const [showTimingDetails, setShowTimingDetails] = useState(true);
+  const [isRulesGuideOpen, setIsRulesGuideOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -1634,8 +1645,8 @@ export function Step3PinpointReview({
         </div>
       )}
 
-      {/* 後から選手交代・継投クイック編集バー */}
-      {currentStructure && (
+      {/* 後から選手交代・継投クイック編集 ＆ 野球規則ガイドバー */}
+      {currentStructure ? (
         <div className="p-3 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             <span className="w-7 h-7 rounded-xl bg-primary/12 text-primary flex items-center justify-center shrink-0">
@@ -1657,13 +1668,35 @@ export function Step3PinpointReview({
             </div>
           </div>
 
+          <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsRulesGuideOpen(true)}
+              className="h-9 px-3 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-xs font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>野球規則ガイド</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowQuickSubstitutionModal(true)}
+              className="h-9 px-3 rounded-xl bg-primary/12 hover:bg-primary/18 border border-primary/30 text-primary text-xs font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>選手交代・継投を編集</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex justify-end">
           <button
             type="button"
-            onClick={() => setShowQuickSubstitutionModal(true)}
-            className="h-9 px-3 rounded-xl bg-primary/12 hover:bg-primary/18 border border-primary/30 text-primary text-xs font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+            onClick={() => setIsRulesGuideOpen(true)}
+            className="h-8 px-3 rounded-xl bg-amber-500/12 hover:bg-amber-500/20 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[11px] font-black inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>選手交代・継投を編集</span>
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>野球規則ガイド（安打/野選・自責点）</span>
           </button>
         </div>
       )}
@@ -2178,6 +2211,14 @@ export function Step3PinpointReview({
                         className="px-1.5 py-0.2 rounded-md bg-primary/20 hover:bg-primary/30 border border-primary/40 text-blue-300 hover:text-white text-[9px] font-black cursor-pointer transition-colors"
                       >
                         投手交代
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsRulesGuideOpen(true)}
+                        className="px-1.5 py-0.2 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/45 text-amber-300 hover:text-white text-[9px] font-black inline-flex items-center gap-0.5 cursor-pointer transition-colors"
+                      >
+                        <BookOpen className="w-2.5 h-2.5 shrink-0" />
+                        <span>規則ガイド</span>
                       </button>
                     </div>
                   </div>
@@ -4720,6 +4761,14 @@ export function Step3PinpointReview({
           handleApplyStructureAndAtBats(nextStruct, nextAtBats)
         }
       />
+
+      {isRulesGuideOpen && (
+        <OfficialBaseballRulesGuideModal
+          isOpen={isRulesGuideOpen}
+          onClose={() => setIsRulesGuideOpen(false)}
+          initialTab="chapter9"
+        />
+      )}
     </div>
   );
 }

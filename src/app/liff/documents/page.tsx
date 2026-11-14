@@ -31,9 +31,18 @@ import {
   ImageIcon,
   Download,
   FileSpreadsheet,
+  BookOpen,
 } from "lucide-react";
+import type { RulesGuideTabId } from "@/lib/liff/baseball-rules-guide-data";
 const PdfCanvasViewer = dynamic(
   () => import("@/components/common/PdfCanvasViewer").then((m) => m.PdfCanvasViewer),
+  { ssr: false }
+);
+const OfficialBaseballRulesGuideModal = dynamic(
+  () =>
+    import("@/components/liff/OfficialBaseballRulesGuideModal").then(
+      (m) => m.OfficialBaseballRulesGuideModal
+    ),
   { ssr: false }
 );
 
@@ -126,6 +135,8 @@ export default function LiffDocumentsPage() {
 
   // プレビューモーダル用ステート
   const [previewDoc, setPreviewDoc] = useState<TeamDocument | null>(null);
+  const [isRulesGuideOpen, setIsRulesGuideOpen] = useState(false);
+  const [rulesGuideTab, setRulesGuideTab] = useState<RulesGuideTabId>("chapter9");
 
   // 編集モーダル用ステート
   const [editingDoc, setEditingDoc] = useState<TeamDocument | null>(null);
@@ -666,6 +677,82 @@ export default function LiffDocumentsPage() {
             </button>
           ))}
         </div>
+
+        {isRulesGuideOpen && (
+          <OfficialBaseballRulesGuideModal
+            isOpen={isRulesGuideOpen}
+            onClose={() => setIsRulesGuideOpen(false)}
+            initialTab={rulesGuideTab}
+            initialQuery={searchQuery}
+          />
+        )}
+
+        {/* 📘 常設公式リファレンス：公認野球規則 ＆ スコア判定ガイド (A-3 Solid Card) */}
+        {(selectedCategory === "all" ||
+          selectedCategory === "rules" ||
+          selectedCategory === "match") &&
+          (selectedFileType === "all" || selectedFileType === "PDF") && (
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-2.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/35 flex items-center justify-center shrink-0">
+                    <BookOpen className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                      公認野球規則 ＆ スコア判定ガイド
+                    </h2>
+                    <p className="text-[10px] font-bold text-slate-300 truncate">
+                      第9章（9.01〜9.22 全22条）・重要試合ルール・実例Q&A
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[10px] font-black shrink-0">
+                  常設ガイド
+                </span>
+              </div>
+
+              <div className="p-3.5 space-y-2.5">
+                <p className="text-xs font-bold text-muted-foreground leading-relaxed">
+                  振り逃げ・インフィールドフライ・タイムプレー・自責点・勝敗/セーブ条件・規定打席特例など、現場とスコア記入で迷いやすい公認野球規則を検索＆A4携行PDF出力できます。
+                </p>
+
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRulesGuideTab("chapter9");
+                      setIsRulesGuideOpen(true);
+                    }}
+                    className="h-9 px-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span>第9章 記録規則</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRulesGuideTab("game_rules");
+                      setIsRulesGuideOpen(true);
+                    }}
+                    className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border text-foreground text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <span>試合ルール</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRulesGuideTab("case_qa");
+                      setIsRulesGuideOpen(true);
+                    }}
+                    className="h-9 px-2 rounded-xl bg-card hover:bg-muted border border-border text-foreground text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <span>実例 Q&A・PDF</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
 
         {/* 📋 チーム資料 セクションカード (A-3 Dark Solid Header Cap) */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">

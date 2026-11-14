@@ -40,6 +40,13 @@ const ScorebookSymbolChartSheetModal = dynamic(
     ),
   { ssr: false }
 );
+const OfficialBaseballRulesGuideModal = dynamic(
+  () =>
+    import("@/components/liff/OfficialBaseballRulesGuideModal").then(
+      (m) => m.OfficialBaseballRulesGuideModal
+    ),
+  { ssr: false }
+);
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
@@ -137,6 +144,7 @@ export default function LiffScoreSettingsPage() {
     useState<ScorebookSymbolRules>(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
   const [isChartGeneratorOpen, setIsChartGeneratorOpen] = useState(false);
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  const [isRulesGuideOpen, setIsRulesGuideOpen] = useState(false);
   const stageSeqRef = useRef<number>(0);
 
   // 1. 端末保存のスコア取込初期設定を読み込み
@@ -670,6 +678,13 @@ export default function LiffScoreSettingsPage() {
         />
       )}
 
+      {isRulesGuideOpen && (
+        <OfficialBaseballRulesGuideModal
+          isOpen={isRulesGuideOpen}
+          onClose={() => setIsRulesGuideOpen(false)}
+        />
+      )}
+
       <LiffHeader />
 
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
@@ -683,6 +698,33 @@ export default function LiffScoreSettingsPage() {
           }
           showBack
         />
+
+        {/* 📘 公認野球規則・スコア判定リファレンス 1タップ起動カード */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-2.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center justify-center shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-xs sm:text-sm font-black text-white truncate">
+                  公認野球規則 ＆ スコア判定ガイド
+                </h2>
+                <p className="text-[10px] font-bold text-slate-300 truncate">
+                  第9章 全22条・試合ルール・実例Q&A・ベンチ用PDF出力
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsRulesGuideOpen(true)}
+              className="h-8 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-black inline-flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+            >
+              <span>ガイドを開く</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </section>
 
         {errorMessage && (
           <div className="p-3.5 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-start gap-2.5">
