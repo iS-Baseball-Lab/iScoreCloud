@@ -101,6 +101,12 @@ interface SeasonBatterStat {
   avg: string;
   obp: string;
   ops: string;
+  currentHitStreak?: number;
+  maxHitStreak?: number;
+  currentOnBaseStreak?: number;
+  maxOnBaseStreak?: number;
+  isRegulationQualified?: boolean;
+  qualifiedByRule922Exception?: boolean;
 }
 
 interface SeasonPitcherStat {
@@ -108,6 +114,12 @@ interface SeasonPitcherStat {
   name: string;
   uniformNumber: string;
   games: number;
+  wins?: number;
+  losses?: number;
+  saves?: number;
+  holds?: number;
+  completeGames?: number;
+  shutouts?: number;
   outs: number;
   ip: string;
   battersFaced: number;
@@ -120,12 +132,23 @@ interface SeasonPitcherStat {
   earnedRuns: number;
   era: string;
   whip: string;
+  isRegulationQualified?: boolean;
+}
+
+interface StatsQualificationData {
+  regulationPa: number;
+  regulationOuts: number;
+  regulationIp: string;
+  avgLeaderId: string | null;
+  isAvgReferenceOnly: boolean;
+  isEraReferenceOnly: boolean;
 }
 
 interface StatsSectionData {
   summary: TeamStatsSummary;
   battingStats: SeasonBatterStat[];
   pitchingStats: SeasonPitcherStat[];
+  qualification?: StatsQualificationData;
 }
 
 interface LiffStatsApiResponse {
@@ -332,6 +355,7 @@ export default function LiffStatsPage() {
 
   const activeSection = sectionsByFilter[filter] || EMPTY_SECTION;
   const summary = activeSection.summary;
+  const qualification = activeSection.qualification;
 
   const filteredMatches = useMemo(() => {
     if (filter === "all") return matchesList;
@@ -359,6 +383,13 @@ export default function LiffStatsPage() {
     const copy = [...activeSection.battingStats];
     copy.sort((a, b) => {
       if (batterSort === "avg") {
+        const aQual = Boolean(a.isRegulationQualified || a.qualifiedByRule922Exception);
+        const bQual = Boolean(b.isRegulationQualified || b.qualifiedByRule922Exception);
+        if (aQual !== bQual) return bQual ? 1 : -1;
+        if (qualification?.avgLeaderId) {
+          if (a.id === qualification.avgLeaderId) return -1;
+          if (b.id === qualification.avgLeaderId) return 1;
+        }
         const avgDiff = parseRateValue(b.avg) - parseRateValue(a.avg);
         if (avgDiff !== 0) return avgDiff;
         return b.hits - a.hits;
@@ -376,23 +407,50 @@ export default function LiffStatsPage() {
       return b.plateAppearances - a.plateAppearances;
     });
     return copy;
-  }, [activeSection.battingStats, batterSort]);
+  }, [activeSection.battingStats, batterSort, qualification?.avgLeaderId]);
 
-  // 打撃リーダー TOP3（打率・打点・安打）
+  // 打撃リーダー TOP3（公認野球規則 9.22(a) 規定打席 ＆ 不足打席凡打加算特例対応）
   const avgLeaders = useMemo(() => {
-    const eligible = activeSection.battingStats.filter((b) => b.atBats >= 2);
-    const pool =
-      eligible.length >= 3
-        ? eligible
-        : activeSection.battingStats.filter((b) => b.atBats >= 1);
-    return [...pool]
+    const hasQualMetadata = activeSection.battingStats.some(
+      (b) => b.isRegulationQualified !== undefined
+    );
+    if (!hasQualMetadata) {
+      const legacyPool = activeSection.battingStats.filter((b) => b.atBats >= 2);
+      const pool =
+        legacyPool.length >= 3
+          ? legacyPool
+          : activeSection.battingStats.filter((b) => b.atBats >= 1);
+      return [...pool]
+        .sort((a, b) => {
+          const d = parseRateValue(b.avg) - parseRateValue(a.avg);
+          return d !== 0 ? d : b.hits - a.hits;
+        })
+        .slice(0, 3);
+    }
+
+    const qualified = activeSection.battingStats
+      .filter((b) => Boolean(b.isRegulationQualified || b.qualifiedByRule922Exception))
+      .sort((a, b) => {
+        if (qualification?.avgLeaderId) {
+          if (a.id === qualification.avgLeaderId) return -1;
+          if (b.id === qualification.avgLeaderId) return 1;
+        }
+        const d = parseRateValue(b.avg) - parseRateValue(a.avg);
+        return d !== 0 ? d : b.hits - a.hits;
+      });
+
+    if (qualified.length >= 3) {
+      return qualified.slice(0, 3);
+    }
+    const qualifiedIds = new Set(qualified.map((b) => b.id));
+    const fallbackRest = activeSection.battingStats
+      .filter((b) => !qualifiedIds.has(b.id) && b.atBats >= 1)
       .sort((a, b) => {
         const d = parseRateValue(b.avg) - parseRateValue(a.avg);
-        if (d !== 0) return d;
-        return b.hits - a.hits;
-      })
-      .slice(0, 3);
-  }, [activeSection.battingStats]);
+        return d !== 0 ? d : b.hits - a.hits;
+      });
+    return [...qualified, ...fallbackRest].slice(0, 3);
+  }, [activeSection.battingStats, qualification?.avgLeaderId]);
 
   const rbiLeaders = useMemo(() => {
     return [...activeSection.battingStats]
@@ -408,14 +466,50 @@ export default function LiffStatsPage() {
       .slice(0, 3);
   }, [activeSection.battingStats]);
 
-  // 投手リーダー TOP3（防御率・奪三振）
+  // 投手リーダー TOP3（公認野球規則 9.22(b) 規定投球回対応・防御率・勝利・奪三振）
   const eraLeaders = useMemo(() => {
-    const eligible = activeSection.pitchingStats.filter((p) => p.outs >= 3);
-    const pool = eligible.length > 0 ? eligible : activeSection.pitchingStats;
-    return [...pool]
+    const hasQualMetadata = activeSection.pitchingStats.some(
+      (p) => p.isRegulationQualified !== undefined
+    );
+    if (!hasQualMetadata) {
+      const eligible = activeSection.pitchingStats.filter((p) => p.outs >= 3);
+      const pool = eligible.length > 0 ? eligible : activeSection.pitchingStats;
+      return [...pool]
+        .sort((a, b) => {
+          const d = Number(a.era) - Number(b.era);
+          return d !== 0 ? d : b.outs - a.outs;
+        })
+        .slice(0, 3);
+    }
+
+    const qualified = activeSection.pitchingStats
+      .filter((p) => Boolean(p.isRegulationQualified))
       .sort((a, b) => {
         const d = Number(a.era) - Number(b.era);
-        if (d !== 0) return d;
+        return d !== 0 ? d : b.outs - a.outs;
+      });
+
+    if (qualified.length >= 3) {
+      return qualified.slice(0, 3);
+    }
+    const qualifiedIds = new Set(qualified.map((p) => p.id));
+    const fallbackRest = activeSection.pitchingStats
+      .filter((p) => !qualifiedIds.has(p.id) && p.outs > 0)
+      .sort((a, b) => {
+        const d = Number(a.era) - Number(b.era);
+        return d !== 0 ? d : b.outs - a.outs;
+      });
+    return [...qualified, ...fallbackRest].slice(0, 3);
+  }, [activeSection.pitchingStats]);
+
+  const winLeaders = useMemo(() => {
+    return [...activeSection.pitchingStats]
+      .filter((p) => (p.wins ?? 0) > 0 || (p.saves ?? 0) > 0)
+      .sort((a, b) => {
+        const wDiff = (b.wins ?? 0) - (a.wins ?? 0);
+        if (wDiff !== 0) return wDiff;
+        const sDiff = (b.saves ?? 0) - (a.saves ?? 0);
+        if (sDiff !== 0) return sDiff;
         return b.outs - a.outs;
       })
       .slice(0, 3);
@@ -1054,17 +1148,30 @@ export default function LiffStatsPage() {
                   </div>
                 ) : (
                   <>
-                    {/* 打率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー） */}
+                    {/* 打率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー・公認野球規則 9.22(a) 対応） */}
                     {avgLeaders.length > 0 && (
                       <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
                           <h3 className="text-xs font-black text-white flex items-center gap-1.5">
                             <Flame className="w-3.5 h-3.5 text-amber-400" />
                             <span>打率 リーダー TOP3</span>
                           </h3>
-                          <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
-                            AVG
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {qualification && qualification.regulationPa > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold tabular-nums">
+                                規定打席 {qualification.regulationPa}
+                              </span>
+                            )}
+                            {qualification?.isAvgReferenceOnly ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black">
+                                参考記録
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
+                                AVG
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="p-3.5 space-y-2">
@@ -1083,6 +1190,9 @@ export default function LiffStatsPage() {
                                 Math.round((parseRateValue(item.avg) / topAvgVal) * 100)
                               )
                             );
+                            const isUnqualifiedFallback =
+                              item.isRegulationQualified === false &&
+                              !item.qualifiedByRule922Exception;
                             const inner = (
                               <>
                                 {uni !== "-" && (
@@ -1105,16 +1215,28 @@ export default function LiffStatsPage() {
                                         {rank}
                                       </span>
                                       <div className="min-w-0">
-                                        <span className="font-black text-foreground">
-                                          {item.name}
-                                        </span>
-                                        {uni !== "-" && (
-                                          <span className="text-[10px] text-muted-foreground ml-1.5 font-bold tabular-nums">
-                                            #{uni}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-black text-foreground">
+                                            {item.name}
                                           </span>
-                                        )}
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] text-muted-foreground font-bold tabular-nums">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                          {item.qualifiedByRule922Exception && (
+                                            <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                                              9.22(a)特例首位
+                                            </span>
+                                          )}
+                                          {isUnqualifiedFallback && (
+                                            <span className="px-1.5 py-0.2 rounded bg-slate-700 text-slate-100 text-[9px] font-bold">
+                                              規定未満
+                                            </span>
+                                          )}
+                                        </div>
                                         <span className="text-[10px] text-muted-foreground block tabular-nums">
-                                          {item.atBats}打数 {item.hits}安打（打点{item.rbi}・得点{item.runs}）
+                                          {item.plateAppearances}打席 {item.atBats}打数 {item.hits}安打（打点{item.rbi}・得点{item.runs}）
                                         </span>
                                       </div>
                                     </div>
@@ -1326,6 +1448,7 @@ export default function LiffStatsPage() {
                               <th className="py-2 px-2 text-right">盗塁</th>
                               <th className="py-2 px-2 text-right">四死</th>
                               <th className="py-2 px-2 text-right">三振</th>
+                              <th className="py-2 px-2 text-right">連続安打</th>
                               <th className="py-2 px-2.5 text-right">OPS</th>
                             </tr>
                           </thead>
@@ -1333,36 +1456,49 @@ export default function LiffStatsPage() {
                             {sortedBatters.map((b) => {
                               const uni = cleanUniform(b.uniformNumber);
                               const canLinkGrowth = !b.id.startsWith("name:");
+                              const curStreak = b.currentHitStreak ?? 0;
+                              const maxStreak = b.maxHitStreak ?? 0;
                               return (
                                 <tr
                                   key={b.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
                                   <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
-                                    {canLinkGrowth ? (
-                                      <Link
-                                        href={`/liff/players/growth?id=${encodeURIComponent(b.id)}`}
-                                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
-                                      >
-                                        <span className="underline decoration-border underline-offset-2">
-                                          {b.name}
+                                    <div className="inline-flex items-center gap-1">
+                                      {canLinkGrowth ? (
+                                        <Link
+                                          href={`/liff/players/growth?id=${encodeURIComponent(b.id)}`}
+                                          className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                                        >
+                                          <span className="underline decoration-border underline-offset-2">
+                                            {b.name}
+                                          </span>
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] font-bold text-muted-foreground">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                        </Link>
+                                      ) : (
+                                        <>
+                                          <span>{b.name}</span>
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] font-bold text-muted-foreground">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                        </>
+                                      )}
+                                      {b.qualifiedByRule922Exception ? (
+                                        <span className="px-1 py-0.2 rounded bg-amber-500 text-slate-950 text-[9px] font-black">
+                                          特例
                                         </span>
-                                        {uni !== "-" && (
-                                          <span className="text-[10px] font-bold text-muted-foreground">
-                                            #{uni}
-                                          </span>
-                                        )}
-                                      </Link>
-                                    ) : (
-                                      <>
-                                        <span>{b.name}</span>
-                                        {uni !== "-" && (
-                                          <span className="ml-1 text-[10px] font-bold text-muted-foreground">
-                                            #{uni}
-                                          </span>
-                                        )}
-                                      </>
-                                    )}
+                                      ) : b.isRegulationQualified ? (
+                                        <span className="px-1 py-0.2 rounded bg-primary/15 text-primary border border-primary/30 text-[9px] font-black">
+                                          規定
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-black text-primary">
                                     {b.avg}
@@ -1424,6 +1560,19 @@ export default function LiffStatsPage() {
                                   <td className="py-2.5 px-2 text-right text-muted-foreground font-bold">
                                     {b.strikeouts}
                                   </td>
+                                  <td className="py-2.5 px-2 text-right font-bold">
+                                    {curStreak > 0 ? (
+                                      <span className="font-black text-amber-600 dark:text-amber-400">
+                                        {curStreak}試合
+                                      </span>
+                                    ) : maxStreak > 0 ? (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        0 (最長{maxStreak})
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">-</span>
+                                    )}
+                                  </td>
                                   <td className="py-2.5 px-2.5 text-right font-black">
                                     {b.ops}
                                   </td>
@@ -1461,17 +1610,30 @@ export default function LiffStatsPage() {
                   </div>
                 ) : (
                   <>
-                    {/* 防御率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー） */}
+                    {/* 防御率リーダー TOP3（A-3 上帯ダーク × 背番号ウォーターマーク × 単色ゲージバー・公認野球規則 9.22(b) 対応） */}
                     {eraLeaders.length > 0 && (
                       <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between">
+                        <div className="px-4 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
                           <h3 className="text-xs font-black text-white flex items-center gap-1.5">
                             <Activity className="w-3.5 h-3.5 text-sky-400" />
                             <span>防御率 リーダー TOP3</span>
                           </h3>
-                          <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
-                            7回換算 ERA
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {qualification && qualification.regulationOuts > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold tabular-nums">
+                                規定 {qualification.regulationIp}回
+                              </span>
+                            )}
+                            {qualification?.isEraReferenceOnly ? (
+                              <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black">
+                                参考記録
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black">
+                                7回換算 ERA
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         <div className="p-3.5 space-y-2">
@@ -1484,6 +1646,11 @@ export default function LiffStatsPage() {
                               100,
                               Math.max(15, Math.round(Math.max(0, 7 - eraNum) / 7 * 100))
                             );
+                            const isUnqualifiedFallback =
+                              item.isRegulationQualified === false;
+                            const w = item.wins ?? 0;
+                            const l = item.losses ?? 0;
+                            const sv = item.saves ?? 0;
                             const inner = (
                               <>
                                 {uni !== "-" && (
@@ -1506,16 +1673,27 @@ export default function LiffStatsPage() {
                                         {rank}
                                       </span>
                                       <div className="min-w-0">
-                                        <span className="font-black text-foreground">
-                                          {item.name}
-                                        </span>
-                                        {uni !== "-" && (
-                                          <span className="text-[10px] text-muted-foreground ml-1.5 font-bold tabular-nums">
-                                            #{uni}
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="font-black text-foreground">
+                                            {item.name}
                                           </span>
-                                        )}
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] text-muted-foreground font-bold tabular-nums">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                          {isUnqualifiedFallback && (
+                                            <span className="px-1.5 py-0.2 rounded bg-slate-700 text-slate-100 text-[9px] font-bold">
+                                              規定未満
+                                            </span>
+                                          )}
+                                        </div>
                                         <span className="text-[10px] text-muted-foreground block tabular-nums">
-                                          {item.games}登板 {item.ip}回 奪三振{item.strikeouts}（失点{item.runs}・自責{item.earnedRuns}）
+                                          {item.games}登板 {item.ip}回
+                                          {w + l + sv > 0
+                                            ? ` · ${w}勝${l}敗${sv > 0 ? `${sv}S` : ""}`
+                                            : ""}
+                                          {" "}奪三振{item.strikeouts}（自責{item.earnedRuns}）
                                         </span>
                                       </div>
                                     </div>
@@ -1559,59 +1737,149 @@ export default function LiffStatsPage() {
                       </div>
                     )}
 
-                    {/* 奪三振リーダー TOP3 */}
-                    {soLeaders.length > 0 && (
-                      <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-                        <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
-                          <h3 className="text-xs font-black text-white flex items-center gap-1.5">
-                            <Flame className="w-3.5 h-3.5 text-amber-400" />
-                            <span>奪三振 TOP3</span>
-                          </h3>
-                        </div>
-                        <div className="p-3 space-y-1.5">
-                          {soLeaders.map((item, idx) => {
-                            const rank = idx + 1;
-                            const uni = cleanUniform(item.uniformNumber);
-                            const maxSo = Math.max(soLeaders[0]?.strikeouts || 1, 1);
-                            const pct = Math.min(100, Math.max(12, Math.round((item.strikeouts / maxSo) * 100)));
-                            return (
-                              <div
-                                key={`so-${item.id}`}
-                                className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
-                              >
-                                {uni !== "-" && (
-                                  <span
-                                    aria-hidden="true"
-                                    className="pointer-events-none select-none absolute right-2 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
+                    {/* 勝利・セーブ ＆ 奪三振リーダー 2カラム */}
+                    {(winLeaders.length > 0 || soLeaders.length > 0) && (
+                      <div
+                        className={cn(
+                          "grid grid-cols-1 gap-3",
+                          winLeaders.length > 0 && soLeaders.length > 0
+                            ? "sm:grid-cols-2"
+                            : ""
+                        )}
+                      >
+                        {winLeaders.length > 0 && (
+                          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                            <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
+                              <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                                <span>勝利・セーブ TOP3</span>
+                              </h3>
+                            </div>
+                            <div className="p-3 space-y-1.5">
+                              {winLeaders.map((item, idx) => {
+                                const rank = idx + 1;
+                                const uni = cleanUniform(item.uniformNumber);
+                                const w = item.wins ?? 0;
+                                const sv = item.saves ?? 0;
+                                const hld = item.holds ?? 0;
+                                const maxWinOrSv = Math.max(
+                                  (winLeaders[0]?.wins ?? 0) +
+                                    (winLeaders[0]?.saves ?? 0),
+                                  1
+                                );
+                                const pct = Math.min(
+                                  100,
+                                  Math.max(
+                                    12,
+                                    Math.round(((w + sv) / maxWinOrSv) * 100)
+                                  )
+                                );
+                                return (
+                                  <div
+                                    key={`win-${item.id}`}
+                                    className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
                                   >
-                                    {uni}
-                                  </span>
-                                )}
-                                <div className="relative z-10 flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span
-                                      className={cn(
-                                        "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
-                                        getRankMedalClass(rank)
-                                      )}
-                                    >
-                                      {rank}
-                                    </span>
-                                    <span className="font-black text-foreground truncate">
-                                      {item.name}（{item.ip}回）
-                                    </span>
+                                    {uni !== "-" && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="pointer-events-none select-none absolute right-2 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
+                                      >
+                                        {uni}
+                                      </span>
+                                    )}
+                                    <div className="relative z-10 flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span
+                                          className={cn(
+                                            "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
+                                            getRankMedalClass(rank)
+                                          )}
+                                        >
+                                          {rank}
+                                        </span>
+                                        <span className="font-black text-foreground truncate">
+                                          {item.name}
+                                        </span>
+                                      </div>
+                                      <span className="font-black tabular-nums text-primary shrink-0">
+                                        {w}勝
+                                        {sv > 0 ? ` ${sv}S` : ""}
+                                        {hld > 0 ? ` ${hld}H` : ""}
+                                      </span>
+                                    </div>
+                                    <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border overflow-hidden">
+                                      <div
+                                        className="h-full bg-primary"
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
                                   </div>
-                                  <span className="font-black tabular-nums text-primary shrink-0">
-                                    {item.strikeouts} 奪三振
-                                  </span>
-                                </div>
-                                <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border overflow-hidden">
-                                  <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {soLeaders.length > 0 && (
+                          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                            <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary">
+                              <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                                <Flame className="w-3.5 h-3.5 text-amber-400" />
+                                <span>奪三振 TOP3</span>
+                              </h3>
+                            </div>
+                            <div className="p-3 space-y-1.5">
+                              {soLeaders.map((item, idx) => {
+                                const rank = idx + 1;
+                                const uni = cleanUniform(item.uniformNumber);
+                                const maxSo = Math.max(soLeaders[0]?.strikeouts || 1, 1);
+                                const pct = Math.min(
+                                  100,
+                                  Math.max(12, Math.round((item.strikeouts / maxSo) * 100))
+                                );
+                                return (
+                                  <div
+                                    key={`so-${item.id}`}
+                                    className="relative overflow-hidden px-2.5 py-2 rounded-xl bg-muted border border-border text-xs space-y-1.5"
+                                  >
+                                    {uni !== "-" && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="pointer-events-none select-none absolute right-2 -bottom-1.5 text-[42px] font-black tracking-tighter leading-none tabular-nums text-slate-200 dark:text-slate-800"
+                                      >
+                                        {uni}
+                                      </span>
+                                    )}
+                                    <div className="relative z-10 flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span
+                                          className={cn(
+                                            "w-5 h-5 rounded font-black text-[11px] flex items-center justify-center shrink-0 tabular-nums",
+                                            getRankMedalClass(rank)
+                                          )}
+                                        >
+                                          {rank}
+                                        </span>
+                                        <span className="font-black text-foreground truncate">
+                                          {item.name}（{item.ip}回）
+                                        </span>
+                                      </div>
+                                      <span className="font-black tabular-nums text-primary shrink-0">
+                                        {item.strikeouts} 奪三振
+                                      </span>
+                                    </div>
+                                    <div className="relative z-10 w-full h-1.5 rounded-xs bg-card border border-border overflow-hidden">
+                                      <div
+                                        className="h-full bg-primary"
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1635,6 +1903,10 @@ export default function LiffStatsPage() {
                               </th>
                               <th className="py-2 px-2 text-right">防御率</th>
                               <th className="py-2 px-2 text-right">登板</th>
+                              <th className="py-2 px-2 text-right">勝</th>
+                              <th className="py-2 px-2 text-right">敗</th>
+                              <th className="py-2 px-2 text-right">S</th>
+                              <th className="py-2 px-2 text-right">H</th>
                               <th className="py-2 px-2 text-right">投球回</th>
                               <th className="py-2 px-2 text-right">失点</th>
                               <th className="py-2 px-2 text-right">自責</th>
@@ -1649,42 +1921,72 @@ export default function LiffStatsPage() {
                             {activeSection.pitchingStats.map((p) => {
                               const uni = cleanUniform(p.uniformNumber);
                               const canLinkGrowth = !p.id.startsWith("name:");
+                              const sho = p.shutouts ?? 0;
+                              const cg = p.completeGames ?? 0;
                               return (
                                 <tr
                                   key={p.id}
                                   className="hover:bg-muted/30 transition-colors"
                                 >
                                   <td className="sticky left-0 z-10 bg-card py-2.5 px-3 border-r border-border font-black text-foreground">
-                                    {canLinkGrowth ? (
-                                      <Link
-                                        href={`/liff/players/growth?id=${encodeURIComponent(p.id)}`}
-                                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
-                                      >
-                                        <span className="underline decoration-border underline-offset-2">
-                                          {p.name}
+                                    <div className="inline-flex items-center gap-1">
+                                      {canLinkGrowth ? (
+                                        <Link
+                                          href={`/liff/players/growth?id=${encodeURIComponent(p.id)}`}
+                                          className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                                        >
+                                          <span className="underline decoration-border underline-offset-2">
+                                            {p.name}
+                                          </span>
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] font-bold text-muted-foreground">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                        </Link>
+                                      ) : (
+                                        <>
+                                          <span>{p.name}</span>
+                                          {uni !== "-" && (
+                                            <span className="text-[10px] font-bold text-muted-foreground">
+                                              #{uni}
+                                            </span>
+                                          )}
+                                        </>
+                                      )}
+                                      {p.isRegulationQualified && (
+                                        <span className="px-1 py-0.2 rounded bg-primary/15 text-primary border border-primary/30 text-[9px] font-black">
+                                          規定
                                         </span>
-                                        {uni !== "-" && (
-                                          <span className="text-[10px] font-bold text-muted-foreground">
-                                            #{uni}
-                                          </span>
-                                        )}
-                                      </Link>
-                                    ) : (
-                                      <>
-                                        <span>{p.name}</span>
-                                        {uni !== "-" && (
-                                          <span className="ml-1 text-[10px] font-bold text-muted-foreground">
-                                            #{uni}
-                                          </span>
-                                        )}
-                                      </>
-                                    )}
+                                      )}
+                                      {sho > 0 ? (
+                                        <span className="px-1 py-0.2 rounded bg-amber-600 text-white text-[9px] font-black">
+                                          完封{sho > 1 ? sho : ""}
+                                        </span>
+                                      ) : cg > 0 ? (
+                                        <span className="px-1 py-0.2 rounded bg-slate-700 text-white text-[9px] font-bold">
+                                          完投{cg > 1 ? cg : ""}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-black text-primary">
                                     {p.era}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-bold">
                                     {p.games}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-rose-600 dark:text-rose-400">
+                                    {p.wins ?? 0}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold text-muted-foreground">
+                                    {p.losses ?? 0}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-black text-sky-600 dark:text-sky-400">
+                                    {p.saves ?? 0}
+                                  </td>
+                                  <td className="py-2.5 px-2 text-right font-bold text-emerald-600 dark:text-emerald-400">
+                                    {p.holds ?? 0}
                                   </td>
                                   <td className="py-2.5 px-2 text-right font-black">
                                     {p.ip}

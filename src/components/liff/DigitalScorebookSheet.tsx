@@ -5595,7 +5595,7 @@ export function DigitalScorebookSheet({
                     >
                       {pRow.uniformNumber ? `#${pRow.uniformNumber}` : "-"}
                     </text>
-                    {/* 投手名 */}
+                    {/* 投手名 ＋ 公認野球規則 9.17〜9.19 勝・敗・S・H・完封/完投マーク */}
                     <text
                       x={lineupX + 98}
                       y={py + 15}
@@ -5603,8 +5603,47 @@ export function DigitalScorebookSheet({
                       fontWeight={900}
                       fill={COLOR_INK}
                     >
-                      {pRow.name.slice(0, 14)}
+                      {pRow.name.slice(0, 12)}
                     </text>
+                    {(pRow.decision && pRow.decision !== "none") ||
+                    pRow.shutout ||
+                    pRow.completeGame ? (
+                      <text
+                        x={lineupX + 266}
+                        y={py + 15}
+                        fontSize={8.5}
+                        fontWeight={900}
+                        textAnchor="end"
+                        fill={
+                          isMonoSheet
+                            ? COLOR_INK
+                            : pRow.decision === "win"
+                            ? COLOR_RED
+                            : pRow.decision === "loss"
+                            ? COLOR_BLUE
+                            : COLOR_INK
+                        }
+                      >
+                        {[
+                          pRow.decision === "win"
+                            ? "○勝"
+                            : pRow.decision === "loss"
+                            ? "●敗"
+                            : pRow.decision === "save"
+                            ? "Ｓ"
+                            : pRow.decision === "hold"
+                            ? "Ｈ"
+                            : "",
+                          pRow.shutout
+                            ? "完封"
+                            : pRow.completeGame
+                            ? "完投"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join("・")}
+                      </text>
+                    ) : null}
                     {/* 担当回 */}
                     <text
                       x={lineupX + 302}
@@ -5672,12 +5711,27 @@ export function DigitalScorebookSheet({
             <text
               x={lineupX + PITCHER_LEFT_W - 8}
               y={pitcherTotalRowY + 15}
-              fontSize={7.6}
+              fontSize={7.4}
               fontWeight={800}
               textAnchor="end"
               fill={COLOR_MUTED}
             >
-              ※防御率は7回制換算
+              {`※${[
+                model.pitcherTotals.teamShutout &&
+                model.pitcherRows.length >= 2 &&
+                !model.pitcherRows.some((r) => r.shutout)
+                  ? "継投完封"
+                  : "",
+                typeof model.pitcherTotals.individualEarnedRunsSum ===
+                  "number" &&
+                model.pitcherTotals.individualEarnedRunsSum !==
+                  model.pitcherTotals.earnedRuns
+                  ? `個人自責計${model.pitcherTotals.individualEarnedRunsSum}`
+                  : "",
+                "防御率は7回制換算",
+              ]
+                .filter(Boolean)
+                .join(" / ")}`}
             </text>
             {PITCHER_STAT_COLS.map((pc) => {
               const totVal = pc.getTotalVal(model.pitcherTotals);

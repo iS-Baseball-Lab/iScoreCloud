@@ -33,7 +33,11 @@ import {
   teamGroups,
   teamGroupMembers,
 } from "@/db/schema";
-import type { ScorebookSheetStructure, ScorebookV2AtBat } from "@/types/scorebook-v2";
+import type {
+  OfficialPitcherDecision,
+  ScorebookSheetStructure,
+  ScorebookV2AtBat,
+} from "@/types/scorebook-v2";
 import {
   DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
   parseMatchDayOpsJson,
@@ -86,11 +90,19 @@ import {
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   classifyAtBatResultToken,
-  evaluateHalfInningPitcherCharges,
+  evaluateHalfInningEarnedRunDetails,
+  evaluateMatchPitcherDecisions,
+  evaluateOfficialBattingTitleQualification,
+  evaluateOfficialStreaks,
   extractFieldingCreditsForAtBat,
+  getOfficialRegulationPitchingOuts,
+  isMidAtBatStrikeoutChargedToPriorBatter,
+  isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
+  type MatchDefenseInningChronologyInput,
+  type OfficialStreakGameLogInput,
 } from "@/lib/liff/baseball-official-rules";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
@@ -5014,6 +5026,12 @@ interface LiffSeasonBatterStatPayload {
   avg: string;
   obp: string;
   ops: string;
+  currentHitStreak: number;
+  maxHitStreak: number;
+  currentOnBaseStreak: number;
+  maxOnBaseStreak: number;
+  isRegulationQualified: boolean;
+  qualifiedByRule922Exception: boolean;
 }
 
 interface LiffSeasonPitcherStatPayload {
@@ -5021,6 +5039,12 @@ interface LiffSeasonPitcherStatPayload {
   name: string;
   uniformNumber: string;
   games: number;
+  wins: number;
+  losses: number;
+  saves: number;
+  holds: number;
+  completeGames: number;
+  shutouts: number;
   outs: number;
   ip: string;
   battersFaced: number;
@@ -5033,12 +5057,23 @@ interface LiffSeasonPitcherStatPayload {
   earnedRuns: number;
   era: string;
   whip: string;
+  isRegulationQualified: boolean;
+}
+
+interface LiffStatsQualificationPayload {
+  regulationPa: number;
+  regulationOuts: number;
+  regulationIp: string;
+  avgLeaderId: string | null;
+  isAvgReferenceOnly: boolean;
+  isEraReferenceOnly: boolean;
 }
 
 interface LiffStatsSectionPayload {
   summary: LiffStatsSummaryPayload;
   battingStats: LiffSeasonBatterStatPayload[];
   pitchingStats: LiffSeasonPitcherStatPayload[];
+  qualification: LiffStatsQualificationPayload;
 }
 
 function formatBaseballRate(val: number): string {
@@ -5209,6 +5244,12 @@ function buildDemoStatsResponse() {
       avg: ".438",
       obp: ".514",
       ops: "1.326",
+      currentHitStreak: 6,
+      maxHitStreak: 8,
+      currentOnBaseStreak: 9,
+      maxOnBaseStreak: 11,
+      isRegulationQualified: true,
+      qualifiedByRule922Exception: false,
     },
     {
       id: "demo-player-2",
@@ -5233,6 +5274,12 @@ function buildDemoStatsResponse() {
       avg: ".387",
       obp: ".441",
       ops: "1.022",
+      currentHitStreak: 4,
+      maxHitStreak: 6,
+      currentOnBaseStreak: 5,
+      maxOnBaseStreak: 8,
+      isRegulationQualified: true,
+      qualifiedByRule922Exception: false,
     },
     {
       id: "demo-player-6",
@@ -5257,6 +5304,12 @@ function buildDemoStatsResponse() {
       avg: ".364",
       obp: ".447",
       ops: "1.205",
+      currentHitStreak: 3,
+      maxHitStreak: 5,
+      currentOnBaseStreak: 7,
+      maxOnBaseStreak: 9,
+      isRegulationQualified: true,
+      qualifiedByRule922Exception: false,
     },
     {
       id: "demo-player-4",
@@ -5281,6 +5334,12 @@ function buildDemoStatsResponse() {
       avg: ".355",
       obp: ".444",
       ops: "1.025",
+      currentHitStreak: 2,
+      maxHitStreak: 5,
+      currentOnBaseStreak: 4,
+      maxOnBaseStreak: 7,
+      isRegulationQualified: true,
+      qualifiedByRule922Exception: false,
     },
     {
       id: "demo-player-3",
@@ -5305,6 +5364,12 @@ function buildDemoStatsResponse() {
       avg: ".333",
       obp: ".412",
       ops: ".912",
+      currentHitStreak: 2,
+      maxHitStreak: 4,
+      currentOnBaseStreak: 3,
+      maxOnBaseStreak: 6,
+      isRegulationQualified: true,
+      qualifiedByRule922Exception: false,
     },
   ];
 
@@ -5314,6 +5379,12 @@ function buildDemoStatsResponse() {
       name: "佐藤 健太",
       uniformNumber: "1",
       games: 8,
+      wins: 6,
+      losses: 1,
+      saves: 0,
+      holds: 0,
+      completeGames: 2,
+      shutouts: 1,
       outs: 72,
       ip: "24.0",
       battersFaced: 88,
@@ -5326,12 +5397,19 @@ function buildDemoStatsResponse() {
       earnedRuns: 5,
       era: "1.46",
       whip: "0.79",
+      isRegulationQualified: true,
     },
     {
       id: "demo-player-4",
       name: "高橋 陸",
       uniformNumber: "8",
       games: 6,
+      wins: 3,
+      losses: 1,
+      saves: 1,
+      holds: 1,
+      completeGames: 0,
+      shutouts: 0,
       outs: 54,
       ip: "18.0",
       battersFaced: 62,
@@ -5344,12 +5422,19 @@ function buildDemoStatsResponse() {
       earnedRuns: 5,
       era: "1.94",
       whip: "0.83",
+      isRegulationQualified: true,
     },
     {
       id: "demo-player-10",
       name: "小林 樹",
       uniformNumber: "18",
       games: 5,
+      wins: 1,
+      losses: 1,
+      saves: 2,
+      holds: 1,
+      completeGames: 0,
+      shutouts: 0,
       outs: 36,
       ip: "12.0",
       battersFaced: 45,
@@ -5362,6 +5447,7 @@ function buildDemoStatsResponse() {
       earnedRuns: 4,
       era: "2.33",
       whip: "1.00",
+      isRegulationQualified: true,
     },
   ];
 
@@ -5403,6 +5489,55 @@ function buildDemoStatsResponse() {
     };
   };
 
+  const makeDemoSection = (
+    summary: LiffStatsSummaryPayload
+  ): LiffStatsSectionPayload => {
+    const batEval = evaluateOfficialBattingTitleQualification(
+      demoBatters.map((b) => ({
+        id: b.id,
+        pa: b.plateAppearances,
+        ab: b.atBats,
+        hits: b.hits,
+        totalBases: b.totalBases,
+        walks: b.walks,
+        hbp: b.hitByPitch,
+        sacFlies: b.sacFlies,
+      })),
+      summary.totalMatches,
+      "avg",
+      7
+    );
+    const regOuts = getOfficialRegulationPitchingOuts(summary.totalMatches, 7);
+    const regFull = Math.floor(regOuts / 3);
+    const regRem = regOuts % 3;
+    const regIp = regRem > 0 ? `${regFull}.${regRem}` : `${regFull}.0`;
+    const mappedBatters = demoBatters.map((b) => {
+      const q = batEval.entries.get(b.id);
+      return {
+        ...b,
+        isRegulationQualified: q?.isRegulationQualified ?? false,
+        qualifiedByRule922Exception: q?.qualifiedByRule922Exception ?? false,
+      };
+    });
+    const mappedPitchers = demoPitchers.map((p) => ({
+      ...p,
+      isRegulationQualified: regOuts > 0 && p.outs >= regOuts,
+    }));
+    return {
+      summary,
+      battingStats: mappedBatters,
+      pitchingStats: mappedPitchers,
+      qualification: {
+        regulationPa: batEval.regulationPa,
+        regulationOuts: regOuts,
+        regulationIp: regIp,
+        avgLeaderId: batEval.leaderId,
+        isAvgReferenceOnly: batEval.isReferenceRecordOnly,
+        isEraReferenceOnly: !mappedPitchers.some((p) => p.isRegulationQualified),
+      },
+    };
+  };
+
   const allSummary = makeDemoSummary(14, 10, 3, 1, 86, 42, 11, 2);
   const officialSummary = makeDemoSummary(5, 4, 1, 0, 31, 14, 9, 1);
   const exchangeSummary = makeDemoSummary(5, 3, 1, 1, 32, 16, 8, 1);
@@ -5420,10 +5555,10 @@ function buildDemoStatsResponse() {
     },
     stats: allSummary,
     sectionsByFilter: {
-      all: { summary: allSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
-      official: { summary: officialSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
-      exchange: { summary: exchangeSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
-      practice: { summary: practiceSummary, battingStats: demoBatters, pitchingStats: demoPitchers },
+      all: makeDemoSection(allSummary),
+      official: makeDemoSection(officialSummary),
+      exchange: makeDemoSection(exchangeSummary),
+      practice: makeDemoSection(practiceSummary),
     },
     matches: demoMatches,
   };
@@ -5457,9 +5592,12 @@ app.get("/stats", async (c) => {
           opponent: matches.opponent,
           matchType: matches.matchType,
           battingOrder: matches.battingOrder,
+          innings: matches.innings,
           status: matches.status,
           myScore: matches.myScore,
           opponentScore: matches.opponentScore,
+          myInningScores: matches.myInningScores,
+          opponentInningScores: matches.opponentInningScores,
           myHits: matches.myHits,
           opponentHits: matches.opponentHits,
           myErrors: matches.myErrors,
@@ -5598,18 +5736,42 @@ app.get("/stats", async (c) => {
       return m ? m[1].trim() : "";
     };
 
+    const parseInningScoresJson = (raw: string | null | undefined): number[] => {
+      if (!raw) return [];
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          return arr.map((v) => {
+            const n = Number(v);
+            return Number.isFinite(n) && n >= 0 ? n : 0;
+          });
+        }
+      } catch {}
+      return [];
+    };
+
     const matchMetaMap = new Map<
       string,
-      { isMyTeamTop: boolean; matchType: "official" | "exchange" | "practice" }
+      {
+        isMyTeamTop: boolean;
+        matchType: "official" | "exchange" | "practice";
+        scheduledInnings: number;
+        rawMyInningScores: number[];
+        rawOpponentInningScores: number[];
+      }
     >();
     for (const m of finishedRaw) {
       matchMetaMap.set(m.id, {
         isMyTeamTop: m.battingOrder === "first",
         matchType: normalizeStatsMatchCategory(m.matchType),
+        scheduledInnings: m.innings && m.innings > 0 ? m.innings : 7,
+        rawMyInningScores: parseInningScoresJson(m.myInningScores),
+        rawOpponentInningScores: parseInningScoresJson(m.opponentInningScores),
       });
     }
 
     const snapMapByDbAtBatId = new Map<string, ScorebookV2AtBat>();
+    const myStructureByMatchId = new Map<string, ScorebookSheetStructure>();
     const oppStructureByMatchId = new Map<string, ScorebookSheetStructure>();
     const snapByMatchId = new Map<string, typeof matchScorebookSnapshots.$inferSelect>();
     for (const sn of allSnapshots) {
@@ -5651,6 +5813,7 @@ app.get("/stats", async (c) => {
       try {
         if (myStructJson) {
           const mySt = JSON.parse(myStructJson) as ScorebookSheetStructure;
+          myStructureByMatchId.set(m.id, mySt);
           for (const slot of mySt.batters || []) {
             if (slot.playerId && slot.name?.trim()) {
               const prev = playerMetaById.get(slot.playerId);
@@ -5790,12 +5953,14 @@ app.get("/stats", async (c) => {
           ? enrichedMatches
           : enrichedMatches.filter((m) => m.matchType === filterKey);
       const targetMatchIds = new Set(targetMatches.map((m) => m.id));
+      const chronologicalTargetMatches = [...targetMatches].reverse();
 
       interface BatterAcc {
         id: string;
         name: string;
         uniformNumber: string;
         matchSet: Set<string>;
+        gameLogsByMatchId: Map<string, OfficialStreakGameLogInput>;
         plateAppearances: number;
         atBats: number;
         singles: number;
@@ -5818,6 +5983,12 @@ app.get("/stats", async (c) => {
         name: string;
         uniformNumber: string;
         matchSet: Set<string>;
+        wins: number;
+        losses: number;
+        saves: number;
+        holds: number;
+        completeGames: number;
+        shutouts: number;
         outs: number;
         battersFaced: number;
         hitsAllowed: number;
@@ -5829,10 +6000,27 @@ app.get("/stats", async (c) => {
         earnedRuns: number;
       }
 
+      interface MatchPitcherLocalAcc {
+        id: string;
+        sortOrder: number;
+        outs: number;
+        runs: number;
+        earnedRuns: number;
+        hitsAllowed: number;
+        walksAllowed: number;
+        manualDecision: OfficialPitcherDecision | null;
+      }
+
       const batterMap = new Map<string, BatterAcc>();
       const pitcherMap = new Map<string, PitcherAcc>();
       const pitcherKeyByAtBatId = new Map<string, string>();
-      const defenseAbsByHalfKey = new Map<string, Array<typeof allAtBats[number]>>();
+      const priorPitcherKeyByAtBatId = new Map<string, string>();
+      const matchPitchersByMatchId = new Map<string, Map<string, MatchPitcherLocalAcc>>();
+      const matchPitcherSeqByMatchId = new Map<string, number>();
+      const defenseAbsByMatchIdAndInning = new Map<
+        string,
+        Map<number, Array<typeof allAtBats[number]>>
+      >();
 
       const ensureBatter = (
         key: string,
@@ -5847,6 +6035,7 @@ app.get("/stats", async (c) => {
           name: meta?.name || fallbackName || "不明",
           uniformNumber: meta?.uniformNumber || fallbackNumber || "-",
           matchSet: new Set<string>(),
+          gameLogsByMatchId: new Map<string, OfficialStreakGameLogInput>(),
           plateAppearances: 0,
           atBats: 0,
           singles: 0,
@@ -5867,6 +6056,27 @@ app.get("/stats", async (c) => {
         return created;
       };
 
+      const ensureBatterGameLog = (
+        batter: BatterAcc,
+        matchId: string
+      ): OfficialStreakGameLogInput => {
+        let log = batter.gameLogsByMatchId.get(matchId);
+        if (!log) {
+          log = {
+            pa: 0,
+            ab: 0,
+            hits: 0,
+            walks: 0,
+            hbp: 0,
+            sacBunts: 0,
+            sacFlies: 0,
+            interferences: 0,
+          };
+          batter.gameLogsByMatchId.set(matchId, log);
+        }
+        return log;
+      };
+
       const ensurePitcher = (
         key: string,
         fallbackName: string,
@@ -5880,6 +6090,12 @@ app.get("/stats", async (c) => {
           name: meta?.name || fallbackName || "不明",
           uniformNumber: meta?.uniformNumber || fallbackNumber || "-",
           matchSet: new Set<string>(),
+          wins: 0,
+          losses: 0,
+          saves: 0,
+          holds: 0,
+          completeGames: 0,
+          shutouts: 0,
           outs: 0,
           battersFaced: 0,
           hitsAllowed: 0,
@@ -5891,6 +6107,40 @@ app.get("/stats", async (c) => {
           earnedRuns: 0,
         };
         pitcherMap.set(key, created);
+        return created;
+      };
+
+      const ensureMatchPitcher = (
+        matchId: string,
+        pKey: string,
+        explicitOrder?: number,
+        manualDecision?: OfficialPitcherDecision | null
+      ): MatchPitcherLocalAcc => {
+        let mMap = matchPitchersByMatchId.get(matchId);
+        if (!mMap) {
+          mMap = new Map<string, MatchPitcherLocalAcc>();
+          matchPitchersByMatchId.set(matchId, mMap);
+        }
+        const existing = mMap.get(pKey);
+        if (existing) {
+          if (manualDecision !== undefined && manualDecision !== null) {
+            existing.manualDecision = manualDecision;
+          }
+          return existing;
+        }
+        const nextSeq = (matchPitcherSeqByMatchId.get(matchId) || 0) + 1;
+        matchPitcherSeqByMatchId.set(matchId, nextSeq);
+        const created: MatchPitcherLocalAcc = {
+          id: pKey,
+          sortOrder: explicitOrder ?? nextSeq,
+          outs: 0,
+          runs: 0,
+          earnedRuns: 0,
+          hitsAllowed: 0,
+          walksAllowed: 0,
+          manualDecision: manualDecision ?? null,
+        };
+        mMap.set(pKey, created);
         return created;
       };
 
@@ -5911,6 +6161,41 @@ app.get("/stats", async (c) => {
         }
         if (playerMetaById.has(lu.playerId)) {
           ensureBatter(lu.playerId, "").matchSet.add(lu.matchId);
+        }
+      }
+
+      // 構造JSONの投手継投に公式記録員手動指定（9.01 / 9.17）がある場合も確実にシード
+      for (const tm of targetMatches) {
+        const oppSt = oppStructureByMatchId.get(tm.id);
+        if (!oppSt?.pitchers) continue;
+        for (const st of oppSt.pitchers) {
+          const hasManual =
+            st.manualDecision !== undefined && st.manualDecision !== null;
+          if (!matchesWithPersonalData.has(tm.id) && !hasManual) continue;
+          const cleanStName = normalizeNameKey(st.name);
+          const stKey =
+            st.playerId ||
+            (cleanStName &&
+            cleanStName !== "相手投手" &&
+            cleanStName !== "投手" &&
+            cleanStName !== "不明"
+              ? playerIdByCleanName.get(cleanStName) || `name:${cleanStName}`
+              : "");
+          if (!stKey) continue;
+          if (hasManual) {
+            const pSeason = ensurePitcher(
+              stKey,
+              st.name || "不明",
+              st.uniformNumber?.trim() || "-"
+            );
+            pSeason.matchSet.add(tm.id);
+            ensureMatchPitcher(
+              tm.id,
+              stKey,
+              st.order,
+              st.manualDecision ?? null
+            );
+          }
         }
       }
 
@@ -5939,31 +6224,82 @@ app.get("/stats", async (c) => {
           const abAdvances = advancesByAtBatId.get(ab.id) || [];
 
           if (batterKey && !cls.isUnfinishedRunnerOut) {
-            const b = ensureBatter(batterKey, fallbackName);
-            b.matchSet.add(ab.matchId);
-            b.plateAppearances++;
+            // 公認野球規則 9.15(b): 2ストライク後に代打が出場して三振した場合、打席・打数・三振は前打者に記録
+            const chargeSoToPrior = isMidAtBatStrikeoutChargedToPriorBatter(
+              snapAb?.midAtBatPriorBatter,
+              cls.isStrikeout
+            );
+            const priorInfo =
+              chargeSoToPrior && snapAb?.midAtBatPriorBatter
+                ? snapAb.midAtBatPriorBatter
+                : null;
+            const cleanPrior = priorInfo ? normalizeNameKey(priorInfo.name) : "";
+            const priorKey = priorInfo
+              ? priorInfo.playerId ||
+                (cleanPrior
+                  ? playerIdByCleanName.get(cleanPrior) || `name:${cleanPrior}`
+                  : "")
+              : "";
 
-            if (cls.isWalk) b.walks++;
-            if (cls.isHbp) b.hitByPitch++;
-            if (cls.isSacBunt) b.sacBunts++;
-            if (cls.isSacFly) b.sacFlies++;
+            // 代打本人も出場試合数は記録
+            const actualBatterAcc = ensureBatter(batterKey, fallbackName);
+            actualBatterAcc.matchSet.add(ab.matchId);
+
+            const b =
+              priorInfo && priorKey
+                ? ensureBatter(
+                    priorKey,
+                    priorInfo.name || "不明",
+                    priorInfo.uniformNumber || "-"
+                  )
+                : actualBatterAcc;
+            b.matchSet.add(ab.matchId);
+            const bGameLog = ensureBatterGameLog(b, ab.matchId);
+
+            b.plateAppearances++;
+            bGameLog.pa++;
+
+            if (cls.isWalk) {
+              b.walks++;
+              bGameLog.walks++;
+            }
+            if (cls.isHbp) {
+              b.hitByPitch++;
+              bGameLog.hbp++;
+            }
+            if (cls.isInterferenceReach) {
+              bGameLog.interferences = (bGameLog.interferences || 0) + 1;
+            }
+            if (cls.isSacBunt) {
+              b.sacBunts++;
+              bGameLog.sacBunts++;
+            }
+            if (cls.isSacFly) {
+              b.sacFlies++;
+              bGameLog.sacFlies++;
+            }
 
             if (cls.isOfficialAtBat) {
               b.atBats++;
+              bGameLog.ab++;
             }
 
             if (cls.isHomeRun) {
               b.homeRuns++;
               b.hits++;
+              bGameLog.hits++;
             } else if (cls.isTriple) {
               b.triples++;
               b.hits++;
+              bGameLog.hits++;
             } else if (cls.isDouble) {
               b.doubles++;
               b.hits++;
+              bGameLog.hits++;
             } else if (cls.isSingle) {
               b.singles++;
               b.hits++;
+              bGameLog.hits++;
             }
 
             if (cls.isStrikeout) b.strikeouts++;
@@ -6083,7 +6419,7 @@ app.get("/stats", async (c) => {
             }
           });
         } else {
-          // 自チーム守備イニング（投手成績：各試合・各ハーフイニングごとに規則 9.16 自責点・責任走者を再構築）
+          // 自チーム守備イニング（投手成績：各試合・各ハーフイニングごとに規則 9.16〜9.19 を再構築）
           const oppSt = oppStructureByMatchId.get(ab.matchId);
           const fallbackPitcher = snapAb?.pitcherName?.trim() || "";
           const cleanPitcher = normalizeNameKey(fallbackPitcher);
@@ -6112,80 +6448,271 @@ app.get("/stats", async (c) => {
               matchedStint?.uniformNumber?.trim() || "-"
             );
             p.matchSet.add(ab.matchId);
+            const mp = ensureMatchPitcher(
+              ab.matchId,
+              pitcherKey,
+              matchedStint?.order,
+              matchedStint?.manualDecision ?? null
+            );
 
-            if (cls.isHit) p.hitsAllowed++;
+            // 公認野球規則 9.16(h): カウント途中の投手交代における四球帰属
+            const priorInfo = snapAb?.midAtBatPriorPitcher ?? null;
+            let priorPAcc: PitcherAcc | null = null;
+            let priorMPAcc: MatchPitcherLocalAcc | null = null;
+            if (priorInfo) {
+              const cleanPrior = normalizeNameKey(priorInfo.name);
+              const matchedPriorStint = oppSt?.pitchers?.find(
+                (st) =>
+                  (priorInfo.playerId && st.playerId === priorInfo.playerId) ||
+                  (cleanPrior && normalizeNameKey(st.name) === cleanPrior)
+              );
+              const resolvedPriorKey =
+                priorInfo.playerId ||
+                matchedPriorStint?.playerId ||
+                (cleanPrior &&
+                cleanPrior !== "相手投手" &&
+                cleanPrior !== "投手" &&
+                cleanPrior !== "不明"
+                  ? playerIdByCleanName.get(cleanPrior) || `name:${cleanPrior}`
+                  : "");
+              if (resolvedPriorKey && resolvedPriorKey !== pitcherKey) {
+                priorPAcc = ensurePitcher(
+                  resolvedPriorKey,
+                  priorInfo.name || matchedPriorStint?.name || "不明",
+                  priorInfo.uniformNumber ||
+                    matchedPriorStint?.uniformNumber?.trim() ||
+                    "-"
+                );
+                priorPAcc.matchSet.add(ab.matchId);
+                priorMPAcc = ensureMatchPitcher(
+                  ab.matchId,
+                  resolvedPriorKey,
+                  matchedPriorStint?.order,
+                  matchedPriorStint?.manualDecision ?? null
+                );
+                priorPitcherKeyByAtBatId.set(ab.id, resolvedPriorKey);
+              }
+            }
+
+            const chargeWalkToPrior =
+              priorPAcc !== null &&
+              isMidAtBatWalkChargedToPriorPitcher(priorInfo, cls.isWalk);
+
+            if (cls.isHit) {
+              p.hitsAllowed++;
+              mp.hitsAllowed++;
+            }
             if (cls.isHomeRun) p.homeRunsAllowed++;
             if (cls.isStrikeout) p.strikeouts++;
-            if (cls.isWalk) p.walks++;
+            if (cls.isWalk) {
+              if (chargeWalkToPrior && priorPAcc && priorMPAcc) {
+                priorPAcc.walks++;
+                priorMPAcc.walksAllowed++;
+              } else {
+                p.walks++;
+                mp.walksAllowed++;
+              }
+            }
             if (cls.isHbp) p.hitByPitch++;
           }
 
-          const halfKey = `${ab.matchId}:${ab.inning}`;
-          const list = defenseAbsByHalfKey.get(halfKey) || [];
-          list.push(ab);
-          defenseAbsByHalfKey.set(halfKey, list);
+          let mInnMap = defenseAbsByMatchIdAndInning.get(ab.matchId);
+          if (!mInnMap) {
+            mInnMap = new Map<number, Array<typeof allAtBats[number]>>();
+            defenseAbsByMatchIdAndInning.set(ab.matchId, mInnMap);
+          }
+          const innList = mInnMap.get(ab.inning) || [];
+          innList.push(ab);
+          mInnMap.set(ab.inning, innList);
         }
       }
 
-      for (const [, halfAbs] of defenseAbsByHalfKey.entries()) {
-        const halfPlays: HalfInningAtBatPitchingInput[] = halfAbs.map((ab) => {
-          const snapAb = snapMapByDbAtBatId.get(ab.id);
-          const pKey = pitcherKeyByAtBatId.get(ab.id) || "";
-          const defAdvances = advancesByAtBatId.get(ab.id) || [];
-          const mappedDbAdvs: HalfInningAdvanceEventInput[] = defAdvances
-            .filter(
-              (a) =>
-                a.toBase >= 1 &&
-                a.toBase <= 4 &&
-                a.fromBase >= 0 &&
-                a.fromBase <= 3 &&
-                !(a.fromBase > 0 && !a.isOut && a.fromBase === a.toBase)
+      // 試合ごとに自責点再構築（9.16）・チーム自責点算出（9.16(i) 注）・勝敗S/H完封判定（9.17〜9.19）を実行
+      let totalEffectiveTeamEr = 0;
+
+      for (const tm of targetMatches) {
+        const mMeta = matchMetaMap.get(tm.id);
+        const mInnMap = defenseAbsByMatchIdAndInning.get(tm.id);
+        const sortedDefInns = mInnMap
+          ? Array.from(mInnMap.entries()).sort((a, b) => a[0] - b[0])
+          : [];
+
+        let matchTeamErSum = 0;
+        const defenseChronology: MatchDefenseInningChronologyInput[] = [];
+
+        for (const [inn, halfAbs] of sortedDefInns) {
+          const halfPlays: HalfInningAtBatPitchingInput[] = halfAbs.map((ab) => {
+            const snapAb = snapMapByDbAtBatId.get(ab.id);
+            const pKey = pitcherKeyByAtBatId.get(ab.id) || "";
+            const priorPKey = priorPitcherKeyByAtBatId.get(ab.id);
+            const defAdvances = advancesByAtBatId.get(ab.id) || [];
+            const mappedDbAdvs: HalfInningAdvanceEventInput[] = defAdvances
+              .filter(
+                (a) =>
+                  a.toBase >= 1 &&
+                  a.toBase <= 4 &&
+                  a.fromBase >= 0 &&
+                  a.fromBase <= 3 &&
+                  !(a.fromBase > 0 && !a.isOut && a.fromBase === a.toBase)
+              )
+              .map((a) => ({
+                fromBase: a.fromBase as 0 | 1 | 2 | 3,
+                toBase: a.toBase as 1 | 2 | 3 | 4,
+                isOut: Boolean(a.isOut),
+                reason: String(a.reason || ""),
+              }));
+            const effectiveAdvs =
+              snapAb && Array.isArray(snapAb.advances) && snapAb.advances.length > 0
+                ? mapSnapshotAdvancesToPitchingEvents(snapAb.advances)
+                : mappedDbAdvs;
+            const dbSafeRuns = defAdvances.filter(
+              (a) => !a.isOut && a.toBase === 4
+            ).length;
+
+            return {
+              atBatId: ab.id,
+              pitcherKey: pKey,
+              priorPitcherKey: priorPKey,
+              rawResult: ab.result,
+              runsInPlay: Math.max(snapAb?.runsInPlay || 0, dbSafeRuns),
+              snapAb,
+              advances: effectiveAdvs,
+            };
+          });
+
+          const details = evaluateHalfInningEarnedRunDetails(halfPlays);
+          for (const [pKey, ch] of details.pitcherCharges.entries()) {
+            const seasonTarget = pitcherMap.get(pKey);
+            if (seasonTarget) {
+              seasonTarget.outs += ch.outs;
+              seasonTarget.battersFaced += ch.battersFaced;
+              seasonTarget.runs += ch.runs;
+              seasonTarget.earnedRuns += ch.earnedRuns;
+            }
+            const matchTarget = matchPitchersByMatchId.get(tm.id)?.get(pKey);
+            if (matchTarget) {
+              matchTarget.outs += ch.outs;
+              matchTarget.runs += ch.runs;
+              matchTarget.earnedRuns += ch.earnedRuns;
+            }
+          }
+          matchTeamErSum += details.teamEarnedRuns;
+          defenseChronology.push({
+            inning: inn,
+            scoredRunsInOrder: details.scoredRunsInOrder,
+            pitcherEntrySnapshots: details.pitcherEntrySnapshots,
+          });
+        }
+
+        const mPitcherMap = matchPitchersByMatchId.get(tm.id);
+        const orderedMatchPitchers = mPitcherMap
+          ? Array.from(mPitcherMap.values()).sort(
+              (a, b) => a.sortOrder - b.sortOrder
             )
-            .map((a) => ({
-              fromBase: a.fromBase as 0 | 1 | 2 | 3,
-              toBase: a.toBase as 1 | 2 | 3 | 4,
-              isOut: Boolean(a.isOut),
-              reason: String(a.reason || ""),
-            }));
-          const effectiveAdvs =
-            snapAb && Array.isArray(snapAb.advances) && snapAb.advances.length > 0
-              ? mapSnapshotAdvancesToPitchingEvents(snapAb.advances)
-              : mappedDbAdvs;
-          const dbSafeRuns = defAdvances.filter(
-            (a) => !a.isOut && a.toBase === 4
-          ).length;
+          : [];
 
-          return {
-            atBatId: ab.id,
-            pitcherKey: pKey,
-            rawResult: ab.result,
-            runsInPlay: Math.max(snapAb?.runsInPlay || 0, dbSafeRuns),
-            snapAb,
-            advances: effectiveAdvs,
-          };
-        });
+        const matchPersonalErSum = orderedMatchPitchers.reduce(
+          (s, mp) => s + mp.earnedRuns,
+          0
+        );
+        totalEffectiveTeamEr +=
+          sortedDefInns.length > 0
+            ? Math.min(matchPersonalErSum, matchTeamErSum)
+            : matchPersonalErSum;
 
-        const charges = evaluateHalfInningPitcherCharges(halfPlays);
-        for (const [pKey, ch] of charges.entries()) {
-          const target = pitcherMap.get(pKey);
-          if (!target) continue;
-          target.outs += ch.outs;
-          target.battersFaced += ch.battersFaced;
-          target.runs += ch.runs;
-          target.earnedRuns += ch.earnedRuns;
+        if (mMeta && orderedMatchPitchers.length > 0) {
+          const myStructScores =
+            myStructureByMatchId.get(tm.id)?.innings.map((s) => s.runs) || [];
+          const oppStructScores =
+            oppStructureByMatchId.get(tm.id)?.innings.map((s) => s.runs) || [];
+          const effectiveMyScores =
+            mMeta.rawMyInningScores.length > 0
+              ? mMeta.rawMyInningScores
+              : myStructScores;
+          const effectiveOppScores =
+            mMeta.rawOpponentInningScores.length > 0
+              ? mMeta.rawOpponentInningScores
+              : oppStructScores;
+
+          const decisionEval = evaluateMatchPitcherDecisions({
+            isMyTeamBatFirst: mMeta.isMyTeamTop,
+            scheduledInnings: mMeta.scheduledInnings,
+            myFinalScore: tm.myScore,
+            opponentFinalScore: tm.opponentScore,
+            myInningScores: effectiveMyScores,
+            opponentInningScores: effectiveOppScores,
+            pitchers: orderedMatchPitchers.map((mp, idx) => ({
+              pitcherKey: mp.id,
+              order: idx + 1,
+              outsRecorded: mp.outs,
+              runsAllowed: mp.runs,
+              earnedRunsAllowed: mp.earnedRuns,
+              hitsAllowed: mp.hitsAllowed,
+              walksAllowed: mp.walksAllowed,
+              manualDecision: mp.manualDecision ?? undefined,
+            })),
+            defenseInnings: defenseChronology,
+          });
+
+          for (const mp of orderedMatchPitchers) {
+            const dec = decisionEval.byPitcherKey.get(mp.id);
+            const seasonTarget = pitcherMap.get(mp.id);
+            if (!dec || !seasonTarget) continue;
+            if (dec.decision === "win") seasonTarget.wins += 1;
+            else if (dec.decision === "loss") seasonTarget.losses += 1;
+            else if (dec.decision === "save") seasonTarget.saves += 1;
+            else if (dec.decision === "hold") seasonTarget.holds += 1;
+            if (dec.completeGame) seasonTarget.completeGames += 1;
+            if (dec.shutout) seasonTarget.shutouts += 1;
+          }
         }
       }
 
-      const battingStats: LiffSeasonBatterStatPayload[] = Array.from(
-        batterMap.values()
-      )
-        .filter(
-          (b) =>
-            b.plateAppearances > 0 ||
-            b.runs > 0 ||
-            b.stolenBases > 0 ||
-            b.rbi > 0
-        )
+      const avgScheduledInnings =
+        targetMatches.length > 0
+          ? targetMatches.reduce(
+              (s, tm) => s + (matchMetaMap.get(tm.id)?.scheduledInnings || 7),
+              0
+            ) / targetMatches.length
+          : 7;
+
+      const eligibleBatters = Array.from(batterMap.values()).filter(
+        (b) =>
+          b.plateAppearances > 0 ||
+          b.runs > 0 ||
+          b.stolenBases > 0 ||
+          b.rbi > 0
+      );
+
+      // 公認野球規則 9.22(a): 規定打席到達判定 ＆ 不足打席凡打加算による例外首位資格判定
+      const battingTitleEval = evaluateOfficialBattingTitleQualification(
+        eligibleBatters.map((b) => ({
+          id: b.id,
+          pa: b.plateAppearances,
+          ab: b.atBats,
+          hits: b.hits,
+          totalBases:
+            b.singles + b.doubles * 2 + b.triples * 3 + b.homeRuns * 4,
+          walks: b.walks,
+          hbp: b.hitByPitch,
+          sacFlies: b.sacFlies,
+        })),
+        targetMatches.length,
+        "avg",
+        avgScheduledInnings
+      );
+
+      // 公認野球規則 9.22(b): 規定投球回（アウト数）判定
+      const regulationOuts = getOfficialRegulationPitchingOuts(
+        targetMatches.length,
+        avgScheduledInnings
+      );
+      const regFullInn = Math.floor(regulationOuts / 3);
+      const regRemOuts = regulationOuts % 3;
+      const regulationIp =
+        regRemOuts > 0 ? `${regFullInn}.${regRemOuts}` : `${regFullInn}.0`;
+
+      const battingStats: LiffSeasonBatterStatPayload[] = eligibleBatters
         .map((b) => {
           const totalBases =
             b.singles + b.doubles * 2 + b.triples * 3 + b.homeRuns * 4;
@@ -6194,6 +6721,16 @@ app.get("/stats", async (c) => {
           const obpNum =
             obpDenom > 0 ? (b.hits + b.walks + b.hitByPitch) / obpDenom : 0;
           const slgNum = b.atBats > 0 ? totalBases / b.atBats : 0;
+
+          // 公認野球規則 9.20(b): 時系列順（古い試合→新しい試合）に連続試合安打・連続試合出塁を算出
+          const chronLogs: OfficialStreakGameLogInput[] = [];
+          for (const tm of chronologicalTargetMatches) {
+            const gLog = b.gameLogsByMatchId.get(tm.id);
+            if (gLog) chronLogs.push(gLog);
+          }
+          const streaks = evaluateOfficialStreaks(chronLogs);
+          const qualEntry = battingTitleEval.entries.get(b.id);
+
           return {
             id: b.id,
             name: b.name,
@@ -6220,6 +6757,13 @@ app.get("/stats", async (c) => {
               b.atBats > 0 || obpDenom > 0
                 ? formatOpsRate(obpNum + slgNum)
                 : ".000",
+            currentHitStreak: streaks.currentHitStreak,
+            maxHitStreak: streaks.maxHitStreak,
+            currentOnBaseStreak: streaks.currentOnBaseStreak,
+            maxOnBaseStreak: streaks.maxOnBaseStreak,
+            isRegulationQualified: qualEntry?.isRegulationQualified ?? false,
+            qualifiedByRule922Exception:
+              qualEntry?.qualifiedByRule922Exception ?? false,
           };
         })
         .sort((a, b) => {
@@ -6231,7 +6775,12 @@ app.get("/stats", async (c) => {
       const pitchingStats: LiffSeasonPitcherStatPayload[] = Array.from(
         pitcherMap.values()
       )
-        .filter((p) => p.battersFaced > 0 || p.outs > 0)
+        .filter(
+          (p) =>
+            p.battersFaced > 0 ||
+            p.outs > 0 ||
+            p.wins + p.losses + p.saves + p.holds > 0
+        )
         .map((p) => {
           const fullInn = Math.floor(p.outs / 3);
           const remOuts = p.outs % 3;
@@ -6244,6 +6793,12 @@ app.get("/stats", async (c) => {
             name: p.name,
             uniformNumber: p.uniformNumber,
             games: p.matchSet.size,
+            wins: p.wins,
+            losses: p.losses,
+            saves: p.saves,
+            holds: p.holds,
+            completeGames: p.completeGames,
+            shutouts: p.shutouts,
             outs: p.outs,
             ip,
             battersFaced: p.battersFaced,
@@ -6256,6 +6811,8 @@ app.get("/stats", async (c) => {
             earnedRuns: p.earnedRuns,
             era: p.outs > 0 ? eraVal.toFixed(2) : "0.00",
             whip: p.outs > 0 ? whipVal.toFixed(2) : "0.00",
+            isRegulationQualified:
+              regulationOuts > 0 && p.outs >= regulationOuts,
           };
         })
         .sort((a, b) => {
@@ -6305,10 +6862,6 @@ app.get("/stats", async (c) => {
       const teamSlg = totalAB > 0 ? totalTb / totalAB : 0;
 
       const totalPitcherOuts = pitchingStats.reduce((s, p) => s + p.outs, 0);
-      const totalPitcherEr = pitchingStats.reduce(
-        (s, p) => s + p.earnedRuns,
-        0
-      );
 
       const matchSumMyHits = targetMatches.reduce(
         (s, m) => s + m.myHits,
@@ -6355,11 +6908,19 @@ app.get("/stats", async (c) => {
           teamStolenBases: totalSb,
           teamEra:
             totalPitcherOuts > 0
-              ? ((totalPitcherEr * 7 * 3) / totalPitcherOuts).toFixed(2)
+              ? ((totalEffectiveTeamEr * 7 * 3) / totalPitcherOuts).toFixed(2)
               : "0.00",
         },
         battingStats,
         pitchingStats,
+        qualification: {
+          regulationPa: battingTitleEval.regulationPa,
+          regulationOuts,
+          regulationIp,
+          avgLeaderId: battingTitleEval.leaderId,
+          isAvgReferenceOnly: battingTitleEval.isReferenceRecordOnly,
+          isEraReferenceOnly: !pitchingStats.some((p) => p.isRegulationQualified),
+        },
       };
     };
 

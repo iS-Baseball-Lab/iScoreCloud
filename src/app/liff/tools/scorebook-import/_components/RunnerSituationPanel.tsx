@@ -14,6 +14,7 @@ import {
   ADVANCE_METHOD_LABELS,
   isNonPitchMoundEvent,
   type AdvanceMethodCode,
+  type AppealOutKind,
   type CanonicalPitchResult,
   type ScorebookBatterSlot,
   type ScorebookRosterPlayer,
@@ -1325,6 +1326,7 @@ export function AtBatModalRunnerEditor({
       );
       return {
         ...prev,
+        resultCode: synced.downgradedResultCode ?? prev.resultCode,
         advances: nextAdvances,
         outsInPlay: synced.outsInPlay,
         runsInPlay: synced.runsInPlay,
@@ -1350,6 +1352,7 @@ export function AtBatModalRunnerEditor({
       );
       return {
         ...prev,
+        resultCode: synced.downgradedResultCode ?? prev.resultCode,
         advances: nextAdvances,
         outsInPlay: synced.outsInPlay,
         runsInPlay: synced.runsInPlay,
@@ -2821,8 +2824,61 @@ export function AtBatModalRunnerEditor({
                     </div>
                   )}
 
-                  {/* 3段目: 投球間・投球外イベント（盗塁・盗塁死・暴投・捕逸・牽制死・ボーク等）の場合のタイミング選択 */}
-                  {isPrePlayAdvanceMethod(adv.method) && (
+                  {adv.method === "appeal_out" && (
+                    <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
+                      <span className="text-[9px] font-black text-muted-foreground shrink-0">
+                        アピール種別:
+                      </span>
+                      <LiffSelect
+                        value={adv.appealType ?? "__auto__"}
+                        onChange={(val) => {
+                          const nextType: AppealOutKind | null =
+                            val === "__auto__"
+                              ? null
+                              : (val as AppealOutKind);
+                          handleUpdateExplicitAdvanceRow(adv.id, (cur) => ({
+                            ...cur,
+                            appealType: nextType,
+                          }));
+                        }}
+                        title="アピールアウトの詳細種別を選択"
+                        subtitle="公認野球規則 5.08(a)・9.06(b)/(c)・9.08(d) に基づき安打格下げや第3アウト得点有効性を自動同期します"
+                        size="xs"
+                        searchable={false}
+                        className="min-w-0 flex-1"
+                        ariaLabel="アピールアウト種別"
+                        options={[
+                          {
+                            value: "__auto__",
+                            label: "自動判定（走者配置・到達塁から判別）",
+                          },
+                          {
+                            value: "missed_base_force",
+                            label:
+                              "強制進塁の空過（フォース相当・第3アウト得点無効）",
+                          },
+                          {
+                            value: "missed_base_non_force",
+                            label:
+                              "非フォース塁の空過（安打格下げ・タイムプレー）",
+                          },
+                          {
+                            value: "retouch_early",
+                            label:
+                              "タッチアップ離塁アピール（タイムプレー・先行生還有効）",
+                          },
+                          {
+                            value: "batting_out_of_turn",
+                            label: "打順誤りアピール（規則6.03(b)）",
+                          },
+                        ]}
+                      />
+                    </div>
+                  )}
+
+                  {/* 3段目: 投球間・投球外イベント（盗塁・盗塁死・暴投・捕逸・牽制死・ボーク・アピール等）の場合のタイミング選択 */}
+                  {(isPrePlayAdvanceMethod(adv.method) ||
+                    adv.method === "appeal_out") && (
                     <div className="pt-1 border-t border-border/60 flex items-center gap-1.5">
                       <span className="text-[9px] font-black text-muted-foreground shrink-0">
                         発生タイミング:
@@ -2849,7 +2905,10 @@ export function AtBatModalRunnerEditor({
                         options={[
                           {
                             value: "__unset__",
-                            label: "指定なし（球数指定なし）",
+                            label:
+                              adv.method === "appeal_out"
+                                ? "インプレー直後（当該打席プレイへのアピール）"
+                                : "指定なし（球数指定なし）",
                           },
                           ...buildPrePlayTimingChoices(
                             atBat.pitches,

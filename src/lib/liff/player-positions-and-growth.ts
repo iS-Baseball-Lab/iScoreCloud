@@ -1,5 +1,8 @@
 // filepath: src/lib/liff/player-positions-and-growth.ts
-import type { ScorebookSheetStructure } from "@/types/scorebook-v2";
+import type {
+  OfficialPitcherDecision,
+  ScorebookSheetStructure,
+} from "@/types/scorebook-v2";
 import {
   countConditionPeriodDays,
   getTodayJstDateKey,
@@ -182,6 +185,12 @@ export interface PlayerGrowthBattingSummary {
 
 export interface PlayerGrowthPitchingSummary {
   games: number;
+  wins: number;
+  losses: number;
+  saves: number;
+  holds: number;
+  completeGames: number;
+  shutouts: number;
   outs: number;
   ip: string;
   battersFaced: number;
@@ -225,6 +234,9 @@ export interface PlayerPitchingTrendItem {
   cumEraNum: number;
   cumWhip: string;
   cumWhipNum: number;
+  decision?: OfficialPitcherDecision;
+  completeGame?: boolean;
+  shutout?: boolean;
   conditionDuringMatch?: NonActiveConditionStatus | null;
   isReturnMatch?: boolean;
   returnedFromStatus?: NonActiveConditionStatus | null;

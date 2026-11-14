@@ -14,6 +14,7 @@ import {
 import {
   classifyDroppedThirdStrikeReach,
   isAerialMultiOutAtBat,
+  resolveAppealOutPlayAdjustment,
 } from "./baseball-official-rules";
 
 export type OccupiedBaseKey = "1B" | "2B" | "3B";
@@ -94,7 +95,6 @@ const PRE_PLAY_METHODS: ReadonlySet<AdvanceMethodCode> = new Set([
   "wp",
   "pb",
   "balk",
-  "appeal_out",
 ]);
 
 const RBI_ELIGIBLE_METHODS: ReadonlySet<AdvanceMethodCode> = new Set([
@@ -907,9 +907,12 @@ export function simulateSheetRunners(
         return false;
       };
 
-      // Phase 1: 投球間イベント（盗塁・盗塁死・牽制死・暴投・捕逸・ボーク等）をリード走者優先ウェーブで適用
+      // Phase 1: 投球間イベント（盗塁・盗塁死・牽制死・暴投・捕逸・ボーク・投球前アピール等）をリード走者優先ウェーブで適用
       const prePlayPool = nonTiebreakAdvances.filter(
-        (a) => a.from !== "BAT" && isPrePlayAdvanceMethod(a.method)
+        (a) =>
+          a.from !== "BAT" &&
+          (isPrePlayAdvanceMethod(a.method) ||
+            (a.method === "appeal_out" && a.pitchNumber === 0))
       );
       let preWaveSafety = 0;
       while (preWaveSafety < 6) {
@@ -2432,8 +2435,20 @@ export function computeSyncedStatsFromAdvances(
   outsInPlay: number;
   runsInPlay: number;
   rbi: number;
+  downgradedResultCode?: CanonicalAtBatResult;
 } {
   const realAdvances = nextAdvances.filter((a) => !isNoOpHoldAdvance(a));
+  const appealAdj = resolveAppealOutPlayAdjustment(
+    ab.resultCode,
+    realAdvances,
+    {
+      "1B": basesBefore["1B"]?.name || null,
+      "2B": basesBefore["2B"]?.name || null,
+      "3B": basesBefore["3B"]?.name || null,
+    }
+  );
+  const effectiveResultCode = appealAdj.downgradedResultCode || ab.resultCode;
+
   const runnerOuts = realAdvances.filter(
     (a) => a.isOut && a.from !== "BAT"
   ).length;
@@ -2443,16 +2458,16 @@ export function computeSyncedStatsFromAdvances(
 
   let outsInPlay = ab.outsInPlay;
   if (
-    isForceOutGroundout(ab.resultCode, ab.battedDirection, ab.resultLabel)
+    isForceOutGroundout(effectiveResultCode, ab.battedDirection, ab.resultLabel)
   ) {
     outsInPlay = Math.max(1, runnerOuts + batterAdvOuts);
-  } else if (ab.resultCode === "triple_play") {
+  } else if (effectiveResultCode === "triple_play") {
     outsInPlay = 3;
-  } else if (ab.resultCode === "double_play") {
+  } else if (effectiveResultCode === "double_play") {
     outsInPlay = Math.min(3, Math.max(2, 1 + runnerOuts));
   } else if (
     isIntrinsicBatterOutResult(
-      ab.resultCode,
+      effectiveResultCode,
       ab.battedDirection,
       ab.resultLabel
     )
@@ -2475,7 +2490,16 @@ export function computeSyncedStatsFromAdvances(
   let runsInPlay = 0;
   let rbi = 0;
 
-  if (ab.resultCode === "home_run") {
+  if (outsAfterPlay >= 3 && appealAdj.cancelsThirdOutRuns) {
+    runsInPlay = realAdvances.filter(
+      (a) =>
+        a.from !== "BAT" &&
+        !a.isOut &&
+        a.to === "HP" &&
+        isPrePlayAdvanceMethod(a.method)
+    ).length;
+    rbi = 0;
+  } else if (effectiveResultCode === "home_run") {
     const outRunners = realAdvances.filter(
       (a) => a.isOut && a.from !== "BAT"
     ).length;
@@ -2492,7 +2516,7 @@ export function computeSyncedStatsFromAdvances(
     const explicitSafeHp = realAdvances.filter(
       (a) => !a.isOut && a.to === "HP"
     );
-    const isAwardedFirst = isAwardedFirstBaseResult(ab.resultCode);
+    const isAwardedFirst = isAwardedFirstBaseResult(effectiveResultCode);
     const isBasesLoadedAtPlay = Boolean(
       basesAtPlay["1B"] && basesAtPlay["2B"] && basesAtPlay["3B"]
     );
@@ -2505,7 +2529,7 @@ export function computeSyncedStatsFromAdvances(
       if (isBasesLoadedAtPlay && !hasExplicitInPlay3BMove) {
         implicitRbiHp = 1;
       }
-    } else if (outsAfterPlay < 3 && ab.resultCode === "triple") {
+    } else if (outsAfterPlay < 3 && effectiveResultCode === "triple") {
       for (const bKey of ["3B", "2B", "1B"] as const) {
         if (
           basesAtPlay[bKey] &&
@@ -2516,7 +2540,7 @@ export function computeSyncedStatsFromAdvances(
           implicitRbiHp += 1;
         }
       }
-    } else if (outsAfterPlay < 3 && ab.resultCode === "double") {
+    } else if (outsAfterPlay < 3 && effectiveResultCode === "double") {
       if (
         basesAtPlay["3B"] &&
         !realAdvances.some(
@@ -2529,7 +2553,7 @@ export function computeSyncedStatsFromAdvances(
 
     runsInPlay = explicitSafeHp.length + implicitRbiHp;
 
-    if (isZeroDefaultRbiPlay(ab)) {
+    if (isZeroDefaultRbiPlay({ ...ab, resultCode: effectiveResultCode })) {
       rbi = 0;
     } else if (isAwardedFirst) {
       rbi = isBasesLoadedAtPlay && runsInPlay >= 1 ? 1 : 0;
@@ -2545,6 +2569,10 @@ export function computeSyncedStatsFromAdvances(
     outsInPlay,
     runsInPlay,
     rbi,
+    ...(appealAdj.downgradedResultCode &&
+    appealAdj.downgradedResultCode !== ab.resultCode
+      ? { downgradedResultCode: appealAdj.downgradedResultCode }
+      : {}),
   };
 }
 
@@ -3533,6 +3561,49 @@ export function reconcileSheetRunsAndRbi(
         }
       }
 
+      const appealAdj = resolveAppealOutPlayAdjustment(
+        ab.resultCode,
+        ab.advances,
+        {
+          "1B": effectiveBasesBefore["1B"]?.name || null,
+          "2B": effectiveBasesBefore["2B"]?.name || null,
+          "3B": effectiveBasesBefore["3B"]?.name || null,
+        }
+      );
+      if (
+        appealAdj.downgradedResultCode &&
+        appealAdj.downgradedResultCode !== ab.resultCode
+      ) {
+        ab.resultCode = appealAdj.downgradedResultCode;
+        changed = true;
+      }
+      if (appealAdj.hasAppealOut) {
+        const appealOutCount = ab.advances.filter(
+          (a) => a.isOut && a.method === "appeal_out"
+        ).length;
+        const hasBatAppealOut = ab.advances.some(
+          (a) => a.from === "BAT" && a.isOut && a.method === "appeal_out"
+        );
+        const intrinsicBatOut =
+          !hasBatAppealOut &&
+          isIntrinsicBatterOutResult(
+            ab.resultCode,
+            ab.battedDirection,
+            ab.resultLabel
+          )
+            ? 1
+            : 0;
+        const syncedAppealOuts = Math.min(
+          Math.max(0, 3 - outsBefore),
+          Math.max(ab.outsInPlay, intrinsicBatOut + appealOutCount)
+        );
+        if (syncedAppealOuts !== ab.outsInPlay) {
+          ab.outsInPlay = syncedAppealOuts;
+          ab.endingOuts = Math.min(3, outsBefore + syncedAppealOuts);
+          changed = true;
+        }
+      }
+
       const occupiedBeforeCount = countOccupiedBases(effectiveBasesBefore);
       const initSafeBase = getBatterInitialSafeBase(ab, ab.outsInPlay >= 1);
       const reachablePreceding = new Set<OccupiedBaseKey>();
@@ -3764,6 +3835,7 @@ export function reconcileSheetRunsAndRbi(
             ab.resultLabel
           ) ||
           hasForceOutAmongInPlayRunners ||
+          appealAdj.cancelsThirdOutRuns ||
           (outsBefore >= 2 &&
             isIntrinsicBatterOutResult(
               ab.resultCode,
@@ -3999,7 +4071,7 @@ export function reconcileSheetRunsAndRbi(
       if (
         ab.resultCode === "flyout" &&
         outsBefore < 2 &&
-        outsAfter < 3 &&
+        (outsAfter < 3 || !invalidatesInPlayRunsOnThirdOut) &&
         !isBuntFly &&
         clampedRuns >= 1 &&
         nextRbi >= 1 &&

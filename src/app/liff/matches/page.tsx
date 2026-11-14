@@ -116,6 +116,7 @@ import type {
   LiffMatchGameDetails,
   LiffPitcherStatItem,
   LiffRawPlayLogItem,
+  LiffTeamPitchingMeta,
 } from "@/components/liff/MatchStatsSection";
 import type { InspectedScorebookCellItem } from "@/lib/liff/scorebook-cell-guide";
 import type { ScorebookMatchHeaderMeta } from "@/lib/liff/scorebook-renderer-model";
@@ -211,6 +212,7 @@ interface MatchStatsApiResponse {
   success?: boolean;
   stats?: LiffBatterStatItem[];
   pitcherStats?: LiffPitcherStatItem[];
+  teamPitchingMeta?: LiffTeamPitchingMeta | null;
   gameDetails?: LiffMatchGameDetails;
   error?: string;
 }
@@ -368,6 +370,8 @@ function MatchesContent() {
   const [teamPlayers, setTeamPlayers] = useState<LineupPlayer[]>([]);
   const [matchStats, setMatchStats] = useState<LiffBatterStatItem[]>([]);
   const [pitcherStats, setPitcherStats] = useState<LiffPitcherStatItem[]>([]);
+  const [teamPitchingMeta, setTeamPitchingMeta] =
+    useState<LiffTeamPitchingMeta | null>(null);
   const [gameDetails, setGameDetails] = useState<LiffMatchGameDetails | null>(null);
   const [playLogs, setPlayLogs] = useState<LiffRawPlayLogItem[]>([]);
   const [boxscoreAtBats, setBoxscoreAtBats] = useState<LiffBoxscoreAtBatItem[]>([]);
@@ -497,6 +501,7 @@ function MatchesContent() {
 
         setMatchStats([]);
         setPitcherStats([]);
+        setTeamPitchingMeta(null);
         setGameDetails(null);
         setPlayLogs([]);
         setBoxscoreAtBats([]);
@@ -652,6 +657,7 @@ function MatchesContent() {
             setPitcherStats(
               Array.isArray(cachedStats.pitcherStats) ? cachedStats.pitcherStats : []
             );
+            setTeamPitchingMeta(cachedStats.teamPitchingMeta ?? null);
             setGameDetails(cachedStats.gameDetails ?? null);
             setIsStatsLoading(false);
           } else {
@@ -692,6 +698,7 @@ function MatchesContent() {
           const demoBundle = getDemoMatchStatsBundle(targetMatchId, demoMatch.status);
           setMatchStats(demoBundle.stats);
           setPitcherStats(demoBundle.pitcherStats);
+          setTeamPitchingMeta(null);
           setGameDetails(demoBundle.gameDetails);
           setPlayLogs(demoBundle.playLogs);
           setBoxscoreAtBats([]);
@@ -701,6 +708,7 @@ function MatchesContent() {
         // 試合切替時に前の試合の成績が残らないよう初期化
         setMatchStats([]);
         setPitcherStats([]);
+        setTeamPitchingMeta(null);
         setGameDetails(null);
         setPlayLogs([]);
         setBoxscoreAtBats([]);
@@ -801,6 +809,7 @@ function MatchesContent() {
             setPitcherStats(
               Array.isArray(statsJson.pitcherStats) ? statsJson.pitcherStats : []
             );
+            setTeamPitchingMeta(statsJson.teamPitchingMeta ?? null);
             setGameDetails(statsJson.gameDetails ?? null);
           }
         }
@@ -1729,6 +1738,7 @@ function MatchesContent() {
       isDemoMatch: isDemoCurrentMatch,
       stats: matchStats,
       pitcherStats,
+      teamPitchingMeta,
       gameDetails,
       playLogs,
       boxscoreAtBats,

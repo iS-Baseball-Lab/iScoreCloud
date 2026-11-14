@@ -29,14 +29,20 @@ import {
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   classifyAtBatResultToken,
-  evaluateHalfInningPitcherCharges,
+  evaluateHalfInningEarnedRunDetails,
+  evaluateMatchPitcherDecisions,
+  evaluateOfficialStreaks,
+  isMidAtBatStrikeoutChargedToPriorBatter,
+  isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
+  type MatchDefenseInningChronologyInput,
 } from "@/lib/liff/baseball-official-rules";
 import {
   isNonPitchMoundEvent,
   type CanonicalPitchResult,
+  type OfficialPitcherDecision,
   type ScorebookSheetStructure,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
@@ -100,6 +106,31 @@ function normalizeMatchType(
     return "exchange";
   }
   return "practice";
+}
+
+function parseInningScoreList(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (Array.isArray(parsed)) {
+      return parsed.map((v) => {
+        if (typeof v === "number" && Number.isFinite(v)) {
+          return Math.max(0, Math.trunc(v));
+        }
+        if (typeof v === "string") {
+          const cleaned = v.replace(/[^0-9]/g, "");
+          return cleaned ? Math.max(0, Number(cleaned)) : 0;
+        }
+        return 0;
+      });
+    }
+  } catch {}
+  return trimmed.split(",").map((seg) => {
+    const cleaned = seg.replace(/[^0-9]/g, "");
+    return cleaned ? Math.max(0, Number(cleaned)) : 0;
+  });
 }
 
 function isNonRbiAdvanceReason(rawReason: string | null | undefined): boolean {
@@ -597,6 +628,7 @@ interface RawGameBattingLog {
   dirLeft: number;
   dirCenter: number;
   dirRight: number;
+  interferences?: number;
   atBatChips: GrowthAtBatChip[];
 }
 
@@ -620,6 +652,9 @@ interface RawGamePitchingLog {
   hbp: number;
   runs: number;
   earnedRuns: number;
+  decision?: OfficialPitcherDecision;
+  completeGame?: boolean;
+  shutout?: boolean;
 }
 
 function buildSectionFromGameLogs(
@@ -669,10 +704,19 @@ function buildSectionFromGameLogs(
   >();
 
   let multiHitGames = 0;
-  let currentHitStreak = 0;
-  let maxHitStreak = 0;
-  let currentOnBaseStreak = 0;
-  let maxOnBaseStreak = 0;
+  // 公認野球規則 9.20(b) 準拠：全打席が四死球・犠打・打撃妨害のみの試合は連続試合安打を中断せず継続
+  const officialStreaks = evaluateOfficialStreaks(
+    battingLogs.map((g) => ({
+      pa: g.pa,
+      ab: g.ab,
+      hits: g.singles + g.doubles + g.triples + g.hr,
+      walks: g.walks,
+      hbp: g.hbp,
+      sacBunts: g.sacBunts,
+      sacFlies: g.sacFlies,
+      interferences: g.interferences || 0,
+    }))
+  );
 
   for (const g of battingLogs) {
     const gameHits = g.singles + g.doubles + g.triples + g.hr;
@@ -697,23 +741,6 @@ function buildSectionFromGameLogs(
     dirRight += g.dirRight;
 
     if (gameHits >= 2) multiHitGames += 1;
-    if (g.pa > 0) {
-      if (gameHits > 0) {
-        currentHitStreak += 1;
-        if (currentHitStreak > maxHitStreak) maxHitStreak = currentHitStreak;
-      } else {
-        currentHitStreak = 0;
-      }
-
-      if (gameHits + g.walks + g.hbp > 0) {
-        currentOnBaseStreak += 1;
-        if (currentOnBaseStreak > maxOnBaseStreak) {
-          maxOnBaseStreak = currentOnBaseStreak;
-        }
-      } else {
-        currentOnBaseStreak = 0;
-      }
-    }
 
     const cumTb = cumSingles + cumDoubles * 2 + cumTriples * 3 + cumHr * 4;
     const cumAvgNum = cumAb > 0 ? cumHits / cumAb : 0;
@@ -949,10 +976,10 @@ function buildSectionFromGameLogs(
     overallKRatePercent: overallKRate,
     kRateDiffPercent: Math.round((rKRate - overallKRate) * 10) / 10,
     multiHitGames,
-    currentHitStreak,
-    maxHitStreak,
-    currentOnBaseStreak,
-    maxOnBaseStreak,
+    currentHitStreak: officialStreaks.currentHitStreak,
+    maxHitStreak: officialStreaks.maxHitStreak,
+    currentOnBaseStreak: officialStreaks.currentOnBaseStreak,
+    maxOnBaseStreak: officialStreaks.maxOnBaseStreak,
   };
 
   // 投手集計
@@ -960,6 +987,12 @@ function buildSectionFromGameLogs(
   const pitchingTrend: PlayerPitchingTrendItem[] = [];
 
   if (pitchingLogs.length > 0) {
+    let pWins = 0;
+    let pLosses = 0;
+    let pSaves = 0;
+    let pHolds = 0;
+    let pCompleteGames = 0;
+    let pShutouts = 0;
     let pOuts = 0;
     let pBf = 0;
     let pPitches = 0;
@@ -973,6 +1006,13 @@ function buildSectionFromGameLogs(
     let pEr = 0;
 
     for (const pg of pitchingLogs) {
+      if (pg.decision === "win") pWins += 1;
+      else if (pg.decision === "loss") pLosses += 1;
+      else if (pg.decision === "save") pSaves += 1;
+      else if (pg.decision === "hold") pHolds += 1;
+      if (pg.completeGame) pCompleteGames += 1;
+      if (pg.shutout) pShutouts += 1;
+
       pOuts += pg.outs;
       pBf += pg.battersFaced;
       pPitches += pg.pitchesThrown;
@@ -1016,6 +1056,9 @@ function buildSectionFromGameLogs(
         cumEraNum: Number(cumEraVal.toFixed(2)),
         cumWhip: pOuts > 0 ? cumWhipVal.toFixed(2) : "-.--",
         cumWhipNum: Number(cumWhipVal.toFixed(2)),
+        decision: pg.decision ?? "none",
+        completeGame: Boolean(pg.completeGame),
+        shutout: Boolean(pg.shutout),
       });
     }
 
@@ -1028,6 +1071,12 @@ function buildSectionFromGameLogs(
 
     pitchingSummary = {
       games: pitchingLogs.length,
+      wins: pWins,
+      losses: pLosses,
+      saves: pSaves,
+      holds: pHolds,
+      completeGames: pCompleteGames,
+      shutouts: pShutouts,
       outs: pOuts,
       ip: formatInningsPitched(pOuts),
       battersFaced: pBf,
@@ -1419,6 +1468,9 @@ function buildDemoPlayerGrowthResponse(
           hbp: 0,
           runs: 3,
           earnedRuns: 3,
+          decision: "loss",
+          completeGame: false,
+          shutout: false,
         },
         {
           matchId: "demo-match-g3",
@@ -1440,6 +1492,9 @@ function buildDemoPlayerGrowthResponse(
           hbp: 0,
           runs: 2,
           earnedRuns: 2,
+          decision: "win",
+          completeGame: false,
+          shutout: false,
         },
         {
           matchId: "demo-match-g4",
@@ -1461,6 +1516,9 @@ function buildDemoPlayerGrowthResponse(
           hbp: 0,
           runs: 1,
           earnedRuns: 1,
+          decision: "win",
+          completeGame: true,
+          shutout: false,
         },
         {
           matchId: "demo-match-g7",
@@ -1482,6 +1540,9 @@ function buildDemoPlayerGrowthResponse(
           hbp: 0,
           runs: 1,
           earnedRuns: 1,
+          decision: "win",
+          completeGame: false,
+          shutout: false,
         },
       ]
     : [];
@@ -1626,8 +1687,11 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           matchType: matches.matchType,
           battingOrder: matches.battingOrder,
           status: matches.status,
+          innings: matches.innings,
           myScore: matches.myScore,
           opponentScore: matches.opponentScore,
+          myInningScores: matches.myInningScores,
+          opponentInningScores: matches.opponentInningScores,
           createdAt: matches.createdAt,
           tournamentName: tournaments.name,
         })
@@ -1985,6 +2049,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
     }
 
     const snapMapByDbAtBatId = new Map<string, ScorebookV2AtBat>();
+    const myStructureByMatchId = new Map<string, ScorebookSheetStructure>();
     const oppStructureByMatchId = new Map<string, ScorebookSheetStructure>();
 
     for (const m of finishedMatches) {
@@ -1993,6 +2058,9 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       const isTop = m.battingOrder === "first";
       const myAtBatsJson = isTop ? sn.topAtBatsJson : sn.bottomAtBatsJson;
       const oppAtBatsJson = isTop ? sn.bottomAtBatsJson : sn.topAtBatsJson;
+      const myStructJson = isTop
+        ? sn.topStructureJson
+        : sn.bottomStructureJson;
       const oppStructJson = isTop
         ? sn.bottomStructureJson
         : sn.topStructureJson;
@@ -2010,6 +2078,14 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         if (oppAtBatsJson) {
           oppSnapAbs = (JSON.parse(oppAtBatsJson) as ScorebookV2AtBat[]).map(
             (ab) => normalizeLegacyForceOutAtBat(ab)
+          );
+        }
+      } catch {}
+      try {
+        if (myStructJson) {
+          myStructureByMatchId.set(
+            m.id,
+            JSON.parse(myStructJson) as ScorebookSheetStructure
           );
         }
       } catch {}
@@ -2072,6 +2148,23 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       return { totalPitches: 0, strikes: 0 };
     };
 
+    interface MatchPitcherGrowthAccumulator {
+      key: string;
+      outs: number;
+      battersFaced: number;
+      pitchesThrown: number;
+      strikesThrown: number;
+      hitsAllowed: number;
+      hrAllowed: number;
+      strikeouts: number;
+      walks: number;
+      hbp: number;
+      runs: number;
+      earnedRuns: number;
+      sortOrder: number;
+      manualDecision: OfficialPitcherDecision | null;
+    }
+
     const targetPid = targetPlayer.id;
     const allBattingLogs: RawGameBattingLog[] = [];
     const allPitchingLogs: RawGamePitchingLog[] = [];
@@ -2101,6 +2194,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       let gHbp = 0;
       let gSacBunt = 0;
       let gSacFly = 0;
+      let gInterferences = 0;
       let gK = 0;
       let gSb = 0;
       let gPitchesSeen = 0;
@@ -2110,21 +2204,65 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       const gChips: GrowthAtBatChip[] = [];
       const dynamicOrders = new Set<number>(matchOrders);
 
-      let pAppeared = false;
-      let pOuts = 0;
-      let pBf = 0;
-      let pPitches = 0;
-      let pStrikes = 0;
-      let pHits = 0;
-      let pHr = 0;
-      let pK = 0;
-      let pWalks = 0;
-      let pHbp = 0;
-      let pRuns = 0;
-      let pEr = 0;
+      const matchPitcherMap = new Map<string, MatchPitcherGrowthAccumulator>();
+      let matchPitcherSeq = 0;
+      const ensureMatchPitcher = (
+        pKey: string,
+        explicitOrder?: number,
+        manualDecision?: OfficialPitcherDecision | null
+      ): MatchPitcherGrowthAccumulator => {
+        const existing = matchPitcherMap.get(pKey);
+        if (existing) {
+          if (manualDecision !== undefined && manualDecision !== null) {
+            existing.manualDecision = manualDecision;
+          }
+          if (explicitOrder !== undefined && explicitOrder < existing.sortOrder) {
+            existing.sortOrder = explicitOrder;
+          }
+          return existing;
+        }
+        matchPitcherSeq += 1;
+        const created: MatchPitcherGrowthAccumulator = {
+          key: pKey,
+          outs: 0,
+          battersFaced: 0,
+          pitchesThrown: 0,
+          strikesThrown: 0,
+          hitsAllowed: 0,
+          hrAllowed: 0,
+          strikeouts: 0,
+          walks: 0,
+          hbp: 0,
+          runs: 0,
+          earnedRuns: 0,
+          sortOrder: explicitOrder ?? matchPitcherSeq,
+          manualDecision: manualDecision ?? null,
+        };
+        matchPitcherMap.set(pKey, created);
+        return created;
+      };
+
+      const oppSt = oppStructureByMatchId.get(m.id);
+      if (oppSt?.pitchers) {
+        for (const st of oppSt.pitchers) {
+          const cleanStName = normalizePlayerNameKey(st.name);
+          const stKey =
+            st.playerId ||
+            (cleanStName &&
+            cleanStName !== "相手投手" &&
+            cleanStName !== "投手" &&
+            cleanStName !== "不明"
+              ? playerIdByCleanName.get(cleanStName) || `name:${cleanStName}`
+              : "");
+          if (stKey) {
+            ensureMatchPitcher(stKey, st.order, st.manualDecision ?? null);
+          }
+        }
+      }
 
       const oppAbsByInning = new Map<number, Array<(typeof mAbs)[number]>>();
       const pitcherKeyByAtBatId = new Map<string, string>();
+      const priorPitcherKeyByAtBatId = new Map<string, string>();
 
       for (const ab of mAbs) {
         const isMyAttack = ab.isTop === isMyTop;
@@ -2143,19 +2281,63 @@ liffPlayerGrowthRouter.get("/", async (c) => {
 
           const abAdvances = advancesByAtBatId.get(ab.id) || [];
 
-          if (batterKey === targetPid && !cls.isUnfinishedRunnerOut) {
+          // 公認野球規則 9.15(b): カウント途中（2ストライク後）の代打三振は前打者へ帰属
+          const priorBatterRaw = snapAb?.midAtBatPriorBatter ?? null;
+          const cleanPriorBatter = priorBatterRaw
+            ? normalizePlayerNameKey(priorBatterRaw.name)
+            : "";
+          const priorBatterKey = priorBatterRaw
+            ? priorBatterRaw.playerId ||
+              (cleanPriorBatter
+                ? playerIdByCleanName.get(cleanPriorBatter) || ""
+                : "")
+            : "";
+          const chargeSoToPriorBatter = isMidAtBatStrikeoutChargedToPriorBatter(
+            priorBatterRaw,
+            cls.isStrikeout
+          );
+          const creditedBatterKey =
+            chargeSoToPriorBatter && priorBatterKey ? priorBatterKey : batterKey;
+
+          if (!cls.isUnfinishedRunnerOut) {
+            const pitchCounts = resolvePitchCountForAtBat(ab.id, snapAb);
+            if (
+              priorBatterRaw &&
+              priorBatterKey &&
+              priorBatterKey !== batterKey
+            ) {
+              const priorSeen = Math.min(
+                pitchCounts.totalPitches,
+                Math.max(
+                  0,
+                  priorBatterRaw.ballsBeforeSub +
+                    priorBatterRaw.strikesBeforeSub
+                )
+              );
+              if (priorBatterKey === targetPid) {
+                gPitchesSeen += priorSeen;
+              } else if (batterKey === targetPid) {
+                gPitchesSeen += Math.max(
+                  0,
+                  pitchCounts.totalPitches - priorSeen
+                );
+              }
+            } else if (batterKey === targetPid) {
+              gPitchesSeen += pitchCounts.totalPitches;
+            }
+          }
+
+          if (creditedBatterKey === targetPid && !cls.isUnfinishedRunnerOut) {
             gPa += 1;
             if (snapAb?.battingOrder && snapAb.battingOrder > 0) {
               dynamicOrders.add(snapAb.battingOrder);
             }
 
-            const pitchCounts = resolvePitchCountForAtBat(ab.id, snapAb);
-            gPitchesSeen += pitchCounts.totalPitches;
-
             if (cls.isWalk) gWalks += 1;
             if (cls.isHbp) gHbp += 1;
             if (cls.isSacBunt) gSacBunt += 1;
             if (cls.isSacFly) gSacFly += 1;
+            if (cls.isInterferenceReach) gInterferences += 1;
 
             if (cls.isOfficialAtBat) {
               gAb += 1;
@@ -2300,8 +2482,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
             }
           });
         } else {
-          // 自チーム守備イニング（投手成績：各ハーフイニングごとに規則 9.16 責任走者・自責点を再構築）
-          const oppSt = oppStructureByMatchId.get(m.id);
+          // 自チーム守備イニング（投手成績：各ハーフイニングごとに規則 9.16〜9.19 責任走者・自責点・勝敗セーブを再構築）
           const fallbackPitcher = snapAb?.pitcherName?.trim() || "";
           const cleanPitcher = normalizePlayerNameKey(fallbackPitcher);
           const matchedStint = oppSt?.pitchers?.find(
@@ -2322,19 +2503,91 @@ liffPlayerGrowthRouter.get("/", async (c) => {
 
           if (pitcherKey) {
             pitcherKeyByAtBatId.set(ab.id, pitcherKey);
-          }
+            const pAcc = ensureMatchPitcher(
+              pitcherKey,
+              matchedStint?.order,
+              matchedStint?.manualDecision ?? null
+            );
 
-          if (pitcherKey === targetPid) {
-            pAppeared = true;
+            // 公認野球規則 9.16(h): カウント途中の投手交代における前任投手特定・球数分割・四球帰属
+            const priorPitcherInfo = snapAb?.midAtBatPriorPitcher ?? null;
+            let priorPAcc: MatchPitcherGrowthAccumulator | null = null;
+            if (priorPitcherInfo) {
+              const cleanPrior = normalizePlayerNameKey(priorPitcherInfo.name);
+              const matchedPriorStint = oppSt?.pitchers?.find(
+                (st) =>
+                  (priorPitcherInfo.playerId &&
+                    st.playerId === priorPitcherInfo.playerId) ||
+                  (cleanPrior &&
+                    normalizePlayerNameKey(st.name) === cleanPrior)
+              );
+              const priorPKey =
+                priorPitcherInfo.playerId ||
+                matchedPriorStint?.playerId ||
+                (cleanPrior &&
+                cleanPrior !== "相手投手" &&
+                cleanPrior !== "投手" &&
+                cleanPrior !== "不明"
+                  ? playerIdByCleanName.get(cleanPrior) || `name:${cleanPrior}`
+                  : "");
+              if (priorPKey && priorPKey !== pitcherKey) {
+                priorPAcc = ensureMatchPitcher(
+                  priorPKey,
+                  matchedPriorStint?.order,
+                  matchedPriorStint?.manualDecision ?? null
+                );
+                priorPitcherKeyByAtBatId.set(ab.id, priorPKey);
+              }
+            }
+
             const pitchCounts = resolvePitchCountForAtBat(ab.id, snapAb);
-            pPitches += pitchCounts.totalPitches;
-            pStrikes += pitchCounts.strikes;
+            if (priorPAcc && priorPitcherInfo) {
+              const priorThrown = Math.min(
+                pitchCounts.totalPitches,
+                Math.max(
+                  0,
+                  priorPitcherInfo.pitchesThrownInAtBat ??
+                    priorPitcherInfo.ballsBeforeChange +
+                      priorPitcherInfo.strikesBeforeChange
+                )
+              );
+              const priorStrikes = Math.min(
+                pitchCounts.strikes,
+                Math.max(0, priorPitcherInfo.strikesBeforeChange)
+              );
+              priorPAcc.pitchesThrown += priorThrown;
+              priorPAcc.strikesThrown += priorStrikes;
+              pAcc.pitchesThrown += Math.max(
+                0,
+                pitchCounts.totalPitches - priorThrown
+              );
+              pAcc.strikesThrown += Math.max(
+                0,
+                pitchCounts.strikes - priorStrikes
+              );
+            } else {
+              pAcc.pitchesThrown += pitchCounts.totalPitches;
+              pAcc.strikesThrown += pitchCounts.strikes;
+            }
 
-            if (cls.isHit) pHits += 1;
-            if (cls.isHomeRun) pHr += 1;
-            if (cls.isStrikeout) pK += 1;
-            if (cls.isWalk) pWalks += 1;
-            if (cls.isHbp) pHbp += 1;
+            const chargeWalkToPrior =
+              priorPAcc !== null &&
+              isMidAtBatWalkChargedToPriorPitcher(
+                priorPitcherInfo,
+                cls.isWalk
+              );
+
+            if (cls.isHit) pAcc.hitsAllowed += 1;
+            if (cls.isHomeRun) pAcc.hrAllowed += 1;
+            if (cls.isStrikeout) pAcc.strikeouts += 1;
+            if (cls.isWalk) {
+              if (chargeWalkToPrior && priorPAcc) {
+                priorPAcc.walks += 1;
+              } else {
+                pAcc.walks += 1;
+              }
+            }
+            if (cls.isHbp) pAcc.hbp += 1;
           }
 
           const innList = oppAbsByInning.get(ab.inning) || [];
@@ -2343,11 +2596,17 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         }
       }
 
-      if (pAppeared) {
-        for (const [, innAbs] of oppAbsByInning.entries()) {
+      if (matchPitcherMap.has(targetPid)) {
+        const defenseInningsChronology: MatchDefenseInningChronologyInput[] = [];
+        const sortedOppInnings = Array.from(oppAbsByInning.entries()).sort(
+          (a, b) => a[0] - b[0]
+        );
+
+        for (const [inn, innAbs] of sortedOppInnings) {
           const halfPlays: HalfInningAtBatPitchingInput[] = innAbs.map((ab) => {
             const snapAb = snapMapByDbAtBatId.get(ab.id);
             const pKey = pitcherKeyByAtBatId.get(ab.id) || "";
+            const priorPKey = priorPitcherKeyByAtBatId.get(ab.id);
             const defAdvances = advancesByAtBatId.get(ab.id) || [];
             const mappedDbAdvs: HalfInningAdvanceEventInput[] = defAdvances
               .filter(
@@ -2375,6 +2634,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
             return {
               atBatId: ab.id,
               pitcherKey: pKey,
+              priorPitcherKey: priorPKey,
               rawResult: ab.result,
               runsInPlay: Math.max(snapAb?.runsInPlay || 0, dbSafeRuns),
               snapAb,
@@ -2382,14 +2642,103 @@ liffPlayerGrowthRouter.get("/", async (c) => {
             };
           });
 
-          const charges = evaluateHalfInningPitcherCharges(halfPlays);
-          const myCharge = charges.get(targetPid);
-          if (myCharge) {
-            pOuts += myCharge.outs;
-            pBf += myCharge.battersFaced;
-            pRuns += myCharge.runs;
-            pEr += myCharge.earnedRuns;
+          const inningDetails = evaluateHalfInningEarnedRunDetails(halfPlays);
+          for (const [pKey, ch] of inningDetails.pitcherCharges.entries()) {
+            const acc = matchPitcherMap.get(pKey);
+            if (!acc) continue;
+            acc.outs += ch.outs;
+            acc.battersFaced += ch.battersFaced;
+            acc.runs += ch.runs;
+            acc.earnedRuns += ch.earnedRuns;
           }
+          defenseInningsChronology.push({
+            inning: inn,
+            scoredRunsInOrder: inningDetails.scoredRunsInOrder,
+            pitcherEntrySnapshots: inningDetails.pitcherEntrySnapshots,
+          });
+        }
+
+        const activeMatchPitchers = Array.from(matchPitcherMap.values())
+          .filter(
+            (p) =>
+              p.battersFaced > 0 ||
+              p.outs > 0 ||
+              (p.manualDecision !== null && p.manualDecision !== undefined)
+          )
+          .sort((a, b) => a.sortOrder - b.sortOrder);
+
+        const mySt = myStructureByMatchId.get(m.id);
+        const parsedMyInn = parseInningScoreList(m.myInningScores);
+        const parsedOppInn = parseInningScoreList(m.opponentInningScores);
+        const effectiveMyInn =
+          parsedMyInn.length > 0
+            ? parsedMyInn
+            : mySt
+            ? mySt.innings.map((s) => s.runs)
+            : [];
+        const effectiveOppInn =
+          parsedOppInn.length > 0
+            ? parsedOppInn
+            : oppSt
+            ? oppSt.innings.map((s) => s.runs)
+            : [];
+
+        const decisionEval =
+          activeMatchPitchers.length > 0
+            ? evaluateMatchPitcherDecisions({
+                isMyTeamBatFirst: isMyTop,
+                scheduledInnings: m.innings || 7,
+                myFinalScore: myScore,
+                opponentFinalScore: oppScore,
+                myInningScores: effectiveMyInn,
+                opponentInningScores: effectiveOppInn,
+                pitchers: activeMatchPitchers.map((p, idx) => ({
+                  pitcherKey: p.key,
+                  order: idx + 1,
+                  outsRecorded: p.outs,
+                  runsAllowed: p.runs,
+                  earnedRunsAllowed: p.earnedRuns,
+                  hitsAllowed: p.hitsAllowed,
+                  walksAllowed: p.walks,
+                  manualDecision: p.manualDecision ?? undefined,
+                })),
+                defenseInnings: defenseInningsChronology,
+              })
+            : null;
+
+        const targetPitcherAcc = matchPitcherMap.get(targetPid);
+        const targetDecision = decisionEval?.byPitcherKey.get(targetPid);
+        if (
+          targetPitcherAcc &&
+          (targetPitcherAcc.battersFaced > 0 ||
+            targetPitcherAcc.outs > 0 ||
+            (targetDecision && targetDecision.decision !== "none") ||
+            targetDecision?.shutout)
+        ) {
+          allPitchingLogs.push({
+            matchId: m.id,
+            date: m.date,
+            opponent: m.opponent,
+            matchType,
+            tournamentName: m.tournamentName || null,
+            result,
+            myScore,
+            opponentScore: oppScore,
+            outs: targetPitcherAcc.outs,
+            battersFaced: targetPitcherAcc.battersFaced,
+            pitchesThrown: targetPitcherAcc.pitchesThrown,
+            strikesThrown: targetPitcherAcc.strikesThrown,
+            hitsAllowed: targetPitcherAcc.hitsAllowed,
+            hrAllowed: targetPitcherAcc.hrAllowed,
+            strikeouts: targetPitcherAcc.strikeouts,
+            walks: targetPitcherAcc.walks,
+            hbp: targetPitcherAcc.hbp,
+            runs: targetPitcherAcc.runs,
+            earnedRuns: targetPitcherAcc.earnedRuns,
+            decision: targetDecision?.decision ?? "none",
+            completeGame: targetDecision?.completeGame ?? false,
+            shutout: targetDecision?.shutout ?? false,
+          });
         }
       }
 
@@ -2426,6 +2775,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           hbp: gHbp,
           sacBunts: gSacBunt,
           sacFlies: gSacFly,
+          interferences: gInterferences,
           strikeouts: gK,
           sb: gSb,
           pitchesSeen: gPitchesSeen,
@@ -2433,30 +2783,6 @@ liffPlayerGrowthRouter.get("/", async (c) => {
           dirCenter: gDirC,
           dirRight: gDirR,
           atBatChips: gChips,
-        });
-      }
-
-      if (pAppeared && (pBf > 0 || pOuts > 0)) {
-        allPitchingLogs.push({
-          matchId: m.id,
-          date: m.date,
-          opponent: m.opponent,
-          matchType,
-          tournamentName: m.tournamentName || null,
-          result,
-          myScore,
-          opponentScore: oppScore,
-          outs: pOuts,
-          battersFaced: pBf,
-          pitchesThrown: pPitches,
-          strikesThrown: pStrikes,
-          hitsAllowed: pHits,
-          hrAllowed: pHr,
-          strikeouts: pK,
-          walks: pWalks,
-          hbp: pHbp,
-          runs: pRuns,
-          earnedRuns: pEr,
         });
       }
     }

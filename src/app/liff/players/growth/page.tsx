@@ -816,6 +816,37 @@ function PitchingGrowthChart({
               <span className="font-black text-foreground truncate">
                 vs {activeItem.opponent}
               </span>
+              {activeItem.decision === "win" && (
+                <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9.5px] font-black">
+                  勝
+                </span>
+              )}
+              {activeItem.decision === "loss" && (
+                <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9.5px] font-black">
+                  敗
+                </span>
+              )}
+              {activeItem.decision === "save" && (
+                <span className="px-1.5 py-0.2 rounded bg-sky-600 text-white text-[9.5px] font-black">
+                  S
+                </span>
+              )}
+              {activeItem.decision === "hold" && (
+                <span className="px-1.5 py-0.2 rounded bg-indigo-600 text-white text-[9.5px] font-black">
+                  H
+                </span>
+              )}
+              {activeItem.shutout ? (
+                <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9.5px] font-black">
+                  完封
+                </span>
+              ) : (
+                activeItem.completeGame && (
+                  <span className="px-1.5 py-0.2 rounded bg-slate-700 text-white text-[9.5px] font-black">
+                    完投
+                  </span>
+                )
+              )}
             </div>
             <p className="text-xs font-black text-foreground tabular-nums">
               {activeItem.ip}回 奪三振{activeItem.strikeouts} 四死
@@ -2278,6 +2309,40 @@ function PlayerGrowthContent() {
                     </div>
 
                     <div className="p-4 space-y-4">
+                    <div className="rounded-2xl bg-muted/40 border border-border p-2.5 flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap text-xs font-black tabular-nums">
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10.5px]">
+                          {activeSection.pitchingSummary.wins ?? 0}勝
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-rose-600 text-white text-[10.5px]">
+                          {activeSection.pitchingSummary.losses ?? 0}敗
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-sky-600 text-white text-[10.5px]">
+                          {activeSection.pitchingSummary.saves ?? 0}S
+                        </span>
+                        <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white text-[10.5px]">
+                          {activeSection.pitchingSummary.holds ?? 0}H
+                        </span>
+                      </div>
+                      {((activeSection.pitchingSummary.shutouts ?? 0) > 0 ||
+                        (activeSection.pitchingSummary.completeGames ?? 0) >
+                          0) && (
+                        <div className="flex items-center gap-1.5 text-[10px] font-black tabular-nums">
+                          {(activeSection.pitchingSummary.shutouts ?? 0) > 0 && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950">
+                              完封 {activeSection.pitchingSummary.shutouts}
+                            </span>
+                          )}
+                          {(activeSection.pitchingSummary.completeGames ?? 0) >
+                            0 && (
+                            <span className="px-2 py-0.5 rounded-lg bg-slate-700 text-white">
+                              完投 {activeSection.pitchingSummary.completeGames}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div className="p-2 rounded-2xl bg-primary/10 border border-primary/25">
                         <span className="text-[9.5px] font-bold text-muted-foreground block">
@@ -2644,15 +2709,49 @@ function PlayerGrowthContent() {
 
                           {/* 登板がある試合は投手ラインも併記 */}
                           {pLine && (
-                            <div className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between text-[11px] tabular-nums">
-                              <span className="font-black text-primary">
-                                ⚾ 登板: {pLine.ip}回 奪三振{pLine.strikeouts} 自責
-                                {pLine.earnedRuns}
-                                {pLine.strikeRatePercent !== null
-                                  ? ` (S率${pLine.strikeRatePercent}%)`
-                                  : ""}
-                              </span>
-                              <span className="text-[10px] font-bold text-muted-foreground">
+                            <div className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2 text-[11px] tabular-nums">
+                              <div className="flex items-center gap-1.5 flex-wrap font-black text-primary">
+                                <span>⚾ 登板:</span>
+                                {pLine.decision === "win" && (
+                                  <span className="px-1.5 py-0.2 rounded bg-emerald-600 text-white text-[9.5px] font-black">
+                                    勝
+                                  </span>
+                                )}
+                                {pLine.decision === "loss" && (
+                                  <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9.5px] font-black">
+                                    敗
+                                  </span>
+                                )}
+                                {pLine.decision === "save" && (
+                                  <span className="px-1.5 py-0.2 rounded bg-sky-600 text-white text-[9.5px] font-black">
+                                    S
+                                  </span>
+                                )}
+                                {pLine.decision === "hold" && (
+                                  <span className="px-1.5 py-0.2 rounded bg-indigo-600 text-white text-[9.5px] font-black">
+                                    H
+                                  </span>
+                                )}
+                                {pLine.shutout ? (
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9.5px] font-black">
+                                    完封
+                                  </span>
+                                ) : (
+                                  pLine.completeGame && (
+                                    <span className="px-1.5 py-0.2 rounded bg-slate-700 text-white text-[9.5px] font-black">
+                                      完投
+                                    </span>
+                                  )
+                                )}
+                                <span>
+                                  {pLine.ip}回 奪三振{pLine.strikeouts} 自責
+                                  {pLine.earnedRuns}
+                                  {pLine.strikeRatePercent !== null
+                                    ? ` (S率${pLine.strikeRatePercent}%)`
+                                    : ""}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-bold text-muted-foreground shrink-0">
                                 防御率 {pLine.cumEra}
                               </span>
                             </div>

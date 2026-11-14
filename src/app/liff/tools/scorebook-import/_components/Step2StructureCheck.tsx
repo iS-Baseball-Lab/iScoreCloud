@@ -45,6 +45,7 @@ import {
   formatTotalElapsedSeconds,
   type ImportScopeMode,
   type NormalizedPoint,
+  type OfficialPitcherDecision,
   type ScorebookBatterSlot,
   type ScorebookGridCorners,
   type ScorebookInningMeta,
@@ -54,6 +55,39 @@ import {
   type ScorebookSubstitution,
   type ScorebookTimingEntry,
 } from "@/types/scorebook-v2";
+
+const OFFICIAL_PITCHER_DECISION_OPTIONS: LiffSelectOption[] = [
+  {
+    value: "",
+    label: "自動判定（規則9.17〜9.19）",
+    sublabel: "イニング・得点推移から勝敗・S・Hを公認野球規則どおり自動算出",
+  },
+  {
+    value: "win",
+    label: "○ 勝利投手（記録員指定）",
+    sublabel: "規則9.17(b)/(c) 先発規定回未満や継投時の公式記録員裁定で勝利を指定",
+  },
+  {
+    value: "loss",
+    label: "● 敗戦投手（記録員指定）",
+    sublabel: "規則9.17(d) 公式記録員指定による敗戦投手オーバーライド",
+  },
+  {
+    value: "save",
+    label: "S セーブ（記録員指定）",
+    sublabel: "規則9.19 公式記録員指定によるセーブ投手付与",
+  },
+  {
+    value: "hold",
+    label: "H ホールド（記録員指定）",
+    sublabel: "リード保持救援のホールドを手動付与",
+  },
+  {
+    value: "none",
+    label: "記録なし固定",
+    sublabel: "規則9.17(c) 短時間非効果的登板など勝敗・S・H対象外に固定",
+  },
+];
 
 interface Step2StructureCheckProps {
   importScope: ImportScopeMode;
@@ -2223,6 +2257,33 @@ export function Step2StructureCheck({
                       }))}
                     />
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pl-1 flex-wrap pt-0.5">
+                  <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+                    勝敗・S・H裁定
+                  </span>
+                  <LiffSelect
+                    ariaLabel="公式記録員の勝敗・セーブ裁定"
+                    title={`${
+                      pt.name || `${idx === 0 ? "先発" : `${idx + 1}番手`}投手`
+                    } の勝敗・セーブ裁定`}
+                    subtitle="通常は「自動判定」のままで公認野球規則 9.17〜9.19 どおり算出されます。記録員裁定がある場合のみ指定してください"
+                    value={pt.manualDecision ?? ""}
+                    size="xs"
+                    searchable={false}
+                    className="min-w-[10.5rem]"
+                    triggerTextClassName={
+                      pt.manualDecision ? "text-primary" : undefined
+                    }
+                    onChange={(val) => {
+                      const nextDecision = val
+                        ? (val as OfficialPitcherDecision | "none")
+                        : null;
+                      updatePitcher(pt.id, { manualDecision: nextDecision });
+                    }}
+                    options={OFFICIAL_PITCHER_DECISION_OPTIONS}
+                  />
                 </div>
 
                 {(hasMidInningEntry || hasMidInningExit) && (

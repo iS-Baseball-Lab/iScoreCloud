@@ -13,6 +13,9 @@ import {
   X,
 } from "lucide-react";
 import {
+  type MidAtBatPriorBatterInfo,
+  type MidAtBatPriorPitcherInfo,
+  type OfficialPitcherDecision,
   type ScorebookBatterSlot,
   type ScorebookPinchRunnerEntry,
   type ScorebookPitcherStint,
@@ -34,6 +37,39 @@ import {
 
 export type BatterChangeMode = "PH" | "DEF" | "STARTER" | "SINGLE_AB";
 export type PitcherChangeMode = "FROM_HERE" | "SINGLE_AB";
+
+const OFFICIAL_PITCHER_DECISION_OPTIONS: LiffSelectOption[] = [
+  {
+    value: "",
+    label: "自動判定（規則9.17〜9.19）",
+    sublabel: "イニング・得点推移から勝敗・S・Hを公認野球規則どおり自動算出",
+  },
+  {
+    value: "win",
+    label: "○ 勝利投手（記録員指定）",
+    sublabel: "規則9.17(b)/(c) 先発規定回未満や継投時の公式記録員裁定で勝利を指定",
+  },
+  {
+    value: "loss",
+    label: "● 敗戦投手（記録員指定）",
+    sublabel: "規則9.17(d) 公式記録員指定による敗戦投手オーバーライド",
+  },
+  {
+    value: "save",
+    label: "S セーブ（記録員指定）",
+    sublabel: "規則9.19 公式記録員指定によるセーブ投手付与",
+  },
+  {
+    value: "hold",
+    label: "H ホールド（記録員指定）",
+    sublabel: "リード保持救援のホールドを手動付与",
+  },
+  {
+    value: "none",
+    label: "記録なし固定",
+    sublabel: "規則9.17(c) 短時間非効果的登板など勝敗・S・H対象外に固定",
+  },
+];
 
 const POSITION_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "", label: "守備未指定" },
@@ -137,6 +173,7 @@ export function applyAtBatBatterChange(params: {
   uniformNumber: string;
   position: string;
   playerId: string | null;
+  midAtBatPriorBatter?: MidAtBatPriorBatterInfo | null;
 }): {
   structure: ScorebookSheetStructure;
   atBats: ScorebookV2AtBat[];
@@ -150,6 +187,7 @@ export function applyAtBatBatterChange(params: {
     uniformNumber,
     position,
     playerId,
+    midAtBatPriorBatter,
   } = params;
   const cleanName = name.trim();
   const cleanUniform = uniformNumber.trim();
@@ -159,6 +197,21 @@ export function applyAtBatBatterChange(params: {
     return { structure, atBats };
   }
   const targetAb = atBats[targetIdx];
+
+  const attachPriorBatterIfSpecified = (
+    items: ScorebookV2AtBat[],
+    allowPrior: boolean
+  ): ScorebookV2AtBat[] => {
+    if (midAtBatPriorBatter === undefined) return items;
+    return items.map((ab) => {
+      if (ab.id !== targetAtBatId) return ab;
+      return {
+        ...ab,
+        midAtBatPriorBatter:
+          allowPrior && midAtBatPriorBatter ? midAtBatPriorBatter : undefined,
+      };
+    });
+  };
 
   if (mode === "SINGLE_AB") {
     const updatedSingle = atBats.map((ab) => {
@@ -176,7 +229,10 @@ export function applyAtBatBatterChange(params: {
     const syncedRunners = syncSheetAtBatsWithStructure(updatedSingle, structure);
     return {
       structure,
-      atBats: recomputeOrderedEndingOuts(syncedRunners, structure),
+      atBats: attachPriorBatterIfSpecified(
+        recomputeOrderedEndingOuts(syncedRunners, structure),
+        true
+      ),
     };
   }
 
@@ -212,7 +268,10 @@ export function applyAtBatBatterChange(params: {
     const synced = syncSheetAtBatsWithStructure(clearedOverrides, nextStructure);
     return {
       structure: nextStructure,
-      atBats: recomputeOrderedEndingOuts(synced, nextStructure),
+      atBats: attachPriorBatterIfSpecified(
+        recomputeOrderedEndingOuts(synced, nextStructure),
+        false
+      ),
     };
   }
 
@@ -267,7 +326,10 @@ export function applyAtBatBatterChange(params: {
   const synced = syncSheetAtBatsWithStructure(clearedOverrides, nextStructure);
   return {
     structure: nextStructure,
-    atBats: recomputeOrderedEndingOuts(synced, nextStructure),
+    atBats: attachPriorBatterIfSpecified(
+      recomputeOrderedEndingOuts(synced, nextStructure),
+      mode === "PH"
+    ),
   };
 }
 
@@ -303,24 +365,34 @@ export function removeBatterSubstitutionForOrder(params: {
   };
 
   const cleanedAtBats = atBats.map((ab) => {
+    let nextAb = ab;
+    if (
+      removedSub &&
+      removedSub.subType === "PH" &&
+      removedSub.enteredAtBatId &&
+      ab.id === removedSub.enteredAtBatId &&
+      ab.midAtBatPriorBatter
+    ) {
+      nextAb = { ...nextAb, midAtBatPriorBatter: undefined };
+    }
     if (
       removedSub &&
       (removedSub.subType === "PR" || removedSub.subType === "TR") &&
-      Array.isArray(ab.pinchRunners) &&
-      ab.pinchRunners.length > 0 &&
+      Array.isArray(nextAb.pinchRunners) &&
+      nextAb.pinchRunners.length > 0 &&
       (removedSub.enteredAtBatId
-        ? ab.id === removedSub.enteredAtBatId
-        : ab.inning === removedSub.inningEntered)
+        ? nextAb.id === removedSub.enteredAtBatId
+        : nextAb.inning === removedSub.inningEntered)
     ) {
-      const filteredPr = ab.pinchRunners.filter(
+      const filteredPr = nextAb.pinchRunners.filter(
         (pr) => pr.battingOrder !== battingOrder
       );
       return {
-        ...ab,
+        ...nextAb,
         pinchRunners: filteredPr.length > 0 ? filteredPr : undefined,
       };
     }
-    return ab;
+    return nextAb;
   });
 
   const synced = syncSheetAtBatsWithStructure(cleanedAtBats, nextStructure);
@@ -341,6 +413,7 @@ export function applyAtBatPitcherChange(params: {
   name: string;
   uniformNumber: string;
   playerId: string | null;
+  midAtBatPriorPitcher?: MidAtBatPriorPitcherInfo | null;
 }): {
   structure: ScorebookSheetStructure;
   atBats: ScorebookV2AtBat[];
@@ -353,6 +426,7 @@ export function applyAtBatPitcherChange(params: {
     name,
     uniformNumber,
     playerId,
+    midAtBatPriorPitcher,
   } = params;
   const cleanName = name.trim();
   const cleanUniform = uniformNumber.trim();
@@ -369,6 +443,9 @@ export function applyAtBatPitcherChange(params: {
             pitcherName: cleanName,
             pitcherPlayerId: playerId,
             manualPitcherOverride: true,
+            ...(midAtBatPriorPitcher !== undefined
+              ? { midAtBatPriorPitcher: midAtBatPriorPitcher || undefined }
+              : {}),
           }
         : ab
     );
@@ -391,6 +468,9 @@ export function applyAtBatPitcherChange(params: {
         pitcherName: cleanName,
         pitcherPlayerId: playerId,
         manualPitcherOverride: false,
+        ...(midAtBatPriorPitcher !== undefined
+          ? { midAtBatPriorPitcher: midAtBatPriorPitcher || undefined }
+          : {}),
       };
     }
     if (ab.manualPitcherOverride) return ab;
@@ -476,6 +556,7 @@ export function applyAtBatPitcherChange(params: {
         fromBatterOrder: null,
         fromColumnIndex: null,
         toInning: maxStructureInning,
+        manualDecision: structure.pitchers[0]?.manualDecision ?? null,
       },
     ];
   } else {
@@ -510,6 +591,7 @@ export function applyAtBatPitcherChange(params: {
         fromBatterOrder: run.fromBatterOrder,
         fromColumnIndex: run.fromColumnIndex,
         toInning: run.toInning,
+        manualDecision: matchedExisting?.manualDecision ?? null,
       };
     });
   }
@@ -759,12 +841,30 @@ export function AtBatPlayerSubstitutionPanel({
   const [batterName, setBatterName] = useState<string>("");
   const [batterUniform, setBatterUniform] = useState<string>("");
   const [batterPos, setBatterPos] = useState<string>("");
+  const [isMidCountBatterSub, setIsMidCountBatterSub] = useState<boolean>(
+    Boolean(atBat.midAtBatPriorBatter)
+  );
+  const [midBatterBalls, setMidBatterBalls] = useState<number>(
+    atBat.midAtBatPriorBatter?.ballsBeforeSub ?? 0
+  );
+  const [midBatterStrikes, setMidBatterStrikes] = useState<number>(
+    atBat.midAtBatPriorBatter?.strikesBeforeSub ?? 2
+  );
 
   const [pitcherMode, setPitcherMode] =
     useState<PitcherChangeMode>("FROM_HERE");
   const [pitcherRosterId, setPitcherRosterId] = useState<string>("");
   const [pitcherName, setPitcherName] = useState<string>("");
   const [pitcherUniform, setPitcherUniform] = useState<string>("");
+  const [isMidCountPitcherSub, setIsMidCountPitcherSub] = useState<boolean>(
+    Boolean(atBat.midAtBatPriorPitcher)
+  );
+  const [midPitcherBalls, setMidPitcherBalls] = useState<number>(
+    atBat.midAtBatPriorPitcher?.ballsBeforeChange ?? 2
+  );
+  const [midPitcherStrikes, setMidPitcherStrikes] = useState<number>(
+    atBat.midAtBatPriorPitcher?.strikesBeforeChange ?? 0
+  );
   const [appliedToast, setAppliedToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -777,10 +877,16 @@ export function AtBatPlayerSubstitutionPanel({
     setBatterName("");
     setBatterUniform("");
     setBatterPos("");
+    setIsMidCountBatterSub(Boolean(atBat.midAtBatPriorBatter));
+    setMidBatterBalls(atBat.midAtBatPriorBatter?.ballsBeforeSub ?? 0);
+    setMidBatterStrikes(atBat.midAtBatPriorBatter?.strikesBeforeSub ?? 2);
     setPitcherRosterId("");
     setPitcherName("");
     setPitcherUniform("");
-  }, [atBat.id]);
+    setIsMidCountPitcherSub(Boolean(atBat.midAtBatPriorPitcher));
+    setMidPitcherBalls(atBat.midAtBatPriorPitcher?.ballsBeforeChange ?? 2);
+    setMidPitcherStrikes(atBat.midAtBatPriorPitcher?.strikesBeforeChange ?? 0);
+  }, [atBat.id, atBat.midAtBatPriorBatter, atBat.midAtBatPriorPitcher]);
 
   const currentSlot = useMemo(
     () =>
@@ -910,6 +1016,33 @@ export function AtBatPlayerSubstitutionPanel({
 
           {activeTab === "batter" ? (
             <div className="space-y-2">
+              {atBat.midAtBatPriorBatter && (
+                <div className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2 text-[10px] font-black text-primary">
+                  <span>
+                    規則9.15(b) カウント途中代打: 前打者{" "}
+                    {atBat.midAtBatPriorBatter.name}（
+                    {atBat.midAtBatPriorBatter.ballsBeforeSub}B-
+                    {atBat.midAtBatPriorBatter.strikesBeforeSub}S 時点で交代）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextAtBats = atBats.map((ab) =>
+                        ab.id === atBat.id
+                          ? { ...ab, midAtBatPriorBatter: undefined }
+                          : ab
+                      );
+                      onApply(structure, nextAtBats);
+                      setIsMidCountBatterSub(false);
+                      setAppliedToast("カウント途中代打の記録を解除しました");
+                    }}
+                    className="px-2 py-0.5 rounded-md bg-card border border-border text-destructive text-[10px] font-black cursor-pointer shrink-0"
+                  >
+                    解除
+                  </button>
+                </div>
+              )}
+
               {/* 既存の交代履歴（解除ボタン付き） */}
               {orderSubs.length > 0 && (
                 <div className="p-2 rounded-xl bg-muted border border-border space-y-1">
@@ -1090,6 +1223,73 @@ export function AtBatPlayerSubstitutionPanel({
                 />
               </div>
 
+              {(batterMode === "PH" || batterMode === "SINGLE_AB") && (
+                <div className="p-2 rounded-xl bg-muted border border-border space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsMidCountBatterSub((prev) => !prev)}
+                      className={`px-2.5 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition-colors ${
+                        isMidCountBatterSub
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card text-foreground border-border"
+                      }`}
+                    >
+                      {isMidCountBatterSub ? "✓ " : "＋ "}
+                      カウント途中の代打（規則9.15(b)）
+                    </button>
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      前打者:{" "}
+                      {atBat.midAtBatPriorBatter?.name ||
+                        atBat.batterName ||
+                        currentSlot?.name ||
+                        "未設定"}
+                    </span>
+                  </div>
+                  {isMidCountBatterSub && (
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <LiffSelect
+                          value={String(midBatterBalls)}
+                          onChange={(val) => setMidBatterBalls(Number(val))}
+                          title="代打起用時のボールカウントを選択"
+                          size="xs"
+                          searchable={false}
+                          className="w-full bg-card"
+                          ariaLabel="代打起用時のボールカウント"
+                          options={[0, 1, 2, 3].map((b) => ({
+                            value: String(b),
+                            label: `交代時 ${b} ボール`,
+                          }))}
+                        />
+                        <LiffSelect
+                          value={String(midBatterStrikes)}
+                          onChange={(val) => setMidBatterStrikes(Number(val))}
+                          title="代打起用時のストライクカウントを選択"
+                          size="xs"
+                          searchable={false}
+                          className="w-full bg-card"
+                          ariaLabel="代打起用時のストライクカウント"
+                          options={[0, 1, 2].map((s) => ({
+                            value: String(s),
+                            label: `交代時 ${s} ストライク`,
+                            sublabel:
+                              s === 2
+                                ? "三振時は前打者に打数・三振を記録（規則9.15(b)）"
+                                : "全結果とも代打に記録",
+                          }))}
+                        />
+                      </div>
+                      <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                        {midBatterStrikes >= 2
+                          ? "※2ストライク後の代打で三振に倒れた場合は前打者の三振、それ以外の結果は代打に記録されます。"
+                          : "※0〜1ストライクでの代打は三振を含めすべての結果が代打に記録されます。"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between gap-2 pt-0.5">
                 <span className="text-[10px] font-bold text-muted-foreground">
                   ※塁上の走者への「代走(PR/TR)」は下部のSTEP 3走者カードから指定できます
@@ -1098,6 +1298,33 @@ export function AtBatPlayerSubstitutionPanel({
                   type="button"
                   disabled={!batterName.trim()}
                   onClick={() => {
+                    const priorName = (
+                      atBat.midAtBatPriorBatter?.name ||
+                      atBat.batterName ||
+                      currentSlot?.name ||
+                      ""
+                    ).trim();
+                    const priorBatterInfo: MidAtBatPriorBatterInfo | null =
+                      (batterMode === "PH" || batterMode === "SINGLE_AB") &&
+                      isMidCountBatterSub &&
+                      priorName
+                        ? {
+                            name: priorName,
+                            uniformNumber:
+                              atBat.midAtBatPriorBatter?.uniformNumber ??
+                              currentSlot?.uniformNumber ??
+                              undefined,
+                            playerId:
+                              atBat.midAtBatPriorBatter !== undefined &&
+                              atBat.midAtBatPriorBatter !== null
+                                ? atBat.midAtBatPriorBatter.playerId
+                                : atBat.batterPlayerId ??
+                                  currentSlot?.playerId ??
+                                  null,
+                            ballsBeforeSub: midBatterBalls,
+                            strikesBeforeSub: midBatterStrikes,
+                          }
+                        : null;
                     const res = applyAtBatBatterChange({
                       atBats,
                       structure,
@@ -1107,6 +1334,7 @@ export function AtBatPlayerSubstitutionPanel({
                       uniformNumber: batterUniform,
                       position: batterPos,
                       playerId: batterRosterId || null,
+                      midAtBatPriorBatter: priorBatterInfo,
                     });
                     onApply(res.structure, res.atBats);
                     setAppliedToast(
@@ -1124,6 +1352,33 @@ export function AtBatPlayerSubstitutionPanel({
             </div>
           ) : (
             <div className="space-y-2">
+              {atBat.midAtBatPriorPitcher && (
+                <div className="px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2 text-[10px] font-black text-primary">
+                  <span>
+                    規則9.16(h) カウント途中救援: 前任投手{" "}
+                    {atBat.midAtBatPriorPitcher.name}（
+                    {atBat.midAtBatPriorPitcher.ballsBeforeChange}B-
+                    {atBat.midAtBatPriorPitcher.strikesBeforeChange}S 時点で交代）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextAtBats = atBats.map((ab) =>
+                        ab.id === atBat.id
+                          ? { ...ab, midAtBatPriorPitcher: undefined }
+                          : ab
+                      );
+                      onApply(structure, nextAtBats);
+                      setIsMidCountPitcherSub(false);
+                      setAppliedToast("カウント途中救援の記録を解除しました");
+                    }}
+                    className="px-2 py-0.5 rounded-md bg-card border border-border text-destructive text-[10px] font-black cursor-pointer shrink-0"
+                  >
+                    解除
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
@@ -1254,6 +1509,67 @@ export function AtBatPlayerSubstitutionPanel({
                 />
               </div>
 
+              <div className="p-2 rounded-xl bg-muted border border-border space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsMidCountPitcherSub((prev) => !prev)}
+                    className={`px-2.5 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition-colors ${
+                      isMidCountPitcherSub
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-card text-foreground border-border"
+                    }`}
+                  >
+                    {isMidCountPitcherSub ? "✓ " : "＋ "}
+                    カウント途中の救援登板（規則9.16(h)）
+                  </button>
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    降板投手:{" "}
+                    {atBat.midAtBatPriorPitcher?.name ||
+                      atBat.pitcherName ||
+                      "未設定"}
+                  </span>
+                </div>
+                {isMidCountPitcherSub && (
+                  <div className="space-y-1.5 pt-0.5">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <LiffSelect
+                        value={String(midPitcherBalls)}
+                        onChange={(val) => setMidPitcherBalls(Number(val))}
+                        title="投手交代時のボールカウントを選択"
+                        size="xs"
+                        searchable={false}
+                        className="w-full bg-card"
+                        ariaLabel="投手交代時のボールカウント"
+                        options={[0, 1, 2, 3].map((b) => ({
+                          value: String(b),
+                          label: `交代時 ${b} ボール`,
+                        }))}
+                      />
+                      <LiffSelect
+                        value={String(midPitcherStrikes)}
+                        onChange={(val) => setMidPitcherStrikes(Number(val))}
+                        title="投手交代時のストライクカウントを選択"
+                        size="xs"
+                        searchable={false}
+                        className="w-full bg-card"
+                        ariaLabel="投手交代時のストライクカウント"
+                        options={[0, 1, 2].map((s) => ({
+                          value: String(s),
+                          label: `交代時 ${s} ストライク`,
+                        }))}
+                      />
+                    </div>
+                    <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                      {(midPitcherBalls === 2 && midPitcherStrikes <= 1) ||
+                      midPitcherBalls === 3
+                        ? "※規則9.16(h)：このカウントからの四球および走者責任（得点・自責点）は前任投手に記録されます。"
+                        : "※規則9.16(h)：このカウント（2-2 または 1ボール以下）からは四球を含め救援投手に記録されます。"}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between gap-2 pt-0.5">
                 <span className="text-[10px] font-bold text-muted-foreground">
                   {pitcherMode === "FROM_HERE"
@@ -1266,6 +1582,28 @@ export function AtBatPlayerSubstitutionPanel({
                   type="button"
                   disabled={!pitcherName.trim()}
                   onClick={() => {
+                    const priorPName = (
+                      atBat.midAtBatPriorPitcher?.name ||
+                      atBat.pitcherName ||
+                      ""
+                    ).trim();
+                    const priorPitcherInfo: MidAtBatPriorPitcherInfo | null =
+                      isMidCountPitcherSub && priorPName
+                        ? {
+                            name: priorPName,
+                            uniformNumber:
+                              atBat.midAtBatPriorPitcher?.uniformNumber,
+                            playerId:
+                              atBat.midAtBatPriorPitcher !== undefined &&
+                              atBat.midAtBatPriorPitcher !== null
+                                ? atBat.midAtBatPriorPitcher.playerId
+                                : atBat.pitcherPlayerId ?? null,
+                            ballsBeforeChange: midPitcherBalls,
+                            strikesBeforeChange: midPitcherStrikes,
+                            pitchesThrownInAtBat:
+                              midPitcherBalls + midPitcherStrikes,
+                          }
+                        : null;
                     const res = applyAtBatPitcherChange({
                       atBats,
                       structure,
@@ -1274,6 +1612,7 @@ export function AtBatPlayerSubstitutionPanel({
                       name: pitcherName,
                       uniformNumber: pitcherUniform,
                       playerId: pitcherRosterId || null,
+                      midAtBatPriorPitcher: priorPitcherInfo,
                     });
                     onApply(res.structure, res.atBats);
                     setAppliedToast(
@@ -2241,6 +2580,38 @@ export function Step3QuickSubstitutionModal({
                         }))}
                       />
                     </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pl-1 flex-wrap pt-0.5">
+                    <span className="text-[11px] font-bold text-muted-foreground shrink-0">
+                      勝敗・S・H裁定
+                    </span>
+                    <LiffSelect
+                      ariaLabel="公式記録員の勝敗・セーブ裁定"
+                      title={`${
+                        pt.name || `${idx === 0 ? "先発" : `${idx + 1}番手`}投手`
+                      } の勝敗・セーブ裁定`}
+                      subtitle="通常は「自動判定」のままで公認野球規則 9.17〜9.19 どおり算出されます"
+                      value={pt.manualDecision ?? ""}
+                      size="xs"
+                      searchable={false}
+                      className="min-w-[10.5rem]"
+                      triggerTextClassName={
+                        pt.manualDecision ? "text-primary" : undefined
+                      }
+                      onChange={(val) => {
+                        const nextDecision = val
+                          ? (val as OfficialPitcherDecision)
+                          : null;
+                        const nextPitchers = structure.pitchers.map((item) =>
+                          item.id === pt.id
+                            ? { ...item, manualDecision: nextDecision }
+                            : item
+                        );
+                        onApply({ ...structure, pitchers: nextPitchers }, atBats);
+                      }}
+                      options={OFFICIAL_PITCHER_DECISION_OPTIONS}
+                    />
                   </div>
                 </div>
               ))}

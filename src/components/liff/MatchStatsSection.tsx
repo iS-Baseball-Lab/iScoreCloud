@@ -30,7 +30,10 @@ import type {
   CompiledScorebookSheetModel,
 } from "@/lib/liff/scorebook-renderer-model";
 import type { ScorebookSymbolRules } from "@/lib/liff/scorebook-symbol-rules";
-import type { CanonicalAtBatResult } from "@/types/scorebook-v2";
+import type {
+  CanonicalAtBatResult,
+  OfficialPitcherDecision,
+} from "@/types/scorebook-v2";
 import { cn } from "@/lib/utils";
 
 export interface LiffBatterStatItem {
@@ -84,6 +87,16 @@ export interface LiffPitcherStatItem {
   runs: number;
   earnedRuns: number;
   era: string;
+  decision?: OfficialPitcherDecision;
+  completeGame?: boolean;
+  shutout?: boolean;
+  isManualDecision?: boolean;
+}
+
+export interface LiffTeamPitchingMeta {
+  teamEarnedRuns: number;
+  individualEarnedRunsSum: number;
+  teamShutout: boolean;
 }
 
 export interface LiffMatchGameDetails {
@@ -176,6 +189,7 @@ interface MatchStatsSectionProps {
   isDemoMatch: boolean;
   stats: LiffBatterStatItem[];
   pitcherStats: LiffPitcherStatItem[];
+  teamPitchingMeta?: LiffTeamPitchingMeta | null;
   gameDetails: LiffMatchGameDetails | null;
   playLogs: LiffRawPlayLogItem[];
   boxscoreAtBats: LiffBoxscoreAtBatItem[];
@@ -1393,6 +1407,7 @@ export function MatchStatsSection({
   isDemoMatch,
   stats,
   pitcherStats,
+  teamPitchingMeta = null,
   gameDetails,
   playLogs,
   boxscoreAtBats,
@@ -1558,6 +1573,34 @@ export function MatchStatsSection({
     [needTables, pitcherStats]
   );
 
+  const oppScorebookModel = isMyTeamTop ? bottomScorebookModel : topScorebookModel;
+
+  const resolvedTeamPitchingMeta = useMemo<LiffTeamPitchingMeta>(() => {
+    if (teamPitchingMeta) return teamPitchingMeta;
+    if (oppScorebookModel) {
+      return {
+        teamEarnedRuns: oppScorebookModel.pitcherTotals.earnedRuns,
+        individualEarnedRunsSum:
+          oppScorebookModel.pitcherTotals.individualEarnedRunsSum ??
+          oppScorebookModel.pitcherTotals.earnedRuns,
+        teamShutout: Boolean(oppScorebookModel.pitcherTotals.teamShutout),
+      };
+    }
+    return {
+      teamEarnedRuns: pitcherTotal.earnedRuns,
+      individualEarnedRunsSum: pitcherTotal.earnedRuns,
+      teamShutout: pitcherTotal.outs > 0 && pitcherTotal.runs === 0,
+    };
+  }, [
+    teamPitchingMeta,
+    oppScorebookModel,
+    pitcherTotal.earnedRuns,
+    pitcherTotal.outs,
+    pitcherTotal.runs,
+  ]);
+
+  const effectiveTeamEarnedRuns = resolvedTeamPitchingMeta.teamEarnedRuns;
+
   const teamIpStr = useMemo(() => {
     const innInt = Math.floor(pitcherTotal.outs / 3);
     const innFrac = pitcherTotal.outs % 3;
@@ -1566,8 +1609,8 @@ export function MatchStatsSection({
 
   const teamEraStr = useMemo(() => {
     if (pitcherTotal.outs <= 0) return "0.00";
-    return ((pitcherTotal.earnedRuns * 7 * 3) / pitcherTotal.outs).toFixed(2);
-  }, [pitcherTotal.earnedRuns, pitcherTotal.outs]);
+    return ((effectiveTeamEarnedRuns * 7 * 3) / pitcherTotal.outs).toFixed(2);
+  }, [effectiveTeamEarnedRuns, pitcherTotal.outs]);
 
   const timelineEntries = useMemo(() => {
     if (!needTimeline) return [];
@@ -2267,13 +2310,21 @@ export function MatchStatsSection({
             <>
               {/* A-3 上帯ダークキャップ（投手サマリー帯） */}
               <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-2 text-[11px] font-black text-white">
+                <div className="flex items-center gap-2 text-[11px] font-black text-white flex-wrap">
                   <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground font-mono tabular-nums">
                     チーム防御率 {teamEraStr}
                   </span>
                   <span className="text-slate-200 font-mono tabular-nums">
-                    {teamIpStr}回 {pitcherTotal.strikeouts}奪三振 自責{pitcherTotal.earnedRuns}
+                    {teamIpStr}回 {pitcherTotal.strikeouts}奪三振 自責{effectiveTeamEarnedRuns}
+                    {resolvedTeamPitchingMeta.individualEarnedRunsSum >
+                      effectiveTeamEarnedRuns &&
+                      ` (個人計${resolvedTeamPitchingMeta.individualEarnedRunsSum})`}
                   </span>
+                  {resolvedTeamPitchingMeta.teamShutout && pitcherStats.length >= 2 && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[10px] font-black">
+                      継投完封
+                    </span>
+                  )}
                 </div>
                 <span className="text-[10px] font-bold text-slate-300 select-none">
                   ← 横スワイプで全項目 →
@@ -2284,7 +2335,7 @@ export function MatchStatsSection({
               <table className="w-full min-w-[680px] border-collapse text-xs whitespace-nowrap">
                 <thead>
                   <tr className="bg-muted border-b border-border text-[10px] font-black text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-muted border-r border-border py-2 pl-2.5 pr-2 text-left min-w-[116px]">
+                    <th className="sticky left-0 z-10 bg-muted border-r border-border py-2 pl-2.5 pr-2 text-left min-w-[136px]">
                       投手
                     </th>
                     <th className="px-1.5 py-2 text-center min-w-[44px] text-foreground">
@@ -2312,15 +2363,39 @@ export function MatchStatsSection({
                 </thead>
 
                 <tbody className="divide-y divide-border">
-                  {pitcherStats.map((pitcher) => {
+                  {pitcherStats.map((pitcher, pIdx) => {
                     const so = Number(pitcher.strikeouts) || 0;
                     const er = Number(pitcher.earnedRuns) || 0;
                     const pitcherPosInfo = getPositionBadgeInfo("1");
+                    const fallbackSbRow =
+                      oppScorebookModel?.pitcherRows.find(
+                        (r) =>
+                          r.name.replace(/\s+/g, "") ===
+                          pitcher.name.replace(/\s+/g, "")
+                      ) || oppScorebookModel?.pitcherRows[pIdx];
+                    const decision: OfficialPitcherDecision =
+                      pitcher.decision ?? fallbackSbRow?.decision ?? "none";
+                    const isShutout = Boolean(
+                      pitcher.shutout ?? fallbackSbRow?.shutout
+                    );
+                    const isCompleteGame = Boolean(
+                      pitcher.completeGame ?? fallbackSbRow?.completeGame
+                    );
+                    const decisionBadge =
+                      decision === "win"
+                        ? { label: "勝", cls: "bg-rose-600 text-white" }
+                        : decision === "loss"
+                        ? { label: "敗", cls: "bg-slate-700 text-white" }
+                        : decision === "save"
+                        ? { label: "S", cls: "bg-sky-600 text-white" }
+                        : decision === "hold"
+                        ? { label: "H", cls: "bg-teal-600 text-white" }
+                        : null;
 
                     return (
                       <tr key={pitcher.id} className="bg-card hover:bg-muted/35 transition-colors">
-                        <td className="sticky left-0 z-10 bg-card border-r border-border py-2 pl-2.5 pr-2 max-w-[138px]">
-                          <div className="flex items-center gap-1.5 min-w-0">
+                        <td className="sticky left-0 z-10 bg-card border-r border-border py-2 pl-2.5 pr-2 max-w-[172px]">
+                          <div className="flex items-center gap-1 min-w-0">
                             <span
                               className={cn(
                                 "w-4 h-4 rounded text-white text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none",
@@ -2329,6 +2404,25 @@ export function MatchStatsSection({
                             >
                               投
                             </span>
+                            {decisionBadge && (
+                              <span
+                                className={cn(
+                                  "px-1 h-4 rounded text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none",
+                                  decisionBadge.cls
+                                )}
+                              >
+                                {decisionBadge.label}
+                              </span>
+                            )}
+                            {isShutout ? (
+                              <span className="px-1 h-4 rounded bg-amber-600 text-white text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none">
+                                完封
+                              </span>
+                            ) : isCompleteGame ? (
+                              <span className="px-1 h-4 rounded bg-indigo-600 text-white text-[9px] font-black inline-flex items-center justify-center shrink-0 leading-none">
+                                完投
+                              </span>
+                            ) : null}
                             <span className="font-black text-xs text-foreground truncate">
                               {pitcher.name}
                             </span>
@@ -2427,7 +2521,7 @@ export function MatchStatsSection({
                       {pitcherTotal.runs}
                     </td>
                     <td className="px-1.5 py-2.5 text-center font-mono tabular-nums text-foreground">
-                      {pitcherTotal.earnedRuns}
+                      {effectiveTeamEarnedRuns}
                     </td>
                     <td className="px-2 py-2.5 pr-2.5 text-right font-mono tabular-nums text-primary border-l border-border">
                       {teamEraStr}

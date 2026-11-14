@@ -1,7 +1,11 @@
 // filepath: src/lib/liff/baseball-official-rules.ts
 import type {
   AdvanceMethodCode,
+  AppealOutKind,
   CanonicalAtBatResult,
+  MidAtBatPriorBatterInfo,
+  MidAtBatPriorPitcherInfo,
+  OfficialPitcherDecision,
   ScorebookV2Advance,
   ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
@@ -970,6 +974,8 @@ export interface HalfInningAdvanceEventInput {
 export interface HalfInningAtBatPitchingInput {
   atBatId: string;
   pitcherKey: string;
+  /** カウント途中で投手交代した場合の前任投手キー（規則 9.16(h)・任意） */
+  priorPitcherKey?: string;
   rawResult: string | null | undefined;
   runsInPlay?: number;
   snapAb?: (Pick<
@@ -983,6 +989,7 @@ export interface HalfInningAtBatPitchingInput {
   > & {
     batterName?: string;
     pinchRunners?: ScorebookV2AtBat["pinchRunners"];
+    midAtBatPriorPitcher?: MidAtBatPriorPitcherInfo | null;
   }) | null;
   advances: HalfInningAdvanceEventInput[];
 }
@@ -993,6 +1000,21 @@ export interface PitcherHalfInningCharge {
   runs: number;
   earnedRuns: number;
   dtsWildPitches: number;
+  /** 規則 9.16(h) によりカウント途中の前任投手へ帰属された四球数 */
+  walksChargedFromRelief?: number;
+}
+
+export interface HalfInningChronologicalRunEvent {
+  responsiblePitcherKey: string;
+  isEarned: boolean;
+  cellAtBatId: string | null;
+}
+
+export interface HalfInningPitcherEntrySnapshot {
+  pitcherKey: string;
+  outsAtEntry: number;
+  inheritedRunnersOnBase: number;
+  runsScoredInHalfBeforeEntry: number;
 }
 
 export interface HalfInningEarnedRunDetails {
@@ -1000,6 +1022,10 @@ export interface HalfInningEarnedRunDetails {
   earnedOriginAtBatIds: Set<string>;
   unearnedOriginAtBatIds: Set<string>;
   teamEarnedRuns: number;
+  /** このハーフイニングで生還した各得点の時系列リスト（規則 9.17(d) 決勝点・敗戦投手特定用） */
+  scoredRunsInOrder: HalfInningChronologicalRunEvent[];
+  /** このハーフイニングで登板した各投手の登板時点スナップショット（規則 9.18 完封例外・9.19(d)(2) セーブ同点走者判定用） */
+  pitcherEntrySnapshots: HalfInningPitcherEntrySnapshot[];
 }
 
 type HypoBaseState = 0 | 1 | 2 | 3 | 4;
@@ -1270,7 +1296,15 @@ export function evaluateHalfInningEarnedRunDetails(
     3: null,
   };
   const allTokens: TrackedPitchingRunner[] = [];
+  const scoredTokensInOrder: TrackedPitchingRunner[] = [];
   let nextTokenSeq = 1;
+
+  const markTokenScored = (tok: TrackedPitchingRunner): void => {
+    tok.actualScored = true;
+    if (!scoredTokensInOrder.includes(tok)) {
+      scoredTokensInOrder.push(tok);
+    }
+  };
 
   const createRunnerToken = (params: {
     cellAtBatId: string | null;
@@ -1288,17 +1322,45 @@ export function evaluateHalfInningEarnedRunDetails(
       ...params,
     };
     allTokens.push(tok);
+    if (tok.actualScored) {
+      scoredTokensInOrder.push(tok);
+    }
     return tok;
   };
 
   let actualOuts = 0;
   const firstPitcherKey =
-    plays.find((p) => Boolean(p.pitcherKey))?.pitcherKey || "";
+    plays.find((p) => Boolean(p.priorPitcherKey || p.pitcherKey))
+      ?.priorPitcherKey ||
+    plays.find((p) => Boolean(p.pitcherKey))?.pitcherKey ||
+    "";
   // 公認野球規則 9.16(i): 救援投手は登板前に記録された失策による仮想アウトの恩恵を受けない
   const pitcherStintByKey = new Map<string, number>();
+  const pitcherEntrySnapshots: HalfInningPitcherEntrySnapshot[] = [];
+  const recordedEntryKeys = new Set<string>();
   let nextStintSeq = 0;
+
+  const countOccupiedBases = (): number =>
+    (bases[1] ? 1 : 0) + (bases[2] ? 1 : 0) + (bases[3] ? 1 : 0);
+
+  const registerPitcherIfNew = (key: string): void => {
+    if (!key) return;
+    if (!pitcherStintByKey.has(key)) {
+      pitcherStintByKey.set(key, nextStintSeq++);
+    }
+    if (!recordedEntryKeys.has(key)) {
+      recordedEntryKeys.add(key);
+      pitcherEntrySnapshots.push({
+        pitcherKey: key,
+        outsAtEntry: actualOuts,
+        inheritedRunnersOnBase: countOccupiedBases(),
+        runsScoredInHalfBeforeEntry: scoredTokensInOrder.length,
+      });
+    }
+  };
+
   if (firstPitcherKey) {
-    pitcherStintByKey.set(firstPitcherKey, nextStintSeq++);
+    registerPitcherIfNew(firstPitcherKey);
   }
 
   const getActiveErrorLivesFromStint = (minStint: number): number => {
@@ -1327,16 +1389,45 @@ export function evaluateHalfInningEarnedRunDetails(
   };
 
   for (const play of plays) {
+    const midPriorInfo = play.snapAb?.midAtBatPriorPitcher || null;
+    const priorKey =
+      play.priorPitcherKey ||
+      (midPriorInfo
+        ? midPriorInfo.playerId ||
+          normalizeCompactRunnerName(midPriorInfo.name)
+        : "");
+    if (priorKey) {
+      registerPitcherIfNew(priorKey);
+    }
+
     const pKey = play.pitcherKey || firstPitcherKey;
-    if (pKey && !pitcherStintByKey.has(pKey)) {
-      pitcherStintByKey.set(pKey, nextStintSeq++);
+    if (pKey) {
+      registerPitcherIfNew(pKey);
     }
     const curStint = pitcherStintByKey.get(pKey) ?? 0;
     const pCharge = pKey ? ensurePitcher(pKey) : null;
     const cls = classifyAtBatResultToken(play.rawResult, play.snapAb);
 
-    if (!cls.isUnfinishedRunnerOut && pCharge) {
-      pCharge.battersFaced += 1;
+    // 公認野球規則 9.16(h): カウント 2-0, 2-1, 3-0, 3-1, 3-2 で救援登板し四球となった場合、四球・対戦打者・責任走者は前任投手に帰属
+    const chargeWalkToPriorPitcher = Boolean(
+      priorKey &&
+        priorKey !== pKey &&
+        cls.isWalk &&
+        midPriorInfo &&
+        ((midPriorInfo.ballsBeforeChange === 2 &&
+          midPriorInfo.strikesBeforeChange <= 1) ||
+          midPriorInfo.ballsBeforeChange >= 3)
+    );
+
+    if (!cls.isUnfinishedRunnerOut) {
+      if (chargeWalkToPriorPitcher && priorKey) {
+        const priorCharge = ensurePitcher(priorKey);
+        priorCharge.battersFaced += 1;
+        priorCharge.walksChargedFromRelief =
+          (priorCharge.walksChargedFromRelief || 0) + 1;
+      } else if (pCharge) {
+        pCharge.battersFaced += 1;
+      }
     }
 
     // 代走（PR/TR）交代時は塁上トークンの走者名を最新化して占有照合を一致させる（cellAtBatId は出塁元セルを維持）
@@ -1404,16 +1495,16 @@ export function evaluateHalfInningEarnedRunDetails(
       }
     }
 
+    const isPrePlayEvent = (a: HalfInningAdvanceEventInput): boolean =>
+      a.fromBase > 0 &&
+      (a.reason.trim().toLowerCase() === "appeal_out"
+        ? a.pitchNumber === 0
+        : isPrePlayReason(a.reason));
     const prePlayAdvs = resolvedAdvances.filter(
-      (a) =>
-        a.reason.toLowerCase() !== "tiebreak" &&
-        a.fromBase > 0 &&
-        isPrePlayReason(a.reason)
+      (a) => a.reason.toLowerCase() !== "tiebreak" && isPrePlayEvent(a)
     );
     const inPlayAdvs = resolvedAdvances.filter(
-      (a) =>
-        a.reason.toLowerCase() !== "tiebreak" &&
-        !(a.fromBase > 0 && isPrePlayReason(a.reason))
+      (a) => a.reason.toLowerCase() !== "tiebreak" && !isPrePlayEvent(a)
     );
 
     // B) 投球間（盗塁・暴投・捕逸・ボーク・盗塁死・牽制死）の走者移動・得点・アウト処理（占有整合順）
@@ -1460,7 +1551,7 @@ export function evaluateHalfInningEarnedRunDetails(
       } else {
         if (pm.toBase === 4) {
           modeledRunsInPlay += 1;
-          token.actualScored = true;
+          markTokenScored(token);
         } else if (pm.toBase === 1 || pm.toBase === 2 || pm.toBase === 3) {
           bases[pm.toBase] = token;
         }
@@ -1794,7 +1885,7 @@ export function evaluateHalfInningEarnedRunDetails(
       } else {
         if (rm.toBase === 4) {
           modeledRunsInPlay += 1;
-          token.actualScored = true;
+          markTokenScored(token);
         } else if (rm.toBase === 1 || rm.toBase === 2 || rm.toBase === 3) {
           bases[rm.toBase] = token;
         }
@@ -1997,6 +2088,8 @@ export function evaluateHalfInningEarnedRunDetails(
     );
     const batterRespKey = inheritsPrecedingRunner
       ? retiredPrecedingRunnerToken!.responsiblePitcherKey || pKey
+      : chargeWalkToPriorPitcher && priorKey
+      ? priorKey
       : pKey;
     const batterIsUnearnedOrigin = inheritsPrecedingRunner
       ? retiredPrecedingRunnerToken!.isUnearnedOrigin || batterReachedUnearned
@@ -2026,7 +2119,7 @@ export function evaluateHalfInningEarnedRunDetails(
           if (!onBase) continue;
           bases[bNum] = null;
           modeledRunsInPlay += 1;
-          onBase.actualScored = true;
+          markTokenScored(onBase);
           if (teamVirtBefore < 3 && onBase.teamHypoBase >= 1) {
             onBase.teamHypoBase = 4;
           }
@@ -2099,7 +2192,7 @@ export function evaluateHalfInningEarnedRunDetails(
             if (bases[1] && bases[2] && bases[3]) {
               const pushed = bases[3];
               modeledRunsInPlay += 1;
-              pushed.actualScored = true;
+              markTokenScored(pushed);
               bases[3] = bases[2];
               bases[2] = bases[1];
             } else if (bases[1] && bases[2]) {
@@ -2127,7 +2220,7 @@ export function evaluateHalfInningEarnedRunDetails(
           bases[bNum] = null;
           missing -= 1;
           modeledRunsInPlay += 1;
-          onBase.actualScored = true;
+          markTokenScored(onBase);
           if (!cls.isErrorReach && !hasRelayErrorSavingBatter) {
             if (
               (cls.isHit ? teamVirtBefore < 3 : teamVirtDuringScoring < 3) &&
@@ -2237,7 +2330,7 @@ export function evaluateHalfInningEarnedRunDetails(
         bases[bNum] = null;
         remaining -= 1;
         modeledRunsInPlay += 1;
-        onBase.actualScored = true;
+        markTokenScored(onBase);
         if (!cls.isErrorReach && !hasRelayErrorSavingBatter) {
           if (
             (cls.isHit ? teamVirtBefore < 3 : teamVirtDuringScoring < 3) &&
@@ -2317,11 +2410,25 @@ export function evaluateHalfInningEarnedRunDetails(
     }
   }
 
+  const scoredRunsInOrder: HalfInningChronologicalRunEvent[] =
+    scoredTokensInOrder.map((tok) => {
+      const respKey = tok.responsiblePitcherKey || firstPitcherKey;
+      const isPitcherEarned =
+        !tok.isUnearnedOrigin && tok.pitcherHypoBase === 4;
+      return {
+        responsiblePitcherKey: respKey,
+        isEarned: isPitcherEarned,
+        cellAtBatId: tok.cellAtBatId,
+      };
+    });
+
   return {
     pitcherCharges: charges,
     earnedOriginAtBatIds,
     unearnedOriginAtBatIds,
     teamEarnedRuns,
+    scoredRunsInOrder,
+    pitcherEntrySnapshots,
   };
 }
 
@@ -2435,4 +2542,975 @@ export function mapSnapshotAdvancesToPitchingEvents(
 
   return events;
 }
+
+// ============================================================================
+// 公認野球規則 9.15(b)：カウント途中の代打三振帰属
+// ============================================================================
+
+/**
+ * 2ストライク後に代打が出場し三振（振り逃げを含む三振全般）に倒れた場合、
+ * 打席・打数・三振は前打者に記録し、それ以外の結果（四死球・安打・凡打・犠打飛・失策等）は代打に記録する（規則 9.15(b)）。
+ */
+export function isMidAtBatStrikeoutChargedToPriorBatter(
+  priorBatter: MidAtBatPriorBatterInfo | null | undefined,
+  isStrikeoutResult: boolean
+): boolean {
+  if (!priorBatter || !isStrikeoutResult) return false;
+  return priorBatter.strikesBeforeSub >= 2;
+}
+
+// ============================================================================
+// 公認野球規則 9.16(h)：カウント途中の救援投手四球・責任走者帰属
+// ============================================================================
+
+/**
+ * カウント途中で救援投手が登板し打者が四球（敬遠含む）を得た場合、
+ * 交代時カウントが 2-0, 2-1, 3-0, 3-1, 3-2 なら前任投手に四球・対戦打者・責任走者を帰属させ、
+ * 2-2, 1-2, 1-1, 1-0, 0-2, 0-1, 0-0 または四球以外の全結果（死球・安打・凡打等）は救援投手に帰属させる（規則 9.16(h)）。
+ */
+export function isMidAtBatWalkChargedToPriorPitcher(
+  priorPitcher: MidAtBatPriorPitcherInfo | null | undefined,
+  isWalkResult: boolean
+): boolean {
+  if (!priorPitcher || !isWalkResult) return false;
+  return (
+    (priorPitcher.ballsBeforeChange === 2 &&
+      priorPitcher.strikesBeforeChange <= 1) ||
+    priorPitcher.ballsBeforeChange >= 3
+  );
+}
+
+// ============================================================================
+// 公認野球規則 9.06(b)/(c) ＆ 5.08(a)：アピールアウトによる安打格下げ・第3アウト得点取消判定
+// ============================================================================
+
+export interface AppealOutPlayAdjustment {
+  hasAppealOut: boolean;
+  /** 打者結果コードの格下げ（例: 二塁空過アピールアウトで二塁打→単打、一塁空過または強制進塁走者の空過で安打→ゴロ/野選） */
+  downgradedResultCode: CanonicalAtBatResult | null;
+  /** 第3アウトがこのアピールアウトで成立した場合、フォースアウト相当として同プレーの得点を全て取り消すか（規則 5.08(a)） */
+  cancelsThirdOutRuns: boolean;
+}
+
+/**
+ * 1打席内の `ScorebookV2Advance` に `method === "appeal_out"` が含まれる場合の
+ * 安打格下げ（規則 9.05(b)(1), 9.06(b)/(c)）および第3アウト時の得点取消有無（規則 5.08(a)）を判定する。
+ *
+ * - 打者走者の空過アピールアウト:
+ *   - 1B 空過 (`to === "1B"`): 安打取消（`groundout`）、第3アウトならフォース相当で全得点取消
+ *   - 2B 空過 (`to === "2B"`): 単打（`single`）に格下げ、タイムプレー（アピール前の先行走者得点は有効）
+ *   - 3B 空過 (`to === "3B"`): 二塁打（`double`）に格下げ、タイムプレー
+ *   - HP 空過 (`to === "HP"`): 三塁打（`triple`）に格下げ、打者自身の得点のみ無効・先行走者得点は有効
+ * - 先行走者のアピールアウト:
+ *   - `appealType === "retouch_early"` または飛球アウト（`flyout` / `sac_fly` / `infield_fly`）での離塁アピール:
+ *     フォースアウトではないため、第3アウトでもアピール成立前の本塁到達得点は認められる（タイムプレー）
+ *   - `appealType === "missed_base_force"` または強制進塁義務のある次塁（例: 一塁走者の二塁空過）での空過アピール:
+ *     フォースアウトとなるため、打者の安打は野選/ゴロに格下げされ、第3アウトなら全得点が取り消される
+ */
+export function resolveAppealOutPlayAdjustment(
+  resultCode: CanonicalAtBatResult,
+  advances: ReadonlyArray<ScorebookV2Advance>,
+  occupiedBeforePlay: Readonly<Record<OccupiedBaseKey, string | null>>
+): AppealOutPlayAdjustment {
+  const appealAdvs = advances.filter(
+    (a) => a.isOut && a.method === "appeal_out"
+  );
+  if (appealAdvs.length === 0) {
+    return {
+      hasAppealOut: false,
+      downgradedResultCode: null,
+      cancelsThirdOutRuns: false,
+    };
+  }
+
+  const isFlyBallBatterOut =
+    resultCode === "flyout" ||
+    resultCode === "sac_fly" ||
+    resultCode === "infield_fly";
+
+  const isHitCode =
+    resultCode === "single" ||
+    resultCode === "double" ||
+    resultCode === "triple" ||
+    resultCode === "home_run";
+
+  let downgradedResultCode: CanonicalAtBatResult | null = null;
+  let cancelsThirdOutRuns = false;
+
+  for (const ap of appealAdvs) {
+    if (ap.appealType === "batting_out_of_turn") {
+      downgradedResultCode = "groundout";
+      continue;
+    }
+
+    if (ap.from === "BAT") {
+      if (ap.to === "1B") {
+        if (isHitCode) downgradedResultCode = "groundout";
+        cancelsThirdOutRuns = true;
+      } else if (ap.to === "2B") {
+        if (
+          resultCode === "double" ||
+          resultCode === "triple" ||
+          resultCode === "home_run"
+        ) {
+          downgradedResultCode = "single";
+        }
+      } else if (ap.to === "3B") {
+        if (resultCode === "triple" || resultCode === "home_run") {
+          downgradedResultCode = "double";
+        }
+      } else if (ap.to === "HP") {
+        if (resultCode === "home_run") {
+          downgradedResultCode = "triple";
+        }
+      }
+      continue;
+    }
+
+    // 先行走者 (from: 1B / 2B / 3B) のアピールアウト
+    if (ap.appealType === "retouch_early" || isFlyBallBatterOut) {
+      // タッチアップ離塁アピールはタイムプレー（フォースアウトではない）
+      continue;
+    }
+    if (ap.appealType === "missed_base_non_force") {
+      continue;
+    }
+
+    const isForcedNextBase =
+      ap.appealType === "missed_base_force" ||
+      (!isFlyBallBatterOut &&
+        ((ap.from === "1B" && ap.to === "2B") ||
+          (ap.from === "2B" &&
+            ap.to === "3B" &&
+            Boolean(occupiedBeforePlay["1B"])) ||
+          (ap.from === "3B" &&
+            ap.to === "HP" &&
+            Boolean(occupiedBeforePlay["1B"]) &&
+            Boolean(occupiedBeforePlay["2B"]))));
+
+    if (isForcedNextBase) {
+      cancelsThirdOutRuns = true;
+      if (isHitCode) {
+        downgradedResultCode = "fc";
+      }
+    }
+  }
+
+  return {
+    hasAppealOut: true,
+    downgradedResultCode,
+    cancelsThirdOutRuns,
+  };
+}
+
+// ============================================================================
+// 公認野球規則 9.17（勝敗投手）・9.18（完投/完封）・9.19（セーブ）＋ホールド＋9.01（記録員手動指定）
+// ============================================================================
+
+export interface MatchPitcherDecisionStintInput {
+  pitcherKey: string;
+  order: number;
+  outsRecorded: number;
+  runsAllowed: number;
+  earnedRunsAllowed: number;
+  hitsAllowed?: number;
+  walksAllowed?: number;
+  manualDecision?: OfficialPitcherDecision | null;
+}
+
+export interface MatchDefenseInningChronologyInput {
+  inning: number;
+  scoredRunsInOrder: ReadonlyArray<HalfInningChronologicalRunEvent>;
+  pitcherEntrySnapshots: ReadonlyArray<HalfInningPitcherEntrySnapshot>;
+}
+
+export interface EvaluateMatchPitcherDecisionsInput {
+  /** 自チームが先攻（true=表攻撃・裏守備）か後攻（false=表守備・裏攻撃）か */
+  isMyTeamBatFirst: boolean;
+  /** 規定イニング数（少年・中学・軟式一般7回制=7、高校・大学・プロ9回制=9） */
+  scheduledInnings: number;
+  myFinalScore: number;
+  opponentFinalScore: number;
+  myInningScores: ReadonlyArray<number>;
+  opponentInningScores: ReadonlyArray<number>;
+  pitchers: ReadonlyArray<MatchPitcherDecisionStintInput>;
+  defenseInnings?: ReadonlyArray<MatchDefenseInningChronologyInput>;
+}
+
+export interface PitcherMatchDecisionOutcome {
+  pitcherKey: string;
+  decision: OfficialPitcherDecision;
+  completeGame: boolean;
+  shutout: boolean;
+  isManualOverride: boolean;
+}
+
+export interface EvaluateMatchPitcherDecisionsResult {
+  byPitcherKey: Map<string, PitcherMatchDecisionOutcome>;
+  winningPitcherKey: string | null;
+  losingPitcherKey: string | null;
+  savingPitcherKey: string | null;
+  holdPitcherKeys: string[];
+  teamShutout: boolean;
+  starterQualifyingOuts: number;
+}
+
+/**
+ * 規定イニング数と実際の総守備アウト数から、先発投手の勝利資格アウト数を算出する（公認野球規則 9.17(a)）。
+ * - 9回制: 原則 5回（15アウト）。5回コールド等の短縮試合（守備アウト 15 以下）では 4回（12アウト）。
+ * - 7回制（JSBB軟式・中学・学童等）: 原則 4回（12アウト）。4回コールド等の短縮試合（守備アウト 12 以下）では 3回（9アウト）。
+ */
+export function getStarterWinQualifyingOuts(
+  scheduledInnings: number,
+  totalDefenseOuts: number
+): number {
+  if (totalDefenseOuts <= 0) {
+    return scheduledInnings >= 8 ? 15 : 12;
+  }
+  if (scheduledInnings >= 8) {
+    if (totalDefenseOuts <= 15) {
+      return Math.min(12, totalDefenseOuts);
+    }
+    return 15;
+  }
+  // 7回制以下
+  if (totalDefenseOuts <= 12) {
+    return Math.min(9, totalDefenseOuts);
+  }
+  return 12;
+}
+
+/**
+ * 1試合のイニングスコア・投手登板順・各守備イニングの時系列得点/登板スナップショットから、
+ * 公認野球規則 9.17（勝投手・敗投手）、9.18（完投・個人完封 vs 継投完封・初回無死救援完封例外）、
+ * 9.19（セーブ投手 3条件）、ホールド、および 9.01（公式記録員手動指定オーバーライド）を一括判定する。
+ */
+export function evaluateMatchPitcherDecisions(
+  input: EvaluateMatchPitcherDecisionsInput
+): EvaluateMatchPitcherDecisionsResult {
+  const orderedPitchers = [...input.pitchers].sort((a, b) => a.order - b.order);
+  const byPitcherKey = new Map<string, PitcherMatchDecisionOutcome>();
+
+  if (orderedPitchers.length === 0) {
+    return {
+      byPitcherKey,
+      winningPitcherKey: null,
+      losingPitcherKey: null,
+      savingPitcherKey: null,
+      holdPitcherKeys: [],
+      teamShutout: false,
+      starterQualifyingOuts: getStarterWinQualifyingOuts(
+        input.scheduledInnings,
+        0
+      ),
+    };
+  }
+
+  const totalDefenseOuts = orderedPitchers.reduce(
+    (acc, p) => acc + Math.max(0, p.outsRecorded),
+    0
+  );
+  const starterQualifyingOuts = getStarterWinQualifyingOuts(
+    input.scheduledInnings,
+    totalDefenseOuts
+  );
+
+  const isFinishedComparisonValid =
+    totalDefenseOuts > 0 ||
+    input.myFinalScore > 0 ||
+    input.opponentFinalScore > 0;
+  const teamShutout =
+    isFinishedComparisonValid &&
+    totalDefenseOuts > 0 &&
+    input.opponentFinalScore === 0;
+
+  // 1) 完投（CG）＆ 個人完封（SHO）判定（公認野球規則 9.18）
+  const completeGameByKey = new Map<string, boolean>();
+  const shutoutByKey = new Map<string, boolean>();
+
+  if (orderedPitchers.length === 1 && totalDefenseOuts > 0) {
+    const soloKey = orderedPitchers[0]!.pitcherKey;
+    completeGameByKey.set(soloKey, true);
+    if (input.opponentFinalScore === 0) {
+      shutoutByKey.set(soloKey, true);
+    }
+  } else if (
+    orderedPitchers.length === 2 &&
+    totalDefenseOuts > 0 &&
+    input.opponentFinalScore === 0
+  ) {
+    // 公認野球規則 9.18 例外: 初回無死（1人もアウトを取る前）に救援登板し、最後まで無失点で投げ切った救援投手には個人完封を記録（完投は記録しない）
+    const starter = orderedPitchers[0]!;
+    const reliever = orderedPitchers[1]!;
+    const inning1Chron = input.defenseInnings?.find((d) => d.inning === 1);
+    const relieverSnap1 = inning1Chron?.pitcherEntrySnapshots.find(
+      (s) => s.pitcherKey === reliever.pitcherKey
+    );
+    const enteredFirstInningZeroOuts = relieverSnap1
+      ? relieverSnap1.outsAtEntry === 0
+      : starter.outsRecorded === 0;
+    if (
+      starter.outsRecorded === 0 &&
+      enteredFirstInningZeroOuts &&
+      reliever.outsRecorded === totalDefenseOuts
+    ) {
+      shutoutByKey.set(reliever.pitcherKey, true);
+    }
+  }
+
+  // 2) イニング・時系列イベント構築（defenseInnings が無い旧試合データのフォールバックも完備）
+  const defenseChronMap = new Map<number, MatchDefenseInningChronologyInput>();
+  for (const d of input.defenseInnings || []) {
+    defenseChronMap.set(d.inning, d);
+  }
+
+  const maxInnings = Math.max(
+    input.myInningScores.length,
+    input.opponentInningScores.length,
+    ...(input.defenseInnings || []).map((d) => d.inning),
+    1
+  );
+
+  // フォールバック用: 各守備イニングの終了時投手を累積アウト数から推定
+  let cumOutsCursor = 0;
+  const fallbackPitcherForOutIndex = (targetOutOneBased: number): string => {
+    let runSum = 0;
+    for (const p of orderedPitchers) {
+      runSum += Math.max(0, p.outsRecorded);
+      if (runSum >= targetOutOneBased) {
+        return p.pitcherKey;
+      }
+    }
+    return orderedPitchers[orderedPitchers.length - 1]!.pitcherKey;
+  };
+
+  // フォールバック用失点割り当てプール
+  const remainingFallbackRunsByKey = new Map<string, number>();
+  for (const p of orderedPitchers) {
+    remainingFallbackRunsByKey.set(p.pitcherKey, Math.max(0, p.runsAllowed));
+  }
+
+  interface RelieverStintTracking {
+    pitcherKey: string;
+    orderIdx: number;
+    leadAtEntry: number;
+    inheritedRunnersOnBase: number;
+    relinquishedLeadDuringOrViaResponsibleRun: boolean;
+    enteredGame: boolean;
+  }
+
+  const relieverTrackingByKey = new Map<string, RelieverStintTracking>();
+  orderedPitchers.forEach((p, idx) => {
+    if (idx === 0) return;
+    relieverTrackingByKey.set(p.pitcherKey, {
+      pitcherKey: p.pitcherKey,
+      orderIdx: idx,
+      leadAtEntry: 0,
+      inheritedRunnersOnBase: 0,
+      relinquishedLeadDuringOrViaResponsibleRun: false,
+      enteredGame: false,
+    });
+  });
+
+  let simMyScore = 0;
+  let simOppScore = 0;
+  let currentMoundPitcherKey = orderedPitchers[0]!.pitcherKey;
+  let activeWinningPitcherOfRecordKey: string | null = null;
+  let goAheadRunLosingPitcherKey: string | null = null;
+  const enteredPitcherKeysSoFar = new Set<string>([
+    orderedPitchers[0]!.pitcherKey,
+  ]);
+
+  const runOffenseHalf = (inn: number): void => {
+    const addMy = Math.max(0, input.myInningScores[inn - 1] ?? 0);
+    if (addMy <= 0) return;
+    const prevMy = simMyScore;
+    simMyScore += addMy;
+
+    if (simMyScore >= simOppScore) {
+      // 自チームが同点以上に追いついたため、それ以前の相手勝ち越しリードは消滅
+      goAheadRunLosingPitcherKey = null;
+    }
+    if (prevMy <= simOppScore && simMyScore > simOppScore) {
+      // 自チームが勝ち越した瞬間の責任投手（先攻1回表のみ先発投手、それ以外は直前の守備回を投げ終えた投手）
+      activeWinningPitcherOfRecordKey =
+        input.isMyTeamBatFirst && inn === 1
+          ? orderedPitchers[0]!.pitcherKey
+          : currentMoundPitcherKey;
+    }
+  };
+
+  const runDefenseHalf = (inn: number): void => {
+    const chron = defenseChronMap.get(inn);
+    const oppRunsFromHeader = Math.max(
+      0,
+      input.opponentInningScores[inn - 1] ?? 0
+    );
+    const oppHalfStartScore = simOppScore;
+
+    if (chron && (chron.pitcherEntrySnapshots.length > 0 || chron.scoredRunsInOrder.length > 0)) {
+      // A) 救援投手の登板時点リード＆引き継ぎ走者スナップショットを記録
+      for (const snap of chron.pitcherEntrySnapshots) {
+        currentMoundPitcherKey = snap.pitcherKey;
+        if (!enteredPitcherKeysSoFar.has(snap.pitcherKey)) {
+          enteredPitcherKeysSoFar.add(snap.pitcherKey);
+          const tr = relieverTrackingByKey.get(snap.pitcherKey);
+          if (tr && !tr.enteredGame) {
+            const oppAtEntry =
+              oppHalfStartScore + snap.runsScoredInHalfBeforeEntry;
+            tr.leadAtEntry = simMyScore - oppAtEntry;
+            tr.inheritedRunnersOnBase = snap.inheritedRunnersOnBase;
+            tr.enteredGame = true;
+          }
+        }
+      }
+
+      // B) 時系列順に相手得点を1点ずつ加算し、リード消滅・決勝点責任投手（9.17(d)）を追跡
+      const runsList = chron.scoredRunsInOrder;
+      const runCount = Math.max(runsList.length, oppRunsFromHeader);
+      for (let rIdx = 0; rIdx < runCount; rIdx++) {
+        const ev = runsList[rIdx];
+        const respKey = ev?.responsiblePitcherKey || currentMoundPitcherKey;
+        const prevOpp = simOppScore;
+        simOppScore += 1;
+
+        if (simOppScore >= simMyScore) {
+          activeWinningPitcherOfRecordKey = null;
+          // 既に登板済みの救援投手が守っていたリードが追いつかれたか記録（自身が降板後でも責任走者による同点ならホールド消滅）
+          for (const tr of relieverTrackingByKey.values()) {
+            if (!tr.enteredGame) continue;
+            if (
+              tr.pitcherKey === currentMoundPitcherKey ||
+              tr.pitcherKey === respKey
+            ) {
+              tr.relinquishedLeadDuringOrViaResponsibleRun = true;
+            }
+          }
+        }
+        if (prevOpp === simMyScore && simOppScore === simMyScore + 1) {
+          goAheadRunLosingPitcherKey = respKey;
+        }
+      }
+      cumOutsCursor = Math.min(totalDefenseOuts, cumOutsCursor + 3);
+    } else {
+      // フォールバック（スコアボード得点＋投手別失点のみ存在する場合）
+      const startOut = cumOutsCursor + 1;
+      const endOut = Math.min(
+        Math.max(totalDefenseOuts, startOut),
+        cumOutsCursor + 3
+      );
+      const halfStartPitcher = fallbackPitcherForOutIndex(startOut);
+      const halfEndPitcher = fallbackPitcherForOutIndex(endOut);
+
+      for (const pk of [halfStartPitcher, halfEndPitcher]) {
+        if (!enteredPitcherKeysSoFar.has(pk)) {
+          enteredPitcherKeysSoFar.add(pk);
+          const tr = relieverTrackingByKey.get(pk);
+          if (tr && !tr.enteredGame) {
+            tr.leadAtEntry = simMyScore - simOppScore;
+            tr.inheritedRunnersOnBase = 0;
+            tr.enteredGame = true;
+          }
+        }
+      }
+
+      for (let rIdx = 0; rIdx < oppRunsFromHeader; rIdx++) {
+        // この回投げた投手のうち失点残枠がある投手を優先帰属
+        let respKey = halfStartPitcher;
+        if ((remainingFallbackRunsByKey.get(respKey) || 0) <= 0) {
+          if ((remainingFallbackRunsByKey.get(halfEndPitcher) || 0) > 0) {
+            respKey = halfEndPitcher;
+          } else {
+            const anyWithRuns = orderedPitchers.find(
+              (p) => (remainingFallbackRunsByKey.get(p.pitcherKey) || 0) > 0
+            );
+            if (anyWithRuns) respKey = anyWithRuns.pitcherKey;
+          }
+        }
+        remainingFallbackRunsByKey.set(
+          respKey,
+          Math.max(0, (remainingFallbackRunsByKey.get(respKey) || 0) - 1)
+        );
+
+        const prevOpp = simOppScore;
+        simOppScore += 1;
+        if (simOppScore >= simMyScore) {
+          activeWinningPitcherOfRecordKey = null;
+          for (const tr of relieverTrackingByKey.values()) {
+            if (
+              tr.enteredGame &&
+              (tr.pitcherKey === halfEndPitcher || tr.pitcherKey === respKey)
+            ) {
+              tr.relinquishedLeadDuringOrViaResponsibleRun = true;
+            }
+          }
+        }
+        if (prevOpp === simMyScore && simOppScore === simMyScore + 1) {
+          goAheadRunLosingPitcherKey = respKey;
+        }
+      }
+
+      currentMoundPitcherKey = halfEndPitcher;
+      cumOutsCursor = Math.min(totalDefenseOuts, cumOutsCursor + 3);
+    }
+  };
+
+  for (let inn = 1; inn <= maxInnings; inn++) {
+    if (input.isMyTeamBatFirst) {
+      runOffenseHalf(inn);
+      runDefenseHalf(inn);
+    } else {
+      runDefenseHalf(inn);
+      runOffenseHalf(inn);
+    }
+  }
+
+  // イニングスコア配列と最終スコアに差分がある場合の最終整合補正
+  if (simMyScore !== input.myFinalScore || simOppScore !== input.opponentFinalScore) {
+    simMyScore = input.myFinalScore;
+    simOppScore = input.opponentFinalScore;
+  }
+
+  // 登板スナップショットに現れなかった救援投手（0アウト降板やイニング情報省略時）の補完
+  for (const tr of relieverTrackingByKey.values()) {
+    if (!tr.enteredGame) {
+      tr.leadAtEntry = input.myFinalScore - input.opponentFinalScore;
+      tr.inheritedRunnersOnBase = 0;
+      tr.enteredGame = true;
+    }
+  }
+
+  // 3) 自動勝・敗・S・H決定
+  let autoWinKey: string | null = null;
+  let autoLossKey: string | null = null;
+  let autoSaveKey: string | null = null;
+  const autoHoldKeys = new Set<string>();
+
+  if (isFinishedComparisonValid && input.myFinalScore > input.opponentFinalScore) {
+    const starter = orderedPitchers[0]!;
+    const candidateWinKey =
+      activeWinningPitcherOfRecordKey || starter.pitcherKey;
+
+    if (candidateWinKey === starter.pitcherKey) {
+      if (
+        starter.outsRecorded >= starterQualifyingOuts ||
+        orderedPitchers.length === 1
+      ) {
+        autoWinKey = starter.pitcherKey;
+      } else {
+        // 公認野球規則 9.17(b): 先発投手が規定投球回未満で降板した場合、最も有効な投球をした救援投手を勝投手とする
+        const relievers = orderedPitchers.slice(1);
+        let bestReliever = relievers[0]!;
+        let bestScore = -Infinity;
+        for (const rel of relievers) {
+          const effectiveness =
+            rel.outsRecorded * 2 -
+            rel.runsAllowed * 6 -
+            rel.earnedRunsAllowed * 3 -
+            (rel.hitsAllowed || 0) -
+            (rel.walksAllowed || 0) +
+            (rel.outsRecorded >= 3 ? 4 : 0);
+          if (effectiveness > bestScore) {
+            bestScore = effectiveness;
+            bestReliever = rel;
+          }
+        }
+        autoWinKey = bestReliever.pitcherKey;
+      }
+    } else {
+      autoWinKey = candidateWinKey;
+    }
+
+    // 公認野球規則 9.19: セーブ判定（勝チームの最終投手・非勝利投手・最低1/3回・リード時登板かつリード保持・3条件のいずれか）
+    if (orderedPitchers.length >= 2) {
+      const closer = orderedPitchers[orderedPitchers.length - 1]!;
+      const closerTr = relieverTrackingByKey.get(closer.pitcherKey);
+      if (
+        closer.pitcherKey !== autoWinKey &&
+        closer.outsRecorded >= 1 &&
+        closerTr &&
+        closerTr.leadAtEntry >= 1 &&
+        !closerTr.relinquishedLeadDuringOrViaResponsibleRun
+      ) {
+        const cond1 =
+          closerTr.leadAtEntry <= 3 && closer.outsRecorded >= 3;
+        const cond2 =
+          closerTr.leadAtEntry <= closerTr.inheritedRunnersOnBase + 2;
+        const cond3 = closer.outsRecorded >= 9;
+        if (cond1 || cond2 || cond3) {
+          autoSaveKey = closer.pitcherKey;
+        }
+      }
+    }
+  } else if (
+    isFinishedComparisonValid &&
+    input.myFinalScore < input.opponentFinalScore
+  ) {
+    // 公認野球規則 9.17(d): 決勝点（相手チームが以後一度もリードを奪い返されなかった勝ち越し点）の責任投手が敗投手
+    if (goAheadRunLosingPitcherKey) {
+      autoLossKey = goAheadRunLosingPitcherKey;
+    } else {
+      const fallbackLoser =
+        orderedPitchers.find((p) => p.runsAllowed > 0) || orderedPitchers[0]!;
+      autoLossKey = fallbackLoser.pitcherKey;
+    }
+  }
+
+  // ホールド判定（中継ぎ投手：1 <= idx < length - 1、勝・敗・S以外、セーブ機会で登板し1アウト以上記録してリードを保ったまま降板）
+  if (isFinishedComparisonValid && orderedPitchers.length >= 2) {
+    for (let idx = 1; idx < orderedPitchers.length - 1; idx++) {
+      const mid = orderedPitchers[idx]!;
+      if (
+        mid.pitcherKey === autoWinKey ||
+        mid.pitcherKey === autoLossKey ||
+        mid.pitcherKey === autoSaveKey
+      ) {
+        continue;
+      }
+      const tr = relieverTrackingByKey.get(mid.pitcherKey);
+      if (!tr) continue;
+      const enteredInSaveSituation =
+        tr.leadAtEntry >= 1 &&
+        (tr.leadAtEntry <= 3 ||
+          tr.leadAtEntry <= tr.inheritedRunnersOnBase + 2);
+      if (
+        mid.outsRecorded >= 1 &&
+        enteredInSaveSituation &&
+        !tr.relinquishedLeadDuringOrViaResponsibleRun
+      ) {
+        autoHoldKeys.add(mid.pitcherKey);
+      }
+    }
+  }
+
+  // 4) 公式記録員の手動指定オーバーライド反映（公認野球規則 9.01 / 9.17(b)/(c)）
+  const manualWin = orderedPitchers.find((p) => p.manualDecision === "win");
+  const manualLoss = orderedPitchers.find((p) => p.manualDecision === "loss");
+  const manualSave = orderedPitchers.find((p) => p.manualDecision === "save");
+
+  if (manualWin) {
+    autoWinKey = manualWin.pitcherKey;
+    if (autoSaveKey === manualWin.pitcherKey) autoSaveKey = null;
+    autoHoldKeys.delete(manualWin.pitcherKey);
+  }
+  if (manualLoss) {
+    autoLossKey = manualLoss.pitcherKey;
+    autoHoldKeys.delete(manualLoss.pitcherKey);
+  }
+  if (manualSave) {
+    autoSaveKey = manualSave.pitcherKey;
+    if (autoWinKey === manualSave.pitcherKey) autoWinKey = null;
+    autoHoldKeys.delete(manualSave.pitcherKey);
+  }
+
+  let finalWinKey: string | null = null;
+  let finalLossKey: string | null = null;
+  let finalSaveKey: string | null = null;
+  const finalHoldKeys: string[] = [];
+
+  for (const p of orderedPitchers) {
+    let decision: OfficialPitcherDecision = "none";
+    const hasManual =
+      p.manualDecision !== undefined && p.manualDecision !== null;
+
+    if (hasManual) {
+      decision = p.manualDecision!;
+    } else if (p.pitcherKey === autoWinKey) {
+      decision = "win";
+    } else if (p.pitcherKey === autoLossKey) {
+      decision = "loss";
+    } else if (p.pitcherKey === autoSaveKey) {
+      decision = "save";
+    } else if (autoHoldKeys.has(p.pitcherKey)) {
+      decision = "hold";
+    }
+
+    if (decision === "win") finalWinKey = p.pitcherKey;
+    else if (decision === "loss") finalLossKey = p.pitcherKey;
+    else if (decision === "save") finalSaveKey = p.pitcherKey;
+    else if (decision === "hold") finalHoldKeys.push(p.pitcherKey);
+
+    byPitcherKey.set(p.pitcherKey, {
+      pitcherKey: p.pitcherKey,
+      decision,
+      completeGame: completeGameByKey.get(p.pitcherKey) ?? false,
+      shutout: shutoutByKey.get(p.pitcherKey) ?? false,
+      isManualOverride: hasManual,
+    });
+  }
+
+  return {
+    byPitcherKey,
+    winningPitcherKey: finalWinKey,
+    losingPitcherKey: finalLossKey,
+    savingPitcherKey: finalSaveKey,
+    holdPitcherKeys: finalHoldKeys,
+    teamShutout,
+    starterQualifyingOuts,
+  };
+}
+
+// ============================================================================
+// 公認野球規則 9.20：連続試合安打・連続試合出塁の公式判定
+// ============================================================================
+
+export interface OfficialStreakGameLogInput {
+  pa: number;
+  ab: number;
+  hits: number;
+  walks: number;
+  hbp: number;
+  sacBunts: number;
+  sacFlies: number;
+  interferences?: number;
+}
+
+export interface OfficialStreaksResult {
+  currentHitStreak: number;
+  maxHitStreak: number;
+  currentOnBaseStreak: number;
+  maxOnBaseStreak: number;
+}
+
+/**
+ * 時系列順（古い試合 → 新しい試合）の打撃成績リストから、公認野球規則 9.20(b) に準拠した
+ * 連続試合安打および連続試合出塁を算出する。
+ *
+ * - 規則 9.20(b):
+ *   - 1試合の全打席が 四球・死球・打撃妨害/走塁妨害・犠打（バント）のみで構成され無安打（`hits === 0 && ab === 0 && sacFlies === 0`）の場合、
+ *     連続試合安打は「加算はしないが中断（終了）もしない」（スルー継続）。
+ *   - 犠飛（`sacFlies > 0`）が含まれて無安打だった場合は、打数 0 でも連続試合安打は「中断（0にリセット）」される！
+ *   - 打席 0（代走・守備固めのみ出場）の試合も中断しない。
+ */
+export function evaluateOfficialStreaks(
+  chronologicalGames: ReadonlyArray<OfficialStreakGameLogInput>
+): OfficialStreaksResult {
+  let currentHitStreak = 0;
+  let maxHitStreak = 0;
+  let currentOnBaseStreak = 0;
+  let maxOnBaseStreak = 0;
+
+  for (const g of chronologicalGames) {
+    if (g.pa <= 0) {
+      continue;
+    }
+
+    // 1) 連続試合安打（規則 9.20(b)）
+    if (g.hits > 0) {
+      currentHitStreak += 1;
+      if (currentHitStreak > maxHitStreak) {
+        maxHitStreak = currentHitStreak;
+      }
+    } else if (g.ab === 0 && g.sacFlies === 0) {
+      // 全打席が BB / IBB / HBP / SH / CI のみ -> 中断せず継続
+    } else {
+      // 有効打数あり無安打 または 犠飛あり無安打 -> 中断
+      currentHitStreak = 0;
+    }
+
+    // 2) 連続試合出塁
+    const reachedOnBase =
+      g.hits + g.walks + g.hbp + (g.interferences || 0);
+    if (reachedOnBase > 0) {
+      currentOnBaseStreak += 1;
+      if (currentOnBaseStreak > maxOnBaseStreak) {
+        maxOnBaseStreak = currentOnBaseStreak;
+      }
+    } else if (g.ab === 0 && g.sacFlies === 0) {
+      // 全打席が犠打（SH）のみ -> 中断せず継続
+    } else {
+      currentOnBaseStreak = 0;
+    }
+  }
+
+  return {
+    currentHitStreak,
+    maxHitStreak,
+    currentOnBaseStreak,
+    maxOnBaseStreak,
+  };
+}
+
+// ============================================================================
+// 公認野球規則 9.22：規定打席・規定投球回 ＆ 9.22(a) 不足打席凡打加算による例外首位資格
+// ============================================================================
+
+export interface OfficialBattingQualificationCandidate {
+  id: string;
+  pa: number;
+  ab: number;
+  hits: number;
+  totalBases: number;
+  walks: number;
+  hbp: number;
+  sacFlies: number;
+}
+
+export type OfficialBattingRateCategory = "avg" | "obp" | "slg" | "ops";
+
+export interface OfficialBattingQualificationEntry {
+  id: string;
+  isRegulationQualified: boolean;
+  /** 規定打席未満だが、不足打席数を凡打として加算した仮想率でも全規定到達者を上回り首位となる例外資格（規則 9.22(a)） */
+  qualifiedByRule922Exception: boolean;
+  rawRate: number;
+  hypotheticalRateWithHitlessShortfall: number;
+}
+
+export interface OfficialBattingTitleEvaluation {
+  regulationPa: number;
+  entries: Map<string, OfficialBattingQualificationEntry>;
+  leaderId: string | null;
+  isReferenceRecordOnly: boolean;
+}
+
+/**
+ * チーム試合数と平均規定イニング数（9回制=9, 7回制=7）から規定打席数を算出する（規則 9.22(a)）。
+ * - 9回制: `Math.round(teamGames * 3.1)`
+ * - 7回制・混在時: イニング比 `avgScheduledInnings / 9` で按分（最低 1 打席）
+ */
+export function getOfficialRegulationPlateAppearances(
+  teamGames: number,
+  avgScheduledInnings = 9
+): number {
+  if (teamGames <= 0) return 0;
+  const inningRatio =
+    avgScheduledInnings > 0 ? avgScheduledInnings / 9 : 1;
+  return Math.max(1, Math.round(teamGames * 3.1 * inningRatio));
+}
+
+/**
+ * チーム試合数と平均規定イニング数から規定投球回（アウト数単位: 3アウト = 1.0回）を算出する（規則 9.22(b)）。
+ * - 9回制: 試合数 × 1.0回（= `teamGames * 3` アウト）
+ * - 7回制・混在時: イニング比 `avgScheduledInnings / 9` で按分（最低 3 アウト = 1.0回）
+ */
+export function getOfficialRegulationPitchingOuts(
+  teamGames: number,
+  avgScheduledInnings = 9
+): number {
+  if (teamGames <= 0) return 0;
+  const inningRatio =
+    avgScheduledInnings > 0 ? avgScheduledInnings / 9 : 1;
+  return Math.max(3, Math.round(teamGames * 3 * inningRatio));
+}
+
+function calcRateWithAddedHitlessAtBats(
+  c: OfficialBattingQualificationCandidate,
+  addedHitlessAb: number,
+  category: OfficialBattingRateCategory
+): number {
+  const adjAb = c.ab + Math.max(0, addedHitlessAb);
+  const obpDenom = adjAb + c.walks + c.hbp + c.sacFlies;
+  const avg = adjAb > 0 ? c.hits / adjAb : 0;
+  const obp = obpDenom > 0 ? (c.hits + c.walks + c.hbp) / obpDenom : 0;
+  const slg = adjAb > 0 ? c.totalBases / adjAb : 0;
+  if (category === "avg") return avg;
+  if (category === "obp") return obp;
+  if (category === "slg") return slg;
+  return obp + slg;
+}
+
+/**
+ * 公認野球規則 9.22(a) に基づき、打率・出塁率・長打率・OPS の規定打席到達および
+ * 「不足打席を凡打（無安打の打数）として加算してもなお最高率となる打者の例外首位資格」を判定する。
+ */
+export function evaluateOfficialBattingTitleQualification(
+  candidates: ReadonlyArray<OfficialBattingQualificationCandidate>,
+  teamGames: number,
+  category: OfficialBattingRateCategory = "avg",
+  avgScheduledInnings = 9
+): OfficialBattingTitleEvaluation {
+  const regulationPa = getOfficialRegulationPlateAppearances(
+    teamGames,
+    avgScheduledInnings
+  );
+  const entries = new Map<string, OfficialBattingQualificationEntry>();
+
+  if (candidates.length === 0 || regulationPa <= 0) {
+    return {
+      regulationPa,
+      entries,
+      leaderId: null,
+      isReferenceRecordOnly: true,
+    };
+  }
+
+  let bestRegulationRate = -1;
+  let bestRegulationId: string | null = null;
+
+  for (const c of candidates) {
+    const rawRate = calcRateWithAddedHitlessAtBats(c, 0, category);
+    const shortfall = Math.max(0, regulationPa - c.pa);
+    const hypoRate = calcRateWithAddedHitlessAtBats(c, shortfall, category);
+    const isReg = c.pa >= regulationPa && (category === "obp" ? c.pa > 0 : c.ab > 0);
+
+    if (isReg && rawRate > bestRegulationRate) {
+      bestRegulationRate = rawRate;
+      bestRegulationId = c.id;
+    }
+
+    entries.set(c.id, {
+      id: c.id,
+      isRegulationQualified: isReg,
+      qualifiedByRule922Exception: false,
+      rawRate,
+      hypotheticalRateWithHitlessShortfall: hypoRate,
+    });
+  }
+
+  // 規則 9.22(a) 例外判定: 規定打席到達者が存在するとき、規定打席未満でも不足打席分を凡打加算した仮想率が全規定到達者の最高率を上回る場合は首位有資格者とする
+  let bestExceptionId: string | null = null;
+  let bestExceptionHypoRate = bestRegulationRate;
+
+  if (bestRegulationId !== null) {
+    for (const c of candidates) {
+      if (c.pa <= 0 || c.pa >= regulationPa) continue;
+      const entry = entries.get(c.id)!;
+      if (entry.hypotheticalRateWithHitlessShortfall > bestExceptionHypoRate) {
+        bestExceptionHypoRate = entry.hypotheticalRateWithHitlessShortfall;
+        bestExceptionId = c.id;
+      }
+    }
+  }
+
+  if (bestExceptionId) {
+    const exEntry = entries.get(bestExceptionId)!;
+    exEntry.qualifiedByRule922Exception = true;
+    return {
+      regulationPa,
+      entries,
+      leaderId: bestExceptionId,
+      isReferenceRecordOnly: false,
+    };
+  }
+
+  if (bestRegulationId) {
+    return {
+      regulationPa,
+      entries,
+      leaderId: bestRegulationId,
+      isReferenceRecordOnly: false,
+    };
+  }
+
+  // シーズン序盤等で規定打席到達者・9.22(a)例外者ともに0人の場合は参考記録リーダーを返す
+  let fallbackId: string | null = null;
+  let fallbackRate = -1;
+  for (const c of candidates) {
+    if (c.pa <= 0) continue;
+    const entry = entries.get(c.id)!;
+    if (entry.rawRate > fallbackRate) {
+      fallbackRate = entry.rawRate;
+      fallbackId = c.id;
+    }
+  }
+
+  return {
+    regulationPa,
+    entries,
+    leaderId: fallbackId,
+    isReferenceRecordOnly: true,
+  };
+}
+
 

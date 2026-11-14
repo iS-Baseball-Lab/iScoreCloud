@@ -142,6 +142,38 @@ export interface ScorebookBatterSlot {
   rowBox?: NormalizedBox;
 }
 
+export type OfficialPitcherDecision =
+  | "win"
+  | "loss"
+  | "save"
+  | "hold"
+  | "none";
+
+export type AppealOutKind =
+  | "missed_base_force"
+  | "missed_base_non_force"
+  | "retouch_early"
+  | "batting_out_of_turn";
+
+/** カウント途中で代打が出た際の前打者情報（公認野球規則 9.15(b)：2ストライク後の代打三振は前打者に帰属） */
+export interface MidAtBatPriorBatterInfo {
+  name: string;
+  uniformNumber?: string;
+  playerId: string | null;
+  ballsBeforeSub: number;
+  strikesBeforeSub: number;
+}
+
+/** カウント途中で救援投手が登板した際の前任投手情報（公認野球規則 9.16(h)：2-0/2-1/3-0/3-1/3-2 からの四球・責任走者は前任投手に帰属） */
+export interface MidAtBatPriorPitcherInfo {
+  name: string;
+  uniformNumber?: string;
+  playerId: string | null;
+  ballsBeforeChange: number;
+  strikesBeforeChange: number;
+  pitchesThrownInAtBat?: number;
+}
+
 export interface ScorebookPitcherStint {
   id: string;
   order: number;
@@ -154,6 +186,8 @@ export interface ScorebookPitcherStint {
   /** 打者一巡したイニングの2列目以降で途中登板した場合の列番号（1始まり・任意） */
   fromColumnIndex?: number | null;
   toInning: number;
+  /** 公式記録員による勝・敗・S・Hの手動指定（公認野球規則 9.01 / 9.17(b)/(c)。未指定/nullなら規則 9.17〜9.19 自動判定） */
+  manualDecision?: OfficialPitcherDecision | null;
 }
 
 export interface ScorebookInningMeta {
@@ -190,6 +224,8 @@ export interface ScorebookV2Advance {
   pitchNumber?: number;
   /** 送球・守備中継経路（例: "8-6", "8-4", "6-3", "2-6", "1-3", "6" 等・任意） */
   throwChain?: string;
+  /** アピールアウト（method === "appeal_out"）時の詳細種別（公認野球規則 5.08(a), 9.06(b)/(c)） */
+  appealType?: AppealOutKind | null;
 }
 
 export interface ScorebookV2AtBat {
@@ -215,6 +251,10 @@ export interface ScorebookV2AtBat {
   advances: ScorebookV2Advance[];
   /** この打席開始時点で塁上の先行走者に代走・臨時代走が起用された場合の記録（任意） */
   pinchRunners?: ScorebookPinchRunnerEntry[];
+  /** カウント途中で代打が出た際の前打者記録（規則 9.15(b)・任意） */
+  midAtBatPriorBatter?: MidAtBatPriorBatterInfo | null;
+  /** カウント途中で投手交代があった際の前任投手記録（規則 9.16(h)・任意） */
+  midAtBatPriorPitcher?: MidAtBatPriorPitcherInfo | null;
   /** STEP 3 で「この1打席のみ打者変更」「この1打席のみ投手変更」を明示指定した場合の保護フラグ（任意） */
   manualBatterOverride?: boolean;
   manualPitcherOverride?: boolean;
