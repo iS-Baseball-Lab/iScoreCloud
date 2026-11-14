@@ -73,6 +73,7 @@ import {
   PLAY_STYLE_TAG_MAP,
   loadDemoPlayerProfileOverrides,
   parsePlayerProfileDetails,
+  resolveDefaultPlayerActionBg,
   saveDemoPlayerProfileOverride,
   type PlayerProfileDetails,
 } from "@/lib/liff/player-profile-schema";
@@ -290,6 +291,7 @@ function resolvePositionMeta(rawPos: string | null | undefined): PositionMeta {
 
 interface CategoryStyleDef {
   stageBg: string;
+  stagePill: string;
   pillSolid: string;
   pillSoft: string;
   barSolid: string;
@@ -301,6 +303,8 @@ interface CategoryStyleDef {
 const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   投手: {
     stageBg: "bg-rose-500/[0.06] dark:bg-rose-500/[0.10] border-b border-border",
+    stagePill:
+      "bg-white text-rose-800 border border-rose-400 dark:bg-slate-900 dark:text-rose-300 dark:border-rose-500/50",
     pillSolid: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30",
     pillSoft: "bg-rose-500/12 text-rose-700 dark:text-rose-300 border-rose-500/25",
     barSolid: "bg-rose-500",
@@ -310,6 +314,8 @@ const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   },
   捕手: {
     stageBg: "bg-sky-500/[0.06] dark:bg-sky-500/[0.10] border-b border-border",
+    stagePill:
+      "bg-white text-sky-800 border border-sky-400 dark:bg-slate-900 dark:text-sky-300 dark:border-sky-500/50",
     pillSolid: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30",
     pillSoft: "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25",
     barSolid: "bg-sky-500",
@@ -319,6 +325,8 @@ const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   },
   内野手: {
     stageBg: "bg-amber-500/[0.06] dark:bg-amber-500/[0.10] border-b border-border",
+    stagePill:
+      "bg-white text-amber-800 border border-amber-400 dark:bg-slate-900 dark:text-amber-300 dark:border-amber-500/50",
     pillSolid: "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30",
     pillSoft: "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25",
     barSolid: "bg-amber-500",
@@ -328,6 +336,8 @@ const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   },
   外野手: {
     stageBg: "bg-emerald-500/[0.06] dark:bg-emerald-500/[0.10] border-b border-border",
+    stagePill:
+      "bg-white text-emerald-800 border border-emerald-400 dark:bg-slate-900 dark:text-emerald-300 dark:border-emerald-500/50",
     pillSolid: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30",
     pillSoft: "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border-emerald-500/25",
     barSolid: "bg-emerald-500",
@@ -337,6 +347,8 @@ const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   },
   DH: {
     stageBg: "bg-purple-500/[0.06] dark:bg-purple-500/[0.10] border-b border-border",
+    stagePill:
+      "bg-white text-purple-800 border border-purple-400 dark:bg-slate-900 dark:text-purple-300 dark:border-purple-500/50",
     pillSolid: "bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30",
     pillSoft: "bg-purple-500/12 text-purple-700 dark:text-purple-300 border-purple-500/25",
     barSolid: "bg-purple-500",
@@ -346,6 +358,8 @@ const CATEGORY_STYLES: Record<RosterCategory, CategoryStyleDef> = {
   },
   未設定: {
     stageBg: "bg-muted/50 border-b border-border",
+    stagePill:
+      "bg-white text-slate-700 border border-slate-300 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-600",
     pillSolid: "bg-muted text-muted-foreground border border-border",
     pillSoft: "bg-muted/50 text-muted-foreground border-border",
     barSolid: "bg-muted-foreground/40",
@@ -1869,6 +1883,10 @@ function LiffPlayersDirectoryContent() {
                 .map((sp) => resolvePositionMeta(sp).shortLabel)
                 .filter(Boolean);
               const pDetails = player.profileDetails;
+              const hasCustomActionBg = Boolean(pDetails?.actionImageUrl);
+              const effectiveActionBgUrl =
+                pDetails?.actionImageUrl ||
+                resolveDefaultPlayerActionBg(player.primaryPosition);
               const styleTagList = (pDetails?.playStyleTags || [])
                 .map((tid) => PLAY_STYLE_TAG_MAP[tid])
                 .filter(Boolean);
@@ -1893,37 +1911,26 @@ function LiffPlayersDirectoryContent() {
                     }`}
                   />
 
-                  {/* 上部ビジュアルステージ（案B：背景プレー写真 ＆ 薄めソリッドスクリム） */}
-                  <div
-                    className={`relative h-32 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border ${
-                      pDetails?.actionImageUrl
-                        ? "bg-slate-900"
-                        : isOnLeave
-                        ? "bg-slate-200/60 dark:bg-slate-800/50"
-                        : "bg-muted/70"
-                    }`}
-                  >
-                    {pDetails?.actionImageUrl ? (
-                      <>
-                        <img
-                          src={pDetails.actionImageUrl}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
-                            isOnLeave ? "grayscale-[45%] opacity-80" : ""
-                          }`}
-                        />
-                        {/* 薄めソリッドスクリム（グラデーション・ブラー完全不使用） */}
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 bg-slate-950/20"
-                        />
-                      </>
-                    ) : (
+                  {/* 上部ビジュアルステージ（案B × ポジション連動デフォルト背景 ＆ 薄めソリッドスクリム） */}
+                  <div className="relative h-32 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border bg-[#0f172a]">
+                    <img
+                      src={effectiveActionBgUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ${
+                        isOnLeave ? "grayscale-[45%] opacity-80" : ""
+                      }`}
+                    />
+                    {/* 薄めソリッドスクリム（グラデーション・ブラー完全不使用） */}
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                    />
+                    {!hasCustomActionBg && (
                       <span
                         aria-hidden="true"
-                        className="pointer-events-none select-none absolute right-1 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-slate-200 dark:text-slate-800 tabular-nums group-hover:scale-105 transition-transform duration-300"
+                        className="pointer-events-none select-none absolute right-1.5 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums group-hover:scale-105 transition-transform duration-300"
                       >
                         {numStr}
                       </span>
@@ -1955,7 +1962,7 @@ function LiffPlayersDirectoryContent() {
                         ) : null}
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-black shadow-2xs tabular-nums ${style.pillSolid}`}>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black shadow-2xs tabular-nums ${style.stagePill}`}>
                         {posMeta.shortLabel}
                         {mainGames > 0 ? ` (${mainGames})` : ""}
                       </span>
@@ -1992,10 +1999,6 @@ function LiffPlayersDirectoryContent() {
                         <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-black text-foreground shadow-2xs">
                           {pDetails.gradeOrAge}
                         </span>
-                      ) : !pDetails?.actionImageUrl ? (
-                        <span className={`text-[10px] font-black tracking-widest uppercase ${style.codeText}`}>
-                          {posMeta.code}
-                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -2027,14 +2030,13 @@ function LiffPlayersDirectoryContent() {
                           </AvatarFallback>
                         </Avatar>
 
-                        {(pDetails?.actionImageUrl || pDetails?.gradeOrAge) &&
-                          condStatus === "active" && (
-                            <span
-                              className={`text-[10px] font-black tracking-widest uppercase pb-0.5 ${style.codeText}`}
-                            >
-                              {posMeta.code}
-                            </span>
-                          )}
+                        {condStatus === "active" && (
+                          <span
+                            className={`text-[10px] font-black tracking-widest uppercase pb-0.5 ${style.codeText}`}
+                          >
+                            {posMeta.code}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -2453,6 +2455,11 @@ function LiffPlayersDirectoryContent() {
           ? `${selectedPlayer.weight}kg`
           : "--";
 
+        const hasCustomModalActionBg = Boolean(details.actionImageUrl);
+        const effectiveModalActionBgUrl =
+          details.actionImageUrl ||
+          resolveDefaultPlayerActionBg(selectedPlayer.primaryPosition);
+
         if (typeof document === "undefined") return null;
 
         return createPortal(
@@ -2477,25 +2484,22 @@ function LiffPlayersDirectoryContent() {
                       : "border-primary"
                   }`}
                 >
-                  {details.actionImageUrl ? (
-                    <>
-                      <img
-                        src={details.actionImageUrl}
-                        alt=""
-                        decoding="async"
-                        className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center ${
-                          isOnLeave ? "grayscale-[45%] opacity-75" : ""
-                        }`}
-                      />
-                      <div
-                        aria-hidden="true"
-                        className="pointer-events-none absolute inset-0 bg-slate-950/20"
-                      />
-                    </>
-                  ) : (
+                  <img
+                    src={effectiveModalActionBgUrl}
+                    alt=""
+                    decoding="async"
+                    className={`pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center ${
+                      isOnLeave ? "grayscale-[45%] opacity-75" : ""
+                    }`}
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                  />
+                  {!hasCustomModalActionBg && (
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
+                      className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums"
                     >
                       {numStr}
                     </span>

@@ -46,6 +46,7 @@ import {
   EMPTY_PLAYER_PROFILE_DETAILS,
   parsePlayerProfileDetails,
   loadDemoPlayerProfileOverrides,
+  resolveDefaultPlayerActionBg,
   saveDemoPlayerProfileOverride,
   type PlayerProfileDetails,
 } from "@/lib/liff/player-profile-schema";
@@ -1293,6 +1294,10 @@ function PlayerGrowthContent() {
               const details = player.profileDetails
                 ? parsePlayerProfileDetails(player.profileDetails)
                 : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
+              const hasCustomActionBg = Boolean(details.actionImageUrl);
+              const effectiveActionBgUrl =
+                details.actionImageUrl ||
+                resolveDefaultPlayerActionBg(player.primaryPosition);
               const condStatus = normalizePlayerConditionStatus(
                 player.conditionStatus
               );
@@ -1320,26 +1325,23 @@ function PlayerGrowthContent() {
                         : "border-primary"
                     )}
                   >
-                    {details.actionImageUrl ? (
-                      <>
-                        <img
-                          src={details.actionImageUrl}
-                          alt=""
-                          decoding="async"
-                          className={cn(
-                            "pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center",
-                            isOnLeave && "grayscale-[45%] opacity-75"
-                          )}
-                        />
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 bg-slate-950/20"
-                        />
-                      </>
-                    ) : (
+                    <img
+                      src={effectiveActionBgUrl}
+                      alt=""
+                      decoding="async"
+                      className={cn(
+                        "pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center",
+                        isOnLeave && "grayscale-[45%] opacity-75"
+                      )}
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                    />
+                    {!hasCustomActionBg && (
                       <span
                         aria-hidden="true"
-                        className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-slate-800 tabular-nums"
+                        className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums"
                       >
                         {numStr}
                       </span>

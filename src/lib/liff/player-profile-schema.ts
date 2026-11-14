@@ -125,6 +125,102 @@ export function normalizeCanonicalPositionCode(
   );
 }
 
+export type PlayerActionBgCategory =
+  | "pitcher"
+  | "catcher"
+  | "infield"
+  | "outfield"
+  | "general";
+
+export const DEFAULT_PLAYER_ACTION_BG_URLS: Record<
+  PlayerActionBgCategory,
+  string
+> = {
+  pitcher: "/player-bg-pitcher.webp",
+  catcher: "/player-bg-catcher.webp",
+  infield: "/player-bg-infield.webp",
+  outfield: "/player-bg-outfield.webp",
+  general: "/player-bg-general.webp",
+};
+
+export function resolvePlayerActionBgCategory(
+  rawPosition: string | null | undefined
+): PlayerActionBgCategory {
+  if (!rawPosition) return "general";
+  const trimmed = rawPosition.trim();
+  if (!trimmed) return "general";
+
+  const canonical = normalizeCanonicalPositionCode(trimmed);
+  if (canonical === "P") return "pitcher";
+  if (canonical === "C") return "catcher";
+  if (
+    canonical === "1B" ||
+    canonical === "2B" ||
+    canonical === "3B" ||
+    canonical === "SS"
+  ) {
+    return "infield";
+  }
+  if (canonical === "LF" || canonical === "CF" || canonical === "RF") {
+    return "outfield";
+  }
+  if (canonical === "DH") return "general";
+
+  const upper = trimmed.toUpperCase();
+  if (
+    upper === "IF" ||
+    upper === "INFIELD" ||
+    upper === "INFIELDER" ||
+    trimmed === "内野" ||
+    trimmed === "内野手"
+  ) {
+    return "infield";
+  }
+  if (
+    upper === "OF" ||
+    upper === "OUTFIELD" ||
+    upper === "OUTFIELDER" ||
+    trimmed === "外野" ||
+    trimmed === "外野手"
+  ) {
+    return "outfield";
+  }
+
+  if (trimmed.includes("投") || trimmed.includes("ピッチャー")) {
+    return "pitcher";
+  }
+  if (trimmed.includes("捕") || trimmed.includes("キャッチャー")) {
+    return "catcher";
+  }
+  if (
+    trimmed.includes("一") ||
+    trimmed.includes("二") ||
+    trimmed.includes("三") ||
+    trimmed.includes("遊") ||
+    trimmed.includes("内")
+  ) {
+    return "infield";
+  }
+  if (
+    trimmed.includes("左") ||
+    trimmed.includes("中") ||
+    trimmed.includes("右") ||
+    trimmed.includes("外")
+  ) {
+    return "outfield";
+  }
+
+  return "general";
+}
+
+export function resolveDefaultPlayerActionBg(
+  rawPosition: string | null | undefined
+): string {
+  return DEFAULT_PLAYER_ACTION_BG_URLS[
+    resolvePlayerActionBgCategory(rawPosition)
+  ];
+}
+
 export const GRADE_AGE_PRESETS_YOUTH: readonly string[] = [
   "小1",
   "小2",

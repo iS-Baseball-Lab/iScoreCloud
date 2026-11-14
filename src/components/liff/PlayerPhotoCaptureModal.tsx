@@ -28,6 +28,7 @@ import {
   LiffSelect,
   type LiffSelectBadgeTone,
 } from "@/components/liff/LiffSelect";
+import { resolveDefaultPlayerActionBg } from "@/lib/liff/player-profile-schema";
 
 export type PlayerPhotoKind = "portrait" | "action";
 
@@ -902,23 +903,30 @@ export function PlayerPhotoCaptureModal({
                 /* 🏃 案B（境界オーバーラップ型＋薄めスクリム）カードステージ・ライブプレビュー */
                 <div className="rounded-2xl border border-border bg-card shadow-2xs overflow-hidden">
                   <div className="h-[3px] w-full bg-primary" />
-                  <div className="relative aspect-[2/1] w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border bg-muted/70">
-                    {activePlayer.actionImageUrl ? (
-                      <>
-                        <img
-                          src={activePlayer.actionImageUrl}
-                          alt={`${activePlayer.name} プレー写真`}
-                          className="pointer-events-none select-none absolute inset-0 w-full h-full object-cover"
-                        />
-                        <div
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-0 bg-slate-950/20"
-                        />
-                      </>
-                    ) : (
+                  <div className="relative aspect-[2/1] w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border bg-[#0f172a]">
+                    <img
+                      src={
+                        activePlayer.actionImageUrl ||
+                        resolveDefaultPlayerActionBg(
+                          activePlayer.primaryPosition
+                        )
+                      }
+                      alt={
+                        activePlayer.actionImageUrl
+                          ? `${activePlayer.name} プレー写真`
+                          : ""
+                      }
+                      decoding="async"
+                      className="pointer-events-none select-none absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                    />
+                    {!activePlayer.actionImageUrl && (
                       <span
                         aria-hidden="true"
-                        className="pointer-events-none select-none absolute right-2 -bottom-3 text-[68px] font-black tracking-tighter leading-none text-slate-200 dark:text-slate-800 tabular-nums"
+                        className="pointer-events-none select-none absolute right-2 -bottom-3 text-[68px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums"
                       >
                         {numStr}
                       </span>
@@ -935,7 +943,7 @@ export function PlayerPhotoCaptureModal({
 
                     {!activePlayer.actionImageUrl && (
                       <div className="relative z-10 flex justify-center pb-2">
-                        <span className="px-2.5 py-1 rounded-full bg-card border border-border text-[10.5px] font-black text-muted-foreground shadow-2xs">
+                        <span className="px-2.5 py-1 rounded-full bg-card border border-border text-[10.5px] font-black text-foreground shadow-2xs">
                           ここに打撃・投球・守備のプレー写真が入ります
                         </span>
                       </div>
