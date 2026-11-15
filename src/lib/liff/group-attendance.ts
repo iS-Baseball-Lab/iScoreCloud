@@ -36,6 +36,7 @@ export interface GroupStatusLabelItem {
   id: "duty" | "help" | "setup" | "game" | "absent";
   mark: string;
   label: string;
+  description?: string;
   enabled: boolean;
 }
 
@@ -90,32 +91,152 @@ export const ATTENDANCE_GROUP_META: Record<
 
 export const DEFAULT_GROUP_STATUS_SUMMARY_CONFIG: GroupStatusConfigSummary = {
   player: [
-    { id: "duty", mark: "◎", label: "出席", enabled: true },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: false },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: false },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true },
-    { id: "absent", mark: "×", label: "欠席", enabled: true },
+    {
+      id: "duty",
+      mark: "◎",
+      label: "出席",
+      description: "終日参加（通常の練習・試合すべて参加）",
+      enabled: true,
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "一部時間帯のみ参加・サポート参加",
+      enabled: false,
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "準備・片付けの時間帯のみ参加",
+      enabled: false,
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "試合の時間帯のみ参加（午前のみ・午後のみ等はコメントへ）",
+      enabled: true,
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日お休み（理由があればコメント欄へ）",
+      enabled: true,
+    },
   ],
   mother: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: true },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true },
-    { id: "absent", mark: "×", label: "欠席", enabled: true },
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "お茶・救急・見守りなどの当番担当として参加",
+      enabled: true,
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "車出し・配車協力・応援・お手伝い参加",
+      enabled: true,
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "朝の準備または夕方の片付けのみ参加",
+      enabled: true,
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "公式戦・練習試合の時間帯のみ応援・手伝い参加",
+      enabled: true,
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不参加（当番日の欠席はコメント欄へ）",
+      enabled: true,
+    },
   ],
   father: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: true },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true },
-    { id: "absent", mark: "×", label: "欠席", enabled: true },
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "審判・グラウンド当番・運営担当として参加",
+      enabled: true,
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "練習手伝い・車出し・審判や記録のサポート参加",
+      enabled: true,
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "朝のグラウンド設営または夕方の撤収のみ参加",
+      enabled: true,
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "公式戦・練習試合の時間帯のみ帯同・協力",
+      enabled: true,
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不参加",
+      enabled: true,
+    },
   ],
   staff: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true },
-    { id: "help", mark: "○", label: "指導参加", enabled: true },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true },
-    { id: "absent", mark: "×", label: "欠席", enabled: true },
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "終日帯同・当番責任者として参加",
+      enabled: true,
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "指導参加",
+      description: "通常の練習・試合の指導参加",
+      enabled: true,
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "グラウンド設営・撤収の時間帯のみ参加",
+      enabled: true,
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "試合の時間帯のみベンチ入り・帯同",
+      enabled: true,
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不在",
+      enabled: true,
+    },
   ],
 };
 
@@ -160,6 +281,8 @@ export function normalizeGroupStatusSummaryConfig(
         id: def.id,
         mark: typeof found?.mark === "string" && found.mark ? found.mark : def.mark,
         label: typeof found?.label === "string" && found.label ? found.label : def.label,
+        description:
+          typeof found?.description === "string" ? found.description : def.description,
         enabled: typeof found?.enabled === "boolean" ? found.enabled : def.enabled,
       });
     }

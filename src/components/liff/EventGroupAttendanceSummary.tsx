@@ -4,7 +4,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Users, ChevronRight, ChevronDown, ChevronUp } from "lucide-react";
+import { Users, ChevronRight, ChevronDown, ChevronUp, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import {
@@ -42,6 +42,7 @@ export function EventGroupAttendanceSummary({
 }: EventGroupAttendanceSummaryProps) {
   const router = useRouter();
   const [selectedGroup, setSelectedGroup] = useState<AttendanceGroupKey | null>(null);
+  const [showMeanings, setShowMeanings] = useState(false);
 
   const effectiveStatusConfig = statusConfig || DEFAULT_GROUP_STATUS_SUMMARY_CONFIG;
 
@@ -273,7 +274,7 @@ export function EventGroupAttendanceSummary({
       {/* タップ選択時：選択中グループの記号別（◎当番・○ヘルプ・▲設営・△試合・×欠席・－未回答）内訳パネル */}
       {selectedGroup && activeGroupData && activeGroupMeta && (
         <div className="p-2.5 rounded-xl bg-card border border-primary/35 space-y-2 animate-in fade-in duration-150">
-          <div className="flex items-center justify-between gap-2 text-[10.5px]">
+          <div className="flex items-center justify-between gap-1.5 text-[10.5px]">
             <div className="flex items-center gap-1.5 font-black text-foreground min-w-0">
               <span>{activeGroupMeta.icon}</span>
               <span className="truncate">
@@ -285,14 +286,32 @@ export function EventGroupAttendanceSummary({
               </span>
             </div>
 
-            <Link
-              href={`/liff/schedule/board?group=${selectedGroup}${monthParam}`}
-              onPointerDown={prefetchBoard}
-              className="inline-flex items-center gap-0.5 text-[10.5px] font-black text-primary hover:underline shrink-0"
-            >
-              <span>{activeGroupMeta.label}タブを開く</span>
-              <ChevronRight className="w-3 h-3" />
-            </Link>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {activeGroupItems.some((item) => item.enabled && item.description?.trim()) && (
+                <button
+                  type="button"
+                  onClick={() => setShowMeanings((prev) => !prev)}
+                  className={cn(
+                    "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9.5px] font-black border transition-all active:scale-95 cursor-pointer",
+                    showMeanings
+                      ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/35"
+                      : "bg-muted text-muted-foreground hover:text-foreground border-border"
+                  )}
+                >
+                  <HelpCircle className="w-2.5 h-2.5 shrink-0" />
+                  <span>項目の意味</span>
+                </button>
+              )}
+
+              <Link
+                href={`/liff/schedule/board?group=${selectedGroup}${monthParam}`}
+                onPointerDown={prefetchBoard}
+                className="inline-flex items-center gap-0.5 text-[10.5px] font-black text-primary hover:underline shrink-0"
+              >
+                <span>{activeGroupMeta.label}タブを開く</span>
+                <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-1">
@@ -300,11 +319,20 @@ export function EventGroupAttendanceSummary({
               .filter((item) => item.enabled || activeGroupData[item.id] > 0)
               .map((item) => {
                 const count = activeGroupData[item.id];
+                const hasDesc = Boolean(item.description?.trim());
                 return (
-                  <span
+                  <button
                     key={item.id}
+                    type="button"
+                    onClick={hasDesc ? () => setShowMeanings((prev) => !prev) : undefined}
+                    title={
+                      item.description?.trim()
+                        ? `${item.mark} ${item.label}：${item.description.trim()}`
+                        : `${item.mark} ${item.label}`
+                    }
                     className={cn(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black tabular-nums border",
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black tabular-nums border text-left transition-colors",
+                      hasDesc && "cursor-pointer active:scale-95",
                       count > 0
                         ? "bg-muted/45 text-foreground border-border"
                         : "bg-muted/20 text-muted-foreground/70 border-border/60"
@@ -320,7 +348,7 @@ export function EventGroupAttendanceSummary({
                     </span>
                     <span>{item.label}</span>
                     <span>{count}</span>
-                  </span>
+                  </button>
                 );
               })}
 
@@ -349,6 +377,34 @@ export function EventGroupAttendanceSummary({
               </span>
             )}
           </div>
+
+          {showMeanings && (
+            <div className="pt-2 border-t border-border space-y-1 animate-in fade-in duration-150">
+              {activeGroupItems
+                .filter((item) => item.enabled)
+                .map((item) => (
+                  <div
+                    key={`meaning-${item.id}`}
+                    className="flex items-start gap-1.5 text-[10px] leading-snug"
+                  >
+                    <span
+                      className={cn(
+                        "w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-black shrink-0 mt-0.5",
+                        MARK_BADGE_CLASS_BY_ID[item.id]
+                      )}
+                    >
+                      {item.mark}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="font-black text-foreground">{item.label}</span>
+                      <span className="text-muted-foreground font-bold">
+                        {item.description?.trim() ? `：${item.description.trim()}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
     </div>

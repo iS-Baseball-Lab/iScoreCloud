@@ -137,6 +137,7 @@ interface StatusSettingItem {
   id: AttendanceMarkType;
   mark: string;
   label: string;
+  description?: string;
   enabled: boolean;
   bgClass: string;
 }
@@ -152,49 +153,207 @@ const STATUS_BG_CLASS_BY_ID: Record<AttendanceMarkType, string> = {
   pending: "bg-slate-100 dark:bg-slate-800/70",
 };
 
-function normalizeGroupStatusColors(config: GroupStatusConfigMap): GroupStatusConfigMap {
+const DEFAULT_GROUP_STATUS_CONFIG: GroupStatusConfigMap = {
+  player: [
+    {
+      id: "duty",
+      mark: "◎",
+      label: "出席",
+      description: "終日参加（通常の練習・試合すべて参加）",
+      enabled: true,
+      bgClass: "bg-red-500",
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "一部時間帯のみ参加・サポート参加",
+      enabled: false,
+      bgClass: "bg-blue-600",
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "準備・片付けの時間帯のみ参加",
+      enabled: false,
+      bgClass: "bg-amber-500",
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "試合の時間帯のみ参加（午前のみ・午後のみ等はコメントへ）",
+      enabled: true,
+      bgClass: "bg-emerald-600",
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日お休み（理由があればコメント欄へ）",
+      enabled: true,
+      bgClass: "bg-slate-600 dark:bg-slate-500",
+    },
+  ],
+  mother: [
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "お茶・救急・見守りなどの当番担当として参加",
+      enabled: true,
+      bgClass: "bg-red-500",
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "車出し・配車協力・応援・お手伝い参加",
+      enabled: true,
+      bgClass: "bg-blue-600",
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "朝の準備または夕方の片付けのみ参加",
+      enabled: true,
+      bgClass: "bg-amber-500",
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "公式戦・練習試合の時間帯のみ応援・手伝い参加",
+      enabled: true,
+      bgClass: "bg-emerald-600",
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不参加（当番日の欠席はコメント欄へ）",
+      enabled: true,
+      bgClass: "bg-slate-600 dark:bg-slate-500",
+    },
+  ],
+  father: [
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "審判・グラウンド当番・運営担当として参加",
+      enabled: true,
+      bgClass: "bg-red-500",
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "ヘルプ",
+      description: "練習手伝い・車出し・審判や記録のサポート参加",
+      enabled: true,
+      bgClass: "bg-blue-600",
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "朝のグラウンド設営または夕方の撤収のみ参加",
+      enabled: true,
+      bgClass: "bg-amber-500",
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "公式戦・練習試合の時間帯のみ帯同・協力",
+      enabled: true,
+      bgClass: "bg-emerald-600",
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不参加",
+      enabled: true,
+      bgClass: "bg-slate-600 dark:bg-slate-500",
+    },
+  ],
+  staff: [
+    {
+      id: "duty",
+      mark: "◎",
+      label: "当番",
+      description: "終日帯同・当番責任者として参加",
+      enabled: true,
+      bgClass: "bg-red-500",
+    },
+    {
+      id: "help",
+      mark: "○",
+      label: "指導参加",
+      description: "通常の練習・試合の指導参加",
+      enabled: true,
+      bgClass: "bg-blue-600",
+    },
+    {
+      id: "setup",
+      mark: "▲",
+      label: "設営撤収",
+      description: "グラウンド設営・撤収の時間帯のみ参加",
+      enabled: true,
+      bgClass: "bg-amber-500",
+    },
+    {
+      id: "game",
+      mark: "△",
+      label: "試合のみ",
+      description: "試合の時間帯のみベンチ入り・帯同",
+      enabled: true,
+      bgClass: "bg-emerald-600",
+    },
+    {
+      id: "absent",
+      mark: "×",
+      label: "欠席",
+      description: "終日不在",
+      enabled: true,
+      bgClass: "bg-slate-600 dark:bg-slate-500",
+    },
+  ],
+};
+
+function normalizeGroupStatusColors(
+  config: Partial<GroupStatusConfigMap> | null | undefined
+): GroupStatusConfigMap {
   const keys: SortGroupKey[] = ["player", "mother", "father", "staff"];
-  const normalized = { ...config };
+  const normalized: GroupStatusConfigMap = {
+    player: DEFAULT_GROUP_STATUS_CONFIG.player,
+    mother: DEFAULT_GROUP_STATUS_CONFIG.mother,
+    father: DEFAULT_GROUP_STATUS_CONFIG.father,
+    staff: DEFAULT_GROUP_STATUS_CONFIG.staff,
+  };
   for (const key of keys) {
-    const items = normalized[key] || DEFAULT_GROUP_STATUS_CONFIG[key];
-    normalized[key] = items.map((item) => ({
-      ...item,
-      bgClass: STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass,
-    }));
+    const rawList = Array.isArray(config?.[key]) ? config?.[key] : null;
+    const defaults = DEFAULT_GROUP_STATUS_CONFIG[key];
+    normalized[key] = defaults.map((defItem) => {
+      const found = rawList?.find((it) => it && it.id === defItem.id);
+      return {
+        id: defItem.id,
+        mark: found?.mark || defItem.mark,
+        label: typeof found?.label === "string" && found.label.trim() ? found.label : defItem.label,
+        description:
+          typeof found?.description === "string"
+            ? found.description
+            : defItem.description || "",
+        enabled: typeof found?.enabled === "boolean" ? found.enabled : defItem.enabled,
+        bgClass: STATUS_BG_CLASS_BY_ID[defItem.id] || defItem.bgClass,
+      };
+    });
   }
   return normalized;
 }
-
-const DEFAULT_GROUP_STATUS_CONFIG: GroupStatusConfigMap = {
-  player: [
-    { id: "duty", mark: "◎", label: "出席", enabled: true, bgClass: "bg-red-500" },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: false, bgClass: "bg-blue-600" },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: false, bgClass: "bg-amber-500" },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
-  ],
-  mother: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
-  ],
-  father: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
-    { id: "help", mark: "○", label: "ヘルプ", enabled: true, bgClass: "bg-blue-600" },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
-  ],
-  staff: [
-    { id: "duty", mark: "◎", label: "当番", enabled: true, bgClass: "bg-red-500" },
-    { id: "help", mark: "○", label: "指導参加", enabled: true, bgClass: "bg-blue-600" },
-    { id: "setup", mark: "▲", label: "設営撤収", enabled: true, bgClass: "bg-amber-500" },
-    { id: "game", mark: "△", label: "試合のみ", enabled: true, bgClass: "bg-emerald-600" },
-    { id: "absent", mark: "×", label: "欠席", enabled: true, bgClass: "bg-slate-600 dark:bg-slate-500" },
-  ],
-};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 型定義
@@ -566,11 +725,31 @@ function AttendanceMatrixBoardContent() {
   }, []);
 
   // グループ別ステータス設定状態
-  const [groupStatusConfig, setGroupStatusConfig] = useState<GroupStatusConfigMap>(DEFAULT_GROUP_STATUS_CONFIG);
+  const [groupStatusConfig, setGroupStatusConfig] = useState<GroupStatusConfigMap>(() => {
+    if (typeof window === "undefined") {
+      return normalizeGroupStatusColors(initialCachedMatrix?.attendanceStatusConfig);
+    }
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    let base: Partial<GroupStatusConfigMap> = {};
+    try {
+      const localSaved = localStorage.getItem(`iscore_matrix_status_config_${tid}`);
+      if (localSaved) {
+        base = JSON.parse(localSaved) as Partial<GroupStatusConfigMap>;
+      }
+    } catch {}
+    if (initialCachedMatrix?.attendanceStatusConfig) {
+      base = { ...base, ...initialCachedMatrix.attendanceStatusConfig };
+    }
+    return normalizeGroupStatusColors(base);
+  });
   const [isStatusConfigModalOpen, setIsStatusConfigModalOpen] = useState(false);
   const [statusModalGroup, setStatusModalGroup] = useState<SortGroupKey>("player");
   const [tempStatusConfig, setTempStatusConfig] = useState<GroupStatusConfigMap>(DEFAULT_GROUP_STATUS_CONFIG);
   const [isSavingStatusConfig, setIsSavingStatusConfig] = useState(false);
+  const [isLegendMeaningOpen, setIsLegendMeaningOpen] = useState(false);
 
   // 🏷️ メンバーサブラベル（班・役職等）状態
   const [memberSubLabels, setMemberSubLabels] = useState<Record<string, string>>({});
@@ -745,20 +924,29 @@ function AttendanceMatrixBoardContent() {
       }
 
       // 🌟 2. グループ別ステータス設定の復元（LocalStorage ＆ サーバー設定）
-      let effectiveStatusConfig: GroupStatusConfigMap = DEFAULT_GROUP_STATUS_CONFIG;
+      let effectiveStatusRaw: Partial<GroupStatusConfigMap> = {};
       try {
         const localKey = `iscore_matrix_status_config_${teamId}`;
         const localSaved = localStorage.getItem(localKey);
         if (localSaved) {
-          const parsed = JSON.parse(localSaved);
-          effectiveStatusConfig = { ...effectiveStatusConfig, ...parsed };
+          const parsed = JSON.parse(localSaved) as Partial<GroupStatusConfigMap>;
+          effectiveStatusRaw = { ...effectiveStatusRaw, ...parsed };
         }
       } catch {}
 
       if (data.attendanceStatusConfig) {
-        effectiveStatusConfig = { ...effectiveStatusConfig, ...data.attendanceStatusConfig };
+        effectiveStatusRaw = { ...effectiveStatusRaw, ...data.attendanceStatusConfig };
       }
-      setGroupStatusConfig(normalizeGroupStatusColors(effectiveStatusConfig));
+      const normalizedStatusConfig = normalizeGroupStatusColors(effectiveStatusRaw);
+      setGroupStatusConfig(normalizedStatusConfig);
+      if (data.attendanceStatusConfig && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(
+            `iscore_matrix_status_config_${teamId}`,
+            JSON.stringify(normalizedStatusConfig)
+          );
+        } catch {}
+      }
 
       // メンバー並び順の復元（LocalStorage ＆ サーバー設定）
       let effectiveOrder: MemberSortOrderMap = {};
@@ -1154,15 +1342,15 @@ function AttendanceMatrixBoardContent() {
     setStatusModalGroup(
       !selectedGroupTab || selectedGroupTab === "all" || selectedGroupTab === "parent" ? "player" : selectedGroupTab
     );
-    setTempStatusConfig(JSON.parse(JSON.stringify(groupStatusConfig)));
+    setTempStatusConfig(normalizeGroupStatusColors(JSON.parse(JSON.stringify(groupStatusConfig)) as GroupStatusConfigMap));
     setIsStatusConfigModalOpen(true);
   };
 
   // ステータスの有効/無効トグル
   const handleToggleStatus = (statusId: AttendanceMarkType) => {
-    setTempStatusConfig(prev => {
+    setTempStatusConfig((prev) => {
       const list = prev[statusModalGroup] || [];
-      const updated = list.map(item => 
+      const updated = list.map((item) =>
         item.id === statusId ? { ...item, enabled: !item.enabled } : item
       );
       return {
@@ -1174,9 +1362,9 @@ function AttendanceMatrixBoardContent() {
 
   // ステータスの名称変更
   const handleChangeStatusLabel = (statusId: AttendanceMarkType, newLabel: string) => {
-    setTempStatusConfig(prev => {
+    setTempStatusConfig((prev) => {
       const list = prev[statusModalGroup] || [];
-      const updated = list.map(item => 
+      const updated = list.map((item) =>
         item.id === statusId ? { ...item, label: newLabel } : item
       );
       return {
@@ -1186,38 +1374,121 @@ function AttendanceMatrixBoardContent() {
     });
   };
 
+  // 確認項目の意味合い（補足説明）変更
+  const handleChangeStatusDescription = (
+    statusId: AttendanceMarkType,
+    newDescription: string
+  ) => {
+    setTempStatusConfig((prev) => {
+      const list = prev[statusModalGroup] || [];
+      const updated = list.map((item) =>
+        item.id === statusId ? { ...item, description: newDescription } : item
+      );
+      return {
+        ...prev,
+        [statusModalGroup]: updated,
+      };
+    });
+  };
+
+  // 別グループ（母⇄父等）の項目設定を反映
+  const handleCopyStatusFromGroup = (sourceGroup: SortGroupKey) => {
+    const groupLabelMap: Record<SortGroupKey, string> = {
+      player: "選手",
+      mother: "母",
+      father: "父",
+      staff: "スタッフ",
+    };
+    setTempStatusConfig((prev) => ({
+      ...prev,
+      [statusModalGroup]: (prev[sourceGroup] || DEFAULT_GROUP_STATUS_CONFIG[sourceGroup]).map(
+        (item) => ({ ...item })
+      ),
+    }));
+    toast.info(
+      `「${groupLabelMap[sourceGroup]}」の項目設定を「${groupLabelMap[statusModalGroup]}」に反映しました`
+    );
+  };
+
   // グループのステータス設定をデフォルトにリセット
   const handleResetStatusGroup = () => {
-    setTempStatusConfig(prev => ({
+    setTempStatusConfig((prev) => ({
       ...prev,
-      [statusModalGroup]: JSON.parse(JSON.stringify(DEFAULT_GROUP_STATUS_CONFIG[statusModalGroup])),
+      [statusModalGroup]: DEFAULT_GROUP_STATUS_CONFIG[statusModalGroup].map((item) => ({
+        ...item,
+      })),
     }));
-    toast.info(`${statusModalGroup === "player" ? "選手" : statusModalGroup === "mother" ? "母" : statusModalGroup === "father" ? "父" : "スタッフ"}のステータス設定を初期値に戻しました`);
+    toast.info(
+      `${
+        statusModalGroup === "player"
+          ? "選手"
+          : statusModalGroup === "mother"
+          ? "母"
+          : statusModalGroup === "father"
+          ? "父"
+          : "スタッフ"
+      }の確認項目設定を初期値に戻しました`
+    );
   };
 
   // ステータス設定の保存
   const handleSaveStatusConfig = async () => {
     setIsSavingStatusConfig(true);
-    setGroupStatusConfig(tempStatusConfig);
+    const groupKeys: SortGroupKey[] = ["player", "mother", "father", "staff"];
+    const sanitizedConfig: GroupStatusConfigMap = {
+      player: [],
+      mother: [],
+      father: [],
+      staff: [],
+    };
+    for (const key of groupKeys) {
+      const defaults = DEFAULT_GROUP_STATUS_CONFIG[key];
+      const currentList = tempStatusConfig[key] || defaults;
+      sanitizedConfig[key] = defaults.map((defItem) => {
+        const found = currentList.find((it) => it.id === defItem.id);
+        const trimmedLabel = (found?.label ?? "").trim();
+        const trimmedDesc =
+          typeof found?.description === "string"
+            ? found.description.trim()
+            : defItem.description || "";
+        return {
+          id: defItem.id,
+          mark: found?.mark || defItem.mark,
+          label: trimmedLabel || defItem.label,
+          description: trimmedDesc,
+          enabled: typeof found?.enabled === "boolean" ? found.enabled : defItem.enabled,
+          bgClass: STATUS_BG_CLASS_BY_ID[defItem.id] || defItem.bgClass,
+        };
+      });
+    }
+
+    setGroupStatusConfig(sanitizedConfig);
 
     const teamId = currentTeam?.id || "demo-team";
     try {
-      localStorage.setItem(`iscore_matrix_status_config_${teamId}`, JSON.stringify(tempStatusConfig));
+      localStorage.setItem(
+        `iscore_matrix_status_config_${teamId}`,
+        JSON.stringify(sanitizedConfig)
+      );
     } catch {}
 
     try {
       if (teamId && teamId !== "demo-team") {
-        await fetch("/api/liff/attendance-matrix/status-config", {
+        const res = await fetch("/api/liff/attendance-matrix/status-config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ teamId, statusConfig: tempStatusConfig }),
+          body: JSON.stringify({ teamId, statusConfig: sanitizedConfig }),
         });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
       }
-      toast.success("ステータス設定を保存しました");
+      invalidateLiffApiCache();
+      toast.success("確認項目の設定を保存しました");
       setIsStatusConfigModalOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to save status config:", err);
-      toast.error("ステータス設定の保存に失敗しました");
+      toast.error("確認項目の設定保存に失敗しました");
     } finally {
       setIsSavingStatusConfig(false);
     }
@@ -1252,7 +1523,7 @@ function AttendanceMatrixBoardContent() {
       }
       toast.success("班・サブラベル設定を保存しました！");
       setIsSubLabelsModalOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("SubLabels save error:", err);
       toast.success("班・サブラベルを端末に保存しました");
       setIsSubLabelsModalOpen(false);
@@ -1300,7 +1571,7 @@ function AttendanceMatrixBoardContent() {
       }
       toast.success(`${editingSingleSubLabel.person.name} さんのラベルを更新しました`);
       setEditingSingleSubLabel(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Single SubLabel save error:", err);
       toast.success("ラベルを端末に保存しました");
       setEditingSingleSubLabel(null);
@@ -1313,17 +1584,106 @@ function AttendanceMatrixBoardContent() {
   const activeLegendItems = useMemo(() => {
     if (!selectedGroupTab) return [];
     if (selectedGroupTab === "all" || selectedGroupTab === "parent") {
-      const map = new Map<AttendanceMarkType, StatusSettingItem>();
-      Object.values(groupStatusConfig).forEach(list => {
-        list.forEach(item => {
-          if (item.enabled && !map.has(item.id)) {
-            map.set(item.id, item);
-          }
+      const ORDER: AttendanceMarkType[] = ["duty", "help", "setup", "game", "absent"];
+      const targetGroups: SortGroupKey[] =
+        selectedGroupTab === "parent"
+          ? ["mother", "father"]
+          : ["player", "mother", "father", "staff"];
+      const merged: StatusSettingItem[] = [];
+      for (const id of ORDER) {
+        const enabledItems = targetGroups
+          .map((gk) => (groupStatusConfig[gk] || []).find((it) => it.id === id))
+          .filter((it): it is StatusSettingItem => Boolean(it?.enabled));
+        if (enabledItems.length === 0) continue;
+        const distinctLabels = Array.from(new Set(enabledItems.map((it) => it.label)));
+        merged.push({
+          ...enabledItems[0],
+          label: distinctLabels.join("／"),
         });
-      });
-      return Array.from(map.values());
+      }
+      return merged;
     }
-    return (groupStatusConfig[selectedGroupTab] || []).filter(item => item.enabled);
+    return (groupStatusConfig[selectedGroupTab] || []).filter((item) => item.enabled);
+  }, [selectedGroupTab, groupStatusConfig]);
+
+  // 凡例の「項目の意味」展開パネル用データ（単一グループ時はそのまま、全員表示時はグループ差分を整理）
+  const activeLegendMeaningRows = useMemo(() => {
+    if (!selectedGroupTab) return [];
+    const ORDER: AttendanceMarkType[] = ["duty", "help", "setup", "game", "absent"];
+    const groupTitleMap: Record<SortGroupKey, string> = {
+      player: "選手",
+      mother: "母",
+      father: "父",
+      staff: "スタッフ",
+    };
+
+    if (selectedGroupTab in groupStatusConfig) {
+      const list = groupStatusConfig[selectedGroupTab as SortGroupKey] || [];
+      return list
+        .filter((item) => item.enabled)
+        .map((item) => ({
+          id: item.id,
+          mark: item.mark,
+          bgClass: STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass,
+          entries: [
+            {
+              groupTag: null as string | null,
+              label: item.label,
+              description: item.description?.trim() || "",
+            },
+          ],
+        }));
+    }
+
+    const targetGroups: SortGroupKey[] =
+      selectedGroupTab === "parent"
+        ? ["mother", "father"]
+        : ["player", "mother", "father", "staff"];
+
+    const rows: Array<{
+      id: AttendanceMarkType;
+      mark: string;
+      bgClass: string;
+      entries: Array<{ groupTag: string | null; label: string; description: string }>;
+    }> = [];
+
+    for (const id of ORDER) {
+      const groupedBySignature = new Map<
+        string,
+        { groups: string[]; label: string; description: string; sample: StatusSettingItem }
+      >();
+      for (const gk of targetGroups) {
+        const found = (groupStatusConfig[gk] || []).find((it) => it.id === id && it.enabled);
+        if (!found) continue;
+        const desc = found.description?.trim() || "";
+        const sig = `${found.label}||${desc}`;
+        const existing = groupedBySignature.get(sig);
+        if (existing) {
+          existing.groups.push(groupTitleMap[gk]);
+        } else {
+          groupedBySignature.set(sig, {
+            groups: [groupTitleMap[gk]],
+            label: found.label,
+            description: desc,
+            sample: found,
+          });
+        }
+      }
+      if (groupedBySignature.size === 0) continue;
+      const buckets = Array.from(groupedBySignature.values());
+      const firstSample = buckets[0].sample;
+      rows.push({
+        id,
+        mark: firstSample.mark,
+        bgClass: STATUS_BG_CLASS_BY_ID[id] || firstSample.bgClass,
+        entries: buckets.map((b) => ({
+          groupTag: buckets.length > 1 ? b.groups.join("・") : null,
+          label: b.label,
+          description: b.description,
+        })),
+      });
+    }
+    return rows;
   }, [selectedGroupTab, groupStatusConfig]);
 
   // 📊 一覧表の出欠集計列に表示するステータス一覧（項目設定で有効なものに連動・非表示設定の列は除外）
@@ -1332,30 +1692,35 @@ function AttendanceMatrixBoardContent() {
     const enabledSet = new Set<AttendanceMarkType>();
 
     if (!selectedGroupTab || selectedGroupTab === "all" || selectedGroupTab === "parent") {
-      Object.values(groupStatusConfig).forEach(list => {
-        list.forEach(item => {
+      Object.values(groupStatusConfig).forEach((list) => {
+        list.forEach((item) => {
           if (item.enabled) enabledSet.add(item.id);
         });
       });
     } else if (selectedGroupTab in groupStatusConfig) {
       const list = groupStatusConfig[selectedGroupTab as SortGroupKey] || [];
-      list.forEach(item => {
+      list.forEach((item) => {
         if (item.enabled) enabledSet.add(item.id);
       });
     }
 
-    return ORDER.filter(id => enabledSet.has(id)).map(id => {
+    return ORDER.filter((id) => enabledSet.has(id)).map((id) => {
       const def = ATTENDANCE_STATUSES[id];
       let customLabel = def?.label || id;
+      let customDescription = def?.description || "";
       if (selectedGroupTab && selectedGroupTab in groupStatusConfig) {
-        const item = groupStatusConfig[selectedGroupTab as SortGroupKey]?.find(i => i.id === id);
+        const item = groupStatusConfig[selectedGroupTab as SortGroupKey]?.find(
+          (i) => i.id === id
+        );
         if (item?.label) customLabel = item.label;
+        if (typeof item?.description === "string") customDescription = item.description.trim();
       }
 
       return {
         id,
         mark: def?.mark || "",
         label: customLabel,
+        description: customDescription,
         headerBgClass:
           id === "duty" ? "bg-[#fee2e2] dark:bg-[#450a0a] text-red-700 dark:text-red-300" :
           id === "help" ? "bg-[#dbeafe] dark:bg-[#172554] text-blue-700 dark:text-blue-300" :
@@ -1811,11 +2176,28 @@ function AttendanceMatrixBoardContent() {
         {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
         <div className="rounded-2xl border border-border bg-card shadow-xs px-3 py-2.5 space-y-2">
           <div className="flex items-center justify-between gap-1 text-[9.5px]">
-            <div className="flex items-center gap-1.5 font-black text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-              <span>
-                凡例（{isLoading ? "読み込み中..." : selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : selectedGroupTab === "all" ? "全員" : "未選択"}）:
-              </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1 font-black text-muted-foreground truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                <span className="truncate">
+                  凡例（{isLoading ? "読み込み中..." : selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : selectedGroupTab === "all" ? "全員" : "未選択"}）:
+                </span>
+              </div>
+              {activeLegendMeaningRows.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setIsLegendMeaningOpen((prev) => !prev)}
+                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                    isLegendMeaningOpen
+                      ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/35"
+                      : "bg-muted/60 text-muted-foreground hover:text-foreground border-border"
+                  }`}
+                  title="確認項目の意味合いを表示・非表示"
+                >
+                  <HelpCircle className="w-2.5 h-2.5 shrink-0" />
+                  <span>意味</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
@@ -1823,8 +2205,8 @@ function AttendanceMatrixBoardContent() {
               <button
                 type="button"
                 onClick={handleOpenStatusConfigModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0"
-                title="グループ別のステータス表示有無と名称を設定"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
+                title="グループ別の確認項目・名称・意味合いを設定"
               >
                 <SlidersHorizontal className="w-3 h-3 text-primary" />
                 <span>項目設定</span>
@@ -1834,7 +2216,7 @@ function AttendanceMatrixBoardContent() {
               <button
                 type="button"
                 onClick={handleOpenOrderModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
                 title="グループ内のメンバー列の並び順を設定"
               >
                 <ArrowUpDown className="w-3 h-3 text-primary" />
@@ -1846,7 +2228,7 @@ function AttendanceMatrixBoardContent() {
                 <button
                   type="button"
                   onClick={handleOpenSubLabelsModal}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0"
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0 cursor-pointer"
                   title="メンバーの班（1班・2班等）やサブラベルを一括設定"
                 >
                   <Tag className="w-3 h-3 text-primary" />
@@ -1857,8 +2239,8 @@ function AttendanceMatrixBoardContent() {
               {(myInfo.isITAdmin || myInfo.isManager) && (
                 <button
                   type="button"
-                  onClick={() => setIsManagerOverrideMode(prev => !prev)}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border ${
+                  onClick={() => setIsManagerOverrideMode((prev) => !prev)}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border cursor-pointer ${
                     isManagerOverrideMode
                       ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35 shadow-2xs"
                       : "bg-muted text-muted-foreground border-border hover:text-foreground"
@@ -1880,22 +2262,33 @@ function AttendanceMatrixBoardContent() {
             </div>
           </div>
 
-          {/* 凡例アイコン（グループで有効なステータスのみ・横幅いっぱいに均等配置） */}
+          {/* 凡例アイコン（グループで有効なステータスのみ・横幅いっぱいに均等配置・タップで意味表示） */}
           <div className="flex items-center gap-1 text-[9.5px] pt-1.5 border-t border-border overflow-x-auto no-scrollbar">
             {activeLegendItems.length === 0 ? (
               <span className="text-[9px] text-muted-foreground py-1 px-2">有効なステータスがありません</span>
             ) : (
               <>
                 {activeLegendItems.map((item) => (
-                  <div
+                  <button
                     key={item.id}
-                    className="flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-muted/35 border border-border text-center"
+                    type="button"
+                    onClick={() => setIsLegendMeaningOpen((prev) => !prev)}
+                    title={
+                      item.description?.trim()
+                        ? `${item.mark} ${item.label}：${item.description.trim()}（タップで一覧表示）`
+                        : `${item.mark} ${item.label}（タップで意味を表示）`
+                    }
+                    className={`flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg border text-center transition-colors active:scale-95 cursor-pointer ${
+                      isLegendMeaningOpen
+                        ? "bg-teal-500/[0.08] border-teal-500/30"
+                        : "bg-muted/35 hover:bg-muted/60 border-border"
+                    }`}
                   >
                     <span className={`w-3.5 h-3.5 rounded-full ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
                       {item.mark}
                     </span>
                     <span className="truncate text-foreground text-[9px]">{item.label}</span>
-                  </div>
+                  </button>
                 ))}
                 {(selectedGroupTab === "player" || selectedGroupTab === "all") &&
                   groups.players.some(
@@ -1913,6 +2306,62 @@ function AttendanceMatrixBoardContent() {
               </>
             )}
           </div>
+
+          {/* 📖 確認項目の意味合い一覧（タップ展開時のみ表示） */}
+          {isLegendMeaningOpen && activeLegendMeaningRows.length > 0 && (
+            <div className="pt-2 border-t border-border space-y-1.5 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-2 text-[9.5px]">
+                <span className="font-black text-muted-foreground flex items-center gap-1">
+                  <Info className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span>確認項目の意味合い・判断基準</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleOpenStatusConfigModal}
+                  className="text-[9.5px] font-black text-primary hover:underline cursor-pointer shrink-0"
+                >
+                  項目設定を編集 &gt;
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                {activeLegendMeaningRows.map((row) => (
+                  <div
+                    key={`legend-meaning-${row.id}`}
+                    className="flex items-start gap-2 px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-[10.5px] leading-snug"
+                  >
+                    <span
+                      className={`w-4.5 h-4.5 rounded-md ${row.bgClass} text-white flex items-center justify-center text-[9.5px] font-black shrink-0 mt-0.5`}
+                    >
+                      {row.mark}
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      {row.entries.map((entry, idx) => (
+                        <div key={`${row.id}-e-${idx}`} className="min-w-0">
+                          {entry.groupTag && (
+                            <span className="inline-block px-1 py-0.1 mr-1 rounded bg-card border border-border text-[9px] font-black text-muted-foreground">
+                              {entry.groupTag}
+                            </span>
+                          )}
+                          <span className="font-black text-foreground">{entry.label}</span>
+                          {entry.description ? (
+                            <span className="text-muted-foreground font-bold">
+                              {" ： "}
+                              {entry.description}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/60 font-medium">
+                              {" ： （意味合い未設定）"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ③ 📅 月単位選択 ＆ 過去日表示切替 ＆ 検索バー (コンパクト統合) */}
@@ -2080,7 +2529,11 @@ function AttendanceMatrixBoardContent() {
                       <th
                         key={st.id}
                         className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[11px] align-middle ${st.headerBgClass}`}
-                        title={`${st.mark} ${st.label}`}
+                        title={
+                          st.description
+                            ? `${st.mark} ${st.label}：${st.description}`
+                            : `${st.mark} ${st.label}`
+                        }
                       >
                         {st.mark}
                       </th>
@@ -2425,6 +2878,18 @@ function AttendanceMatrixBoardContent() {
             isEditingOnLeavePlayer && editingCell.currentStatus === "pending"
               ? "休部中（回答なし）"
               : selectedSetting?.label || selectedBaseStatus.shortLabel || selectedBaseStatus.label;
+          const selectedBadgeClass =
+            isEditingOnLeavePlayer && editingCell.currentStatus === "pending"
+              ? "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black border border-slate-300 dark:border-slate-700"
+              : selectedBaseStatus.badgeClass;
+          const selectedDescription =
+            isEditingOnLeavePlayer && editingCell.currentStatus === "pending"
+              ? "休部期間中のため、一覧表には「休」と表示されます"
+              : editingCell.currentStatus === "pending"
+              ? selectedBaseStatus.description
+              : typeof selectedSetting?.description === "string"
+              ? selectedSetting.description.trim()
+              : selectedBaseStatus.description;
           const quickCommentChips =
             personGroup === "player"
               ? ["遅刻参加", "早退", "午前のみ", "午後のみ", "別メニュー", "学校行事", "体調不良"]
@@ -2531,9 +2996,13 @@ function AttendanceMatrixBoardContent() {
                           const customLabel = isLeavePendingOption
                             ? "休部中（回答なし）"
                             : setting?.label || baseItem.label;
-                          const customShortLabel = isLeavePendingOption
+                          const customDescription = isLeavePendingOption
                             ? "表に「休」と表示"
-                            : baseItem.shortLabel;
+                            : key === "pending"
+                            ? baseItem.description
+                            : typeof setting?.description === "string"
+                            ? setting.description.trim()
+                            : baseItem.description;
                           const customBadgeClass = isLeavePendingOption
                             ? "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black border border-slate-300 dark:border-slate-700"
                             : baseItem.badgeClass;
@@ -2550,27 +3019,31 @@ function AttendanceMatrixBoardContent() {
                                 )
                               }
                               disabled={isSavingCell}
-                              className={`relative flex items-center justify-between gap-2 p-2.5 rounded-2xl text-left transition-all active:scale-95 cursor-pointer ${
+                              className={`relative flex items-start justify-between gap-1.5 p-2.5 rounded-2xl text-left transition-all active:scale-95 cursor-pointer ${
                                 isSelected
                                   ? "border-2 border-primary bg-primary/10 text-primary font-black shadow-xs"
                                   : "border border-border bg-card text-foreground hover:bg-muted"
                               }`}
                             >
-                              <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-start gap-2 min-w-0 flex-1">
                                 <span
-                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 ${customBadgeClass}`}
+                                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs shrink-0 mt-0.5 ${customBadgeClass}`}
                                 >
                                   {customMark}
                                 </span>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-black truncate">{customLabel}</p>
-                                  <p className="text-[9px] text-muted-foreground truncate">
-                                    {customShortLabel}
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-black truncate leading-tight">
+                                    {customLabel}
                                   </p>
+                                  {customDescription && (
+                                    <p className="text-[9.5px] text-muted-foreground font-bold line-clamp-2 leading-tight mt-0.5">
+                                      {customDescription}
+                                    </p>
+                                  )}
                                 </div>
                               </div>
                               {isSelected && (
-                                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                                <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 mt-0.5">
                                   <Check className="w-3 h-3 stroke-[3]" />
                                 </span>
                               )}
@@ -2578,6 +3051,25 @@ function AttendanceMatrixBoardContent() {
                           );
                         })}
                     </div>
+
+                    {/* 選択中ステータスの意味合い全文ガイド（長文でも見切れず確認可能） */}
+                    {selectedDescription && (
+                      <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-muted/45 border border-border text-[10.5px] leading-snug">
+                        <span
+                          className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] shrink-0 mt-0.5 ${selectedBadgeClass}`}
+                        >
+                          {selectedButtonMark}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <span className="font-black text-foreground">
+                            {selectedButtonLabel}：
+                          </span>
+                          <span className="font-bold text-muted-foreground">
+                            {selectedDescription}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* 2. メモ・備考入力欄（ワンタップ定型チップ＋自由入力） */}
@@ -2715,7 +3207,7 @@ function AttendanceMatrixBoardContent() {
             💬 コメント・連絡事項閲覧モーダル (閲覧専用・権限なし時用)
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {viewingComment && (
-          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3.5 bg-slate-950/60 animate-in fade-in duration-200">
             <div
               className="absolute inset-0"
               onClick={() => setViewingComment(null)}
@@ -2771,21 +3263,46 @@ function AttendanceMatrixBoardContent() {
 
               <div className="p-4 sm:p-5 space-y-3.5">
                 {/* 出欠ステータス & グループ情報 */}
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-muted/35 border border-border">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-start justify-between gap-2 p-2.5 rounded-xl bg-muted/35 border border-border">
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
                     {(() => {
-                      const statusConfig = ATTENDANCE_STATUSES[viewingComment.status] || ATTENDANCE_STATUSES.pending;
+                      const statusConfig =
+                        ATTENDANCE_STATUSES[viewingComment.status] || ATTENDANCE_STATUSES.pending;
+                      const personGroup: SortGroupKey =
+                        viewingComment.person.groupType === "father"
+                          ? "father"
+                          : viewingComment.person.groupType === "mother"
+                          ? "mother"
+                          : viewingComment.person.groupType === "staff"
+                          ? "staff"
+                          : "player";
+                      const setting = (
+                        groupStatusConfig[personGroup] || DEFAULT_GROUP_STATUS_CONFIG[personGroup]
+                      ).find((s) => s.id === viewingComment.status);
+                      const resolvedMark = setting?.mark || statusConfig.mark;
+                      const resolvedLabel = setting?.label || statusConfig.label;
+                      const resolvedDesc = setting
+                        ? typeof setting.description === "string"
+                          ? setting.description.trim()
+                          : statusConfig.description
+                        : statusConfig.description;
+                      const resolvedBadgeClass = setting
+                        ? `${STATUS_BG_CLASS_BY_ID[setting.id] || setting.bgClass} text-white font-black shadow-xs`
+                        : statusConfig.badgeClass;
+
                       return (
                         <>
-                          <span className={`w-6 h-6 rounded-md flex items-center justify-center text-[10.5px] font-black shrink-0 ${statusConfig.badgeClass}`}>
-                            {statusConfig.mark}
+                          <span
+                            className={`w-6 h-6 rounded-md flex items-center justify-center text-[10.5px] shrink-0 mt-0.5 ${resolvedBadgeClass}`}
+                          >
+                            {resolvedMark}
                           </span>
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="text-xs font-black text-foreground">
-                              {statusConfig.label}
+                              {resolvedLabel}
                             </p>
-                            <p className="text-[9.5px] text-muted-foreground">
-                              出欠ステータス
+                            <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-0.5">
+                              {resolvedDesc || "出欠ステータス"}
                             </p>
                           </div>
                         </>
@@ -2793,7 +3310,7 @@ function AttendanceMatrixBoardContent() {
                     })()}
                   </div>
                   {viewingComment.person.subText && (
-                    <span className="text-[10px] font-bold text-muted-foreground px-2 py-0.5 rounded-full bg-card border border-border">
+                    <span className="text-[10px] font-bold text-muted-foreground px-2 py-0.5 rounded-full bg-card border border-border shrink-0">
                       {viewingComment.person.subText}
                     </span>
                   )}
@@ -3072,11 +3589,19 @@ function AttendanceMatrixBoardContent() {
         )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🏷️ グループ別ステータス設定モーダル
+            🏷️ グループ別 確認項目設定モーダル（名称・意味合い・使用有無）
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {isStatusConfigModalOpen && (
-          <div className="fixed inset-0 z-[9990] flex items-center justify-center p-3 bg-slate-950/60 animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150">
+            <div
+              className="absolute inset-0"
+              onClick={() => !isSavingStatusConfig && setIsStatusConfigModalOpen(false)}
+            />
+
+            <div
+              className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[88dvh] sm:max-h-[88vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
               {/* ヘッダー */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -3084,33 +3609,36 @@ function AttendanceMatrixBoardContent() {
                     <SlidersHorizontal className="w-4 h-4" />
                   </span>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-black text-white">出欠ステータス設定</h3>
-                    <p className="text-[10px] text-slate-300 font-bold">グループごとに表示する記号・名称をカスタマイズ</p>
+                    <h3 className="text-sm font-black text-white">確認項目の設定</h3>
+                    <p className="text-[10px] text-slate-300 font-bold">
+                      グループごとに記号の名称・意味合い・使用有無を設定
+                    </p>
                   </div>
                 </div>
                 <button
                   type="button"
+                  disabled={isSavingStatusConfig}
                   onClick={() => setIsStatusConfigModalOpen(false)}
-                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-4 sm:p-5 space-y-4 overflow-y-auto no-scrollbar">
-                {/* グループ切り替えタブ */}
+              {/* 上部固定エリア（グループ切替タブ ＋ 見出し・設定反映ヘルパー） */}
+              <div className="px-4 pt-3.5 pb-2.5 space-y-2.5 shrink-0 border-b border-border bg-card">
                 <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border">
                   {[
                     { key: "player" as const, label: "選手" },
                     { key: "mother" as const, label: "母" },
                     { key: "father" as const, label: "父" },
                     { key: "staff" as const, label: "スタッフ" },
-                  ].map(tab => (
+                  ].map((tab) => (
                     <button
                       key={tab.key}
                       type="button"
                       onClick={() => setStatusModalGroup(tab.key)}
-                      className={`flex-1 py-1.5 text-center rounded-lg text-xs transition-all ${
+                      className={`flex-1 py-1.5 text-center rounded-lg text-xs transition-all cursor-pointer ${
                         statusModalGroup === tab.key
                           ? "bg-card text-foreground shadow-xs border border-border font-black"
                           : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
@@ -3121,81 +3649,143 @@ function AttendanceMatrixBoardContent() {
                   ))}
                 </div>
 
-                {/* ステータス設定リスト */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground px-1">
-                    <span>ステータス記号と名称</span>
+                <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-muted-foreground px-0.5">
+                  <span>確認項目（名称・意味合い）</span>
+                  {statusModalGroup === "mother" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyStatusFromGroup("father")}
+                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-black text-foreground border border-border active:scale-95 transition-all cursor-pointer"
+                    >
+                      「父」の設定を反映
+                    </button>
+                  ) : statusModalGroup === "father" ? (
+                    <button
+                      type="button"
+                      onClick={() => handleCopyStatusFromGroup("mother")}
+                      className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-black text-foreground border border-border active:scale-95 transition-all cursor-pointer"
+                    >
+                      「母」の設定を反映
+                    </button>
+                  ) : (
                     <span>使用有無</span>
-                  </div>
+                  )}
+                </div>
+              </div>
 
-                  <div className="space-y-1.5">
-                    {(tempStatusConfig[statusModalGroup] || []).map((item) => (
-                      <div
-                        key={item.id}
-                        className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+              {/* スクロール可能な確認項目カード一覧 */}
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2.5 no-scrollbar">
+                {(tempStatusConfig[statusModalGroup] || []).map((item) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-xl border transition-all ${
+                      item.enabled
+                        ? "bg-card border-border p-2.5 space-y-2 shadow-2xs"
+                        : "bg-muted/35 border-border p-2 opacity-65"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span
+                          className={`w-7 h-7 rounded-lg ${
+                            STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass
+                          } text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}
+                        >
+                          {item.mark}
+                        </span>
+                        <input
+                          type="text"
+                          maxLength={14}
+                          value={item.label}
+                          disabled={!item.enabled}
+                          onChange={(e) => handleChangeStatusLabel(item.id, e.target.value)}
+                          placeholder="項目名を入力（例: 当番、ヘルプ...）"
+                          className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-black rounded-lg bg-muted/35 border border-border focus:outline-none focus:border-primary text-foreground placeholder:text-muted-foreground disabled:opacity-40"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleStatus(item.id)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[10.5px] font-black transition-all shrink-0 active:scale-95 border cursor-pointer ${
                           item.enabled
-                            ? "bg-card border-border shadow-2xs"
-                            : "bg-muted/35 border-border opacity-60"
+                            ? "bg-primary/10 text-primary border-primary/25"
+                            : "bg-muted text-muted-foreground border-border hover:text-foreground"
                         }`}
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
-                          <span className={`w-6 h-6 rounded-lg ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white font-black text-xs flex items-center justify-center shrink-0 shadow-xs`}>
-                            {item.mark}
+                        {item.enabled ? "使用中" : "非表示"}
+                      </button>
+                    </div>
+
+                    {item.enabled ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2 px-0.5">
+                          <span className="text-[10px] font-black text-muted-foreground">
+                            意味合い・選ぶ基準（出欠登録時や凡例に表示）
                           </span>
-                          <input
-                            type="text"
-                            value={item.label}
-                            disabled={!item.enabled}
-                            onChange={(e) => handleChangeStatusLabel(item.id, e.target.value)}
-                            placeholder="名称を入力..."
-                            className="flex-1 min-w-0 px-2 py-1 text-xs font-bold rounded-lg bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground disabled:opacity-40"
-                          />
+                          {(item.description ?? "").length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleChangeStatusDescription(item.id, "")}
+                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                            >
+                              クリア
+                            </button>
+                          )}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleToggleStatus(item.id)}
-                          className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black transition-all shrink-0 active:scale-95 border ${
-                            item.enabled
-                              ? "bg-primary/10 text-primary border-primary/25"
-                              : "bg-muted text-muted-foreground border-border hover:text-foreground"
-                          }`}
-                        >
-                          {item.enabled ? "使用中" : "非表示"}
-                        </button>
+                        <textarea
+                          rows={2}
+                          maxLength={80}
+                          value={item.description ?? ""}
+                          onChange={(e) => handleChangeStatusDescription(item.id, e.target.value)}
+                          placeholder="この項目を選ぶ基準や意味合いを入力（例: お茶・救急当番として参加）..."
+                          className="w-full px-2.5 py-1.5 text-[11px] font-bold leading-snug rounded-lg bg-muted/35 border border-border focus:outline-none focus:border-primary text-foreground placeholder:text-muted-foreground resize-none"
+                        />
                       </div>
-                    ))}
+                    ) : (
+                      (item.description ?? "").trim().length > 0 && (
+                        <p className="text-[9.5px] font-bold text-muted-foreground truncate pl-9 mt-1">
+                          {item.description}
+                        </p>
+                      )
+                    )}
                   </div>
-                </div>
+                ))}
+              </div>
 
-                {/* フッター操作ボタン */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-border">
+              {/* フッター操作ボタン（Safe Area対応・下部常時固定） */}
+              <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={isSavingStatusConfig}
+                  onClick={handleResetStatusGroup}
+                  className="px-2.5 py-2 rounded-xl bg-card border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  初期値に戻す
+                </button>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleResetStatusGroup}
-                    className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+                    disabled={isSavingStatusConfig}
+                    onClick={() => setIsStatusConfigModalOpen(false)}
+                    className="px-3.5 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    初期値に戻す
+                    キャンセル
                   </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsStatusConfigModalOpen(false)}
-                      className="px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
-                    >
-                      キャンセル
-                    </button>
-                    <button
-                      type="button"
-                      disabled={isSavingStatusConfig}
-                      onClick={handleSaveStatusConfig}
-                      className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
-                    >
-                      {isSavingStatusConfig ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                      <span>設定を保存</span>
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={isSavingStatusConfig}
+                    onClick={handleSaveStatusConfig}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingStatusConfig ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>設定を保存</span>
+                  </button>
                 </div>
               </div>
             </div>
