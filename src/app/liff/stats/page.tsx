@@ -11,6 +11,7 @@ import {
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { cn } from "@/lib/utils";
 import {
@@ -296,28 +297,44 @@ export default function LiffStatsPage() {
     () => (Array.isArray(initialCachedStats?.matches) ? initialCachedStats.matches : [])
   );
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedStats);
+  const [loadError, setLoadError] = useState<boolean>(false);
 
-  const loadStats = useCallback(async () => {
-    if (isLoadingTeam && !currentTeam?.id) return;
-    try {
-      const teamId =
-        currentTeam?.id ||
-        (typeof window !== "undefined"
-          ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
-          : "demo-team");
-      const url = `/api/liff/stats?teamId=${encodeURIComponent(teamId)}`;
-      const syncCached = peekLiffApiCache<LiffStatsApiResponse>(url);
-      if (syncCached) {
-        if (syncCached.team?.year) setSeasonYear(syncCached.team.year);
-        if (syncCached.sectionsByFilter) setSectionsByFilter(syncCached.sectionsByFilter);
-        if (Array.isArray(syncCached.matches)) setMatchesList(syncCached.matches);
-        setIsLoading(false);
-      } else {
-        setIsLoading(true);
-      }
-      const res = await fetch(url);
-      if (res.ok) {
+  const loadStats = useCallback(
+    async (bypassCache = false) => {
+      if (isLoadingTeam && !currentTeam?.id) return;
+      try {
+        const teamId =
+          currentTeam?.id ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
+            : "demo-team");
+        const url = `/api/liff/stats?teamId=${encodeURIComponent(teamId)}`;
+        const syncCached = !bypassCache
+          ? peekLiffApiCache<LiffStatsApiResponse>(url)
+          : null;
+        if (syncCached && syncCached.success !== false) {
+          if (syncCached.team?.year) setSeasonYear(syncCached.team.year);
+          if (syncCached.sectionsByFilter) setSectionsByFilter(syncCached.sectionsByFilter);
+          if (Array.isArray(syncCached.matches)) setMatchesList(syncCached.matches);
+          setLoadError(false);
+          setIsLoading(false);
+        } else {
+          setIsLoading(true);
+        }
+        const res = await fetch(
+          url,
+          bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
+        );
+        if (!res.ok) {
+          setLoadError(true);
+          return;
+        }
         const data = (await res.json()) as LiffStatsApiResponse;
+        if (data.success === false) {
+          setLoadError(true);
+          return;
+        }
+        setLoadError(false);
         if (data.team?.year) {
           setSeasonYear(data.team.year);
         }
@@ -341,16 +358,18 @@ export default function LiffStatsPage() {
         } else {
           setMatchesList([]);
         }
+      } catch (err) {
+        setLoadError(true);
+        console.error("Failed to fetch stats:", err);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch stats:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentTeam?.id, isLoadingTeam]);
+    },
+    [currentTeam?.id, isLoadingTeam]
+  );
 
   useEffect(() => {
-    loadStats();
+    void loadStats();
   }, [loadStats]);
 
   const activeSection = sectionsByFilter[filter] || EMPTY_SECTION;
@@ -907,22 +926,30 @@ export default function LiffStatsPage() {
             {tab === "matches" && (
               <section className="space-y-2.5">
                 {filteredMatches.length === 0 ? (
-                  <div className="py-6 space-y-4">
-                    <EmptyState
-                      icon={Shield}
-                      title="確定済みの試合結果がありません"
-                      description="試合結果が登録されると、試合ごとの勝敗・得点・失点がここに一覧表示されます"
+                  matchesList.length === 0 && loadError ? (
+                    <LiffDataLoadErrorCard
+                      title="成績・試合データを読み込めませんでした"
+                      onRetry={() => void loadStats(true)}
+                      isRetrying={isLoading}
                     />
-                    <div className="flex justify-center">
-                      <Link
-                        href="/liff/matches"
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>試合情報ページを開く</span>
-                      </Link>
+                  ) : (
+                    <div className="py-6 space-y-4">
+                      <EmptyState
+                        icon={Shield}
+                        title="確定済みの試合結果がありません"
+                        description="試合結果が登録されると、試合ごとの勝敗・得点・失点がここに一覧表示されます"
+                      />
+                      <div className="flex justify-center">
+                        <Link
+                          href="/liff/matches"
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>試合情報ページを開く</span>
+                        </Link>
+                      </div>
                     </div>
-                  </div>
+                  )
                 ) : (
                   <>
                     <div className="flex items-center justify-between px-1 gap-2 flex-wrap">

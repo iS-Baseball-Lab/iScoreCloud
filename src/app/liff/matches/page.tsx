@@ -1,7 +1,7 @@
 // filepath: src/app/liff/matches/page.tsx
 "use client";
 
-import React, { useState, useEffect, Suspense, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, Suspense, useCallback, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -60,6 +60,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 import {
   buildGoogleMapsEmbedFromUrl,
@@ -379,6 +380,9 @@ function MatchesContent() {
   const [isDetailLoading, setIsDetailLoading] = useState<boolean>(() => Boolean(matchId));
   const [loadedMatchId, setLoadedMatchId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [detailIsNotFound, setDetailIsNotFound] = useState<boolean>(false);
+  const [detailReloadKey, setDetailReloadKey] = useState<number>(0);
+  const hydratedStatsMatchIdRef = useRef<string | null>(null);
   const [isAddressCopied, setIsAddressCopied] = useState(false);
   const [showDeleteStatsModal, setShowDeleteStatsModal] = useState(false);
   const [isDeletingPersonalStats, setIsDeletingPersonalStats] = useState(false);
@@ -458,6 +462,7 @@ function MatchesContent() {
   const [isListLoading, setIsListLoading] = useState<boolean>(
     () => initialCachedMatchesList === null
   );
+  const [listLoadError, setListLoadError] = useState<boolean>(false);
   const [filter, setFilter] = useState<"all" | "scheduled" | "video" | "official">("all");
   const [scorebookFilter, setScorebookFilter] = useState<
     "all" | "imported" | "unimported"
@@ -585,6 +590,8 @@ function MatchesContent() {
     }
   }, [match, isDeletingMatch, currentTeam?.id, router]);
 
+  const loadedDetailMatchIdRef = useRef<string | null>(null);
+
   // 1. 試合詳細 ＆ 出場メンバー・成績データのロード (matchId がある場合)
   useEffect(() => {
     setIsAddressCopied(false);
@@ -595,7 +602,10 @@ function MatchesContent() {
     setInspectedCellModalState(null);
     setOpsEditorState({ isOpen: false, initialTab: "guide" });
     if (!matchId) {
+      loadedDetailMatchIdRef.current = null;
+      hydratedStatsMatchIdRef.current = null;
       setDetailError(null);
+      setDetailIsNotFound(false);
       setPrevMatch(null);
       setNextMatch(null);
       setMatchPosition(null);
@@ -612,18 +622,29 @@ function MatchesContent() {
     }
 
     const targetMatchId = matchId;
+    const forceBypass = detailReloadKey > 0;
+    const detailFetchInit: RequestInit = forceBypass
+      ? { cache: "no-store", headers: { "x-iscore-bypass-cache": "1" } }
+      : { cache: "no-store" };
     let isCancelled = false;
 
     async function loadMatch() {
+      let hasHydratedDetailFromCache = loadedDetailMatchIdRef.current === targetMatchId;
+      let hasHydratedStatsFromCache = hydratedStatsMatchIdRef.current === targetMatchId;
       try {
         setDetailError(null);
+        setDetailIsNotFound(false);
 
         // ⚡ 同期キャッシュがあればスピナーを出さずに0ms即時反映しつつ裏で再検証
         if (!isDemoMatchId(targetMatchId)) {
-          const cachedDetail = peekLiffApiCache<MatchDetailApiResponse>(
-            `/api/matches/${encodeURIComponent(targetMatchId)}`
-          );
+          const cachedDetail = forceBypass
+            ? null
+            : peekLiffApiCache<MatchDetailApiResponse>(
+                `/api/matches/${encodeURIComponent(targetMatchId)}`
+              );
           if (cachedDetail?.match) {
+            hasHydratedDetailFromCache = true;
+            loadedDetailMatchIdRef.current = targetMatchId;
             setMatch(cachedDetail.match);
             setPrevMatch(
               cachedDetail.prevMatch ??
@@ -645,14 +666,18 @@ function MatchesContent() {
                 : null
             );
             setIsDetailLoading(false);
-          } else {
+          } else if (!hasHydratedDetailFromCache) {
             setIsDetailLoading(true);
           }
 
-          const cachedStats = peekLiffApiCache<MatchStatsApiResponse>(
-            `/api/matches/${encodeURIComponent(targetMatchId)}/stats`
-          );
+          const cachedStats = forceBypass
+            ? null
+            : peekLiffApiCache<MatchStatsApiResponse>(
+                `/api/matches/${encodeURIComponent(targetMatchId)}/stats`
+              );
           if (cachedStats?.success) {
+            hasHydratedStatsFromCache = true;
+            hydratedStatsMatchIdRef.current = targetMatchId;
             setMatchStats(Array.isArray(cachedStats.stats) ? cachedStats.stats : []);
             setPitcherStats(
               Array.isArray(cachedStats.pitcherStats) ? cachedStats.pitcherStats : []
@@ -660,7 +685,7 @@ function MatchesContent() {
             setTeamPitchingMeta(cachedStats.teamPitchingMeta ?? null);
             setGameDetails(cachedStats.gameDetails ?? null);
             setIsStatsLoading(false);
-          } else {
+          } else if (!hasHydratedStatsFromCache) {
             setIsStatsLoading(true);
           }
         } else {
@@ -672,9 +697,12 @@ function MatchesContent() {
         if (isDemoMatchId(targetMatchId)) {
           const demoMatch = getDemoMatchById(targetMatchId);
           if (!demoMatch) {
+            setDetailIsNotFound(true);
             throw new Error("指定されたデモ試合が見つかりませんでした");
           }
           if (isCancelled) return;
+          loadedDetailMatchIdRef.current = targetMatchId;
+          hydratedStatsMatchIdRef.current = targetMatchId;
           const demoAdjacent = getDemoAdjacentMatches(targetMatchId);
           setMatch(demoMatch);
           setPrevMatch(demoAdjacent.prevMatch);
@@ -705,16 +733,22 @@ function MatchesContent() {
           return;
         }
 
-        // 試合切替時に前の試合の成績が残らないよう初期化
-        setMatchStats([]);
-        setPitcherStats([]);
-        setTeamPitchingMeta(null);
-        setGameDetails(null);
-        setPlayLogs([]);
-        setBoxscoreAtBats([]);
-        setOpponentLineup([]);
-        setOpponentBench([]);
-        setLineupsMatchCreatedAt(null);
+        // 試合切替時のみ前の試合のデータを初期化（キャッシュから同一試合を即時復元済みの場合は消去しない）
+        if (!hasHydratedStatsFromCache) {
+          setMatchStats([]);
+          setPitcherStats([]);
+          setTeamPitchingMeta(null);
+          setGameDetails(null);
+        }
+        if (!hasHydratedDetailFromCache) {
+          setMatch(null);
+          setPlayLogs([]);
+          setBoxscoreAtBats([]);
+          setMyLineup([]);
+          setOpponentLineup([]);
+          setOpponentBench([]);
+          setLineupsMatchCreatedAt(null);
+        }
 
         // 🅱️ 実チームDB処理（試合詳細 + スタメン・出欠 + 個人成績・打席経過 + 既知チーム選手名簿を並列取得）
         const rawKnownTeamId =
@@ -728,34 +762,55 @@ function MatchesContent() {
 
         const [matchRes, lineupsRes, statsRes, logsRes, boxscoreRes, prefetchedPlayersRes] =
           await Promise.all([
-            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, { cache: "no-store" }),
-            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/lineups`, { cache: "no-store" }),
-            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/stats`, {
-              cache: "no-store",
-            }).catch(() => null),
-            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/logs`, {
-              cache: "no-store",
-            }).catch(() => null),
-            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/boxscore`, {
-              cache: "no-store",
-            }).catch(() => null),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}`, detailFetchInit),
+            fetch(
+              `/api/matches/${encodeURIComponent(targetMatchId)}/lineups`,
+              detailFetchInit
+            ).catch(() => null),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/stats`, detailFetchInit).catch(
+              () => null
+            ),
+            fetch(`/api/matches/${encodeURIComponent(targetMatchId)}/logs`, detailFetchInit).catch(
+              () => null
+            ),
+            fetch(
+              `/api/matches/${encodeURIComponent(targetMatchId)}/boxscore`,
+              detailFetchInit
+            ).catch(() => null),
             knownTeamId
-              ? fetch(`/api/teams/${encodeURIComponent(knownTeamId)}/players`, {
-                  cache: "no-store",
-                }).catch(() => null)
+              ? fetch(
+                  `/api/teams/${encodeURIComponent(knownTeamId)}/players`,
+                  detailFetchInit
+                ).catch(() => null)
               : Promise.resolve(null),
           ]);
 
         if (!matchRes.ok) {
+          if (matchRes.status === 404) {
+            loadedDetailMatchIdRef.current = null;
+            hydratedStatsMatchIdRef.current = null;
+            setDetailIsNotFound(true);
+            setMatch(null);
+            throw new Error("試合が見つかりませんでした");
+          }
+          if (hasHydratedDetailFromCache) {
+            return;
+          }
           throw new Error("試合データの取得に失敗しました");
         }
 
         const data = (await matchRes.json()) as MatchDetailApiResponse;
         if (!data.match) {
+          if (hasHydratedDetailFromCache && data.success === false) {
+            return;
+          }
+          setDetailIsNotFound(true);
           throw new Error(data.error || "試合が見つかりませんでした");
         }
 
         if (isCancelled) return;
+        loadedDetailMatchIdRef.current = targetMatchId;
+        setDetailIsNotFound(false);
         setMatch(data.match);
         setPrevMatch(
           data.prevMatch ??
@@ -773,7 +828,7 @@ function MatchesContent() {
             : null
         );
 
-        if (lineupsRes.ok) {
+        if (lineupsRes && lineupsRes.ok) {
           const lineupsJson = (await lineupsRes.json()) as MatchLineupsApiResponse;
           if (!isCancelled) {
             if (lineupsJson.success && lineupsJson.lineups) {
@@ -791,7 +846,7 @@ function MatchesContent() {
               );
               setMySubstitutions(lineupsJson.lineups.mySubstitutions || []);
               setMyAttendance(lineupsJson.lineups.myAttendance || {});
-            } else {
+            } else if (!hasHydratedDetailFromCache) {
               setMyLineup([]);
               setOpponentLineup([]);
               setOpponentBench([]);
@@ -805,6 +860,7 @@ function MatchesContent() {
         if (statsRes && statsRes.ok) {
           const statsJson = (await statsRes.json()) as MatchStatsApiResponse;
           if (!isCancelled && statsJson.success) {
+            hydratedStatsMatchIdRef.current = targetMatchId;
             setMatchStats(Array.isArray(statsJson.stats) ? statsJson.stats : []);
             setPitcherStats(
               Array.isArray(statsJson.pitcherStats) ? statsJson.pitcherStats : []
@@ -839,9 +895,10 @@ function MatchesContent() {
           const playersRes =
             effectiveTeamId === knownTeamId && prefetchedPlayersRes
               ? prefetchedPlayersRes
-              : await fetch(`/api/teams/${encodeURIComponent(effectiveTeamId)}/players`, {
-                  cache: "no-store",
-                }).catch(() => null);
+              : await fetch(
+                  `/api/teams/${encodeURIComponent(effectiveTeamId)}/players`,
+                  detailFetchInit
+                ).catch(() => null);
           if (playersRes && playersRes.ok && !isCancelled) {
             const playersData = (await playersRes.json()) as LineupPlayer[];
             const activePlayers = (Array.isArray(playersData) ? playersData : []).filter(
@@ -855,7 +912,9 @@ function MatchesContent() {
       } catch (err) {
         if (isCancelled) return;
         console.error("Error loading match detail:", err);
-        setDetailError(err instanceof Error ? err.message : "エラーが発生しました");
+        if (!hasHydratedDetailFromCache) {
+          setDetailError(err instanceof Error ? err.message : "エラーが発生しました");
+        }
       } finally {
         if (!isCancelled) {
           setLoadedMatchId(targetMatchId);
@@ -865,98 +924,125 @@ function MatchesContent() {
       }
     }
 
-    loadMatch();
+    void loadMatch();
     return () => {
       isCancelled = true;
     };
-  }, [matchId, currentTeam?.id]);
+  }, [matchId, currentTeam?.id, detailReloadKey]);
 
   // 2. 試合一覧のロード (matchId がない場合、選択中チームに応じてフェッチ)
-  const loadMatchesList = useCallback(async () => {
-    if (matchId) return;
-    if (isLoadingTeam && !currentTeam?.id) return;
+  const loadMatchesList = useCallback(
+    async (bypassCache = false) => {
+      if (matchId) return;
+      if (isLoadingTeam && !currentTeam?.id) return;
 
-    const storedTeamId =
-      typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
-    const explicitDemo =
-      typeof window !== "undefined"
-        ? localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1"
-        : false;
+      const storedTeamId =
+        typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : null;
+      const explicitDemo =
+        typeof window !== "undefined"
+          ? localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1"
+          : false;
 
-    let resolvedTeamId =
-      currentTeam?.id ||
-      (storedTeamId && (storedTeamId !== "demo-team" || explicitDemo) ? storedTeamId : null);
+      let resolvedTeamId =
+        currentTeam?.id ||
+        (storedTeamId && (storedTeamId !== "demo-team" || explicitDemo) ? storedTeamId : null);
 
-    try {
-      // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から承認済みチームID（または demo-team）を解決
-      if (!resolvedTeamId) {
-        setIsListLoading(true);
-        try {
-          const hubRes = await fetch(
-            buildLiffHubUrl({
-              userId: profile?.userId,
-              userName: profile?.displayName,
-            }),
-            { cache: "no-store" }
-          );
-          if (hubRes.ok) {
+      try {
+        // 初回アクセス等でまだ teamId が未確定の場合は /api/liff/hub から承認済みチームID（または demo-team）を解決
+        if (!resolvedTeamId) {
+          setIsListLoading(true);
+          try {
+            const hubRes = await fetch(
+              buildLiffHubUrl({
+                userId: profile?.userId,
+                userName: profile?.displayName,
+              }),
+              bypassCache
+                ? { cache: "no-store", headers: { "x-iscore-bypass-cache": "1" } }
+                : { cache: "no-store" }
+            );
+            if (!hubRes.ok) {
+              setListLoadError(true);
+              return;
+            }
             const hubData = (await hubRes.json()) as {
+              success?: boolean;
               isDemo?: boolean;
               team?: { id?: string | null };
             };
+            if (hubData.success === false) {
+              setListLoadError(true);
+              return;
+            }
             resolvedTeamId = hubData.team?.id || "demo-team";
-          } else {
-            resolvedTeamId = "demo-team";
-          }
-        } catch {
-          resolvedTeamId = "demo-team";
-        }
-      }
-
-      const effectiveListTeamId = resolvedTeamId || "demo-team";
-      const listUrl = `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`;
-      const syncCachedList = peekLiffApiCache<LiffMatchesApiResponse>(listUrl);
-      if (Array.isArray(syncCachedList?.matches)) {
-        setMatchesList(
-          isDemoTeamId(effectiveListTeamId)
-            ? getHydratedDemoMatchCards(syncCachedList.matches)
-            : syncCachedList.matches
-        );
-        setIsListLoading(false);
-      } else {
-        setIsListLoading(true);
-      }
-
-      if (isDemoTeamId(effectiveListTeamId)) {
-        try {
-          const res = await fetch(`/api/liff/matches?teamId=demo-team`, { cache: "no-store" });
-          if (res.ok) {
-            const data = (await res.json()) as LiffMatchesApiResponse;
-            setMatchesList(
-              getHydratedDemoMatchCards(Array.isArray(data.matches) ? data.matches : undefined)
-            );
+          } catch {
+            setListLoadError(true);
             return;
           }
-        } catch {}
-        setMatchesList(getHydratedDemoMatchCards());
-        return;
-      }
+        }
 
-      const res = await fetch(
-        `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`,
-        { cache: "no-store" }
-      );
-      if (res.status === 403) {
-        setMatchesList(getHydratedDemoMatchCards());
-        return;
-      }
-      if (res.ok) {
+        const effectiveListTeamId = resolvedTeamId || "demo-team";
+        const listUrl = `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`;
+        const syncCachedList = bypassCache
+          ? null
+          : peekLiffApiCache<LiffMatchesApiResponse>(listUrl);
+        if (Array.isArray(syncCachedList?.matches)) {
+          setMatchesList(
+            isDemoTeamId(effectiveListTeamId)
+              ? getHydratedDemoMatchCards(syncCachedList.matches)
+              : syncCachedList.matches
+          );
+          setIsListLoading(false);
+        } else {
+          setIsListLoading(true);
+        }
+
+        if (isDemoTeamId(effectiveListTeamId)) {
+          setListLoadError(false);
+          try {
+            const res = await fetch(`/api/liff/matches?teamId=demo-team`, { cache: "no-store" });
+            if (res.ok) {
+              const data = (await res.json()) as LiffMatchesApiResponse;
+              if (data.success !== false) {
+                setMatchesList(
+                  getHydratedDemoMatchCards(Array.isArray(data.matches) ? data.matches : undefined)
+                );
+                return;
+              }
+            }
+          } catch {}
+          setMatchesList(getHydratedDemoMatchCards());
+          return;
+        }
+
+        const res = await fetch(
+          `/api/liff/matches?teamId=${encodeURIComponent(effectiveListTeamId)}`,
+          bypassCache
+            ? { cache: "no-store", headers: { "x-iscore-bypass-cache": "1" } }
+            : { cache: "no-store" }
+        );
+        if (res.status === 403) {
+          setListLoadError(false);
+          setMatchesList(getHydratedDemoMatchCards());
+          return;
+        }
+        if (!res.ok) {
+          setListLoadError(true);
+          return;
+        }
         const data = (await res.json()) as LiffMatchesApiResponse;
+        if (data.success === false) {
+          setListLoadError(true);
+          return;
+        }
+        setListLoadError(false);
         if (Array.isArray(data.matches)) {
           const hydrated = data.matches.map((m) => {
             if (isDemoMatchId(m.id)) {
               const demoPayload = loadDemoMatchLineups(m.id);
-              const hasSavedStarters = demoPayload.myLineup.some((s) => Boolean(s.playerId || s.name));
+              const hasSavedStarters = demoPayload.myLineup.some((s) =>
+                Boolean(s.playerId || s.name)
+              );
               return { ...m, hasLineup: hasSavedStarters };
             }
             return m;
@@ -965,19 +1051,24 @@ function MatchesContent() {
         } else {
           setMatchesList([]);
         }
+      } catch (err) {
+        console.error("Error loading matches list:", err);
+        if (isDemo || isDemoTeamId(resolvedTeamId)) {
+          setListLoadError(false);
+          setMatchesList(getHydratedDemoMatchCards());
+        } else {
+          setListLoadError(true);
+        }
+      } finally {
+        setIsListLoading(false);
       }
-    } catch (err) {
-      console.error("Error loading matches list:", err);
-      if (isDemo || isDemoTeamId(resolvedTeamId)) {
-        setMatchesList(getHydratedDemoMatchCards());
-      }
-    } finally {
-      setIsListLoading(false);
-    }
-  }, [matchId, currentTeam?.id, isLoadingTeam, isDemo, profile?.userId, profile?.displayName]);
+    },
+    [matchId, currentTeam?.id, isLoadingTeam, isDemo, profile?.userId, profile?.displayName]
+  );
 
   useEffect(() => {
-    loadMatchesList();
+    setListLoadError(false);
+    void loadMatchesList();
   }, [loadMatchesList]);
 
   useEffect(() => {
@@ -1526,11 +1617,22 @@ function MatchesContent() {
           <LiffHeader />
           <div className="p-4 space-y-4">
             <LiffPageHeader title="試合・スコア" showBack />
-            <EmptyState
-              icon={Shield}
-              title="試合が見つかりませんでした"
-              description={detailError || "指定された試合が存在しないか、削除された可能性があります"}
-            />
+            {detailIsNotFound ? (
+              <EmptyState
+                icon={Shield}
+                title="試合が見つかりませんでした"
+                description={
+                  detailError || "指定された試合が存在しないか、削除された可能性があります"
+                }
+              />
+            ) : (
+              <LiffDataLoadErrorCard
+                title="試合データを読み込めませんでした"
+                onRetry={() => setDetailReloadKey((k) => k + 1)}
+                isRetrying={isDetailLoading}
+              />
+            )}
+            <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
           </div>
         </div>
       );
@@ -3760,12 +3862,18 @@ function MatchesContent() {
         </div>
 
         {/* 試合カード一覧 */}
-        {isListLoading ? (
+        {isListLoading && !listLoadError ? (
           <div className="space-y-3.5">
             {[1, 2].map((i) => (
               <MatchScoreCardSkeleton key={i} hasVideo={true} />
             ))}
           </div>
+        ) : matchesList.length === 0 && listLoadError ? (
+          <LiffDataLoadErrorCard
+            title="試合データを読み込めませんでした"
+            onRetry={() => void loadMatchesList(true)}
+            isRetrying={isListLoading}
+          />
         ) : filteredMatches.length === 0 ? (
           <div className="py-8 space-y-4">
             <EmptyState

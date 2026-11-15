@@ -327,13 +327,25 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
           } catch {}
         }
 
-        // 既存保存データに「先行走者封殺ゴロ（outsInPlay >= 1）なのに resultCode='fc'」が混入している場合のみ自動修復（べき等・修復後は書き込み0回）
-        await repairLegacyForceOutScorebookData(d1);
+        // 既存保存データの一括修復は D1 上で完了マーカー未作成の初回1回のみ実行（コールドIsolate起動ごとの全件LIKE走査・CPUスパイクを完全防止）
+        const FORCE_OUT_REPAIR_SENTINEL_TABLE = "_repair_force_out_v1_done";
+        if (!existingTables.has(FORCE_OUT_REPAIR_SENTINEL_TABLE)) {
+          const repairedCleanly = await repairLegacyForceOutScorebookData(d1);
+          if (repairedCleanly) {
+            try {
+              await d1
+                .prepare(
+                  `CREATE TABLE IF NOT EXISTS ${FORCE_OUT_REPAIR_SENTINEL_TABLE} (done integer PRIMARY KEY)`
+                )
+                .run()
+                .catch(() => {});
+            } catch {}
+          }
+        }
       }
       isAllSchemaVerified = true;
     } catch {
-      // 万が一 batch 読取が失敗した場合もリクエスト自体はブロックしない
-      isAllSchemaVerified = true;
+      // 万が一 batch 読取が一時エラーになった場合も現在のリクエストはブロックせず、次回リクエストで再検証可能にする
     } finally {
       schemaVerificationPromise = null;
     }
@@ -342,7 +354,7 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
   await schemaVerificationPromise;
 }
 
-async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> {
+async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<boolean> {
   try {
     const [snapQueryRes, standaloneLogRes] = await d1.batch([
       d1.prepare(
@@ -565,8 +577,10 @@ async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<void> 
         await d1.batch(chunk);
       }
     }
+    return true;
   } catch {
     // 修復処理中に例外が発生しても通常リクエストは一切阻害しない
+    return false;
   }
 }
 

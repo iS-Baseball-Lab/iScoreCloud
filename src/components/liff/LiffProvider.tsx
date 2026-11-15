@@ -4,7 +4,13 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { Liff } from "@line/liff";
-import { LiffUserProfile, initLiff, getLiffProfile } from "@/lib/liff/liff-client";
+import {
+  LiffUserProfile,
+  initLiff,
+  getLiffProfile,
+  resolveActiveLiffUserIdFromSdk,
+  resolveActiveLiffUserNameFromSdk,
+} from "@/lib/liff/liff-client";
 import { LIFF_THEME_CHANGE_EVENT, syncLiffThemeClasses } from "@/lib/liff/theme-settings";
 import {
   buildLiffHubUrl,
@@ -21,6 +27,7 @@ import {
   navigateToLiffRoot,
 } from "@/lib/liff/navigation";
 import {
+  LIFF_WEBVIEW_RESUMED_EVENT,
   installLiffRuntimeRecovery,
   releaseOrphanedBodyLocks,
 } from "@/lib/liff/runtime-recovery";
@@ -186,6 +193,8 @@ export interface LiffPendingTeamItem {
 }
 
 interface HubTeamsPayload {
+  success?: boolean;
+  error?: string;
   liffId?: string;
   miniAppUrl?: string;
   sessionUser?: {
@@ -305,6 +314,8 @@ export function LiffProvider({
   });
   const [error, setError] = useState<string | null>(null);
   const lastLoadedUserIdRef = useRef<string>("");
+  const teamsLoadFailedRef = useRef<boolean>(false);
+  const isRecoveringSdkRef = useRef<boolean>(false);
   const [loadedTeamsUserId, setLoadedTeamsUserId] = useState<string | null>(null);
 
   // チーム状態 (LocalStorageから同期的に承認済みチームオブジェクトのみを取得・旧キャッシュは破棄)
@@ -580,6 +591,12 @@ export function LiffProvider({
   }, []);
 
   const applyHubPayload = useCallback((data: HubTeamsPayload, targetTeamId: string | null, uid: string, uName: string) => {
+    if (!data || data.success === false) {
+      teamsLoadFailedRef.current = true;
+      return;
+    }
+    teamsLoadFailedRef.current = false;
+
     if (typeof window !== "undefined" && (data.liffId || data.miniAppUrl)) {
       syncLineMiniAppConfigCache({
         liffId: data.liffId,
@@ -619,15 +636,18 @@ export function LiffProvider({
 
     const resolvedAppliedUid = data.sessionUser?.userId || uid || "";
     setLoadedTeamsUserId(resolvedAppliedUid);
+    const hasVerifiedIdentity = Boolean(
+      resolvedAppliedUid && resolvedAppliedUid !== "cached-user"
+    );
 
     const demoFlag = !!data.isDemo;
     setIsDemo(demoFlag);
     localStorage.setItem("iscore_isDemo", demoFlag ? "true" : "false");
 
-    // 要求した実チームIDが未承認・権限外でデモへ差し戻された場合、残留キャッシュを破棄
-    if (targetTeamId && targetTeamId !== "demo-team" && demoFlag) {
+    // 認証ユーザー確定済みの状態で要求した実チームIDが未承認・権限外としてデモへ差し戻された場合のみ残留キャッシュを完全破棄
+    if (targetTeamId && targetTeamId !== "demo-team" && demoFlag && hasVerifiedIdentity) {
       localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
-      invalidateLiffApiCache();
+      invalidateLiffApiCache(undefined, { clearLastKnownGood: true });
     } else if (!demoFlag) {
       localStorage.removeItem(EXPLICIT_DEMO_STORAGE_KEY);
     }
@@ -785,12 +805,17 @@ export function LiffProvider({
         typeof window !== "undefined"
           ? localStorage.getItem(EXPLICIT_DEMO_STORAGE_KEY) === "1"
           : false;
-      const storedUserId =
+      const rawStoredUserId =
         typeof window !== "undefined"
           ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
           : "";
+      const storedUserId =
+        rawStoredUserId && rawStoredUserId !== "cached-user"
+          ? rawStoredUserId
+          : resolveActiveLiffUserIdFromSdk();
       const storedUserName =
-        typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "";
+        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "") ||
+        resolveActiveLiffUserNameFromSdk();
 
       let targetTeamId: string | null = null;
       if (urlTeamId && !hasExplicitTeamSelectionRef.current) {
@@ -824,6 +849,7 @@ export function LiffProvider({
 
       applyHubPayload(data, targetTeamId, storedUserId, storedUserName);
     } catch (err) {
+      teamsLoadFailedRef.current = true;
       console.error("Failed to load teams in LiffProvider:", err);
     } finally {
       setIsLoadingTeam(false);
@@ -1174,6 +1200,77 @@ export function LiffProvider({
       isMounted = false;
     };
   }, [liffId]);
+
+  // 🛡️ WebView 復帰・電波回復時の自己修復ガード（LINE再起動なしでプロフィール・チーム状態を自動復旧）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleSelfHealOnResume = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+
+      // 1. 初回起動時に電波不良等で LIFF SDK 初期化やプロフィール取得がタイムアウトしていた場合は再試行
+      const needsSdkRetry =
+        (!liff &&
+          isMock &&
+          Boolean(
+            reason && (reason.includes("TIMEOUT") || reason.includes("ERROR"))
+          )) ||
+        Boolean(
+          liff &&
+            liff.isLoggedIn() &&
+            (!profile?.userId || profile.userId === "cached-user")
+        );
+
+      if (needsSdkRetry && !isRecoveringSdkRef.current) {
+        isRecoveringSdkRef.current = true;
+        try {
+          let activeInstance = liff;
+          if (!activeInstance) {
+            const retried = await initLiff(liffId);
+            if (retried.liff) {
+              activeInstance = retried.liff;
+              setLiff(retried.liff);
+              setIsMock(false);
+              setReason(undefined);
+              setIsInClient(retried.liff.isInClient());
+            }
+          }
+          if (activeInstance && activeInstance.isLoggedIn()) {
+            const recoveredProfile = await getLiffProfile();
+            if (recoveredProfile) {
+              localStorage.setItem("iscore_user_name", recoveredProfile.displayName);
+              localStorage.setItem("iscore_user_id", recoveredProfile.userId);
+              if (recoveredProfile.pictureUrl) {
+                localStorage.setItem("iscore_user_avatar", recoveredProfile.pictureUrl);
+              }
+              setProfile(recoveredProfile);
+              setIsLoggedIn(true);
+            }
+          }
+        } catch {
+          // ignore transient retry errors
+        } finally {
+          isRecoveringSdkRef.current = false;
+        }
+      } else {
+        // localStorage 側だけ欠落していた場合も SDK IDトークンから即時補完
+        resolveActiveLiffUserIdFromSdk();
+      }
+
+      // 2. 直前のチーム情報同期が通信失敗していた、または未取得の場合は自動で再同期
+      if (teamsLoadFailedRef.current || !currentTeam) {
+        void loadTeams(true);
+      }
+    };
+
+    window.addEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleSelfHealOnResume);
+    window.addEventListener("online", handleSelfHealOnResume);
+    return () => {
+      window.removeEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleSelfHealOnResume);
+      window.removeEventListener("online", handleSelfHealOnResume);
+    };
+  }, [currentTeam, isMock, liff, liffId, loadTeams, profile?.userId, reason]);
 
   const contextValue = useMemo<LiffContextType>(
     () => ({

@@ -47,6 +47,7 @@ import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache, invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedPlayerProfilePayload } from "@/components/liff/PlayerProfileEditModal";
 import type { PlayerPhotoKind } from "@/components/liff/PlayerPhotoCaptureModal";
@@ -453,6 +454,7 @@ function LiffPlayersDirectoryContent() {
   }, [currentTeam?.id, profile?.userId, profile?.displayName]);
 
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedPlayers?.success);
+  const [loadError, setLoadError] = useState<boolean>(false);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => Boolean(initialCachedPlayers?.isDemo));
   const [canManagePlayers, setCanManagePlayers] = useState<boolean>(() =>
     Boolean(initialCachedPlayers?.canManagePlayers || initialCachedPlayers?.isDemo)
@@ -523,6 +525,7 @@ function LiffPlayersDirectoryContent() {
 
   // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
   useEffect(() => {
+    setLoadError(false);
     setSelectedPlayerId(null);
     setIsPortraitZoomOpen(false);
     setPhotoModalTarget(null);
@@ -696,114 +699,128 @@ function LiffPlayersDirectoryContent() {
     []
   );
 
-  const loadPlayers = useCallback(async () => {
-    try {
-      const tid =
-        currentTeam?.id ||
-        (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
-        "demo-team";
-      const uid =
-        profile?.userId ||
-        (typeof window !== "undefined"
-          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
-          : "");
-      const uName =
-        profile?.displayName ||
-        (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+  const loadPlayers = useCallback(
+    async (bypassCache = false) => {
+      try {
+        const tid =
+          currentTeam?.id ||
+          (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") : "") ||
+          "demo-team";
+        const uid =
+          profile?.userId ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+            : "");
+        const uName =
+          profile?.displayName ||
+          (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
 
-      const query = new URLSearchParams({ teamId: tid });
-      if (uid && uid !== "cached-user") query.set("userId", uid);
-      if (uName) query.set("userName", uName);
-      const url = `/api/liff/players?${query.toString()}`;
+        const query = new URLSearchParams({ teamId: tid });
+        if (uid && uid !== "cached-user") query.set("userId", uid);
+        if (uName) query.set("userName", uName);
+        const url = `/api/liff/players?${query.toString()}`;
 
-      const syncCached = peekLiffApiCache<PlayersDirectoryResponse>(url);
-      if (syncCached?.success) {
-        setIsLoading(false);
-      } else {
-        setIsLoading(true);
-      }
-
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = (await res.json()) as PlayersDirectoryResponse;
-        if (data.success) {
-          const demoFlag = Boolean(data.isDemo);
-          setIsDemoMode(demoFlag);
-          setCanManagePlayers(Boolean(data.canManagePlayers || demoFlag));
-          setCanClaimSelfPlayer(Boolean(data.canClaimSelfPlayer));
-          setTeamInfo(data.team || null);
-
-          let nextPlayers = (data.players || []).map(hydrateDirectoryPlayer);
-
-          if (demoFlag) {
-            const condOverrides = loadDemoPlayerConditionOverrides();
-            const profOverrides = loadDemoPlayerProfileOverrides();
-            nextPlayers = nextPlayers
-              .map((p) => {
-                const cOv = condOverrides[p.id];
-                const pOv = profOverrides[p.id];
-                const mergedDetails = pOv?.profileDetails
-                  ? parsePlayerProfileDetails(pOv.profileDetails)
-                  : p.profileDetails;
-                const isProfilePosMode = p.positionSource !== "match_data";
-
-                return {
-                  ...p,
-                  ...(pOv?.name ? { name: pOv.name } : {}),
-                  ...(pOv?.nameKana !== undefined ? { nameKana: pOv.nameKana } : {}),
-                  ...(pOv?.uniformNumber ? { uniformNumber: pOv.uniformNumber } : {}),
-                  ...(pOv?.nickname !== undefined ? { nickname: pOv.nickname } : {}),
-                  ...(pOv?.registeredPrimaryPosition !== undefined
-                    ? {
-                        registeredPrimaryPosition: pOv.registeredPrimaryPosition,
-                        ...(isProfilePosMode
-                          ? { primaryPosition: pOv.registeredPrimaryPosition }
-                          : {}),
-                      }
-                    : {}),
-                  ...(pOv?.registeredSubPositions !== undefined
-                    ? {
-                        registeredSubPositions: pOv.registeredSubPositions,
-                        ...(isProfilePosMode
-                          ? { subPositions: pOv.registeredSubPositions }
-                          : {}),
-                      }
-                    : {}),
-                  ...(pOv?.throws !== undefined ? { throws: pOv.throws } : {}),
-                  ...(pOv?.bats !== undefined ? { bats: pOv.bats } : {}),
-                  ...(pOv?.height !== undefined ? { height: pOv.height } : {}),
-                  ...(pOv?.weight !== undefined ? { weight: pOv.weight } : {}),
-                  ...(pOv?.editableWeight !== undefined
-                    ? { editableWeight: pOv.editableWeight }
-                    : {}),
-                  ...(pOv?.notes !== undefined ? { notes: pOv.notes } : {}),
-                  ...(pOv?.isCaptain !== undefined ? { isCaptain: pOv.isCaptain } : {}),
-                  ...(pOv?.joinedAt !== undefined ? { joinedAt: pOv.joinedAt } : {}),
-                  ...(pOv?.profileImageUrl !== undefined
-                    ? { profileImageUrl: pOv.profileImageUrl }
-                    : {}),
-                  profileDetails: mergedDetails,
-                  conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
-                  conditionNote: cOv ? cOv.conditionNote : p.conditionNote,
-                  conditionPeriods: cOv ? cOv.conditionPeriods : p.conditionPeriods,
-                };
-              })
-              .map(hydrateDirectoryPlayer)
-              .sort(comparePlayersByConditionAndUniform);
-          }
-
-          setPlayers(nextPlayers);
+        const syncCached = bypassCache ? null : peekLiffApiCache<PlayersDirectoryResponse>(url);
+        if (syncCached?.success) {
+          setIsLoading(false);
+        } else {
+          setIsLoading(true);
         }
+
+        const res = await fetch(
+          url,
+          bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
+        );
+        if (!res.ok) {
+          setLoadError(true);
+          return;
+        }
+
+        const data = (await res.json()) as PlayersDirectoryResponse;
+        if (!data.success) {
+          setLoadError(true);
+          return;
+        }
+
+        setLoadError(false);
+        const demoFlag = Boolean(data.isDemo);
+        setIsDemoMode(demoFlag);
+        setCanManagePlayers(Boolean(data.canManagePlayers || demoFlag));
+        setCanClaimSelfPlayer(Boolean(data.canClaimSelfPlayer));
+        setTeamInfo(data.team || null);
+
+        let nextPlayers = (data.players || []).map(hydrateDirectoryPlayer);
+
+        if (demoFlag) {
+          const condOverrides = loadDemoPlayerConditionOverrides();
+          const profOverrides = loadDemoPlayerProfileOverrides();
+          nextPlayers = nextPlayers
+            .map((p) => {
+              const cOv = condOverrides[p.id];
+              const pOv = profOverrides[p.id];
+              const mergedDetails = pOv?.profileDetails
+                ? parsePlayerProfileDetails(pOv.profileDetails)
+                : p.profileDetails;
+              const isProfilePosMode = p.positionSource !== "match_data";
+
+              return {
+                ...p,
+                ...(pOv?.name ? { name: pOv.name } : {}),
+                ...(pOv?.nameKana !== undefined ? { nameKana: pOv.nameKana } : {}),
+                ...(pOv?.uniformNumber ? { uniformNumber: pOv.uniformNumber } : {}),
+                ...(pOv?.nickname !== undefined ? { nickname: pOv.nickname } : {}),
+                ...(pOv?.registeredPrimaryPosition !== undefined
+                  ? {
+                      registeredPrimaryPosition: pOv.registeredPrimaryPosition,
+                      ...(isProfilePosMode
+                        ? { primaryPosition: pOv.registeredPrimaryPosition }
+                        : {}),
+                    }
+                  : {}),
+                ...(pOv?.registeredSubPositions !== undefined
+                  ? {
+                      registeredSubPositions: pOv.registeredSubPositions,
+                      ...(isProfilePosMode
+                        ? { subPositions: pOv.registeredSubPositions }
+                        : {}),
+                    }
+                  : {}),
+                ...(pOv?.throws !== undefined ? { throws: pOv.throws } : {}),
+                ...(pOv?.bats !== undefined ? { bats: pOv.bats } : {}),
+                ...(pOv?.height !== undefined ? { height: pOv.height } : {}),
+                ...(pOv?.weight !== undefined ? { weight: pOv.weight } : {}),
+                ...(pOv?.editableWeight !== undefined
+                  ? { editableWeight: pOv.editableWeight }
+                  : {}),
+                ...(pOv?.notes !== undefined ? { notes: pOv.notes } : {}),
+                ...(pOv?.isCaptain !== undefined ? { isCaptain: pOv.isCaptain } : {}),
+                ...(pOv?.joinedAt !== undefined ? { joinedAt: pOv.joinedAt } : {}),
+                ...(pOv?.profileImageUrl !== undefined
+                  ? { profileImageUrl: pOv.profileImageUrl }
+                  : {}),
+                profileDetails: mergedDetails,
+                conditionStatus: cOv ? cOv.conditionStatus : p.conditionStatus,
+                conditionNote: cOv ? cOv.conditionNote : p.conditionNote,
+                conditionPeriods: cOv ? cOv.conditionPeriods : p.conditionPeriods,
+              };
+            })
+            .map(hydrateDirectoryPlayer)
+            .sort(comparePlayersByConditionAndUniform);
+        }
+
+        setPlayers(nextPlayers);
+      } catch (err) {
+        console.error("Failed to fetch players directory:", err);
+        setLoadError(true);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch players directory:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentTeam?.id, profile?.displayName, profile?.userId]);
+    },
+    [currentTeam?.id, profile?.displayName, profile?.userId]
+  );
 
   useEffect(() => {
-    loadPlayers();
+    void loadPlayers();
   }, [loadPlayers]);
 
   // 選手本人紐付け実行
@@ -1855,11 +1872,17 @@ function LiffPlayersDirectoryContent() {
         </div>
 
         {/* ━━━ ⚾ 選手一覧エリア ━━━ */}
-        {isLoading ? (
+        {isLoading && !loadError ? (
           <div className="rounded-2xl border border-border bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">選手名鑑を読み込み中...</p>
           </div>
+        ) : players.length === 0 && loadError ? (
+          <LiffDataLoadErrorCard
+            title="選手名鑑データを読み込めませんでした"
+            onRetry={() => void loadPlayers(true)}
+            isRetrying={isLoading}
+          />
         ) : filteredPlayers.length === 0 ? (
           <EmptyState
             icon={Users}

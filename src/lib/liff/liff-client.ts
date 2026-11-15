@@ -84,7 +84,7 @@ export async function initLiff(
           if (configData.liffId) {
             targetLiffId = configData.liffId;
             localStorage.setItem("iscore_liff_id", configData.liffId);
-          } else {
+          } else if (configData.success === true) {
             sessionStorage.setItem("iscore_liff_id_empty", "1");
           }
         }
@@ -154,6 +154,49 @@ export async function initLiff(
  */
 export function getLiffInstance(): Liff | null {
   return liffInstance;
+}
+
+/**
+ * 初期化済みLIFF SDKのIDトークンから同期的にユーザーIDを補完取得・自己修復する
+ * （長時間利用中に localStorage の一時欠落が起きた際も認証ヘッダーが途切れないようにする）
+ */
+export function resolveActiveLiffUserIdFromSdk(): string {
+  if (!liffInstance) return "";
+  try {
+    if (!liffInstance.isLoggedIn()) return "";
+    const idToken = liffInstance.getDecodedIDToken();
+    const sub = typeof idToken?.sub === "string" ? idToken.sub.trim() : "";
+    if (!sub || sub === "unknown" || sub === "cached-user") return "";
+    if (typeof window !== "undefined") {
+      try {
+        const storedUid = localStorage.getItem("iscore_user_id") || "";
+        if (!storedUid || storedUid === "cached-user") {
+          localStorage.setItem("iscore_user_id", sub);
+        }
+        const tokenName = typeof idToken?.name === "string" ? idToken.name.trim() : "";
+        if (tokenName && !localStorage.getItem("iscore_user_name")) {
+          localStorage.setItem("iscore_user_name", tokenName);
+        }
+      } catch {}
+    }
+    return sub;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * 初期化済みLIFF SDKのIDトークンから同期的に表示名を補完取得する
+ */
+export function resolveActiveLiffUserNameFromSdk(): string {
+  if (!liffInstance) return "";
+  try {
+    if (!liffInstance.isLoggedIn()) return "";
+    const idToken = liffInstance.getDecodedIDToken();
+    return typeof idToken?.name === "string" ? idToken.name.trim() : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   getLastLiffCacheInvalidatedAt,
   peekLiffApiCache,
 } from "@/lib/liff/api-cache";
+import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 import {
   normalizeGroupStatusSummaryConfig,
   type GroupStatusConfigSummary,
@@ -100,6 +101,7 @@ export default function LiffHubPage() {
   const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const hasLoadedRef = useRef<boolean>(Boolean(initialCached));
+  const hubLoadFailedRef = useRef<boolean>(false);
   const lastAppliedAtRef = useRef<number>(initialCached ? Date.now() : 0);
   const prevTeamIdRef = useRef<string | undefined>(currentTeam?.id);
 
@@ -118,6 +120,12 @@ export default function LiffHubPage() {
   }, [shouldOpenJoinModal]);
 
   const applyHubData = useCallback((data: HubDataResponse) => {
+    if (!data || data.success === false) {
+      hubLoadFailedRef.current = true;
+      setIsLoading(false);
+      return;
+    }
+    hubLoadFailedRef.current = false;
     setNextEvent(data.nextEvent ?? null);
     setEvents(Array.isArray(data.events) ? data.events : []);
     setMatches(Array.isArray(data.matches) ? data.matches : []);
@@ -153,7 +161,7 @@ export default function LiffHubPage() {
       });
 
       const cached = !forceRefresh ? peekLiffApiCache<HubDataResponse>(endpoint) : null;
-      if (cached) {
+      if (cached && cached.success !== false) {
         applyHubData(cached);
       } else if (!hasLoadedRef.current) {
         setIsLoading(true);
@@ -166,6 +174,7 @@ export default function LiffHubPage() {
         });
         applyHubData(data);
       } catch (error) {
+        hubLoadFailedRef.current = true;
         console.error("Failed to load hub data:", error);
         setIsLoading(false);
       }
@@ -200,33 +209,43 @@ export default function LiffHubPage() {
     void loadHubData(currentId, needsForce);
   }, [currentTeam?.id, loadHubData, profile?.displayName, profile?.userId]);
 
-  // 試合詳細・予定編集・出欠登録など下層画面で保存して「戻る」で復帰した際も即時最新データを反映
+  // 試合詳細・予定編集・出欠登録など下層画面で保存して「戻る」で復帰した際や通信回復時にも即時最新データを反映
   useEffect(() => {
     const handleInvalidated = () => {
       void loadHubData(currentTeam?.id, true);
     };
-    const handleBackOrShow = () => {
-      if (getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current) {
+    const handleBackOrResume = () => {
+      if (
+        hubLoadFailedRef.current ||
+        !hasLoadedRef.current ||
+        getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current
+      ) {
         void loadHubData(currentTeam?.id, true);
       }
     };
     const handleVisibility = () => {
       if (
         document.visibilityState === "visible" &&
-        getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current
+        (hubLoadFailedRef.current ||
+          !hasLoadedRef.current ||
+          getLastLiffCacheInvalidatedAt() > lastAppliedAtRef.current)
       ) {
         void loadHubData(currentTeam?.id, true);
       }
     };
 
     window.addEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
-    window.addEventListener("popstate", handleBackOrShow);
-    window.addEventListener("pageshow", handleBackOrShow);
+    window.addEventListener("popstate", handleBackOrResume);
+    window.addEventListener("pageshow", handleBackOrResume);
+    window.addEventListener("online", handleBackOrResume);
+    window.addEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleBackOrResume);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener(LIFF_CACHE_INVALIDATED_EVENT, handleInvalidated);
-      window.removeEventListener("popstate", handleBackOrShow);
-      window.removeEventListener("pageshow", handleBackOrShow);
+      window.removeEventListener("popstate", handleBackOrResume);
+      window.removeEventListener("pageshow", handleBackOrResume);
+      window.removeEventListener("online", handleBackOrResume);
+      window.removeEventListener(LIFF_WEBVIEW_RESUMED_EVENT, handleBackOrResume);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [currentTeam?.id, loadHubData]);

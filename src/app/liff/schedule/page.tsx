@@ -8,6 +8,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
 import {
@@ -295,6 +296,7 @@ export default function LiffSchedulePage() {
   const [isLoading, setIsLoading] = useState<boolean>(
     () => initialCachedSchedule === null
   );
+  const [loadError, setLoadError] = useState<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -593,39 +595,65 @@ export default function LiffSchedulePage() {
     }
   };
 
-  const loadSchedule = useCallback(async () => {
-    try {
-      const teamId = currentTeam?.id || (typeof window !== "undefined" ? localStorage.getItem("iscore_selectedTeamId") || "demo-team" : "demo-team");
-      const rawUserId = profile?.userId || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") : "");
-      const userId = rawUserId === "cached-user" ? "" : rawUserId;
-      const uName = profile?.displayName || (typeof window !== "undefined" ? (localStorage.getItem("iscore_user_name") || "") : "");
-      const cachedMid = typeof window !== "undefined" ? (localStorage.getItem(`iscore_member_id_${teamId}`) || "") : "";
-      const schedParams = new URLSearchParams({
-        teamId,
-        userId,
-        userName: uName,
-      });
-      if (cachedMid) schedParams.set("memberId", cachedMid);
-      const url = `/api/liff/schedule?${schedParams.toString()}`;
-      const syncCached = peekLiffApiCache<{
-        success: boolean;
-        events?: ScheduleEvent[];
-        attendanceStatusConfig?: GroupStatusConfigSummary;
-        scheduleDefaultTimes?: TeamScheduleDefaultTimes;
-      }>(url);
-      if (syncCached?.events) {
-        setIsLoading(false);
-      } else {
-        setIsLoading(true);
-      }
-      const res = await fetch(url);
-      if (res.ok) {
+  const loadSchedule = useCallback(
+    async (bypassCache = false) => {
+      try {
+        const teamId =
+          currentTeam?.id ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
+            : "demo-team");
+        const rawUserId =
+          profile?.userId ||
+          (typeof window !== "undefined"
+            ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+            : "");
+        const userId = rawUserId === "cached-user" ? "" : rawUserId;
+        const uName =
+          profile?.displayName ||
+          (typeof window !== "undefined" ? localStorage.getItem("iscore_user_name") || "" : "");
+        const cachedMid =
+          typeof window !== "undefined"
+            ? localStorage.getItem(`iscore_member_id_${teamId}`) || ""
+            : "";
+        const schedParams = new URLSearchParams({
+          teamId,
+          userId,
+          userName: uName,
+        });
+        if (cachedMid) schedParams.set("memberId", cachedMid);
+        const url = `/api/liff/schedule?${schedParams.toString()}`;
+        const syncCached = bypassCache
+          ? null
+          : peekLiffApiCache<{
+              success: boolean;
+              events?: ScheduleEvent[];
+              attendanceStatusConfig?: GroupStatusConfigSummary;
+              scheduleDefaultTimes?: TeamScheduleDefaultTimes;
+            }>(url);
+        if (syncCached?.events) {
+          setIsLoading(false);
+        } else {
+          setIsLoading(true);
+        }
+        const res = await fetch(
+          url,
+          bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
+        );
+        if (!res.ok) {
+          setLoadError(true);
+          return;
+        }
         const data = (await res.json()) as {
-          success: boolean;
+          success?: boolean;
           events?: ScheduleEvent[];
           attendanceStatusConfig?: GroupStatusConfigSummary;
           scheduleDefaultTimes?: TeamScheduleDefaultTimes;
         };
+        if (data.success === false) {
+          setLoadError(true);
+          return;
+        }
         if (data.attendanceStatusConfig) {
           setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
         }
@@ -634,15 +662,24 @@ export default function LiffSchedulePage() {
           setScheduleDefaultTimes(normalizedTimes);
           saveCachedTeamScheduleDefaultTimes(teamId, normalizedTimes);
         }
-        if (data.events) {
-          const normalizedEvents = data.events.map(ev => {
+        if (Array.isArray(data.events)) {
+          setLoadError(false);
+          const normalizedEvents = data.events.map((ev) => {
             const isAmOff = ev.hasAm === false || ev.amType === "off";
             return {
               ...ev,
               hasAm: !isAmOff,
-              amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
-              needsLunch: ev.needsLunch === true || (ev.needsLunch as unknown) === 1 || (ev.needsLunch as unknown) === "1" || (ev.needsLunch as unknown) === "true",
-              needsSnack: ev.needsSnack === true || (ev.needsSnack as unknown) === 1 || (ev.needsSnack as unknown) === "1" || (ev.needsSnack as unknown) === "true",
+              amType: isAmOff ? ("off" as const) : ev.amType || ev.eventType || "practice",
+              needsLunch:
+                ev.needsLunch === true ||
+                (ev.needsLunch as unknown) === 1 ||
+                (ev.needsLunch as unknown) === "1" ||
+                (ev.needsLunch as unknown) === "true",
+              needsSnack:
+                ev.needsSnack === true ||
+                (ev.needsSnack as unknown) === 1 ||
+                (ev.needsSnack as unknown) === "1" ||
+                (ev.needsSnack as unknown) === "true",
             };
           });
 
@@ -657,23 +694,26 @@ export default function LiffSchedulePage() {
             }
           }
           if (Object.keys(map).length > 0) {
-            setAttendanceMap(prev => ({ ...map, ...prev }));
+            setAttendanceMap((prev) => ({ ...map, ...prev }));
           }
           if (Object.keys(pGrpMap).length > 0) {
-            setParentGroupMap(prev => ({ ...pGrpMap, ...prev }));
+            setParentGroupMap((prev) => ({ ...pGrpMap, ...prev }));
           }
           setEvents(normalizedEvents);
         }
+      } catch (err) {
+        console.error("Failed to fetch schedule:", err);
+        setLoadError(true);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch schedule:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentTeam?.id, profile?.userId, profile?.displayName]);
+    },
+    [currentTeam?.id, profile?.userId, profile?.displayName]
+  );
 
   useEffect(() => {
-    loadSchedule();
+    setLoadError(false);
+    void loadSchedule();
   }, [loadSchedule]);
 
   // ✏️ 個別予定の保存ハンドラー
@@ -1198,7 +1238,7 @@ export default function LiffSchedulePage() {
         </div>
 
         {/* ローディング */}
-        {isLoading ? (
+        {isLoading && !loadError ? (
           <div className="space-y-3.5 animate-pulse">
             {[1, 2, 3].map((i) => (
               <div
@@ -1218,6 +1258,12 @@ export default function LiffSchedulePage() {
               </div>
             ))}
           </div>
+        ) : events.length === 0 && loadError ? (
+          <LiffDataLoadErrorCard
+            title="予定データを読み込めませんでした"
+            onRetry={() => void loadSchedule(true)}
+            isRetrying={isLoading}
+          />
         ) : filteredEvents.length === 0 ? (
           /* 空ステート */
           <div className="flex flex-col items-center justify-center py-12 text-center rounded-2xl border border-border bg-card shadow-xs overflow-hidden p-6 space-y-3">

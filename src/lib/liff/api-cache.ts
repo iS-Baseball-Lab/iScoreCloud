@@ -1,12 +1,18 @@
 // filepath: src/lib/liff/api-cache.ts
+import {
+  resolveActiveLiffUserIdFromSdk,
+  resolveActiveLiffUserNameFromSdk,
+} from "@/lib/liff/liff-client";
+import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 
 /**
- * ⚡ LIFF 爆速表示エンジン（3層SWRキャッシュ: L1 Memory + L2 sessionStorage + L3 localStorage 永続スナップショット）
+ * ⚡ LIFF 爆速表示＆自己修復エンジン（3層SWRキャッシュ + Last-Known-Good Stale-If-Error + 自動リトライ）
  * - 画面遷移時はもちろん、LINEミニアプリを一度閉じて開き直したコールド起動時でも **1フレーム目（0ms）で即時返却** しスピナーをゼロにする。
  * - 指が触れた瞬間（`onPointerDown`）の先行プリフェッチ（`warmupLiffEndpointForHref` / `warmupLiffMatchDetail`）に対応。
  * - 同一URLへの同時フェッチ（LiffProvider と各ページの重複呼び出し等）を 1 本の通信に統合する。
- * - モバイル回線切替（4G/5G・Wi-Fi）や LINE トーク画面往復時のハーフオープン通信ハングを防ぐタイムアウト＆ゾンビ通信自動破棄を搭載。
- * - POST / PUT / PATCH / DELETE 実行時は自動で L1/L2/L3 全キャッシュを即時破棄し、更新結果を確実に反映する。
+ * - 長時間利用後のモバイル回線切替（4G/5G・Wi-Fi）や LINE トーク画面往復時のハーフオープン通信ハングを検知し、
+ *   プリバックグラウンド滞留通信の即時破棄・自動リトライ（`cache: "reload"`）・通信断時の Stale-If-Error フォールバックで「データがありません」誤表示を根絶する。
+ * - POST / PUT / PATCH / DELETE 実行時は自動で L1/L2/L3 全キャッシュを破棄し、最新状態を確実に反映する（403 権限外時は Last-Known-Good も完全消去）。
  */
 
 interface CacheEntry<T = unknown> {
@@ -19,6 +25,8 @@ interface RawFetchSnapshot {
   statusText: string;
   contentType: string;
   bodyText: string;
+  isForbiddenResponse?: boolean;
+  isTransientFailure?: boolean;
 }
 
 interface TrackedInflightEntry<T> {
@@ -38,16 +46,21 @@ const LEGACY_PERSISTENT_CACHE_PREFIXES = [
 ] as const;
 const SESSION_CACHE_PREFIX = "iscore_swr_v4:";
 const PERSISTENT_CACHE_PREFIX = "iscore_swr_l3_v3:";
-const DEFAULT_FRESH_MS = 30_000; // 30秒以内は完全フレッシュ扱い（更新時は全キャッシュ即時破棄されるため無駄な裏再検証通信＆ストレージ書込を削減）
+const DEFAULT_FRESH_MS = 30_000; // 30秒以内は完全フレッシュ扱い
 const FAST_RETURN_STALE_MS = 120_000; // 120秒以内は window.fetch でも 0ms 即返却しつつ裏で再検証
-const MAX_STALE_MS = 10 * 60_000; // L1/L2 セッション内は10分保持
-const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットは24時間保持（コールド起動0ms描画用）
-const MAX_PERSISTENT_ENTRIES = 28;
-const MAX_PERSISTENT_BYTES = 120_000;
+const MAX_STALE_MS = 30 * 60_000; // L1/L2 セッション内は30分保持（従来の10分境界によるキャッシュ一斉消失を解消）
+const MAX_PERSISTENT_STALE_MS = 24 * 60 * 60_000; // L3 永続スナップショットおよび Stale-If-Error 救済上限は24時間
+const MAX_PERSISTENT_ENTRIES = 45;
+const MAX_PERSISTENT_BYTES = 260_000;
+const MAX_LAST_KNOWN_GOOD_ENTRIES = 120;
 
-const FOREGROUND_GET_TIMEOUT_MS = 12_000; // 通常GET通信の最大待機時間（モバイル回線スタック防止）
+const FOREGROUND_ATTEMPT_TIMEOUT_MS = 9_500; // 初回試行の待機上限（ハーフオープン接続を早期切断してリトライへ移行）
+const FOREGROUND_GET_TIMEOUT_MS = 11_000; // リトライ試行の最大待機時間
 const WARMUP_GET_TIMEOUT_MS = 8_000; // 先行プリフェッチ通信の最大待機時間
-const RESUME_ZOMBIE_THRESHOLD_MS = 6_000; // バックグラウンド復帰時に強制解除する滞留通信の閾値
+const MUTATION_JSON_TIMEOUT_MS = 22_000; // 更新系通信のハング防止タイムアウト（コネクション枠枯渇を防止）
+const MUTATION_UPLOAD_TIMEOUT_MS = 60_000; // 画像・PDFアップロード系の最大待機時間
+const RESUME_ZOMBIE_THRESHOLD_MS = 4_500; // バックグラウンド復帰時に強制解除する滞留通信の閾値
+const AUTO_RETRY_BACKOFF_MS = 220;
 
 const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/hub",
@@ -65,11 +78,16 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/attendance-matrix",
   "/api/liff/my-family",
   "/api/liff/admin",
+  "/api/liff/match-ops-context",
+  "/api/liff/scorebook/",
+  "/api/matches/",
+  "/api/teams/",
 ];
 
 export const LIFF_CACHE_INVALIDATED_EVENT = "iscore:liff-cache-invalidated";
 
 const memoryCache = new Map<string, CacheEntry>();
+const lastKnownGoodCache = new Map<string, CacheEntry>();
 const inflightRequests = new Map<string, TrackedInflightEntry<unknown>>();
 const inflightRawRequests = new Map<string, TrackedInflightEntry<RawFetchSnapshot>>();
 
@@ -78,6 +96,7 @@ let isGlobalFastFetchInstalled = false;
 let hasPurgedLegacyCache = false;
 let cacheMutationEpoch = 0;
 let lastCacheInvalidatedAt = 0;
+let lastDocumentHiddenAt = 0;
 
 let prefetchQueue: string[] = [];
 let prefetchGeneration = 0;
@@ -130,10 +149,15 @@ function createTimedSignal(
   return { controller, cleanup };
 }
 
-function abortZombieInflightRequests(forceAllOlderThanMs = RESUME_ZOMBIE_THRESHOLD_MS): void {
+function abortZombieInflightRequests(
+  forceAllOlderThanMs = RESUME_ZOMBIE_THRESHOLD_MS,
+  abortStartedBeforeTimestamp = 0
+): void {
   const now = Date.now();
   for (const [key, entry] of Array.from(inflightRequests.entries())) {
-    if (now - entry.startedAt >= forceAllOlderThanMs) {
+    const startedBeforeSuspend =
+      abortStartedBeforeTimestamp > 0 && entry.startedAt <= abortStartedBeforeTimestamp;
+    if (startedBeforeSuspend || now - entry.startedAt >= forceAllOlderThanMs) {
       try {
         entry.controller.abort();
       } catch {}
@@ -141,7 +165,9 @@ function abortZombieInflightRequests(forceAllOlderThanMs = RESUME_ZOMBIE_THRESHO
     }
   }
   for (const [key, entry] of Array.from(inflightRawRequests.entries())) {
-    if (now - entry.startedAt >= forceAllOlderThanMs) {
+    const startedBeforeSuspend =
+      abortStartedBeforeTimestamp > 0 && entry.startedAt <= abortStartedBeforeTimestamp;
+    if (startedBeforeSuspend || now - entry.startedAt >= forceAllOlderThanMs) {
       try {
         entry.controller.abort();
       } catch {}
@@ -195,19 +221,25 @@ function getActiveClientUserId(): string {
       localStorage.getItem("iscore_userId") ||
       "";
     const trimmed = raw.trim();
-    return trimmed && !IGNORED_CLIENT_USER_IDS.has(trimmed) ? trimmed : "";
+    if (trimmed && !IGNORED_CLIENT_USER_IDS.has(trimmed)) {
+      return trimmed;
+    }
   } catch {
-    return "";
+    // fall through to SDK recovery
   }
+  const sdkUid = resolveActiveLiffUserIdFromSdk();
+  return sdkUid && !IGNORED_CLIENT_USER_IDS.has(sdkUid) ? sdkUid : "";
 }
 
 function getActiveClientUserName(): string {
   if (typeof window === "undefined") return "";
   try {
-    return (localStorage.getItem("iscore_user_name") || "").trim();
+    const stored = (localStorage.getItem("iscore_user_name") || "").trim();
+    if (stored) return stored;
   } catch {
-    return "";
+    // fall through to SDK recovery
   }
+  return resolveActiveLiffUserNameFromSdk();
 }
 
 function extractPathFromCacheKey(key: string): string {
@@ -282,6 +314,28 @@ function withSameOriginApiAuthHeaders(
 function isPersistentEligibleKey(key: string): boolean {
   const pathPart = extractPathFromCacheKey(key);
   return PERSISTENT_ELIGIBLE_PREFIXES.some((prefix) => pathPart.startsWith(prefix));
+}
+
+function recordLastKnownGood(key: string, entry: CacheEntry): void {
+  lastKnownGoodCache.delete(key);
+  lastKnownGoodCache.set(key, entry);
+  if (lastKnownGoodCache.size > MAX_LAST_KNOWN_GOOD_ENTRIES) {
+    const oldestKey = lastKnownGoodCache.keys().next().value;
+    if (oldestKey) {
+      lastKnownGoodCache.delete(oldestKey);
+    }
+  }
+}
+
+function purgeForbiddenCacheKey(key: string): void {
+  memoryCache.delete(key);
+  lastKnownGoodCache.delete(key);
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
+      localStorage.removeItem(PERSISTENT_CACHE_PREFIX + key);
+    } catch {}
+  }
 }
 
 function prunePersistentCacheIfNeeded(): void {
@@ -397,7 +451,11 @@ function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> 
   if (mem) {
     const maxAge = allowPersistentL3 && isPersistentEligibleKey(key) ? MAX_PERSISTENT_STALE_MS : MAX_STALE_MS;
     if (now - mem.updatedAt <= maxAge) {
+      recordLastKnownGood(key, mem);
       return mem as CacheEntry<T>;
+    }
+    if (now - mem.updatedAt <= MAX_PERSISTENT_STALE_MS) {
+      recordLastKnownGood(key, mem);
     }
     memoryCache.delete(key);
   }
@@ -407,11 +465,18 @@ function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> 
       const raw = sessionStorage.getItem(SESSION_CACHE_PREFIX + key);
       if (raw) {
         const parsed = JSON.parse(raw) as CacheEntry<T>;
-        if (parsed && typeof parsed.updatedAt === "number" && now - parsed.updatedAt <= MAX_STALE_MS) {
-          memoryCache.set(key, parsed);
-          return parsed;
+        if (parsed && typeof parsed.updatedAt === "number") {
+          if (now - parsed.updatedAt <= MAX_STALE_MS) {
+            memoryCache.set(key, parsed);
+            recordLastKnownGood(key, parsed);
+            return parsed;
+          }
+          if (now - parsed.updatedAt <= MAX_PERSISTENT_STALE_MS) {
+            recordLastKnownGood(key, parsed);
+          } else {
+            sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
+          }
         }
-        sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
       }
     } catch {
       // ignore storage quota / parse errors
@@ -428,6 +493,7 @@ function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> 
             now - parsedL3.updatedAt <= MAX_PERSISTENT_STALE_MS
           ) {
             memoryCache.set(key, parsedL3);
+            recordLastKnownGood(key, parsedL3);
             return parsedL3;
           }
           localStorage.removeItem(PERSISTENT_CACHE_PREFIX + key);
@@ -441,30 +507,80 @@ function readFromCache<T>(key: string, allowPersistentL3 = true): CacheEntry<T> 
   return null;
 }
 
+/**
+ * 通信断・タイムアウト・500系一時障害発生時の最終救済スナップショット（Stale-If-Error、最大24時間）
+ * ※ 403 / isForbidden 時は purgeForbiddenCacheKey により即時破棄されているため権限外漏洩は起きない
+ */
+function readStaleFallbackEntry<T>(key: string): CacheEntry<T> | null {
+  const now = Date.now();
+  const candidates: CacheEntry<T>[] = [];
+
+  const mem = memoryCache.get(key) as CacheEntry<T> | undefined;
+  if (mem && now - mem.updatedAt <= MAX_PERSISTENT_STALE_MS) {
+    candidates.push(mem);
+  }
+  const lkg = lastKnownGoodCache.get(key) as CacheEntry<T> | undefined;
+  if (lkg && now - lkg.updatedAt <= MAX_PERSISTENT_STALE_MS) {
+    candidates.push(lkg);
+  }
+
+  if (typeof window !== "undefined") {
+    try {
+      const rawSession = sessionStorage.getItem(SESSION_CACHE_PREFIX + key);
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession) as CacheEntry<T>;
+        if (parsed && typeof parsed.updatedAt === "number" && now - parsed.updatedAt <= MAX_PERSISTENT_STALE_MS) {
+          candidates.push(parsed);
+        }
+      }
+    } catch {}
+    try {
+      const rawL3 = localStorage.getItem(PERSISTENT_CACHE_PREFIX + key);
+      if (rawL3) {
+        const parsedL3 = JSON.parse(rawL3) as CacheEntry<T>;
+        if (
+          parsedL3 &&
+          typeof parsedL3.updatedAt === "number" &&
+          now - parsedL3.updatedAt <= MAX_PERSISTENT_STALE_MS
+        ) {
+          candidates.push(parsedL3);
+        }
+      }
+    } catch {}
+  }
+
+  const valid = candidates.filter((c) => shouldPersistResponseToCache(key, c.data));
+  if (valid.length === 0) return null;
+  valid.sort((a, b) => b.updatedAt - a.updatedAt);
+  return valid[0];
+}
+
 function writeToCache<T>(key: string, data: T): void {
   purgeLegacySessionCache();
-  if (!shouldPersistResponseToCache(key, data)) {
-    memoryCache.delete(key);
-    if (typeof window !== "undefined") {
-      try {
-        sessionStorage.removeItem(SESSION_CACHE_PREFIX + key);
-        localStorage.removeItem(PERSISTENT_CACHE_PREFIX + key);
-      } catch {}
+  if (data && typeof data === "object") {
+    const rec = data as Record<string, unknown>;
+    if (rec.isForbidden === true) {
+      purgeForbiddenCacheKey(key);
+      return;
     }
+  }
+  if (!shouldPersistResponseToCache(key, data)) {
+    // 一時エラー（success: false）や未解決状態のレスポンスで既存の正常キャッシュを破壊しない
     return;
   }
 
   const entry: CacheEntry<T> = { data, updatedAt: Date.now() };
   memoryCache.set(key, entry);
+  recordLastKnownGood(key, entry);
 
   if (typeof window !== "undefined") {
     try {
       const serialized = JSON.stringify(entry);
-      // 250KB超の巨大レスポンスはメモリキャッシュのみに保持し sessionStorage 圧迫を防ぐ
-      if (serialized.length < 250_000) {
+      // 300KB超の巨大レスポンスはメモリキャッシュのみに保持し sessionStorage 圧迫を防ぐ
+      if (serialized.length < 300_000) {
         sessionStorage.setItem(SESSION_CACHE_PREFIX + key, serialized);
       }
-      // 主要画面の軽量レスポンス（120KB以下）は L3 localStorage にも保存し、次回LINE起動時の 0ms 表示を実現
+      // 主要画面・試合詳細レスポンス（260KB以下）は L3 localStorage にも保存し、次回LINE起動時の 0ms 表示＆通信断耐性を実現
       if (isPersistentEligibleKey(key) && serialized.length <= MAX_PERSISTENT_BYTES) {
         try {
           localStorage.setItem(PERSISTENT_CACHE_PREFIX + key, serialized);
@@ -504,59 +620,251 @@ export function peekLiffApiCache<T>(url: string): T | null {
   return entry ? entry.data : null;
 }
 
+function isTransientHttpStatus(status: number): boolean {
+  return (
+    status === 408 ||
+    status === 425 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
+}
+
+async function executeGetSnapshotWithRetry(params: {
+  rawUrl: string;
+  input: RequestInfo | URL;
+  init?: RequestInit;
+  cacheKey: string;
+  timeoutMs: number;
+  startEpoch: number;
+  masterAbortSignal: AbortSignal;
+  callerSignal?: AbortSignal | null;
+  maxAttempts?: number;
+}): Promise<RawFetchSnapshot> {
+  const baseFetch = getNativeFetch();
+  const totalAttempts = params.maxAttempts ?? 2;
+
+  for (let attempt = 0; attempt < totalAttempts; attempt++) {
+    const attemptTimeout =
+      attempt === 0 && totalAttempts > 1
+        ? Math.min(params.timeoutMs, FOREGROUND_ATTEMPT_TIMEOUT_MS)
+        : params.timeoutMs;
+
+    const useMasterSignal = attempt === 0 && !params.masterAbortSignal.aborted;
+    const { controller: attemptController, cleanup } = createTimedSignal(
+      attemptTimeout,
+      params.callerSignal || (useMasterSignal ? params.masterAbortSignal : undefined)
+    );
+
+    const onMasterAbort = () => {
+      try {
+        attemptController.abort();
+      } catch {}
+    };
+    if (useMasterSignal && params.callerSignal && params.masterAbortSignal !== params.callerSignal) {
+      params.masterAbortSignal.addEventListener("abort", onMasterAbort, { once: true });
+    }
+
+    try {
+      // リトライ時は直前に LIFF SDK 側で解決・自己修復された最新 userId ヘッダーを再付与し、cache: "reload" でハーフオープン接続を回避
+      const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
+        params.rawUrl,
+        params.input,
+        params.init
+      );
+      const res = await baseFetch(nextInput, {
+        ...nextInit,
+        cache: attempt === 0 ? "no-store" : "reload",
+        signal: attemptController.signal,
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      const bodyText = await res.text();
+
+      if (res.status === 403) {
+        purgeForbiddenCacheKey(params.cacheKey);
+        return {
+          status: res.status,
+          statusText: res.statusText,
+          contentType: contentType || "application/json; charset=utf-8",
+          bodyText,
+          isForbiddenResponse: true,
+          isTransientFailure: false,
+        };
+      }
+
+      let parsedJson: unknown = undefined;
+      let hasParsedJson = false;
+      let isPayloadForbidden = false;
+      let isPayloadExplicitError = false;
+
+      if (contentType.includes("application/json") && bodyText) {
+        try {
+          parsedJson = JSON.parse(bodyText) as unknown;
+          hasParsedJson = true;
+          if (parsedJson && typeof parsedJson === "object") {
+            const rec = parsedJson as Record<string, unknown>;
+            if (rec.isForbidden === true) {
+              isPayloadForbidden = true;
+            } else if (rec.success === false) {
+              isPayloadExplicitError = true;
+            }
+          }
+        } catch {
+          hasParsedJson = false;
+        }
+      }
+
+      if (isPayloadForbidden) {
+        purgeForbiddenCacheKey(params.cacheKey);
+        return {
+          status: res.status,
+          statusText: res.statusText,
+          contentType: contentType || "application/json; charset=utf-8",
+          bodyText,
+          isForbiddenResponse: true,
+          isTransientFailure: false,
+        };
+      }
+
+      const transientFailure =
+        isTransientHttpStatus(res.status) || (res.ok && isPayloadExplicitError);
+
+      if (!transientFailure) {
+        if (res.ok && hasParsedJson && params.startEpoch === cacheMutationEpoch) {
+          writeToCache(params.cacheKey, parsedJson);
+        }
+        return {
+          status: res.status,
+          statusText: res.statusText,
+          contentType: contentType || "application/json; charset=utf-8",
+          bodyText,
+          isForbiddenResponse: false,
+          isTransientFailure: false,
+        };
+      }
+
+      const isForegroundOrUnknown =
+        typeof document === "undefined" || document.visibilityState !== "hidden";
+      if (attempt + 1 < totalAttempts && !params.callerSignal?.aborted && isForegroundOrUnknown) {
+        await sleepMs(AUTO_RETRY_BACKOFF_MS);
+        continue;
+      }
+
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        contentType: contentType || "application/json; charset=utf-8",
+        bodyText,
+        isForbiddenResponse: false,
+        isTransientFailure: true,
+      };
+    } catch (err) {
+      if (params.callerSignal?.aborted) {
+        throw err;
+      }
+      const isForegroundOrUnknown =
+        typeof document === "undefined" || document.visibilityState !== "hidden";
+      if (attempt + 1 < totalAttempts && isForegroundOrUnknown) {
+        await sleepMs(params.masterAbortSignal.aborted ? 40 : AUTO_RETRY_BACKOFF_MS);
+        continue;
+      }
+      throw err;
+    } finally {
+      cleanup();
+      if (useMasterSignal && params.callerSignal && params.masterAbortSignal !== params.callerSignal) {
+        params.masterAbortSignal.removeEventListener("abort", onMasterAbort);
+      }
+    }
+  }
+
+  throw new Error("LIFF_FETCH_RETRY_EXHAUSTED");
+}
+
 /**
- * 重複排除・タイムアウト保護付きのネットワーク JSON フェッチ（成功時キャッシュ更新・常にネイティブ fetch を使用）
+ * 重複排除・タイムアウト保護・自動リトライ・Stale-If-Error 救済付きのネットワーク JSON フェッチ
  */
 export async function fetchLiffJsonFresh<T>(
   urlOrKey: string,
-  options?: { timeoutMs?: number }
+  options?: {
+    timeoutMs?: number;
+    disableStaleFallback?: boolean;
+    maxAttempts?: number;
+  }
 ): Promise<T> {
   const fetchUrl = extractPathFromCacheKey(urlOrKey);
   const key = normalizeCacheKey(fetchUrl) || urlOrKey;
-  const existing = inflightRequests.get(key);
-  if (existing) {
-    return existing.promise as Promise<T>;
+
+  let tracked = inflightRequests.get(key);
+  if (!tracked) {
+    const startEpoch = cacheMutationEpoch;
+    const timeoutMs = options?.timeoutMs ?? FOREGROUND_GET_TIMEOUT_MS;
+    const masterController = new AbortController();
+
+    const networkPromise = (async () => {
+      try {
+        const snap = await executeGetSnapshotWithRetry({
+          rawUrl: fetchUrl,
+          input: fetchUrl,
+          cacheKey: key,
+          timeoutMs,
+          startEpoch,
+          masterAbortSignal: masterController.signal,
+          maxAttempts: options?.maxAttempts ?? 2,
+        });
+        if (snap.status < 200 || snap.status >= 300) {
+          const statusErr = new Error(`HTTP ${snap.status}`) as Error & {
+            httpStatus?: number;
+            isForbidden?: boolean;
+          };
+          statusErr.httpStatus = snap.status;
+          statusErr.isForbidden = snap.isForbiddenResponse;
+          throw statusErr;
+        }
+        const parsed = JSON.parse(snap.bodyText) as T;
+        if (parsed && typeof parsed === "object") {
+          const rec = parsed as Record<string, unknown>;
+          if (rec.success === false && rec.isForbidden !== true) {
+            throw new Error(
+              typeof rec.error === "string" ? rec.error : "API_SUCCESS_FALSE"
+            );
+          }
+        }
+        return parsed;
+      } finally {
+        const current = inflightRequests.get(key);
+        if (current && current.controller === masterController) {
+          inflightRequests.delete(key);
+        }
+      }
+    })();
+
+    tracked = {
+      promise: networkPromise,
+      controller: masterController,
+      startedAt: Date.now(),
+    };
+    inflightRequests.set(key, tracked);
   }
 
-  const startEpoch = cacheMutationEpoch;
-  const baseFetch = getNativeFetch();
-  const timeoutMs = options?.timeoutMs ?? FOREGROUND_GET_TIMEOUT_MS;
-  const { controller, cleanup } = createTimedSignal(timeoutMs);
-
-  const reqPromise = (async () => {
-    try {
-      const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
-        fetchUrl,
-        fetchUrl,
-        {
-          cache: "no-store",
-          signal: controller.signal,
-        }
-      );
-      const res = await baseFetch(nextInput, nextInit);
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const json = (await res.json()) as T;
-      if (startEpoch === cacheMutationEpoch) {
-        writeToCache(key, json);
-      }
-      return json;
-    } finally {
-      cleanup();
-      const current = inflightRequests.get(key);
-      if (current && current.controller === controller) {
-        inflightRequests.delete(key);
+  try {
+    return (await tracked.promise) as T;
+  } catch (err) {
+    const errObj = err as { httpStatus?: number; isForbidden?: boolean } | null;
+    if (
+      !options?.disableStaleFallback &&
+      errObj?.httpStatus !== 403 &&
+      !errObj?.isForbidden
+    ) {
+      const stale = readStaleFallbackEntry<T>(key);
+      if (stale) {
+        return stale.data;
       }
     }
-  })();
-
-  inflightRequests.set(key, {
-    promise: reqPromise,
-    controller,
-    startedAt: Date.now(),
-  });
-  return reqPromise;
+    throw err;
+  }
 }
 
 /**
@@ -578,7 +886,10 @@ export async function fetchLiffJsonSWR<T>(
     if (cached) {
       const age = Date.now() - cached.updatedAt;
       if (age > freshMs) {
-        void fetchLiffJsonFresh<T>(key)
+        void fetchLiffJsonFresh<T>(key, {
+          disableStaleFallback: true,
+          maxAttempts: 2,
+        })
           .then((freshData) => {
             options?.onRevalidate?.(freshData);
           })
@@ -594,7 +905,10 @@ export async function fetchLiffJsonSWR<T>(
 /**
  * キャッシュを無効化する（POST / PUT / PATCH / DELETE 実行時に自動または明示呼び出し）
  */
-export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
+export function invalidateLiffApiCache(
+  prefixOrSubstring?: string,
+  options?: { clearLastKnownGood?: boolean }
+): void {
   cacheMutationEpoch += 1;
   lastCacheInvalidatedAt = Date.now();
   inflightRequests.clear();
@@ -602,6 +916,9 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
 
   if (!prefixOrSubstring) {
     memoryCache.clear();
+    if (options?.clearLastKnownGood) {
+      lastKnownGoodCache.clear();
+    }
     if (typeof window !== "undefined") {
       try {
         const sKeys: string[] = [];
@@ -628,6 +945,13 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
   for (const key of Array.from(memoryCache.keys())) {
     if (key.includes(prefixOrSubstring)) {
       memoryCache.delete(key);
+    }
+  }
+  if (options?.clearLastKnownGood) {
+    for (const key of Array.from(lastKnownGoodCache.keys())) {
+      if (key.includes(prefixOrSubstring)) {
+        lastKnownGoodCache.delete(key);
+      }
     }
   }
 
@@ -658,11 +982,7 @@ export function invalidateLiffApiCache(prefixOrSubstring?: string): void {
 }
 
 /**
- * 🚀 全LIFFページの `fetch('/api/...')` を自動的に SWR 即時応答＋同時リクエスト統合化するアクセラレータ
- * - `/api/*` 以外の通信（Next.js App Router の RSC `.txt` 遷移や静的チャンク読込等）は一切加工せず 0ms パススルーする。
- * - 90秒以内のキャッシュは `window.fetch` でも 0ms で即返却し、15秒超なら裏で静かに再検証する。
- * - タイムアウト保護（12秒）および LINE バックグラウンド復帰時の滞留リクエスト自動解除により、永久スピナーを根絶する。
- * - POST / PUT / PATCH / DELETE 通信が発生した瞬間に L1/L2/L3 全キャッシュを自動破棄するため古いデータが残らない。
+ * 🚀 全LIFFページの `fetch('/api/...')` を自動的に SWR 即時応答＋同時リクエスト統合＋自動リトライ＋Stale-If-Error 救済化するアクセラレータ
  */
 export function installLiffFastFetchCache(): void {
   if (typeof window === "undefined" || isGlobalFastFetchInstalled) return;
@@ -671,19 +991,25 @@ export function installLiffFastFetchCache(): void {
   isGlobalFastFetchInstalled = true;
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      abortZombieInflightRequests(RESUME_ZOMBIE_THRESHOLD_MS);
+    if (document.visibilityState === "hidden") {
+      lastDocumentHiddenAt = Date.now();
+    } else if (document.visibilityState === "visible") {
+      abortZombieInflightRequests(RESUME_ZOMBIE_THRESHOLD_MS, lastDocumentHiddenAt);
     }
   });
 
   window.addEventListener("pageshow", (event: PageTransitionEvent) => {
     if (event.persisted) {
-      abortZombieInflightRequests(0);
+      abortZombieInflightRequests(0, Date.now());
     }
   });
 
   window.addEventListener("online", () => {
-    abortZombieInflightRequests(3_000);
+    abortZombieInflightRequests(2_500, lastDocumentHiddenAt);
+  });
+
+  window.addEventListener(LIFF_WEBVIEW_RESUMED_EVENT, () => {
+    abortZombieInflightRequests(RESUME_ZOMBIE_THRESHOLD_MS, lastDocumentHiddenAt);
   });
 
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -705,29 +1031,42 @@ export function installLiffFastFetchCache(): void {
       "GET"
     ).toUpperCase();
 
-    const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
-      rawUrl,
-      input,
-      init
-    );
-
     const cacheKey = normalizeCacheKey(rawUrl);
 
     // 2. キャッシュ対象外の `/api/*`（認証API・画像バイナリ・ポーリング専用API等）はヘッダー付与済みでそのまま委譲
     if (!cacheKey) {
+      const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
       return baseFetch(nextInput, nextInit);
     }
 
-    // 3. 更新系リクエスト（POST / PUT / PATCH / DELETE）は実行直後にキャッシュを全クリアして最新状態を保証
+    // 3. 更新系リクエスト（POST / PUT / PATCH / DELETE）：ハング防止タイムアウト保護＋完了時1回のみキャッシュ無効化
     if (method !== "GET") {
-      invalidateLiffApiCache();
+      const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
+      const callerMutationSignal =
+        init?.signal || (input instanceof Request ? input.signal : null);
+      const isUploadBody =
+        rawUrl.includes("/upload") ||
+        rawUrl.includes("/photos") ||
+        rawUrl.includes("/logo") ||
+        rawUrl.includes("/cover") ||
+        (typeof FormData !== "undefined" && init?.body instanceof FormData) ||
+        (typeof Blob !== "undefined" && init?.body instanceof Blob);
+      const mutationTimeoutMs = isUploadBody
+        ? MUTATION_UPLOAD_TIMEOUT_MS
+        : MUTATION_JSON_TIMEOUT_MS;
+      const { controller: mutController, cleanup: cleanupMut } = createTimedSignal(
+        mutationTimeoutMs,
+        callerMutationSignal
+      );
       try {
-        const res = await baseFetch(nextInput, nextInit);
-        invalidateLiffApiCache();
+        const res = await baseFetch(nextInput, {
+          ...nextInit,
+          signal: mutController.signal,
+        });
         return res;
-      } catch (err) {
+      } finally {
+        cleanupMut();
         invalidateLiffApiCache();
-        throw err;
       }
     }
 
@@ -740,13 +1079,18 @@ export function installLiffFastFetchCache(): void {
       } catch {}
     }
 
-    // 4. GET リクエスト：直近90秒以内のキャッシュは 0ms で Response を即返却（15秒超なら裏で再検証）
-    const cached = !bypassCache ? readFromCache<unknown>(cacheKey, false) : null;
+    // 4. GET リクエスト：直近120秒以内のフレッシュ／準フレッシュキャッシュは 0ms で Response を即返却（30秒超なら裏で再検証）
+    // ※ L3 対象エンドポイントは L1 メモリ消失後も L3 から高速読取する
+    const cached = !bypassCache ? readFromCache<unknown>(cacheKey, true) : null;
     if (cached) {
       const age = Date.now() - cached.updatedAt;
       if (age <= FAST_RETURN_STALE_MS) {
         if (age > DEFAULT_FRESH_MS) {
-          void fetchLiffJsonFresh(cacheKey, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
+          void fetchLiffJsonFresh(cacheKey, {
+            timeoutMs: WARMUP_GET_TIMEOUT_MS,
+            disableStaleFallback: true,
+            maxAttempts: 1,
+          }).catch(() => {});
         }
         return new Response(JSON.stringify(cached.data), {
           status: 200,
@@ -759,100 +1103,108 @@ export function installLiffFastFetchCache(): void {
       }
     }
 
-    // 呼び出し元独自の AbortSignal が既に指定されている場合は共有統合せず個別にタイムアウト保護実行
+    const buildStaleErrorRescueResponse = (): Response | null => {
+      if (bypassCache) return null;
+      const stale = readStaleFallbackEntry<unknown>(cacheKey);
+      if (!stale) return null;
+      return new Response(JSON.stringify(stale.data), {
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-iScore-SWR": "STALE-IF-ERROR",
+        },
+      });
+    };
+
+    // 呼び出し元独自の AbortSignal が既に指定されている場合は共有統合せず個別にタイムアウト＆リトライ保護実行
     const callerSignal =
       init?.signal || (input instanceof Request ? input.signal : null);
     if (callerSignal) {
-      const { controller, cleanup } = createTimedSignal(
-        FOREGROUND_GET_TIMEOUT_MS,
-        callerSignal
-      );
+      const masterController = new AbortController();
       const startEpoch = cacheMutationEpoch;
       try {
-        const res = await baseFetch(nextInput, {
-          ...nextInit,
-          cache: "no-store",
-          signal: controller.signal,
+        const snap = await executeGetSnapshotWithRetry({
+          rawUrl,
+          input,
+          init,
+          cacheKey,
+          timeoutMs: FOREGROUND_GET_TIMEOUT_MS,
+          startEpoch,
+          masterAbortSignal: masterController.signal,
+          callerSignal,
+          maxAttempts: 2,
         });
-        const contentType = res.headers.get("content-type") || "";
-        const bodyText = await res.text();
-        if (
-          res.ok &&
-          contentType.includes("application/json") &&
-          startEpoch === cacheMutationEpoch
-        ) {
-          try {
-            writeToCache(cacheKey, JSON.parse(bodyText) as unknown);
-          } catch {}
+        if (snap.isTransientFailure && !snap.isForbiddenResponse) {
+          const rescued = buildStaleErrorRescueResponse();
+          if (rescued) return rescued;
         }
-        return new Response(bodyText, {
-          status: res.status,
-          statusText: res.statusText,
+        return new Response(snap.bodyText, {
+          status: snap.status,
+          statusText: snap.statusText,
           headers: {
-            "Content-Type": contentType || "application/json; charset=utf-8",
+            "Content-Type": snap.contentType,
           },
         });
-      } finally {
-        cleanup();
+      } catch (err) {
+        if (!callerSignal.aborted) {
+          const rescued = buildStaleErrorRescueResponse();
+          if (rescued) return rescued;
+        }
+        throw err;
       }
     }
 
-    // 5. キャッシュミスまたは90秒超の古いスナップショット時：同一 URL への同時リクエストをタイムアウト付きで 1 本に統合
+    // 5. キャッシュミスまたは120秒超の古いスナップショット時：同一 URL への同時リクエストを自動リトライ＆タイムアウト付きで 1 本に統合
     let tracked = inflightRawRequests.get(cacheKey);
     if (!tracked) {
       const startEpoch = cacheMutationEpoch;
-      const { controller, cleanup } = createTimedSignal(FOREGROUND_GET_TIMEOUT_MS);
+      const masterController = new AbortController();
       const pending = (async (): Promise<RawFetchSnapshot> => {
         try {
-          const res = await baseFetch(nextInput, {
-            ...nextInit,
-            cache: "no-store",
-            signal: controller.signal,
+          return await executeGetSnapshotWithRetry({
+            rawUrl,
+            input,
+            init,
+            cacheKey,
+            timeoutMs: FOREGROUND_GET_TIMEOUT_MS,
+            startEpoch,
+            masterAbortSignal: masterController.signal,
+            maxAttempts: 2,
           });
-          const contentType = res.headers.get("content-type") || "";
-          const bodyText = await res.text();
-
-          if (
-            res.ok &&
-            contentType.includes("application/json") &&
-            startEpoch === cacheMutationEpoch
-          ) {
-            try {
-              const parsed = JSON.parse(bodyText) as unknown;
-              writeToCache(cacheKey, parsed);
-            } catch {}
-          }
-
-          return {
-            status: res.status,
-            statusText: res.statusText,
-            contentType: contentType || "application/json; charset=utf-8",
-            bodyText,
-          };
         } finally {
-          cleanup();
           const current = inflightRawRequests.get(cacheKey);
-          if (current && current.controller === controller) {
+          if (current && current.controller === masterController) {
             inflightRawRequests.delete(cacheKey);
           }
         }
       })();
       tracked = {
         promise: pending,
-        controller,
+        controller: masterController,
         startedAt: Date.now(),
       };
       inflightRawRequests.set(cacheKey, tracked);
     }
 
-    const snap = await tracked.promise;
-    return new Response(snap.bodyText, {
-      status: snap.status,
-      statusText: snap.statusText,
-      headers: {
-        "Content-Type": snap.contentType,
-      },
-    });
+    try {
+      const snap = await tracked.promise;
+      if (snap.isTransientFailure && !snap.isForbiddenResponse) {
+        const rescued = buildStaleErrorRescueResponse();
+        if (rescued) return rescued;
+      }
+      return new Response(snap.bodyText, {
+        status: snap.status,
+        statusText: snap.statusText,
+        headers: {
+          "Content-Type": snap.contentType,
+        },
+      });
+    } catch (err) {
+      const rescued = buildStaleErrorRescueResponse();
+      if (rescued) return rescued;
+      throw err;
+    }
   };
 }
 
@@ -864,7 +1216,11 @@ function triggerWarmupUrl(url: string): void {
     return;
   }
   if (!inflightRequests.has(key) && !inflightRawRequests.has(key)) {
-    void fetchLiffJsonFresh(key, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
+    void fetchLiffJsonFresh(key, {
+      timeoutMs: WARMUP_GET_TIMEOUT_MS,
+      disableStaleFallback: true,
+      maxAttempts: 1,
+    }).catch(() => {});
   }
 }
 
@@ -1056,7 +1412,11 @@ async function runPolitePrefetchWorker(expectedGen: number): Promise<void> {
       const key = normalizeCacheKey(nextUrl) || nextUrl;
       const existing = readFromCache(key, false);
       if (!existing && !inflightRequests.has(key) && !inflightRawRequests.has(key)) {
-        await fetchLiffJsonFresh(key, { timeoutMs: WARMUP_GET_TIMEOUT_MS }).catch(() => {});
+        await fetchLiffJsonFresh(key, {
+          timeoutMs: WARMUP_GET_TIMEOUT_MS,
+          disableStaleFallback: true,
+          maxAttempts: 1,
+        }).catch(() => {});
         await sleepMs(120);
       }
     }

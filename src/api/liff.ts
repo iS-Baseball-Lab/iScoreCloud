@@ -1060,12 +1060,16 @@ app.get("/my-status", async (c) => {
     });
   } catch (error: unknown) {
     console.error("Failed to load user my-status:", error);
-    return c.json({
-      success: false,
-      activeTeams: [],
-      pendingTeams: [],
-      isDemo: true,
-    });
+    return c.json(
+      {
+        success: false,
+        error: "所属チーム状態の取得に失敗しました",
+        activeTeams: [],
+        pendingTeams: [],
+        isDemo: true,
+      },
+      500
+    );
   }
 });
 
@@ -1876,45 +1880,16 @@ app.get("/hub", async (c) => {
       scheduleDefaultTimes: hubTeamScheduleDefaults,
       matches: formattedMatches,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff hub data:", error);
-    return c.json({
-      success: true,
-      liffId: c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "",
-      isDemo: true,
-      team: DEMO_TEAM,
-      teams: [DEMO_TEAM],
-      nextEvent: DEMO_NEXT_EVENT,
-      events: [
-        {
-          id: "demo-ev-1",
-          title: "秋季大会 2回戦 vs レッドソックス",
-          date: "8/29(土)",
-          dateStr: "2026-08-29",
-          time: "08:00〜12:00",
-          location: "市民第1球場",
-          eventType: "match",
-          dutyGroup: "1班",
-          carInfo: "鈴木号・佐藤号",
-          needsLunch: false,
-          needsSnack: true,
-        },
-        {
-          id: "demo-ev-2",
-          title: "全日通常練習 & 守備連携・走塁強化",
-          date: "8/30(日)",
-          dateStr: "2026-08-30",
-          time: "08:00〜18:00",
-          location: "大師河原第3G",
-          eventType: "practice",
-          dutyGroup: "2班",
-          carInfo: "配車調整中",
-          needsLunch: true,
-          needsSnack: false,
-        },
-      ],
-      matches: DEMO_MATCHES,
-    });
+    return c.json(
+      {
+        success: false,
+        error: "チームデータの取得に失敗しました",
+        liffId: c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "",
+      },
+      500
+    );
   }
 });
 
@@ -2038,9 +2013,9 @@ app.get("/matches", async (c) => {
       isDemo: false,
       matches: formattedMatches,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff matches:", error);
-    return c.json({ success: false, matches: [] });
+    return c.json({ success: false, error: "試合一覧の取得に失敗しました", matches: [] }, 500);
   }
 });
 
@@ -2468,9 +2443,9 @@ app.get("/schedule", async (c) => {
       scheduleDefaultTimes: schedDefaultTimes,
       events: formattedEvents,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff schedule:", error);
-    return c.json({ success: false, events: [] });
+    return c.json({ success: false, error: "予定データの取得に失敗しました", events: [] }, 500);
   }
 });
 
@@ -3865,15 +3840,19 @@ app.get("/my-family", async (c) => {
       parentAttendances: parentAttMap,
       parentGroupMap,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load my-family:", error);
-    return c.json({
-      success: false,
-      isParent: true,
-      children: [],
-      attendances: {},
-      parentAttendances: {},
-    });
+    return c.json(
+      {
+        success: false,
+        error: "家族情報の取得に失敗しました",
+        isParent: true,
+        children: [],
+        attendances: {},
+        parentAttendances: {},
+      },
+      500
+    );
   }
 });
 
@@ -4331,9 +4310,9 @@ app.get("/carpool", async (c) => {
         cars: carsWithPassengers,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff carpool:", error);
-    return c.json({ success: false, carpool: null });
+    return c.json({ success: false, error: "配車データの取得に失敗しました", carpool: null }, 500);
   }
 });
 
@@ -4828,9 +4807,12 @@ app.get("/grounds", async (c) => {
       isDemo: false,
       venues: formatted,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff grounds:", error);
-    return c.json({ success: true, isDemo: true, venues: DEMO_VENUES });
+    return c.json(
+      { success: false, error: "球場データの取得に失敗しました", venues: [] },
+      500
+    );
   }
 });
 
@@ -6948,11 +6930,14 @@ app.get("/stats", async (c) => {
     });
   } catch (error: unknown) {
     console.error("Failed to load liff stats:", error);
-    return c.json({
-      success: false,
-      stats: null,
-      error: error instanceof Error ? error.message : "成績データの取得に失敗しました",
-    });
+    return c.json(
+      {
+        success: false,
+        stats: null,
+        error: error instanceof Error ? error.message : "成績データの取得に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -7138,9 +7123,9 @@ app.get("/documents", async (c) => {
       isDemo: false,
       documents: formatted,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff documents:", error);
-    return c.json({ success: false, documents: [] });
+    return c.json({ success: false, error: "資料データの取得に失敗しました", documents: [] }, 500);
   }
 });
 
@@ -7418,9 +7403,9 @@ app.get("/faqs", async (c) => {
       isDemo: false,
       faqs: formatted,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load liff faqs:", error);
-    return c.json({ success: false, faqs: [] });
+    return c.json({ success: false, error: "Q&Aデータの取得に失敗しました", faqs: [] }, 500);
   }
 });
 
@@ -7616,79 +7601,6 @@ app.delete("/faqs/:id", async (c) => {
   }
 });
 
-/**
- * ⚾ 試合一覧取得API (GET /matches?teamId=xxx)
- */
-app.get("/matches", async (c) => {
-  await ensureMatchLineupColumns(c.env.DB);
-  const db = drizzle(c.env.DB);
-  const teamId = c.req.query("teamId");
-
-  try {
-    if (!teamId || teamId === "demo-team") {
-      return c.json({
-        success: true,
-        isDemo: true,
-        matches: DEMO_MATCHES,
-      });
-    }
-
-    const matchesList = await db
-      .select({
-        id: matches.id,
-        opponent: matches.opponent,
-        date: matches.date,
-        status: matches.status,
-        myScore: matches.myScore,
-        opponentScore: matches.opponentScore,
-        youtubeUrl: matches.youtubeUrl,
-        matchType: matches.matchType,
-        tournamentName: tournaments.name,
-        venueName: venues.name,
-        venueShortName: venues.shortName,
-        venueParkingInfo: venues.parkingInfo,
-        surfaceDetails: matches.surfaceDetails,
-        battingOrder: matches.battingOrder,
-        innings: matches.innings,
-        myInningScores: matches.myInningScores,
-        opponentInningScores: matches.opponentInningScores,
-        myHits: matches.myHits,
-        opponentHits: matches.opponentHits,
-        myErrors: matches.myErrors,
-        opponentErrors: matches.opponentErrors,
-        matchDayOps: matches.matchDayOps,
-      })
-      .from(matches)
-      .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-      .leftJoin(venues, eq(matches.venueId, venues.id))
-      .where(eq(matches.teamId, teamId))
-      .orderBy(desc(sql`replace(${matches.date}, '/', '-')`), desc(matches.createdAt))
-      .all();
-
-    const secondScheduleSyncMap = await buildScheduledMatchCarpoolSyncMap(
-      db,
-      teamId,
-      matchesList
-    );
-
-    const formattedMatches = matchesList.map(({ matchDayOps: rawMatchDayOps, ...m }) => ({
-      ...m,
-      myInningScores: typeof m.myInningScores === "string" ? JSON.parse(m.myInningScores || "[]") : (m.myInningScores || []),
-      opponentInningScores: typeof m.opponentInningScores === "string" ? JSON.parse(m.opponentInningScores || "[]") : (m.opponentInningScores || []),
-      matchDayOps: parseMatchDayOpsJson(rawMatchDayOps),
-      scheduleSync: secondScheduleSyncMap.get(m.id) || null,
-    }));
-
-    return c.json({
-      success: true,
-      isDemo: false,
-      matches: formattedMatches,
-    });
-  } catch (error: any) {
-    console.error("Failed to load liff matches:", error);
-    return c.json({ success: false, error: error?.message || "試合一覧の取得に失敗しました", matches: [] }, 500);
-  }
-});
 
 // ========================================================
 // ⚠️ チーム・編成別 注意事項 (Rules / Guidelines) API
@@ -7965,13 +7877,16 @@ app.get("/rules", async (c) => {
       isDemo: false,
       rules: formattedRules.length > 0 ? formattedRules : DEMO_RULES,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load rules:", error);
-    return c.json({
-      success: true,
-      isDemo: false,
-      rules: DEMO_RULES,
-    });
+    return c.json(
+      {
+        success: false,
+        error: "ルール・注意事項の取得に失敗しました",
+        rules: [],
+      },
+      500
+    );
   }
 });
 
@@ -8337,13 +8252,16 @@ app.get("/links", async (c) => {
       isDemo: false,
       links: formattedLinks.length > 0 ? formattedLinks : DEMO_LINKS,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load links:", error);
-    return c.json({
-      success: true,
-      isDemo: false,
-      links: DEMO_LINKS,
-    });
+    return c.json(
+      {
+        success: false,
+        error: "関連リンクの取得に失敗しました",
+        links: [],
+      },
+      500
+    );
   }
 });
 
@@ -11974,11 +11892,15 @@ app.get("/tournaments", async (c) => {
     });
   } catch (err: unknown) {
     console.error("Failed to fetch LIFF tournaments:", err);
-    return c.json({
-      success: true,
-      isDemo: false,
-      tournaments: [],
-    });
+    return c.json(
+      {
+        success: false,
+        error: "大会データの取得に失敗しました",
+        isDemo: false,
+        tournaments: [],
+      },
+      500
+    );
   }
 });
 

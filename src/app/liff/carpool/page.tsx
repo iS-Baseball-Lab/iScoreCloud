@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -120,6 +121,7 @@ function LiffCarpoolContent() {
     () => initialCachedCarpool?.carpool ?? null
   );
   const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedCarpool);
+  const [loadError, setLoadError] = useState<boolean>(false);
   const [isTestConvoyMode, setIsTestConvoyMode] = useState(false);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editorInitialEventId, setEditorInitialEventId] = useState<string | undefined>(undefined);
@@ -147,8 +149,9 @@ function LiffCarpoolContent() {
       const syncCached = !bypassCache
         ? peekLiffApiCache<{ success: boolean; carpool?: CarpoolData }>(url)
         : null;
-      if (syncCached) {
+      if (syncCached && syncCached.success !== false) {
         setCarpoolInfo(syncCached.carpool ?? null);
+        setLoadError(false);
         setIsLoading(false);
       } else {
         setIsLoading(true);
@@ -158,15 +161,23 @@ function LiffCarpoolContent() {
         url,
         bypassCache ? { headers: { "x-iscore-bypass-cache": "1" } } : undefined
       );
-      if (res.ok) {
-        const data = (await res.json()) as { success: boolean; carpool?: CarpoolData };
-        if (data.carpool) {
-          setCarpoolInfo(data.carpool);
-        } else {
-          setCarpoolInfo(null);
-        }
+      if (!res.ok) {
+        setLoadError(true);
+        return;
+      }
+      const data = (await res.json()) as { success: boolean; carpool?: CarpoolData };
+      if (data.success === false) {
+        setLoadError(true);
+        return;
+      }
+      setLoadError(false);
+      if (data.carpool) {
+        setCarpoolInfo(data.carpool);
+      } else {
+        setCarpoolInfo(null);
       }
     } catch (err) {
+      setLoadError(true);
       console.error("Failed to fetch carpool:", err);
     } finally {
       setIsLoading(false);
@@ -245,6 +256,12 @@ function LiffCarpoolContent() {
             <Loader2 className="w-6 h-6 animate-spin text-primary" />
             <span className="text-xs font-bold">配車表を読み込み中...</span>
           </div>
+        ) : !carpoolInfo && loadError && !isTestConvoyMode ? (
+          <LiffDataLoadErrorCard
+            title="配車データを読み込めませんでした"
+            onRetry={() => void loadCarpool(undefined, true)}
+            isRetrying={isLoading}
+          />
         ) : (!carpoolInfo || cars.length === 0) && !isTestConvoyMode ? (
           /* 空ステート ＋ 簡易配車作成 ＆ 隊列ライブマップ実機テスト起動カード */
           <div className="space-y-3">
