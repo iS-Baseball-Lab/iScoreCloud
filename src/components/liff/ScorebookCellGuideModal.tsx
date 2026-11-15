@@ -20,6 +20,7 @@ import {
   buildScorebookCellGuide,
   type InspectedScorebookCellItem,
   type PitchGuideItem,
+  type RuleJudgmentReasonBoxData,
 } from "@/lib/liff/scorebook-cell-guide";
 import {
   renderCellSubstitutionsOverlaySvg,
@@ -647,6 +648,9 @@ export function ScorebookCellGuideModal({
                       <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
                         {row.description}
                       </p>
+                      {row.ruleReasonBox && (
+                        <RuleJudgmentReasonBox box={row.ruleReasonBox} />
+                      )}
                     </div>
                   </div>
                 );
@@ -701,62 +705,10 @@ export function ScorebookCellGuideModal({
                         {row.description}
                       </p>
                       {row.earnedRunReasonBox && (
-                        <div
-                          className={cn(
-                            "mt-2 rounded-xl border overflow-hidden",
-                            row.earnedRunReasonBox.variant === "unearned"
-                              ? "border-amber-400 bg-amber-50"
-                              : "border-sky-400 bg-sky-50"
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              "px-2.5 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 flex items-center justify-between gap-2 flex-wrap",
-                              row.earnedRunReasonBox.variant === "unearned"
-                                ? "border-amber-500"
-                                : "border-sky-500"
-                            )}
-                          >
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-wide">
-                              <Scale
-                                className={cn(
-                                  "w-3 h-3 shrink-0",
-                                  row.earnedRunReasonBox.variant === "unearned"
-                                    ? "text-amber-400"
-                                    : "text-sky-400"
-                                )}
-                              />
-                              <span>
-                                {row.earnedRunReasonBox.variant === "unearned"
-                                  ? "非自責点の理由"
-                                  : "自責点判定の補足"}
-                              </span>
-                            </span>
-                            <span
-                              className={cn(
-                                "px-1.5 py-0.5 rounded font-mono text-[9px] font-black leading-none",
-                                row.earnedRunReasonBox.variant === "unearned"
-                                  ? "bg-amber-500 text-slate-950"
-                                  : "bg-sky-500 text-slate-950"
-                              )}
-                            >
-                              {row.earnedRunReasonBox.ruleClause}
-                            </span>
-                          </div>
-                          <div className="p-2.5 space-y-1.5">
-                            <p className="text-[11px] font-black text-slate-950 leading-snug">
-                              {row.earnedRunReasonBox.headline}
-                            </p>
-                            <p className="text-[11px] font-bold text-slate-800 leading-relaxed">
-                              {row.earnedRunReasonBox.detail}
-                            </p>
-                            {row.earnedRunReasonBox.note && (
-                              <div className="rounded-lg bg-white border border-slate-300 px-2 py-1.5 text-[10px] font-bold text-slate-700 leading-relaxed">
-                                {row.earnedRunReasonBox.note}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+                        <RuleJudgmentReasonBox box={row.earnedRunReasonBox} />
+                      )}
+                      {row.ruleReasonBox && (
+                        <RuleJudgmentReasonBox box={row.ruleReasonBox} />
                       )}
                     </div>
                   </div>
@@ -801,3 +753,70 @@ export function ScorebookCellGuideModal({
     document.body
   );
 }
+
+function RuleJudgmentReasonBox({ box }: { box: RuleJudgmentReasonBoxData }) {
+  const isUnearned = box.variant === "unearned";
+  const isEarnedNote = box.variant === "earned_note";
+
+  const frameCls = isUnearned
+    ? "border-amber-400 bg-amber-50"
+    : isEarnedNote
+    ? "border-sky-400 bg-sky-50"
+    : "border-slate-300 bg-slate-50";
+
+  const capBorderCls = isUnearned
+    ? "border-amber-500"
+    : isEarnedNote
+    ? "border-sky-500"
+    : "border-amber-500";
+
+  const iconCls = isEarnedNote ? "text-sky-400" : "text-amber-400";
+
+  const clauseBadgeCls = isEarnedNote
+    ? "bg-sky-500 text-slate-950"
+    : "bg-amber-500 text-slate-950";
+
+  const defaultLabel = isUnearned
+    ? "なぜ非自責点になるのか"
+    : isEarnedNote
+    ? "なぜ自責点になるのか"
+    : "なぜこの記録・判定になるのか";
+
+  return (
+    <div className={cn("mt-2 rounded-xl border overflow-hidden", frameCls)}>
+      <div
+        className={cn(
+          "px-2.5 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 flex items-center justify-between gap-2 flex-wrap",
+          capBorderCls
+        )}
+      >
+        <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-wide">
+          <Scale className={cn("w-3 h-3 shrink-0", iconCls)} />
+          <span>{box.headerLabel || defaultLabel}</span>
+        </span>
+        <span
+          className={cn(
+            "px-1.5 py-0.5 rounded font-mono text-[9px] font-black leading-none",
+            clauseBadgeCls
+          )}
+        >
+          {box.ruleClause}
+        </span>
+      </div>
+      <div className="p-2.5 space-y-1.5">
+        <p className="text-[11px] font-black text-slate-950 leading-snug">
+          {box.headline}
+        </p>
+        <p className="text-[11px] font-bold text-slate-800 leading-relaxed">
+          {box.detail}
+        </p>
+        {box.note && (
+          <div className="rounded-lg bg-white border border-slate-300 px-2 py-1.5 text-[10px] font-bold text-slate-700 leading-relaxed">
+            {box.note}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

@@ -1050,6 +1050,8 @@ export interface OfficialEarnedRunExplanation {
   inheritedFromPriorPitcher?: boolean;
   /** 救援特例（規則 9.16(i)）や前任投手帰属（9.16(g)/(h)）等の補足注記 */
   note?: string;
+  /** 自責点（isEarned === true）であっても判断理由が分かりにくいケース（暴投振り逃げ・途中失策からの自責昇格・救援特例・投手交代跨ぎ責任走者等）か */
+  hasSpecialEarnedWhy?: boolean;
 }
 
 export interface HalfInningEarnedRunDetails {
@@ -1083,6 +1085,9 @@ interface TrackedPitchingRunner {
   runnerName: string;
   responsiblePitcherKey: string;
   inheritedFromPriorPitcher: boolean;
+  dtsWpOrigin?: boolean;
+  swappedFromPriorPitcherRunner?: boolean;
+  midAtBatWalkFromPriorPitcher?: boolean;
   isUnearnedOrigin: boolean;
   originCauseKind: RunnerOriginCauseKind;
   originPlayLabel: string;
@@ -1438,6 +1443,9 @@ export function evaluateHalfInningEarnedRunDetails(
     runnerName: string;
     responsiblePitcherKey: string;
     inheritedFromPriorPitcher?: boolean;
+    dtsWpOrigin?: boolean;
+    swappedFromPriorPitcherRunner?: boolean;
+    midAtBatWalkFromPriorPitcher?: boolean;
     isUnearnedOrigin: boolean;
     originCauseKind?: RunnerOriginCauseKind;
     originPlayLabel?: string;
@@ -1455,6 +1463,9 @@ export function evaluateHalfInningEarnedRunDetails(
       id: nextTokenSeq++,
       isRetired: false,
       inheritedFromPriorPitcher: params.inheritedFromPriorPitcher ?? false,
+      dtsWpOrigin: params.dtsWpOrigin ?? false,
+      swappedFromPriorPitcherRunner: params.swappedFromPriorPitcherRunner ?? false,
+      midAtBatWalkFromPriorPitcher: params.midAtBatWalkFromPriorPitcher ?? false,
       originCauseKind:
         params.originCauseKind ??
         (params.isUnearnedOrigin ? "error_reach" : "clean"),
@@ -1949,7 +1960,10 @@ export function evaluateHalfInningEarnedRunDetails(
       !cls.isHit &&
       !cls.isWalk &&
       !cls.isHbp &&
-      (cls.isFieldersChoiceReach ||
+      ((cls.isFieldersChoiceReach &&
+        (play.snapAb
+          ? inPlayOuts >= 1
+          : !inPlayAdvs.some((r) => r.fromBase > 0 && !r.isOut))) ||
         (cls.effectiveResult === "groundout" &&
           inPlayOuts === 1 &&
           Boolean(
@@ -2376,6 +2390,13 @@ export function evaluateHalfInningEarnedRunDetails(
         ? [describeUnearnedReasonLabel(batterRunReason)]
         : [];
 
+      const isBatterWpDts = Boolean(
+        cls.isDroppedThirdStrikeSafe && dtsKind === "wp"
+      );
+      const isSwappedFromPriorPitcher = Boolean(
+        inheritsPrecedingRunner && batterRespKey && pKey && batterRespKey !== pKey
+      );
+
       createRunnerToken({
         cellAtBatId: play.atBatId || null,
         runnerName: play.snapAb?.batterName || "",
@@ -2383,6 +2404,9 @@ export function evaluateHalfInningEarnedRunDetails(
         inheritedFromPriorPitcher: Boolean(
           batterRespKey && pKey && batterRespKey !== pKey
         ),
+        dtsWpOrigin: isBatterWpDts,
+        swappedFromPriorPitcherRunner: isSwappedFromPriorPitcher,
+        midAtBatWalkFromPriorPitcher: chargeWalkToPriorPitcher,
         isUnearnedOrigin: batterIsUnearnedOrigin,
         originCauseKind: batterOriginCauseKind,
         originPlayLabel: batterOriginPlayLabel,
@@ -2567,6 +2591,14 @@ export function evaluateHalfInningEarnedRunDetails(
           inheritedFromPriorPitcher: Boolean(
             batterRespKey && pKey && batterRespKey !== pKey
           ),
+          dtsWpOrigin: Boolean(cls.isDroppedThirdStrikeSafe && dtsKind === "wp"),
+          swappedFromPriorPitcherRunner: Boolean(
+            inheritsPrecedingRunner &&
+              batterRespKey &&
+              pKey &&
+              batterRespKey !== pKey
+          ),
+          midAtBatWalkFromPriorPitcher: chargeWalkToPriorPitcher,
           isUnearnedOrigin: batterIsUnearnedOrigin,
           originCauseKind: batterOriginCauseKind,
           originPlayLabel: batterOriginPlayLabel,
@@ -2698,22 +2730,111 @@ export function evaluateHalfInningEarnedRunDetails(
           tok.scoredDuringPitcherKey !== respKey)
     );
 
+    const priorPitcherInheritNote = tok.midAtBatWalkFromPriorPitcher
+      ? "公認野球規則 9.16(h) により、ボール先行カウント（2-0 / 2-1 / 3-0 / 3-1 / 3-2）で交代した打席が四球となったため、この走者の失点・自責責任は救援投手ではなく交代前の前任投手に帰属します。"
+      : tok.swappedFromPriorPitcherRunner
+      ? "公認野球規則 9.16(g)［例題］により、救援投手の登板中に封殺ゴロ・野選でこの打者が一塁に残りましたが、前任投手が残した先行走者と入れ替わった走者のため、失点・自責責任は救援投手ではなく前任投手に帰属します。"
+      : crossedPitcherChange
+      ? "公認野球規則 9.16(g) により、投手交代前に塁へ出た走者が後続の救援投手の登板中に生還した場合でも、失点・自責責任はその走者を出塁させた前任投手に帰属します。"
+      : undefined;
+
+    const combineNotes = (
+      ...parts: Array<string | undefined>
+    ): string | undefined => {
+      const valid = parts.filter((s): s is string => Boolean(s && s.trim()));
+      return valid.length > 0 ? valid.join(" ") : undefined;
+    };
+
     if (isPitcherEarned) {
       const relieverTeamDiffNote = !isTeamEarned
-        ? "公認野球規則 9.16(i) により、救援投手は登板前の失策による仮想アウトの恩恵を受けないため救援投手個人には自責点（●）が記録されます（チーム全体の自責点では仮想3アウト後のため非自責扱い）。"
+        ? "公認野球規則 9.16(i) により、救援投手は登板前に記録された失策による仮想アウトの恩恵を受けないため、救援投手個人には自責点（●）が記録されます（チーム全体の自責点では仮想3アウト到達後のため非自責扱いとなり、個人自責点合計とチーム自責点に差が生じます）。"
         : undefined;
+
+      if (tok.dtsWpOrigin) {
+        return {
+          isEarned: true,
+          isTeamEarned,
+          hasSpecialEarnedWhy: true,
+          ruleClause: "公認野球規則 9.16(a)(3)",
+          headline: "暴投（ワイルドピッチ）による振り逃げ出塁は投手の自責対象",
+          detail:
+            "三振（振り逃げ）での出塁ですが、第3ストライクの後逸原因が捕手の捕逸（PB）や野手の悪送球ではなく「投手の暴投（WP）」であるため、公認野球規則 9.16(a)(3) により四死球等と同じく投手の責任出塁として扱われ、生還時は自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+          note: combineNotes(priorPitcherInheritNote, relieverTeamDiffNote),
+        };
+      }
 
       if (tok.unearnedAdvanceTriggers.length > 0) {
         const triggersJa = tok.unearnedAdvanceTriggers.join("・");
         return {
           isEarned: true,
           isTeamEarned,
+          hasSpecialEarnedWhy: true,
           ruleClause: "公認野球規則 9.16(a)・(f)",
-          headline: "失策・捕逸絡みの生還後、後続打席により自責点へ昇格",
-          detail: `進塁・生還の途中には「${triggersJa}」が絡んでいましたが、3アウトになる前の後続打席（安打・四死球・暴投等）によってミスがなくても本塁へ生還できていたと再構成されるため、自責点として記録されます。`,
+          headline: "失策・捕逸絡みの進塁でも、後続打席により自責点へ昇格",
+          detail: `進塁・生還の途中には「${triggersJa}」が絡んでいましたが、3アウトになる前の後続打席（安打・四死球・犠飛・暴投等）によって「仮にそのミスがなくても結局本塁へ生還できていた」とイニング再構成されるため、非自責ではなく自責点として記録されます。`,
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
-          note: relieverTeamDiffNote,
+          note: combineNotes(priorPitcherInheritNote, relieverTeamDiffNote),
+        };
+      }
+
+      if (!isTeamEarned) {
+        return {
+          isEarned: true,
+          isTeamEarned,
+          hasSpecialEarnedWhy: true,
+          ruleClause: "公認野球規則 9.16(i)",
+          headline: "救援投手は登板前の失策の恩恵を受けないため個人自責点",
+          detail:
+            "イニング全体で見ると前任投手時の失策により既に仮想3アウト相当ですが、公認野球規則 9.16(i) により救援投手は自分が登板する前の失策（仮想アウト）の恩恵を受けられません。救援投手自身の登板後に失策なく許した得点のため、救援投手個人の自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: crossedPitcherChange,
+          note:
+            "チーム全体の自責点（TEAM TOTAL）ではイニング全体の再構成により非自責扱いとなるため、個人自責点の合計よりもチーム自責点が少なくなります（規則 9.16(i) 注）。",
+        };
+      }
+
+      if (tok.midAtBatWalkFromPriorPitcher) {
+        return {
+          isEarned: true,
+          isTeamEarned,
+          hasSpecialEarnedWhy: true,
+          ruleClause: "公認野球規則 9.16(g)・(h)",
+          headline: "打席途中の投手交代による四球出塁（前任投手の自責点）",
+          detail:
+            "ボール先行カウント（2-0 / 2-1 / 3-0 / 3-1 / 3-2）で投手交代した打席が四球となったため、公認野球規則 9.16(h) により四球と責任走者は救援投手ではなく交代前の前任投手に記録され、この生還も前任投手の自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: true,
+        };
+      }
+
+      if (tok.swappedFromPriorPitcherRunner) {
+        return {
+          isEarned: true,
+          isTeamEarned,
+          hasSpecialEarnedWhy: true,
+          ruleClause: "公認野球規則 9.16(g)［例題］",
+          headline: "封殺で入れ替わった走者の生還（前任投手の自責点）",
+          detail:
+            "救援投手の登板中に内野ゴロ封殺・野選でこの打者が一塁に残りましたが、アウトになった先行走者は交代前の前任投手が出塁させた走者でした。公認野球規則 9.16(g) により入れ替わった一塁走者の責任も前任投手が引き継ぐため、救援投手ではなく前任投手の自責点となります。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: true,
+        };
+      }
+
+      if (crossedPitcherChange) {
+        return {
+          isEarned: true,
+          isTeamEarned,
+          hasSpecialEarnedWhy: true,
+          ruleClause: "公認野球規則 9.16(g)",
+          headline: "投手交代前の残留走者が生還（出塁させた前任投手の自責点）",
+          detail:
+            "後続の救援投手が打たれて本塁へ生還しましたが、公認野球規則 9.16(g) により塁上に走者を残して降板した投手がその走者の得点責任を負うため、失点・自責点ともにこの走者を出塁させた前任投手に記録されます。",
+          responsiblePitcherKey: respKey || undefined,
+          inheritedFromPriorPitcher: true,
         };
       }
 
@@ -2725,8 +2846,7 @@ export function evaluateHalfInningEarnedRunDetails(
         detail:
           "安打・四死球・犠打・犠飛・盗塁・暴投・ボークなど守備側の失策や捕逸を介さずに3アウト成立前に生還したため、投手の自責点となります。",
         responsiblePitcherKey: respKey || undefined,
-        inheritedFromPriorPitcher: crossedPitcherChange,
-        note: relieverTeamDiffNote,
+        inheritedFromPriorPitcher: false,
       };
     }
 
@@ -2757,6 +2877,7 @@ export function evaluateHalfInningEarnedRunDetails(
           detail: `この走者自身が${playDesc}によって出塁しており、失策がなければその打席でアウトになっていた走者のため、後続の安打等で生還しても非自責点となります。`,
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
       }
 
@@ -2771,6 +2892,7 @@ export function evaluateHalfInningEarnedRunDetails(
             "先行走者をアウトにした後の悪送球・捕球失策（エラー）によって打者走者がアウトを免れて一塁に残っており、失策がなければ併殺等でアウトになっていたため非自責点となります。",
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
 
       case "dts_pb":
@@ -2784,6 +2906,7 @@ export function evaluateHalfInningEarnedRunDetails(
             "第3ストライクを捕手が捕逸（パスボール）して振り逃げ出塁した走者であり、捕逸がなければ三振アウトになっていたため非自責点となります（※投手の暴投による振り逃げ出塁のみ自責対象）。",
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
 
       case "dts_error":
@@ -2797,6 +2920,7 @@ export function evaluateHalfInningEarnedRunDetails(
             "第3ストライク後の振り逃げで、野手の悪送球または捕球失策（エラー）により一塁へ生きた走者のため、失策がなければ三振アウトになっており非自責点となります。",
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
 
       case "interference":
@@ -2810,6 +2934,7 @@ export function evaluateHalfInningEarnedRunDetails(
             "捕手の打撃妨害（捕手に失策記録）によって一塁を与えられた走者のため、本人が本塁へ生還した得点は投手の自責点にはならず非自責点となります。",
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
 
       case "inherited_unearned": {
@@ -2824,6 +2949,7 @@ export function evaluateHalfInningEarnedRunDetails(
           detail: `前の塁にいた「${causeJa}」がフォースアウト等で退き、この打者が入れ替わりで一塁に残ったため、先行走者の非自責扱いをそのまま引き継いで非自責点となります。`,
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
       }
 
@@ -2839,6 +2965,7 @@ export function evaluateHalfInningEarnedRunDetails(
             detail: `この回に記録された失策・捕逸${errorPlaysJa}がなければ、この打席の時点で既に3アウトチェンジとなっていました。公認野球規則 9.16(a) のイニング再構成により、仮想3アウト到達後の得点は安打・本塁打を含めすべて非自責点となります。`,
             responsiblePitcherKey: respKey || undefined,
             inheritedFromPriorPitcher: crossedPitcherChange,
+            note: priorPitcherInheritNote,
           };
         }
 
@@ -2852,6 +2979,7 @@ export function evaluateHalfInningEarnedRunDetails(
             detail: `この走者自身の出塁は正規でしたが、この回の失策・捕逸${errorPlaysJa}を除いてイニングを再構成すると、本塁へ還る前に3アウトチェンジ（${hypoBaseJa}残塁相当）となっていたため非自責点となります。`,
             responsiblePitcherKey: respKey || undefined,
             inheritedFromPriorPitcher: crossedPitcherChange,
+            note: priorPitcherInheritNote,
           };
         }
 
@@ -2867,6 +2995,7 @@ export function evaluateHalfInningEarnedRunDetails(
             : `出塁自体は正規でしたが、途中の進塁または本塁生還が「${triggersJa}」によるものであり、後続の打席結果でもミスなしでは本塁まで進めなかった（イニング再構成上の到達塁：${hypoBaseJa}止まり）ため非自責点となります。`,
           responsiblePitcherKey: respKey || undefined,
           inheritedFromPriorPitcher: crossedPitcherChange,
+          note: priorPitcherInheritNote,
         };
       }
     }
@@ -3204,8 +3333,24 @@ export function resolveAppealOutPlayAdjustment(
 // 公認野球規則 9.17（勝敗投手）・9.18（完投/完封）・9.19（セーブ）＋ホールド＋9.01（記録員手動指定）
 // ============================================================================
 
+export interface OfficialPitcherDecisionExplanation {
+  /** 表示カテゴリラベル */
+  categoryLabel: string;
+  /** 強調トーン */
+  variant: "win" | "loss" | "save" | "hold" | "shutout" | "info";
+  /** 根拠となる公認野球規則条項 */
+  ruleClause: string;
+  /** 1行の要点見出し */
+  headline: string;
+  /** なぜその判断・記録になるのかの具体的な解説 */
+  detail: string;
+  /** 補足注記（任意） */
+  note?: string;
+}
+
 export interface MatchPitcherDecisionStintInput {
   pitcherKey: string;
+  pitcherName?: string;
   order: number;
   outsRecorded: number;
   runsAllowed: number;
@@ -3240,6 +3385,8 @@ export interface PitcherMatchDecisionOutcome {
   completeGame: boolean;
   shutout: boolean;
   isManualOverride: boolean;
+  /** なぜその勝・敗・S・H（または先発勝敗なし）になるのかの公式規則解説 */
+  decisionExplanation?: OfficialPitcherDecisionExplanation;
 }
 
 export interface EvaluateMatchPitcherDecisionsResult {
@@ -3250,6 +3397,34 @@ export interface EvaluateMatchPitcherDecisionsResult {
   holdPitcherKeys: string[];
   teamShutout: boolean;
   starterQualifyingOuts: number;
+  /** 継投完封・初回無死救援完封等のチーム完封解説（公認野球規則 9.18） */
+  teamShutoutExplanation?: OfficialPitcherDecisionExplanation;
+}
+
+/**
+ * 公認野球規則 9.16(i)［注］：個人自責点の合計とチーム自責点が一致しない場合の理由解説を生成する。
+ */
+export function buildTeamEarnedRunDiscrepancyExplanation(
+  teamEarnedRuns: number,
+  individualEarnedRunsSum: number
+): OfficialPitcherDecisionExplanation | null {
+  if (individualEarnedRunsSum <= teamEarnedRuns) {
+    return null;
+  }
+  return {
+    categoryLabel: "チーム自責点と個人合計の差",
+    variant: "info",
+    ruleClause: "公認野球規則 9.16(i)［注］",
+    headline: `個人自責点の合計（${individualEarnedRunsSum}）よりチーム自責点（${teamEarnedRuns}）が少ない理由`,
+    detail: `失策・捕逸が記録されたイニングの途中で投手交代が行われた場合、公認野球規則 9.16(i) により救援投手は「自分が登板する前の失策による仮想アウト」の恩恵を受けられず個人自責点が記録されます。一方、チーム全体の自責点はイニング全体を通して仮想3アウトを再構成するため、個人自責点の合計（${individualEarnedRunsSum}）よりもチーム自責点（${teamEarnedRuns}）が少なくなります。`,
+  };
+}
+
+function formatOutsAsInningsJa(outs: number): string {
+  const safeOuts = Math.max(0, Math.trunc(outs));
+  const whole = Math.floor(safeOuts / 3);
+  const rem = safeOuts % 3;
+  return rem === 0 ? `${whole}.0回` : `${whole}.${rem}回`;
 }
 
 /**
@@ -3303,6 +3478,11 @@ export function evaluateMatchPitcherDecisions(
     };
   }
 
+  const formatPitcherActor = (p: MatchPitcherDecisionStintInput): string => {
+    const trimmed = (p.pitcherName || "").trim();
+    return trimmed ? `${trimmed}投手` : `${p.order}番手投手`;
+  };
+
   const totalDefenseOuts = orderedPitchers.reduce(
     (acc, p) => acc + Math.max(0, p.outsRecorded),
     0
@@ -3311,6 +3491,18 @@ export function evaluateMatchPitcherDecisions(
     input.scheduledInnings,
     totalDefenseOuts
   );
+  const isShortenedGame =
+    input.scheduledInnings >= 8
+      ? totalDefenseOuts > 0 && totalDefenseOuts <= 15
+      : totalDefenseOuts > 0 && totalDefenseOuts <= 12;
+  const regulationSystemLabel =
+    input.scheduledInnings >= 8
+      ? isShortenedGame
+        ? "9回制（5回以下の短縮試合）"
+        : "9回制"
+      : isShortenedGame
+      ? "7回制（4回以下の短縮試合）"
+      : "7回制";
 
   const isFinishedComparisonValid =
     totalDefenseOuts > 0 ||
@@ -3324,6 +3516,7 @@ export function evaluateMatchPitcherDecisions(
   // 1) 完投（CG）＆ 個人完封（SHO）判定（公認野球規則 9.18）
   const completeGameByKey = new Map<string, boolean>();
   const shutoutByKey = new Map<string, boolean>();
+  let relieverZeroOutShutoutKey: string | null = null;
 
   if (orderedPitchers.length === 1 && totalDefenseOuts > 0) {
     const soloKey = orderedPitchers[0]!.pitcherKey;
@@ -3352,6 +3545,7 @@ export function evaluateMatchPitcherDecisions(
       reliever.outsRecorded === totalDefenseOuts
     ) {
       shutoutByKey.set(reliever.pitcherKey, true);
+      relieverZeroOutShutoutKey = reliever.pitcherKey;
     }
   }
 
@@ -3413,7 +3607,19 @@ export function evaluateMatchPitcherDecisions(
   let simOppScore = 0;
   let currentMoundPitcherKey = orderedPitchers[0]!.pitcherKey;
   let activeWinningPitcherOfRecordKey: string | null = null;
+  let winningGoAheadMeta: {
+    inning: number;
+    myScoreAfter: number;
+    oppScoreAtMoment: number;
+  } | null = null;
   let goAheadRunLosingPitcherKey: string | null = null;
+  let losingGoAheadMeta: {
+    inning: number;
+    myScoreAtMoment: number;
+    oppScoreAfter: number;
+    moundPitcherKeyAtScore: string;
+    isEarned?: boolean;
+  } | null = null;
   const enteredPitcherKeysSoFar = new Set<string>([
     orderedPitchers[0]!.pitcherKey,
   ]);
@@ -3427,6 +3633,7 @@ export function evaluateMatchPitcherDecisions(
     if (simMyScore >= simOppScore) {
       // 自チームが同点以上に追いついたため、それ以前の相手勝ち越しリードは消滅
       goAheadRunLosingPitcherKey = null;
+      losingGoAheadMeta = null;
     }
     if (prevMy <= simOppScore && simMyScore > simOppScore) {
       // 自チームが勝ち越した瞬間の責任投手（先攻1回表のみ先発投手、それ以外は直前の守備回を投げ終えた投手）
@@ -3434,6 +3641,11 @@ export function evaluateMatchPitcherDecisions(
         input.isMyTeamBatFirst && inn === 1
           ? orderedPitchers[0]!.pitcherKey
           : currentMoundPitcherKey;
+      winningGoAheadMeta = {
+        inning: inn,
+        myScoreAfter: simMyScore,
+        oppScoreAtMoment: simOppScore,
+      };
     }
   };
 
@@ -3473,6 +3685,7 @@ export function evaluateMatchPitcherDecisions(
 
         if (simOppScore >= simMyScore) {
           activeWinningPitcherOfRecordKey = null;
+          winningGoAheadMeta = null;
           // 既に登板済みの救援投手が守っていたリードが追いつかれたか記録（自身が降板後でも責任走者による同点ならホールド消滅）
           for (const tr of relieverTrackingByKey.values()) {
             if (!tr.enteredGame) continue;
@@ -3486,6 +3699,13 @@ export function evaluateMatchPitcherDecisions(
         }
         if (prevOpp === simMyScore && simOppScore === simMyScore + 1) {
           goAheadRunLosingPitcherKey = respKey;
+          losingGoAheadMeta = {
+            inning: inn,
+            myScoreAtMoment: simMyScore,
+            oppScoreAfter: simOppScore,
+            moundPitcherKeyAtScore: currentMoundPitcherKey,
+            isEarned: ev?.isEarned,
+          };
         }
       }
       cumOutsCursor = Math.min(totalDefenseOuts, cumOutsCursor + 3);
@@ -3533,6 +3753,7 @@ export function evaluateMatchPitcherDecisions(
         simOppScore += 1;
         if (simOppScore >= simMyScore) {
           activeWinningPitcherOfRecordKey = null;
+          winningGoAheadMeta = null;
           for (const tr of relieverTrackingByKey.values()) {
             if (
               tr.enteredGame &&
@@ -3544,6 +3765,12 @@ export function evaluateMatchPitcherDecisions(
         }
         if (prevOpp === simMyScore && simOppScore === simMyScore + 1) {
           goAheadRunLosingPitcherKey = respKey;
+          losingGoAheadMeta = {
+            inning: inn,
+            myScoreAtMoment: simMyScore,
+            oppScoreAfter: simOppScore,
+            moundPitcherKeyAtScore: halfEndPitcher,
+          };
         }
       }
 
@@ -3581,6 +3808,12 @@ export function evaluateMatchPitcherDecisions(
   let autoWinKey: string | null = null;
   let autoLossKey: string | null = null;
   let autoSaveKey: string | null = null;
+  let starterDidNotQualifyForWin = false;
+  let autoSaveReasonKind:
+    | "cond1_3runs_1ip"
+    | "cond2_tying_run_on_deck"
+    | "cond3_3ip"
+    | null = null;
   const autoHoldKeys = new Set<string>();
 
   if (isFinishedComparisonValid && input.myFinalScore > input.opponentFinalScore) {
@@ -3595,6 +3828,7 @@ export function evaluateMatchPitcherDecisions(
       ) {
         autoWinKey = starter.pitcherKey;
       } else {
+        starterDidNotQualifyForWin = true;
         // 公認野球規則 9.17(b): 先発投手が規定投球回未満で降板した場合、最も有効な投球をした救援投手を勝投手とする
         const relievers = orderedPitchers.slice(1);
         let bestReliever = relievers[0]!;
@@ -3636,6 +3870,11 @@ export function evaluateMatchPitcherDecisions(
         const cond3 = closer.outsRecorded >= 9;
         if (cond1 || cond2 || cond3) {
           autoSaveKey = closer.pitcherKey;
+          autoSaveReasonKind = cond1
+            ? "cond1_3runs_1ip"
+            : cond2
+            ? "cond2_tying_run_on_deck"
+            : "cond3_3ip";
         }
       }
     }
@@ -3704,8 +3943,226 @@ export function evaluateMatchPitcherDecisions(
   let finalLossKey: string | null = null;
   let finalSaveKey: string | null = null;
   const finalHoldKeys: string[] = [];
+  const starterPitcher = orderedPitchers[0]!;
 
-  for (const p of orderedPitchers) {
+  const buildPitcherDecisionExplanation = (
+    p: MatchPitcherDecisionStintInput,
+    idx: number,
+    decision: OfficialPitcherDecision,
+    hasManual: boolean
+  ): OfficialPitcherDecisionExplanation | undefined => {
+    const actor = formatPitcherActor(p);
+
+    if (hasManual) {
+      const manualLabelMap: Record<OfficialPitcherDecision, string> = {
+        win: "勝利投手（勝）",
+        loss: "敗戦投手（敗）",
+        save: "セーブ（S）",
+        hold: "ホールド（H）",
+        none: "勝敗・Sなし",
+      };
+      return {
+        categoryLabel: "公式記録員裁定",
+        variant:
+          decision === "win"
+            ? "win"
+            : decision === "loss"
+            ? "loss"
+            : decision === "save"
+            ? "save"
+            : decision === "hold"
+            ? "hold"
+            : "info",
+        ruleClause: "公認野球規則 9.01・9.17(b)・(c)",
+        headline: `公式記録員（スコアラー）裁定により「${manualLabelMap[decision]}」を記録`,
+        detail: `${actor}は、救援投手の有効度判定や短時間・非効果的投球の除外規定（公認野球規則 9.17(b)/(c)）等に基づくスコアラーの手動指定により「${manualLabelMap[decision]}」として確定されています。`,
+      };
+    }
+
+    if (decision === "win") {
+      const zeroOutShutoutNote =
+        relieverZeroOutShutoutKey === p.pitcherKey
+          ? "また公認野球規則 9.18 例外規定により、初回無死（1人もアウトを取る前）から救援して最後まで無失点で投げ切ったため、「完投」は付きませんが個人記録の「完封」が記録されます。"
+          : undefined;
+
+      if (idx === 0) {
+        if (orderedPitchers.length === 1) {
+          return {
+            categoryLabel: `勝利投手（${actor}）`,
+            variant: "win",
+            ruleClause: "公認野球規則 9.17(a)・9.18",
+            headline: shutoutByKey.get(p.pitcherKey)
+              ? "全守備イニングを1人で零封して完封勝利"
+              : "全守備イニングを1人で投げ切り完投勝利",
+            detail: `${actor}が試合終了まで全${formatOutsAsInningsJa(
+              totalDefenseOuts
+            )}を1人で投げ切り、自チームが勝利したため完投の勝利投手${
+              shutoutByKey.get(p.pitcherKey) ? "（および個人完封）" : ""
+            }となります。`,
+          };
+        }
+        const goAheadJa = winningGoAheadMeta
+          ? `${winningGoAheadMeta.inning}回に勝ち越し（${winningGoAheadMeta.myScoreAfter}対${winningGoAheadMeta.oppScoreAtMoment}）、`
+          : "";
+        return {
+          categoryLabel: `勝利投手（${actor}）`,
+          variant: "win",
+          ruleClause: "公認野球規則 9.17(a)",
+          headline: `先発勝利資格（${formatOutsAsInningsJa(
+            starterQualifyingOuts
+          )}以上）を満たしてリードを保持`,
+          detail: `${regulationSystemLabel}の先発勝利資格（${formatOutsAsInningsJa(
+            starterQualifyingOuts
+          )}以上）に対し、${actor}は${formatOutsAsInningsJa(
+            p.outsRecorded
+          )}を投球。${goAheadJa}自チームがリードした状態で降板し、その後一度も同点・逆転を許さなかったため勝利投手となります。`,
+        };
+      }
+
+      if (starterDidNotQualifyForWin) {
+        const starterActor = formatPitcherActor(starterPitcher);
+        return {
+          categoryLabel: `勝利投手（${actor}）`,
+          variant: "win",
+          ruleClause: "公認野球規則 9.17(b)",
+          headline: "先発が勝利資格回未満のため、最も有効な救援投手に勝利記録",
+          detail: `先発・${starterActor}はリード時に降板しましたが、投球回（${formatOutsAsInningsJa(
+            starterPitcher.outsRecorded
+          )}）が${regulationSystemLabel}の先発勝利資格（${formatOutsAsInningsJa(
+            starterQualifyingOuts
+          )}以上）に届きませんでした。公認野球規則 9.17(b) により、救援陣の中で最も有効な投球（${formatOutsAsInningsJa(
+            p.outsRecorded
+          )}・失点${p.runsAllowed}）をした${actor}が勝利投手となります。`,
+          note: zeroOutShutoutNote,
+        };
+      }
+
+      const goAheadJa = winningGoAheadMeta
+        ? `${winningGoAheadMeta.inning}回に自チームが勝ち越し点（${winningGoAheadMeta.myScoreAfter}対${winningGoAheadMeta.oppScoreAtMoment}）を挙げ、`
+        : "自チームが終盤に勝ち越し点を挙げ、";
+      return {
+        categoryLabel: `勝利投手（${actor}）`,
+        variant: "win",
+        ruleClause: "公認野球規則 9.17(a)",
+        headline: "自チームが勝ち越した時点の責任投手として救援勝利",
+        detail: `${goAheadJa}以後一度もリードを奪い返されずに勝利したため、その勝ち越し直前の守備回を投げ終えていた${actor}が勝利投手となります。`,
+        note: zeroOutShutoutNote,
+      };
+    }
+
+    if (decision === "loss") {
+      const unearnedLossNote =
+        losingGoAheadMeta?.isEarned === false ||
+        (p.runsAllowed > 0 && p.earnedRunsAllowed === 0)
+          ? "公認野球規則 9.17(d) により、決勝点が守備失策や捕逸などによる「非自責点（自責点0）」であっても、その走者の失点責任を持つ投手に敗戦投手が記録されます。"
+          : undefined;
+
+      if (
+        losingGoAheadMeta &&
+        losingGoAheadMeta.moundPitcherKeyAtScore !== p.pitcherKey
+      ) {
+        return {
+          categoryLabel: `敗戦投手（${actor}）`,
+          variant: "loss",
+          ruleClause: "公認野球規則 9.17(d)・9.16(g)",
+          headline: "降板後に生還した残留走者が決勝点となったため敗戦投手",
+          detail: `${losingGoAheadMeta.inning}回に相手が勝ち越した決勝点（自チーム${losingGoAheadMeta.myScoreAtMoment}対相手${losingGoAheadMeta.oppScoreAfter}、以後一度も同点・逆転できず）の走者は、救援投手ではなく${actor}が塁に残して降板した責任走者だったため、公認野球規則 9.17(d)・9.16(g) により${actor}が敗戦投手となります。`,
+          note: unearnedLossNote,
+        };
+      }
+
+      return {
+        categoryLabel: `敗戦投手（${actor}）`,
+        variant: "loss",
+        ruleClause: "公認野球規則 9.17(d)",
+        headline: "相手が勝ち越し以後リードを譲らなかった「決勝点」の責任投手",
+        detail: losingGoAheadMeta
+          ? `${losingGoAheadMeta.inning}回に相手が勝ち越した得点（自チーム${losingGoAheadMeta.myScoreAtMoment}対相手${losingGoAheadMeta.oppScoreAfter}）が決勝点となり、以後一度も同点・逆転できなかったため、その決勝点の責任を持つ${actor}が敗戦投手となります。`
+          : `相手チームがリードを奪い、以後一度も同点・逆転できなかった決勝点の責任走者を許した${actor}が敗戦投手となります。`,
+        note: unearnedLossNote,
+      };
+    }
+
+    if (decision === "save") {
+      const tr = relieverTrackingByKey.get(p.pitcherKey);
+      const leadJa = tr ? `${tr.leadAtEntry}点リード` : "リード時";
+      if (autoSaveReasonKind === "cond2_tying_run_on_deck") {
+        const runnersJa =
+          tr && tr.inheritedRunnersOnBase > 0
+            ? `塁上に走者${tr.inheritedRunnersOnBase}人`
+            : "走者なし";
+        return {
+          categoryLabel: `セーブ（${actor}）`,
+          variant: "save",
+          ruleClause: "公認野球規則 9.19(d)(2)",
+          headline: "同点となる走者を塁上・打席・次打者に迎える場面から締め切り",
+          detail: `${actor}は勝利投手以外の最終投手として${leadJa}（${runnersJa}：迎える2打者に連続本塁打が出れば同点以上になる状況）で登板し、${formatOutsAsInningsJa(
+            p.outsRecorded
+          )}を投げてリードを守り切ったため、公認野球規則 9.19(d)(2) により1イニング未満でもセーブが記録されます。`,
+        };
+      }
+      if (autoSaveReasonKind === "cond3_3ip") {
+        return {
+          categoryLabel: `セーブ（${actor}）`,
+          variant: "save",
+          ruleClause: "公認野球規則 9.19(d)(3)",
+          headline: "点差を問わず3.0回以上を投げ切って試合を完了（3回セーブ）",
+          detail: `登板時は${leadJa}（4点差以上）でしたが、公認野球規則 9.19(d)(3) には「点差にかかわらず最低3イニング以上有効に投球してリードを守り試合を終了させた最終救援投手にはセーブを与える」規定があるため、${formatOutsAsInningsJa(
+            p.outsRecorded
+          )}を投げ切った${actor}にセーブが記録されます。`,
+        };
+      }
+      return {
+        categoryLabel: `セーブ（${actor}）`,
+        variant: "save",
+        ruleClause: "公認野球規則 9.19(d)(1)",
+        headline: "3点差以内のリードで登板し、1.0回以上投げて逃げ切り",
+        detail: `${actor}は勝利投手以外の最終投手として${leadJa}（3点差以内）で救援登板し、1イニング以上（${formatOutsAsInningsJa(
+          p.outsRecorded
+        )}）を投げて一度も同点・逆転を許さず試合を締めくくったため、公認野球規則 9.19(d)(1) によりセーブが記録されます。`,
+      };
+    }
+
+    if (decision === "hold") {
+      const tr = relieverTrackingByKey.get(p.pitcherKey);
+      const leadJa = tr ? `${tr.leadAtEntry}点リード` : "僅差リード";
+      return {
+        categoryLabel: `ホールド（${actor}）`,
+        variant: "hold",
+        ruleClause: "公認野球規則 9.19 準用（ホールド規定）",
+        headline: "セーブ機会で救援登板し、リードを守ったまま後続へ継投",
+        detail: `${actor}は${leadJa}のセーブ機会で中継ぎ登板し、1アウト以上（${formatOutsAsInningsJa(
+          p.outsRecorded
+        )}）を記録して一度も同点・逆転を許さず後続投手へバトンを繋いだため、ホールドが記録されます。`,
+      };
+    }
+
+    // decision === "none" のうち、なぜ勝敗が付かないのか疑問になりやすい先発投手のケースを補足
+    if (
+      idx === 0 &&
+      starterDidNotQualifyForWin &&
+      !manualWin &&
+      isFinishedComparisonValid &&
+      input.myFinalScore > input.opponentFinalScore
+    ) {
+      return {
+        categoryLabel: `先発勝利資格（${actor}）`,
+        variant: "info",
+        ruleClause: "公認野球規則 9.17(a)・(b)",
+        headline: "リード時に降板したが、先発勝利資格回に届かず勝敗なし",
+        detail: `先発・${actor}はリードした状態で後続へ託しましたが、投球回（${formatOutsAsInningsJa(
+          p.outsRecorded
+        )}）が${regulationSystemLabel}の先発勝利資格（${formatOutsAsInningsJa(
+          starterQualifyingOuts
+        )}以上）に満たないため、公認野球規則 9.17(a)・(b) により先発には勝利が付かず救援投手へ勝利が移ります。`,
+      };
+    }
+
+    return undefined;
+  };
+
+  for (let idx = 0; idx < orderedPitchers.length; idx++) {
+    const p = orderedPitchers[idx]!;
     let decision: OfficialPitcherDecision = "none";
     const hasManual =
       p.manualDecision !== undefined && p.manualDecision !== null;
@@ -3733,7 +4190,42 @@ export function evaluateMatchPitcherDecisions(
       completeGame: completeGameByKey.get(p.pitcherKey) ?? false,
       shutout: shutoutByKey.get(p.pitcherKey) ?? false,
       isManualOverride: hasManual,
+      decisionExplanation: buildPitcherDecisionExplanation(
+        p,
+        idx,
+        decision,
+        hasManual
+      ),
     });
+  }
+
+  let teamShutoutExplanation: OfficialPitcherDecisionExplanation | undefined;
+  if (teamShutout && orderedPitchers.length >= 2) {
+    if (relieverZeroOutShutoutKey) {
+      const zeroOutReliever = orderedPitchers.find(
+        (p) => p.pitcherKey === relieverZeroOutShutoutKey
+      );
+      const relieverActor = zeroOutReliever
+        ? formatPitcherActor(zeroOutReliever)
+        : "2番手投手";
+      teamShutoutExplanation = {
+        categoryLabel: "初回無死救援完封（特例）",
+        variant: "shutout",
+        ruleClause: "公認野球規則 9.18（例外規定）",
+        headline: "初回無死からの無失点リレーは「完投なし・個人完封あり」",
+        detail: `先発投手が1回に1人もアウトを取る前に降板し、救援した${relieverActor}が残りの全守備アウト（${formatOutsAsInningsJa(
+          totalDefenseOuts
+        )}）を無失点で投げ切ったため、公認野球規則 9.18 例外規定により「完投」は記録されませんが${relieverActor}個人に「完封」が記録されます。`,
+      };
+    } else {
+      teamShutoutExplanation = {
+        categoryLabel: "継投完封（チーム完封）",
+        variant: "shutout",
+        ruleClause: "公認野球規則 9.18",
+        headline: "複数投手による無失点リレーは「チーム完封」のみ（個人完封は0）",
+        detail: `${orderedPitchers.length}人の投手リレーで相手を0点に抑えたため、チーム成績として「継投完封」が記録されます。公認野球規則 9.18 により1人で全イニングを投げ切っていないため、各投手個人には完投・完封は記録されません。`,
+      };
+    }
   }
 
   return {
@@ -3744,6 +4236,7 @@ export function evaluateMatchPitcherDecisions(
     holdPitcherKeys: finalHoldKeys,
     teamShutout,
     starterQualifyingOuts,
+    teamShutoutExplanation,
   };
 }
 

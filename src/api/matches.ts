@@ -2050,6 +2050,7 @@ app.get("/:id/stats", async (c) => {
             opponentInningScores: effectiveOppInnScores,
             pitchers: orderedPitchers.map((p, idx) => ({
               pitcherKey: p.id,
+              pitcherName: p.name,
               order: idx + 1,
               outsRecorded: p.outs,
               runsAllowed: p.runs,
@@ -2090,6 +2091,7 @@ app.get("/:id/stats", async (c) => {
           completeGame: dec?.completeGame ?? false,
           shutout: dec?.shutout ?? false,
           isManualDecision: dec?.isManualOverride ?? false,
+          decisionExplanation: dec?.decisionExplanation,
         };
       }
     );
@@ -2102,6 +2104,7 @@ app.get("/:id/stats", async (c) => {
         teamEarnedRuns: effectiveTeamEarnedRuns,
         individualEarnedRunsSum,
         teamShutout: decisionEval?.teamShutout ?? false,
+        teamShutoutExplanation: decisionEval?.teamShutoutExplanation,
       },
       gameDetails,
     });

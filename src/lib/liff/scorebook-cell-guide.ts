@@ -8,7 +8,12 @@ import {
   type CanonicalPitchResult,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
-import { classifyDroppedThirdStrikeReach } from "@/lib/liff/baseball-official-rules";
+import {
+  classifyDroppedThirdStrikeReach,
+  isAerialMultiOutAtBat,
+  isMidAtBatStrikeoutChargedToPriorBatter,
+  isMidAtBatWalkChargedToPriorPitcher,
+} from "@/lib/liff/baseball-official-rules";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
   formatBaseJa,
@@ -56,19 +61,24 @@ export interface PitchGuideItem {
   tone: "strike" | "ball" | "foul" | "mound" | "in_play";
 }
 
+export interface RuleJudgmentReasonBoxData {
+  variant: "unearned" | "earned_note" | "rule_why";
+  /** 上帯ダークキャップの見出しラベル */
+  headerLabel?: string;
+  ruleClause: string;
+  headline: string;
+  detail: string;
+  note?: string;
+}
+
+export type EarnedRunReasonBoxData = RuleJudgmentReasonBoxData;
+
 export interface ResultBreakdownRow {
   badge: string;
   badgeTone: "red" | "dark" | "blue" | "amber";
   title: string;
   description: string;
-}
-
-export interface EarnedRunReasonBoxData {
-  variant: "unearned" | "earned_note";
-  ruleClause: string;
-  headline: string;
-  detail: string;
-  note?: string;
+  ruleReasonBox?: RuleJudgmentReasonBoxData;
 }
 
 export interface DiamondBreakdownRow {
@@ -78,6 +88,7 @@ export interface DiamondBreakdownRow {
   title: string;
   description: string;
   earnedRunReasonBox?: EarnedRunReasonBoxData;
+  ruleReasonBox?: RuleJudgmentReasonBoxData;
 }
 
 export interface ScorebookCellGuideData {
@@ -741,7 +752,7 @@ function buildFielderExplanationRow(
     };
   }
 
-  // 2. 送球経路（例: 6-3, 6-4-3, 1-2-3）
+  // 2. 送球経路（例: 6-3, 6-4-3, 1-2-3, 6-3E）
   const chainMatch = sourceToken.match(/[1-9](?:-[1-9])+/);
   if (chainMatch) {
     const nums = chainMatch[0].split("-");
@@ -749,11 +760,18 @@ function buildFielderExplanationRow(
       const info = POSITION_NAME_JA[n];
       return info ? `${n}（${info.short}：${info.full.replace(/（.*）/, "")}）` : n;
     });
+    const isReceivingErrOnErrorPlay =
+      ab.resultCode === "error" &&
+      /(?:[1-9]-[1-9]E|[1-9]-E[1-9]|捕球失策|落球)/i.test(
+        `${cleanDir} ${mainText} ${ab.resultLabel || ""}`
+      );
     return {
       badge: chainMatch[0],
       badgeTone: "blue",
       title: "守備番号と送球ルート",
-      description: `${stepsJa.join(" → ")} の順にボールが渡ってアウトにしたことを表します。`,
+      description: isReceivingErrOnErrorPlay
+        ? `${stepsJa.join(" → ")} の順に送球されたものの、送球先の捕球ミス（落球）でセーフになった経路を表します。`
+        : `${stepsJa.join(" → ")} の順にボールが渡って処理されたことを表します。`,
     };
   }
 
@@ -802,6 +820,14 @@ function buildResultSection(
           badgeTone: "blue",
           title: `タイブレーク開始走者（${startBaseJa}）`,
           description: `イニング開始時点から無死（または継続条件）で${startBaseJa}に配置されたタイブレーク走者のマスです。右下の打撃結果は空欄になります。`,
+          ruleReasonBox: {
+            variant: "rule_why",
+            headerLabel: "タイブレーク配置走者の公式記録ルール",
+            ruleClause: "公認野球規則 9.16（タイブレーク規定）",
+            headline: "打席記録は付かず、生還時は「得点1」・投手は常に「非自責点」",
+            detail:
+              "タイブレークで塁上に置かれた走者には打席や出塁の記録は付きませんが、その後の盗塁・盗塁刺・得点は通常通り個人成績に記録されます。一方、投手が許した出塁ではないため、本塁へ生還しても投手の自責点にはなりません。",
+          },
         },
       ],
     };
@@ -855,11 +881,37 @@ function buildResultSection(
       ? "一塁から本塁までダイヤモンドの4辺すべてを赤実線で結んで本塁打を表します。"
       : "到達した塁まで赤実線を引き、一塁線に直交する赤線マークで安打の種類を表します。";
 
+    // 単打・二塁打・三塁打を放った同一プレーでさらに次塁を狙いタッチアウト（欲張り走塁死）になったか判定
+    const stretchOutSeg = ([2, 3, 4] as const)
+      .map((sIdx) => cell.segments[sIdx])
+      .find(
+        (seg) =>
+          seg !== null &&
+          seg.status === "out" &&
+          !seg.isPrePlay &&
+          !seg.drivingBatterOrder
+      );
+    const hitStretchRuleBox: RuleJudgmentReasonBoxData | undefined =
+      rc !== "home_run" && stretchOutSeg
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜアウトになったのに「ヒット（安打）」になるのか",
+            ruleClause: "公認野球規則 9.05(a)・9.06(a)",
+            headline: `所定の塁（${
+              rc === "single" ? "一塁" : rc === "double" ? "二塁" : "三塁"
+            }）へ安全に到達した時点で${hitKindJa}が確定`,
+            detail: `打球によって${
+              rc === "single" ? "一塁" : rc === "double" ? "二塁" : "三塁"
+            }を確実に陥れた時点で公認野球規則 9.06(a) により${hitKindJa}が成立します。その余勢を駆ってさらに次の塁を狙いタッチアウトになった場合は、安打は取り消されず「${hitKindJa}（打数1・安打1）＋走塁アウト」として記録されます。`,
+          }
+        : undefined;
+
     rows.push({
       badge: notation.mainText || "H",
       badgeTone: "red",
       title: `${hitKindJa}（${headlineResult}）`,
       description: slashRuleJa,
+      ruleReasonBox: hitStretchRuleBox,
     });
     if (/^BH/i.test(notation.mainText)) {
       rows.push({
@@ -927,7 +979,9 @@ function buildResultSection(
           "丸で囲んだ「Ⓚ」は、最後の球を見逃して三振になったことを表します（空振り三振は丸なしのK）。",
       });
     } else {
-      const isCalled = headlineResult.includes("見逃") || notation.mainText === "K" && rules.strikeout === "k_called_so_swing";
+      const isCalled =
+        headlineResult.includes("見逃") ||
+        (notation.mainText === "K" && rules.strikeout === "k_called_so_swing");
       rows.push({
         badge: notation.mainText,
         badgeTone: "dark",
@@ -941,31 +995,75 @@ function buildResultSection(
       });
     }
 
-    if (notation.subText) {
-      if (rc === "dropped_third_strike_out") {
-        rows.push({
-          badge: notation.subText,
-          badgeTone: "blue",
-          title: "振り逃げ時の送球アウト記録",
-          description: `第3ストライクを捕手が後逸・ワンバウンド捕球したあと、「${notation.subText}」（捕手→一塁手など）へ送球してアウトにしたことを表します。`,
-        });
-      } else if (rc === "dropped_third_strike") {
-        rows.push({
-          badge: notation.subText,
-          badgeTone: "amber",
-          title: "振り逃げ成功で一塁出塁",
-          description:
-            "第3ストライクが暴投・捕逸となり、打者がアウトにならず一塁へ生きた（振り逃げ出塁）ことを表します。",
-        });
-      } else if (notation.subText === "3B") {
-        rows.push({
-          badge: "3B",
-          badgeTone: "amber",
-          title: "スリーバント失敗",
-          description:
-            "2ストライク後にバントがファウルとなり、規則により三振アウトになったことを表します。",
-        });
-      }
+    if (rc === "dropped_third_strike_out") {
+      rows.push({
+        badge: notation.subText || "2-3",
+        badgeTone: "blue",
+        title: "振り逃げ時の送球アウト記録",
+        description: `第3ストライクを捕手が後逸・ワンバウンド捕球したあと、「${
+          notation.subText || "2-3"
+        }」（捕手→一塁手など）へ送球してアウトにしたことを表します。`,
+        ruleReasonBox: {
+          variant: "rule_why",
+          headerLabel: "なぜ三振なのに一塁送球（2-3 等）が必要なのか",
+          ruleClause: "公認野球規則 5.05(a)(2)・5.09(a)(2)・9.09(c)・9.10(a)",
+          headline:
+            "第3ストライクを正規捕球できなかったため、一塁送球で三振アウトを完成",
+          detail:
+            "第3ストライクがワンバウンドや後逸になると、無死・一死で一塁に走者がいない時、または二死の時はその場でアウトが成立せず打者に一塁へ走る権利が生じます。捕手が拾って一塁へ送球しアウトにすることで初めて「三振アウト」が成立し、投手に奪三振1・捕手に捕殺1・一塁手に刺殺1が記録されます。",
+        },
+      });
+    } else if (rc === "dropped_third_strike") {
+      const dts = classifyDroppedThirdStrikeReach(
+        ab.battedDirection,
+        ab.resultLabel
+      );
+      const dtsCauseHeadline =
+        dts.kind === "wp"
+          ? "投手の暴投（WP）による振り逃げ出塁：無失策・生還時は「自責点」"
+          : dts.kind === "pb"
+          ? "捕手の捕逸（PB）による振り逃げ出塁：無失策・生還時は「非自責点」"
+          : "送球・捕球失策による振り逃げ出塁：野手に失策・生還時は「非自責点」";
+      const dtsCauseDetail =
+        dts.kind === "wp"
+          ? "無死・一死で一塁が空いている時、または二死（満塁含む）の時に第3ストライクが暴投となったため、打者に打数1・三振1、投手に奪三振1・暴投1が記録された上で一塁出塁となります。後逸原因が投手の暴投であるためエラーは付かず、この走者が生還すると投手の「自責点」になります（出塁率 OBP には含まれません）。"
+          : dts.kind === "pb"
+          ? "無死・一死で一塁が空いている時、または二死（満塁含む）の時に第3ストライクを捕手が捕逸（パスボール）したため、打者に打数1・三振1、投手に奪三振1、捕手に捕逸1が記録された上で一塁出塁となります。捕手にエラー（失策）は付きませんが、捕逸がなければ三振アウトだったため生還時は「非自責点」になります。"
+          : "第3ストライク後の一塁送球が悪送球または捕球落球となったため、打者に打数1・三振1、投手に奪三振1、当該野手に失策1が記録されて一塁出塁となります。失策がなければ三振アウトだったため生還時は「非自責点」になります。";
+      rows.push({
+        badge: notation.subText || "振逃",
+        badgeTone: "amber",
+        title: "振り逃げ成功で一塁出塁",
+        description:
+          "第3ストライクが暴投・捕逸・送球失策となり、打者がアウトにならず一塁へ生きた（振り逃げ出塁）ことを表します。",
+        ruleReasonBox: {
+          variant: "rule_why",
+          headerLabel: "なぜ「三振」と「一塁出塁」が同時に成立するのか",
+          ruleClause:
+            dts.kind === "wp" || dts.kind === "pb"
+              ? "公認野球規則 5.05(a)(2)・9.13・9.15(a)・9.16(a)(3)"
+              : "公認野球規則 5.05(a)(2)・9.12(a)(7)・9.15(a)・9.16(a)(3)",
+          headline: dtsCauseHeadline,
+          detail: dtsCauseDetail,
+        },
+      });
+    } else if (notation.subText === "3B") {
+      rows.push({
+        badge: "3B",
+        badgeTone: "amber",
+        title: "スリーバント失敗",
+        description:
+          "2ストライク後にバントがファウルとなり、規則により三振アウトになったことを表します。",
+        ruleReasonBox: {
+          variant: "rule_why",
+          headerLabel: "なぜファウルなのに三振アウトになるのか",
+          ruleClause: "公認野球規則 5.09(a)(4)",
+          headline:
+            "2ストライク後のバントは、ファウルになった時点でボールデッド・三振アウト",
+          detail:
+            "通常のヒッティングでは2ストライク後のファウルはカウント据え置きですが、バントで意図的に当てにいった打球がファウルになった場合は公認野球規則 5.09(a)(4) により即座に三振アウト（ボールデッドで走者進塁不可）となります。",
+        },
+      });
     }
   } else if (rc === "sac_bunt") {
     decoratorLabel =
@@ -977,6 +1075,16 @@ function buildResultSection(
       badgeTone: "amber",
       title: `犠打（送りバント：${headlineResult}）`,
       description: `${shapeName}で守備番号を囲むことで、走者を進めるための犠打（送りバント）が成功したことを表します（打数には含まれません）。`,
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜアウトなのに「打数」に含まれず打率・出塁率が下がらないのか",
+        ruleClause: "公認野球規則 9.02(a)(1)・9.08(a)・9.21(e)・(f)",
+        headline: "チーム作戦による自己犠牲のため、打数（AB）・出塁率（OBP）の分母から除外",
+        detail:
+          "自分のアウトと引き換えに先行走者を次の塁へ進めたため、打者に不利にならないよう「打数」には算入されず、打率も出塁率も下がりません。",
+        note:
+          "※バントを試みても先行走者が先の塁で封殺（二封など）になった場合は犠打と認められず、通常のゴロ凡打（打数1・安打0）となります。",
+      },
     });
   } else if (rc === "sac_fly") {
     decoratorLabel =
@@ -994,10 +1102,26 @@ function buildResultSection(
         notation.decorator === "sac_triangle"
           ? "三角枠「△」で守備番号を囲むことで、外野フライ捕球後に走者がタッチアップ生還した「犠牲フライ」を表します（犠打の四角枠□と明確に区別します）。"
           : "外野フライ等の捕球後に走者がタッチアップでホームインした「犠牲フライ」を表します（打数には含まれず打点がつきます）。",
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜ「打率」は下がらないのに「出塁率」は下がるのか",
+        ruleClause: "公認野球規則 9.02(a)(1)・9.08(d)・9.21(e)・(f)",
+        headline: "打数（AB）からは除外されるが、出塁率（OBP）の分母には含まれる公式規定",
+        detail:
+          "飛球の捕球（または落球しても生還できたと認められる飛球）で走者が本塁へ生還したため、打者には打点が記録され「打数」から除外されて打率は下がりません。一方、公認野球規則 9.21(f) の出塁率計算式『(安打＋四死球) ÷ (打数＋四死球＋犠飛)』では分母に犠飛が含まれるため、犠打とは異なり出塁率はわずかに下がります。",
+      },
     });
   } else if (rc === "flyout" || rc === "infield_fly") {
     const isStandaloneInfieldFly =
       rc === "infield_fly" && notation.subText !== "IF";
+    const infieldFlyRuleBox: RuleJudgmentReasonBoxData = {
+      variant: "rule_why",
+      headerLabel: "なぜ野手が捕る前（落球しても）打者がアウトになるのか",
+      ruleClause: "公認野球規則 5.09(a)(5)（定義 40）",
+      headline: "野手がわざと落球して併殺を取るのを防ぐための攻撃側保護ルール",
+      detail:
+        "無死または一死で走者一・二塁（または満塁）のとき、内野手が普通に捕れるフェア飛球（ライナー・バント飛球を除く）をわざと落とされると、塁上の走者が進退窮まって簡単に併殺にされてしまいます。これを防ぐため審判が宣告した時点で打者をアウトにし、仮に落球しても走者には進塁義務が生じない（元の塁に留まってよい）ルールになっています。",
+    };
 
     if (isStandaloneInfieldFly) {
       if (notation.decorator === "umbrella") {
@@ -1012,6 +1136,7 @@ function buildResultSection(
         title: "IF ＝ インフィールドフライ宣告（守備位置指定なし）",
         description:
           "無死または一死で走者一・二塁（または満塁）の場面で内野フェア飛球に宣告されるインフィールドフライ（打者即アウト）を表します。落球時や野手番号を記載しない単独「IF」記帳の表示です。",
+        ruleReasonBox: infieldFlyRuleBox,
       });
     } else if (
       notation.decorator === "umbrella" ||
@@ -1055,6 +1180,7 @@ function buildResultSection(
         title: "IF ＝ インフィールドフライ宣告",
         description:
           "無死または一死で走者一・二塁（または満塁）の場面で内野フェア飛球に宣告されるインフィールドフライを表します。",
+        ruleReasonBox: infieldFlyRuleBox,
       });
     } else if (notation.subText === "F" || notation.subText === "BF") {
       rows.push({
@@ -1065,7 +1191,34 @@ function buildResultSection(
           "ファウルゾーンに上がった飛球を野手が捕球してアウトにしたことを表します。",
       });
     }
+
+    // フライ・ライナーからの飛び出し帰塁アウト併殺（resultCode が flyout / infield_fly のまま outsInPlay >= 2 のケース）
+    if (ab.outsInPlay >= 2) {
+      rows.push({
+        badge: ab.outsInPlay >= 3 ? "TP" : "DP",
+        badgeTone: "amber",
+        title:
+          ab.outsInPlay >= 3
+            ? "飛球・ライナーからの三重殺"
+            : "飛球・ライナーからの併殺（ダブルプレー）",
+        description:
+          "打者の飛球・ライナー捕球に続き、塁を飛び出していた走者も帰塁できずアウトになった併殺プレーです。",
+        ruleReasonBox: {
+          variant: "rule_why",
+          headerLabel: "なぜ併殺なのに打者に「併殺打（GDP）」が付かないのか",
+          ruleClause: "公認野球規則 9.02(a)(16)・9.04",
+          headline:
+            "ゴロ封殺ではなく飛球・ライナーからの帰塁アウトのため「併殺打」対象外",
+          detail:
+            "個人成績の「併殺打（GDP）」は『内野ゴロ等によるフォースプレーまたは逆順併殺』に限定される規定（公認野球規則 9.02(a)(16)）のため、フライやライナーからの併殺は打者の併殺打数には算入されません（また3アウト目でなければ別走者のタッチアップ生還に打点も認められます）。",
+        },
+      });
+    }
   } else if (rc === "error") {
+    const dirAndLabel = `${ab.battedDirection || ""} ${notation.mainText} ${headlineResult}`;
+    const isReceivingErrorWithAssist =
+      /[1-9]-(?:[1-9]E|E[1-9])/i.test(dirAndLabel) ||
+      (/[1-9]-[1-9]/.test(dirAndLabel) && /捕球失策|落球/.test(dirAndLabel));
     rows.push({
       badge: notation.mainText || "E",
       badgeTone: "amber",
@@ -1073,6 +1226,25 @@ function buildResultSection(
       description: `「${
         rules.advanceError === "kanji" ? "失" : "E"
       }」は野手のエラー（捕球ミス・悪送球）によって打者がセーフになったことを表します（安打にはならず打数にカウントされます）。`,
+      ruleReasonBox: isReceivingErrorWithAssist
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜアウトになっていないのに送球した野手に「捕殺」が付くのか",
+            ruleClause: "公認野球規則 9.10(a)(1)・9.12(a)",
+            headline:
+              "送球が正確で、受け手が捕球していればアウトだった場合は送球者に捕殺を記録",
+            detail:
+              "送球先の野手の落球（捕球失策）によって打者走者はセーフになりましたが、公認野球規則 9.10(a)(1) には『悪送球ではなく、後続の失策がなければ刺殺が成立していた送球には捕殺（Assist）を与える』と定められているため、正確に送球した野手には捕殺1が記録されます（落球した野手に失策1・刺殺0）。",
+          }
+        : {
+            variant: "rule_why",
+            headerLabel: "相手失策（エラー）出塁時の打率・出塁率・自責点の扱い",
+            ruleClause: "公認野球規則 9.02(a)(1)・9.16(a)・9.21(e)・(f)",
+            headline:
+              "打者の「打数1・安打0」に算入され、この走者が生還しても投手の非自責点",
+            detail:
+              "失策がなければアウトになっていた打球のため、打者には打数1・安打0が記録され打率・出塁率ともに下がります（四死球のような打数除外にはなりません）。またこの走者が後続の安打等でホームインしても、投手の自責点にはならず非自責点となります。",
+          },
     });
   } else if (rc === "fc") {
     rows.push({
@@ -1083,12 +1255,23 @@ function buildResultSection(
       title: `野手選択（フィルダースチョイス：${headlineResult}）`,
       description:
         "野手が打者走者ではなく先行走者をアウトにしようと送球した結果、先行走者もアウトにならずオールセーフ（失策なし）で打者走者が一塁に生きたプレイを表します。",
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜヒットでもエラーでもなく「野手選択（FC）」になるのか",
+        ruleClause: "公認野球規則 9.02(a)(1)・9.05(b)(1)・9.12(d)",
+        headline:
+          "一塁へ投げればアウトにできた打球を、野手の判断で他塁へ送球しオールセーフ",
+        detail:
+          "野手が捕球や送球をミスしたわけではなく（失策なし）、先行走者をアウトにしようと他塁へ送球した結果間に合わず全員セーフになったプレーです。一塁へ送球していれば打者走者をアウトにできたため安打は付かず、暴投・悪送球でもないため野手にエラーも付きません（打者に打数1・安打0）。",
+      },
     });
   } else if (rc === "groundout" || rc === "double_play" || rc === "triple_play") {
     const isForceOut =
-      /二封|三封|本封|封殺|本塁憤死|本塁アウト/.test(headlineResult) ||
-      /^(?:BH|B)?[1-9]-[2456](?:[BCH]|TO)?$/i.test(ab.battedDirection || "") ||
-      /^(?:BH|B)?[1-9][BCH]$/i.test(ab.battedDirection || "");
+      rc === "groundout" &&
+      (/二封|三封|本封|封殺|本塁憤死|本塁アウト/.test(headlineResult) ||
+        /^(?:BH|B)?[1-9]-[2456](?:[BCH]|TO)?$/i.test(ab.battedDirection || "") ||
+        /^(?:BH|B)?[1-9][BCH]$/i.test(ab.battedDirection || "") ||
+        cell.segments[1]?.status === "safe");
     if (notation.decorator === "under_arc") {
       decoratorLabel = "⏝ 下弧マーク（ゴロ）";
     }
@@ -1104,21 +1287,97 @@ function buildResultSection(
         : notation.decorator === "under_arc"
         ? "守備番号の下にある曲線「⏝（下弧マーク）」は、内野へのゴロ打球であることを表します。"
         : "ゴロを捕球した野手の番号から送球先の野手の番号へハイフン「-」でつなぎ、ゴロ送球アウトを表します。",
+      ruleReasonBox: isForceOut
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ一塁に生きたのに「ヒット」や「FC表記」にならないのか",
+            ruleClause: "公認野球規則 9.02(a)(1)・9.05(b)(2)",
+            headline:
+              "先行走者が先の塁でアウトになっているため、打数1・安打0の「封殺ゴロ」",
+            detail:
+              "打者自身は一塁に残りましたが、野手が先行走者を先の塁でアウト（封殺）にしているため、公認野球規則 9.05(b)(2) により安打は認められず打数1・安打0（ゴロ凡打）となります。日本の公式4分割スコアブックでは、アウトが成立した封殺ゴロには「FC」を付けず通常のゴロ送球番号（6-4 等）を記帳し、全員セーフの野手選択（FC）と明確に区別します。",
+            note:
+              (ab.rbi || 0) > 0
+                ? "※併殺にならず三塁走者がこのゴロの間に生還したため、打者には打点（RBI）が記録されます（規則 9.04(a)(1)）。"
+                : undefined,
+          }
+        : undefined,
     });
-    if (notation.subText === "DP" || rc === "double_play") {
+    if (
+      notation.subText === "DP" ||
+      rc === "double_play" ||
+      notation.subText === "TP" ||
+      rc === "triple_play"
+    ) {
+      const isTp = notation.subText === "TP" || rc === "triple_play";
+      const isAerialDp = isAerialMultiOutAtBat(
+        ab.resultCode,
+        ab.battedDirection,
+        ab.resultLabel
+      );
+      const isReverseFirstBaseDp = /^(?:3|3A)-[46]$/i.test(
+        (ab.battedDirection || "").trim()
+      );
+      const scoredOnDpWithoutRbi =
+        !isAerialDp &&
+        !isTp &&
+        Boolean(cell.situation && cell.situation.runsInPlay > 0) &&
+        (ab.rbi || 0) === 0;
+
+      const dpRuleBox: RuleJudgmentReasonBoxData = isAerialDp
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ併殺なのに打者に「併殺打（GDP）」が付かないのか",
+            ruleClause: "公認野球規則 9.02(a)(16)・9.04",
+            headline:
+              "ゴロ封殺ではなく飛球・ライナーからの帰塁アウトのため「併殺打」対象外",
+            detail:
+              "個人成績の「併殺打（GDP）」は『内野ゴロ等によるフォースプレーまたは逆順併殺』に限定される規定（公認野球規則 9.02(a)(16)）のため、フライやライナーで飛び出した走者がアウトになった併殺は打者の併殺打数には算入されません。",
+          }
+        : isReverseFirstBaseDp
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ二塁でベース踏みではなく「走者へのタッチ」が必要なのか",
+            ruleClause: "公認野球規則 5.09(b)(6)・9.02(a)(16)・9.04(b)(1)",
+            headline:
+              "一塁手が先に一塁を踏んだ瞬間に、一塁走者のフォース（進塁義務）が解除される",
+            detail:
+              "一塁手がゴロを捕って先に一塁ベースを踏むと、その瞬間に打者走者がアウトになり一塁が空くため、二塁へ向かう一塁走者のフォース状態が消滅します。したがって二塁ではベースを踏むだけではアウトにならず走者へのタッチが必要（タッチアウト）となり、公式記録上は「逆順併殺」として打者の併殺打（GDP）に算入されます（仮に三塁走者が生還しても打点は0）。",
+          }
+        : scoredOnDpWithoutRbi
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ走者がホームインして1点入ったのに「打点0」なのか",
+            ruleClause: "公認野球規則 9.04(b)(1)・9.02(a)(16)",
+            headline:
+              "フォース併殺打の間に三塁走者が生還しても、打者には打点（RBI）は付かない",
+            detail:
+              "3アウトになっていないため三塁走者のホームイン（チームの1得点）は認められますが、公認野球規則 9.04(b)(1)『フォースダブルプレーまたは逆順ダブルプレーとなるゴロを打ったときには打点を与えない』の規定により、打者の打点は0となります。",
+          }
+        : {
+            variant: "rule_why",
+            headerLabel: isTp
+              ? "三重殺（トリプルプレー）の公式記録ルール"
+              : "併殺打（GDP）と打点の公式記録ルール",
+            ruleClause: "公認野球規則 9.02(a)(16)・9.04(b)(1)",
+            headline: isTp
+              ? "1打球で3アウトチェンジ成立（第3アウトのため生還・打点は一切発生せず）"
+              : "ゴロ封殺を伴う併殺は打者に「併殺打」が記録され、走者生還時も打点は付かない",
+            detail: isTp
+              ? "1つの打球から連続して3つのアウトが成立し即座にイニング終了となります。"
+              : "内野ゴロからフォースアウトを含む2アウトを取られたため、打者の個人成績に「併殺打（GDP）」が1つ記録されます。なお無死一・三塁等から併殺打の間に三塁走者が生還した場合、得点は認められますが打者には打点（RBI）は記録されません（規則 9.04(b)(1)）。",
+          };
+
       rows.push({
-        badge: "DP",
+        badge: isTp ? "TP" : "DP",
         badgeTone: "amber",
-        title: "DP ＝ 併殺（ダブルプレー）",
-        description:
-          "1つの打球から連続して2つのアウトを取った併殺プレイを表します（清書シート全体では縦2マスの右側内を上部から下部まで括弧「 ] 」等で括り、1マス目と2マス目の間に DP を記載します）。",
-      });
-    } else if (notation.subText === "TP" || rc === "triple_play") {
-      rows.push({
-        badge: "TP",
-        badgeTone: "amber",
-        title: "TP ＝ 三重殺（トリプルプレー）",
-        description: "1つの打球から一気に3つのアウトを取った三重殺プレイを表します。",
+        title: isTp
+          ? "TP ＝ 三重殺（トリプルプレー）"
+          : "DP ＝ 併殺（ダブルプレー）",
+        description: isTp
+          ? "1つの打球から一気に3つのアウトを取った三重殺プレイを表します。"
+          : "1つの打球から連続して2つのアウトを取った併殺プレイを表します（清書シート全体では縦2マスの右側内を上部から下部まで括弧「 ] 」等で括り、1マス目と2マス目の間に DP を記載します）。",
+        ruleReasonBox: dpRuleBox,
       });
     }
   } else if (rc === "interference" || rc === "interference_out") {
@@ -1130,6 +1389,26 @@ function buildResultSection(
         rc === "interference"
           ? "捕手等の打撃妨害により打者に一塁が与えられた記録です。"
           : "打者または走者の守備妨害によりアウトが宣告された記録です。",
+      ruleReasonBox:
+        rc === "interference"
+          ? {
+              variant: "rule_why",
+              headerLabel: "なぜ打者の出塁なのに「出塁率」にも「自責点」にも入らないのか",
+              ruleClause: "公認野球規則 9.02(a)(1)・9.12(c)・9.16(a)・9.21(f)",
+              headline:
+                "捕手に失策（エラー）が記録され、打席は打数・出塁率の双方から除外",
+              detail:
+                "スイング中にバットが捕手のミット等に接触した打撃妨害では打者に一塁が与えられますが、公認野球規則 9.12(c) により捕手に失策1が記録されます。打者には打数も四死球も付かず（打率・出塁率とも変化なし）、また捕手失策による出塁のため本人が生還しても投手の自責点にはなりません（規則 9.16(a)）。",
+            }
+          : {
+              variant: "rule_why",
+              headerLabel: "守備妨害でボールデッド・刺殺がどう処理されるのか",
+              ruleClause: "公認野球規則 5.09(b)(7)・9.09(c)(1)",
+              headline:
+                "妨害発生と同時にボールデッドとなり、守備機会の野手に無触球で刺殺を記録",
+              detail:
+                "打球処理中の野手への接触やフェア打球が走者に当たる等の守備妨害が起きると即座にボールデッドとなり、他走者は原則として投球当時の塁へ戻されます。野手が実際にタッチしていなくても、そのプレーでアウトにしようとしていた最も近い野手に「刺殺（Putout）」が記録されます。",
+            },
     });
   } else {
     rows.push({
@@ -1138,6 +1417,81 @@ function buildResultSection(
       title: headlineResult,
       description:
         "打席の途中で盗塁死・牽制死などにより3アウトチェンジとなったため、この打席は完了せず次の回の先頭打者へ持ち越されます。",
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜこの打席は凡退にならず次の回の先頭打者になるのか",
+        ruleClause: "公認野球規則 5.04(a)(3)・9.02",
+        headline:
+          "打席完了前に走塁死で第3アウトになった場合、打席記録は付かず次回カウント0-0で打ち直し",
+        detail:
+          "打者がアウトになるか一塁へ出塁する前に塁上の走者が盗塁死・牽制死等で第3アウトになった場合、この打席は未完了となるため打席数（PA）も打数（AB）も記録されず、次のイニングの先頭打者としてボールカウント0-0から改めて打席に入ります。",
+      },
+    });
+  }
+
+  // 打席途中の代打交代（規則 9.15(b)）・投手交代（規則 9.16(h)）がある場合の帰属理由解説行
+  if (ab.midAtBatPriorBatter) {
+    const priorB = ab.midAtBatPriorBatter;
+    const isStrikeoutPlay =
+      rc === "strikeout" ||
+      rc === "dropped_third_strike_out" ||
+      rc === "dropped_third_strike";
+    const chargedToPriorBatter = isMidAtBatStrikeoutChargedToPriorBatter(
+      priorB,
+      isStrikeoutPlay
+    );
+    rows.push({
+      badge: "途中代打",
+      badgeTone: "amber",
+      title: `打席途中の代打交代（${priorB.name} → ${ab.batterName}）`,
+      description: `カウント ${priorB.ballsBeforeSub}B-${priorB.strikesBeforeSub}S の時点で前打者「${priorB.name}」から代打へ交代した打席です。`,
+      ruleReasonBox: chargedToPriorBatter
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ代打が三振したのに交代前の打者に三振が付くのか",
+            ruleClause: "公認野球規則 9.15(b)",
+            headline: `2ストライク後の代打交代で三振となったため、前打者（${priorB.name}）の三振・打数に計上`,
+            detail: `カウント ${priorB.ballsBeforeSub}ボール・${priorB.strikesBeforeSub}ストライク（2ストライク）から代打が出場して三振に倒れた場合、公認野球規則 9.15(b) により打席・打数・三振はすべて退いた前打者「${priorB.name}」に記録されます（※三振以外の結果になった場合は代打本人に記録されます）。`,
+          }
+        : {
+            variant: "rule_why",
+            headerLabel: "打席途中の代打交代で誰に記録が付くのか",
+            ruleClause: "公認野球規則 9.15(b)",
+            headline:
+              "2ストライク後の三振以外は、すべて代打本人の打席成績として記録",
+            detail: `カウント ${priorB.ballsBeforeSub}ボール・${priorB.strikesBeforeSub}ストライクから代打交代しましたが、公認野球規則 9.15(b) により「2ストライク後の三振」以外の打席結果（安打・四死球・凡打・1ストライク以下からの三振）はすべて代打「${ab.batterName}」本人に記録されます。`,
+          },
+    });
+  }
+
+  if (ab.midAtBatPriorPitcher) {
+    const priorP = ab.midAtBatPriorPitcher;
+    const isWalkPlay = rc === "walk" || rc === "intentional_walk";
+    const chargedToPriorPitcher = isMidAtBatWalkChargedToPriorPitcher(
+      priorP,
+      isWalkPlay
+    );
+    rows.push({
+      badge: "途中継投",
+      badgeTone: "amber",
+      title: `打席途中の投手交代（${priorP.name} → ${ab.pitcherName || "救援投手"}）`,
+      description: `カウント ${priorP.ballsBeforeChange}B-${priorP.strikesBeforeChange}S の時点で前任「${priorP.name}」投手から救援投手へ交代した打席です。`,
+      ruleReasonBox: chargedToPriorPitcher
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ救援投手が投げたのに前任投手に四球が付くのか",
+            ruleClause: "公認野球規則 9.16(h)",
+            headline: `ボール先行（${priorP.ballsBeforeChange}-${priorP.strikesBeforeChange}）からの交代で四球となったため、前任投手（${priorP.name}）に計上`,
+            detail: `公認野球規則 9.16(h) により、カウント 2-0 / 2-1 / 3-0 / 3-1 / 3-2 で救援登板してその打者に四球を与えた場合、四球・対戦打者・出塁走者の得点責任は救援投手ではなく交代前の「${priorP.name}」投手に記録されます。`,
+          }
+        : {
+            variant: "rule_why",
+            headerLabel: "打席途中の投手交代でどちらの投手に記録が付くのか",
+            ruleClause: "公認野球規則 9.16(h)",
+            headline:
+              "所定のボール先行四球以外は、打席を完了させた救援投手の記録に計上",
+            detail: `カウント ${priorP.ballsBeforeChange}ボール・${priorP.strikesBeforeChange}ストライクから交代しましたが、公認野球規則 9.16(h) の前任帰属条件（カウント 2-0 / 2-1 / 3-0 / 3-1 / 3-2 からの四球）には該当しないため、この打席の結果と出塁走者の責任は救援投手に記録されます。`,
+          },
     });
   }
 
@@ -1179,7 +1533,13 @@ function describeAdvanceMethodMeaning(
   cell: CompiledScorebookCell,
   model: CompiledScorebookSheetModel,
   rules: ScorebookSymbolRules
-): { symbolText: string; tone: DiamondBreakdownRow["tone"]; title: string; description: string } {
+): {
+  symbolText: string;
+  tone: DiamondBreakdownRow["tone"];
+  title: string;
+  description: string;
+  ruleReasonBox?: RuleJudgmentReasonBoxData;
+} {
   const rangeJa = segmentRangeLabel(startSeg, endSeg);
   const advSymbol =
     seg.customLabelOverride !== undefined
@@ -1284,11 +1644,35 @@ function describeAdvanceMethodMeaning(
         ? "辺に沿った矢印マークで、この区間で走塁アウトになったことを表します。"
         : "この区間で走塁アウトになったことを表します。";
 
+    const outRuleReasonBox: RuleJudgmentReasonBoxData | undefined =
+      seg.method === "appeal_out"
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜアピールプレイでアウト・記録変更になるのか",
+            ruleClause: "公認野球規則 5.08(a)・5.09(c)・9.06(b)・(c)",
+            headline: "走者の空過・離塁の早すぎに対する守備側のアピール成立",
+            detail:
+              "走者がベースを踏み忘れた（空過）場合や、飛球捕球前に元の塁を離れた（タッチアップの離塁が早すぎた）場合、審判は自動ではアウトを宣告せず、守備側が次の投球・プレイ前に該当の塁（または走者）へ送球・触球してアピールした時点でアウトが成立します。",
+            note:
+              "このアピールアウトが第3アウトで、かつ強制進塁義務のある走者（打者走者の一塁空過など）に対するアピールだった場合は、第3アウトより先に他の走者がホームを踏んでいても得点は認められません（5.08(a) 例外）。また空過により進塁が取り消された場合は安打の塁打数も手前の塁までに格下げされます（9.06(b)・(c)）。",
+          }
+        : seg.method === "interference_out"
+        ? {
+            variant: "rule_why",
+            headerLabel: "なぜ守備妨害で即アウトになるのか",
+            ruleClause: "公認野球規則 5.09(b)(7)・6.01(a)・9.09(c)(1)",
+            headline: "打球処理中の野手への妨害・フェア打球接触は即ボールデッド＆無触球アウト",
+            detail:
+              "走者が打球処理中の野手を妨害したり、内野手を通過する前のフェア打球に触れた場合、その瞬間にボールデッドとなり野手が触球しなくても当該走者がアウトになります（最も近い野手に無触球で刺殺を記録し、他の走者は妨害発生時点で占有していた塁へ戻されます）。",
+          }
+        : undefined;
+
     return {
       symbolText: outLineSymbol,
       tone: "dark",
       title: `${rangeJa}：${reasonJa}${prePlayTimingTitleSuffix}`,
       description: `${driverJa}${rangeJa}の間でアウトになりました。${chainDescJa}${prePlayTimingDescSuffix}${lineStyleJa}`,
+      ruleReasonBox: outRuleReasonBox,
     };
   }
 
@@ -1332,6 +1716,22 @@ function describeAdvanceMethodMeaning(
   }
 
   if (seg.method === "steal") {
+    if (seg.nullifiedStealByCompanionCs) {
+      return {
+        symbolText: advSymbol || "DS",
+        tone: "blue",
+        title: `${rangeJa}：重盗時の進塁（他走者盗塁死のため盗塁記録なし）${prePlayTimingTitleSuffix}`,
+        description: `複数の走者が同時にスタートした重盗（ダブルスチール等）で次の塁へ到達しましたが、同じプレーで他の走者が盗塁死になったため、公式記録上の「盗塁（SB）」はカウントされません（送球間の野手選択進塁扱い）。${prePlayTimingDescSuffix}${dottedNote}`,
+        ruleReasonBox: {
+          variant: "rule_why",
+          headerLabel: "なぜ進塁できたのに「盗塁」が記録されないのか",
+          ruleClause: "公認野球規則 9.07(d)",
+          headline: "重盗（ダブルスチール等）で1人でも盗塁刺になると全員に盗塁は付かない",
+          detail:
+            "二重盗・三重盗を試みた際、守備側がいずれか1人の走者をアウト（盗塁刺）にした場合は、その送球の間に他の走者が次の塁へ進んでも誰にも「盗塁（SB）」は記録されません（守備側がそちらの走者を優先して刺しにいった結果の野手選択進塁とみなされるためです）。",
+        },
+      };
+    }
     return {
       symbolText: advSymbol || "S",
       tone: "blue",
@@ -1372,6 +1772,14 @@ function describeAdvanceMethodMeaning(
       description: `「${
         advSymbol || "BK"
       }」は相手投手のボークにより安全進塁権を得て進んだことを表します。${prePlayTimingDescSuffix}${dottedNote}`,
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜボークで1つ先の塁へ進めるのか",
+        ruleClause: "公認野球規則 6.02(a)・9.16(a)",
+        headline: "投手の不正動作（ボーク）により塁上の全走者に1個の安全進塁権",
+        detail:
+          "塁上に走者がいる場面で投手がセットポジションの完全静止を怠ったり、不正な牽制・投球中断などを行った場合はボークが宣告され、塁上のすべての走者に1つ先の塁への安全進塁権が与えられます（ボークは投手の責任であるため、この進塁によって生還した得点は自責点となります）。",
+      },
     };
   }
 
@@ -1398,6 +1806,16 @@ function describeAdvanceMethodMeaning(
       tone: "blue",
       title: `${rangeJa}：走塁妨害（オブストラクション）で進塁`,
       description: `「${advSymbol || "OB"}」は野手${obFielderJa}による走塁妨害が宣告され、安全進塁権が与えられたことを表します。${dottedNote}`,
+      ruleReasonBox: {
+        variant: "rule_why",
+        headerLabel: "なぜ走塁妨害で安全進塁権＆非自責点になるのか",
+        ruleClause: "公認野球規則 6.01(h)・9.16(a)",
+        headline: "ボールを持たない野手の進路妨害に対する安全進塁権（生還時は非自責点）",
+        detail:
+          "ボールを持っていない（かつ打球処理中でもない）野手が走者の走路を塞いで走塁を妨げた場合、審判はオブストラクション（走塁妨害）を宣告し、妨害がなければ到達できたと審判員が判断する塁（プレイが行われていた走者には最低でも1つ先の塁）への安全進塁権を与えます。",
+        note:
+          "走塁妨害には野手の個人失策（エラー数）は加算されませんが、公認野球規則 9.16(a) により守備側のミスと同等に扱われるため、走塁妨害で進塁・生還した得点は投手の非自責点となります。",
+      },
     };
   }
 
@@ -1458,15 +1876,21 @@ function resolveCellEarnedRunReasonBox(
     if (!exp.isEarned || cell.isUnearnedRun) {
       return {
         variant: "unearned",
+        headerLabel: "なぜ非自責点になるのか",
         ruleClause: exp.ruleClause,
         headline: exp.headline,
         detail: exp.detail,
         note: exp.note,
       };
     }
-    if (exp.headline.includes("昇格") || Boolean(exp.note)) {
+    if (
+      exp.hasSpecialEarnedWhy ||
+      exp.headline.includes("昇格") ||
+      Boolean(exp.note)
+    ) {
       return {
         variant: "earned_note",
+        headerLabel: "なぜ自責点（または前任投手責任）になるのか",
         ruleClause: exp.ruleClause,
         headline: exp.headline,
         detail: exp.detail,
@@ -1484,6 +1908,7 @@ function resolveCellEarnedRunReasonBox(
   if (cell.isTiebreakRunnerOnly) {
     return {
       variant: "unearned",
+      headerLabel: "なぜ非自責点になるのか",
       ruleClause: "公認野球規則 9.16（タイブレーク規定）",
       headline: "タイブレーク開始時の配置走者による生還",
       detail:
@@ -1496,6 +1921,7 @@ function resolveCellEarnedRunReasonBox(
     if (rc === "error") {
       return {
         variant: "unearned",
+        headerLabel: "なぜ非自責点になるのか",
         ruleClause: "公認野球規則 9.16(a)・(d)",
         headline: "打者自身の相手失策（エラー）による出塁",
         detail:
@@ -1505,6 +1931,7 @@ function resolveCellEarnedRunReasonBox(
     if (rc === "interference") {
       return {
         variant: "unearned",
+        headerLabel: "なぜ非自責点になるのか",
         ruleClause: "公認野球規則 9.16(a)・(b)(2)",
         headline: "打撃妨害（捕手失策）による出塁走者の生還",
         detail:
@@ -1519,6 +1946,7 @@ function resolveCellEarnedRunReasonBox(
       if (dts.kind === "pb") {
         return {
           variant: "unearned",
+          headerLabel: "なぜ非自責点になるのか",
           ruleClause: "公認野球規則 9.16(a)(3)",
           headline: "第3ストライクの捕逸（パスボール）による振り逃げ出塁",
           detail:
@@ -1528,6 +1956,7 @@ function resolveCellEarnedRunReasonBox(
       if (dts.kind === "throwing_error" || dts.kind === "receiving_error") {
         return {
           variant: "unearned",
+          headerLabel: "なぜ非自責点になるのか",
           ruleClause: "公認野球規則 9.16(a)(3)",
           headline: "振り逃げ時の一塁送球・捕球失策による出塁",
           detail:
@@ -1559,6 +1988,7 @@ function resolveCellEarnedRunReasonBox(
     const triggersJa = segTriggerLabels.join("・");
     return {
       variant: "unearned",
+      headerLabel: "なぜ非自責点になるのか",
       ruleClause: "公認野球規則 9.16(a)・(d)・(f)",
       headline: `${triggersJa}による進塁・生還`,
       detail: `途中の進塁または本塁生還に「${triggersJa}」が絡んでおり、そのミスがなければ3アウト終了までに本塁へ生還できていなかったと判定されるため非自責点となります。`,
@@ -1567,6 +1997,7 @@ function resolveCellEarnedRunReasonBox(
 
   return {
     variant: "unearned",
+    headerLabel: "なぜ非自責点になるのか",
     ruleClause: "公認野球規則 9.16(a)",
     headline: "イニング再構成（失策・捕逸絡み／仮想3アウト以降）による非自責点",
     detail:
@@ -1652,6 +2083,7 @@ function buildDiamondSection(
       tone: explained.tone,
       title: explained.title,
       description: explained.description,
+      ruleReasonBox: explained.ruleReasonBox,
     });
 
     segCursor = endSeg + 1;
@@ -1737,7 +2169,32 @@ function buildDiamondSection(
     });
   }
 
-  // 4. 右下角・下辺：イニング終了区切り線
+  // 4. 右下角・下辺：イニング終了区切り線（＋第3アウト同時プレーでのタイムプレー得点解説）
+  const atBatAdvances = cell.atBat?.advances || [];
+  const hasInPlayThirdOutRun =
+    Boolean(cell.situation && cell.situation.outsAfter >= 3 && cell.situation.runsInPlay > 0) &&
+    (cell.atBat?.outsInPlay ?? 0) >= 1 &&
+    atBatAdvances.some(
+      (a) => !a.isOut && a.to === "HP" && !isPrePlayAdvanceMethod(a.method)
+    );
+  const hasPrePlayThirdOutRun =
+    Boolean(cell.situation && cell.situation.outsAfter >= 3 && cell.situation.runsInPlay > 0) &&
+    atBatAdvances.some((a) => a.isOut && isPrePlayAdvanceMethod(a.method)) &&
+    atBatAdvances.some(
+      (a) => !a.isOut && a.to === "HP" && isPrePlayAdvanceMethod(a.method)
+    );
+  const timePlayRuleBox: RuleJudgmentReasonBoxData | undefined =
+    hasInPlayThirdOutRun || hasPrePlayThirdOutRun
+      ? {
+          variant: "rule_why",
+          headerLabel: "なぜ3アウトチェンジのプレーなのに得点が認められるのか",
+          ruleClause: "公認野球規則 5.08(a)（タイムプレー）",
+          headline: `第3アウトがフォースアウト以外のタッチアウトのため、その前の本塁到達（${cell.situation?.runsInPlay ?? 1}点）が有効`,
+          detail:
+            "第3アウトが「①打者走者が一塁に触れる前のアウト」「②フォースアウト（封殺）」「③強制進塁走者の空過アピール」のいずれでもない場合（本件のような進塁・次塁狙いのタッチアウト等）はタイムプレーとなり、第3アウトの触球より一瞬でも早く先行走者が本塁に触れていれば得点が認められます。",
+        }
+      : undefined;
+
   if (cell.isInningEndCell && rules.inningEndMark !== "none") {
     const isRedEnd =
       rules.inningEndMark === "red_double_slash" &&
@@ -1763,6 +2220,17 @@ function buildDiamondSection(
       tone: isRedEnd ? "red" : "dark",
       title: "イニング終了線（3アウトチェンジ）",
       description: `${endDescShape}は「この打者のところで3アウトになり、この回の攻撃が終わった」という区切り印です。次の回は次の列の次の打順から始まります。`,
+      ruleReasonBox: timePlayRuleBox,
+    });
+  } else if (cell.isInningEndCell && timePlayRuleBox) {
+    rows.push({
+      zoneLabel: "チェンジ",
+      symbolText: "3OUT",
+      tone: "dark",
+      title: "3アウトチェンジ（タイムプレー得点成立）",
+      description:
+        "このプレーで3アウトチェンジとなりましたが、タイムプレーにより先行走者の本塁生還が有効となっています。",
+      ruleReasonBox: timePlayRuleBox,
     });
   }
 

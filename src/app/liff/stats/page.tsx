@@ -28,6 +28,7 @@ import {
   Plus,
   CheckCircle2,
   BookOpen,
+  Scale,
 } from "lucide-react";
 
 type StatsFilterKey = "all" | "official" | "exchange" | "practice";
@@ -1303,6 +1304,58 @@ export default function LiffStatsPage() {
                               </div>
                             );
                           })}
+
+                          {(() => {
+                            const exceptionLeader = avgLeaders.find(
+                              (b) => b.qualifiedByRule922Exception
+                            );
+                            if (!exceptionLeader) return null;
+                            const regPa = qualification?.regulationPa ?? 0;
+                            const shortagePa = Math.max(
+                              0,
+                              regPa - exceptionLeader.plateAppearances
+                            );
+                            const hypoAb = exceptionLeader.atBats + shortagePa;
+                            const hypoAvgRaw =
+                              hypoAb > 0
+                                ? (exceptionLeader.hits / hypoAb).toFixed(3)
+                                : "0.000";
+                            const hypoAvgStr = hypoAvgRaw.startsWith("0.")
+                              ? hypoAvgRaw.slice(1)
+                              : hypoAvgRaw;
+
+                            return (
+                              <div className="mt-1 rounded-xl border border-amber-400 bg-amber-50 overflow-hidden">
+                                <div className="px-2.5 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 border-amber-500 flex items-center justify-between gap-2 flex-wrap">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-black tracking-wide">
+                                    <Scale className="w-3 h-3 text-amber-400 shrink-0" />
+                                    <span>
+                                      なぜ規定打席未満でも首位打者（特例首位）になるのか
+                                    </span>
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono text-[9px] font-black leading-none">
+                                    公認野球規則 9.22(a)［但し書き］
+                                  </span>
+                                </div>
+                                <div className="p-2.5 space-y-1">
+                                  <p className="text-[11px] font-black text-slate-950 leading-snug">
+                                    {exceptionLeader.name}選手：不足{shortagePa}
+                                    打席をすべて凡打と仮定（仮想打率 {hypoAvgStr}
+                                    ）してもチーム最高率を上回るため公認
+                                  </p>
+                                  <p className="text-[11px] font-bold text-slate-800 leading-relaxed">
+                                    規定打席（{regPa}打席）に{shortagePa}
+                                    打席不足していますが、不足分をすべて打数（安打0の凡打）として分母に加算した仮想打率（
+                                    {exceptionLeader.hits}安打 ÷ {hypoAb}仮想打数 ＝{" "}
+                                    {hypoAvgStr}
+                                    ）でも他の規定到達者を上回るため、公認野球規則
+                                    9.22(a)［但し書き］により正式に首位資格が認められます（※公式打率そのものは実成績の{" "}
+                                    {exceptionLeader.avg} を記録します）。
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     )}

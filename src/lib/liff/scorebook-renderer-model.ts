@@ -15,6 +15,7 @@ import {
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
   type OfficialEarnedRunExplanation,
+  type OfficialPitcherDecisionExplanation,
 } from "@/lib/liff/baseball-official-rules";
 import {
   extractRelayChainFromHitDirection,
@@ -81,6 +82,8 @@ export interface CompiledDiamondSegment {
   throwChain?: string;
   /** ダブルスチール（重盗）か */
   isDoubleSteal?: boolean;
+  /** 公認野球規則 9.07(d) により、同一盗塁企画の他走者が盗塁刺となったため盗塁記録が不成立（野手選択進塁扱い）となった区間か */
+  nullifiedStealByCompanionCs?: boolean;
   /** 特殊表記の上書きラベル（早見表の "(ー)" 等） */
   customLabelOverride?: string;
   /** 早稲田式（塁線波線）モード用の代走選手名 */
@@ -246,6 +249,7 @@ export interface CompiledPitcherRowStats {
   completeGame?: boolean;
   shutout?: boolean;
   isManualDecision?: boolean;
+  decisionExplanation?: OfficialPitcherDecisionExplanation;
 }
 
 export interface CompiledPitcherTotals {
@@ -267,6 +271,7 @@ export interface CompiledPitcherTotals {
   earnedRuns: number;
   individualEarnedRunsSum?: number;
   teamShutout?: boolean;
+  teamShutoutExplanation?: OfficialPitcherDecisionExplanation;
   eraDisplay: string;
 }
 
@@ -428,6 +433,7 @@ function applyRunnerStepSegments(
     isForceOut?: boolean;
     throwChain?: string;
     isDoubleSteal?: boolean;
+    nullifiedStealByCompanionCs?: boolean;
     pitchNumber?: number;
   }
 ): void {
@@ -479,6 +485,9 @@ function applyRunnerStepSegments(
       isForceOut: isFinalStep ? options.isForceOut : undefined,
       throwChain: isFinalStep ? options.throwChain : undefined,
       isDoubleSteal: isFinalStep ? options.isDoubleSteal : undefined,
+      nullifiedStealByCompanionCs: isFinalStep
+        ? options.nullifiedStealByCompanionCs
+        : undefined,
       customLabelOverride:
         !isFinalStep || suppressBatterSamePlayDup ? "" : undefined,
       pitchNumber: isFinalStep ? options.pitchNumber : undefined,
@@ -1368,11 +1377,11 @@ export function compileScorebookSheetModel(
         const originCell = originKey ? cellsByKey[originKey] : undefined;
 
         for (const pm of pr.prePlayMoves) {
-          if (
+          const isPrePlayNullifiedSteal =
             !pm.isOut &&
             pm.method === "steal" &&
-            !hasCompanionCaughtStealingOnSameStealAttempt(pm, ab.advances)
-          ) {
+            hasCompanionCaughtStealingOnSameStealAttempt(pm, ab.advances);
+          if (!pm.isOut && pm.method === "steal" && !isPrePlayNullifiedSteal) {
             if (pr.runner.battingOrder > 0) {
               addStealToRunner(
                 pr.runner.battingOrder,
@@ -1418,7 +1427,11 @@ export function compileScorebookSheetModel(
               isForceOut: false,
               throwChain: explicitPreChain || defaultPickoffChain,
               isDoubleSteal:
-                !pm.isOut && pm.method === "steal" && stealRunnersInAtBat >= 2,
+                !pm.isOut &&
+                pm.method === "steal" &&
+                stealRunnersInAtBat >= 2 &&
+                !isPrePlayNullifiedSteal,
+              nullifiedStealByCompanionCs: isPrePlayNullifiedSteal || undefined,
               pitchNumber: pm.pitchNumber,
             });
           }
@@ -1569,13 +1582,16 @@ export function compileScorebookSheetModel(
               assignInningOutOrdinal(undefined, false);
             }
           } else if (baseToLevel(pr.finalBase) > baseToLevel(inPlayFrom)) {
+            const isInPlayNullifiedSteal =
+              pr.effectiveMethod === "steal" &&
+              hasCompanionCaughtStealingOnSameStealAttempt(
+                { method: "steal", isOut: false },
+                ab.advances
+              );
             if (
               pr.effectiveMethod === "steal" &&
               !pr.prePlayMoves.some((pm) => !pm.isOut && pm.method === "steal") &&
-              !hasCompanionCaughtStealingOnSameStealAttempt(
-                { method: "steal", isOut: false },
-                ab.advances
-              )
+              !isInPlayNullifiedSteal
             ) {
               if (pr.runner.battingOrder > 0) {
                 addStealToRunner(
@@ -1602,6 +1618,8 @@ export function compileScorebookSheetModel(
                     ? undefined
                     : ab.battingOrder,
                   isPrePlay: isPrePlayAdvanceMethod(pr.effectiveMethod),
+                  nullifiedStealByCompanionCs:
+                    isInPlayNullifiedSteal || undefined,
                   throwChain: normalizeThrowChainToken(
                     pr.inPlayExplicitMove?.throwChain
                   ),
@@ -1721,6 +1739,14 @@ export function compileScorebookSheetModel(
           }
         );
 
+        const extraMove = snap.batterSummary.extraExplicitMove;
+        const isBatterExtraNullifiedSteal = Boolean(
+          extraMove &&
+            !extraMove.isOut &&
+            extraMove.method === "steal" &&
+            hasCompanionCaughtStealingOnSameStealAttempt(extraMove, ab.advances)
+        );
+
         if (
           finalBase &&
           initBase !== "HP" &&
@@ -1737,17 +1763,18 @@ export function compileScorebookSheetModel(
               method: snap.batterSummary.effectiveMethod,
               isPrePlay: false,
               isForceOut: snap.batterSummary.isOutOnBases ? false : undefined,
+              nullifiedStealByCompanionCs:
+                isBatterExtraNullifiedSteal || undefined,
               throwChain: batterExtraChain,
             }
           );
         }
 
-        const extraMove = snap.batterSummary.extraExplicitMove;
         if (extraMove) {
           if (
             !extraMove.isOut &&
             extraMove.method === "steal" &&
-            !hasCompanionCaughtStealingOnSameStealAttempt(extraMove, ab.advances)
+            !isBatterExtraNullifiedSteal
           ) {
             addStealToRunner(
               ab.battingOrder,
@@ -2976,6 +3003,7 @@ function compilePitcherRows(
     opponentInningScores: battingSideInningScores,
     pitchers: activeAccEntries.map(({ p, origIdx }, idx) => ({
       pitcherKey: String(origIdx),
+      pitcherName: p.name,
       order: idx + 1,
       outsRecorded: p.outsRecorded,
       runsAllowed: p.runsAllowed,
@@ -3017,6 +3045,7 @@ function compilePitcherRows(
         completeGame: dec?.completeGame ?? false,
         shutout: dec?.shutout ?? false,
         isManualDecision: dec?.isManualOverride ?? false,
+        decisionExplanation: dec?.decisionExplanation,
       };
     }
   );
@@ -3048,6 +3077,7 @@ function compilePitcherRows(
     earnedRuns: effectiveTeamEarned,
     individualEarnedRunsSum: totIndividualEarned,
     teamShutout: decisionEval.teamShutout,
+    teamShutoutExplanation: decisionEval.teamShutoutExplanation,
     eraDisplay: formatRegulationEra(effectiveTeamEarned, totOuts),
   };
 

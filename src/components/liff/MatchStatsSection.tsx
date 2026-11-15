@@ -11,12 +11,17 @@ import {
   ChevronDown,
   ChevronUp,
   Flame,
+  Scale,
   ScanLine,
   Target,
   Zap,
 } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { ScorebookSingleCellThumbnail } from "@/components/liff/ScorebookCellGuideModal";
+import {
+  buildTeamEarnedRunDiscrepancyExplanation,
+  type OfficialPitcherDecisionExplanation,
+} from "@/lib/liff/baseball-official-rules";
 import { getPositionBadgeInfo } from "@/lib/liff/demo-lineup";
 import { repairPlayLogForceOutDescription } from "@/lib/liff/scorebook-fielding";
 import {
@@ -100,12 +105,14 @@ export interface LiffPitcherStatItem {
   completeGame?: boolean;
   shutout?: boolean;
   isManualDecision?: boolean;
+  decisionExplanation?: OfficialPitcherDecisionExplanation;
 }
 
 export interface LiffTeamPitchingMeta {
   teamEarnedRuns: number;
   individualEarnedRunsSum: number;
   teamShutout: boolean;
+  teamShutoutExplanation?: OfficialPitcherDecisionExplanation;
 }
 
 export interface LiffMatchGameDetails {
@@ -1587,7 +1594,14 @@ export function MatchStatsSection({
   const oppScorebookModel = isMyTeamTop ? bottomScorebookModel : topScorebookModel;
 
   const resolvedTeamPitchingMeta = useMemo<LiffTeamPitchingMeta>(() => {
-    if (teamPitchingMeta) return teamPitchingMeta;
+    if (teamPitchingMeta) {
+      return {
+        ...teamPitchingMeta,
+        teamShutoutExplanation:
+          teamPitchingMeta.teamShutoutExplanation ??
+          oppScorebookModel?.pitcherTotals.teamShutoutExplanation,
+      };
+    }
     if (oppScorebookModel) {
       return {
         teamEarnedRuns: oppScorebookModel.pitcherTotals.earnedRuns,
@@ -1595,6 +1609,8 @@ export function MatchStatsSection({
           oppScorebookModel.pitcherTotals.individualEarnedRunsSum ??
           oppScorebookModel.pitcherTotals.earnedRuns,
         teamShutout: Boolean(oppScorebookModel.pitcherTotals.teamShutout),
+        teamShutoutExplanation:
+          oppScorebookModel.pitcherTotals.teamShutoutExplanation,
       };
     }
     return {
@@ -1622,6 +1638,68 @@ export function MatchStatsSection({
     if (pitcherTotal.outs <= 0) return "0.00";
     return ((effectiveTeamEarnedRuns * 7 * 3) / pitcherTotal.outs).toFixed(2);
   }, [effectiveTeamEarnedRuns, pitcherTotal.outs]);
+
+  const pitcherRuleExplanations = useMemo<
+    Array<{
+      key: string;
+      actorLabel: string;
+      explanation: OfficialPitcherDecisionExplanation;
+    }>
+  >(() => {
+    if (!needTables || pitcherStats.length === 0) return [];
+    const items: Array<{
+      key: string;
+      actorLabel: string;
+      explanation: OfficialPitcherDecisionExplanation;
+    }> = [];
+
+    pitcherStats.forEach((pitcher, pIdx) => {
+      const fallbackSbRow =
+        oppScorebookModel?.pitcherRows.find(
+          (r) =>
+            r.name.replace(/\s+/g, "") === pitcher.name.replace(/\s+/g, "")
+        ) || oppScorebookModel?.pitcherRows[pIdx];
+      const exp =
+        pitcher.decisionExplanation ?? fallbackSbRow?.decisionExplanation;
+      if (!exp) return;
+      const numSuffix =
+        pitcher.number && pitcher.number !== "-" ? ` #${pitcher.number}` : "";
+      items.push({
+        key: `p-exp-${pitcher.id}-${pIdx}`,
+        actorLabel: `${pitcher.name}${numSuffix}`,
+        explanation: exp,
+      });
+    });
+
+    if (resolvedTeamPitchingMeta.teamShutoutExplanation) {
+      items.push({
+        key: "team-shutout-exp",
+        actorLabel: "チーム完封記録",
+        explanation: resolvedTeamPitchingMeta.teamShutoutExplanation,
+      });
+    }
+
+    const discrepancyExp = buildTeamEarnedRunDiscrepancyExplanation(
+      effectiveTeamEarnedRuns,
+      resolvedTeamPitchingMeta.individualEarnedRunsSum
+    );
+    if (discrepancyExp) {
+      items.push({
+        key: "team-er-discrepancy-exp",
+        actorLabel: "TEAM TOTAL（自責点）",
+        explanation: discrepancyExp,
+      });
+    }
+
+    return items;
+  }, [
+    needTables,
+    pitcherStats,
+    oppScorebookModel,
+    resolvedTeamPitchingMeta.teamShutoutExplanation,
+    resolvedTeamPitchingMeta.individualEarnedRunsSum,
+    effectiveTeamEarnedRuns,
+  ]);
 
   const timelineEntries = useMemo(() => {
     if (!needTimeline) return [];
@@ -2585,6 +2663,98 @@ export function MatchStatsSection({
                 </tbody>
               </table>
               </div>
+
+              {pitcherRuleExplanations.length > 0 && (
+                <div className="border-t border-border bg-muted/45 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap px-0.5">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-foreground">
+                      <Scale className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span>なぜこの判定になるのか（勝敗・セーブ・完封・自責点）</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsRulesGuideOpen(true)}
+                      className="px-2 py-0.5 rounded-lg bg-card hover:bg-muted border border-border text-[10px] font-black text-foreground inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <BookOpen className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>規則ガイド全文</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {pitcherRuleExplanations.map((item) => {
+                      const exp = item.explanation;
+                      const capBorderCls =
+                        exp.variant === "win"
+                          ? "border-rose-500"
+                          : exp.variant === "loss"
+                          ? "border-slate-400"
+                          : exp.variant === "save"
+                          ? "border-sky-500"
+                          : exp.variant === "hold"
+                          ? "border-teal-500"
+                          : "border-amber-500";
+                      const badgePillCls =
+                        exp.variant === "win"
+                          ? "bg-rose-600 text-white"
+                          : exp.variant === "loss"
+                          ? "bg-slate-600 text-white"
+                          : exp.variant === "save"
+                          ? "bg-sky-600 text-white"
+                          : exp.variant === "hold"
+                          ? "bg-teal-600 text-white"
+                          : exp.variant === "shutout"
+                          ? "bg-amber-600 text-white"
+                          : "bg-slate-700 text-slate-100";
+
+                      return (
+                        <div
+                          key={item.key}
+                          className="rounded-xl border border-border bg-card overflow-hidden"
+                        >
+                          <div
+                            className={cn(
+                              "px-2.5 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 flex items-center justify-between gap-2 flex-wrap",
+                              capBorderCls
+                            )}
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                              <span
+                                className={cn(
+                                  "px-1.5 py-0.5 rounded text-[9px] font-black leading-none shrink-0",
+                                  badgePillCls
+                                )}
+                              >
+                                {exp.categoryLabel}
+                              </span>
+                              <span className="text-[11px] font-black text-white truncate">
+                                {item.actorLabel}
+                              </span>
+                            </div>
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono text-[9px] font-black leading-none shrink-0">
+                              {exp.ruleClause}
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 space-y-1">
+                            <p className="text-[11px] font-black text-foreground leading-snug">
+                              {exp.headline}
+                            </p>
+                            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                              {exp.detail}
+                            </p>
+                            {exp.note && (
+                              <div className="mt-1 rounded-lg bg-muted/70 border border-border px-2 py-1.5 text-[10px] font-bold text-foreground leading-relaxed">
+                                {exp.note}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
