@@ -479,7 +479,7 @@ export function PlayerProfileEditModal({
               className="relative shrink-0 cursor-pointer active:scale-95 transition-transform"
               title="正面写真を撮影・変更"
             >
-              <Avatar className="h-12 w-12 border-2 border-slate-700">
+              <Avatar className="h-14 w-14 border-2 border-slate-700">
                 {player.profileImageUrl && (
                   <AvatarImage
                     src={player.profileImageUrl}
@@ -487,11 +487,11 @@ export function PlayerProfileEditModal({
                     className="object-cover"
                   />
                 )}
-                <AvatarFallback className="bg-primary text-primary-foreground font-black text-base">
+                <AvatarFallback className="bg-primary text-primary-foreground font-black text-lg">
                   {initial}
                 </AvatarFallback>
               </Avatar>
-              <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-primary text-primary-foreground border border-[#0f172a] flex items-center justify-center">
+              <span className="absolute -bottom-1 -right-1 w-5.5 h-5.5 rounded-full bg-primary text-primary-foreground border border-[#0f172a] flex items-center justify-center">
                 <Camera className="w-3 h-3" />
               </span>
             </button>

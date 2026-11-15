@@ -70,8 +70,8 @@ interface UploadPhotoApiResponse {
 
 const PORTRAIT_PREVIEW_W = 480;
 const PORTRAIT_PREVIEW_H = 480;
-const PORTRAIT_EXPORT_W = 512;
-const PORTRAIT_EXPORT_H = 512;
+const PORTRAIT_EXPORT_W = 640;
+const PORTRAIT_EXPORT_H = 640;
 
 const ACTION_PREVIEW_W = 640;
 const ACTION_PREVIEW_H = 320;

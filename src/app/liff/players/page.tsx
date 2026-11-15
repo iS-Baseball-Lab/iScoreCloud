@@ -39,6 +39,7 @@ import {
   Calendar,
   Plus,
   Trash2,
+  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -470,6 +471,7 @@ function LiffPlayersDirectoryContent() {
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>("すべて");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [isPortraitZoomOpen, setIsPortraitZoomOpen] = useState<boolean>(false);
   const [photoModalTarget, setPhotoModalTarget] = useState<{
     playerId: string;
     kind: PlayerPhotoKind;
@@ -522,6 +524,7 @@ function LiffPlayersDirectoryContent() {
   // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
   useEffect(() => {
     setSelectedPlayerId(null);
+    setIsPortraitZoomOpen(false);
     setPhotoModalTarget(null);
     setEditingPlayerId(null);
     setIsTeamCoverModalOpen(false);
@@ -532,6 +535,7 @@ function LiffPlayersDirectoryContent() {
 
   // 詳細モーダルで別選手に切り替えた際、コンディション編集フォームを対象選手の値に同期
   useEffect(() => {
+    setIsPortraitZoomOpen(false);
     if (!selectedPlayerId) {
       setIsConditionEditorOpen(false);
       setEditingPeriodId(null);
@@ -1912,7 +1916,7 @@ function LiffPlayersDirectoryContent() {
                   />
 
                   {/* 上部ビジュアルステージ（案B × ポジション連動デフォルト背景 ＆ 薄めソリッドスクリム） */}
-                  <div className="relative h-32 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border bg-[#0f172a]">
+                  <div className="relative h-[136px] sm:h-36 w-full p-2.5 flex flex-col justify-between overflow-hidden border-b border-border bg-[#0f172a]">
                     <img
                       src={effectiveActionBgUrl}
                       alt=""
@@ -1968,7 +1972,7 @@ function LiffPlayersDirectoryContent() {
                       </span>
                     </div>
 
-                    <div className="relative z-10 flex items-end justify-end gap-1 flex-wrap">
+                    <div className="relative z-10 flex items-end justify-end gap-1 flex-wrap pl-[88px] sm:pl-24">
                       {condStatus !== "active" ? (
                         <div className="flex items-center gap-1 flex-wrap justify-end">
                           <span
@@ -2003,12 +2007,12 @@ function LiffPlayersDirectoryContent() {
                     </div>
                   </div>
 
-                  {/* 下部ソリッド情報エリア（案B：丸枠正面写真 境界オーバーラップ） */}
+                  {/* 下部ソリッド情報エリア（案B：丸枠正面写真 境界オーバーラップ・大型化） */}
                   <div className="px-3 pb-3 pt-2 bg-card flex-1 flex flex-col justify-between space-y-2">
                     <div className="min-w-0 space-y-1">
-                      <div className="relative z-20 flex items-end justify-between gap-1.5 -mt-9 mb-0.5">
+                      <div className="relative z-20 flex items-end justify-between gap-1.5 -mt-12 sm:-mt-13 mb-0.5">
                         <Avatar
-                          className={`h-14 w-14 border-[3px] border-card bg-card shadow-sm ring-2 shrink-0 ${
+                          className={`h-[76px] w-[76px] sm:h-20 sm:w-20 border-[3.5px] border-card bg-card shadow-sm ring-2 shrink-0 ${
                             isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : style.ring
                           }`}
                         >
@@ -2020,7 +2024,7 @@ function LiffPlayersDirectoryContent() {
                             />
                           )}
                           <AvatarFallback
-                            className={`font-black text-base ${
+                            className={`font-black text-xl ${
                               isOnLeave
                                 ? "bg-slate-500 text-white"
                                 : "bg-primary text-primary-foreground"
@@ -2225,9 +2229,9 @@ function LiffPlayersDirectoryContent() {
                     }`}
                   />
 
-                  <div className="flex-1 p-3 flex items-center justify-between gap-3 min-w-0">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-11 text-center shrink-0">
+                  <div className="flex-1 p-3 flex items-center justify-between gap-2.5 sm:gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                      <div className="w-10 sm:w-11 text-center shrink-0">
                         <span className="text-lg font-black italic tracking-tighter tabular-nums text-foreground leading-none block">
                           #{numStr}
                         </span>
@@ -2237,8 +2241,8 @@ function LiffPlayersDirectoryContent() {
                       </div>
 
                       <Avatar
-                        className={`h-10 w-10 border border-border shrink-0 ${
-                          isOnLeave ? "grayscale-[35%]" : ""
+                        className={`h-14 w-14 sm:h-16 sm:w-16 border-2 border-card bg-card shadow-2xs ring-2 shrink-0 ${
+                          isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : style.ring
                         }`}
                       >
                         {player.profileImageUrl && (
@@ -2249,7 +2253,7 @@ function LiffPlayersDirectoryContent() {
                           />
                         )}
                         <AvatarFallback
-                          className={`font-black text-sm ${
+                          className={`font-black text-base ${
                             isOnLeave
                               ? "bg-slate-500/15 text-slate-600 dark:text-slate-300"
                               : "bg-primary/10 text-primary"
@@ -2474,7 +2478,7 @@ function LiffPlayersDirectoryContent() {
               <div className="shrink-0 bg-card border-b border-border">
                 {/* 上部ワイドステージ（プレー写真を邪魔しないよう前後送りピルと閉じるボタンのみ配置） */}
                 <div
-                  className={`relative h-36 sm:h-44 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden ${
+                  className={`relative h-40 sm:h-48 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden ${
                     condStatus === "on_leave"
                       ? "border-slate-400"
                       : condStatus === "rehab"
@@ -2542,30 +2546,79 @@ function LiffPlayersDirectoryContent() {
                   </div>
                 </div>
 
-                {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ ＋ 操作ボタン ＋ 選手名・属性） */}
+                {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ・大型化 ＋ 操作ボタン ＋ 選手名・属性） */}
                 <div className="px-4 pb-3 pt-1.5 bg-card space-y-2">
-                  <div className="relative z-20 flex items-end justify-between gap-2 -mt-10">
+                  <div className="relative z-20 flex items-end justify-between gap-2 -mt-12 sm:-mt-14">
                     {canEditThisPlayer ? (
+                      <div className="relative group/avatar shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (selectedPlayer.profileImageUrl) {
+                              setIsPortraitZoomOpen(true);
+                            } else {
+                              openPhotoModal(selectedPlayer.id, "portrait");
+                            }
+                          }}
+                          className="block rounded-full cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
+                          title={
+                            selectedPlayer.profileImageUrl
+                              ? "タップして正面写真を拡大表示"
+                              : "正面写真を撮影・変更"
+                          }
+                        >
+                          <Avatar
+                            className={`h-24 w-24 sm:h-28 sm:w-28 border-4 border-card bg-card shadow-sm ring-2 ${
+                              isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : catStyle.ring
+                            }`}
+                          >
+                            {selectedPlayer.profileImageUrl && (
+                              <AvatarImage
+                                src={selectedPlayer.profileImageUrl}
+                                alt={selectedPlayer.name}
+                                className="object-cover"
+                              />
+                            )}
+                            <AvatarFallback
+                              className={`font-black text-3xl ${
+                                isOnLeave
+                                  ? "bg-slate-500 text-white"
+                                  : "bg-primary text-primary-foreground"
+                              }`}
+                            >
+                              {initial}
+                            </AvatarFallback>
+                          </Avatar>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                          className="absolute -bottom-0.5 -right-0.5 w-8 h-8 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                          title="正面写真を撮影・変更"
+                          aria-label="正面写真を撮影・変更"
+                        >
+                          <Camera className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : selectedPlayer.profileImageUrl ? (
                       <button
                         type="button"
-                        onClick={() => openPhotoModal(selectedPlayer.id, "portrait")}
+                        onClick={() => setIsPortraitZoomOpen(true)}
                         className="relative group/avatar shrink-0 cursor-pointer active:scale-95 transition-transform focus:outline-hidden"
-                        title="正面写真を撮影・変更"
+                        title="タップして正面写真を拡大表示"
                       >
                         <Avatar
-                          className={`h-20 w-20 border-4 border-card bg-card shadow-sm ring-2 ${
+                          className={`h-24 w-24 sm:h-28 sm:w-28 border-4 border-card bg-card shadow-sm ring-2 ${
                             isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : catStyle.ring
                           }`}
                         >
-                          {selectedPlayer.profileImageUrl && (
-                            <AvatarImage
-                              src={selectedPlayer.profileImageUrl}
-                              alt={selectedPlayer.name}
-                              className="object-cover"
-                            />
-                          )}
+                          <AvatarImage
+                            src={selectedPlayer.profileImageUrl}
+                            alt={selectedPlayer.name}
+                            className="object-cover"
+                          />
                           <AvatarFallback
-                            className={`font-black text-2xl ${
+                            className={`font-black text-3xl ${
                               isOnLeave
                                 ? "bg-slate-500 text-white"
                                 : "bg-primary text-primary-foreground"
@@ -2574,26 +2627,19 @@ function LiffPlayersDirectoryContent() {
                             {initial}
                           </AvatarFallback>
                         </Avatar>
-                        <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
-                          <Camera className="w-3.5 h-3.5" />
+                        <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-[#0f172a] text-white border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                          <ZoomIn className="w-3.5 h-3.5" />
                         </span>
                       </button>
                     ) : (
                       <div className="relative shrink-0">
                         <Avatar
-                          className={`h-20 w-20 border-4 border-card bg-card shadow-sm ring-2 ${
+                          className={`h-24 w-24 sm:h-28 sm:w-28 border-4 border-card bg-card shadow-sm ring-2 ${
                             isOnLeave ? "ring-slate-400/40 grayscale-[35%]" : catStyle.ring
                           }`}
                         >
-                          {selectedPlayer.profileImageUrl && (
-                            <AvatarImage
-                              src={selectedPlayer.profileImageUrl}
-                              alt={selectedPlayer.name}
-                              className="object-cover"
-                            />
-                          )}
                           <AvatarFallback
-                            className={`font-black text-2xl ${
+                            className={`font-black text-3xl ${
                               isOnLeave
                                 ? "bg-slate-500 text-white"
                                 : "bg-primary text-primary-foreground"
@@ -3873,6 +3919,74 @@ function LiffPlayersDirectoryContent() {
                   type="button"
                   onClick={() => setIsSelfClaimModalOpen(false)}
                   className="w-full py-2.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━ 🔍 正面写真 拡大プレビューモーダル（A-3 ソリッド規格） ━━━ */}
+      {isPortraitZoomOpen &&
+        selectedPlayer?.profileImageUrl &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[10100] flex items-center justify-center bg-slate-950/75 p-4 animate-in fade-in duration-150">
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsPortraitZoomOpen(false)}
+            />
+            <div className="relative z-10 w-full max-w-sm rounded-2xl border border-border bg-card shadow-xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-xs font-black tabular-nums shrink-0">
+                    #{cleanUniformNumber(selectedPlayer.uniformNumber)}
+                  </span>
+                  <span className="text-sm font-black text-white truncate">
+                    {selectedPlayer.name}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPortraitZoomOpen(false)}
+                  className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center shrink-0 active:scale-90 transition-all cursor-pointer"
+                  aria-label="閉じる"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-card">
+                <div className="w-full aspect-square rounded-xl overflow-hidden border border-border bg-muted">
+                  <img
+                    src={selectedPlayer.profileImageUrl}
+                    alt={selectedPlayer.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              </div>
+
+              <div className="px-3 pb-3 flex items-center gap-2 bg-card">
+                {Boolean(selectedPlayer.canEditProfile || canManagePlayers) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetId = selectedPlayer.id;
+                      setIsPortraitZoomOpen(false);
+                      openPhotoModal(targetId, "portrait");
+                    }}
+                    className="flex-1 py-2.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black inline-flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>正面写真を変更</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsPortraitZoomOpen(false)}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground active:scale-95 transition-all cursor-pointer"
                 >
                   閉じる
                 </button>

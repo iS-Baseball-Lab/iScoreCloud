@@ -1346,7 +1346,7 @@ function PlayerGrowthContent() {
                   {/* 上部ワイドステージ（選手詳細モーダルと統一：プレー写真を邪魔しないよう上角ピルのみ配置） */}
                   <div
                     className={cn(
-                      "relative h-36 sm:h-44 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden",
+                      "relative h-40 sm:h-48 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] overflow-hidden",
                       condStatus === "on_leave"
                         ? "border-slate-400"
                         : condStatus === "rehab"
@@ -1450,9 +1450,9 @@ function PlayerGrowthContent() {
                     )}
                   </div>
 
-                  {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ ＋ 操作ボタン ＋ 選手名・属性） */}
+                  {/* 下部純白アイデンティティ帯（丸枠正面写真 境界オーバーラップ・大型化 ＋ 操作ボタン ＋ 選手名・属性） */}
                   <div className="px-4 pb-3.5 pt-1.5 bg-card space-y-2.5">
-                    <div className="relative z-20 flex items-end justify-between gap-2 -mt-10">
+                    <div className="relative z-20 flex items-end justify-between gap-2 -mt-12 sm:-mt-14">
                       {canEditThisPlayer ? (
                         <button
                           type="button"
@@ -1462,7 +1462,7 @@ function PlayerGrowthContent() {
                         >
                           <Avatar
                             className={cn(
-                              "h-20 w-20 border-4 border-card bg-card shadow-sm ring-2",
+                              "h-24 w-24 sm:h-28 sm:w-28 border-4 border-card bg-card shadow-sm ring-2",
                               isOnLeave
                                 ? "ring-slate-400/40 grayscale-[35%]"
                                 : mainMeta.ringClass
@@ -1477,7 +1477,7 @@ function PlayerGrowthContent() {
                             )}
                             <AvatarFallback
                               className={cn(
-                                "font-black text-2xl",
+                                "font-black text-3xl",
                                 isOnLeave
                                   ? "bg-slate-500 text-white"
                                   : "bg-primary text-primary-foreground"
@@ -1486,15 +1486,15 @@ function PlayerGrowthContent() {
                               {initial}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
-                            <Camera className="w-3.5 h-3.5" />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-8 h-8 rounded-full bg-primary text-primary-foreground border-2 border-card flex items-center justify-center shadow-xs group-hover/avatar:scale-110 transition-transform">
+                            <Camera className="w-4 h-4" />
                           </span>
                         </button>
                       ) : (
                         <div className="relative shrink-0">
                           <Avatar
                             className={cn(
-                              "h-20 w-20 border-4 border-card bg-card shadow-sm ring-2",
+                              "h-24 w-24 sm:h-28 sm:w-28 border-4 border-card bg-card shadow-sm ring-2",
                               isOnLeave
                                 ? "ring-slate-400/40 grayscale-[35%]"
                                 : mainMeta.ringClass
@@ -1509,7 +1509,7 @@ function PlayerGrowthContent() {
                             )}
                             <AvatarFallback
                               className={cn(
-                                "font-black text-2xl",
+                                "font-black text-3xl",
                                 isOnLeave
                                   ? "bg-slate-500 text-white"
                                   : "bg-primary text-primary-foreground"
