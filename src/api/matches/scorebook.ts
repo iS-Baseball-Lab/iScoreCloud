@@ -285,8 +285,9 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
 }
 注意: \`f\` と \`t\` は "1B", "2B", "3B", "HP" のいずれかを使用してください。`;
 
-    // F. Gemini API の呼び出し (マルチモデル・フェイルオーバー対応)
+    // F. Gemini API の呼び出し (Gemini 4 Hydrogen ＋ Gemini 3 マルチモデル・フェイルオーバー対応)
     const candidateModels = [
+      "gemini-4-hydrogen",
       "gemini-3.8-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash-lite",
@@ -295,6 +296,20 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
     let geminiRes: Response | null = null;
     for (const modelName of candidateModels) {
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+      const isGemini4 = modelName.startsWith("gemini-4");
+      const generationConfig: Record<string, unknown> = isGemini4
+        ? {
+            responseMimeType: "application/json",
+            mediaResolution: "MEDIA_RESOLUTION_HIGH",
+            thinkingConfig: {
+              thinkingLevel: "HIGH",
+            },
+          }
+        : {
+            temperature: 0.0,
+            responseMimeType: "application/json",
+          };
+
       geminiRes = await fetch(geminiUrl, {
         method: "POST",
         headers: {
@@ -306,12 +321,31 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
               parts: [{ text: prompt }, ...imageParts],
             },
           ],
-          generationConfig: {
-            temperature: 0.0,
-            responseMimeType: "application/json",
-          },
+          generationConfig,
         }),
       });
+
+      // パラメータ仕様差で万一 400 が返った場合は最小構成（responseMimeType のみ）で即リトライ
+      if (!geminiRes.ok && geminiRes.status === 400 && isGemini4) {
+        await geminiRes.text().catch(() => "");
+        geminiRes = await fetch(geminiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }, ...imageParts],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+            },
+          }),
+        });
+      }
+
       if (
         geminiRes.ok ||
         (geminiRes.status !== 404 &&
@@ -330,10 +364,26 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
       return c.json({ success: false, error: `Gemini API Error: ${errorText}` }, 500);
     }
 
-    const geminiData = await geminiRes.json() as any;
+    interface LegacyGeminiScorebookCandidate {
+      finishReason?: string;
+      content?: {
+        parts?: Array<{
+          thought?: boolean;
+          text?: string;
+        }>;
+      };
+    }
+    const geminiData = (await geminiRes.json()) as {
+      candidates?: LegacyGeminiScorebookCandidate[];
+    };
     const finishReason = geminiData.candidates?.[0]?.finishReason;
-    const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+    const rawParts = geminiData.candidates?.[0]?.content?.parts || [];
+    const responseText = rawParts
+      .filter((p) => !p.thought && typeof p.text === "string")
+      .map((p) => p.text || "")
+      .join("")
+      .trim();
+
     if (!responseText) {
       return c.json({ success: false, error: `AIからの解析結果が空でした (終了理由: ${finishReason})` }, 500);
     }

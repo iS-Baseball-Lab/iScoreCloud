@@ -324,9 +324,19 @@ interface GeminiModelAttemptConfig {
   firstResponseTimeoutMs: number;
   /** 思考開始後、非思考の本文JSONテキストが出始めるまでの最大待機ミリ秒 */
   firstTextTimeoutMs: number;
-  thinkingMode: "level_high" | "level_medium" | "level_low" | "budget" | "none";
+  thinkingMode:
+    | "level_xhigh"
+    | "level_high"
+    | "level_medium"
+    | "level_low"
+    | "budget"
+    | "none";
   thinkingBudget?: number;
   backoffBeforeMs: number;
+}
+
+function isGemini4Model(modelName: string): boolean {
+  return modelName.startsWith("gemini-4");
 }
 
 /**
@@ -348,10 +358,12 @@ const LEGEND_PART_CACHE = new Map<
 >();
 
 /**
- * Gemini 3 マルチプール・フェイルオーバールーティング:
+ * Gemini 4 Hydrogen ＋ Gemini 3 マルチプール・フェイルオーバールーティング:
+ * - 無償枠（Free Tier）対応の最新主力モデル `gemini-4-hydrogen` を最優先（1番手）に配置し、
+ *   単一モデルのRPM/RPD上限（429）到達時は即座に `gemini-3.8-flash` 以降の独立クォータ枠へ0ms自動切替する
  * - 廃止・無料枠ゼロ・404のモデル（旧2.5系 / 3.5-flash / gemini-flash-latest / gemini-3.8-flash-lite）を完全排除
- * - Stage 2 (chunk) は歪み補正＆にじみ分解ズーム付き画像単体＋thinkingMode: "level_medium" により、
- *   手書きの「くっつき文字・にじみ」を1画ずつ論理分解する高精度推論と 1イニング10〜17秒の高速応答を両立する
+ * - `gemini-4-hydrogen` は既定の `HIGH`（旧 `3.8-flash` の `MEDIUM` 相当の推論深度かつ約2.5倍高速）で、
+ *   手書きの「くっつき文字・にじみ」を1画ずつ論理分解する高精度推論と高速応答を両立する
  */
 function getGeminiModelConfigs(
   mode: GeminiCallMode
@@ -359,11 +371,18 @@ function getGeminiModelConfigs(
   const isDeepChunk = mode === "chunk";
   return [
     {
+      model: "gemini-4-hydrogen",
+      firstResponseTimeoutMs: isDeepChunk ? 24_000 : 34_000,
+      firstTextTimeoutMs: isDeepChunk ? 38_000 : 50_000,
+      thinkingMode: "level_high",
+      backoffBeforeMs: 0,
+    },
+    {
       model: "gemini-3.8-flash",
       firstResponseTimeoutMs: isDeepChunk ? 24_000 : 34_000,
       firstTextTimeoutMs: isDeepChunk ? 38_000 : 50_000,
       thinkingMode: "level_medium",
-      backoffBeforeMs: 0,
+      backoffBeforeMs: 120,
     },
     {
       model: "gemini-3.6-flash",
@@ -5709,14 +5728,22 @@ async function callGeminiStructuredJson<T>(
     scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
 
     try {
+      const gemini4 = isGemini4Model(cfg.model);
       const generationConfig: Record<string, unknown> = {
-        temperature: 0.05,
         responseMimeType: "application/json",
         mediaResolution: "MEDIA_RESOLUTION_HIGH",
       };
+      if (!gemini4) {
+        generationConfig.temperature = 0.05;
+      }
       // includeThoughts: true を付与することで、Geminiが推論中にもSSE思考チャンクを即時ストリーム配信し、
       // 画像プリフィル＋思考フェーズ中の無通信による誤タイムアウトを構造的に排除する
-      if (cfg.thinkingMode === "level_high") {
+      if (cfg.thinkingMode === "level_xhigh") {
+        generationConfig.thinkingConfig = {
+          thinkingLevel: "XHIGH",
+          includeThoughts: true,
+        };
+      } else if (cfg.thinkingMode === "level_high") {
         generationConfig.thinkingConfig = {
           thinkingLevel: "HIGH",
           includeThoughts: true,
@@ -5731,7 +5758,7 @@ async function callGeminiStructuredJson<T>(
           thinkingLevel: "LOW",
           includeThoughts: true,
         };
-      } else if (cfg.thinkingMode === "budget") {
+      } else if (cfg.thinkingMode === "budget" && !gemini4) {
         generationConfig.thinkingConfig = {
           thinkingBudget: cfg.thinkingBudget ?? 1024,
           includeThoughts: true,
@@ -5774,17 +5801,37 @@ async function callGeminiStructuredJson<T>(
         if (hasMediaIssue || hasAnyThinkingIssue) {
           scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
-            temperature: 0.05,
             responseMimeType: "application/json",
           };
+          if (!gemini4) {
+            fallbackGenConfig.temperature = 0.05;
+          }
           if (!hasMediaIssue) {
             fallbackGenConfig.mediaResolution = "MEDIA_RESOLUTION_HIGH";
           }
           if (!hasAnyThinkingIssue && generationConfig.thinkingConfig) {
             // mediaResolution のみが非対応だった場合は thinkingConfig を100%そのまま保持！
             fallbackGenConfig.thinkingConfig = generationConfig.thinkingConfig;
-          } else if (hasThinkingLevelIssue && !hasIncludeThoughtsIssue) {
-            // thinkingLevel 非対応モデル（budget方式モデル）には適切な thinkingBudget で高速・高精度推論を維持！
+          } else if (
+            gemini4 &&
+            hasIncludeThoughtsIssue &&
+            !hasThinkingLevelIssue
+          ) {
+            // Gemini 4 系では thinkingBudget 指定が 400 エラーになるため、thinkingLevel のみ保持する
+            fallbackGenConfig.thinkingConfig = {
+              thinkingLevel:
+                cfg.thinkingMode === "level_low"
+                  ? "LOW"
+                  : cfg.thinkingMode === "level_medium"
+                    ? "MEDIUM"
+                    : "HIGH",
+            };
+          } else if (
+            !gemini4 &&
+            hasThinkingLevelIssue &&
+            !hasIncludeThoughtsIssue
+          ) {
+            // thinkingLevel 非対応の旧モデル（budget方式モデル）には適切な thinkingBudget で高速・高精度推論を維持！
             fallbackGenConfig.thinkingConfig = {
               thinkingBudget: mode === "chunk" ? 1536 : 2560,
               includeThoughts: true,
@@ -5809,6 +5856,12 @@ async function callGeminiStructuredJson<T>(
           if (!res.ok && res.status === 400 && fallbackGenConfig.thinkingConfig) {
             await res.text();
             scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
+            const minimalGenConfig: Record<string, unknown> = {
+              responseMimeType: "application/json",
+            };
+            if (!gemini4) {
+              minimalGenConfig.temperature = 0.05;
+            }
             res = await fetch(endpoint, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -5819,10 +5872,7 @@ async function callGeminiStructuredJson<T>(
                     parts: [{ text: prompt }, ...imageParts],
                   },
                 ],
-                generationConfig: {
-                  temperature: 0.05,
-                  responseMimeType: "application/json",
-                },
+                generationConfig: minimalGenConfig,
               }),
             });
           }

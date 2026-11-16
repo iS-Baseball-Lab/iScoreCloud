@@ -157,16 +157,17 @@ interface WebModelAttemptSpec {
   useGoogleSearch: boolean;
   thinkingMode:
     | { type: "budget"; budget: number }
-    | { type: "level"; level: "LOW" | "MEDIUM" }
+    | { type: "level"; level: "LOW" | "MEDIUM" | "HIGH" }
     | { type: "none" };
   timeoutMs: number;
 }
 
 /**
  * マルチプール・クォータ分散フェイルオーバー構成:
- * - 単一モデル（gemini-2.5-flash 等）の無料枠上限（20 RPD / 5 RPM 等）に達しても 429 エラーにせず、
- *   独立した別クォータ枠（gemini-2.5-flash-lite / gemini-3系 / gemini-flash-lite-latest / gemini-2.0-flash）へ即座に自動切替する
- * - 1モデルが 429 を返しても Google Search グラウンディング自体は止めず、別モデルで Web 検索精度を維持する
+ * - 無償枠（Free Tier）で Google Search グラウンディングが利用可能な `gemini-2.5` 系を Web 検索前半スロットに配置し、
+ *   有料枠（Paid Tier）利用時や 2.5 系 429 到達時の後続枠に `gemini-4-hydrogen` / `gemini-3` 系を配置する
+ * - Google Search ツール枠が日次上限（または Free Tier 非対象）に達した後半スロットでは、
+ *   無償枠対応の最新 `gemini-4-hydrogen` を筆頭に Wikipedia＋国土地理院＋日本郵便データ照合付きの構造化推論を行う
  */
 const WEB_SEARCH_MODEL_ATTEMPTS: ReadonlyArray<WebModelAttemptSpec> = [
   {
@@ -188,12 +189,30 @@ const WEB_SEARCH_MODEL_ATTEMPTS: ReadonlyArray<WebModelAttemptSpec> = [
     timeoutMs: 18_000,
   },
   {
+    model: "gemini-4-hydrogen",
+    useGoogleSearch: true,
+    thinkingMode: { type: "level", level: "MEDIUM" },
+    timeoutMs: 18_000,
+  },
+  {
     model: "gemini-3.1-flash-lite-preview",
     useGoogleSearch: true,
     thinkingMode: { type: "level", level: "LOW" },
     timeoutMs: 18_000,
   },
-  // Google Search Grounding ツール枠が日次上限に達した場合の超高速マルチモデル安全網（Wikipedia＋国土地理院＋日本郵便照合付き）
+  // Google Search Grounding ツール枠が上限に達した場合の超高速マルチモデル安全網（Wikipedia＋国土地理院＋日本郵便照合付き）
+  {
+    model: "gemini-4-hydrogen",
+    useGoogleSearch: false,
+    thinkingMode: { type: "level", level: "MEDIUM" },
+    timeoutMs: 15_000,
+  },
+  {
+    model: "gemini-3.8-flash",
+    useGoogleSearch: false,
+    thinkingMode: { type: "level", level: "LOW" },
+    timeoutMs: 13_000,
+  },
   {
     model: "gemini-flash-lite-latest",
     useGoogleSearch: false,
@@ -1369,14 +1388,16 @@ liffGroundsAiRouter.post("/", async (c) => {
       spec: WebModelAttemptSpec,
       withThinking: boolean
     ): Record<string, unknown> => {
-      const cfg: Record<string, unknown> = {
-        temperature: 0.05,
-      };
+      const isGemini4 = spec.model.startsWith("gemini-4");
+      const cfg: Record<string, unknown> = {};
+      if (!isGemini4) {
+        cfg.temperature = 0.05;
+      }
       if (!spec.useGoogleSearch) {
         cfg.responseMimeType = "application/json";
       }
       if (withThinking) {
-        if (spec.thinkingMode.type === "budget") {
+        if (spec.thinkingMode.type === "budget" && !isGemini4) {
           cfg.thinkingConfig = {
             thinkingBudget: spec.thinkingMode.budget,
           };
@@ -1464,8 +1485,8 @@ liffGroundsAiRouter.post("/", async (c) => {
           if (firstErr.toLowerCase().includes("thinking")) {
             res = await sendRequest(false);
           } else {
-            // google_search 非対応モデルの可能性
-            MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 10 * 60_000);
+            // google_search 非対応（Free Tier で Gemini 3/4 に google_search を付けた場合等）は gs スロットのみクールダウン
+            MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 15 * 60_000);
             console.warn(
               `[grounds-ai] ${spec.model} 400:`,
               firstErr.slice(0, 200)
@@ -1502,6 +1523,7 @@ liffGroundsAiRouter.post("/", async (c) => {
           } else if (res.status === 503) {
             MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 30_000);
           } else if (spec.useGoogleSearch && res.status === 403) {
+            MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 30 * 60_000);
             skipGoogleSearchTool = true;
           }
 
