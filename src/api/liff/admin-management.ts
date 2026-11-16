@@ -979,14 +979,20 @@ liffAdminMgmtRouter.post("/create-club", async (c) => {
     return c.json({ success: false, error: "チーム（クラブ）名を入力してください" }, 400);
   }
 
-  const access = await resolveCallerTeamAccess(c, body.userId ? [body.userId] : undefined);
-  const rawUserId =
-    (body.userId || "").trim() ||
-    extractHeaderUserId(c) ||
-    access.sessionUser?.id ||
-    "";
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.primaryUserId) {
+    return c.json(
+      {
+        success: false,
+        error: "新しいチームを作成するにはLINEログインが必要です。",
+      },
+      401
+    );
+  }
+  const rawUserId = access.primaryUserId;
   const rawUserName =
     (body.userName || "").trim() ||
+    access.primaryUserName ||
     extractHeaderUserName(c) ||
     access.sessionUser?.name ||
     "代表・監督";
@@ -1521,7 +1527,7 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
         .filter((s) => VALID_ROLES_SET.has(s) && s !== normRole);
       return {
         memberId: m.id,
-        userId: m.userId || null,
+        userId: ctx.canManage ? m.userId || null : null,
         name: m.name || "名称未設定",
         nameKana: m.nameKana || "",
         memberType: m.memberType || "parent",

@@ -11,7 +11,16 @@ permissions:
 
 jobs:
   run-agent:
-    if: contains(github.event.issue.title, '🤖') || contains(github.event.issue.title, '[AI]')
+    if: >-
+      github.actor == github.repository_owner &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event.issue.author_association == 'OWNER' &&
+          github.event.issue.user.login == github.repository_owner &&
+          (contains(github.event.issue.title, '🤖') || contains(github.event.issue.title, '[AI]'))
+        )
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,7 +46,10 @@ jobs:
           script: |
             const fs = require('fs');
             const { execSync } = require('child_process');
-            const instruction = context.payload.issue.body;
+            const instruction = context.payload.issue ? context.payload.issue.body : '';
+            if (!instruction) {
+              throw new Error('Issue body instruction is empty.');
+            }
             
             // 🔍 ディスクを直接見てsrc構成か通常構成かを自動判定
             let filePath = fs.existsSync("src/app/page.tsx") ? "src/app/page.tsx" : "app/page.tsx";
@@ -89,10 +101,13 @@ jobs:
               // 💾 ファイルに一旦書き込み
               fs.writeFileSync(filePath, rawText, 'utf8');
               
-              // 🏗️ 本物のコンパイラ（npm run build）をぶち当てて実力テスト！
+              // 🏗️ 本物のコンパイラ（npm run build）をぶち当てて実力テスト！（子プロセスからはシークレットを除外）
               try {
                 console.log("⚙️  コンパイルテストを実行中... (npm run build)");
-                execSync('npm run build', { stdio: 'pipe' });
+                const safeBuildEnv = { ...process.env };
+                delete safeBuildEnv.GEMINI_API_KEY;
+                delete safeBuildEnv.GITHUB_TOKEN;
+                execSync('npm run build', { stdio: 'pipe', env: safeBuildEnv });
                 
                 console.log("✅【コンパイル成功】エラーなし！完璧なコードが完成しました！");
                 success = true;

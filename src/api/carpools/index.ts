@@ -13,6 +13,7 @@ import {
 } from '@/db/schema/carpool';
 import { teamMembers, players } from '@/db/schema/team';
 import { events, attendances } from '@/db/schema/attendance';
+import { resolveCallerTeamAccess } from '@/lib/team-access';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -47,7 +48,7 @@ app.get('/cars', async (c) => {
     return c.json({ success: true, data: cars });
   } catch (err: unknown) {
     console.error(`[Fetch Member Cars Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "車両情報の取得に失敗しました。" }, 500);
   }
 });
 
@@ -88,7 +89,7 @@ app.get('/cars/list', async (c) => {
     return c.json({ success: true, data: list });
   } catch (err: unknown) {
     console.error(`[Fetch Cars List Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "車両一覧の取得に失敗しました。" }, 500);
   }
 });
 
@@ -99,12 +100,29 @@ app.get('/cars/list', async (c) => {
 app.post('/cars', async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
+    const body = await c.req.json<{
+      id?: string;
+      teamId?: string;
+      ownerId?: string | null;
+      ownerId2?: string | null;
+      name?: string;
+      color?: string | null;
+      colorCode?: string | null;
+      numberPlate?: string | null;
+      capacity?: number;
+      fuelEfficiency?: number;
+      carType?: "normal" | "cargo" | "bus";
+    }>();
     const { id, teamId, ownerId, ownerId2, name, color, colorCode, numberPlate, capacity, fuelEfficiency, carType } = body;
 
     const isBus = carType === "bus";
     if (!teamId || (!isBus && !ownerId) || !name) {
       return c.json({ success: false, error: isBus ? "必須項目 (teamId, name) が不足しています。" : "必須項目 (teamId, ownerId, name) が不足しています。" }, 400);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(teamId)) {
+      return c.json({ success: false, error: "このチームの車両情報を編集する権限がありません。" }, 403);
     }
 
     const carId = id || `car_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -125,10 +143,10 @@ app.post('/cars', async (c) => {
 
     let result;
     if (id) {
-      // 更新
+      // 更新（teamId 一致を必須化）
       result = await db.update(memberCars)
         .set(values)
-        .where(eq(memberCars.id, id))
+        .where(and(eq(memberCars.id, id), eq(memberCars.teamId, teamId)))
         .returning();
     } else {
       // 新規登録
@@ -140,7 +158,7 @@ app.post('/cars', async (c) => {
     return c.json({ success: true, data: result[0] });
   } catch (err: unknown) {
     console.error(`[Save Car Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "車両情報の保存に失敗しました。" }, 500);
   }
 });
 
@@ -153,12 +171,25 @@ app.delete('/cars/:carId', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
+    const existing = await db.select({ id: memberCars.id, teamId: memberCars.teamId })
+      .from(memberCars)
+      .where(eq(memberCars.id, carId))
+      .get();
+    if (!existing) {
+      return c.json({ success: true });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(existing.teamId)) {
+      return c.json({ success: false, error: "このチームの車両情報を削除する権限がありません。" }, 403);
+    }
+
     await db.delete(memberCars)
-      .where(eq(memberCars.id, carId));
+      .where(and(eq(memberCars.id, carId), eq(memberCars.teamId, existing.teamId)));
     return c.json({ success: true });
   } catch (err: unknown) {
     console.error(`[Delete Car Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "車両情報の削除に失敗しました。" }, 500);
   }
 });
 
@@ -198,7 +229,7 @@ app.get('/family', async (c) => {
     return c.json({ success: true, data: relations });
   } catch (err: unknown) {
     console.error(`[Fetch Family Relations Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "親子関係一覧の取得に失敗しました。" }, 500);
   }
 });
 
@@ -209,11 +240,25 @@ app.get('/family', async (c) => {
 app.post('/family', async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
+    const body = await c.req.json<{ teamId?: string; parentId?: string; childId?: string }>();
     const { teamId, parentId, childId } = body;
 
     if (!teamId || !parentId || !childId) {
       return c.json({ success: false, error: "必須項目 (teamId, parentId, childId) が不足しています。" }, 400);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(teamId)) {
+      return c.json({ success: false, error: "このチームの親子関係を編集する権限がありません。" }, 403);
+    }
+
+    // 同一チーム内のメンバー・選手か検証
+    const [validParent, validChild] = await Promise.all([
+      db.select({ id: teamMembers.id }).from(teamMembers).where(and(eq(teamMembers.id, parentId), eq(teamMembers.teamId, teamId))).get(),
+      db.select({ id: players.id }).from(players).where(and(eq(players.id, childId), eq(players.teamId, teamId))).get(),
+    ]);
+    if (!validParent || !validChild) {
+      return c.json({ success: false, error: "指定された保護者または選手がチーム内に存在しません。" }, 400);
     }
 
     // 既に存在するか確認 (二重登録の防止)
@@ -242,7 +287,7 @@ app.post('/family', async (c) => {
     return c.json({ success: true, data: result[0] });
   } catch (err: unknown) {
     console.error(`[Save Family Relation Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "親子関係の保存に失敗しました。" }, 500);
   }
 });
 
@@ -255,12 +300,25 @@ app.delete('/family/:relationId', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
+    const existing = await db.select({ id: parentChildRelations.id, teamId: parentChildRelations.teamId })
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.id, relationId))
+      .get();
+    if (!existing) {
+      return c.json({ success: true });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(existing.teamId)) {
+      return c.json({ success: false, error: "このチームの親子関係を解除する権限がありません。" }, 403);
+    }
+
     await db.delete(parentChildRelations)
-      .where(eq(parentChildRelations.id, relationId));
+      .where(and(eq(parentChildRelations.id, relationId), eq(parentChildRelations.teamId, existing.teamId)));
     return c.json({ success: true });
   } catch (err: unknown) {
     console.error(`[Delete Family Relation Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "親子関係の解除に失敗しました。" }, 500);
   }
 });
 
@@ -323,7 +381,6 @@ app.get('/events/:eventId', async (c) => {
       .where(eq(memberCars.teamId, teamId));
 
     // 5. 出席するメンバー（選手 ＆ 大人）の一覧と出欠ステータスを取得
-    // 参加予定 (present, partial, late) のみ
     const attendees = await db.select({
       id: attendances.id,
       eventId: attendances.eventId,
@@ -364,7 +421,17 @@ app.get('/events/:eventId', async (c) => {
 
     // 7. 同乗者（riders）を全配車スロットに対して取得
     const carpoolIds = carpools.map(cp => cp.id);
-    let riders: any[] = [];
+    interface CarpoolRiderRow {
+      id: string;
+      carpoolId: string;
+      playerId: string | null;
+      playerName: string | null;
+      playerNumber: string | null;
+      memberId: string | null;
+      memberName: string | null;
+      memberType: string | null;
+    }
+    let riders: CarpoolRiderRow[] = [];
     if (carpoolIds.length > 0) {
       riders = await db.select({
         id: eventCarpoolRiders.id,
@@ -402,7 +469,7 @@ app.get('/events/:eventId', async (c) => {
 
   } catch (err: unknown) {
     console.error(`[Fetch Event Carpools Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "イベント配車情報の取得に失敗しました。" }, 500);
   }
 });
 
@@ -415,14 +482,43 @@ app.post('/events/:eventId/save', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
-    const body = await c.req.json();
+    const eventRow = await db.select({ id: events.id, teamId: events.teamId })
+      .from(events)
+      .where(eq(events.id, eventId))
+      .get();
+    if (!eventRow) {
+      return c.json({ success: false, error: "指定されたイベントが見つかりません。" }, 404);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(eventRow.teamId)) {
+      return c.json({ success: false, error: "このイベントの配車設定を保存する権限がありません。" }, 403);
+    }
+
+    const body = await c.req.json<{
+      settings?: {
+        distanceKm?: number;
+        gasolinePrice?: number;
+        splitMethod?: "by_team" | "by_car";
+        noParentChild?: boolean;
+      };
+      carpools?: Array<{
+        id?: string;
+        driverId?: string;
+        carId?: string | null;
+        capacity?: number;
+        carType?: "normal" | "cargo" | "bus";
+        highwayFee?: number;
+        parkingFee?: number;
+        riders?: Array<{ playerId?: string | null; memberId?: string | null }>;
+      }>;
+    }>();
     const { settings, carpools } = body;
 
     if (!settings) {
       return c.json({ success: false, error: "settings が必要です。" }, 400);
     }
 
-    // 💡 トランザクション処理の代替 (D1で動作しないため個別実行)
     // 1. 設定の保存 (eventCarpoolSettings) - 一度削除してから挿入
     await db.delete(eventCarpoolSettings)
       .where(eq(eventCarpoolSettings.eventId, eventId));
@@ -438,65 +534,58 @@ app.post('/events/:eventId/save', async (c) => {
         noParentChild: !!settings.noParentChild
       });
 
-    // 2. 既存 of このイベントの配車枠 (および同乗者) を一括削除
+    // 2. 既存のこのイベントの配車枠 (および同乗者) を一括削除
     const existingCarpools = await db.select({ id: eventCarpools.id })
       .from(eventCarpools)
       .where(eq(eventCarpools.eventId, eventId));
     const existingCarpoolIds = existingCarpools.map(cp => cp.id);
 
     if (existingCarpoolIds.length > 0) {
-      // 同乗者の削除
       await db.delete(eventCarpoolRiders)
         .where(inArray(eventCarpoolRiders.carpoolId, existingCarpoolIds));
-      // 配車枠の削除
       await db.delete(eventCarpools)
         .where(eq(eventCarpools.eventId, eventId));
     }
 
-    // 3. 新しい配車枠および同乗者のインサート
+    // 3. 新しい配車枠および同乗者のインサート（同一チーム内マスタに厳格限定）
     if (Array.isArray(carpools) && carpools.length > 0) {
-      // 外部キーの存在チェック用にマスタIDリストを取得
-      const validDrivers = await db.select({ id: teamMembers.id }).from(teamMembers);
+      const [validDrivers, validCars, validPlayers] = await Promise.all([
+        db.select({ id: teamMembers.id }).from(teamMembers).where(eq(teamMembers.teamId, eventRow.teamId)),
+        db.select({ id: memberCars.id }).from(memberCars).where(eq(memberCars.teamId, eventRow.teamId)),
+        db.select({ id: players.id }).from(players).where(eq(players.teamId, eventRow.teamId)),
+      ]);
       const validDriverIds = new Set(validDrivers.map(d => d.id));
-
-      const validCars = await db.select({ id: memberCars.id }).from(memberCars);
-      const validCarIds = new Set(validCars.map(c => c.id));
-
-      const validPlayers = await db.select({ id: players.id }).from(players);
+      const validCarIds = new Set(validCars.map(car => car.id));
       const validPlayerIds = new Set(validPlayers.map(p => p.id));
 
       for (const cp of carpools) {
-        // driverId が有効な teamMembers.id に存在するかチェック
         if (!cp.driverId || !validDriverIds.has(cp.driverId)) {
           console.warn(`[Save Carpool Warning] Skipping invalid driverId: ${cp.driverId}`);
-          continue; // ドライバーが無効な場合はこの配車枠の保存をスキップ
+          continue;
         }
 
-        const carpoolId = cp.id || `cp_${crypto.randomUUID().replace(/-/g, '')}`;
+        // cp.id が他イベントの ID と衝突しないよう新規 ID を発行
+        const carpoolId = `cp_${crypto.randomUUID().replace(/-/g, '')}`;
         const isCarValid = cp.carId && validCarIds.has(cp.carId);
 
-        // 配車枠のインサート
         await db.insert(eventCarpools)
           .values({
             id: carpoolId,
             eventId,
             driverId: cp.driverId,
-            carId: isCarValid ? cp.carId : null, // 無効な車両IDはnullにフォールバック
+            carId: isCarValid ? cp.carId : null,
             capacity: Number(cp.capacity) || 4,
             carType: cp.carType || 'normal',
             highwayFee: Number(cp.highwayFee) || 0,
             parkingFee: Number(cp.parkingFee) || 0
           });
 
-        // 同乗者のインサート
         if (Array.isArray(cp.riders) && cp.riders.length > 0) {
           for (const rider of cp.riders) {
             const isPlayerValid = !!(rider.playerId && validPlayerIds.has(rider.playerId));
             const isMemberValid = !!(rider.memberId && validDriverIds.has(rider.memberId));
 
-            // どちらも有効でない場合はインサートをスキップ
             if (!isPlayerValid && !isMemberValid) {
-              console.warn(`[Save Carpool Warning] Skipping invalid rider (no valid player or member):`, rider);
               continue;
             }
 
@@ -505,8 +594,8 @@ app.post('/events/:eventId/save', async (c) => {
               .values({
                 id: riderId,
                 carpoolId,
-                playerId: isPlayerValid ? rider.playerId : null,
-                memberId: isMemberValid ? rider.memberId : null
+                playerId: isPlayerValid ? rider.playerId! : null,
+                memberId: isMemberValid ? rider.memberId! : null
               });
           }
         }
@@ -517,7 +606,7 @@ app.post('/events/:eventId/save', async (c) => {
 
   } catch (err: unknown) {
     console.error(`[Save Event Carpools Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "イベント配車の保存に失敗しました。" }, 500);
   }
 });
 

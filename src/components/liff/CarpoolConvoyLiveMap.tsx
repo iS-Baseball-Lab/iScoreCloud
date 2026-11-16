@@ -1892,6 +1892,11 @@ export function CarpoolConvoyLiveMap({
                 </p>
               )}
 
+              {/* 安全運転・道路交通法遵守の注意表示（ソリッド表示） */}
+              <div className="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/12 text-[11px] font-black text-amber-900 dark:text-amber-200 leading-snug">
+                ⚠️ 運転中のスマホ操作・画面注視は厳禁です。共有操作や確認は必ず停車中または同乗者が行ってください。
+              </div>
+
               {gpsErrorMsg && (
                 <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-bold">
                   {gpsErrorMsg}

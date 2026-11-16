@@ -1,6 +1,5 @@
 // filepath: src/api/teams/players.ts
-import { Hono } from "hono";
-import { getAuth } from "@/lib/auth";
+import { Hono, type Context } from "hono";
 import { ensurePlayerProfileColumns } from "@/lib/db-helper";
 import {
   comparePlayersByConditionAndUniform,
@@ -15,19 +14,10 @@ import {
   cleanupPreJoinMatchAttendance,
   loadTeamPlayerConditionPeriodsMap,
 } from "@/lib/player-roster-cleanup";
-import { canManageTeam } from "@/lib/roles";
-import type { AuthUser, WorkerEnv } from "@/types/api";
+import { resolveCallerTeamAccess } from "@/lib/team-access";
+import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
-
-const STAFF_ROLES = new Set([
-  "admin",
-  "system_admin",
-  "manager",
-  "coach",
-  "scorer",
-  "staff",
-]);
 
 interface RawPlayerDbRow {
   id: string;
@@ -49,137 +39,12 @@ interface RawPlayerDbRow {
 }
 
 async function resolveCanViewPlayerConditionNotes(
-  c: {
-    env: WorkerEnv;
-    req: {
-      raw: Request;
-      query: (key: string) => string | undefined;
-    };
-  },
+  c: Context<{ Bindings: WorkerEnv }>,
   teamId: string
 ): Promise<boolean> {
   if (!teamId || teamId === "demo-team") return true;
-
-  let sessionUserId: string | null = null;
-  let sessionUserName: string | null = null;
-
-  try {
-    if (c.req.raw.headers.get("cookie")) {
-      const auth = getAuth(c.env.DB, c.env);
-      const session = await auth.api
-        .getSession({ headers: c.req.raw.headers })
-        .catch(() => null);
-      if (session?.user) {
-        const role = ((session.user as AuthUser).role || "").toUpperCase();
-        if (role === "SYSTEM_ADMIN" || role === "ADMIN") {
-          return true;
-        }
-        sessionUserId = session.user.id || null;
-        sessionUserName = session.user.name || null;
-      }
-    }
-  } catch {
-    // ignore session errors
-  }
-
-  const queryUserId = (c.req.query("userId") || "").trim();
-  const queryUserName = (c.req.query("userName") || "").trim();
-  const candidateIds = Array.from(
-    new Set(
-      [sessionUserId, queryUserId].filter(
-        (v): v is string =>
-          Boolean(v && v !== "cached-user" && v !== "mock-user-12345" && !v.startsWith("demo-"))
-      )
-    )
-  );
-
-  // LINE accountId 連携からの userId 展開
-  if (candidateIds.length > 0) {
-    try {
-      const placeholders = candidateIds.map(() => "?").join(",");
-      const accRes = await c.env.DB.prepare(
-        `SELECT userId, accountId FROM account WHERE userId IN (${placeholders}) OR accountId IN (${placeholders})`
-      )
-        .bind(...candidateIds, ...candidateIds)
-        .all<{ userId: string | null; accountId: string | null }>();
-      for (const row of accRes.results || []) {
-        if (row.userId && !candidateIds.includes(row.userId)) candidateIds.push(row.userId);
-        if (row.accountId && !candidateIds.includes(row.accountId)) candidateIds.push(row.accountId);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  // 1. チーム作成者 または 組織管理者チェック
-  try {
-    const teamRow = await c.env.DB.prepare(
-      `SELECT created_by AS createdBy, organization_id AS organizationId FROM teams WHERE id = ?`
-    )
-      .bind(teamId)
-      .first<{ createdBy: string | null; organizationId: string | null }>();
-    if (teamRow?.createdBy && candidateIds.includes(teamRow.createdBy)) {
-      return true;
-    }
-    if (teamRow?.organizationId && candidateIds.length > 0) {
-      const placeholders = candidateIds.map(() => "?").join(",");
-      const orgRow = await c.env.DB.prepare(
-        `SELECT role FROM organization_members WHERE organization_id = ? AND user_id IN (${placeholders}) LIMIT 1`
-      )
-        .bind(teamRow.organizationId, ...candidateIds)
-        .first<{ role: string | null }>();
-      const orgRole = (orgRow?.role || "").toUpperCase();
-      if (orgRole === "OWNER" || orgRole === "ADMIN") {
-        return true;
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // 2. team_members ロールチェック（userId または 氏名一致の指導者・管理者）
-  try {
-    const memRes = await c.env.DB.prepare(
-      `SELECT user_id AS userId, name, role, status FROM team_members WHERE team_id = ?`
-    )
-      .bind(teamId)
-      .all<{
-        userId: string | null;
-        name: string | null;
-        role: string | null;
-        status: string | null;
-      }>();
-
-    const activeMembers = (memRes.results || []).filter(
-      (m) => !m.status || m.status === "active"
-    );
-
-    for (const m of activeMembers) {
-      const roleLower = (m.role || "").toLowerCase();
-      if (!STAFF_ROLES.has(roleLower) && !canManageTeam(m.role)) continue;
-      if (m.userId && candidateIds.includes(m.userId)) {
-        return true;
-      }
-    }
-
-    const candidateNames = [queryUserName, sessionUserName]
-      .filter((n): n is string => Boolean(n && n.trim()))
-      .map((n) => n.replace(/[\s　]+/g, ""));
-    if (candidateNames.length > 0) {
-      for (const m of activeMembers) {
-        const roleLower = (m.role || "").toLowerCase();
-        if (!STAFF_ROLES.has(roleLower) && !canManageTeam(m.role)) continue;
-        const memberNorm = (m.name || "").replace(/[\s　]+/g, "");
-        if (memberNorm && candidateNames.some((cn) => cn === memberNorm)) {
-          return true;
-        }
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  return false;
+  const access = await resolveCallerTeamAccess(c);
+  return access.canManagePlayersForTeam(teamId);
 }
 
 // 選手一覧取得（主要フィールド全て含む・conditionNote/privateNoteは指導者/管理者のみ返却）

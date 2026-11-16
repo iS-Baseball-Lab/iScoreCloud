@@ -15,6 +15,7 @@ import { LIFF_THEME_CHANGE_EVENT, syncLiffThemeClasses } from "@/lib/liff/theme-
 import {
   buildLiffHubUrl,
   fetchLiffJsonSWR,
+  hasStoredLiffSessionProof,
   installLiffFastFetchCache,
   invalidateLiffApiCache,
   prefetchLiffCoreEndpoints,
@@ -195,6 +196,7 @@ export interface LiffPendingTeamItem {
 interface HubTeamsPayload {
   success?: boolean;
   error?: string;
+  authVerified?: boolean;
   liffId?: string;
   miniAppUrl?: string;
   sessionUser?: {
@@ -316,6 +318,7 @@ export function LiffProvider({
   const lastLoadedUserIdRef = useRef<string>("");
   const teamsLoadFailedRef = useRef<boolean>(false);
   const isRecoveringSdkRef = useRef<boolean>(false);
+  const liffReadyRef = useRef<boolean>(false);
   const [loadedTeamsUserId, setLoadedTeamsUserId] = useState<string | null>(null);
 
   // チーム状態 (LocalStorageから同期的に承認済みチームオブジェクトのみを取得・旧キャッシュは破棄)
@@ -634,10 +637,20 @@ export function LiffProvider({
       setIsLoggedIn(true);
     }
 
+    if (
+      data.authVerified === false &&
+      Boolean(uid && uid !== "cached-user") &&
+      !liffReadyRef.current
+    ) {
+      return;
+    }
+
     const resolvedAppliedUid = data.sessionUser?.userId || uid || "";
     setLoadedTeamsUserId(resolvedAppliedUid);
     const hasVerifiedIdentity = Boolean(
-      resolvedAppliedUid && resolvedAppliedUid !== "cached-user"
+      data.authVerified !== false &&
+        resolvedAppliedUid &&
+        resolvedAppliedUid !== "cached-user"
     );
 
     const demoFlag = !!data.isDemo;
@@ -1165,6 +1178,14 @@ export function LiffProvider({
               }
               setProfile(userProfile);
               setIsLoggedIn(true);
+              if (
+                userProfile.userId &&
+                userProfile.userId !== "cached-user" &&
+                userProfile.userId === lastLoadedUserIdRef.current &&
+                !hasStoredLiffSessionProof(userProfile.userId)
+              ) {
+                void loadTeams(true);
+              }
             }
           } else if (inClient) {
             let redirectUri: string | undefined =
@@ -1184,12 +1205,14 @@ export function LiffProvider({
             instance.login(redirectUri ? { redirectUri } : undefined);
           }
         }
+        liffReadyRef.current = true;
         setIsReady(true);
       } catch (err: unknown) {
         if (!isMounted) return;
         console.error("LiffProvider init error:", err);
         const message = err instanceof Error ? err.message : "LIFF initialization failed";
         setError(message);
+        liffReadyRef.current = true;
         setIsReady(true);
       }
     }
@@ -1199,7 +1222,7 @@ export function LiffProvider({
     return () => {
       isMounted = false;
     };
-  }, [liffId]);
+  }, [liffId, loadTeams]);
 
   // 🛡️ WebView 復帰・電波回復時の自己修復ガード（LINE再起動なしでプロフィール・チーム状態を自動復旧）
   useEffect(() => {

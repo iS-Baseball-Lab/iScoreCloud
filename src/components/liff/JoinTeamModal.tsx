@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { SiLine } from "react-icons/si";
 import {
   UserPlus,
@@ -384,6 +385,26 @@ export function JoinTeamModal({
                   チーム管理者の承認完了後、予定や配車表・写真ギャラリーなどのチーム限定機能が解禁されます。
                 </span>
               </div>
+
+              <p className="text-[11px] font-bold text-muted-foreground text-center leading-relaxed px-1">
+                申請の送信により、
+                <Link
+                  href="/liff/terms"
+                  onClick={onClose}
+                  className="text-primary font-black underline underline-offset-2 hover:opacity-80 mx-0.5"
+                >
+                  利用規約
+                </Link>
+                ・
+                <Link
+                  href="/liff/privacy"
+                  onClick={onClose}
+                  className="text-primary font-black underline underline-offset-2 hover:opacity-80 mx-0.5"
+                >
+                  プライバシーポリシー
+                </Link>
+                に同意したものとみなされます（未成年の方は保護者の同意を得て申請してください）。
+              </p>
 
               <button
                 type="submit"

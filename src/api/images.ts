@@ -1,85 +1,162 @@
-// src/app/api/images.ts
-import { Hono } from 'hono'
-import { getAuth } from "@/lib/auth"
-import type { WorkerEnv } from "@/types/api"
+// filepath: src/api/images.ts
+import { Hono, type Context } from "hono";
+import { resolveCallerTeamAccess } from "@/lib/team-access";
+import type { WorkerEnv } from "@/types/api";
 
-const app = new Hono<{ Bindings: WorkerEnv }>()
+const app = new Hono<{ Bindings: WorkerEnv }>();
+
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_IMAGE_MIMES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+const ALLOWED_SERVE_FOLDERS = new Set([
+  "avatars",
+  "teams",
+  "players",
+  "rules",
+  "links",
+]);
+const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]{1,180}$/;
+
+function resolveSafeServeMimeType(path: string, storedMime: string): {
+  contentType: string;
+  forceAttachment: boolean;
+} {
+  const lowerPath = path.toLowerCase();
+  if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) {
+    return { contentType: "image/jpeg", forceAttachment: false };
+  }
+  if (lowerPath.endsWith(".png")) {
+    return { contentType: "image/png", forceAttachment: false };
+  }
+  if (lowerPath.endsWith(".webp")) {
+    return { contentType: "image/webp", forceAttachment: false };
+  }
+  if (lowerPath.endsWith(".gif")) {
+    return { contentType: "image/gif", forceAttachment: false };
+  }
+  if (lowerPath.endsWith(".pdf")) {
+    return { contentType: "application/pdf", forceAttachment: false };
+  }
+  const cleanMime = storedMime.toLowerCase().split(";")[0].trim();
+  if (cleanMime in ALLOWED_IMAGE_MIMES) {
+    return { contentType: cleanMime, forceAttachment: false };
+  }
+  return { contentType: "application/octet-stream", forceAttachment: true };
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 💡 1. 画像アップロード API (POST /api/images/upload)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-app.post('/upload', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+app.post("/upload", async (c) => {
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.primaryUserId) {
+    return c.json({ success: false, error: "Unauthorized" }, 401);
+  }
+  if (!c.env.BUCKET) {
+    return c.json({ success: false, error: "Storage unavailable" }, 503);
+  }
 
-  const formData = await c.req.parseBody()
-  const file = formData['file'] as File
-  if (!file) return c.json({ error: 'File is required' }, 400)
+  const formData = await c.req.parseBody();
+  const rawFile = formData["file"];
+  if (!(rawFile instanceof File)) {
+    return c.json({ success: false, error: "File is required" }, 400);
+  }
 
-  // 💡 アップロードの用途に応じて保存先フォルダを切り替える (type=team など)
-  const uploadType = c.req.query('type') || 'avatar'
-  const folder = uploadType === 'team' ? 'teams' : 'avatars'
+  if (rawFile.size <= 0 || rawFile.size > MAX_IMAGE_UPLOAD_BYTES) {
+    return c.json(
+      { success: false, error: "画像サイズは10MB以下にしてください" },
+      413
+    );
+  }
 
-  // 拡張子を取得して、ユーザーIDベースのユニークなファイル名を作成
-  const fileExtension = file.name.split('.').pop()
-  const fileName = `${folder}/${session.user.id}-${Date.now()}.${fileExtension}`
+  const cleanMime = (rawFile.type || "").toLowerCase().split(";")[0].trim();
+  const safeExt = ALLOWED_IMAGE_MIMES[cleanMime];
+  if (!safeExt) {
+    return c.json(
+      {
+        success: false,
+        error: "JPEG / PNG / WebP / GIF 形式の画像のみアップロード可能です",
+      },
+      400
+    );
+  }
+
+  const uploadType = c.req.query("type") || "avatar";
+  const folder = uploadType === "team" ? "teams" : "avatars";
+  const safeUid = access.primaryUserId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "u";
+  const randomSuffix = crypto.randomUUID().replace(/-/g, "");
+  const fileName = `${folder}/${safeUid}-${Date.now()}-${randomSuffix}.${safeExt}`;
 
   try {
-    // R2バケットへ保存！
-    await c.env.BUCKET!.put(fileName, await file.arrayBuffer(), {
-      httpMetadata: { contentType: file.type },
-    })
+    await c.env.BUCKET.put(fileName, await rawFile.arrayBuffer(), {
+      httpMetadata: { contentType: cleanMime },
+    });
 
-    // 💡 パブリックURLの代わりに、「自分のAPIを経由するURL」をフロントエンドに返す
-    const imageUrl = `/api/images/${fileName}`
-    return c.json({ success: true, imageUrl })
+    const imageUrl = `/api/images/${fileName}`;
+    return c.json({ success: true, imageUrl });
   } catch (e) {
-    console.error("画像アップロードエラー:", e)
-    return c.json({ success: false, error: 'Upload failed' }, 500)
+    console.error("画像アップロードエラー:", e);
+    return c.json({ success: false, error: "Upload failed" }, 500);
   }
-})
+});
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 💡 2. 画像・添付ファイル配信 API (GET /api/images/:folder/:filename & /api/images/:folder/:subfolder/:filename)
+// 💡 2. 画像・添付ファイル配信 API
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-async function serveImage(c: any, path: string) {
-  if (!c.env.BUCKET) return c.text('Not found', 404)
-
-  // R2バケットから画像/ファイルを取り出す
-  const object = await c.env.BUCKET.get(path)
-  if (!object) return c.text('Not found', 404)
-
-  const headers = new Headers()
-  object.writeHttpMetadata(headers)
-  headers.set('etag', object.httpEtag)
-
-  if (path.endsWith('.pdf')) {
-    if (!headers.has('content-type')) {
-      headers.set('content-type', 'application/pdf')
-    }
-    if (!headers.has('content-disposition')) {
-      headers.set('content-disposition', 'inline')
+async function serveImage(
+  c: Context<{ Bindings: WorkerEnv }>,
+  folder: string,
+  segments: string[]
+) {
+  if (!c.env.BUCKET) return c.text("Not found", 404);
+  if (!ALLOWED_SERVE_FOLDERS.has(folder)) {
+    return c.text("Not found", 404);
+  }
+  for (const seg of segments) {
+    if (!seg || seg.includes("..") || !SAFE_SEGMENT_RE.test(seg)) {
+      return c.text("Not found", 404);
     }
   }
 
-  // 💡 究極のパフォーマンス最適化：ブラウザにキャッシュさせる！
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable')
+  const path = `${folder}/${segments.join("/")}`;
+  const object = await c.env.BUCKET.get(path);
+  if (!object) return c.text("Not found", 404);
 
-  return new Response(object.body, { headers })
+  const rawHeaders = new Headers();
+  object.writeHttpMetadata(rawHeaders);
+  const { contentType, forceAttachment } = resolveSafeServeMimeType(
+    path,
+    rawHeaders.get("content-type") || ""
+  );
+
+  const headers = new Headers();
+  headers.set("ETag", object.httpEtag);
+  headers.set("Content-Type", contentType);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "sandbox");
+  if (forceAttachment) {
+    headers.set("Content-Disposition", "attachment");
+  } else if (contentType === "application/pdf") {
+    headers.set("Content-Disposition", "inline");
+  }
+  headers.set("Cache-Control", "private, max-age=86400");
+
+  return new Response(object.body, { status: 200, headers });
 }
 
-app.get('/:folder/:filename', async (c) => {
-  const folder = c.req.param('folder')
-  const filename = c.req.param('filename')
-  return serveImage(c, `${folder}/${filename}`)
-})
+app.get("/:folder/:filename", async (c) => {
+  return serveImage(c, c.req.param("folder"), [c.req.param("filename")]);
+});
 
-app.get('/:folder/:subfolder/:filename', async (c) => {
-  const folder = c.req.param('folder')
-  const subfolder = c.req.param('subfolder')
-  const filename = c.req.param('filename')
-  return serveImage(c, `${folder}/${subfolder}/${filename}`)
-})
+app.get("/:folder/:subfolder/:filename", async (c) => {
+  return serveImage(c, c.req.param("folder"), [
+    c.req.param("subfolder"),
+    c.req.param("filename"),
+  ]);
+});
 
-export default app
+export default app;

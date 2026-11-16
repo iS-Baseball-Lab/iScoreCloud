@@ -1,5 +1,5 @@
 // filepath: src/api/liff.ts
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, desc, asc, gte, and, or, inArray, sql } from "drizzle-orm";
 import {
@@ -115,6 +115,7 @@ import { canManageSystem, canManageTeam } from "@/lib/roles";
 import {
   extractHeaderUserId,
   extractHeaderUserName,
+  parseSubRolesList,
   resolveCallerTeamAccess,
 } from "@/lib/team-access";
 import {
@@ -371,8 +372,8 @@ function findMatchingAdultMemberByName<
 }
 
 /**
- * 🔗 チームメンバーに紐づく `user.name`（Web Google/Microsoft登録名など）と LINE表示名を照合し、
- * 一意に一致した場合は `account` テーブルへ自動連携して該当メンバーを返す（中島父・小西父・松下父・石田父パターン根絶）
+ * 🔗 チーム内メンバーの `user.name` と表示名を照合する読み取り専用ヘルパー
+ * ⚠️ セキュリティ原則（CRIT-04）: 表示名一致のみを根拠に `account` テーブルへ自動連携書き込みを行うことは厳禁。
  */
 async function findAndAutoLinkMemberByUserTableName<
   T extends {
@@ -386,7 +387,7 @@ async function findAndAutoLinkMemberByUserTableName<
   db: ReturnType<typeof drizzle>,
   members: T[],
   searchNames: Array<string | null | undefined>,
-  rawLineUserId?: string | null
+  _rawLineUserId?: string | null
 ): Promise<T | null> {
   const queryCanonical = new Set<string>();
   for (const s of searchNames) {
@@ -432,15 +433,7 @@ async function findAndAutoLinkMemberByUserTableName<
     const matchedMembers = adultWithUid.filter((m) => m.userId === targetUserId);
     if (matchedMembers.length === 0) return null;
 
-    const chosen =
-      matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
-
-    const cleanLine = rawLineUserId?.trim() || "";
-    if (cleanLine.startsWith("U") && targetUserId !== cleanLine) {
-      await ensureLineAccountLink(db, targetUserId, cleanLine);
-    }
-
-    return chosen;
+    return matchedMembers.find((m) => !m.id.startsWith("tm_")) || matchedMembers[0];
   } catch (err) {
     console.warn("findAndAutoLinkMemberByUserTableName warning:", err);
     return null;
@@ -1090,23 +1083,14 @@ app.post("/join", async (c) => {
     const {
       teamId,
       inviteCode,
-      userId: bodyUserId,
       userName,
-      memberType = "parent",
+      memberType: rawMemberType = "parent",
       phone,
     } = body;
-
-    const access = await resolveCallerTeamAccess(c, [bodyUserId]);
-    const effectiveUserId =
-      (typeof bodyUserId === "string" && bodyUserId.trim()) ||
-      extractHeaderUserId(c) ||
-      access.sessionUser?.id ||
-      "";
-    const effectiveUserName =
-      (typeof userName === "string" && userName.trim()) ||
-      extractHeaderUserName(c) ||
-      access.sessionUser?.name ||
-      "";
+    const allowedJoinMemberTypes = new Set(["parent", "player", "staff"]);
+    const memberType = allowedJoinMemberTypes.has(rawMemberType)
+      ? rawMemberType
+      : "parent";
 
     const code = (inviteCode || teamId || "").trim();
 
@@ -1126,6 +1110,24 @@ app.post("/join", async (c) => {
         logoImageUrl: DEMO_TEAM.logoImageUrl,
       });
     }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.primaryUserId) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "チーム参加申請にはLINEログイン連携が必要です。画面の案内からLINE連携を行ってから再度お試しください。",
+        },
+        401
+      );
+    }
+
+    const effectiveUserId = access.primaryUserId;
+    const effectiveUserName =
+      (typeof userName === "string" && userName.trim().slice(0, 60)) ||
+      access.primaryUserName ||
+      "";
 
     if (code.length < 6) {
       return c.json(
@@ -1499,6 +1501,7 @@ app.get("/hub", async (c) => {
     if (requestedTeamId === "demo-team") {
       return c.json({
         success: true,
+        authVerified: access.isAuthenticated,
         liffId: hubLiffId,
         miniAppUrl: hubMiniAppUrl,
         sessionUser: hubSessionUser,
@@ -1530,6 +1533,7 @@ app.get("/hub", async (c) => {
     if (!targetTeam) {
       return c.json({
         success: true,
+        authVerified: access.isAuthenticated,
         liffId: hubLiffId,
         miniAppUrl: hubMiniAppUrl,
         sessionUser: hubSessionUser,
@@ -1852,6 +1856,7 @@ app.get("/hub", async (c) => {
 
     return c.json({
       success: true,
+      authVerified: access.isAuthenticated,
       liffId: hubLiffId,
       miniAppUrl: hubMiniAppUrl,
       sessionUser: hubSessionUser,
@@ -4893,7 +4898,29 @@ app.patch("/grounds/:id", async (c) => {
       return c.json({ success: true, message: "施設情報を更新しました（デモ）" });
     }
 
-    const updateData: any = {};
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isSystemAdmin && access.mutableTeamIds.size === 0) {
+      return c.json({ success: false, error: "施設情報を変更する権限がありません" }, 403);
+    }
+
+    if (!access.isSystemAdmin) {
+      const refMatches = await db
+        .select({ teamId: matches.teamId })
+        .from(matches)
+        .where(eq(matches.venueId, id))
+        .all();
+      if (refMatches.some((m) => Boolean(m.teamId && !access.canAccessTeam(m.teamId)))) {
+        return c.json(
+          {
+            success: false,
+            error: "他のチームの試合記録で使用されている施設のため変更できません",
+          },
+          403
+        );
+      }
+    }
+
+    const updateData: Partial<typeof venues.$inferInsert> = {};
     if (body.name !== undefined) updateData.name = body.name.trim();
     if (body.shortName !== undefined) updateData.shortName = body.shortName ? body.shortName.trim() : null;
     if (body.category !== undefined) updateData.category = body.category;
@@ -4909,9 +4936,15 @@ app.patch("/grounds/:id", async (c) => {
     await db.update(venues).set(updateData).where(eq(venues.id, id));
 
     return c.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update ground:", error);
-    return c.json({ success: false, error: error.message || "球場・施設の更新に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "球場・施設の更新に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -4927,11 +4960,39 @@ app.delete("/grounds/:id", async (c) => {
       return c.json({ success: true, message: "施設を削除しました（デモ）" });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isSystemAdmin && access.mutableTeamIds.size === 0) {
+      return c.json({ success: false, error: "施設を削除する権限がありません" }, 403);
+    }
+
+    if (!access.isSystemAdmin) {
+      const refMatches = await db
+        .select({ teamId: matches.teamId })
+        .from(matches)
+        .where(eq(matches.venueId, id))
+        .all();
+      if (refMatches.some((m) => Boolean(m.teamId && !access.canAccessTeam(m.teamId)))) {
+        return c.json(
+          {
+            success: false,
+            error: "他のチームの試合記録で使用されている施設のため削除できません",
+          },
+          403
+        );
+      }
+    }
+
     await db.delete(venues).where(eq(venues.id, id));
     return c.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to delete ground:", error);
-    return c.json({ success: false, error: error.message || "球場・施設の削除に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "球場・施設の削除に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -7135,55 +7196,123 @@ app.get("/documents", async (c) => {
 app.post("/documents/upload", async (c) => {
   try {
     let file: File | null = null;
-    let teamId = "general";
+    let teamId = "";
 
     try {
       const formData = await c.req.formData();
-      file = formData.get("file") as File | null;
+      const rawFile = formData.get("file");
+      if (rawFile instanceof File) file = rawFile;
       const t = formData.get("teamId");
-      if (typeof t === "string" && t) teamId = t;
+      if (typeof t === "string" && t.trim()) teamId = t.trim();
     } catch {
       const body = await c.req.parseBody();
-      file = (body["file"] as File) || null;
-      if (typeof body["teamId"] === "string" && body["teamId"]) {
-        teamId = body["teamId"];
+      const rawFile = body["file"];
+      if (rawFile instanceof File) file = rawFile;
+      if (typeof body["teamId"] === "string" && body["teamId"].trim()) {
+        teamId = body["teamId"].trim();
       }
     }
 
-    if (!file || typeof file === "string" || !file.name) {
+    if (!teamId || !/^[a-zA-Z0-9_-]{1,64}$/.test(teamId)) {
+      return c.json({ success: false, error: "有効なチームIDが指定されていません" }, 400);
+    }
+
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (!access.canMutateTeamData(teamId)) {
+        return c.json(
+          { success: false, error: "このチームへの資料アップロード権限がありません" },
+          403
+        );
+      }
+    }
+
+    if (!file || !file.name) {
       return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
     }
 
-    const originalName = file.name || "document.pdf";
-    const ext = originalName.split(".").pop()?.toLowerCase() || "pdf";
-
-    let fileType = "PDF";
-    if (["xls", "xlsx", "csv"].includes(ext)) fileType = "XLSX";
-    else if (["doc", "docx"].includes(ext)) fileType = "DOCX";
-    else if (["png", "jpg", "jpeg", "webp"].includes(ext)) fileType = "IMG";
-    else if (["ppt", "pptx"].includes(ext)) fileType = "PPTX";
-
     const sizeBytes = file.size || 0;
+    if (sizeBytes <= 0 || sizeBytes > 20 * 1024 * 1024) {
+      return c.json(
+        { success: false, error: "資料ファイルは20MB以下にしてください" },
+        413
+      );
+    }
+
+    const originalName = file.name.trim() || "document.pdf";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "";
+    const docSpecMap: Record<
+      string,
+      { fileType: string; mimeType: string; inlineAllowed: boolean }
+    > = {
+      pdf: { fileType: "PDF", mimeType: "application/pdf", inlineAllowed: true },
+      png: { fileType: "IMG", mimeType: "image/png", inlineAllowed: true },
+      jpg: { fileType: "IMG", mimeType: "image/jpeg", inlineAllowed: true },
+      jpeg: { fileType: "IMG", mimeType: "image/jpeg", inlineAllowed: true },
+      webp: { fileType: "IMG", mimeType: "image/webp", inlineAllowed: true },
+      xls: { fileType: "XLSX", mimeType: "application/vnd.ms-excel", inlineAllowed: false },
+      xlsx: {
+        fileType: "XLSX",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        inlineAllowed: false,
+      },
+      csv: { fileType: "XLSX", mimeType: "text/csv; charset=utf-8", inlineAllowed: false },
+      doc: { fileType: "DOCX", mimeType: "application/msword", inlineAllowed: false },
+      docx: {
+        fileType: "DOCX",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        inlineAllowed: false,
+      },
+      ppt: { fileType: "PPTX", mimeType: "application/vnd.ms-powerpoint", inlineAllowed: false },
+      pptx: {
+        fileType: "PPTX",
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        inlineAllowed: false,
+      },
+    };
+
+    const spec = docSpecMap[ext];
+    if (!spec) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "対応していないファイル形式です（PDF / JPEG・PNG・WebP画像 / Word / Excel / PowerPoint / CSV のみ可能）",
+        },
+        400
+      );
+    }
+
     let fileSizeStr = `${(sizeBytes / 1024).toFixed(0)} KB`;
     if (sizeBytes >= 1024 * 1024) {
       fileSizeStr = `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
     }
 
-    if (c.env.BUCKET) {
-      const safeExt = ext.replace(/[^a-z0-9]/gi, "");
-      const filename = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
-      const r2Key = `documents/${teamId}/${filename}`;
+    if (teamId === "demo-team") {
+      return c.json({
+        success: true,
+        fileUrl: "/api/documents/files/demo-team/sample.pdf",
+        fileName: originalName,
+        fileType: spec.fileType,
+        fileSize: fileSizeStr,
+      });
+    }
 
-      const mimeType = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
+    if (c.env.BUCKET) {
+      const randomToken = crypto.randomUUID().replace(/-/g, "");
+      const filename = `${Date.now()}-${randomToken}.${ext}`;
+      const r2Key = `documents/${teamId}/${filename}`;
+      const safeDispName = encodeURIComponent(originalName.replace(/[\r\n"]/g, "_"));
+      const dispMode = spec.inlineAllowed ? "inline" : "attachment";
       const arrayBuffer = await file.arrayBuffer();
 
       await c.env.BUCKET.put(r2Key, arrayBuffer, {
         httpMetadata: {
-          contentType: mimeType,
-          contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
+          contentType: spec.mimeType,
+          contentDisposition: `${dispMode}; filename*=UTF-8''${safeDispName}`,
         },
         customMetadata: {
-          originalName: encodeURIComponent(originalName),
+          originalName: safeDispName,
           teamId,
         },
       });
@@ -7194,15 +7323,21 @@ app.post("/documents/upload", async (c) => {
         success: true,
         fileUrl,
         fileName: originalName,
-        fileType,
+        fileType: spec.fileType,
         fileSize: fileSizeStr,
       });
     }
 
     return c.json({ success: false, error: "R2ストレージが設定されていません" }, 500);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Document upload in liff error:", error);
-    return c.json({ success: false, error: error?.message || "アップロードに失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "アップロードに失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -7523,11 +7658,49 @@ app.delete("/documents/:id", async (c) => {
       return c.json({ success: true, message: "資料を削除しました（デモ）" });
     }
 
+    const currentDoc = await db
+      .select()
+      .from(teamDocuments)
+      .where(eq(teamDocuments.id, id))
+      .get();
+    if (!currentDoc) {
+      return c.json({ success: false, error: "指定された資料が見つかりません" }, 404);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentDoc.teamId ? access.canMutateTeamData(currentDoc.teamId) : false) ||
+      (currentDoc.organizationId
+        ? access.canAccessOrganization(currentDoc.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json({ success: false, error: "資料を削除する権限がありません" }, 403);
+    }
+
+    if (
+      c.env.BUCKET &&
+      currentDoc.fileUrl &&
+      currentDoc.fileUrl.startsWith("/api/documents/files/")
+    ) {
+      const rel = currentDoc.fileUrl.slice("/api/documents/files/".length);
+      if (rel && !rel.includes("..")) {
+        await c.env.BUCKET.delete(`documents/${rel}`).catch(() => null);
+      }
+    }
+
     await db.delete(teamDocuments).where(eq(teamDocuments.id, id));
     return c.json({ success: true, message: "資料を削除しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to delete document:", error);
-    return c.json({ success: false, error: error?.message || "資料の削除に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "資料の削除に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -7713,40 +7886,103 @@ const DEMO_RULES = [
 app.post("/rules/upload", async (c) => {
   try {
     let file: File | null = null;
-    let teamId = "general";
+    let teamId = "";
 
     try {
       const formData = await c.req.formData();
-      file = formData.get("file") as File | null;
+      const rawFile = formData.get("file");
+      if (rawFile instanceof File) file = rawFile;
       const t = formData.get("teamId");
-      if (typeof t === "string" && t) teamId = t;
+      if (typeof t === "string" && t.trim()) teamId = t.trim();
     } catch {
       const body = await c.req.parseBody();
-      file = (body["file"] as File) || null;
-      if (typeof body["teamId"] === "string" && body["teamId"]) {
-        teamId = body["teamId"];
+      const rawFile = body["file"];
+      if (rawFile instanceof File) file = rawFile;
+      if (typeof body["teamId"] === "string" && body["teamId"].trim()) {
+        teamId = body["teamId"].trim();
       }
     }
 
-    if (!file || typeof file === "string" || !file.name) {
+    if (!teamId || !/^[a-zA-Z0-9_-]{1,64}$/.test(teamId)) {
+      return c.json({ success: false, error: "有効なチームIDが指定されていません" }, 400);
+    }
+
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (!access.canMutateTeamData(teamId)) {
+        return c.json(
+          { success: false, error: "このチームへの添付ファイル登録権限がありません" },
+          403
+        );
+      }
+    }
+
+    if (!file || !file.name) {
       return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
     }
 
-    const originalName = file.name || "rule_file";
+    const originalName = file.name.trim() || "rule_file";
     const ext = originalName.split(".").pop()?.toLowerCase() || "";
-    const isPdf = ext === "pdf" || file.type === "application/pdf";
+    const ruleAllowedExts: Record<string, { mime: string; isPdf: boolean }> = {
+      pdf: { mime: "application/pdf", isPdf: true },
+      jpg: { mime: "image/jpeg", isPdf: false },
+      jpeg: { mime: "image/jpeg", isPdf: false },
+      png: { mime: "image/png", isPdf: false },
+      webp: { mime: "image/webp", isPdf: false },
+      gif: { mime: "image/gif", isPdf: false },
+    };
+    const spec = ruleAllowedExts[ext];
+    if (!spec) {
+      return c.json(
+        {
+          success: false,
+          error: "PDF または画像（JPEG / PNG / WebP / GIF）のみ添付可能です",
+        },
+        400
+      );
+    }
+
+    const maxBytes = spec.isPdf ? 20 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (!file.size || file.size <= 0 || file.size > maxBytes) {
+      return c.json(
+        {
+          success: false,
+          error: spec.isPdf
+            ? "PDFファイルは20MB以下にしてください"
+            : "画像ファイルは10MB以下にしてください",
+        },
+        413
+      );
+    }
+
+    const isPdf = spec.isPdf;
+    const mimeType = spec.mime;
+
+    if (teamId === "demo-team") {
+      const demoUrl = isPdf
+        ? "/api/documents/files/demo-team/sample.pdf"
+        : "/liff-logo.png";
+      return c.json({
+        success: true,
+        fileUrl: demoUrl,
+        imageUrl: isPdf ? null : demoUrl,
+        pdfUrl: isPdf ? demoUrl : null,
+        fileName: originalName,
+        isPdf,
+      });
+    }
 
     // R2バケットが使える場合
     if (c.env.BUCKET) {
-      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || (isPdf ? "pdf" : "jpg");
-      const filename = `rules/${teamId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
-      const mimeType = file.type || (isPdf ? "application/pdf" : "image/jpeg");
+      const randomToken = crypto.randomUUID().replace(/-/g, "");
+      const filename = `rules/${teamId}/${Date.now()}-${randomToken}.${ext}`;
+      const safeDispName = encodeURIComponent(originalName.replace(/[\r\n"]/g, "_"));
       const arrayBuffer = await file.arrayBuffer();
 
       await c.env.BUCKET.put(filename, arrayBuffer, {
         httpMetadata: {
           contentType: mimeType,
-          contentDisposition: `inline; filename="${encodeURIComponent(originalName)}"`,
+          contentDisposition: `inline; filename*=UTF-8''${safeDispName}`,
         },
       });
 
@@ -7770,7 +8006,6 @@ app.post("/rules/upload", async (c) => {
       binary += String.fromCharCode(bytes[i]);
     }
     const base64 = btoa(binary);
-    const mimeType = file.type || (isPdf ? "application/pdf" : "image/jpeg");
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
     return c.json({
@@ -7781,9 +8016,18 @@ app.post("/rules/upload", async (c) => {
       fileName: originalName,
       isPdf,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Rules file upload error:", error);
-    return c.json({ success: false, error: error?.message || "ファイルのアップロードに失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "ファイルのアップロードに失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8012,11 +8256,58 @@ app.delete("/rules/:id", async (c) => {
       return c.json({ success: true, message: "ルール & 注意事項を削除しました（デモ）" });
     }
 
+    const currentRule = await db
+      .select()
+      .from(teamRules)
+      .where(eq(teamRules.id, id))
+      .get();
+    if (!currentRule) {
+      return c.json(
+        { success: false, error: "指定されたルール & 注意事項が見つかりません" },
+        404
+      );
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentRule.teamId ? access.canMutateTeamData(currentRule.teamId) : false) ||
+      (currentRule.organizationId
+        ? access.canAccessOrganization(currentRule.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json(
+        { success: false, error: "ルール & 注意事項を削除する権限がありません" },
+        403
+      );
+    }
+
+    if (c.env.BUCKET) {
+      for (const attUrl of [currentRule.imageUrl, currentRule.pdfUrl]) {
+        if (attUrl && attUrl.startsWith("/api/images/rules/")) {
+          const r2Key = attUrl.slice("/api/images/".length);
+          if (r2Key && !r2Key.includes("..")) {
+            await c.env.BUCKET.delete(r2Key).catch(() => null);
+          }
+        }
+      }
+    }
+
     await db.delete(teamRules).where(eq(teamRules.id, id));
     return c.json({ success: true, message: "ルール & 注意事項を削除しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to delete rule:", error);
-    return c.json({ success: false, error: error?.message || "ルール & 注意事項の削除に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "ルール & 注意事項の削除に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8111,32 +8402,75 @@ const DEMO_LINKS = [
 app.post("/links/upload", async (c) => {
   try {
     let file: File | null = null;
-    let teamId = "general";
+    let teamId = "";
 
     try {
       const formData = await c.req.formData();
-      file = formData.get("file") as File | null;
+      const rawFile = formData.get("file");
+      if (rawFile instanceof File) file = rawFile;
       const t = formData.get("teamId");
-      if (typeof t === "string" && t) teamId = t;
+      if (typeof t === "string" && t.trim()) teamId = t.trim();
     } catch {
       const body = await c.req.parseBody();
-      file = (body["file"] as File) || null;
-      if (typeof body["teamId"] === "string" && body["teamId"]) {
-        teamId = body["teamId"];
+      const rawFile = body["file"];
+      if (rawFile instanceof File) file = rawFile;
+      if (typeof body["teamId"] === "string" && body["teamId"].trim()) {
+        teamId = body["teamId"].trim();
       }
     }
 
-    if (!file || typeof file === "string" || !file.name) {
+    if (!teamId || !/^[a-zA-Z0-9_-]{1,64}$/.test(teamId)) {
+      return c.json({ success: false, error: "有効なチームIDが指定されていません" }, 400);
+    }
+
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (!access.canMutateTeamData(teamId)) {
+        return c.json(
+          { success: false, error: "このチームへの画像アップロード権限がありません" },
+          403
+        );
+      }
+    }
+
+    if (!file || !file.name) {
       return c.json({ success: false, error: "ファイルが選択されていません" }, 400);
     }
 
-    const originalName = file.name || "link_image.jpg";
-    const ext = originalName.split(".").pop()?.toLowerCase() || "jpg";
+    if (!file.size || file.size <= 0 || file.size > 10 * 1024 * 1024) {
+      return c.json(
+        { success: false, error: "画像ファイルは10MB以下にしてください" },
+        413
+      );
+    }
+
+    const originalName = file.name.trim() || "link_image.jpg";
+    const ext = originalName.split(".").pop()?.toLowerCase() || "";
+    const linkImgMimes: Record<string, string> = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      gif: "image/gif",
+    };
+    const mimeType = linkImgMimes[ext];
+    if (!mimeType) {
+      return c.json(
+        {
+          success: false,
+          error: "JPEG / PNG / WebP / GIF 形式の画像のみアップロード可能です",
+        },
+        400
+      );
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, imageUrl: "/liff-logo.png" });
+    }
 
     if (c.env.BUCKET) {
-      const safeExt = ext.replace(/[^a-z0-9]/gi, "") || "jpg";
-      const filename = `links/${teamId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${safeExt}`;
-      const mimeType = file.type || "image/jpeg";
+      const randomToken = crypto.randomUUID().replace(/-/g, "");
+      const filename = `links/${teamId}/${Date.now()}-${randomToken}.${ext}`;
       const arrayBuffer = await file.arrayBuffer();
 
       await c.env.BUCKET.put(filename, arrayBuffer, {
@@ -8155,13 +8489,21 @@ app.post("/links/upload", async (c) => {
       binary += String.fromCharCode(bytes[i]);
     }
     const base64 = btoa(binary);
-    const mimeType = file.type || "image/jpeg";
     const imageUrl = `data:${mimeType};base64,${base64}`;
 
     return c.json({ success: true, imageUrl });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Links image upload error:", error);
-    return c.json({ success: false, error: error?.message || "画像のアップロードに失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "画像のアップロードに失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8367,9 +8709,81 @@ app.put("/links/:id", async (c) => {
       .where(eq(teamLinks.id, id));
 
     return c.json({ success: true, message: "関連リンクを更新しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update link:", error);
-    return c.json({ success: false, error: error?.message || "関連リンクの更新に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "関連リンクの更新に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ 関連リンク 削除API (DELETE /links/:id)
+ */
+app.delete("/links/:id", async (c) => {
+  await ensureLinksTable(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const id = c.req.param("id");
+  try {
+    if (id.startsWith("demo-")) {
+      return c.json({ success: true, message: "関連リンクを削除しました（デモ）" });
+    }
+
+    const currentLink = await db
+      .select()
+      .from(teamLinks)
+      .where(eq(teamLinks.id, id))
+      .get();
+    if (!currentLink) {
+      return c.json(
+        { success: false, error: "指定された関連リンクが見つかりません" },
+        404
+      );
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentLink.teamId ? access.canMutateTeamData(currentLink.teamId) : false) ||
+      (currentLink.organizationId
+        ? access.canAccessOrganization(currentLink.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json(
+        { success: false, error: "関連リンクを削除する権限がありません" },
+        403
+      );
+    }
+
+    if (
+      c.env.BUCKET &&
+      currentLink.imageUrl &&
+      currentLink.imageUrl.startsWith("/api/images/links/")
+    ) {
+      const r2Key = currentLink.imageUrl.slice("/api/images/".length);
+      if (r2Key && !r2Key.includes("..")) {
+        await c.env.BUCKET.delete(r2Key).catch(() => null);
+      }
+    }
+
+    await db.delete(teamLinks).where(eq(teamLinks.id, id));
+    return c.json({ success: true, message: "関連リンクを削除しました" });
+  } catch (error: unknown) {
+    console.error("Failed to delete link:", error);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "関連リンクの削除に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8388,7 +8802,7 @@ app.get("/admin/dashboard", async (c) => {
   const adminMiniAppUrl =
     c.env.NEXT_PUBLIC_LINE_MINIAPP_URL || c.env.LINE_MINIAPP_URL || "";
 
-  // 1. デモモードまたはチーム未指定時のフォールバック
+  // 1. デモモードまたはチーム未指定時のフォールバック（環境変数APIキーは絶対に露出させない）
   if (!teamId || teamId === "demo-team") {
     return c.json({
       success: true,
@@ -8397,8 +8811,8 @@ app.get("/admin/dashboard", async (c) => {
       myRole: "admin",
       liffId: adminLiffId,
       miniAppUrl: adminMiniAppUrl,
-      googleMapsApiKey: envMapsKey,
-      googleMapsKeySource: envMapsKey ? "env" : "none",
+      googleMapsApiKey: null,
+      googleMapsKeySource: "none",
       team: {
         id: "demo-team",
         name: DEMO_TEAM.name,
@@ -8659,11 +9073,28 @@ app.get("/admin/dashboard", async (c) => {
       pendingRequests: canManage ? pendingRequests : [],
       activeMembers: canManage ? activeMembers : [],
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to load admin dashboard:", error);
-    return c.json({ success: false, error: error?.message || "データの取得に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "データの取得に失敗しました",
+      },
+      500
+    );
   }
 });
+
+const ALLOWED_ADMIN_MEMBER_ROLES = new Set([
+  "admin",
+  "manager",
+  "coach",
+  "scorer",
+  "staff",
+  "parent",
+  "player",
+  "viewer",
+]);
 
 /**
  * 🛡️ 参加申請の承認・却下実行API (POST /admin/requests/action)
@@ -8671,8 +9102,13 @@ app.get("/admin/dashboard", async (c) => {
 app.post("/admin/requests/action", async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
-    const { teamId, memberId, action, role = "parent" } = body;
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      memberId?: string;
+      action?: string;
+      role?: string;
+    };
+    const { teamId, memberId, action, role: rawRole = "parent" } = body;
 
     if (!teamId || !memberId || !action) {
       return c.json({ success: false, error: "パラメーターが不足しています" }, 400);
@@ -8685,10 +9121,20 @@ app.post("/admin/requests/action", async (c) => {
       });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManageTeamId(teamId)) {
+      return c.json({ success: false, error: "管理者権限がありません" }, 403);
+    }
+
+    const normalizedRole = rawRole.trim().toLowerCase();
+    const safeRole = ALLOWED_ADMIN_MEMBER_ROLES.has(normalizedRole)
+      ? normalizedRole
+      : "parent";
+
     if (action === "approve") {
       await db
         .update(teamMembers)
-        .set({ status: "active", role: role })
+        .set({ status: "active", role: safeRole })
         .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
 
       return c.json({ success: true, message: "参加申請を承認しました" });
@@ -8699,9 +9145,15 @@ app.post("/admin/requests/action", async (c) => {
 
       return c.json({ success: true, message: "参加申請を却下しました" });
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to execute request action:", error);
-    return c.json({ success: false, error: error?.message || "処理に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "処理に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8711,7 +9163,12 @@ app.post("/admin/requests/action", async (c) => {
 app.post("/admin/members/update", async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      memberId?: string;
+      role?: string;
+      subLabel?: string;
+    };
     const { teamId, memberId, role, subLabel } = body;
 
     if (!teamId || !memberId) {
@@ -8722,10 +9179,19 @@ app.post("/admin/members/update", async (c) => {
       return c.json({ success: true, message: "設定を更新しました（デモ）" });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManageTeamId(teamId)) {
+      return c.json({ success: false, error: "管理者権限がありません" }, 403);
+    }
+
     if (role) {
+      const normalizedRole = role.trim().toLowerCase();
+      if (!ALLOWED_ADMIN_MEMBER_ROLES.has(normalizedRole)) {
+        return c.json({ success: false, error: "無効なロールが指定されました" }, 400);
+      }
       await db
         .update(teamMembers)
-        .set({ role })
+        .set({ role: normalizedRole })
         .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
     }
 
@@ -8734,7 +9200,7 @@ app.post("/admin/members/update", async (c) => {
       let currentMap: Record<string, string> = {};
       try {
         if (teamRow?.memberSubLabels) {
-          currentMap = JSON.parse(teamRow.memberSubLabels);
+          currentMap = JSON.parse(teamRow.memberSubLabels) as Record<string, string>;
         }
       } catch {}
 
@@ -8751,9 +9217,15 @@ app.post("/admin/members/update", async (c) => {
     }
 
     return c.json({ success: true, message: "メンバー情報を更新しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update member:", error);
-    return c.json({ success: false, error: error?.message || "更新に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "更新に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8764,7 +9236,11 @@ app.post("/admin/members/update", async (c) => {
 app.post("/admin/members/merge", async (c) => {
   const db = drizzle(c.env.DB);
   try {
-    const body = await c.req.json();
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      targetMemberId?: string;
+      sourceMemberId?: string;
+    };
     const { teamId, targetMemberId, sourceMemberId } = body;
 
     if (!teamId || !targetMemberId || !sourceMemberId) {
@@ -8781,6 +9257,11 @@ app.post("/admin/members/merge", async (c) => {
         success: true,
         message: "メンバーを正常に統合しました（デモ）",
       });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManageTeamId(teamId)) {
+      return c.json({ success: false, error: "管理者権限がありません" }, 403);
     }
 
     const target = await db.select().from(teamMembers).where(and(eq(teamMembers.id, targetMemberId), eq(teamMembers.teamId, teamId))).get();
@@ -8990,17 +9471,20 @@ async function resolveProfileMember(
     initialMemberType?: string | null;
   }
 ) {
-  const { teamId, memberId, userId, userName, createIfMissing = false, initialName, initialMemberType } = params;
+  const {
+    teamId,
+    memberId,
+    userName,
+    createIfMissing = false,
+    initialName,
+    initialMemberType,
+  } = params;
 
-  let sessionUser: { id?: string; name?: string | null; role?: string | null } | null = null;
-  try {
-    const auth = getAuth(c.env.DB, c.env);
-    const session = await auth.api.getSession({ headers: c.req.raw.headers as unknown as Headers }).catch(() => null);
-    sessionUser = session?.user || null;
-  } catch {}
-
-  const cleanUid = userId?.trim();
-  const candidateIds = await expandCandidateUserIds(db, [cleanUid, sessionUser?.id]);
+  const access = await resolveCallerTeamAccess(
+    c as Context<{ Bindings: WorkerEnv }>
+  );
+  const sessionUser = access.sessionUser;
+  const candidateIds = access.candidateUserIds;
 
   // `user` テーブル整合性付きの有効な userId 確保（連携済みの正規 Better-Auth ID を優先）
   let validUserId: string | null = null;
@@ -9010,7 +9494,11 @@ async function resolveProfileMember(
   ];
   for (const uid of prioritizedUserIds) {
     try {
-      const userExists = await db.select({ id: user.id }).from(user).where(eq(user.id, uid)).get();
+      const userExists = await db
+        .select({ id: user.id })
+        .from(user)
+        .where(eq(user.id, uid))
+        .get();
       if (userExists) {
         validUserId = userExists.id;
         break;
@@ -9019,14 +9507,19 @@ async function resolveProfileMember(
   }
 
   const preferredUid =
-    sessionUser?.id ||
-    (cleanUid && !IGNORED_MOCK_USER_IDS.has(cleanUid) ? cleanUid : null);
+    sessionUser?.id || (access.primaryUserId ? access.primaryUserId : null);
 
   if (!validUserId && preferredUid && createIfMissing) {
     try {
       await db.insert(user).values({
         id: preferredUid,
-        name: (initialName || userName || sessionUser?.name || "LINEユーザー").trim(),
+        name: (
+          initialName ||
+          access.primaryUserName ||
+          userName ||
+          sessionUser?.name ||
+          "LINEユーザー"
+        ).trim(),
         email: `${preferredUid}@line.user`,
         emailVerified: false,
         role: "GUEST",
@@ -9053,27 +9546,41 @@ async function resolveProfileMember(
         )
       )
       .all();
-    const activeMatched = matchedByUid.filter((m) => m.status === "active" || !m.status);
+    const activeMatched = matchedByUid.filter(
+      (m) => m.status === "active" || !m.status
+    );
     foundMember =
       activeMatched.find((m) => !m.id.startsWith("tm_")) ||
       activeMatched[0] ||
       matchedByUid[0];
   }
 
-  // 2. memberId 明示指定（userId未連携メンバーのキャッシュ照合。他人のuserIdが紐付いているレコードは除外）
+  // 2. memberId 明示指定（管理者が指定した場合、または userId未連携の一般メンバーキャッシュ照合。他人のuserIdレコードや未連携admin/managerへの勝手な紐付けは禁止）
   if (!foundMember && memberId && memberId.trim() && !memberId.startsWith("demo-")) {
     const byId = await db
       .select()
       .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, memberId.trim())))
+      .where(
+        and(eq(teamMembers.teamId, teamId), eq(teamMembers.id, memberId.trim()))
+      )
       .get();
-    if (byId && (!byId.userId || candidateIds.includes(byId.userId))) {
-      foundMember = byId;
+    if (byId) {
+      const isOwnLinked = Boolean(byId.userId && candidateIds.includes(byId.userId));
+      const isSafeUnlinked =
+        !byId.userId && !canManageTeam(byId.role, parseSubRolesList(byId.subRoles));
+      if (isOwnLinked || access.canManageTeamId(teamId) || isSafeUnlinked) {
+        foundMember = byId;
+      }
     }
   }
 
-  // 3. 名前照合（保存時は入力された表示名 initialName を最優先で照合し、重複 tm_ 作成を防止！）
-  const searchNames = [initialName, userName, sessionUser?.name];
+  // 3. 名前照合（所属認可済みチーム内の userId 未連携一般メンバー限定。既存アカウントへの account 自動リンクや admin/manager 横取りは厳禁）
+  const searchNames = [
+    initialName,
+    access.primaryUserName,
+    userName,
+    sessionUser?.name,
+  ];
   if (!foundMember && searchNames.some((s) => Boolean(s?.trim()))) {
     const allTeamMembers = await db
       .select()
@@ -9081,52 +9588,47 @@ async function resolveProfileMember(
       .where(eq(teamMembers.teamId, teamId))
       .all();
 
+    const safeUnlinkedPool = allTeamMembers.filter(
+      (m) =>
+        !m.userId &&
+        m.status !== "pending" &&
+        !canManageTeam(m.role, parseSubRolesList(m.subRoles))
+    );
+
     if (initialMemberType === "player") {
       const normTargets = searchNames
         .map((s) => (s ? normalizeMemberName(s) : ""))
         .filter(Boolean);
-      foundMember = allTeamMembers.find(
+      foundMember = safeUnlinkedPool.find(
         (m) =>
           m.memberType === "player" &&
           Boolean(m.name) &&
           normTargets.includes(normalizeMemberName(m.name || ""))
       );
     } else {
-      const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
-        db,
-        allTeamMembers,
-        searchNames,
-        cleanUid
-      );
       foundMember =
-        matchedByUserTable || findMatchingAdultMemberByName(allTeamMembers, searchNames) || undefined;
+        findMatchingAdultMemberByName(safeUnlinkedPool, searchNames) || undefined;
     }
 
-    if (foundMember) {
-      if (!foundMember.userId && validUserId) {
-        try {
-          await db
-            .update(teamMembers)
-            .set({ userId: validUserId })
-            .where(eq(teamMembers.id, foundMember.id));
-          foundMember = { ...foundMember, userId: validUserId };
-        } catch {}
-      } else if (foundMember.userId) {
-        if (cleanUid && cleanUid.startsWith("U") && foundMember.userId !== cleanUid) {
-          await ensureLineAccountLink(db, foundMember.userId, cleanUid);
-        } else if (
-          sessionUser?.id &&
-          !sessionUser.id.startsWith("U") &&
-          foundMember.userId.startsWith("U")
-        ) {
-          await ensureLineAccountLink(db, sessionUser.id, foundMember.userId);
-        }
-      }
+    if (foundMember && createIfMissing && !foundMember.userId && validUserId) {
+      try {
+        await db
+          .update(teamMembers)
+          .set({ userId: validUserId })
+          .where(eq(teamMembers.id, foundMember.id));
+        foundMember = { ...foundMember, userId: validUserId };
+      } catch {}
     }
   }
 
-  // 4. 未登録かつ createIfMissing の場合は安全に自動作成
-  const fallbackName = (initialName || userName || sessionUser?.name || "メンバー").trim();
+  // 4. 未登録かつ createIfMissing の場合は安全に自動作成（一般保護者の自己申告による staff 権限昇格を防止）
+  const fallbackName = (
+    initialName ||
+    access.primaryUserName ||
+    userName ||
+    sessionUser?.name ||
+    "メンバー"
+  ).trim();
   if (!foundMember && createIfMissing) {
     const teamExists = await db
       .select({ id: teams.id })
@@ -9137,6 +9639,10 @@ async function resolveProfileMember(
     if (teamExists) {
       const newMemberId = `tm_${crypto.randomUUID()}`;
       const mType = initialMemberType || "parent";
+      const assignedRole =
+        mType === "staff" && access.canManagePlayersForTeam(teamId)
+          ? "staff"
+          : "parent";
       const createdRow = {
         id: newMemberId,
         teamId,
@@ -9147,7 +9653,7 @@ async function resolveProfileMember(
         phone: null as string | null,
         email: null as string | null,
         avatarUrl: null as string | null,
-        role: mType === "staff" ? "staff" : "parent",
+        role: assignedRole,
         subRoles: null as string | null,
         status: "active",
         joinedAt: new Date(),
@@ -9606,12 +10112,35 @@ app.delete("/profile/family/:relationId", async (c) => {
 
   const db = drizzle(c.env.DB);
   try {
+    const existingRel = await db
+      .select()
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.id, relationId))
+      .get();
+    if (!existingRel) {
+      return c.json({ success: true, isDemo: false });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManagePlayersForTeam(existingRel.teamId)) {
+      const callerMember = await resolveProfileMember(c, db, {
+        teamId: existingRel.teamId,
+        createIfMissing: false,
+      });
+      if (!callerMember || callerMember.id !== existingRel.parentId) {
+        return c.json(
+          { success: false, error: "他メンバーの親子紐付けを解除する権限がありません" },
+          403
+        );
+      }
+    }
+
     await db.delete(parentChildRelations).where(eq(parentChildRelations.id, relationId));
     return c.json({ success: true, isDemo: false });
   } catch (err: unknown) {
     console.error("Failed to unlink child in LIFF profile:", err);
     return c.json(
-      { success: false, error: err instanceof Error ? err.message : "紐付けの解除に失敗しました" },
+      { success: false, error: "紐付けの解除に失敗しました" },
       500
     );
   }
@@ -9654,19 +10183,21 @@ app.post("/profile/self-player", async (c) => {
       });
     }
 
-    let sessionUser: { id?: string; name?: string | null } | null = null;
-    try {
-      if (c.req.raw.headers.get("cookie")) {
-        const auth = getAuth(c.env.DB, c.env);
-        const session = await auth.api
-          .getSession({ headers: c.req.raw.headers as unknown as Headers })
-          .catch(() => null);
-        sessionUser = session?.user || null;
-      }
-    } catch {}
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.primaryUserId) {
+      return c.json(
+        { success: false, error: "選手本人紐付けを行うにはLINE連携ログインが必要です" },
+        401
+      );
+    }
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        { success: false, error: "このチームへのアクセス権限がありません" },
+        403
+      );
+    }
 
-    const rawUid = body.userId?.trim() || extractHeaderUserId(c);
-    const candidateIds = await expandCandidateUserIds(db, [rawUid, sessionUser?.id]);
+    const candidateIds = access.candidateUserIds;
     if (candidateIds.length === 0) {
       return c.json(
         { success: false, error: "選手本人紐付けを行うにはLINE連携ログインが必要です" },
@@ -9717,14 +10248,13 @@ app.post("/profile/self-player", async (c) => {
       } catch {}
     }
 
-    const preferredUid =
-      sessionUser?.id || (rawUid && !IGNORED_MOCK_USER_IDS.has(rawUid) ? rawUid : null);
+    const preferredUid = access.primaryUserId;
 
     if (!validUserId && preferredUid) {
       try {
         await db.insert(user).values({
           id: preferredUid,
-          name: (body.userName || sessionUser?.name || targetPlayer.name || "LINEユーザー").trim(),
+          name: (access.primaryUserName || targetPlayer.name || "LINEユーザー").trim(),
           email: `${preferredUid}@line.user`,
           emailVerified: false,
           role: "GUEST",
@@ -9772,7 +10302,7 @@ app.post("/profile/self-player", async (c) => {
     return c.json(
       {
         success: false,
-        error: err instanceof Error ? err.message : "選手本人紐付けに失敗しました",
+        error: "選手本人紐付けに失敗しました",
       },
       500
     );
@@ -9789,59 +10319,25 @@ app.delete("/profile/self-player", async (c) => {
   try {
     const teamId = (c.req.query("teamId") || "demo-team").trim();
     const targetPlayerId = (c.req.query("playerId") || "").trim();
-    const queryUserId = c.req.query("userId");
 
     if (teamId === "demo-team" || targetPlayerId.startsWith("demo-")) {
       return c.json({ success: true, isDemo: true });
     }
 
-    let sessionUser: { id?: string } | null = null;
-    try {
-      if (c.req.raw.headers.get("cookie")) {
-        const auth = getAuth(c.env.DB, c.env);
-        const session = await auth.api
-          .getSession({ headers: c.req.raw.headers as unknown as Headers })
-          .catch(() => null);
-        sessionUser = session?.user || null;
-      }
-    } catch {}
-
-    const candidateIds = await expandCandidateUserIds(db, [
-      queryUserId,
-      extractHeaderUserId(c),
-      sessionUser?.id,
-    ]);
-
-    if (targetPlayerId) {
-      const teamRow = await db
-        .select({
-          id: teams.id,
-          createdBy: teams.createdBy,
-          organizationId: teams.organizationId,
-        })
-        .from(teams)
-        .where(eq(teams.id, teamId))
-        .get();
-
-      const canManage = teamRow
-        ? await resolveCanManageTeamPlayers(c, db, {
-            teamId,
-            userId: queryUserId || extractHeaderUserId(c),
-            userName: extractHeaderUserName(c),
-            createdBy: teamRow.createdBy,
-            organizationId: teamRow.organizationId,
-          })
-        : false;
-
-      if (canManage) {
-        await db
-          .update(players)
-          .set({ userId: null })
-          .where(and(eq(players.id, targetPlayerId), eq(players.teamId, teamId)));
-        return c.json({ success: true, isDemo: false });
-      }
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated) {
+      return c.json({ success: false, error: "ログイン情報が見つかりません" }, 401);
     }
 
+    if (targetPlayerId && access.canManagePlayersForTeam(teamId)) {
+      await db
+        .update(players)
+        .set({ userId: null })
+        .where(and(eq(players.id, targetPlayerId), eq(players.teamId, teamId)));
+      return c.json({ success: true, isDemo: false });
+    }
+
+    const candidateIds = access.candidateUserIds;
     if (candidateIds.length === 0) {
       return c.json({ success: false, error: "ログイン情報が見つかりません" }, 401);
     }
@@ -9862,7 +10358,7 @@ app.delete("/profile/self-player", async (c) => {
     return c.json(
       {
         success: false,
-        error: err instanceof Error ? err.message : "選手本人紐付けの解除に失敗しました",
+        error: "選手本人紐付けの解除に失敗しました",
       },
       500
     );
@@ -9943,6 +10439,24 @@ app.post("/profile/cars", async (c) => {
     };
 
     if (body.id) {
+      const existingCar = await db
+        .select()
+        .from(memberCars)
+        .where(and(eq(memberCars.id, body.id), eq(memberCars.teamId, teamId)))
+        .get();
+      if (!existingCar) {
+        return c.json({ success: false, error: "対象の車両が見つかりません" }, 404);
+      }
+      const access = await resolveCallerTeamAccess(c);
+      const isOwner =
+        existingCar.ownerId === member.id || existingCar.ownerId2 === member.id;
+      if (!isOwner && !access.canManagePlayersForTeam(teamId)) {
+        return c.json(
+          { success: false, error: "他メンバーの車両情報を編集する権限がありません" },
+          403
+        );
+      }
+
       await db
         .update(memberCars)
         .set({
@@ -9966,7 +10480,7 @@ app.post("/profile/cars", async (c) => {
   } catch (err: unknown) {
     console.error("Failed to save car in LIFF profile:", err);
     return c.json(
-      { success: false, error: err instanceof Error ? err.message : "車両情報の保存に失敗しました" },
+      { success: false, error: "車両情報の保存に失敗しました" },
       500
     );
   }
@@ -9983,12 +10497,41 @@ app.delete("/profile/cars/:carId", async (c) => {
 
   const db = drizzle(c.env.DB);
   try {
-    await db.delete(memberCars).where(eq(memberCars.id, carId));
+    const existingCar = await db
+      .select()
+      .from(memberCars)
+      .where(eq(memberCars.id, carId))
+      .get();
+    if (!existingCar) {
+      return c.json({ success: true, isDemo: false });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManagePlayersForTeam(existingCar.teamId)) {
+      const callerMember = await resolveProfileMember(c, db, {
+        teamId: existingCar.teamId,
+        createIfMissing: false,
+      });
+      const isOwner =
+        callerMember &&
+        (existingCar.ownerId === callerMember.id ||
+          existingCar.ownerId2 === callerMember.id);
+      if (!isOwner) {
+        return c.json(
+          { success: false, error: "他メンバーの車両情報を削除する権限がありません" },
+          403
+        );
+      }
+    }
+
+    await db
+      .delete(memberCars)
+      .where(and(eq(memberCars.id, carId), eq(memberCars.teamId, existingCar.teamId)));
     return c.json({ success: true, isDemo: false });
   } catch (err: unknown) {
     console.error("Failed to delete car in LIFF profile:", err);
     return c.json(
-      { success: false, error: err instanceof Error ? err.message : "車両情報の削除に失敗しました" },
+      { success: false, error: "車両情報の削除に失敗しました" },
       500
     );
   }
@@ -9997,15 +10540,6 @@ app.delete("/profile/cars/:carId", async (c) => {
 // ==========================================
 // ⚾ 選手名鑑（ロースター & 通算成績付きディレクトリ）API
 // ==========================================
-
-const PLAYER_CONDITION_MANAGER_ROLES = new Set([
-  "admin",
-  "system_admin",
-  "manager",
-  "coach",
-  "scorer",
-  "staff",
-]);
 
 interface CallerPlayerEditPermissions {
   canManagePlayers: boolean;
@@ -10035,57 +10569,11 @@ async function resolveCallerPlayerEditPermissions(
     };
   }
 
-  let authUserId: string | undefined;
-  let authUserName: string | undefined;
-  let isSessionSysAdmin = false;
-  if (c.req.raw.headers.get("cookie")) {
-    try {
-      const auth = getAuth(c.env.DB, c.env);
-      const session = await auth.api
-        .getSession({ headers: c.req.raw.headers })
-        .catch(() => null);
-      const sessRole = ((session?.user as AuthUser | undefined)?.role || "").toUpperCase();
-      if (sessRole === "SYSTEM_ADMIN" || sessRole === "ADMIN") {
-        isSessionSysAdmin = true;
-      }
-      authUserId = session?.user?.id;
-      authUserName = session?.user?.name || undefined;
-    } catch {
-      // ignore session error
-    }
-  }
+  const access = await resolveCallerTeamAccess(c as Context<{ Bindings: WorkerEnv }>);
+  const canManagePlayers = access.canManagePlayersForTeam(params.teamId);
+  const searchUserIds = access.candidateUserIds;
 
-  const headerUid = sanitizeUserIdCandidate(c.req.raw.headers.get("x-liff-user-id"));
-  const headerUnameRaw = c.req.raw.headers.get("x-liff-user-name");
-  let headerUname = "";
-  if (headerUnameRaw) {
-    try {
-      headerUname = decodeURIComponent(headerUnameRaw).trim();
-    } catch {
-      headerUname = headerUnameRaw.trim();
-    }
-  }
-
-  const searchUserIds = await expandCandidateUserIds(db, [
-    params.userId,
-    headerUid,
-    authUserId,
-  ]);
-
-  const [orgRow, allTeamMembersRaw, allRelations] = await Promise.all([
-    params.organizationId && searchUserIds.length > 0
-      ? db
-          .select({ role: organizationMembers.role })
-          .from(organizationMembers)
-          .where(
-            and(
-              eq(organizationMembers.organizationId, params.organizationId),
-              or(...searchUserIds.map((uid) => eq(organizationMembers.userId, uid)))
-            )
-          )
-          .get()
-          .catch(() => undefined)
-      : Promise.resolve(undefined),
+  const [allTeamMembersRaw, allRelations] = await Promise.all([
     db
       .select()
       .from(teamMembers)
@@ -10114,25 +10602,14 @@ async function resolveCallerPlayerEditPermissions(
     }
   }
 
-  const candidateNames = [params.userName, headerUname, authUserName].filter((s) =>
+  // 未連携(!userId)の保護者レコードに対してのみ、わが子ハイライト用の安全な氏名フォールバックを許可（指導者権限には一切昇格させない）
+  const candidateNames = [access.primaryUserName, params.userName].filter((s) =>
     Boolean(s?.trim())
   );
-
   if (matchedMembers.length === 0 && candidateNames.length > 0) {
-    const matchedByUserTable = await findAndAutoLinkMemberByUserTableName(
-      db,
-      activeAllMembers,
-      candidateNames,
-      params.userId || headerUid
-    );
-    if (matchedByUserTable) {
-      matchedMembers.push(matchedByUserTable);
-    }
-  }
-
-  if (matchedMembers.length === 0 && candidateNames.length > 0) {
+    const unlinkedMembers = activeAllMembers.filter((m) => !m.userId);
     const matchedByName = findMatchingAdultMemberByName(
-      activeAllMembers,
+      unlinkedMembers,
       candidateNames,
       { allowAmbiguousFamilyParent: false }
     );
@@ -10149,16 +10626,8 @@ async function resolveCallerPlayerEditPermissions(
     }
   }
 
-  const orgRole = (orgRow?.role || "").toUpperCase();
-  const isOrgAdmin = orgRole === "OWNER" || orgRole === "ADMIN";
-  const isCreator = Boolean(params.createdBy && searchUserIds.includes(params.createdBy));
-  const isTeamManagerRole = matchedMembers.some((m) => {
-    const r = (m.role || "").toLowerCase();
-    return PLAYER_CONDITION_MANAGER_ROLES.has(r) || canManageTeam(m.role);
-  });
-
   return {
-    canManagePlayers: isSessionSysAdmin || isCreator || isOrgAdmin || isTeamManagerRole,
+    canManagePlayers,
     searchUserIds,
     linkedChildIds,
   };
@@ -11563,8 +12032,34 @@ app.post("/players/:playerId/photo", async (c) => {
       return c.json({ success: false, error: "写真ファイルが選択されていません" }, 400);
     }
 
+    if (file.size <= 0 || file.size > 10 * 1024 * 1024) {
+      return c.json(
+        { success: false, error: "写真ファイルは10MB以下の画像をお選びください" },
+        400
+      );
+    }
+
+    const rawExt = file.name.split(".").pop()?.toLowerCase() || "";
+    const rawFileMime = (file.type || "").toLowerCase();
+    const isAllowedExt =
+      rawExt === "jpg" || rawExt === "jpeg" || rawExt === "png" || rawExt === "webp";
+    const isAllowedMime =
+      !rawFileMime ||
+      rawFileMime === "image/jpeg" ||
+      rawFileMime === "image/jpg" ||
+      rawFileMime === "image/png" ||
+      rawFileMime === "image/webp";
+    if (!isAllowedExt || !isAllowedMime) {
+      return c.json(
+        { success: false, error: "JPEG・PNG・WebP形式の画像ファイルのみアップロード可能です" },
+        400
+      );
+    }
+
+    const safeExt = rawExt === "png" ? "png" : rawExt === "webp" ? "webp" : "jpg";
+    const mimeType =
+      safeExt === "png" ? "image/png" : safeExt === "webp" ? "image/webp" : "image/jpeg";
     const arrayBuffer = await file.arrayBuffer();
-    const mimeType = file.type || "image/jpeg";
 
     const toDataUrl = (): string => {
       const bytes = new Uint8Array(arrayBuffer);
@@ -11661,11 +12156,11 @@ app.post("/players/:playerId/photo", async (c) => {
         await c.env.BUCKET.delete(oldR2Key).catch(() => {});
       }
 
-      const rawExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const safeExt = rawExt.replace(/[^a-z0-9]/g, "") || "jpg";
       const safePlayerKey = playerId.replace(/[^a-zA-Z0-9_-]/g, "");
       const safeTeamKey = teamId.replace(/[^a-zA-Z0-9_-]/g, "");
-      const suffix = photoKind === "action" ? `-action-${Date.now()}` : `-${Date.now()}`;
+      const rand = crypto.randomUUID().replace(/-/g, "");
+      const suffix =
+        photoKind === "action" ? `-action-${Date.now()}-${rand}` : `-${Date.now()}-${rand}`;
       const objectKey = `players/${safeTeamKey}/${safePlayerKey}${suffix}.${safeExt}`;
 
       await c.env.BUCKET.put(objectKey, arrayBuffer, {
@@ -11960,6 +12455,17 @@ app.post("/teams/:teamId/logo", async (c) => {
       return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManagePlayersForTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "チームロゴを変更する権限がありません（指導者・管理者のみ設定できます）",
+        },
+        403
+      );
+    }
+
     let orgId = teamObj.organizationId;
     if (!orgId) {
       orgId = crypto.randomUUID();
@@ -12022,27 +12528,33 @@ app.post("/teams/:teamId/logo", async (c) => {
     }
 
     const rawMime = (body.mimeType || "image/png").toLowerCase();
+    if (rawMime.includes("svg") || rawMime.includes("html") || rawMime.includes("xml")) {
+      return c.json(
+        {
+          success: false,
+          error: "SVG形式の画像はセキュリティ保護のため利用できません。PNG・WebP・JPEG形式をお選びください",
+        },
+        400
+      );
+    }
     const safeMimeType =
-      rawMime === "image/svg+xml"
-        ? "image/svg+xml"
-        : rawMime === "image/webp"
-          ? "image/webp"
-          : rawMime === "image/jpeg" || rawMime === "image/jpg"
-            ? "image/jpeg"
-            : "image/png";
+      rawMime === "image/webp"
+        ? "image/webp"
+        : rawMime === "image/jpeg" || rawMime === "image/jpg"
+          ? "image/jpeg"
+          : "image/png";
     const ext =
-      safeMimeType === "image/svg+xml"
-        ? "svg"
-        : safeMimeType === "image/webp"
-          ? "webp"
-          : safeMimeType === "image/jpeg"
-            ? "jpg"
-            : "png";
+      safeMimeType === "image/webp"
+        ? "webp"
+        : safeMimeType === "image/jpeg"
+          ? "jpg"
+          : "png";
 
     let nextLogoUrl: string;
     if (c.env.BUCKET) {
       const safeOrgKey = orgId.replace(/[^a-zA-Z0-9_-]/g, "");
-      const r2Key = `teams/logo-${safeOrgKey}-${Date.now()}.${ext}`;
+      const rand = crypto.randomUUID().replace(/-/g, "");
+      const r2Key = `teams/logo-${safeOrgKey}-${Date.now()}-${rand}.${ext}`;
       const arrayBuf = bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength
@@ -12072,7 +12584,7 @@ app.post("/teams/:teamId/logo", async (c) => {
     return c.json(
       {
         success: false,
-        error: err instanceof Error ? err.message : "チームロゴの保存に失敗しました",
+        error: "チームロゴの保存に失敗しました",
       },
       500
     );
@@ -12111,6 +12623,17 @@ app.delete("/teams/:teamId/logo", async (c) => {
       return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManagePlayersForTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "チームロゴを削除する権限がありません（指導者・管理者のみ削除できます）",
+        },
+        403
+      );
+    }
+
     if (c.env.BUCKET && teamObj.logoImageUrl?.startsWith("/api/images/teams/")) {
       const oldR2Key = teamObj.logoImageUrl.slice("/api/images/".length);
       await c.env.BUCKET.delete(oldR2Key).catch(() => {});
@@ -12134,7 +12657,7 @@ app.delete("/teams/:teamId/logo", async (c) => {
     return c.json(
       {
         success: false,
-        error: err instanceof Error ? err.message : "チームロゴの削除に失敗しました",
+        error: "チームロゴの削除に失敗しました",
       },
       500
     );
@@ -12360,7 +12883,8 @@ app.post("/teams/:teamId/cover", async (c) => {
     let nextCoverUrl: string;
     if (c.env.BUCKET) {
       const safeOrgKey = orgId.replace(/[^a-zA-Z0-9_-]/g, "");
-      const r2Key = `teams/cover-${safeOrgKey}-${Date.now()}.${ext}`;
+      const rand = crypto.randomUUID().replace(/-/g, "");
+      const r2Key = `teams/cover-${safeOrgKey}-${Date.now()}-${rand}.${ext}`;
       const arrayBuf = bytes.buffer.slice(
         bytes.byteOffset,
         bytes.byteOffset + bytes.byteLength

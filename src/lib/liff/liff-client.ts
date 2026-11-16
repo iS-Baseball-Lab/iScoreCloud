@@ -17,6 +17,38 @@ const LIFF_PROFILE_TIMEOUT_MS = 6_000;
 
 let liffInstance: Liff | null = null;
 let initializedLiffId: string | null = null;
+let hasInitialLiffSdkSettled = false;
+let initialLiffReadyWaiters: Array<() => void> = [];
+
+function notifyInitialLiffSdkSettled(): void {
+  hasInitialLiffSdkSettled = true;
+  if (initialLiffReadyWaiters.length > 0) {
+    const waiters = initialLiffReadyWaiters;
+    initialLiffReadyWaiters = [];
+    for (const resolve of waiters) {
+      try {
+        resolve();
+      } catch {}
+    }
+  }
+}
+
+export function waitForInitialLiffSdkReady(maxWaitMs = 2_200): Promise<void> {
+  if (typeof window === "undefined" || hasInitialLiffSdkSettled) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timerId);
+      resolve();
+    };
+    const timerId = setTimeout(finish, maxWaitMs);
+    initialLiffReadyWaiters.push(finish);
+  });
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -46,106 +78,110 @@ export async function initLiff(
     return { liff: null, isMock: true, reason: "SSR" };
   }
 
-  // 1. LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
-  const urlParams = new URLSearchParams(window.location.search);
-  const queryLiffId = urlParams.get("liffId");
-  const storedLiffId = localStorage.getItem("iscore_liff_id");
-  let targetLiffId =
-    liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
+  try {
+    // 1. LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryLiffId = urlParams.get("liffId");
+    const storedLiffId = localStorage.getItem("iscore_liff_id");
+    let targetLiffId =
+      liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
 
-  if (queryLiffId) {
-    localStorage.setItem("iscore_liff_id", queryLiffId);
-  }
+    if (queryLiffId) {
+      localStorage.setItem("iscore_liff_id", queryLiffId);
+    }
 
-  // すでに同一 LIFF ID で初期化完了済みの場合は再 init せず即返却
-  if (liffInstance && targetLiffId && initializedLiffId === targetLiffId) {
-    return { liff: liffInstance, isMock: false };
-  }
+    // すでに同一 LIFF ID で初期化完了済みの場合は再 init せず即返却
+    if (liffInstance && targetLiffId && initializedLiffId === targetLiffId) {
+      return { liff: liffInstance, isMock: false };
+    }
 
-  // 2. まだ LIFF ID が未確定の場合、Cloudflare Workers API (/api/liff/config) から自動フェッチ（セッション中1回のみ）
-  if (!targetLiffId) {
-    const checkedNoLiff = sessionStorage.getItem("iscore_liff_id_empty");
-    if (!checkedNoLiff) {
-      const controller = new AbortController();
-      const timerId = setTimeout(() => {
+    // 2. まだ LIFF ID が未確定の場合、Cloudflare Workers API (/api/liff/config) から自動フェッチ（セッション中1回のみ）
+    if (!targetLiffId) {
+      const checkedNoLiff = sessionStorage.getItem("iscore_liff_id_empty");
+      if (!checkedNoLiff) {
+        const controller = new AbortController();
+        const timerId = setTimeout(() => {
+          try {
+            controller.abort();
+          } catch {}
+        }, LIFF_CONFIG_TIMEOUT_MS);
         try {
-          controller.abort();
-        } catch {}
-      }, LIFF_CONFIG_TIMEOUT_MS);
-      try {
-        const configRes = await fetch("/api/liff/config", {
-          signal: controller.signal,
-        });
-        if (configRes.ok) {
-          const configData = (await configRes.json()) as {
-            success?: boolean;
-            liffId?: string;
-          };
-          if (configData.liffId) {
-            targetLiffId = configData.liffId;
-            localStorage.setItem("iscore_liff_id", configData.liffId);
-          } else if (configData.success === true) {
-            sessionStorage.setItem("iscore_liff_id_empty", "1");
+          const configRes = await fetch("/api/liff/config", {
+            signal: controller.signal,
+          });
+          if (configRes.ok) {
+            const configData = (await configRes.json()) as {
+              success?: boolean;
+              liffId?: string;
+            };
+            if (configData.liffId) {
+              targetLiffId = configData.liffId;
+              localStorage.setItem("iscore_liff_id", configData.liffId);
+            } else if (configData.success === true) {
+              sessionStorage.setItem("iscore_liff_id_empty", "1");
+            }
           }
+        } catch {
+          // ignore fetch error
+        } finally {
+          clearTimeout(timerId);
         }
-      } catch {
-        // ignore fetch error
-      } finally {
-        clearTimeout(timerId);
       }
     }
-  }
 
-  if (!targetLiffId) {
-    console.warn("⚠️ LIFF ID is not configured. Running in mock fallback mode.");
-    return { liff: null, isMock: true, reason: "LIFF_ID_NOT_CONFIGURED" };
-  }
+    if (!targetLiffId) {
+      console.warn("⚠️ LIFF ID is not configured. Running in mock fallback mode.");
+      return { liff: null, isMock: true, reason: "LIFF_ID_NOT_CONFIGURED" };
+    }
 
-  if (liffInstance && initializedLiffId === targetLiffId) {
-    return { liff: liffInstance, isMock: false };
-  }
+    if (liffInstance && initializedLiffId === targetLiffId) {
+      return { liff: liffInstance, isMock: false };
+    }
 
-  try {
-    const liff = (await withTimeout(
-      import("@line/liff"),
-      LIFF_INIT_TIMEOUT_MS,
-      "LIFF_IMPORT"
-    )).default;
-    const isLineClientUa = /Line\//i.test(navigator.userAgent);
-    const isIPadDevice = detectIsIPadDevice();
-    const hasLiffOAuthParams =
-      urlParams.has("code") ||
-      urlParams.has("liff.state") ||
-      urlParams.has("liffClientId");
-    const hasWebHandoffUser = Boolean(localStorage.getItem("iscore_user_id"));
-    // iPad版LINEアプリ内ブラウザはLINEミニアプリ非対応のため、初回ロード時の強制OAuthリダイレクトを抑止して案内を表示可能にする
-    const shouldAutoLoginExternal =
-      isIPadDevice && isLineClientUa
-        ? hasLiffOAuthParams
-        : isLineClientUa || hasLiffOAuthParams || !hasWebHandoffUser;
+    try {
+      const liff = (await withTimeout(
+        import("@line/liff"),
+        LIFF_INIT_TIMEOUT_MS,
+        "LIFF_IMPORT"
+      )).default;
+      const isLineClientUa = /Line\//i.test(navigator.userAgent);
+      const isIPadDevice = detectIsIPadDevice();
+      const hasLiffOAuthParams =
+        urlParams.has("code") ||
+        urlParams.has("liff.state") ||
+        urlParams.has("liffClientId");
+      const hasWebHandoffUser = Boolean(localStorage.getItem("iscore_user_id"));
+      // iPad版LINEアプリ内ブラウザはLINEミニアプリ非対応のため、初回ロード時の強制OAuthリダイレクトを抑止して案内を表示可能にする
+      const shouldAutoLoginExternal =
+        isIPadDevice && isLineClientUa
+          ? hasLiffOAuthParams
+          : isLineClientUa || hasLiffOAuthParams || !hasWebHandoffUser;
 
-    await withTimeout(
-      (async () => {
-        await liff.init({
-          liffId: targetLiffId,
-          // Web版セッション（Google / LINE / Microsoft）から引き継いだ外部ブラウザ閲覧時は強制OAuthリダイレクトを抑止
-          withLoginOnExternalBrowser: shouldAutoLoginExternal,
-        });
-        // 🌟 LIFF SDKの内部初期化・セッション準備を確実に待機
-        await liff.ready;
-      })(),
-      LIFF_INIT_TIMEOUT_MS,
-      "LIFF_INIT"
-    );
+      await withTimeout(
+        (async () => {
+          await liff.init({
+            liffId: targetLiffId,
+            // Web版セッション（Google / LINE / Microsoft）から引き継いだ外部ブラウザ閲覧時は強制OAuthリダイレクトを抑止
+            withLoginOnExternalBrowser: shouldAutoLoginExternal,
+          });
+          // 🌟 LIFF SDKの内部初期化・セッション準備を確実に待機
+          await liff.ready;
+        })(),
+        LIFF_INIT_TIMEOUT_MS,
+        "LIFF_INIT"
+      );
 
-    liffInstance = liff;
-    initializedLiffId = targetLiffId;
-    return { liff, isMock: false };
-  } catch (error: unknown) {
-    console.error("❌ Failed to initialize LIFF SDK:", error);
-    const reason =
-      error instanceof Error ? error.message : "LIFF_INIT_ERROR";
-    return { liff: null, isMock: true, reason };
+      liffInstance = liff;
+      initializedLiffId = targetLiffId;
+      return { liff, isMock: false };
+    } catch (error: unknown) {
+      console.error("❌ Failed to initialize LIFF SDK:", error);
+      const reason =
+        error instanceof Error ? error.message : "LIFF_INIT_ERROR";
+      return { liff: null, isMock: true, reason };
+    }
+  } finally {
+    notifyInitialLiffSdkSettled();
   }
 }
 
@@ -154,6 +190,20 @@ export async function initLiff(
  */
 export function getLiffInstance(): Liff | null {
   return liffInstance;
+}
+
+/**
+ * 初期化済みLIFF SDKから有効なLINEアクセストークンを同期取得する（サーバー側での本人検証・セッショントークン発行用）
+ */
+export function resolveActiveLiffAccessTokenFromSdk(): string {
+  if (!liffInstance) return "";
+  try {
+    if (!liffInstance.isLoggedIn()) return "";
+    const token = liffInstance.getAccessToken();
+    return typeof token === "string" ? token.trim() : "";
+  } catch {
+    return "";
+  }
 }
 
 /**

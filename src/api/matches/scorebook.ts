@@ -187,46 +187,24 @@ ${scoreSummaryLines.join("\n")}\n`;
           const markerIdx = legendUrl.indexOf(marker);
 
           if (markerIdx !== -1 && c.env.BUCKET) {
-            // A-2. R2 から直接ロード
+            // A-2. R2 から自チーム専用の早見表キーのみ直接ロード（他チームキーや外部SSRFは完全拒否）
             const r2Key = legendUrl.substring(markerIdx + marker.length);
-            const r2Object = await c.env.BUCKET.get(r2Key);
-            
-            if (r2Object) {
-              const legendBytes = await r2Object.arrayBuffer();
-              const legendBase64 = arrayBufferToBase64(legendBytes);
-              const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
+            const expectedPrefix = `teams/legend-${match.teamId}-`;
+            if (r2Key.startsWith(expectedPrefix) && !r2Key.includes("..")) {
+              const r2Object = await c.env.BUCKET.get(r2Key);
+              if (r2Object) {
+                const legendBytes = await r2Object.arrayBuffer();
+                const legendBase64 = arrayBufferToBase64(legendBytes);
+                const legendMimeType = r2Object.httpMetadata?.contentType || "image/png";
 
-              imageParts.push({
-                inlineData: {
-                  mimeType: legendMimeType,
-                  data: legendBase64
-                }
-              });
-              isLegendLoaded = true;
-            }
-          } else {
-            // A-3. HTTP / Relative URL のフェッチ
-            let targetUrl = legendUrl;
-            if (legendUrl.startsWith("/")) {
-              const requestUrl = new URL(c.req.url);
-              targetUrl = `${requestUrl.origin}${legendUrl}`;
-            }
-
-            const legendRes = await fetch(targetUrl);
-            if (legendRes.ok) {
-              const legendBytes = await legendRes.arrayBuffer();
-              const legendBase64 = arrayBufferToBase64(legendBytes);
-              const legendMimeType = legendRes.headers.get("content-type") || "image/png";
-
-              imageParts.push({
-                inlineData: {
-                  mimeType: legendMimeType,
-                  data: legendBase64
-                }
-              });
-              isLegendLoaded = true;
-            } else {
-              console.warn(`[ScorebookImport] Failed to fetch legendUrl (Status ${legendRes.status}): ${targetUrl}`);
+                imageParts.push({
+                  inlineData: {
+                    mimeType: legendMimeType,
+                    data: legendBase64
+                  }
+                });
+                isLegendLoaded = true;
+              }
             }
           }
         }
@@ -411,13 +389,11 @@ ${legendPromptAdd}${playerRosterPrompt}${lineupPrompt}${opponentLineupPrompt}${t
       validationMessages
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Scorebook import error:", error);
-    const details = error instanceof Error ? `${error.name}: ${error.message}\n${error.stack}` : String(error);
     return c.json({ 
       success: false, 
-      error: `解析処理中にエラーが発生しました: ${error.message || error}`,
-      details
+      error: "スコアブック画像の解析処理中にエラーが発生しました。"
     }, 500);
   }
 });
@@ -435,13 +411,11 @@ scorebookRouter.post("/:id/scorebook/save", async (c) => {
     await MatchService.saveScorebookImport(db, matchId, body.events, body.validationMessages || []);
     return c.json({ success: true });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Scorebook save error:", error);
     return c.json({ 
       success: false, 
-      error: error.message || "データの保存中にエラーが発生しました",
-      stack: error.stack,
-      details: String(error)
+      error: "スコアブックデータの保存中にエラーが発生しました。"
     }, 500);
   }
 });

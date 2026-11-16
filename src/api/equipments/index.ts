@@ -4,7 +4,9 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, and } from 'drizzle-orm';
 import { teamEquipments, eventEquipments } from '@/db/schema/equipment';
 import { teamMembers } from '@/db/schema/team';
+import { events } from '@/db/schema/attendance';
 import { eventCarpools } from '@/db/schema/carpool';
+import { resolveCallerTeamAccess } from '@/lib/team-access';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -29,7 +31,7 @@ app.get('/', async (c) => {
     return c.json({ success: true, data: list });
   } catch (err: unknown) {
     console.error(`[Fetch Team Equipments Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "道具マスタの取得に失敗しました。" }, 500);
   }
 });
 
@@ -41,17 +43,29 @@ app.post('/', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
-    const body = await c.req.json();
+    const body = await c.req.json<{
+      id?: string;
+      teamId?: string;
+      name?: string;
+      description?: string | null;
+      isHeavy?: boolean;
+      quantity?: number;
+    }>();
     const { id, teamId, name, description, isHeavy, quantity } = body;
 
     if (!teamId || !name) {
       return c.json({ success: false, error: "teamId と name は必須です。" }, 400);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(teamId)) {
+      return c.json({ success: false, error: "このチームの道具マスタを編集する権限がありません。" }, 403);
+    }
+
     const qty = quantity != null ? Number(quantity) : 1;
 
     if (id) {
-      // 編集（更新）
+      // 編集（更新）— teamId 一致を必須化
       await db.update(teamEquipments)
         .set({
           name,
@@ -59,7 +73,7 @@ app.post('/', async (c) => {
           isHeavy: !!isHeavy,
           quantity: qty
         })
-        .where(eq(teamEquipments.id, id));
+        .where(and(eq(teamEquipments.id, id), eq(teamEquipments.teamId, teamId)));
 
       return c.json({ success: true, data: { id, teamId, name, description, isHeavy, quantity: qty } });
     } else {
@@ -80,7 +94,7 @@ app.post('/', async (c) => {
 
   } catch (err: unknown) {
     console.error(`[Save Team Equipment Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "道具マスタの保存に失敗しました。" }, 500);
   }
 });
 
@@ -93,13 +107,26 @@ app.delete('/:id', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
+    const existing = await db.select({ id: teamEquipments.id, teamId: teamEquipments.teamId })
+      .from(teamEquipments)
+      .where(eq(teamEquipments.id, id))
+      .get();
+    if (!existing) {
+      return c.json({ success: true });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(existing.teamId)) {
+      return c.json({ success: false, error: "このチームの道具マスタを削除する権限がありません。" }, 403);
+    }
+
     await db.delete(teamEquipments)
-      .where(eq(teamEquipments.id, id));
+      .where(and(eq(teamEquipments.id, id), eq(teamEquipments.teamId, existing.teamId)));
 
     return c.json({ success: true });
   } catch (err: unknown) {
     console.error(`[Delete Team Equipment Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "道具マスタの削除に失敗しました。" }, 500);
   }
 });
 
@@ -145,7 +172,7 @@ app.get('/events/:eventId', async (c) => {
     return c.json({ success: true, data });
   } catch (err: unknown) {
     console.error(`[Fetch Event Equipments Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "イベント道具状況の取得に失敗しました。" }, 500);
   }
 });
 
@@ -158,35 +185,59 @@ app.post('/events/:eventId/save', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
-    const body = await c.req.json();
-    const { equipments } = body; // Array of { equipmentId, carpoolId, responsibleMemberId, status }
+    const eventRow = await db.select({ id: events.id, teamId: events.teamId })
+      .from(events)
+      .where(eq(events.id, eventId))
+      .get();
+    if (!eventRow) {
+      return c.json({ success: false, error: "対象のイベントが見つかりません。" }, 404);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(eventRow.teamId)) {
+      return c.json({ success: false, error: "このイベントの道具割当を保存する権限がありません。" }, 403);
+    }
+
+    const body = await c.req.json<{
+      equipments?: Array<{
+        equipmentId: string;
+        carpoolId?: string | null;
+        responsibleMemberId?: string | null;
+        status?: "pending" | "loaded" | "returned";
+      }>;
+    }>();
+    const { equipments } = body;
 
     if (!Array.isArray(equipments)) {
       return c.json({ success: false, error: "equipments 配列が必要です。" }, 400);
     }
 
-    // 💡 トランザクション処理の代替 (D1で動作しないため個別実行)
     // 1. 既存のこのイベントの日程別道具割当を削除
     await db.delete(eventEquipments)
       .where(eq(eventEquipments.eventId, eventId));
 
-    // 2. 有効な配車スロット ID (eventCarpools.id) リストを取得 (外部キー制約エラー防止)
-    const validCarpools = await db.select({ id: eventCarpools.id })
-      .from(eventCarpools)
-      .where(eq(eventCarpools.eventId, eventId));
-    const validCarpoolIds = new Set(validCarpools.map(c => c.id));
-
-    // 3. 有効なメンバー ID リストを取得 (外部キー制約エラー防止)
-    const validMembers = await db.select({ id: teamMembers.id })
-      .from(teamMembers);
+    // 2. 同一イベント・同一チーム内の有効IDのみを取得（クロステナント紐付け防止）
+    const [validCarpools, validMembers, validMasterEquipments] = await Promise.all([
+      db.select({ id: eventCarpools.id })
+        .from(eventCarpools)
+        .where(eq(eventCarpools.eventId, eventId)),
+      db.select({ id: teamMembers.id })
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, eventRow.teamId)),
+      db.select({ id: teamEquipments.id })
+        .from(teamEquipments)
+        .where(eq(teamEquipments.teamId, eventRow.teamId)),
+    ]);
+    const validCarpoolIds = new Set(validCarpools.map(cp => cp.id));
     const validMemberIds = new Set(validMembers.map(m => m.id));
+    const validEquipmentIds = new Set(validMasterEquipments.map(eqItem => eqItem.id));
 
-    // 4. 新たなアサインをインサート
+    // 3. 新たなアサインをインサート
     for (const eqData of equipments) {
-      // もし積載先が未設定(null)か、無効なID（フロント一時IDなど）の場合は null にフォールバック
+      if (!eqData.equipmentId || !validEquipmentIds.has(eqData.equipmentId)) {
+        continue;
+      }
       const carpoolId = (eqData.carpoolId && validCarpoolIds.has(eqData.carpoolId)) ? eqData.carpoolId : null;
-      
-      // 担当メンバーが無効なIDの場合は null にフォールバック
       const responsibleMemberId = (eqData.responsibleMemberId && validMemberIds.has(eqData.responsibleMemberId)) ? eqData.responsibleMemberId : null;
 
       const id = `eveq_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -205,7 +256,7 @@ app.post('/events/:eventId/save', async (c) => {
 
   } catch (err: unknown) {
     console.error(`[Save Event Equipments Error]:`, err);
-    return c.json({ success: false, error: err instanceof Error ? err.message : "Internal Server Error" }, 500);
+    return c.json({ success: false, error: "イベント道具割当の保存に失敗しました。" }, 500);
   }
 });
 

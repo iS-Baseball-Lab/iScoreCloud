@@ -49,24 +49,36 @@ interface AuthEnv {
   BETTER_AUTH_URL?: string; // 💡 追加：エッジ環境での OAuth 安定化のため
 }
 
-let authCache: any = null;
+let authCache: ReturnType<typeof createAuthInstance> | null = null;
 let lastD1: D1Database | null = null;
 
-export const getAuth = (d1: D1Database, env?: AuthEnv) => {
-  // 💡 パフォーマンス最適化: ID が同じならキャッシュを返す (CPU 制限対策)
-  if (authCache && lastD1 === d1) {
-    return authCache;
-  }
-
+function createAuthInstance(d1: D1Database, env?: AuthEnv) {
   const db = drizzle(d1);
-  const auth = betterAuth({
-    baseURL: env?.BETTER_AUTH_URL, // 💡 追加：Cloudflare 環境での baseURL ズレ防止
-    trustedHeaders: ["x-forwarded-host", "x-forwarded-proto"],
+  const configuredBaseUrl = (env?.BETTER_AUTH_URL || "").trim();
+  const trustedOrigins = Array.from(
+    new Set(
+      [
+        configuredBaseUrl,
+        "https://iscorecloud.com",
+        "https://www.iscorecloud.com",
+        "https://liff.line.me",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+      ].filter(Boolean)
+    )
+  );
+
+  return betterAuth({
+    baseURL: configuredBaseUrl || undefined,
+    trustedOrigins,
+    ...(configuredBaseUrl
+      ? {}
+      : { trustedHeaders: ["x-forwarded-host", "x-forwarded-proto"] }),
     advanced: {
       database: {
         validateSchema: false,
       },
-    }, // 💡 追加：プロキシ背後での State 整合性を保証
+    },
     user: {
       additionalFields: {
         role: {
@@ -124,8 +136,15 @@ export const getAuth = (d1: D1Database, env?: AuthEnv) => {
       },
     },
   });
+}
 
+export const getAuth = (d1: D1Database, env?: AuthEnv) => {
+  if (authCache && lastD1 === d1) {
+    return authCache;
+  }
+  const auth = createAuthInstance(d1, env);
   authCache = auth;
   lastD1 = d1;
   return auth;
 };
+

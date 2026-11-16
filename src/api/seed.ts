@@ -10,9 +10,14 @@ import type { WorkerEnv } from '../types/api';
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 app.post('/', async (c) => {
+  if (c.env.ALLOW_DEV_SEED !== 'true') {
+    return c.json({ error: 'Not Found' }, 404);
+  }
   const access = await resolveCallerTeamAccess(c);
   if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401);
-  if (!access.isSystemAdmin) return c.json({ error: 'Forbidden' }, 403);
+  if (access.sessionUser.role !== 'SYSTEM_ADMIN') {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
 
   const db = drizzle(c.env.DB);
   const userId = access.sessionUser.id;

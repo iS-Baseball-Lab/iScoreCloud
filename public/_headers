@@ -1,5 +1,10 @@
 /*
   Cache-Control: no-cache, no-store, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(self), camera=(self), microphone=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: frame-ancestors 'self' https://*.line.me https://*.line-apps.com
 
 /*.webp
   ! Cache-Control

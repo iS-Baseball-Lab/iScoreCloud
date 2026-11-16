@@ -542,6 +542,9 @@ app.get("/media/:teamId/:albumId/:filename", async (c) => {
       status: 200,
       headers: {
         "Content-Type": "image/svg+xml; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy":
+          "default-src 'none'; style-src 'unsafe-inline'; sandbox",
         "Cache-Control": "public, max-age=86400",
       },
     });
@@ -569,11 +572,27 @@ app.get("/media/:teamId/:albumId/:filename", async (c) => {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
-  if (!headers.has("content-type")) {
-    headers.set("content-type", "image/jpeg");
-  }
+  const storedMime = (headers.get("content-type") || "image/jpeg")
+    .toLowerCase()
+    .split(";")[0]
+    .trim();
+  const allowedMediaMimes = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif",
+  ]);
+  const safeMediaMime = allowedMediaMimes.has(storedMime)
+    ? storedMime
+    : "application/octet-stream";
+  headers.set("content-type", safeMediaMime);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Content-Security-Policy", "sandbox");
 
-  const wantDownload = c.req.query("download") === "1";
+  const wantDownload =
+    c.req.query("download") === "1" || safeMediaMime === "application/octet-stream";
   const dlName = (c.req.query("dlName") || "").trim();
   if (wantDownload) {
     const safeName = (dlName || filename).replace(/[\r\n"]/g, "_");
@@ -1403,6 +1422,25 @@ app.post("/albums/:albumId/photos", async (c) => {
     );
   }
 
+  if (thumbFile.size > 5 * 1024 * 1024 || webFile.size > 10 * 1024 * 1024) {
+    return c.json(
+      { success: false, error: "最適化済み画像サイズが上限を超えています" },
+      413
+    );
+  }
+
+  const safeOptimizedMimes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  const thumbMime = safeOptimizedMimes.has(
+    (thumbFile.type || "").toLowerCase().split(";")[0].trim()
+  )
+    ? (thumbFile.type || "image/jpeg").toLowerCase().split(";")[0].trim()
+    : "image/jpeg";
+  const webMime = safeOptimizedMimes.has(
+    (webFile.type || "").toLowerCase().split(";")[0].trim()
+  )
+    ? (webFile.type || "image/jpeg").toLowerCase().split(";")[0].trim()
+    : "image/jpeg";
+
   const rawFileName =
     typeof formData["fileName"] === "string" && formData["fileName"].trim()
       ? formData["fileName"].trim()
@@ -1425,10 +1463,10 @@ app.post("/albums/:albumId/photos", async (c) => {
 
   await Promise.all([
     c.env.BUCKET.put(thumbKey, thumbBuf, {
-      httpMetadata: { contentType: thumbFile.type || "image/jpeg" },
+      httpMetadata: { contentType: thumbMime },
     }),
     c.env.BUCKET.put(webKey, webBuf, {
-      httpMetadata: { contentType: webFile.type || "image/jpeg" },
+      httpMetadata: { contentType: webMime },
     }),
   ]);
 
@@ -1526,8 +1564,18 @@ app.put("/photos/:photoId/original", async (c) => {
   }
 
   const access = await resolveCallerTeamAccess(c);
-  if (!access.canAccessTeam(teamId)) {
+  if (!access.canMutateTeamData(teamId)) {
     return c.json({ success: false, error: "権限がありません" }, 403);
+  }
+
+  const maxRawBytes = 30 * 1024 * 1024; // 30MB
+  const contentLengthHeader = Number(c.req.header("content-length") || 0);
+  const querySize = Number(c.req.query("size") || 0);
+  if (contentLengthHeader > maxRawBytes || querySize > maxRawBytes) {
+    return c.json(
+      { success: false, error: "元データサイズは1枚あたり30MB以下にしてください" },
+      413
+    );
   }
 
   await ensureGallerySchema(c.env.DB);
@@ -1539,6 +1587,7 @@ app.put("/photos/:photoId/original", async (c) => {
       albumId: galleryPhotos.albumId,
       teamId: galleryPhotos.teamId,
       originalKey: galleryPhotos.originalKey,
+      uploadedByUserId: galleryPhotos.uploadedByUserId,
     })
     .from(galleryPhotos)
     .where(
@@ -1550,13 +1599,44 @@ app.put("/photos/:photoId/original", async (c) => {
     return c.json({ success: false, error: "対象の写真が見つかりません" }, 404);
   }
 
-  const contentType = c.req.header("content-type") || "image/jpeg";
+  const canAttachOriginal =
+    access.canManageTeamId(teamId) ||
+    !photo.uploadedByUserId ||
+    access.candidateUserIds.includes(photo.uploadedByUserId);
+  if (!canAttachOriginal) {
+    return c.json(
+      { success: false, error: "アップロードした本人または管理者のみ保存できます" },
+      403
+    );
+  }
+
+  const rawContentType = (c.req.header("content-type") || "image/jpeg")
+    .toLowerCase()
+    .split(";")[0]
+    .trim();
+  const allowedOrigMimes = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif",
+    "application/octet-stream",
+  ]);
+  if (!allowedOrigMimes.has(rawContentType)) {
+    return c.json(
+      { success: false, error: "対応していない画像形式です" },
+      400
+    );
+  }
+  const contentType = rawContentType;
   const ext = sanitizeFileExtension(c.req.query("ext"), contentType);
+  if (ext === "svg" || ext === "html" || ext === "htm" || ext === "xml") {
+    return c.json({ success: false, error: "対応していない画像形式です" }, 400);
+  }
   const rawSecret = generateHexSecret(12);
   const originalKey = `gallery-raw/${teamId}/${photo.albumId}/${photo.id}_${rawSecret}_orig.${ext}`;
 
-  const contentLengthHeader = Number(c.req.header("content-length") || 0);
-  const querySize = Number(c.req.query("size") || 0);
   let storedBytes = 0;
 
   if (c.req.raw.body && contentLengthHeader > 0) {
@@ -1566,6 +1646,12 @@ app.put("/photos/:photoId/original", async (c) => {
     storedBytes = contentLengthHeader;
   } else {
     const rawBuf = await c.req.arrayBuffer();
+    if (rawBuf.byteLength > maxRawBytes) {
+      return c.json(
+        { success: false, error: "元データサイズは1枚あたり30MB以下にしてください" },
+        413
+      );
+    }
     await c.env.BUCKET.put(originalKey, rawBuf, {
       httpMetadata: { contentType },
     });

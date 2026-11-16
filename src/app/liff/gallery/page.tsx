@@ -1975,6 +1975,11 @@ function LiffGalleryContent() {
                   </label>
                 </div>
 
+                {/* 肖像権・SNS無断転載禁止・EXIF注意書き */}
+                <p className="px-3 py-2 rounded-xl border border-amber-500/35 bg-amber-500/10 text-[11px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
+                  ※相手チーム選手等の肖像権にご配慮ください。写真のSNS等への無断転載は禁止です（7日間元データ保存時は撮影時のEXIF情報が含まれる場合があります）。
+                </p>
+
                 {/* アップロード進捗バー */}
                 {isUploading && uploadProgress && (
                   <div className="rounded-2xl border-2 border-primary bg-[#0f172a] text-white p-3.5 space-y-2">

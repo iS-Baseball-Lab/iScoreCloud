@@ -1137,29 +1137,52 @@ export default function LiffAdminTeamsPage() {
                 )}
               </div>
 
-              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateClubOpen(false)}
-                  className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
-                >
-                  閉じる
-                </button>
+              <div className="px-4 pt-2.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card space-y-2.5 shrink-0">
                 {isLoggedIn && (
+                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    チーム作成により、
+                    <Link
+                      href="/liff/terms"
+                      onClick={() => setIsCreateClubOpen(false)}
+                      className="text-primary font-black underline underline-offset-2 hover:opacity-80 mx-0.5"
+                    >
+                      利用規約
+                    </Link>
+                    ・
+                    <Link
+                      href="/liff/privacy"
+                      onClick={() => setIsCreateClubOpen(false)}
+                      className="text-primary font-black underline underline-offset-2 hover:opacity-80 mx-0.5"
+                    >
+                      プライバシーポリシー
+                    </Link>
+                    に同意し、未成年の選手情報を登録する際は保護者の同意を得ることを確認します。
+                  </p>
+                )}
+                <div className="flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    disabled={isCreatingClub}
-                    onClick={() => void handleCreateNewClub()}
-                    className="h-10 px-5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    onClick={() => setIsCreateClubOpen(false)}
+                    className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
                   >
-                    {isCreatingClub ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4" />
-                    )}
-                    <span>チームを作成する</span>
+                    閉じる
                   </button>
-                )}
+                  {isLoggedIn && (
+                    <button
+                      type="button"
+                      disabled={isCreatingClub}
+                      onClick={() => void handleCreateNewClub()}
+                      className="h-10 px-5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isCreatingClub ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      <span>チームを作成する</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>,

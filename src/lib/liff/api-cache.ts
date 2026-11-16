@@ -1,7 +1,9 @@
 // filepath: src/lib/liff/api-cache.ts
 import {
+  resolveActiveLiffAccessTokenFromSdk,
   resolveActiveLiffUserIdFromSdk,
   resolveActiveLiffUserNameFromSdk,
+  waitForInitialLiffSdkReady,
 } from "@/lib/liff/liff-client";
 import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 
@@ -279,6 +281,128 @@ function shouldAttachClientAuthHeaders(rawUrl: string): boolean {
   }
 }
 
+const LIFF_SESSION_PROOF_STORAGE_KEY = "iscore_liff_session_v1";
+
+interface StoredLiffSessionProofRecord {
+  userId: string;
+  token: string;
+  savedAt: number;
+}
+
+function decodeProofPayloadPreview(
+  token: string
+): { uid?: string; exp?: number } | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[0] !== "v1") return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "===".slice((b64.length + 3) % 4);
+    const json = atob(padded);
+    const parsed = JSON.parse(json) as { uid?: unknown; exp?: unknown };
+    return {
+      uid: typeof parsed.uid === "string" ? parsed.uid : undefined,
+      exp: typeof parsed.exp === "number" ? parsed.exp : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearStoredLiffSessionProof(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(LIFF_SESSION_PROOF_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function saveStoredLiffSessionProof(userId: string, token: string): void {
+  if (typeof window === "undefined") return;
+  const cleanToken = token.trim();
+  if (!cleanToken) return;
+  const preview = decodeProofPayloadPreview(cleanToken);
+  const resolvedUid = (preview?.uid || userId || "").trim();
+  if (!resolvedUid) return;
+  try {
+    const record: StoredLiffSessionProofRecord = {
+      userId: resolvedUid,
+      token: cleanToken,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(LIFF_SESSION_PROOF_STORAGE_KEY, JSON.stringify(record));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getStoredLiffSessionProof(expectedUserId?: string): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = localStorage.getItem(LIFF_SESSION_PROOF_STORAGE_KEY);
+    if (!raw) return "";
+    const parsed = JSON.parse(raw) as Partial<StoredLiffSessionProofRecord>;
+    const token = typeof parsed.token === "string" ? parsed.token.trim() : "";
+    const storedUid = typeof parsed.userId === "string" ? parsed.userId.trim() : "";
+    if (!token || !storedUid) return "";
+
+    const cleanExpected = (expectedUserId || "").trim();
+    if (
+      cleanExpected &&
+      !IGNORED_CLIENT_USER_IDS.has(cleanExpected) &&
+      storedUid !== cleanExpected
+    ) {
+      return "";
+    }
+
+    const preview = decodeProofPayloadPreview(token);
+    if (!preview || !preview.exp) {
+      localStorage.removeItem(LIFF_SESSION_PROOF_STORAGE_KEY);
+      return "";
+    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (preview.exp <= nowSec + 60) {
+      localStorage.removeItem(LIFF_SESSION_PROOF_STORAGE_KEY);
+      return "";
+    }
+    if (preview.uid && preview.uid !== storedUid) {
+      localStorage.removeItem(LIFF_SESSION_PROOF_STORAGE_KEY);
+      return "";
+    }
+    return token;
+  } catch {
+    return "";
+  }
+}
+
+export function hasStoredLiffSessionProof(expectedUserId?: string): boolean {
+  return Boolean(getStoredLiffSessionProof(expectedUserId));
+}
+
+function captureLiffSessionProofFromResponse(res: Response): void {
+  try {
+    if (res.headers.get("x-liff-auth-invalid") === "1" || res.status === 401) {
+      clearStoredLiffSessionProof();
+      return;
+    }
+    const issued = res.headers.get("x-liff-session-token")?.trim() || "";
+    if (issued) {
+      saveStoredLiffSessionProof(getActiveClientUserId(), issued);
+    }
+  } catch {
+    // ignore header access errors
+  }
+}
+
+async function ensureClientAuthReadyIfNeeded(rawUrl: string): Promise<void> {
+  if (!shouldAttachClientAuthHeaders(rawUrl)) return;
+  const uid = getActiveClientUserId();
+  if (!uid) return;
+  if (hasStoredLiffSessionProof(uid)) return;
+  if (resolveActiveLiffAccessTokenFromSdk()) return;
+  await waitForInitialLiffSdkReady(2_200);
+}
+
 function withSameOriginApiAuthHeaders(
   rawUrl: string,
   input: RequestInfo | URL,
@@ -289,13 +413,26 @@ function withSameOriginApiAuthHeaders(
   }
   const uid = getActiveClientUserId();
   const uName = getActiveClientUserName();
-  if (!uid && !uName) {
+  const sessionProof = getStoredLiffSessionProof(uid || undefined);
+  const accessToken = !sessionProof ? resolveActiveLiffAccessTokenFromSdk() : "";
+
+  if (!uid && !uName && !sessionProof && !accessToken) {
     return { nextInput: input, nextInit: init };
   }
   try {
     const headers = new Headers(
       init?.headers || (input instanceof Request ? input.headers : undefined)
     );
+    if (sessionProof && !headers.has("x-liff-session-token")) {
+      headers.set("X-Liff-Session-Token", sessionProof);
+    }
+    if (
+      accessToken &&
+      /^[\x20-\x7E]+$/.test(accessToken) &&
+      !headers.has("x-liff-access-token")
+    ) {
+      headers.set("X-Liff-Access-Token", accessToken);
+    }
     if (uid && /^[\x20-\x7E]+$/.test(uid) && !headers.has("x-liff-user-id")) {
       headers.set("X-Liff-User-Id", uid);
     }
@@ -381,6 +518,14 @@ function shouldPersistResponseToCache(key: string, data: unknown): boolean {
     Boolean(getActiveClientUserId()) ||
     (pathPart.includes("userId=") && !pathPart.includes("userId=&")) ||
     (pathPart.includes("userName=") && !pathPart.includes("userName=&"));
+
+  if (
+    hasIdentityQuery &&
+    pathPart.startsWith("/api/liff/hub") &&
+    record.authVerified === false
+  ) {
+    return false;
+  }
 
   if (hasIdentityQuery && pathPart.startsWith("/api/liff/attendance-matrix")) {
     const myInfo = record.myInfo as
@@ -668,7 +813,8 @@ async function executeGetSnapshotWithRetry(params: {
     }
 
     try {
-      // リトライ時は直前に LIFF SDK 側で解決・自己修復された最新 userId ヘッダーを再付与し、cache: "reload" でハーフオープン接続を回避
+      await ensureClientAuthReadyIfNeeded(params.rawUrl);
+      // リトライ時は直前に LIFF SDK 側で解決・自己修復された最新 userId / セッショントークンを再付与し、cache: "reload" でハーフオープン接続を回避
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(
         params.rawUrl,
         params.input,
@@ -679,6 +825,17 @@ async function executeGetSnapshotWithRetry(params: {
         cache: attempt === 0 ? "no-store" : "reload",
         signal: attemptController.signal,
       });
+
+      captureLiffSessionProofFromResponse(res);
+
+      if (
+        res.status === 401 &&
+        attempt + 1 < totalAttempts &&
+        Boolean(resolveActiveLiffAccessTokenFromSdk())
+      ) {
+        await sleepMs(60);
+        continue;
+      }
 
       const contentType = res.headers.get("content-type") || "";
       const bodyText = await res.text();
@@ -1035,12 +1192,26 @@ export function installLiffFastFetchCache(): void {
 
     // 2. キャッシュ対象外の `/api/*`（認証API・画像バイナリ・ポーリング専用API等）はヘッダー付与済みでそのまま委譲
     if (!cacheKey) {
+      await ensureClientAuthReadyIfNeeded(rawUrl);
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
-      return baseFetch(nextInput, nextInit);
+      const res = await baseFetch(nextInput, nextInit);
+      captureLiffSessionProofFromResponse(res);
+      if (
+        res.status === 401 &&
+        !(input instanceof Request) &&
+        Boolean(resolveActiveLiffAccessTokenFromSdk())
+      ) {
+        const retriedAuth = withSameOriginApiAuthHeaders(rawUrl, input, init);
+        const retriedRes = await baseFetch(retriedAuth.nextInput, retriedAuth.nextInit);
+        captureLiffSessionProofFromResponse(retriedRes);
+        return retriedRes;
+      }
+      return res;
     }
 
     // 3. 更新系リクエスト（POST / PUT / PATCH / DELETE）：ハング防止タイムアウト保護＋完了時1回のみキャッシュ無効化
     if (method !== "GET") {
+      await ensureClientAuthReadyIfNeeded(rawUrl);
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
       const callerMutationSignal =
         init?.signal || (input instanceof Request ? input.signal : null);
@@ -1059,10 +1230,24 @@ export function installLiffFastFetchCache(): void {
         callerMutationSignal
       );
       try {
-        const res = await baseFetch(nextInput, {
+        let res = await baseFetch(nextInput, {
           ...nextInit,
           signal: mutController.signal,
         });
+        captureLiffSessionProofFromResponse(res);
+        if (
+          res.status === 401 &&
+          !(input instanceof Request) &&
+          !(typeof ReadableStream !== "undefined" && init?.body instanceof ReadableStream) &&
+          Boolean(resolveActiveLiffAccessTokenFromSdk())
+        ) {
+          const retriedAuth = withSameOriginApiAuthHeaders(rawUrl, input, init);
+          res = await baseFetch(retriedAuth.nextInput, {
+            ...retriedAuth.nextInit,
+            signal: mutController.signal,
+          });
+          captureLiffSessionProofFromResponse(res);
+        }
         return res;
       } finally {
         cleanupMut();

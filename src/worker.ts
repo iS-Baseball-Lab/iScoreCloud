@@ -37,28 +37,100 @@ import liffGalleryRoute from './api/liff/gallery'
 import liffAdminMgmtRoute from './api/liff/admin-management'
 import documentsRoute from './api/documents'
 import {
+  buildClearLiffSessionCookieHeader,
+  buildLiffSessionSetCookieHeader,
   createLiffTeamIsolationMiddleware,
   createSharedApiTeamIsolationMiddleware,
+  sanitizeIncomingApiRequest,
 } from './lib/team-access'
 import type { WorkerEnv } from './types/api'
 
+const STATIC_TRUSTED_ORIGINS = new Set([
+  'https://iscorecloud.com',
+  'https://www.iscorecloud.com',
+  'https://liff.line.me',
+  'https://miniapp.line.me',
+])
+
+const LOCAL_DEV_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:8787',
+  'http://127.0.0.1:8787',
+])
+
+function resolveAllowedCorsOrigin(
+  origin: string,
+  reqUrl: URL,
+  env: WorkerEnv
+): string | null {
+  if (!origin) return null
+  const cleanOrigin = origin.trim().replace(/\/+$/, '')
+  if (cleanOrigin === reqUrl.origin) return origin
+  if (STATIC_TRUSTED_ORIGINS.has(cleanOrigin)) return origin
+
+  const configuredAuthOrigin = (env.BETTER_AUTH_URL || '').trim().replace(/\/+$/, '')
+  if (configuredAuthOrigin && cleanOrigin === configuredAuthOrigin) {
+    return origin
+  }
+
+  const isLocalReq =
+    reqUrl.hostname === 'localhost' || reqUrl.hostname === '127.0.0.1'
+  if (isLocalReq && LOCAL_DEV_ORIGINS.has(cleanOrigin)) {
+    return origin
+  }
+
+  return null
+}
+
+function applySecurityHeaders(headers: Headers, isHttps: boolean): void {
+  if (!headers.has('X-Content-Type-Options')) {
+    headers.set('X-Content-Type-Options', 'nosniff')
+  }
+  if (!headers.has('Referrer-Policy')) {
+    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  }
+  if (!headers.has('Permissions-Policy')) {
+    headers.set(
+      'Permissions-Policy',
+      'geolocation=(self), camera=(self), microphone=()'
+    )
+  }
+  if (isHttps && !headers.has('Strict-Transport-Security')) {
+    headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains'
+    )
+  }
+}
+
 const app = new Hono<{ Bindings: WorkerEnv }>()
 
-// 🌟 CORSを全APIルートに適用（Better-Auth Cookie認証とLINE内ブラウザ/LIFF双方に対応）
-app.use('*', cors({
-  origin: (origin) => origin || '*',
-  credentials: true,
-  allowHeaders: [
-    'Content-Type',
-    'Authorization',
-    'X-Liff-User-Id',
-    'X-Liff-User-Name',
-    'X-iScore-Bypass-Cache',
-  ],
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  exposeHeaders: ['Content-Length'],
-  maxAge: 86400,
-}))
+// 🌟 CORSを全APIルートに適用（信頼済みオリジンのみに厳格制限）
+app.use('*', async (c, next) => {
+  const reqUrl = new URL(c.req.url)
+  const corsMiddleware = cors({
+    origin: (origin) => resolveAllowedCorsOrigin(origin, reqUrl, c.env),
+    credentials: true,
+    allowHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Liff-Access-Token',
+      'X-Liff-Session-Token',
+      'X-Liff-User-Id',
+      'X-Liff-User-Name',
+      'X-iScore-Bypass-Cache',
+    ],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    exposeHeaders: [
+      'Content-Length',
+      'X-Liff-Session-Token',
+      'X-Liff-Auth-Invalid',
+    ],
+    maxAge: 86400,
+  })
+  return corsMiddleware(c, next)
+})
 
 // 🛡️ チーム所属・招待承認ステータスによる厳格なアクセス隔離ガード
 app.use(
@@ -125,27 +197,53 @@ app.route('/api/venues', venuesRoute)
 export default {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext) {
     const url = new URL(request.url)
+    const isHttps = url.protocol === 'https:'
 
     // 💡 規約: API パスは Hono に、静的アセットは ASSETS (Cloudflare Workers) に振り分け
     if (url.pathname.startsWith('/api/')) {
-      const apiRes = await app.fetch(request, env, ctx)
-      // 認証コールバック（Set-Cookie・302リダイレクト）や画像配信は生レスポンスをそのまま返却し、通常の2xx JSON APIのみHTTPキャッシュ抑止を付与
+      const {
+        sanitizedRequest,
+        issuedSessionToken,
+        clearInvalidSessionProof,
+      } = await sanitizeIncomingApiRequest(request, env)
+      const apiRes = await app.fetch(sanitizedRequest, env, ctx)
+
+      // Better-Auth コールバック（複数 Set-Cookie・302リダイレクト）はヘッダー構造を壊さず生返却
+      if (url.pathname.startsWith('/api/auth/')) {
+        return apiRes
+      }
+
+      const headers = new Headers(apiRes.headers)
+      applySecurityHeaders(headers, isHttps)
+
+      if (issuedSessionToken) {
+        headers.set('X-Liff-Session-Token', issuedSessionToken)
+        headers.append(
+          'Set-Cookie',
+          buildLiffSessionSetCookieHeader(issuedSessionToken, isHttps)
+        )
+      } else if (clearInvalidSessionProof) {
+        headers.set('X-Liff-Auth-Invalid', '1')
+        headers.append(
+          'Set-Cookie',
+          buildClearLiffSessionCookieHeader(isHttps)
+        )
+      }
+
       if (
         !url.pathname.startsWith('/api/images/') &&
         !url.pathname.startsWith('/api/liff/gallery/media/') &&
-        !url.pathname.startsWith('/api/auth/') &&
         apiRes.status < 300 &&
-        !apiRes.headers.has('Cache-Control')
+        !headers.has('Cache-Control')
       ) {
-        const headers = new Headers(apiRes.headers)
         headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
-        return new Response(apiRes.body, {
-          status: apiRes.status,
-          statusText: apiRes.statusText,
-          headers,
-        })
       }
-      return apiRes
+
+      return new Response(apiRes.body, {
+        status: apiRes.status,
+        statusText: apiRes.statusText,
+        headers,
+      })
     }
 
     // 🔗 旧Web版廃止後の規約・プライバシーポリシーURL互換リダイレクト（OAuth同意画面・LINE審査リンク保護）
@@ -186,6 +284,7 @@ export default {
 
     if (url.pathname.startsWith('/_next/static/')) {
       const headers = new Headers(assetRes.headers)
+      applySecurityHeaders(headers, isHttps)
       headers.set('Cache-Control', 'public, max-age=31536000, immutable')
       return new Response(assetRes.body, {
         status: assetRes.status,
@@ -197,6 +296,7 @@ export default {
     const contentType = assetRes.headers.get('content-type') || ''
     if (contentType.includes('text/html') || url.pathname.endsWith('.txt')) {
       const headers = new Headers(assetRes.headers)
+      applySecurityHeaders(headers, isHttps)
       headers.set('Cache-Control', 'no-cache, no-store, must-revalidate')
       return new Response(assetRes.body, {
         status: assetRes.status,

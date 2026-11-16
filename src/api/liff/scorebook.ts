@@ -6178,34 +6178,21 @@ async function resolveLegendImagePart(
     const idx = legendUrl.indexOf(marker);
     if (idx !== -1 && c.env.BUCKET) {
       const r2Key = legendUrl.slice(idx + marker.length);
-      const obj = await c.env.BUCKET.get(r2Key);
-      if (obj) {
-        const buf = await obj.arrayBuffer();
-        if (buf.byteLength <= 2_500_000) {
-          return cacheAndReturn({
-            inlineData: {
-              mimeType: obj.httpMetadata?.contentType || "image/png",
-              data: arrayBufferToBase64(buf),
-            },
-          });
+      const expectedPrefix = `teams/legend-${teamId}-`;
+      if (r2Key.startsWith(expectedPrefix) && !r2Key.includes("..")) {
+        const obj = await c.env.BUCKET.get(r2Key);
+        if (obj) {
+          const buf = await obj.arrayBuffer();
+          if (buf.byteLength <= 2_500_000) {
+            return cacheAndReturn({
+              inlineData: {
+                mimeType: obj.httpMetadata?.contentType || "image/png",
+                data: arrayBufferToBase64(buf),
+              },
+            });
+          }
+          return cacheAndReturn(null);
         }
-        return cacheAndReturn(null);
-      }
-    }
-
-    const targetUrl = legendUrl.startsWith("/")
-      ? `${new URL(c.req.url).origin}${legendUrl}`
-      : legendUrl;
-    const res = await fetch(targetUrl);
-    if (res.ok) {
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength <= 2_500_000) {
-        return cacheAndReturn({
-          inlineData: {
-            mimeType: res.headers.get("content-type") || "image/png",
-            data: arrayBufferToBase64(buf),
-          },
-        });
       }
     }
   } catch (err) {

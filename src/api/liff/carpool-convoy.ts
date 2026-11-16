@@ -1,18 +1,21 @@
 // filepath: src/api/liff/carpool-convoy.ts
 import { Hono } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
-import { getAuth } from "@/lib/auth";
 import { canManageSystem, canManageTeam } from "@/lib/roles";
+import {
+  resolveCallerTeamAccess,
+  type ResolvedSessionUser,
+} from "@/lib/team-access";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import {
   expandGoogleMapsShortUrl,
   extractDirectionsTargetFromUrl,
   extractLatLngFromGoogleMapsUrl,
 } from "@/lib/google-maps";
-import type { AuthUser, WorkerEnv } from "@/types/api";
+import type { WorkerEnv } from "@/types/api";
 import type {
   ConvoyDirection,
   ConvoyLocationUpdatePayload,
@@ -29,9 +32,7 @@ const {
   organizationMembers,
   teams,
   teamMembers,
-  players,
   user: userTable,
-  account,
   events,
   matches,
   venues,
@@ -43,8 +44,6 @@ const {
 
 /** 6時間を超えた古い位置レコードは自動失効扱いとする（自宅・翌日以降の意図せぬ残存を完全遮断） */
 const LIVE_LOCATION_TTL_MS = 6 * 60 * 60 * 1000;
-
-const IGNORED_MOCK_USER_IDS = new Set(["cached-user", "mock-user-12345"]);
 
 const VALID_DIRECTIONS = new Set<ConvoyDirection>(["outbound", "return"]);
 const VALID_STATUSES = new Set<ConvoyVehicleStatus>([
@@ -96,47 +95,6 @@ function clampFiniteNumber(
   if (typeof val !== "number" || !Number.isFinite(val)) return null;
   if (val < min || val > max) return null;
   return val;
-}
-
-async function expandCandidateUserIds(
-  db: ReturnType<typeof drizzle>,
-  rawIds: Array<string | null | undefined>
-): Promise<string[]> {
-  const idSet = new Set<string>();
-  for (const raw of rawIds) {
-    const trimmed = raw?.trim();
-    if (trimmed && !IGNORED_MOCK_USER_IDS.has(trimmed)) {
-      idSet.add(trimmed);
-    }
-  }
-  if (idSet.size === 0) return [];
-
-  try {
-    const initialIds = Array.from(idSet);
-    const linkedRows = await db
-      .select({ userId: account.userId, accountId: account.accountId })
-      .from(account)
-      .where(
-        or(
-          inArray(account.accountId, initialIds),
-          inArray(account.userId, initialIds)
-        )
-      )
-      .all();
-
-    for (const row of linkedRows) {
-      if (row.userId && !IGNORED_MOCK_USER_IDS.has(row.userId)) {
-        idSet.add(row.userId);
-      }
-      if (row.accountId && !IGNORED_MOCK_USER_IDS.has(row.accountId)) {
-        idSet.add(row.accountId);
-      }
-    }
-  } catch {
-    // ignore account lookup errors
-  }
-
-  return Array.from(idSet);
 }
 
 function resolveEnvGoogleMapsKey(env: WorkerEnv): string | null {
@@ -213,10 +171,8 @@ async function resolveMapsKeyAccess(params: {
   };
   allMembers: TeamMemberRow[];
   expandedIds: string[];
-  rawUserId: string;
   rawUserName: string;
-  sessionUser: AuthUser | undefined;
-  bindUnlinkedMemberOnNameMatch?: boolean;
+  sessionUser: ResolvedSessionUser | null | undefined;
 }): Promise<{
   allowed: boolean;
   matchedMember: TeamMemberRow | null;
@@ -226,10 +182,8 @@ async function resolveMapsKeyAccess(params: {
     teamRow,
     allMembers,
     expandedIds,
-    rawUserId,
     rawUserName,
     sessionUser,
-    bindUnlinkedMemberOnNameMatch = false,
   } = params;
 
   const candidateIdSet = new Set<string>(expandedIds);
@@ -241,57 +195,35 @@ async function resolveMapsKeyAccess(params: {
   const idMatchedMembers = allMembers.filter(
     (m) => Boolean(m.userId && candidateIdSet.has(m.userId))
   );
+  const idVerifiedPrivilegedMember =
+    idMatchedMembers.find(
+      (m) =>
+        m.status !== "pending" &&
+        hasMapsKeyMemberPrivilege(m.role, m.subRoles, true)
+    ) || null;
   let matchedMember: TeamMemberRow | null =
-    idMatchedMembers.find((m) =>
-      hasMapsKeyMemberPrivilege(m.role, m.subRoles, true)
-    ) ||
-    idMatchedMembers[0] ||
-    null;
+    idVerifiedPrivilegedMember || idMatchedMembers[0] || null;
 
-  // 2. 氏名一致によるフォールバック照合（LIFF初回や未紐付けのIT管理者・指導者救済）
+  // 2. 氏名一致は userId 未連携メンバーの号車ハイライト表示用にのみ使用（DB自動書込・管理者権限付与は厳禁）
   if (!matchedMember && targetNormNames.length > 0) {
-    const nameMatchedMembers = allMembers.filter((m) => {
+    const nameMatchedUnlinked = allMembers.filter((m) => {
+      if (m.userId || m.status === "pending") return false;
       const norm = normalizePersonName(m.name);
       return norm.length >= 2 && targetNormNames.includes(norm);
     });
-    const byName =
-      nameMatchedMembers.find((m) =>
-        hasMapsKeyMemberPrivilege(m.role, m.subRoles, true)
-      ) ||
-      nameMatchedMembers[0] ||
-      null;
-
-    if (byName) {
-      matchedMember = byName;
-      const bindUid =
-        (rawUserId && !IGNORED_MOCK_USER_IDS.has(rawUserId) ? rawUserId : "") ||
-        sessionUser?.id ||
-        "";
-      if (bindUnlinkedMemberOnNameMatch && bindUid && !byName.userId) {
-        try {
-          await db
-            .update(teamMembers)
-            .set({ userId: bindUid })
-            .where(eq(teamMembers.id, byName.id));
-        } catch {
-          // ignore non-critical auto-bind error
-        }
-      }
+    if (nameMatchedUnlinked.length === 1) {
+      matchedMember = nameMatchedUnlinked[0];
     }
   }
 
-  // Fast-path 判定（追加クエリ0回で即決できるケース）
+  // Fast-path 判定（追加クエリ0回で即決できるケース — 必ずID検証済み根拠のみ）
   if (isSystemAdminRoleValue(sessionUser?.role)) {
     return { allowed: true, matchedMember };
   }
   if (teamRow.createdBy && candidateIdSet.has(teamRow.createdBy)) {
     return { allowed: true, matchedMember };
   }
-  if (
-    matchedMember &&
-    matchedMember.status !== "pending" &&
-    hasMapsKeyMemberPrivilege(matchedMember.role, matchedMember.subRoles, true)
-  ) {
+  if (idVerifiedPrivilegedMember) {
     return { allowed: true, matchedMember };
   }
 
@@ -346,14 +278,10 @@ async function resolveMapsKeyAccess(params: {
     .map((t) => t.id)
     .filter((id) => id !== teamRow.id);
 
-  if (
-    otherTeamIds.length > 0 &&
-    (expandedIds.length > 0 || targetNormNames.length > 0)
-  ) {
+  if (otherTeamIds.length > 0 && expandedIds.length > 0) {
     const siblingMembers = await db
       .select({
         userId: teamMembers.userId,
-        name: teamMembers.name,
         role: teamMembers.role,
         subRoles: teamMembers.subRoles,
         status: teamMembers.status,
@@ -365,7 +293,6 @@ async function resolveMapsKeyAccess(params: {
         () =>
           [] as Array<{
             userId: string | null;
-            name: string | null;
             role: string;
             subRoles: string | null;
             status: string;
@@ -374,12 +301,8 @@ async function resolveMapsKeyAccess(params: {
 
     const hasSiblingAdmin = siblingMembers.some((m) => {
       if (m.status === "pending") return false;
-      const idMatch = Boolean(m.userId && candidateIdSet.has(m.userId));
-      const norm = normalizePersonName(m.name);
-      const nameMatch =
-        norm.length >= 2 && targetNormNames.includes(norm);
-      if (!idMatch && !nameMatch) return false;
-      // 同一クラブ他編成のIT管理者 (admin) / 監督・代表 (manager) / owner はクラブ共通キーを設定可能
+      if (!m.userId || !candidateIdSet.has(m.userId)) return false;
+      // 同一クラブ他編成のIT管理者 (admin) / 監督・代表 (manager) / owner はクラブ共通キーを設定可能（ID検証済みのみ）
       return hasMapsKeyMemberPrivilege(m.role, m.subRoles, false);
     });
 
@@ -392,13 +315,12 @@ async function resolveMapsKeyAccess(params: {
 }
 
 function buildDemoSnapshot(
-  env: WorkerEnv,
+  _env: WorkerEnv,
   direction: ConvoyDirection
 ): ConvoySnapshotResponse {
   const now = Date.now();
   // デモ用：緩やかに進行する1〜3号車（多摩川緑地野球場周辺）
   const phase = ((now / 1000) % 120) / 120; // 0.0 -> 1.0 over 2 min
-  const envKey = resolveEnvGoogleMapsKey(env);
 
   const stadium: ConvoyTargetLocationInfo = {
     name: "多摩川緑地野球場 第1駐車場",
@@ -475,8 +397,8 @@ function buildDemoSnapshot(
     eventId: "demo-event-carpool",
     direction,
     serverTime: now,
-    googleMapsApiKey: envKey,
-    googleMapsKeySource: envKey ? "env" : "none",
+    googleMapsApiKey: null,
+    googleMapsKeySource: "none",
     canConfigureMapsKey: false,
     myAssignedCarpoolId: "demo-cp-1",
     myDisplayName: "鈴木 パパ",
@@ -530,7 +452,6 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
   const teamId = (c.req.query("teamId") || "").trim();
   const eventIdParam = (c.req.query("eventId") || "").trim();
   const direction = normalizeDirection(c.req.query("direction"));
-  const rawUserId = (c.req.query("userId") || "").trim();
   const rawUserName = (c.req.query("userName") || "").trim();
 
   if (!teamId || teamId === "demo-team" || eventIdParam === "demo-event-carpool") {
@@ -539,6 +460,14 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
 
   try {
     await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        { success: false, error: "このチームのデータへのアクセス権限がありません" },
+        403
+      );
+    }
+
     const db = drizzle(c.env.DB);
     const now = Date.now();
 
@@ -548,7 +477,6 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
       allMembers,
       familyRows,
       allVenues,
-      authSession,
     ] = await Promise.all([
       db
         .select({
@@ -586,9 +514,6 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         .all()
         .catch(() => [] as Array<{ parentId: string; childId: string }>),
       db.select().from(venues).all().catch(() => []),
-      getAuth(c.env.DB, c.env)
-        .api.getSession({ headers: c.req.raw.headers })
-        .catch(() => null),
     ]);
 
     if (!teamRow) {
@@ -606,11 +531,9 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
       : "none";
 
     // 本人照合 & 管理権限判定（IT管理者・監督・指導者・クラブ共通権限）
-    const sessionUser = authSession?.user as AuthUser | undefined;
-    const expandedIds = await expandCandidateUserIds(db, [
-      rawUserId,
-      sessionUser?.id,
-    ]);
+    const sessionUser = access.sessionUser;
+    const expandedIds = access.candidateUserIds;
+    const effectiveUserName = access.primaryUserName || rawUserName;
 
     const { allowed: canConfigureMapsKey, matchedMember } =
       await resolveMapsKeyAccess({
@@ -618,15 +541,13 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         teamRow,
         allMembers,
         expandedIds,
-        rawUserId,
-        rawUserName,
+        rawUserName: effectiveUserName,
         sessionUser,
-        bindUnlinkedMemberOnNameMatch: false,
       });
 
     const myDisplayName =
       matchedMember?.name?.trim() ||
-      rawUserName ||
+      effectiveUserName ||
       sessionUser?.name?.trim() ||
       null;
 
@@ -968,10 +889,27 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
     }
 
     await ensureAllSchemasOnce(c.env.DB);
-    const db = drizzle(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canMutateTeamData(teamId)) {
+      return c.json(
+        { success: false, error: "このチームの位置情報を更新する権限がありません" },
+        403
+      );
+    }
 
     const isTestConvoy =
       eventId === TEST_CONVOY_EVENT_ID && TEST_CARPOOL_IDS.has(carpoolId);
+    if (isTestConvoy && !access.canManagePlayersForTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "テスト隊列モードの位置送信には指導者・管理者権限が必要です",
+        },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB);
     const rowId = isTestConvoy
       ? `${teamId}:${carpoolId}:${direction}`
       : `${carpoolId}:${direction}`;
@@ -980,7 +918,7 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
     const [carpoolCheck, existingRow] = await Promise.all([
       isTestConvoy
         ? db
-            .select({ id: teams.id })
+            .select({ id: teams.id, driverId: teams.createdBy })
             .from(teams)
             .where(eq(teams.id, teamId))
             .get()
@@ -988,6 +926,7 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
             .select({
               carpoolId: eventCarpools.id,
               eventTeamId: events.teamId,
+              driverId: eventCarpools.driverId,
             })
             .from(eventCarpools)
             .innerJoin(events, eq(eventCarpools.eventId, events.id))
@@ -1010,7 +949,62 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
       return c.json({ success: false, error: "対象の配車枠が見つかりません" }, 404);
     }
 
-    const now = Math.max(Date.now(), (existingRow?.updatedAt ?? 0) + 1);
+    // 他メンバーが現在アクティブ発信中（60秒以内）の号車に対する無関係メンバーからの乗っ取り更新を防止
+    const realNow = Date.now();
+    if (
+      !isTestConvoy &&
+      existingRow?.isSharing &&
+      realNow - existingRow.updatedAt <= 60_000 &&
+      existingRow.senderUserId &&
+      !access.candidateUserIds.includes(existingRow.senderUserId) &&
+      !access.canManagePlayersForTeam(teamId)
+    ) {
+      const callerMemberId = access.teamRoles.get(teamId)?.memberId || "";
+      let isAssignedToCar =
+        Boolean(callerMemberId) && carpoolCheck.driverId === callerMemberId;
+
+      if (!isAssignedToCar && callerMemberId) {
+        const [riders, familyLinks] = await Promise.all([
+          db
+            .select({
+              memberId: eventCarpoolRiders.memberId,
+              playerId: eventCarpoolRiders.playerId,
+            })
+            .from(eventCarpoolRiders)
+            .where(eq(eventCarpoolRiders.carpoolId, carpoolId))
+            .all(),
+          db
+            .select({ childId: parentChildRelations.childId })
+            .from(parentChildRelations)
+            .where(
+              and(
+                eq(parentChildRelations.teamId, teamId),
+                eq(parentChildRelations.parentId, callerMemberId)
+              )
+            )
+            .all()
+            .catch(() => [] as Array<{ childId: string }>),
+        ]);
+        const childIds = new Set(familyLinks.map((f) => f.childId));
+        isAssignedToCar = riders.some(
+          (r) =>
+            r.memberId === callerMemberId ||
+            Boolean(r.playerId && childIds.has(r.playerId))
+        );
+      }
+
+      if (!isAssignedToCar) {
+        return c.json(
+          {
+            success: false,
+            error: "この号車は現在ほかの乗車メンバーが位置共有中です",
+          },
+          409
+        );
+      }
+    }
+
+    const now = Math.max(realNow, (existingRow?.updatedAt ?? 0) + 1);
     const effectiveSharing = Boolean(body.isSharing) && status !== "arrived";
     const shouldWipeCoords =
       Boolean(body.clearLocation) || (!effectiveSharing && status !== "arrived");
@@ -1037,36 +1031,21 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
         null;
 
     const senderName =
-      (body.userName || "").trim().slice(0, 40) ||
+      (access.primaryUserName || body.userName || "").trim().slice(0, 40) ||
       existingRow?.senderName ||
       null;
     const senderUserId =
-      (body.userId || "").trim().slice(0, 80) ||
-      existingRow?.senderUserId ||
-      null;
+      access.primaryUserId.slice(0, 80) || existingRow?.senderUserId || null;
 
-    await db
-      .insert(carpoolLiveLocations)
-      .values({
-        id: rowId,
-        teamId,
-        eventId,
-        carpoolId,
-        direction,
-        isSharing: effectiveSharing,
-        status,
-        latitude: nextLat,
-        longitude: nextLng,
-        heading: nextHeading,
-        speedKmh: nextSpeed,
-        accuracyM: nextAccuracy,
-        senderUserId,
-        senderName,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: carpoolLiveLocations.id,
-        set: {
+    await Promise.all([
+      db
+        .insert(carpoolLiveLocations)
+        .values({
+          id: rowId,
+          teamId,
+          eventId,
+          carpoolId,
+          direction,
           isSharing: effectiveSharing,
           status,
           latitude: nextLat,
@@ -1077,8 +1056,28 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
           senderUserId,
           senderName,
           updatedAt: now,
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: carpoolLiveLocations.id,
+          set: {
+            isSharing: effectiveSharing,
+            status,
+            latitude: nextLat,
+            longitude: nextLng,
+            heading: nextHeading,
+            speedKmh: nextSpeed,
+            accuracyM: nextAccuracy,
+            senderUserId,
+            senderName,
+            updatedAt: now,
+          },
+        }),
+      // 6時間超の失効済み位置レコードをDB物理削除して座標残存を防止
+      db
+        .delete(carpoolLiveLocations)
+        .where(lt(carpoolLiveLocations.updatedAt, realNow - LIVE_LOCATION_TTL_MS))
+        .catch(() => null),
+    ]);
 
     const savedState: ConvoyVehicleLiveState = {
       carpoolId,
@@ -1122,7 +1121,6 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
     };
     const teamId = (body.teamId || "").trim();
     const cleanedKey = (body.apiKey || "").trim();
-    const rawUserId = (body.userId || "").trim();
     const rawUserName = (body.userName || "").trim();
 
     if (!teamId || teamId === "demo-team") {
@@ -1144,9 +1142,14 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
     }
 
     await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated) {
+      return c.json({ success: false, error: "認証が必要です" }, 401);
+    }
+
     const db = drizzle(c.env.DB);
 
-    const [teamRow, allMembers, authSession] = await Promise.all([
+    const [teamRow, allMembers] = await Promise.all([
       db
         .select({
           id: teams.id,
@@ -1157,30 +1160,19 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
         .where(eq(teams.id, teamId))
         .get(),
       db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
-      getAuth(c.env.DB, c.env)
-        .api.getSession({ headers: c.req.raw.headers })
-        .catch(() => null),
     ]);
 
     if (!teamRow || !teamRow.organizationId) {
       return c.json({ success: false, error: "チーム組織が見つかりません" }, 404);
     }
 
-    const sessionUser = authSession?.user as AuthUser | undefined;
-    const expandedIds = await expandCandidateUserIds(db, [
-      rawUserId,
-      sessionUser?.id,
-    ]);
-
     const { allowed } = await resolveMapsKeyAccess({
       db,
       teamRow,
       allMembers,
-      expandedIds,
-      rawUserId,
-      rawUserName,
-      sessionUser,
-      bindUnlinkedMemberOnNameMatch: true,
+      expandedIds: access.candidateUserIds,
+      rawUserName: access.primaryUserName || rawUserName,
+      sessionUser: access.sessionUser,
     });
 
     if (!allowed) {

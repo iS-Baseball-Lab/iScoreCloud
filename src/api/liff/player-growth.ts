@@ -1757,6 +1757,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
         const adultHits = activeTeamMembers.filter((m) => {
           const roleLower = (m.role || "").toLowerCase();
           if (
+            m.userId ||
             m.memberType === "player" ||
             roleLower === "player" ||
             roleLower === "pending"
@@ -1780,15 +1781,8 @@ liffPlayerGrowthRouter.get("/", async (c) => {
       }
     }
 
-    const canManagePlayers =
-      callerAccess.canManageTeamId(teamId) ||
-      matchedMembers.some((m) => {
-        const r = (m.role || "").toLowerCase();
-        return (
-          GROWTH_PLAYER_MANAGER_ROLES.has(r) ||
-          canManageTeam(m.role, parseSubRolesList(m.subRoles))
-        );
-      });
+    // ⚠️ MED-03: 故障・配慮メモ（privateNote）の復号権限は必ず検証済みアカウントの指導者・管理者ロールのみで判定する
+    const canManagePlayers = callerAccess.canManagePlayersForTeam(teamId);
 
     const {
       byPlayerId: aggregatedPosMap,

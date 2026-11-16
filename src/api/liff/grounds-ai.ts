@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { organizations, teams, venues } from "@/db/schema";
+import { resolveCallerTeamAccess } from "@/lib/team-access";
 import type { WorkerEnv } from "@/types/api";
 
 const liffGroundsAiRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -1268,6 +1269,22 @@ liffGroundsAiRouter.post("/", async (c) => {
       { success: false, error: "施設・球場名を入力してからAI取得を実行してください" },
       400
     );
+  }
+
+  if (teamId !== "demo-team") {
+    const access = await resolveCallerTeamAccess(c);
+    const allowed = teamId
+      ? access.canMutateTeamData(teamId)
+      : access.isSystemAdmin || access.mutableTeamIds.size > 0;
+    if (!allowed) {
+      return c.json(
+        {
+          success: false,
+          error: "グラウンドAI検索を利用するにはチームメンバーとしてログインが必要です",
+        },
+        403
+      );
+    }
   }
 
   const apiKey = c.env.GEMINI_API_KEY;

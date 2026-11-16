@@ -1,12 +1,10 @@
 // filepath: src/api/teams/index.ts
 import { Hono } from 'hono'
-import { getAuth } from "@/lib/auth"
 import { drizzle } from 'drizzle-orm/d1'
-import { teams, teamMembers, organizations } from '@/db/schema'
+import { teams, teamMembers, organizations, organizationMembers } from '@/db/schema'
 import { desc, eq, and, inArray } from 'drizzle-orm'
-import { canManageTeam } from '@/lib/roles'
 import { resolveCallerTeamAccess } from '@/lib/team-access'
-import type { AuthUser, WorkerEnv } from '@/types/api'
+import type { WorkerEnv } from '@/types/api'
 
 // 🌟 members.ts から各ハンドラー関数をインポート
 import { 
@@ -109,24 +107,90 @@ app.get('/', async (c) => {
   return c.json(authorized)
 })
 
-/** 新規チーム作成 */
+/** 新規チーム作成（指定された organizationId の管理権限を厳格検証） */
 app.post('/', async (c) => {
-  const auth = getAuth(c.env.DB, c.env)
-  const session = await auth.api.getSession({ headers: c.req.raw.headers as any })
-  if (!session) return c.json({ error: 'Unauthorized' }, 401)
+  const access = await resolveCallerTeamAccess(c)
+  if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
-  const { name, role, organizationId, year, tier, teamType } = await c.req.json()
+  const body = await c.req.json<{
+    name?: string
+    role?: string
+    organizationId?: string | null
+    year?: number
+    tier?: string | null
+    teamType?: 'regular' | 'practice'
+  }>()
+  const teamName = (body.name || '').trim()
+  if (!teamName) {
+    return c.json({ success: false, error: 'チーム名は必須です' }, 400)
+  }
+
   const db = drizzle(c.env.DB)
 
   try {
+    let targetOrgId = body.organizationId ? body.organizationId.trim() : null
+    if (targetOrgId && !access.isSystemAdmin) {
+      const candidateIds = access.candidateUserIds.length > 0 ? access.candidateUserIds : [access.sessionUser.id]
+      const [orgMember, managedSquadInOrg] = await Promise.all([
+        db.select({ role: organizationMembers.role })
+          .from(organizationMembers)
+          .where(and(
+            eq(organizationMembers.organizationId, targetOrgId),
+            inArray(organizationMembers.userId, candidateIds)
+          ))
+          .get(),
+        db.select({ id: teams.id })
+          .from(teams)
+          .where(eq(teams.organizationId, targetOrgId))
+          .all(),
+      ])
+      const orgRole = (orgMember?.role || '').toUpperCase()
+      const isOrgAdmin = orgRole === 'OWNER' || orgRole === 'ADMIN'
+      const managesExistingSquad = managedSquadInOrg.some((sq) => access.canManageTeamId(sq.id))
+      if (!isOrgAdmin && !managesExistingSquad) {
+        return c.json({ success: false, error: '指定されたクラブにチームを追加する権限がありません' }, 403)
+      }
+    }
+
+    if (!targetOrgId) {
+      targetOrgId = crypto.randomUUID()
+      await db.insert(organizations).values({
+        id: targetOrgId,
+        name: teamName,
+        category: 'other',
+      })
+      await db.insert(organizationMembers).values({
+        id: crypto.randomUUID(),
+        organizationId: targetOrgId,
+        userId: access.sessionUser.id,
+        role: 'OWNER',
+        status: 'active',
+      })
+    }
+
+    const ALLOWED_INITIAL_ROLES = new Set(['admin', 'manager', 'coach', 'scorer', 'staff'])
+    const initialRole = body.role && ALLOWED_INITIAL_ROLES.has(body.role) ? body.role : 'manager'
     const teamId = crypto.randomUUID()
     await db.insert(teams).values({
-      id: teamId, organizationId, name, year: year || new Date().getFullYear(),
-      tier: tier || null, teamType: teamType || 'regular', createdBy: session.user.id,
+      id: teamId,
+      organizationId: targetOrgId,
+      name: teamName,
+      year: body.year || new Date().getFullYear(),
+      tier: body.tier || null,
+      teamType: body.teamType === 'practice' ? 'practice' : 'regular',
+      createdBy: access.sessionUser.id,
     })
-    await db.insert(teamMembers).values({ id: crypto.randomUUID(), teamId, userId: session.user.id, role: role || 'manager', status: 'active' })
+    await db.insert(teamMembers).values({
+      id: crypto.randomUUID(),
+      teamId,
+      userId: access.sessionUser.id,
+      role: initialRole,
+      status: 'active',
+    })
     return c.json({ success: true, teamId })
-  } catch (e) { return c.json({ success: false, error: 'Failed to create team' }, 500) }
+  } catch {
+    return c.json({ success: false, error: 'Failed to create team' }, 500)
+  }
 })
 
 /** チーム基本情報の更新 */
@@ -135,13 +199,23 @@ app.patch('/:id', async (c) => {
   if (!access.sessionUser) return c.json({ error: 'Unauthorized' }, 401)
 
   const teamId = c.req.param('id')
-  const body = await c.req.json()
+  const body = await c.req.json<{
+    name?: string
+    year?: number
+    tier?: string | null
+    teamType?: 'regular' | 'practice'
+    managerName?: string | null
+    homeGround?: string | null
+    scorebookLegendUrl?: string | null
+    logoImageUrl?: string | null
+    description?: string | null
+  }>()
   const db = drizzle(c.env.DB)
 
   try {
     if (!access.canManageTeamId(teamId)) return c.json({ error: '権限がありません' }, 403)
 
-    const updatePayload: Record<string, any> = {};
+    const updatePayload: Partial<typeof teams.$inferInsert> = {};
     if (body.name !== undefined) updatePayload.name = body.name;
     if (body.year !== undefined) updatePayload.year = body.year;
     if (body.tier !== undefined) updatePayload.tier = body.tier;
@@ -178,7 +252,7 @@ app.patch('/:id', async (c) => {
     }
 
     return c.json({ success: true })
-  } catch (e) { return c.json({ success: false, error: 'Failed to update team' }, 500) }
+  } catch { return c.json({ success: false, error: 'Failed to update team' }, 500) }
 })
 
 /** チーム全体の完全削除（解散） */

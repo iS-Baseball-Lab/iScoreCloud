@@ -94,11 +94,11 @@ export const handleJoinTeam = async (c: TeamContext) => {
       joinedAt: new Date(),
     })
 
-    return c.json({ success: true, message: '参加申請を送信しました！' })
+      return c.json({ success: true, message: '参加申請を送信しました！' })
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e)
     console.error("[iScore API Error] チーム参加申請でエラー:", message)
-    return c.json({ success: false, error: '申請処理に失敗しました', details: message }, 500)
+    return c.json({ success: false, error: '申請処理に失敗しました' }, 500)
   }
 }
 
@@ -117,9 +117,8 @@ export const handleSearchTeam = async (c: TeamContext) => {
       .from(teams).where(eq(teams.id, teamId)).get()
     if (!teamData) return c.json({ success: false, error: '指定されたチームが見つかりません' }, 404)
     return c.json({ success: true, team: teamData })
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: '検索に失敗しました', details: message }, 500)
+  } catch {
+    return c.json({ success: false, error: '検索に失敗しました' }, 500)
   }
 }
 
@@ -171,33 +170,56 @@ export const handleGetMembers = async (c: TeamContext) => {
         tm.joined_at ASC
     `).bind(teamId, teamId).all<RawMemberRow>()
 
-    // ② ソーシャルログイン情報 (provider) の取得を試みる（安全設計）
-    const providersMap: Record<string, string[]> = {}
-    try {
-      let accResults: Array<Record<string, unknown>> = []
-      try {
-        accResults = (await c.env.DB.prepare(`SELECT * FROM account`).all<Record<string, unknown>>()).results
-      } catch {
-        accResults = (await c.env.DB.prepare(`SELECT * FROM accounts`).all<Record<string, unknown>>()).results
-      }
-
-      for (const row of accResults) {
-        const uid = String(row.userId || row.user_id || '')
-        const p = String(row.providerId || row.provider_id || row.provider || '')
-        if (uid && p) {
-          if (!providersMap[uid]) providersMap[uid] = []
-          providersMap[uid].push(p)
-        }
-      }
-    } catch {
-      console.warn("[iScore Warning] プロバイダー情報の取得をスキップしました")
-    }
-
-    // ③ フロントエンド用のフォーマットに合体させる（非管理者には pending 行・連絡先・招待コードを非公開）
+    // ② フロントエンド用の可視行を先に確定（非管理者には pending 行・連絡先・招待コード・他者userIdを非公開）
     const visibleRows = canManage
       ? (results || [])
       : (results || []).filter((row) => (row.status || 'active') === 'active')
 
+    // ③ ソーシャルログイン情報 (provider) は可視メンバーの userId のみに限定して取得（全件スキャン＆トークン読込を完全排除）
+    const providersMap: Record<string, string[]> = {}
+    const visibleUserIds = Array.from(
+      new Set(
+        visibleRows
+          .map((row) => row.userId)
+          .filter((uid): uid is string => typeof uid === 'string' && uid.length > 0)
+      )
+    )
+    if (canManage && visibleUserIds.length > 0) {
+      const placeholders = visibleUserIds.map(() => '?').join(',')
+      try {
+        let accResults: Array<Record<string, unknown>> = []
+        try {
+          accResults = (
+            await c.env.DB.prepare(
+              `SELECT userId, providerId FROM account WHERE userId IN (${placeholders})`
+            )
+              .bind(...visibleUserIds)
+              .all<Record<string, unknown>>()
+          ).results
+        } catch {
+          accResults = (
+            await c.env.DB.prepare(
+              `SELECT user_id, provider_id FROM accounts WHERE user_id IN (${placeholders})`
+            )
+              .bind(...visibleUserIds)
+              .all<Record<string, unknown>>()
+          ).results
+        }
+
+        for (const row of accResults) {
+          const uid = String(row.userId || row.user_id || '')
+          const p = String(row.providerId || row.provider_id || row.provider || '')
+          if (uid && p) {
+            if (!providersMap[uid]) providersMap[uid] = []
+            providersMap[uid].push(p)
+          }
+        }
+      } catch {
+        console.warn("[iScore Warning] プロバイダー情報の取得をスキップしました")
+      }
+    }
+
+    const callerCandidateSet = new Set(access.candidateUserIds)
     const formattedMembers = visibleRows.map((row) => {
       let parsedSubRoles: string[] = []
       if (row.subRoles) {
@@ -210,9 +232,10 @@ export const handleGetMembers = async (c: TeamContext) => {
           parsedSubRoles = []
         }
       }
+      const isCallerSelf = Boolean(row.userId && callerCandidateSet.has(row.userId))
       return {
         memberId: row.memberId,
-        userId: row.userId,
+        userId: canManage || isCallerSelf ? row.userId : null,
         role: row.role,
         subRoles: parsedSubRoles,
         status: row.status,
@@ -223,7 +246,7 @@ export const handleGetMembers = async (c: TeamContext) => {
         email: canManage ? (row.memberEmail || row.userEmail || '') : '',
         memberType: row.memberType,
         phone: canManage ? row.phone : null,
-        authProviders: row.userId ? (providersMap[row.userId] || []) : [],
+        authProviders: canManage && row.userId ? (providersMap[row.userId] || []) : [],
       }
     })
 
@@ -233,9 +256,8 @@ export const handleGetMembers = async (c: TeamContext) => {
       inviteCode: canManage ? teamId : '',
       roleSettings,
     })
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : String(e)
-    return c.json({ success: false, error: 'メンバー一覧の取得に失敗しました', details: message }, 500)
+  } catch {
+    return c.json({ success: false, error: 'メンバー一覧の取得に失敗しました' }, 500)
   }
 }
 

@@ -42,6 +42,16 @@ function hasResolvedGoogleMapTarget(urlStr: string): boolean {
   );
 }
 
+const GOOGLE_MAPS_HOST_RE =
+  /^(?:(?:www|maps)\.)?google\.(?:com|co\.jp|[a-z]{2,3}(?:\.[a-z]{2})?)$/i;
+const GOOGLE_SHORT_HOST_RE = /^(?:maps\.app\.goo\.gl|goo\.gl)$/i;
+
+function isTrustedGoogleMapsParsedUrl(parsed: URL): boolean {
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  return GOOGLE_MAPS_HOST_RE.test(host) || GOOGLE_SHORT_HOST_RE.test(host);
+}
+
 /**
  * サーバーサイド（Cloudflare Workers）で短縮URL（maps.app.goo.gl 等）のリダイレクト先を展開する
  */
@@ -51,21 +61,45 @@ export async function expandGoogleMapsShortUrl(rawUrl: string): Promise<string> 
     return cleaned;
   }
 
-  const cached = SHORT_URL_CACHE.get(cleaned);
+  let initialParsed: URL;
+  try {
+    initialParsed = new URL(cleaned);
+  } catch {
+    return "";
+  }
+  if (initialParsed.protocol !== "https:") {
+    initialParsed.protocol = "https:";
+  }
+  if (!GOOGLE_SHORT_HOST_RE.test(initialParsed.hostname.toLowerCase())) {
+    return "";
+  }
+
+  const normalizedShort = initialParsed.toString();
+  const cached = SHORT_URL_CACHE.get(normalizedShort);
   if (cached) {
     return cached;
   }
 
-  let currentUrl = cleaned;
+  let currentUrl = normalizedShort;
 
   try {
     for (let hop = 0; hop < 5; hop++) {
+      let hopParsed: URL;
+      try {
+        hopParsed = new URL(currentUrl);
+      } catch {
+        break;
+      }
+      if (!isTrustedGoogleMapsParsedUrl(hopParsed)) {
+        break;
+      }
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
 
       let res: Response;
       try {
-        res = await fetch(currentUrl, {
+        res = await fetch(hopParsed.toString(), {
           method: "GET",
           redirect: "manual",
           signal: controller.signal,
@@ -81,12 +115,18 @@ export async function expandGoogleMapsShortUrl(rawUrl: string): Promise<string> 
 
       const locationHeader = res.headers.get("location");
       if (locationHeader) {
-        const nextUrl = new URL(locationHeader, currentUrl).toString();
-        currentUrl = nextUrl;
-        if (hasResolvedGoogleMapTarget(currentUrl) || !isGoogleMapsShortUrl(currentUrl)) {
-          if (hasResolvedGoogleMapTarget(currentUrl)) {
-            break;
-          }
+        let nextParsed: URL;
+        try {
+          nextParsed = new URL(locationHeader, currentUrl);
+        } catch {
+          break;
+        }
+        if (!isTrustedGoogleMapsParsedUrl(nextParsed)) {
+          break;
+        }
+        currentUrl = nextParsed.toString();
+        if (hasResolvedGoogleMapTarget(currentUrl)) {
+          break;
         }
         continue;
       }
@@ -98,14 +138,20 @@ export async function expandGoogleMapsShortUrl(rawUrl: string): Promise<string> 
           /https:\/\/(?:www\.|maps\.)?google\.(?:com|co\.jp)\/maps[^\s"'<>\\]+/i
         );
         if (mapLinkMatch?.[0]) {
-          currentUrl = mapLinkMatch[0].replace(/&amp;/g, "&");
+          const candidate = mapLinkMatch[0].replace(/&amp;/g, "&");
+          try {
+            const candidateParsed = new URL(candidate);
+            if (isTrustedGoogleMapsParsedUrl(candidateParsed)) {
+              currentUrl = candidateParsed.toString();
+            }
+          } catch {}
         }
       }
       break;
     }
 
-    if (currentUrl && currentUrl !== cleaned) {
-      SHORT_URL_CACHE.set(cleaned, currentUrl);
+    if (currentUrl && currentUrl !== normalizedShort) {
+      SHORT_URL_CACHE.set(normalizedShort, currentUrl);
     }
   } catch (err) {
     console.warn("Failed to expand Google Maps short URL:", err);
@@ -141,11 +187,6 @@ export function buildGoogleMapsEmbedFromUrl(rawUrl: string | null | undefined): 
   const cleaned = normalizeRawMapUrlInput(rawUrl);
   if (!cleaned) return "";
 
-  // 1. すでに埋め込み専用URLの場合はそのまま利用
-  if (cleaned.includes("/maps/embed") || /[?&]output=embed/i.test(cleaned)) {
-    return cleaned;
-  }
-
   let parsed: URL | null = null;
   try {
     parsed = new URL(cleaned);
@@ -153,11 +194,16 @@ export function buildGoogleMapsEmbedFromUrl(rawUrl: string | null | undefined): 
     return "";
   }
 
-  const host = parsed.hostname.toLowerCase();
-  const isGoogleDomain =
-    host.includes("google.") || host === "maps.app.goo.gl" || host === "goo.gl";
-  if (!isGoogleDomain) {
+  if (!isTrustedGoogleMapsParsedUrl(parsed)) {
     return "";
+  }
+
+  // 1. 信頼済みGoogleドメイン上の埋め込み専用URLの場合はそのまま利用
+  if (
+    GOOGLE_MAPS_HOST_RE.test(parsed.hostname.toLowerCase()) &&
+    (parsed.pathname.includes("/maps/embed") || /[?&]output=embed/i.test(parsed.search))
+  ) {
+    return parsed.toString();
   }
 
   const zoom = extractZoomFromUrl(cleaned, parsed);

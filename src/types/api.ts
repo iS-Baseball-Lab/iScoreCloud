@@ -17,11 +17,13 @@ export interface WorkerEnv {
   ASSETS: Fetcher;
   BUCKET?: R2Bucket;
   BETTER_AUTH_URL?: string;
+  BETTER_AUTH_SECRET?: string;
   NEXT_PUBLIC_API_URL?: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   LINE_CLIENT_ID?: string;
   LINE_CLIENT_SECRET?: string;
+  LINE_CHANNEL_SECRET?: string;
   /** 🌟 修正: Messaging API 送信用のトークンを定義 */
   LINE_CHANNEL_ACCESS_TOKEN: string;
   NEXT_PUBLIC_LIFF_ID?: string;
@@ -31,6 +33,7 @@ export interface WorkerEnv {
   GEMINI_API_KEY?: string;
   GOOGLE_MAPS_API_KEY?: string;
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?: string;
+  ALLOW_DEV_SEED?: string;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
