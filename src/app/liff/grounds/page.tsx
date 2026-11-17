@@ -16,6 +16,7 @@ import {
   extractDirectionsTargetFromUrl,
   normalizeRawMapUrlInput,
 } from "@/lib/google-maps";
+import { validateSafeHttpUrl } from "@/lib/utils";
 import type {
   GroundAiLookupResult,
   GroundVenueCategory,
@@ -405,7 +406,7 @@ export default function LiffGroundsPage() {
       const res = await fetch(url);
       if (res.ok) {
         const data = (await res.json()) as { success: boolean; venues?: VenueInfo[] };
-        if (data.venues && data.venues.length > 0) {
+        if (Array.isArray(data.venues)) {
           setVenues(data.venues);
         }
       }
@@ -721,6 +722,19 @@ export default function LiffGroundsPage() {
       return;
     }
 
+    let normalizedMapUrl = formMapUrl.trim();
+    if (normalizedMapUrl) {
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalizedMapUrl)) {
+        normalizedMapUrl = `https://${normalizedMapUrl}`;
+      }
+      const urlCheck = validateSafeHttpUrl(normalizedMapUrl, { allowEmpty: true });
+      if (!urlCheck.ok) {
+        toast.error(urlCheck.error);
+        return;
+      }
+      normalizedMapUrl = urlCheck.url || "";
+    }
+
     try {
       setIsSubmitting(true);
       const teamId = currentTeam?.id || "demo-team";
@@ -730,7 +744,7 @@ export default function LiffGroundsPage() {
         category: formCategory,
         surface: formSurface.trim(),
         address: formAddress.trim(),
-        mapUrl: formMapUrl.trim() || undefined,
+        mapUrl: normalizedMapUrl || undefined,
         parkingInfo: formParkingInfo.trim(),
         spikeRule: formSpikeRule.trim(),
         notes: formNotes.trim(),
@@ -967,10 +981,14 @@ export default function LiffGroundsPage() {
               <MapPin className="w-6 h-6" />
             </div>
             <p className="text-sm font-black text-foreground">
-              該当する球場・施設がありません
+              {venues.length === 0
+                ? "まだ球場・施設が登録されていません"
+                : "該当する球場・施設がありません"}
             </p>
             <p className="text-xs text-muted-foreground">
-              条件を変更するか、新しい球場・施設を登録してください。
+              {venues.length === 0
+                ? "本拠地やよく使う試合会場を登録すると、スケジュール作成や駐車場ルールの共有がスムーズになります。"
+                : "条件を変更するか、新しい球場・施設を登録してください。"}
             </p>
             <div className="flex items-center justify-center gap-2 pt-1">
               {(selectedCategory !== "all" || searchQuery) && (

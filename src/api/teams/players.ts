@@ -9,7 +9,10 @@ import {
   resolveEffectivePlayerConditionOnDate,
   type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
-import { parseDateInputToUnixSeconds } from "@/lib/liff/player-profile-schema";
+import {
+  parseDateInputToUnixSeconds,
+  parsePlayerProfileDetails,
+} from "@/lib/liff/player-profile-schema";
 import {
   cleanupPreJoinMatchAttendance,
   loadTeamPlayerConditionPeriodsMap,
@@ -50,6 +53,12 @@ async function resolveCanViewPlayerConditionNotes(
 // 選手一覧取得（主要フィールド全て含む・conditionNote/privateNoteは指導者/管理者のみ返却）
 app.get("/:teamId/players", async (c) => {
   const teamId = c.req.param("teamId");
+  if (teamId && teamId !== "demo-team") {
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json({ error: "対象チームへのアクセス権限がありません" }, 403);
+    }
+  }
   try {
     await ensurePlayerProfileColumns(c.env.DB);
     const [queryRes, canViewNotes, periodsByPlayerId] = await Promise.all([
@@ -111,9 +120,17 @@ app.get("/:teamId/players", async (c) => {
   }
 });
 
-// 選手登録（主要フィールド対応）
+// 選手登録（指導者・管理者のみ）
 app.post("/:teamId/players", async (c) => {
   const teamId = c.req.param("teamId");
+  if (!teamId || teamId === "demo-team") {
+    return c.json({ success: true, id: `demo-player-${Date.now()}` });
+  }
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.canManagePlayersForTeam(teamId)) {
+    return c.json({ error: "選手を登録する権限がありません" }, 403);
+  }
+
   const body = (await c.req.json()) as {
     name: string;
     nameKana?: string | null;
@@ -127,6 +144,10 @@ app.post("/:teamId/players", async (c) => {
     conditionStatus?: string | null;
     conditionNote?: string | null;
   };
+  if (!body.name?.trim()) {
+    return c.json({ error: "選手名を入力してください" }, 400);
+  }
+
   const playerId = crypto.randomUUID();
   const { unixSeconds: joinedAtSeconds, dateKey: joinedDateKey } =
     parseDateInputToUnixSeconds(body.joinedAt);
@@ -145,9 +166,9 @@ app.post("/:teamId/players", async (c) => {
       .bind(
         playerId,
         teamId,
-        body.name,
-        body.nameKana ?? null,
-        body.uniformNumber,
+        body.name.trim(),
+        body.nameKana?.trim() || null,
+        (body.uniformNumber || "").trim(),
         body.primaryPosition ?? null,
         body.throws ?? null,
         body.bats ?? null,
@@ -167,10 +188,18 @@ app.post("/:teamId/players", async (c) => {
   }
 });
 
-// 選手情報更新（主要フィールド対応）
+// 選手情報更新（指導者・管理者のみ）
 app.patch("/:teamId/players/:playerId", async (c) => {
   const teamId = c.req.param("teamId");
   const playerId = c.req.param("playerId");
+  if (!teamId || teamId === "demo-team") {
+    return c.json({ success: true });
+  }
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.canManagePlayersForTeam(teamId)) {
+    return c.json({ error: "選手情報を更新する権限がありません" }, 403);
+  }
+
   const body = (await c.req.json()) as {
     name: string;
     nameKana?: string | null;
@@ -248,14 +277,114 @@ app.patch("/:teamId/players/:playerId", async (c) => {
   }
 });
 
-// 選手削除
+// 選手削除（指導者・管理者のみ ＆ 試合出場履歴がある場合は削除拒否し卒団・退団アーカイブへ誘導）
 app.delete("/:teamId/players/:playerId", async (c) => {
   const teamId = c.req.param("teamId");
   const playerId = c.req.param("playerId");
+  if (!teamId || teamId === "demo-team") {
+    return c.json({ success: true });
+  }
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.canManagePlayersForTeam(teamId)) {
+    return c.json({ error: "選手を削除する権限がありません" }, 403);
+  }
+
   try {
-    await c.env.DB.prepare(`DELETE FROM players WHERE id = ? AND team_id = ?`)
+    const existing = await c.env.DB.prepare(
+      `SELECT id, profile_image_url AS profileImageUrl, profile_details AS profileDetails
+       FROM players WHERE id = ? AND team_id = ?`
+    )
       .bind(playerId, teamId)
-      .run();
+      .first<{
+        id: string;
+        profileImageUrl: string | null;
+        profileDetails: string | null;
+      }>();
+
+    if (!existing) {
+      return c.json({ error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const [abRow, advRow, lineupRow, jsonLineupRow] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT id FROM at_bats WHERE batter_id = ? OR pitcher_id = ? LIMIT 1`
+      )
+        .bind(playerId, playerId)
+        .first<{ id: string }>(),
+      c.env.DB.prepare(
+        `SELECT id FROM base_advances WHERE runner_id = ? LIMIT 1`
+      )
+        .bind(playerId)
+        .first<{ id: string }>()
+        .catch(() => null),
+      c.env.DB.prepare(
+        `SELECT id FROM match_lineups WHERE player_id = ? LIMIT 1`
+      )
+        .bind(playerId)
+        .first<{ id: string }>()
+        .catch(() => null),
+      c.env.DB.prepare(
+        `SELECT id FROM matches WHERE team_id = ? AND my_lineup LIKE ? LIMIT 1`
+      )
+        .bind(teamId, `%${playerId}%`)
+        .first<{ id: string }>()
+        .catch(() => null),
+    ]);
+
+    if (abRow || advRow || lineupRow || jsonLineupRow) {
+      return c.json(
+        {
+          success: false,
+          code: "HAS_MATCH_RECORDS",
+          error:
+            "過去の試合記録が存在するため完全削除できません。戦績データを保護するため「在籍外（卒団・退団）」へ移動してください。",
+        },
+        409
+      );
+    }
+
+    if (c.env.BUCKET) {
+      if (existing.profileImageUrl?.startsWith("/api/images/players/")) {
+        await c.env.BUCKET.delete(
+          existing.profileImageUrl.slice("/api/images/".length)
+        ).catch(() => {});
+      }
+      const details = parsePlayerProfileDetails(existing.profileDetails);
+      if (details.actionImageUrl?.startsWith("/api/images/players/")) {
+        await c.env.BUCKET.delete(
+          details.actionImageUrl.slice("/api/images/".length)
+        ).catch(() => {});
+      }
+    }
+
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `DELETE FROM player_condition_periods WHERE player_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(
+        `DELETE FROM parent_child_relations WHERE child_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(
+        `DELETE FROM team_group_members WHERE player_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(`DELETE FROM attendances WHERE player_id = ?`).bind(
+        playerId
+      ),
+      c.env.DB.prepare(
+        `UPDATE teams SET captain_id = NULL WHERE id = ? AND captain_id = ?`
+      ).bind(teamId, playerId),
+      c.env.DB.prepare(`DELETE FROM players WHERE id = ? AND team_id = ?`).bind(
+        playerId,
+        teamId
+      ),
+    ]).catch(async () => {
+      await c.env.DB.prepare(
+        `DELETE FROM players WHERE id = ? AND team_id = ?`
+      )
+        .bind(playerId, teamId)
+        .run();
+    });
+
     return c.json({ success: true });
   } catch {
     return c.json({ error: "選手の削除に失敗しました" }, 500);

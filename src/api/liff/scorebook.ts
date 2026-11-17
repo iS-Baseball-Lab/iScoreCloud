@@ -1,9 +1,11 @@
 // filepath: src/api/liff/scorebook.ts
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureMatchLineupColumns, ensurePlayerProfileColumns } from "@/lib/db-helper";
+import { resolveCallerTeamAccess } from "@/lib/team-access";
+import { buildTeamTenantWhere } from "@/lib/tenant-scope";
 import {
   comparePlayersByConditionAndUniform,
   getTodayJstDateKey,
@@ -90,6 +92,55 @@ const {
   playLogs,
   matchScorebookSnapshots,
 } = schema;
+
+async function requireScorebookAiAccess(
+  c: Context<{ Bindings: WorkerEnv }>,
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  rawTeamId?: string | null,
+  rawMatchId?: string | null
+): Promise<{ ok: true; teamId: string } | { ok: false; status: 401 | 403; error: string }> {
+  let effectiveTeamId = (rawTeamId || "").trim();
+  if ((!effectiveTeamId || effectiveTeamId === "demo-team") && rawMatchId) {
+    const cleanMatchId = rawMatchId.trim();
+    if (cleanMatchId && !cleanMatchId.startsWith("demo-")) {
+      const m = await db
+        .select({ teamId: matches.teamId })
+        .from(matches)
+        .where(eq(matches.id, cleanMatchId))
+        .get();
+      if (m?.teamId) {
+        effectiveTeamId = m.teamId;
+      }
+    }
+  }
+
+  if (!effectiveTeamId || effectiveTeamId === "demo-team") {
+    return {
+      ok: false,
+      status: 403,
+      error:
+        "デモモードではスコアブックAI解析を実行できません。チームに参加または作成してからご利用ください",
+    };
+  }
+
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated) {
+    return {
+      ok: false,
+      status: 401,
+      error: "スコアブックAI解析を利用するにはログインが必要です",
+    };
+  }
+  if (!access.canMutateTeamData(effectiveTeamId)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "対象チームでスコアブックAI解析を実行する権限がありません",
+    };
+  }
+
+  return { ok: true, teamId: effectiveTeamId };
+}
 
 interface GeminiInlineDataPart {
   inlineData: {
@@ -932,20 +983,22 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
   try {
     const body = (await c.req.json()) as ExtractTeamSymbolRulesPayload;
     const requestedTeamId = (body.teamId || "").trim();
-    const isDemoTeamRequest = !requestedTeamId || requestedTeamId === "demo-team";
-    const targetTeam = isDemoTeamRequest
-      ? undefined
-      : await db
-          .select({
-            id: teams.id,
-            scorebookLegendUrl: teams.scorebookLegendUrl,
-            scorebookSymbolRules: teams.scorebookSymbolRules,
-          })
-          .from(teams)
-          .where(eq(teams.id, requestedTeamId))
-          .get();
+    const aiAccess = await requireScorebookAiAccess(c, db, requestedTeamId);
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
 
-    if (!targetTeam && !isDemoTeamRequest) {
+    const targetTeam = await db
+      .select({
+        id: teams.id,
+        scorebookLegendUrl: teams.scorebookLegendUrl,
+        scorebookSymbolRules: teams.scorebookSymbolRules,
+      })
+      .from(teams)
+      .where(eq(teams.id, aiAccess.teamId))
+      .get();
+
+    if (!targetTeam) {
       return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
     }
 
@@ -1089,8 +1142,13 @@ liffScorebookRouter.post("/create-match", async (c) => {
       );
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canMutateTeamData(requestedTeamId)) {
+      return c.json({ success: false, error: "試合枠を作成する権限がありません" }, 403);
+    }
+
     const targetTeam = await db
-      .select({ id: teams.id })
+      .select({ id: teams.id, organizationId: teams.organizationId })
       .from(teams)
       .where(eq(teams.id, requestedTeamId))
       .get();
@@ -1104,10 +1162,20 @@ liffScorebookRouter.post("/create-match", async (c) => {
       (body.matchType === "official" || body.matchType === "exchange") &&
       trimmedTournament
     ) {
+      const tenantWhere = buildTeamTenantWhere(
+        {
+          organizationId: tournaments.organizationId,
+          teamId: tournaments.teamId,
+        },
+        {
+          teamId: targetTeam.id,
+          organizationId: targetTeam.organizationId || null,
+        }
+      );
       const existing = await db
         .select({ id: tournaments.id })
         .from(tournaments)
-        .where(eq(tournaments.name, trimmedTournament))
+        .where(and(eq(tournaments.name, trimmedTournament), tenantWhere))
         .get();
       if (existing) {
         tournamentId = existing.id;
@@ -1115,6 +1183,8 @@ liffScorebookRouter.post("/create-match", async (c) => {
         tournamentId = crypto.randomUUID();
         await db.insert(tournaments).values({
           id: tournamentId,
+          organizationId: targetTeam.organizationId || null,
+          teamId: targetTeam.id,
           name: trimmedTournament,
           season: String(new Date().getFullYear()),
           category: "other",
@@ -1243,6 +1313,11 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
 
     if (!match) {
       return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
+    }
+
+    const aiAccess = await requireScorebookAiAccess(c, db, match.teamId, match.id);
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
     }
 
     const roster = await db
@@ -1807,6 +1882,11 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 
   try {
     const body = (await c.req.json()) as AnalyzeInningChunkPayload;
+    const aiAccess = await requireScorebookAiAccess(c, db, body.teamId, body.matchId);
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
+
     if (
       (!body.focusCropBase64 && !body.imageBase64) ||
       !body.structure ||
@@ -2664,6 +2744,11 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
 
   try {
     const body = (await c.req.json()) as ReconcileMissingAtBatsPayload;
+    const aiAccess = await requireScorebookAiAccess(c, db, body.teamId, body.matchId);
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
+
     if (
       !body.comparisonCropBase64 ||
       !body.structure ||
@@ -3153,6 +3238,11 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 
   try {
     const body = (await c.req.json()) as ReconcileInningOutsPayload;
+    const aiAccess = await requireScorebookAiAccess(c, db, body.teamId, body.matchId);
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
+
     if (
       !body.cropBase64 ||
       !body.structure ||

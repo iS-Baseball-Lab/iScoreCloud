@@ -330,6 +330,13 @@
       "when": 1794918069415,
       "tag": "0046_broken_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1794960000000,
+      "tag": "0047_phase1_venue_tournament_tenant_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,10 @@ import {
   Plus,
   Trash2,
   ZoomIn,
+  UserPlus,
+  Archive,
+  RotateCcw,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -51,6 +55,7 @@ import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { SavedPlayerProfilePayload } from "@/components/liff/PlayerProfileEditModal";
 import type { PlayerPhotoKind } from "@/components/liff/PlayerPhotoCaptureModal";
+import type { CreatedRosterPlayerSummary } from "@/components/liff/PlayerRosterManageModal";
 import {
   PLAYER_CONDITION_META,
   PLAYER_CONDITION_STATUS_ORDER,
@@ -74,6 +79,7 @@ import {
   EMPTY_PLAYER_PROFILE_DETAILS,
   PLAY_STYLE_TAG_MAP,
   loadDemoPlayerProfileOverrides,
+  parseDateInputToUnixSeconds,
   parsePlayerProfileDetails,
   resolveDefaultPlayerActionBg,
   saveDemoPlayerProfileOverride,
@@ -100,6 +106,14 @@ const TeamCoverPhotoModal = dynamic(
   () =>
     import("@/components/liff/TeamCoverPhotoModal").then(
       (m) => m.TeamCoverPhotoModal
+    ),
+  { ssr: false }
+);
+
+const PlayerRosterManageModal = dynamic(
+  () =>
+    import("@/components/liff/PlayerRosterManageModal").then(
+      (m) => m.PlayerRosterManageModal
     ),
   { ssr: false }
 );
@@ -162,6 +176,8 @@ interface DirectoryPlayer {
   activeConditionPeriod?: PlayerConditionPeriod | null;
   upcomingConditionPeriod?: PlayerConditionPeriod | null;
   isCaptain: boolean;
+  isActive?: boolean;
+  hasMatchRecords?: boolean;
   joinedAt: number | null;
   batting: PlayerBattingStat | null;
   pitching: PlayerPitchingStat | null;
@@ -189,6 +205,7 @@ interface PlayersDirectoryResponse {
   error?: string;
   team?: DirectoryTeamInfo;
   players?: DirectoryPlayer[];
+  archivedPlayers?: DirectoryPlayer[];
 }
 
 const CONDITION_NOTE_PRESETS: Record<Exclude<PlayerConditionStatus, "active">, string[]> = {
@@ -468,6 +485,9 @@ function LiffPlayersDirectoryContent() {
   const [players, setPlayers] = useState<DirectoryPlayer[]>(() =>
     (initialCachedPlayers?.players || []).map(hydrateDirectoryPlayer)
   );
+  const [archivedPlayers, setArchivedPlayers] = useState<DirectoryPlayer[]>(() =>
+    (initialCachedPlayers?.archivedPlayers || []).map(hydrateDirectoryPlayer)
+  );
 
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedCategory, setSelectedCategory] = useState<FilterCategory>("すべて");
@@ -480,6 +500,12 @@ function LiffPlayersDirectoryContent() {
   } | null>(null);
   const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
   const [isTeamCoverModalOpen, setIsTeamCoverModalOpen] = useState<boolean>(false);
+  const [isAddPlayerModalOpen, setIsAddPlayerModalOpen] = useState<boolean>(false);
+  const [isArchivedSectionOpen, setIsArchivedSectionOpen] = useState<boolean>(false);
+  const [confirmRosterAction, setConfirmRosterAction] = useState<
+    "archive" | "delete" | null
+  >(null);
+  const [isMutatingRoster, setIsMutatingRoster] = useState<boolean>(false);
 
   // 本人紐付けボトムシート & 確認ステート
   const [isSelfClaimModalOpen, setIsSelfClaimModalOpen] = useState<boolean>(false);
@@ -500,6 +526,7 @@ function LiffPlayersDirectoryContent() {
   const [isSavingCondition, setIsSavingCondition] = useState<boolean>(false);
 
   const handledDeepLinkRef = useRef<string>("");
+  const handledAddDeepLinkRef = useRef<string>("");
 
   const activeTeamId =
     teamInfo?.id ||
@@ -531,6 +558,8 @@ function LiffPlayersDirectoryContent() {
     setPhotoModalTarget(null);
     setEditingPlayerId(null);
     setIsTeamCoverModalOpen(false);
+    setIsAddPlayerModalOpen(false);
+    setConfirmRosterAction(null);
     setIsConditionEditorOpen(false);
     setIsSelfClaimModalOpen(false);
     setConfirmingClaimPlayerId(null);
@@ -539,6 +568,7 @@ function LiffPlayersDirectoryContent() {
   // 詳細モーダルで別選手に切り替えた際、コンディション編集フォームを対象選手の値に同期
   useEffect(() => {
     setIsPortraitZoomOpen(false);
+    setConfirmRosterAction(null);
     if (!selectedPlayerId) {
       setIsConditionEditorOpen(false);
       setEditingPeriodId(null);
@@ -562,6 +592,16 @@ function LiffPlayersDirectoryContent() {
       setConfirmingClaimPlayerId(null);
     }
   }, [selectedPlayerId, players]);
+
+  // URL クエリ（?add=1）からの選手登録モーダル自動展開（0名の新規チームにも対応）
+  useEffect(() => {
+    if (isLoading || !canManagePlayers) return;
+    if (searchParams.get("add") !== "1") return;
+    const addSig = `${activeTeamId}:add`;
+    if (handledAddDeepLinkRef.current === addSig) return;
+    handledAddDeepLinkRef.current = addSig;
+    setIsAddPlayerModalOpen(true);
+  }, [activeTeamId, canManagePlayers, isLoading, searchParams]);
 
   // URL クエリ（?playerId=xxx&edit=1 等）からの直接編集・詳細展開
   useEffect(() => {
@@ -809,6 +849,11 @@ function LiffPlayersDirectoryContent() {
         }
 
         setPlayers(nextPlayers);
+        setArchivedPlayers(
+          (data.archivedPlayers || [])
+            .map(hydrateDirectoryPlayer)
+            .sort(comparePlayersByConditionAndUniform)
+        );
       } catch (err) {
         console.error("Failed to fetch players directory:", err);
         setLoadError(true);
@@ -822,6 +867,201 @@ function LiffPlayersDirectoryContent() {
   useEffect(() => {
     void loadPlayers();
   }, [loadPlayers]);
+
+  const handleRosterPlayersCreated = useCallback(
+    (createdItems: CreatedRosterPlayerSummary[]) => {
+      const isDemoFlag = Boolean(
+        isDemoMode || providerDemo || activeTeamId === "demo-team"
+      );
+
+      const optimisticEntries: DirectoryPlayer[] = createdItems.map((item) => {
+        const { unixSeconds } = parseDateInputToUnixSeconds(item.joinedAt);
+        return hydrateDirectoryPlayer({
+          id: item.id,
+          name: item.name,
+          nameKana: item.nameKana,
+          uniformNumber: item.uniformNumber,
+          nickname: item.nickname,
+          primaryPosition: item.primaryPosition,
+          subPositions: [],
+          registeredPrimaryPosition: item.primaryPosition,
+          registeredSubPositions: [],
+          positionCounts: [],
+          totalPositionGames: 0,
+          positionSource: "profile",
+          throws: item.throws,
+          bats: item.bats,
+          height: null,
+          weight: null,
+          editableWeight: null,
+          profileImageUrl: null,
+          notes: null,
+          profileDetails: parsePlayerProfileDetails({
+            gradeOrAge: item.gradeOrAge,
+          }),
+          isSelf: false,
+          isLinkedChild: false,
+          canEditProfile: true,
+          hasLinkedUser: false,
+          conditionStatus: "active",
+          conditionNote: null,
+          conditionPeriods: [],
+          activeConditionPeriod: null,
+          upcomingConditionPeriod: null,
+          isCaptain: false,
+          isActive: true,
+          hasMatchRecords: false,
+          joinedAt: unixSeconds,
+          batting: null,
+          pitching: null,
+        });
+      });
+
+      setPlayers((prev) =>
+        [...prev, ...optimisticEntries].sort(comparePlayersByConditionAndUniform)
+      );
+
+      if (!isDemoFlag) {
+        void loadPlayers(true);
+        void refreshTeams();
+      }
+    },
+    [activeTeamId, isDemoMode, loadPlayers, providerDemo, refreshTeams]
+  );
+
+  const handleToggleArchivePlayer = useCallback(
+    async (targetPlayer: DirectoryPlayer, nextIsActive: boolean) => {
+      setIsMutatingRoster(true);
+      try {
+        const res = await fetch(
+          `/api/liff/players/${encodeURIComponent(targetPlayer.id)}/archive`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: activeTeamId,
+              isActive: nextIsActive,
+              userId: effectiveUserId || null,
+              userName: effectiveUserName || null,
+            }),
+          }
+        );
+
+        const json = (await res.json()) as {
+          success?: boolean;
+          error?: string;
+        };
+
+        if (!res.ok || !json.success) {
+          toast.error(json.error || "在籍ステータスの変更に失敗しました");
+          return;
+        }
+
+        invalidateLiffApiCache("/api/liff/");
+        setConfirmRosterAction(null);
+
+        if (nextIsActive) {
+          const restored = hydrateDirectoryPlayer({
+            ...targetPlayer,
+            isActive: true,
+          });
+          setArchivedPlayers((prev) => prev.filter((p) => p.id !== targetPlayer.id));
+          setPlayers((prev) =>
+            [...prev.filter((p) => p.id !== targetPlayer.id), restored].sort(
+              comparePlayersByConditionAndUniform
+            )
+          );
+          toast.success(`「${targetPlayer.name}」を現役名簿に戻しました`);
+        } else {
+          const archivedItem = hydrateDirectoryPlayer({
+            ...targetPlayer,
+            isActive: false,
+            isCaptain: false,
+          });
+          setPlayers((prev) => prev.filter((p) => p.id !== targetPlayer.id));
+          setArchivedPlayers((prev) =>
+            [...prev.filter((p) => p.id !== targetPlayer.id), archivedItem].sort(
+              comparePlayersByConditionAndUniform
+            )
+          );
+          if (selectedPlayerId === targetPlayer.id) {
+            setSelectedPlayerId(null);
+          }
+          toast.success(
+            `「${targetPlayer.name}」を在籍外（卒団・退団）へ移動しました（過去の試合記録・成績は保持されます）`
+          );
+        }
+      } catch (err) {
+        console.error("Failed to toggle archive status:", err);
+        toast.error("通信エラーにより変更できませんでした");
+      } finally {
+        setIsMutatingRoster(false);
+      }
+    },
+    [activeTeamId, effectiveUserId, effectiveUserName, selectedPlayerId]
+  );
+
+  const handlePermanentDeletePlayer = useCallback(
+    async (targetPlayer: DirectoryPlayer) => {
+      setIsMutatingRoster(true);
+      try {
+        const res = await fetch(
+          `/api/liff/players/${encodeURIComponent(targetPlayer.id)}?teamId=${encodeURIComponent(activeTeamId)}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: activeTeamId,
+              userId: effectiveUserId || null,
+              userName: effectiveUserName || null,
+            }),
+          }
+        );
+
+        const json = (await res.json()) as {
+          success?: boolean;
+          code?: string;
+          error?: string;
+        };
+
+        if (!res.ok || !json.success) {
+          if (res.status === 409 || json.code === "HAS_MATCH_RECORDS") {
+            setPlayers((prev) =>
+              prev.map((p) =>
+                p.id === targetPlayer.id ? { ...p, hasMatchRecords: true } : p
+              )
+            );
+            setArchivedPlayers((prev) =>
+              prev.map((p) =>
+                p.id === targetPlayer.id ? { ...p, hasMatchRecords: true } : p
+              )
+            );
+          }
+          setConfirmRosterAction(null);
+          toast.error(
+            json.error ||
+              "過去の試合記録が存在するため完全削除できません。「在籍外（卒団・退団）」へ移動してください。"
+          );
+          return;
+        }
+
+        invalidateLiffApiCache("/api/liff/");
+        setConfirmRosterAction(null);
+        setPlayers((prev) => prev.filter((p) => p.id !== targetPlayer.id));
+        setArchivedPlayers((prev) => prev.filter((p) => p.id !== targetPlayer.id));
+        if (selectedPlayerId === targetPlayer.id) {
+          setSelectedPlayerId(null);
+        }
+        toast.success(`「${targetPlayer.name}」の選手データを完全に削除しました`);
+      } catch (err) {
+        console.error("Failed to delete player:", err);
+        toast.error("通信エラーにより削除できませんでした");
+      } finally {
+        setIsMutatingRoster(false);
+      }
+    },
+    [activeTeamId, effectiveUserId, effectiveUserName, selectedPlayerId]
+  );
 
   // 選手本人紐付け実行
   const handleClaimSelfPlayer = useCallback(
@@ -1455,9 +1695,19 @@ function LiffPlayersDirectoryContent() {
           }
           showBack
           rightElement={
-            players.length > 0 ? (
+            canManagePlayers || players.length > 0 ? (
               <div className="flex items-center gap-1.5">
-                {editablePhotoPlayers.length > 0 && (
+                {canManagePlayers && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddPlayerModalOpen(true)}
+                    className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>選手追加</span>
+                  </button>
+                )}
+                {players.length > 0 && editablePhotoPlayers.length > 0 && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1479,20 +1729,22 @@ function LiffPlayersDirectoryContent() {
                     className="px-2.5 py-1.5 rounded-xl bg-[#0f172a] text-white hover:bg-slate-800 border border-slate-700 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs cursor-pointer"
                   >
                     <Camera className="w-3.5 h-3.5 text-teal-400" />
-                    <span>写真撮影</span>
+                    <span className="hidden min-[380px]:inline">写真撮影</span>
                   </button>
                 )}
-                <Link
-                  href={`/liff/players/growth?id=${encodeURIComponent(
-                    (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
-                      ? teamInfo.captainId
-                      : players[0].id)
-                  )}`}
-                  className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-                >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>個人成長</span>
-                </Link>
+                {players.length > 0 && !canManagePlayers && (
+                  <Link
+                    href={`/liff/players/growth?id=${encodeURIComponent(
+                      (teamInfo?.captainId && players.some((p) => p.id === teamInfo.captainId)
+                        ? teamInfo.captainId
+                        : players[0].id)
+                    )}`}
+                    className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>個人成長</span>
+                  </Link>
+                )}
               </div>
             ) : undefined
           }
@@ -1889,8 +2141,22 @@ function LiffPlayersDirectoryContent() {
             title={players.length === 0 ? "登録選手がいません" : "該当する選手がいません"}
             description={
               players.length === 0
-                ? "選手が登録されるとここに一覧表示されます"
+                ? canManagePlayers
+                  ? "1名ずつの詳細登録または名簿テキストからの一括登録で選手を追加できます"
+                  : "選手が登録されるとここに一覧表示されます"
                 : "別の絞り込み条件やキーワードをお試しください"
+            }
+            action={
+              players.length === 0 && canManagePlayers ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAddPlayerModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black inline-flex items-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>選手を登録する（1名／一括）</span>
+                </button>
+              ) : undefined
             }
           />
         ) : viewMode === "grid" ? (
@@ -2406,6 +2672,102 @@ function LiffPlayersDirectoryContent() {
               );
             })}
           </div>
+        )}
+
+        {/* ━━━ 📦 在籍外（卒団・退団）メンバー保管枠（指導者・管理者のみ表示） ━━━ */}
+        {canManagePlayers && archivedPlayers.length > 0 && (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setIsArchivedSectionOpen((prev) => !prev)}
+              className="w-full px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 flex items-center justify-between gap-2 text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-7 h-7 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 flex items-center justify-center shrink-0">
+                  <Archive className="w-3.5 h-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <span className="text-xs font-black text-white block truncate">
+                    在籍外（卒団・退団）メンバー
+                  </span>
+                  <span className="text-[10px] font-bold text-slate-300 block truncate">
+                    過去の試合記録・個人通算成績を保持したまま保管中
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 text-[10.5px] font-black tabular-nums">
+                  {archivedPlayers.length}名
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 text-slate-300 transition-transform duration-200 ${
+                    isArchivedSectionOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </div>
+            </button>
+
+            {isArchivedSectionOpen && (
+              <div className="divide-y divide-border bg-card">
+                {archivedPlayers.map((ap) => {
+                  const num = cleanUniformNumber(ap.uniformNumber);
+                  const pMeta = resolvePositionMeta(ap.primaryPosition);
+                  return (
+                    <div
+                      key={`archived-${ap.id}`}
+                      className="p-3 flex items-center justify-between gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="min-w-[38px] px-1.5 py-0.5 rounded-lg bg-muted border border-border text-xs font-black tabular-nums text-center text-muted-foreground shrink-0">
+                          #{num}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs sm:text-sm font-black text-foreground truncate">
+                              {ap.name}
+                            </span>
+                            <span className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground text-[9.5px] font-black">
+                              {pMeta.shortLabel}
+                            </span>
+                            {ap.hasMatchRecords && (
+                              <span className="px-1.5 py-0.2 rounded bg-teal-500/12 text-teal-700 dark:text-teal-300 text-[9.5px] font-black">
+                                戦績保護中
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          disabled={isMutatingRoster}
+                          onClick={() => void handleToggleArchivePlayer(ap, true)}
+                          className="px-2.5 py-1.5 rounded-xl bg-primary/12 hover:bg-primary/20 text-primary border border-primary/30 text-[11px] font-black inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>現役に戻す</span>
+                        </button>
+
+                        {!ap.hasMatchRecords && (
+                          <button
+                            type="button"
+                            disabled={isMutatingRoster}
+                            onClick={() => void handlePermanentDeletePlayer(ap)}
+                            className="p-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/25 cursor-pointer disabled:opacity-50"
+                            title="試合記録がない誤登録データを完全削除"
+                            aria-label="完全削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
 
         <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
@@ -3794,6 +4156,120 @@ function LiffPlayersDirectoryContent() {
                   <Trophy className="w-3.5 h-3.5 text-primary" />
                   <span>チーム成績・ランキングを見る</span>
                 </Link>
+
+                {/* 指導者・管理者限定：卒団・退団アーカイブ ＆ 誤登録削除 */}
+                {canManagePlayers && (
+                  <div className="rounded-2xl border border-border bg-muted/35 overflow-hidden">
+                    <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[2px] border-slate-500 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black flex items-center gap-1.5">
+                        <Archive className="w-3.5 h-3.5 text-slate-300" />
+                        <span>在籍ステータス管理（卒団・退団／削除）</span>
+                      </span>
+                      <span className="px-2 py-0.2 rounded bg-slate-800 text-slate-300 text-[9.5px] font-black">
+                        指導者専用
+                      </span>
+                    </div>
+
+                    <div className="p-3 space-y-2.5 bg-card">
+                      {confirmRosterAction === "archive" ? (
+                        <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2.5">
+                          <p className="text-xs font-black text-foreground">
+                            「{selectedPlayer.name}」を在籍外（卒団・退団）へ移動しますか？
+                          </p>
+                          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                            現役名簿や今後の出欠確認からは外れますが、これまでの全試合スコア・通算成績データは100%安全に保持されます（いつでも現役に戻せます）。
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isMutatingRoster}
+                              onClick={() => setConfirmRosterAction(null)}
+                              className="flex-1 py-2 rounded-xl bg-muted border border-border text-xs font-black text-foreground cursor-pointer"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isMutatingRoster}
+                              onClick={() =>
+                                void handleToggleArchivePlayer(selectedPlayer, false)
+                              }
+                              className="flex-1 py-2 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              {isMutatingRoster ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Archive className="w-3.5 h-3.5" />
+                              )}
+                              <span>在籍外へ移動</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : confirmRosterAction === "delete" ? (
+                        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-2.5">
+                          <p className="text-xs font-black text-rose-600 dark:text-rose-400">
+                            「{selectedPlayer.name}」を完全に削除しますか？
+                          </p>
+                          <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                            誤って登録した選手データをデータベースから削除します。この操作は取り消せません。
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              disabled={isMutatingRoster}
+                              onClick={() => setConfirmRosterAction(null)}
+                              className="flex-1 py-2 rounded-xl bg-muted border border-border text-xs font-black text-foreground cursor-pointer"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isMutatingRoster}
+                              onClick={() =>
+                                void handlePermanentDeletePlayer(selectedPlayer)
+                              }
+                              className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              {isMutatingRoster ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-3.5 h-3.5" />
+                              )}
+                              <span>完全削除する</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setConfirmRosterAction("archive")}
+                            className="flex-1 py-2.5 px-3 rounded-xl bg-muted hover:bg-muted/80 border border-border text-xs font-black text-foreground inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Archive className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span>在籍外（卒団・退団）へ移動</span>
+                          </button>
+
+                          {selectedPlayer.hasMatchRecords ? (
+                            <div className="flex-1 py-2 px-3 rounded-xl bg-muted/50 border border-dashed border-border text-[10.5px] font-bold text-muted-foreground flex items-center justify-center gap-1.5">
+                              <Lock className="w-3 h-3 shrink-0" />
+                              <span>試合記録あり（完全削除不可）</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRosterAction("delete")}
+                              className="py-2.5 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-xs font-black text-rose-600 dark:text-rose-400 inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>誤登録を削除</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>,
@@ -4083,6 +4559,19 @@ function LiffPlayersDirectoryContent() {
             if (!(isDemoMode || providerDemo || activeTeamId === "demo-team")) {
               void refreshTeams();
             }
+          }}
+        />
+      )}
+      {/* ━━━ ➕ 在籍選手の新規追加・一括登録モーダル ━━━ */}
+      {isAddPlayerModalOpen && (
+        <PlayerRosterManageModal
+          isOpen={isAddPlayerModalOpen}
+          teamId={activeTeamId}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
+          onClose={() => setIsAddPlayerModalOpen(false)}
+          onCreated={(createdItems) => {
+            handleRosterPlayersCreated(createdItems);
           }}
         />
       )}

@@ -11,6 +11,7 @@ import {
 } from "@/components/liff/LiffSelect";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { sanitizeSafeExternalHref, validateSafeHttpUrl } from "@/lib/utils";
 import {
   Link2,
   ExternalLink,
@@ -233,9 +234,16 @@ export default function LiffLinksPage() {
       const teamId = currentTeam?.id || "demo-team";
 
       let finalUrl = newUrl.trim();
-      if (!/^https?:\/\//i.test(finalUrl)) {
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl)) {
         finalUrl = `https://${finalUrl}`;
       }
+      const createUrlCheck = validateSafeHttpUrl(finalUrl, { allowEmpty: false });
+      if (!createUrlCheck.ok || !createUrlCheck.url) {
+        throw new Error(
+          createUrlCheck.ok ? "URLを入力してください" : createUrlCheck.error
+        );
+      }
+      finalUrl = createUrlCheck.url;
 
       const res = await fetch("/api/liff/links", {
         method: "POST",
@@ -265,9 +273,11 @@ export default function LiffLinksPage() {
       setNewIsImportant(false);
       setNewImageUrl("");
       loadLinks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating link:", err);
-      setSubmitError(err.message || "リンクの登録に失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "リンクの登録に失敗しました"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -284,9 +294,16 @@ export default function LiffLinksPage() {
       const teamId = currentTeam?.id || "demo-team";
 
       let finalUrl = editUrl.trim();
-      if (!/^https?:\/\//i.test(finalUrl)) {
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl)) {
         finalUrl = `https://${finalUrl}`;
       }
+      const updateUrlCheck = validateSafeHttpUrl(finalUrl, { allowEmpty: false });
+      if (!updateUrlCheck.ok || !updateUrlCheck.url) {
+        throw new Error(
+          updateUrlCheck.ok ? "URLを入力してください" : updateUrlCheck.error
+        );
+      }
+      finalUrl = updateUrlCheck.url;
 
       const res = await fetch(`/api/liff/links/${editingLink.id}`, {
         method: "PUT",
@@ -719,7 +736,7 @@ export default function LiffLinksPage() {
 
                           {/* 🌐 サイトを開くリンクボタン（外部サービスは公式ソリッドブランドカラー） */}
                           <a
-                            href={link.url}
+                            href={sanitizeSafeExternalHref(link.url)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all shadow-xs cursor-pointer ${brandStyle.buttonClass}`}

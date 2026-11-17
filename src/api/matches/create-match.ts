@@ -1,10 +1,11 @@
 // filepath: src/api/matches/create-match.ts
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { matches, tournaments } from '@/db/schema/match';
 import { teams } from '@/db/schema/team'; // 🌟 チーム実在チェック用
 import { ensureMatchLineupColumns } from '@/lib/db-helper';
+import { buildTeamTenantWhere } from '@/lib/tenant-scope';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -16,10 +17,12 @@ interface CreateMatchRequest {
   date: string;
   matchType: 'official' | 'practice' | 'exchange';
   tournamentId?: string;
+  tournamentName?: string;
   venueId?: string;
   battingOrder: 'first' | 'second';
   benchSide?: '1B' | '3B' | 'unknown'; // 🌟 追加：ベンチ位置
   innings: 6 | 7 | 9;                  // 🌟 追加：イニング数
+  inningCount?: 6 | 7 | 9;
   surfaceDetails?: string;
   status: 'scheduled' | 'started' | 'finished' | 'rainout'; // 🌟 追加：3つの導線対応
   myScore?: number;                    // 🌟 追加：QUICK SCORE用
@@ -47,7 +50,7 @@ app.post('/create', async (c) => {
     }
 
     const existingTeam = await db
-      .select({ id: teams.id })
+      .select({ id: teams.id, organizationId: teams.organizationId })
       .from(teams)
       .where(eq(teams.id, requestTeamId))
       .get();
@@ -58,12 +61,19 @@ app.post('/create', async (c) => {
 
     const finalTeamId = existingTeam.id;
 
-    // 🌟 2. 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
+    // 🌟 2. 大会名（tournamentName）が送られてきた場合、自クラブ・チームのスコープで解決・新規生成する
     let tournamentId: string | null = null;
-    if ((body.matchType === 'official' || body.matchType === 'exchange') && (body as any).tournamentName) {
-      const tName = (body as any).tournamentName;
-      const existingTournament = await db.select().from(tournaments)
-        .where(eq(tournaments.name, tName)).get();
+    const rawTournamentName = (body.tournamentName || '').trim();
+    if ((body.matchType === 'official' || body.matchType === 'exchange') && rawTournamentName) {
+      const tenantWhere = buildTeamTenantWhere(
+        { organizationId: tournaments.organizationId, teamId: tournaments.teamId },
+        { teamId: finalTeamId, organizationId: existingTeam.organizationId || null }
+      );
+      const existingTournament = await db
+        .select()
+        .from(tournaments)
+        .where(and(eq(tournaments.name, rawTournamentName), tenantWhere))
+        .get();
 
       if (existingTournament) {
         tournamentId = existingTournament.id;
@@ -71,7 +81,9 @@ app.post('/create', async (c) => {
         tournamentId = crypto.randomUUID();
         await db.insert(tournaments).values({
           id: tournamentId,
-          name: tName,
+          organizationId: existingTeam.organizationId || null,
+          teamId: finalTeamId,
+          name: rawTournamentName,
           season: new Date().getFullYear().toString(),
           category: 'other',
         });

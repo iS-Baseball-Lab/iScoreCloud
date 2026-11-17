@@ -79,16 +79,14 @@ export async function initLiff(
   }
 
   try {
-    // 1. LIFF ID の優先順位: 引数 > URLクエリ > localStorage > 環境変数
+    // 1. LIFF ID の優先順位: 引数 > 環境変数 > localStorage（URLクエリによる外部LIFFアプリ差し替え・localStorage汚染を防止）
     const urlParams = new URLSearchParams(window.location.search);
-    const queryLiffId = urlParams.get("liffId");
-    const storedLiffId = localStorage.getItem("iscore_liff_id");
-    let targetLiffId =
-      liffId || queryLiffId || storedLiffId || process.env.NEXT_PUBLIC_LIFF_ID;
-
-    if (queryLiffId) {
-      localStorage.setItem("iscore_liff_id", queryLiffId);
+    const envLiffId = (process.env.NEXT_PUBLIC_LIFF_ID || "").trim();
+    const storedLiffId = (localStorage.getItem("iscore_liff_id") || "").trim();
+    if (envLiffId && storedLiffId !== envLiffId) {
+      localStorage.setItem("iscore_liff_id", envLiffId);
     }
+    let targetLiffId = liffId || envLiffId || storedLiffId;
 
     // すでに同一 LIFF ID で初期化完了済みの場合は再 init せず即返却
     if (liffInstance && targetLiffId && initializedLiffId === targetLiffId) {

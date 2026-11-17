@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { organizations, teams, venues } from "@/db/schema";
 import { resolveCallerTeamAccess } from "@/lib/team-access";
+import { buildTeamTenantWhere } from "@/lib/tenant-scope";
 import type { WorkerEnv } from "@/types/api";
 
 const liffGroundsAiRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -772,28 +773,35 @@ async function loadTeamRegionContext(
 
   try {
     const db = drizzle(env.DB);
-    const [teamRow, venueRows] = await Promise.all([
-      db
-        .select({
-          name: teams.name,
-          homeGround: teams.homeGround,
-          organizationId: teams.organizationId,
-          orgName: organizations.name,
-          orgCategory: organizations.category,
-          orgMapsKey: organizations.googleMapsApiKey,
-        })
-        .from(teams)
-        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
-        .where(eq(teams.id, teamId))
-        .get(),
-      db
-        .select({
-          address: venues.address,
-        })
-        .from(venues)
-        .limit(40)
-        .all(),
-    ]);
+    const teamRow = await db
+      .select({
+        name: teams.name,
+        homeGround: teams.homeGround,
+        organizationId: teams.organizationId,
+        orgName: organizations.name,
+        orgCategory: organizations.category,
+        orgMapsKey: organizations.googleMapsApiKey,
+      })
+      .from(teams)
+      .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+      .where(eq(teams.id, teamId))
+      .get();
+
+    const venueRows = teamRow
+      ? await db
+          .select({
+            address: venues.address,
+          })
+          .from(venues)
+          .where(
+            buildTeamTenantWhere(
+              { organizationId: venues.organizationId, teamId: venues.teamId },
+              { teamId, organizationId: teamRow.organizationId || null }
+            )
+          )
+          .limit(40)
+          .all()
+      : [];
 
     const areaCount = new Map<string, number>();
     for (const v of venueRows) {
@@ -1290,20 +1298,26 @@ liffGroundsAiRouter.post("/", async (c) => {
     );
   }
 
-  if (teamId !== "demo-team") {
-    const access = await resolveCallerTeamAccess(c);
-    const allowed = teamId
-      ? access.canMutateTeamData(teamId)
-      : access.isSystemAdmin || access.mutableTeamIds.size > 0;
-    if (!allowed) {
-      return c.json(
-        {
-          success: false,
-          error: "グラウンドAI検索を利用するにはチームメンバーとしてログインが必要です",
-        },
-        403
-      );
-    }
+  if (!teamId || teamId === "demo-team") {
+    return c.json(
+      {
+        success: false,
+        error:
+          "デモモードではAI自動取得を実行できません。チームに参加または作成してからご利用ください",
+      },
+      403
+    );
+  }
+
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+    return c.json(
+      {
+        success: false,
+        error: "グラウンドAI検索を利用するにはチームメンバーとしてログインが必要です",
+      },
+      403
+    );
   }
 
   const apiKey = c.env.GEMINI_API_KEY;

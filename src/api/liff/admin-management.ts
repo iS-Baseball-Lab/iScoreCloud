@@ -29,6 +29,12 @@ import {
   resolveCallerTeamAccess,
   type CallerTeamAccess,
 } from "@/lib/team-access";
+import {
+  buildTeamSubqueryTenantWhere,
+  canCallerMutateTenantEntity,
+  resolveTeamTenantIds,
+} from "@/lib/tenant-scope";
+import { validateSafeHttpUrl } from "@/lib/utils";
 import type { WorkerEnv } from "@/types/api";
 
 const liffAdminMgmtRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -2240,24 +2246,43 @@ liffAdminMgmtRouter.get("/tournaments", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
-  const [teamOrgRow, allTournaments, matchRefRows] = await Promise.all([
+  const [teamOrgRow, allTournaments] = await Promise.all([
     db
       .select({ orgCategory: organizations.category })
       .from(teams)
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
       .where(eq(teams.id, ctx.teamId))
       .get(),
-    db.select().from(tournaments).orderBy(desc(tournaments.createdAt)).all(),
     db
-      .select({
-        tournamentId: matches.tournamentId,
-        teamId: matches.teamId,
-        count: sql<number>`count(*)`,
-      })
-      .from(matches)
-      .groupBy(matches.tournamentId, matches.teamId)
+      .select()
+      .from(tournaments)
+      .where(
+        buildTeamSubqueryTenantWhere(
+          {
+            organizationId: tournaments.organizationId,
+            teamId: tournaments.teamId,
+          },
+          ctx.teamId
+        )
+      )
+      .orderBy(desc(tournaments.createdAt))
       .all(),
   ]);
+
+  const tournamentIds = allTournaments.map((t) => t.id);
+  const matchRefRows =
+    tournamentIds.length > 0
+      ? await db
+          .select({
+            tournamentId: matches.tournamentId,
+            teamId: matches.teamId,
+            count: sql<number>`count(*)`,
+          })
+          .from(matches)
+          .where(inArray(matches.tournamentId, tournamentIds))
+          .groupBy(matches.tournamentId, matches.teamId)
+          .all()
+      : [];
 
   const myMatchCountMap = new Map<string, number>();
   const otherMatchCountMap = new Map<string, number>();
@@ -2332,6 +2357,11 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
     return c.json({ success: false, error: "大会・リーグ名を入力してください" }, 400);
   }
 
+  const bracketCheck = validateSafeHttpUrl(body.bracketUrl, { allowEmpty: true });
+  if (!bracketCheck.ok) {
+    return c.json({ success: false, error: bracketCheck.error }, 400);
+  }
+
   if (ctx.isDemo) {
     return c.json({
       success: true,
@@ -2344,12 +2374,13 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
+  const tenant = await resolveTeamTenantIds(db, ctx.teamId);
   const values = {
     name: trnName,
     category: (body.category || "other").trim(),
     season: (body.season || String(new Date().getFullYear())).trim(),
     organizer: body.organizer ? body.organizer.trim() || null : null,
-    bracketUrl: body.bracketUrl ? body.bracketUrl.trim() || null : null,
+    bracketUrl: bracketCheck.url,
     timeLimit: body.timeLimit ? body.timeLimit.trim() || null : null,
     coldGameRule: body.coldGameRule ? body.coldGameRule.trim() || null : null,
     tiebreakerRule: body.tiebreakerRule ? body.tiebreakerRule.trim() || null : null,
@@ -2358,6 +2389,24 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
   };
 
   if (body.id) {
+    const existing = await db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, body.id))
+      .get();
+    if (!existing) {
+      return c.json({ success: false, error: "対象の大会が見つかりません" }, 404);
+    }
+    if (
+      ctx.access &&
+      !canCallerMutateTenantEntity(existing, ctx.access, { requireManage: true })
+    ) {
+      return c.json(
+        { success: false, error: "他クラブの大会情報は変更できません" },
+        403
+      );
+    }
+
     await db.update(tournaments).set(values).where(eq(tournaments.id, body.id));
     return c.json({ success: true, message: "大会情報を更新しました" });
   }
@@ -2365,6 +2414,8 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
   const newId = `trn_${crypto.randomUUID().replace(/-/g, "")}`;
   await db.insert(tournaments).values({
     id: newId,
+    organizationId: tenant?.organizationId || null,
+    teamId: ctx.teamId,
     ...values,
     createdAt: new Date(),
   });
@@ -2390,13 +2441,33 @@ liffAdminMgmtRouter.delete("/tournaments/:tournamentId", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
+  const existing = await db
+    .select()
+    .from(tournaments)
+    .where(eq(tournaments.id, tournamentId))
+    .get();
+  if (!existing) {
+    return c.json({ success: false, error: "対象の大会が見つかりません" }, 404);
+  }
+  if (
+    ctx.access &&
+    !canCallerMutateTenantEntity(existing, ctx.access, { requireManage: true })
+  ) {
+    return c.json(
+      { success: false, error: "他クラブの大会は削除できません" },
+      403
+    );
+  }
+
   const linkedMatches = await db
     .select({ id: matches.id, teamId: matches.teamId })
     .from(matches)
     .where(eq(matches.tournamentId, tournamentId))
     .all();
 
-  const usedByOtherTeam = linkedMatches.some((m) => m.teamId !== ctx.teamId);
+  const usedByOtherTeam = linkedMatches.some(
+    (m) => m.teamId !== ctx.teamId && !(ctx.access?.canAccessTeam(m.teamId))
+  );
   if (usedByOtherTeam && !ctx.access?.isSystemAdmin) {
     return c.json(
       {
@@ -2407,7 +2478,7 @@ liffAdminMgmtRouter.delete("/tournaments/:tournamentId", async (c) => {
     );
   }
 
-  // 自チームの試合に紐づいている場合は外部キー制約違反を防ぐため tournament_id を null へ解除してから削除
+  // 自クラブの試合に紐づいている場合は外部キー制約違反を防ぐため tournament_id を null へ解除してから削除
   if (linkedMatches.length > 0) {
     await db
       .update(matches)

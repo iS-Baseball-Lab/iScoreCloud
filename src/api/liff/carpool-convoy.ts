@@ -9,6 +9,7 @@ import {
   resolveCallerTeamAccess,
   type ResolvedSessionUser,
 } from "@/lib/team-access";
+import { buildTeamSubqueryTenantWhere } from "@/lib/tenant-scope";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import {
   expandGoogleMapsShortUrl,
@@ -513,7 +514,17 @@ liffCarpoolConvoyRouter.get("/", async (c) => {
         .where(eq(parentChildRelations.teamId, teamId))
         .all()
         .catch(() => [] as Array<{ parentId: string; childId: string }>),
-      db.select().from(venues).all().catch(() => []),
+      db
+        .select()
+        .from(venues)
+        .where(
+          buildTeamSubqueryTenantWhere(
+            { organizationId: venues.organizationId, teamId: venues.teamId },
+            teamId
+          )
+        )
+        .all()
+        .catch(() => []),
     ]);
 
     if (!teamRow) {

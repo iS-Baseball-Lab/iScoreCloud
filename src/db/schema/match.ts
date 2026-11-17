@@ -14,6 +14,8 @@ import { teams, players } from "./team";
 // ==========================================
 export const tournaments = sqliteTable("tournaments", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id"),
+  teamId: text("team_id"),
   name: text("name").notNull(), // 例: "第15回 関東秋季大会"
   category: text("category").notNull().default('other'), // 学童、中学、草野球などのカテゴリ
   season: text("season").notNull(), // 例: "2026"
@@ -25,7 +27,10 @@ export const tournaments = sqliteTable("tournaments", {
   startDate: text("start_date"), // 大会開幕日
   endDate: text("end_date"), // 大会終了日
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
-});
+}, (table) => ({
+  orgIdx: index("idx_tournaments_org_id").on(table.organizationId),
+  teamIdx: index("idx_tournaments_team_id").on(table.teamId),
+}));
 
 // ==========================================
 // 🗺️ 球場・グラウンド（Venues）テーブル
@@ -33,6 +38,8 @@ export const tournaments = sqliteTable("tournaments", {
 // ==========================================
 export const venues = sqliteTable("venues", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id"),
+  teamId: text("team_id"),
   name: text("name").notNull(), // 例: "多摩川緑地野球場"
   shortName: text("short_name"), // 画面表示用の略称
   category: text("category").default("stadium"), // 'home' | 'stadium' | 'school' | 'indoor'
@@ -44,7 +51,10 @@ export const venues = sqliteTable("venues", {
   spikeRule: text("spike_rule"), // スパイク規定（金具可/金具禁止/ポイント等）
   notes: text("notes"), // 例: "駐車場から遠い", "ファウルボール注意" などのローカルメモ
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
-});
+}, (table) => ({
+  orgIdx: index("idx_venues_org_id").on(table.organizationId),
+  teamIdx: index("idx_venues_team_id").on(table.teamId),
+}));
 
 // ==========================================
 // ⚾️ 試合テーブル

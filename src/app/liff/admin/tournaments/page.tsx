@@ -30,6 +30,7 @@ import {
   invalidateLiffApiCache,
   peekLiffApiCache,
 } from "@/lib/liff/api-cache";
+import { sanitizeSafeExternalHref, validateSafeHttpUrl } from "@/lib/utils";
 
 const TOURNAMENT_CATEGORIES = [
   { value: "gakudou", label: "学童（小学生）" },
@@ -167,6 +168,21 @@ export default function LiffAdminTournamentsPage() {
       return;
     }
 
+    let normalizedBracketUrl = bracketUrl.trim();
+    if (normalizedBracketUrl) {
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(normalizedBracketUrl)) {
+        normalizedBracketUrl = `https://${normalizedBracketUrl}`;
+      }
+      const urlCheck = validateSafeHttpUrl(normalizedBracketUrl, {
+        allowEmpty: true,
+      });
+      if (!urlCheck.ok) {
+        toast.error(urlCheck.error);
+        return;
+      }
+      normalizedBracketUrl = urlCheck.url || "";
+    }
+
     setIsSaving(true);
     try {
       const res = await fetch("/api/liff/admin/mgmt/tournaments", {
@@ -185,7 +201,7 @@ export default function LiffAdminTournamentsPage() {
           timeLimit: timeLimit.trim(),
           coldGameRule: coldGameRule.trim(),
           tiebreakerRule: tiebreakerRule.trim(),
-          bracketUrl: bracketUrl.trim(),
+          bracketUrl: normalizedBracketUrl,
         }),
       });
       const json = (await res.json()) as {
@@ -411,7 +427,7 @@ export default function LiffAdminTournamentsPage() {
                 {item.bracketUrl && (
                   <div className="pt-1">
                     <a
-                      href={item.bracketUrl}
+                      href={sanitizeSafeExternalHref(item.bracketUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[11px] font-black text-primary hover:underline"

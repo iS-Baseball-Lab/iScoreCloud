@@ -1,4 +1,4 @@
-// filepath: `src/components/layout/EmptyState.tsx`
+// filepath: src/components/layout/EmptyState.tsx
 import React from "react";
 import { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,10 +7,11 @@ interface EmptyStateProps {
   icon: LucideIcon;
   title: string;
   description?: string;
+  action?: React.ReactNode;
   className?: string;
 }
 
-export function EmptyState({ icon: Icon, title, description, className }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div className={cn(
       "flex flex-col items-center justify-center text-center p-10 rounded-2xl transition-all",
@@ -31,6 +32,8 @@ export function EmptyState({ icon: Icon, title, description, className }: EmptyS
           {description}
         </p>
       )}
+
+      {action && <div className="mt-5">{action}</div>}
     </div>
   );
 }

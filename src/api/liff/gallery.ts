@@ -12,6 +12,7 @@ import {
   extractHeaderUserName,
   resolveCallerTeamAccess,
 } from "@/lib/team-access";
+import { buildTeamSubqueryTenantWhere } from "@/lib/tenant-scope";
 import type { WorkerEnv } from "@/types/api";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
@@ -693,6 +694,15 @@ app.get("/", async (c) => {
         name: tournaments.name,
       })
       .from(tournaments)
+      .where(
+        buildTeamSubqueryTenantWhere(
+          {
+            organizationId: tournaments.organizationId,
+            teamId: tournaments.teamId,
+          },
+          teamId
+        )
+      )
       .all(),
   ]);
 

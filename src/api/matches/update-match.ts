@@ -1,9 +1,10 @@
 // filepath: src/api/matches/update-match.ts
 import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { matches, tournaments } from '@/db/schema/match';
 import { ensureMatchLineupColumns } from '@/lib/db-helper';
+import { buildTeamTenantWhere, resolveTeamTenantIds } from '@/lib/tenant-scope';
 import type { WorkerEnv } from '@/types/api';
 import type { MatchDayOps } from '@/types/match';
 
@@ -41,27 +42,50 @@ app.patch('/:id', async (c) => {
     // 💡 徹底的に null 変換するヘルパー
     const n = (val: string | undefined | null) => (val === "" || val === undefined || val === null ? null : val);
 
-    // 💡 大会名（tournamentName）が送られてきた場合、自動的に解決・新規生成する
+    // 💡 大会名（tournamentName）が送られてきた場合、対象試合の所属クラブ・チーム内で解決・新規生成する
     let tournamentId: string | null | undefined = undefined;
     if (body.tournamentName !== undefined) {
       const tName = (body.tournamentName || "").trim();
       if (!tName) {
         tournamentId = null;
       } else {
-        // 1. UUIDで既存大会テーブルに存在するかチェック（IDが送られてきた場合）
-        const byId = await db.select().from(tournaments).where(eq(tournaments.id, tName)).get();
+        const matchRow = await db
+          .select({ teamId: matches.teamId })
+          .from(matches)
+          .where(eq(matches.id, matchId))
+          .get();
+        const tenant = matchRow?.teamId
+          ? await resolveTeamTenantIds(db, matchRow.teamId)
+          : null;
+        const tenantWhere = buildTeamTenantWhere(
+          { organizationId: tournaments.organizationId, teamId: tournaments.teamId },
+          tenant
+        );
+
+        // 1. IDが送られてきた場合（自クラブ内または未割当レガシーのみ許可）
+        const byId = await db
+          .select()
+          .from(tournaments)
+          .where(and(eq(tournaments.id, tName), tenantWhere))
+          .get();
         if (byId) {
           tournamentId = byId.id;
         } else {
-          // 2. 名前で検索
-          const existing = await db.select().from(tournaments).where(eq(tournaments.name, tName)).get();
+          // 2. 自クラブ・チーム内で名前検索
+          const existing = await db
+            .select()
+            .from(tournaments)
+            .where(and(eq(tournaments.name, tName), tenantWhere))
+            .get();
           if (existing) {
             tournamentId = existing.id;
           } else {
-            // 3. なければ新規作成
+            // 3. なければ自クラブ・チームの大会として新規作成
             const newId = crypto.randomUUID();
             await db.insert(tournaments).values({
               id: newId,
+              organizationId: tenant?.organizationId || null,
+              teamId: tenant?.teamId || null,
               name: tName,
               season: new Date().getFullYear().toString(),
               category: 'other',

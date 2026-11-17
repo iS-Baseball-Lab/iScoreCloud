@@ -97,9 +97,15 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "profile_details", ddl: "ALTER TABLE players ADD COLUMN profile_details text" },
   ],
   venues: [
+    { name: "organization_id", ddl: "ALTER TABLE venues ADD COLUMN organization_id TEXT" },
+    { name: "team_id", ddl: "ALTER TABLE venues ADD COLUMN team_id TEXT" },
     { name: "category", ddl: "ALTER TABLE venues ADD COLUMN category TEXT DEFAULT 'stadium'" },
     { name: "parking_info", ddl: "ALTER TABLE venues ADD COLUMN parking_info TEXT" },
     { name: "spike_rule", ddl: "ALTER TABLE venues ADD COLUMN spike_rule TEXT" },
+  ],
+  tournaments: [
+    { name: "organization_id", ddl: "ALTER TABLE tournaments ADD COLUMN organization_id TEXT" },
+    { name: "team_id", ddl: "ALTER TABLE tournaments ADD COLUMN team_id TEXT" },
   ],
   team_rules: [
     { name: "is_important", ddl: "ALTER TABLE team_rules ADD COLUMN is_important integer DEFAULT 0" },
@@ -265,6 +271,10 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_player_cond_periods_player_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_player_id ON player_condition_periods (player_id)" },
   { name: "team_role_idx", ddl: "CREATE UNIQUE INDEX IF NOT EXISTS team_role_idx ON team_role_settings (team_id, role)" },
   { name: "idx_team_equipments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_equipments_team_id ON team_equipments (team_id)" },
+  { name: "idx_venues_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_venues_org_id ON venues (organization_id)" },
+  { name: "idx_venues_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_venues_team_id ON venues (team_id)" },
+  { name: "idx_tournaments_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_org_id ON tournaments (organization_id)" },
+  { name: "idx_tournaments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_team_id ON tournaments (team_id)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {
@@ -343,6 +353,21 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
             } catch {}
           }
         }
+
+        const TENANT_SCOPE_SENTINEL_TABLE = "_repair_venue_tournament_tenant_v1_done";
+        if (!existingTables.has(TENANT_SCOPE_SENTINEL_TABLE)) {
+          const backfilledCleanly = await backfillLegacyVenueTournamentTenants(d1);
+          if (backfilledCleanly) {
+            try {
+              await d1
+                .prepare(
+                  `CREATE TABLE IF NOT EXISTS ${TENANT_SCOPE_SENTINEL_TABLE} (done integer PRIMARY KEY)`
+                )
+                .run()
+                .catch(() => {});
+            } catch {}
+          }
+        }
       }
       isAllSchemaVerified = true;
     } catch {
@@ -353,6 +378,290 @@ export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void
   })();
 
   await schemaVerificationPromise;
+}
+
+async function backfillLegacyVenueTournamentTenants(d1: D1Database): Promise<boolean> {
+  try {
+    const [teamsRes, venuesRes, tournamentsRes, matchesRes, eventsRes] =
+      await d1.batch([
+        d1.prepare("SELECT id, organization_id FROM teams"),
+        d1.prepare(
+          "SELECT id, name, short_name, category, address, map_url, surface_type, dimensions, parking_info, spike_rule, notes FROM venues WHERE team_id IS NULL AND organization_id IS NULL"
+        ),
+        d1.prepare(
+          "SELECT id, name, category, season, organizer, bracket_url, time_limit, cold_game_rule, tiebreaker_rule, start_date, end_date FROM tournaments WHERE team_id IS NULL AND organization_id IS NULL"
+        ),
+        d1.prepare(
+          "SELECT id, team_id, venue_id, tournament_id FROM matches WHERE venue_id IS NOT NULL OR tournament_id IS NOT NULL"
+        ),
+        d1.prepare(
+          "SELECT team_id, location, pm_location FROM events WHERE location IS NOT NULL OR pm_location IS NOT NULL"
+        ),
+      ]);
+
+    const teamRows = (teamsRes?.results || []) as Array<{
+      id: string;
+      organization_id: string | null;
+    }>;
+    const realTeams = teamRows.filter((t) => t.id && t.id !== "demo-team");
+    const teamOrgMap = new Map<string, string | null>();
+    const distinctOrgs = new Set<string>();
+    for (const t of realTeams) {
+      teamOrgMap.set(t.id, t.organization_id || null);
+      if (t.organization_id) distinctOrgs.add(t.organization_id);
+    }
+
+    const singleFallbackTeam =
+      distinctOrgs.size === 1
+        ? realTeams.find((t) => t.organization_id && distinctOrgs.has(t.organization_id)) || null
+        : realTeams.length === 1
+        ? realTeams[0]
+        : null;
+
+    const matchRows = (matchesRes?.results || []) as Array<{
+      id: string;
+      team_id: string;
+      venue_id: string | null;
+      tournament_id: string | null;
+    }>;
+    const eventRows = (eventsRes?.results || []) as Array<{
+      team_id: string;
+      location: string | null;
+      pm_location: string | null;
+    }>;
+
+    const writeStmts: D1PreparedStatement[] = [];
+
+    // 1. Venues backfill
+    const orphanVenues = (venuesRes?.results || []) as Array<{
+      id: string;
+      name: string;
+      short_name: string | null;
+      category: string | null;
+      address: string | null;
+      map_url: string | null;
+      surface_type: string | null;
+      dimensions: string | null;
+      parking_info: string | null;
+      spike_rule: string | null;
+      notes: string | null;
+    }>;
+
+    for (const v of orphanVenues) {
+      const refMatches = matchRows.filter((m) => m.venue_id === v.id && m.team_id);
+      if (refMatches.length > 0) {
+        const groupedByTenant = new Map<
+          string,
+          { teamId: string; orgId: string | null; matchIds: string[] }
+        >();
+        for (const m of refMatches) {
+          const orgId = teamOrgMap.get(m.team_id) || null;
+          const key = orgId ? `org:${orgId}` : `team:${m.team_id}`;
+          const existing = groupedByTenant.get(key);
+          if (existing) {
+            existing.matchIds.push(m.id);
+          } else {
+            groupedByTenant.set(key, {
+              teamId: m.team_id,
+              orgId,
+              matchIds: [m.id],
+            });
+          }
+        }
+        const entries = Array.from(groupedByTenant.values());
+        const primary = entries[0];
+        if (primary) {
+          writeStmts.push(
+            d1
+              .prepare(
+                "UPDATE venues SET team_id = ?, organization_id = ? WHERE id = ?"
+              )
+              .bind(primary.teamId, primary.orgId, v.id)
+          );
+        }
+        for (let idx = 1; idx < entries.length; idx++) {
+          const extra = entries[idx];
+          const clonedId = crypto.randomUUID();
+          writeStmts.push(
+            d1
+              .prepare(
+                `INSERT INTO venues (id, organization_id, team_id, name, short_name, category, address, map_url, surface_type, dimensions, parking_info, spike_rule, notes)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              )
+              .bind(
+                clonedId,
+                extra.orgId,
+                extra.teamId,
+                v.name,
+                v.short_name,
+                v.category,
+                v.address,
+                v.map_url,
+                v.surface_type,
+                v.dimensions,
+                v.parking_info,
+                v.spike_rule,
+                v.notes
+              )
+          );
+          for (const mid of extra.matchIds) {
+            writeStmts.push(
+              d1
+                .prepare("UPDATE matches SET venue_id = ? WHERE id = ?")
+                .bind(clonedId, mid)
+            );
+          }
+        }
+        continue;
+      }
+
+      const vName = (v.name || "").trim();
+      const vShort = (v.short_name || "").trim();
+      const matchedEvent = eventRows.find((ev) => {
+        const loc = (ev.location || "").trim();
+        const pmLoc = (ev.pm_location || "").trim();
+        return (
+          (vName && (loc === vName || pmLoc === vName)) ||
+          (vShort && (loc === vShort || pmLoc === vShort))
+        );
+      });
+      if (matchedEvent && matchedEvent.team_id) {
+        const orgId = teamOrgMap.get(matchedEvent.team_id) || null;
+        writeStmts.push(
+          d1
+            .prepare(
+              "UPDATE venues SET team_id = ?, organization_id = ? WHERE id = ?"
+            )
+            .bind(matchedEvent.team_id, orgId, v.id)
+        );
+        continue;
+      }
+
+      if (singleFallbackTeam) {
+        writeStmts.push(
+          d1
+            .prepare(
+              "UPDATE venues SET team_id = ?, organization_id = ? WHERE id = ?"
+            )
+            .bind(
+              singleFallbackTeam.id,
+              singleFallbackTeam.organization_id || null,
+              v.id
+            )
+        );
+      }
+    }
+
+    // 2. Tournaments backfill
+    const orphanTournaments = (tournamentsRes?.results || []) as Array<{
+      id: string;
+      name: string;
+      category: string;
+      season: string;
+      organizer: string | null;
+      bracket_url: string | null;
+      time_limit: string | null;
+      cold_game_rule: string | null;
+      tiebreaker_rule: string | null;
+      start_date: string | null;
+      end_date: string | null;
+    }>;
+
+    for (const trn of orphanTournaments) {
+      const refMatches = matchRows.filter(
+        (m) => m.tournament_id === trn.id && m.team_id
+      );
+      if (refMatches.length > 0) {
+        const groupedByTenant = new Map<
+          string,
+          { teamId: string; orgId: string | null; matchIds: string[] }
+        >();
+        for (const m of refMatches) {
+          const orgId = teamOrgMap.get(m.team_id) || null;
+          const key = orgId ? `org:${orgId}` : `team:${m.team_id}`;
+          const existing = groupedByTenant.get(key);
+          if (existing) {
+            existing.matchIds.push(m.id);
+          } else {
+            groupedByTenant.set(key, {
+              teamId: m.team_id,
+              orgId,
+              matchIds: [m.id],
+            });
+          }
+        }
+        const entries = Array.from(groupedByTenant.values());
+        const primary = entries[0];
+        if (primary) {
+          writeStmts.push(
+            d1
+              .prepare(
+                "UPDATE tournaments SET team_id = ?, organization_id = ? WHERE id = ?"
+              )
+              .bind(primary.teamId, primary.orgId, trn.id)
+          );
+        }
+        for (let idx = 1; idx < entries.length; idx++) {
+          const extra = entries[idx];
+          const clonedId = `trn_${crypto.randomUUID().replace(/-/g, "")}`;
+          writeStmts.push(
+            d1
+              .prepare(
+                `INSERT INTO tournaments (id, organization_id, team_id, name, category, season, organizer, bracket_url, time_limit, cold_game_rule, tiebreaker_rule, start_date, end_date)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              )
+              .bind(
+                clonedId,
+                extra.orgId,
+                extra.teamId,
+                trn.name,
+                trn.category,
+                trn.season,
+                trn.organizer,
+                trn.bracket_url,
+                trn.time_limit,
+                trn.cold_game_rule,
+                trn.tiebreaker_rule,
+                trn.start_date,
+                trn.end_date
+              )
+          );
+          for (const mid of extra.matchIds) {
+            writeStmts.push(
+              d1
+                .prepare("UPDATE matches SET tournament_id = ? WHERE id = ?")
+                .bind(clonedId, mid)
+            );
+          }
+        }
+        continue;
+      }
+
+      if (singleFallbackTeam) {
+        writeStmts.push(
+          d1
+            .prepare(
+              "UPDATE tournaments SET team_id = ?, organization_id = ? WHERE id = ?"
+            )
+            .bind(
+              singleFallbackTeam.id,
+              singleFallbackTeam.organization_id || null,
+              trn.id
+            )
+        );
+      }
+    }
+
+    for (let i = 0; i < writeStmts.length; i += 50) {
+      const chunk = writeStmts.slice(i, i + 50);
+      if (chunk.length > 0) {
+        await d1.batch(chunk);
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function repairLegacyForceOutScorebookData(d1: D1Database): Promise<boolean> {

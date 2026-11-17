@@ -11,6 +11,7 @@ import {
 } from "@/lib/liff/player-condition";
 import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
 import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
+import { buildTeamSubqueryTenantWhere } from "@/lib/tenant-scope";
 import type { WorkerEnv } from "@/types/api";
 
 const liffCarpoolSimpleRouter = new Hono<{ Bindings: WorkerEnv }>();
@@ -373,7 +374,17 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         .from(memberCars)
         .where(eq(memberCars.teamId, teamId))
         .all(),
-      db.select({ id: venues.id, name: venues.name }).from(venues).all().catch(() => []),
+      db
+        .select({ id: venues.id, name: venues.name })
+        .from(venues)
+        .where(
+          buildTeamSubqueryTenantWhere(
+            { organizationId: venues.organizationId, teamId: venues.teamId },
+            teamId
+          )
+        )
+        .all()
+        .catch(() => []),
       db
         .select({
           parentId: parentChildRelations.parentId,

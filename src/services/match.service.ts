@@ -12,6 +12,7 @@ import {
 import { players } from "@/db/schema/team";
 import { buildGoogleMapsEmbedFromUrl, expandGoogleMapsShortUrl } from "@/lib/google-maps";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
+import { buildTeamTenantWhere, resolveTeamTenantIds } from "@/lib/tenant-scope";
 import type {
   DrizzleDB,
   CreateMatchBody,
@@ -200,6 +201,7 @@ export const MatchService = {
         const normalizedQuery = normalizeVenueKey(rawQuery);
         const coreQuery = stripGenericVenueWords(normalizedQuery);
 
+        const tenant = await resolveTeamTenantIds(db, row.teamId);
         const allVenues = await db
           .select({
             id: venues.id,
@@ -214,6 +216,12 @@ export const MatchService = {
             notes: venues.notes,
           })
           .from(venues)
+          .where(
+            buildTeamTenantWhere(
+              { organizationId: venues.organizationId, teamId: venues.teamId },
+              tenant
+            )
+          )
           .all();
 
         const matchedVenue =
@@ -226,7 +234,7 @@ export const MatchService = {
             const nShort = normalizeVenueKey(v.shortName);
             return nName === normalizedQuery || (nShort.length >= 2 && nShort === normalizedQuery);
           }) ||
-          // 2. 固有地名部分（"等々力"・"多摩川緑地"・"桜本小" 等）での部分一致（「球場」「グラウンド」単体での誤一致を防止）
+          // 2. 固有地名部分での部分一致（「球場」「グラウンド」単体での誤一致を防止）
           (coreQuery.length >= 2
             ? allVenues.find((v) => {
                 const cName = stripGenericVenueWords(normalizeVenueKey(v.name));
@@ -309,36 +317,63 @@ export const MatchService = {
     return results;
   },
 
-  // 4. 大会（Tournament）の検索・作成（内部ヘルパー）
-  async _resolveTournament(db: DrizzleDB, matchType: string, tournamentName?: string): Promise<string | null> {
+  // 4. 大会（Tournament）の検索・作成（内部ヘルパー・マルチテナント分離済み）
+  async _resolveTournament(
+    db: DrizzleDB,
+    matchType: string,
+    tournamentName?: string,
+    teamId?: string
+  ): Promise<string | null> {
     if ((matchType !== "official" && matchType !== "exchange") || !tournamentName) return null;
 
     const tName = tournamentName.trim();
     if (!tName) return null;
 
-    // 1. UUIDで既存大会テーブルに存在するかチェック
-    const byId = await db.select().from(tournaments).where(eq(tournaments.id, tName)).get();
+    const tenant = teamId ? await resolveTeamTenantIds(db, teamId) : null;
+    const tenantWhere = tenant
+      ? buildTeamTenantWhere(
+          { organizationId: tournaments.organizationId, teamId: tournaments.teamId },
+          tenant
+        )
+      : undefined;
+
+    // 1. IDで既存大会テーブルに存在するかチェック（自クラブ所属のみ）
+    const byId = await db
+      .select()
+      .from(tournaments)
+      .where(tenantWhere ? and(eq(tournaments.id, tName), tenantWhere) : eq(tournaments.id, tName))
+      .get();
     if (byId) return byId.id;
 
-    // 2. 名前で検索
-    const existingTournament = await db.select().from(tournaments)
-      .where(eq(tournaments.name, tName)).get();
+    // 2. 自クラブ・チーム内で名前検索
+    const existingTournament = await db
+      .select()
+      .from(tournaments)
+      .where(tenantWhere ? and(eq(tournaments.name, tName), tenantWhere) : eq(tournaments.name, tName))
+      .get();
 
     if (existingTournament) return existingTournament.id;
 
     const newId = crypto.randomUUID();
     await db.insert(tournaments).values({
       id: newId,
+      organizationId: tenant?.organizationId || null,
+      teamId: tenant?.teamId || null,
       name: tName,
       season: new Date().getFullYear().toString(),
-      category: 'other',
+      category: "other",
     });
     return newId;
   },
 
   // 5. 新規試合の作成
   async createMatch(db: DrizzleDB, body: CreateMatchBody): Promise<string> {
-    const tournamentId = await this._resolveTournament(db, body.matchType, body.tournamentName);
+    const tournamentId = await this._resolveTournament(
+      db,
+      body.matchType,
+      body.tournamentName,
+      body.teamId
+    );
     const matchId = crypto.randomUUID();
 
     await db.insert(matches).values({
@@ -363,9 +398,20 @@ export const MatchService = {
   async updateMatch(db: DrizzleDB, matchId: string, body: UpdateMatchBody): Promise<void> {
     const shouldResolveTournament =
       body.matchType !== undefined || body.tournamentName !== undefined;
-    const tournamentId = shouldResolveTournament
-      ? await this._resolveTournament(db, body.matchType || "official", body.tournamentName)
-      : undefined;
+    let tournamentId: string | null | undefined = undefined;
+    if (shouldResolveTournament) {
+      const existingMatch = await db
+        .select({ teamId: matches.teamId, matchType: matches.matchType })
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .get();
+      tournamentId = await this._resolveTournament(
+        db,
+        body.matchType || existingMatch?.matchType || "official",
+        body.tournamentName,
+        existingMatch?.teamId
+      );
+    }
 
     const resolvedSurfaceDetails =
       body.surfaceDetails !== undefined

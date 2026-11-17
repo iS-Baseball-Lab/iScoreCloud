@@ -124,6 +124,13 @@ import {
   expandGoogleMapsShortUrl,
   isGoogleMapsShortUrl,
 } from "@/lib/google-maps";
+import {
+  buildTeamSubqueryTenantWhere,
+  buildTeamTenantWhere,
+  canCallerMutateTenantEntity,
+  resolveTeamTenantIds,
+} from "@/lib/tenant-scope";
+import { validateSafeHttpUrl } from "@/lib/utils";
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -1602,7 +1609,15 @@ app.get("/hub", async (c) => {
           })
           .from(parentChildRelations)
           .where(eq(parentChildRelations.teamId, teamId)),
-        db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+        db
+          .select({ name: venues.name, shortName: venues.shortName })
+          .from(venues)
+          .where(
+            buildTeamSubqueryTenantWhere(
+              { organizationId: venues.organizationId, teamId: venues.teamId },
+              teamId
+            )
+          ),
       ]),
       db
         .select({
@@ -1933,6 +1948,14 @@ app.get("/hub", async (c) => {
       attendanceStatusConfig: hubStatusConfig,
       scheduleDefaultTimes: hubTeamScheduleDefaults,
       matches: formattedMatches,
+      onboardingSummary: {
+        activePlayerCount: teamPlayerRows.filter((p) => p.isActive !== false).length,
+        activeMemberCount: teamMemberList.filter(
+          (m) => !m.status || m.status === "active"
+        ).length,
+        venueCount: teamVenues.length,
+        hasActivity: allEventsList.length > 0 || matchesList.length > 0,
+      },
     });
   } catch (error: unknown) {
     console.error("Failed to load liff hub data:", error);
@@ -2217,7 +2240,15 @@ app.get("/schedule", async (c) => {
           .from(events)
           .where(eq(events.teamId, teamId))
           .orderBy(asc(events.startAt)),
-        db.select({ name: venues.name, shortName: venues.shortName }).from(venues),
+        db
+          .select({ name: venues.name, shortName: venues.shortName })
+          .from(venues)
+          .where(
+            buildTeamSubqueryTenantWhere(
+              { organizationId: venues.organizationId, teamId: venues.teamId },
+              teamId
+            )
+          ),
         db
           .select({
             id: teamMembers.id,
@@ -4833,14 +4864,32 @@ app.get("/grounds", async (c) => {
       });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        { success: false, error: "対象チームへのアクセス権限がありません", venues: [] },
+        403
+      );
+    }
+
     await ensureVenuesColumns(c.env.DB);
-    const venuesList = await db.select().from(venues).all();
+    const tenant = await resolveTeamTenantIds(db, teamId);
+    const venuesList = await db
+      .select()
+      .from(venues)
+      .where(
+        buildTeamTenantWhere(
+          { organizationId: venues.organizationId, teamId: venues.teamId },
+          tenant
+        )
+      )
+      .all();
 
     if (venuesList.length === 0) {
       return c.json({
         success: true,
         isDemo: false,
-        venues: DEMO_VENUES,
+        venues: [],
       });
     }
 
@@ -4942,15 +4991,38 @@ app.post("/grounds", async (c) => {
       return c.json({ success: false, error: "球場・施設名は必須です" }, 400);
     }
 
-    if (body.teamId === "demo-team") {
+    const requestedTeamId = (body.teamId || "").trim();
+    if (!requestedTeamId || requestedTeamId === "demo-team") {
       return c.json({ success: true, id: `demo-venue-${Date.now()}`, message: "施設を登録しました（デモ）" });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canMutateTeamData(requestedTeamId)) {
+      return c.json(
+        { success: false, error: "施設を登録する権限がありません" },
+        403
+      );
+    }
+
+    const mapUrlCheck = validateSafeHttpUrl(body.mapUrl, { allowEmpty: true });
+    if (!mapUrlCheck.ok) {
+      return c.json({ success: false, error: mapUrlCheck.error }, 400);
+    }
+
+    const tenant = await resolveTeamTenantIds(db, requestedTeamId);
+    if (!tenant) {
+      return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
+    }
+
     const newId = crypto.randomUUID();
-    const mapUrl = body.mapUrl?.trim() || `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name)}`;
+    const mapUrl =
+      mapUrlCheck.url ||
+      `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name)}`;
 
     await db.insert(venues).values({
       id: newId,
+      organizationId: tenant.organizationId,
+      teamId: tenant.teamId,
       name: body.name.trim(),
       shortName: body.shortName?.trim() || body.name.trim(),
       category: body.category || "stadium",
@@ -4963,9 +5035,15 @@ app.post("/grounds", async (c) => {
     });
 
     return c.json({ success: true, id: newId });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to create ground:", error);
-    return c.json({ success: false, error: error.message || "球場・施設の登録に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "球場・施設の登録に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -4999,6 +5077,24 @@ app.patch("/grounds/:id", async (c) => {
       return c.json({ success: false, error: "施設情報を変更する権限がありません" }, 403);
     }
 
+    const existing = await db.select().from(venues).where(eq(venues.id, id)).get();
+    if (!existing) {
+      return c.json({ success: false, error: "対象の施設が見つかりません" }, 404);
+    }
+    if (!canCallerMutateTenantEntity(existing, access)) {
+      return c.json(
+        { success: false, error: "他クラブの施設情報は変更できません" },
+        403
+      );
+    }
+
+    if (body.mapUrl !== undefined && body.mapUrl.trim()) {
+      const mapUrlCheck = validateSafeHttpUrl(body.mapUrl, { allowEmpty: true });
+      if (!mapUrlCheck.ok) {
+        return c.json({ success: false, error: mapUrlCheck.error }, 400);
+      }
+    }
+
     if (!access.isSystemAdmin) {
       const refMatches = await db
         .select({ teamId: matches.teamId })
@@ -5022,7 +5118,9 @@ app.patch("/grounds/:id", async (c) => {
     if (body.category !== undefined) updateData.category = body.category;
     if (body.address !== undefined) updateData.address = body.address ? body.address.trim() : null;
     if (body.mapUrl !== undefined) {
-      updateData.mapUrl = body.mapUrl ? body.mapUrl.trim() : `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name || "")}`;
+      updateData.mapUrl = body.mapUrl.trim()
+        ? body.mapUrl.trim()
+        : `https://maps.google.com/?q=${encodeURIComponent(body.address || body.name || existing.name)}`;
     }
     if (body.surface !== undefined) updateData.surfaceType = body.surface ? body.surface.trim() : null;
     if (body.parkingInfo !== undefined) updateData.parkingInfo = body.parkingInfo ? body.parkingInfo.trim() : null;
@@ -5061,12 +5159,23 @@ app.delete("/grounds/:id", async (c) => {
       return c.json({ success: false, error: "施設を削除する権限がありません" }, 403);
     }
 
+    const existing = await db.select().from(venues).where(eq(venues.id, id)).get();
+    if (!existing) {
+      return c.json({ success: false, error: "対象の施設が見つかりません" }, 404);
+    }
+    if (!canCallerMutateTenantEntity(existing, access)) {
+      return c.json(
+        { success: false, error: "他クラブの施設は削除できません" },
+        403
+      );
+    }
+
+    const refMatches = await db
+      .select({ teamId: matches.teamId })
+      .from(matches)
+      .where(eq(matches.venueId, id))
+      .all();
     if (!access.isSystemAdmin) {
-      const refMatches = await db
-        .select({ teamId: matches.teamId })
-        .from(matches)
-        .where(eq(matches.venueId, id))
-        .all();
       if (refMatches.some((m) => Boolean(m.teamId && !access.canAccessTeam(m.teamId)))) {
         return c.json(
           {
@@ -5078,6 +5187,9 @@ app.delete("/grounds/:id", async (c) => {
       }
     }
 
+    if (refMatches.length > 0) {
+      await db.update(matches).set({ venueId: null }).where(eq(matches.venueId, id));
+    }
     await db.delete(venues).where(eq(venues.id, id));
     return c.json({ success: true });
   } catch (error: unknown) {
@@ -8721,6 +8833,25 @@ app.post("/links", async (c) => {
       return c.json({ success: true, message: "関連リンクを登録しました（デモ）" });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+      return c.json(
+        { success: false, error: "関連リンクを登録する権限がありません" },
+        403
+      );
+    }
+
+    const urlCheck = validateSafeHttpUrl(url, { allowEmpty: false });
+    if (!urlCheck.ok || !urlCheck.url) {
+      return c.json(
+        {
+          success: false,
+          error: urlCheck.ok ? "URLを入力してください" : urlCheck.error,
+        },
+        400
+      );
+    }
+
     const currentTeam = await db
       .select({
         id: teams.id,
@@ -8738,7 +8869,7 @@ app.post("/links", async (c) => {
       organizationId: linkScope === "organization" ? organizationId : null,
       teamId: linkScope === "team" ? teamId : null,
       title: title.trim(),
-      url: url.trim(),
+      url: urlCheck.url,
       description: description ? description.trim() : null,
       category: category || "other",
       scope: linkScope,
@@ -8750,9 +8881,16 @@ app.post("/links", async (c) => {
     });
 
     return c.json({ success: true, message: "関連リンクを登録しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to create link:", error);
-    return c.json({ success: false, error: error?.message || "関連リンクの登録に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "関連リンクの登録に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8776,6 +8914,36 @@ app.put("/links/:id", async (c) => {
       return c.json({ success: false, error: "指定された関連リンクが見つかりません" }, 404);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentLink.teamId ? access.canMutateTeamData(currentLink.teamId) : false) ||
+      (currentLink.organizationId
+        ? access.canAccessOrganization(currentLink.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json(
+        { success: false, error: "関連リンクを更新する権限がありません" },
+        403
+      );
+    }
+
+    let sanitizedUrl = currentLink.url;
+    if (url !== undefined && String(url).trim()) {
+      const urlCheck = validateSafeHttpUrl(String(url), { allowEmpty: false });
+      if (!urlCheck.ok || !urlCheck.url) {
+        return c.json(
+          {
+            success: false,
+            error: urlCheck.ok ? "URLを入力してください" : urlCheck.error,
+          },
+          400
+        );
+      }
+      sanitizedUrl = urlCheck.url;
+    }
+
     let organizationId = currentLink.organizationId;
     let targetTeamId = currentLink.teamId;
 
@@ -8783,7 +8951,7 @@ app.put("/links/:id", async (c) => {
       const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
       organizationId = team?.orgId || null;
       targetTeamId = null;
-    } else if (scope === "team" && teamId) {
+    } else if (scope === "team" && teamId && access.canMutateTeamData(teamId)) {
       targetTeamId = teamId;
       organizationId = null;
     }
@@ -8792,7 +8960,7 @@ app.put("/links/:id", async (c) => {
       .update(teamLinks)
       .set({
         title: title ? title.trim() : currentLink.title,
-        url: url ? url.trim() : currentLink.url,
+        url: sanitizedUrl,
         description: description !== undefined ? (description ? description.trim() : null) : currentLink.description,
         category: category || currentLink.category,
         scope: scope || currentLink.scope,
@@ -11122,11 +11290,12 @@ app.get("/players", async (c) => {
           pitching: { battersFaced: 45, outs: 36, inningsText: "12", strikeouts: 14, hitsAllowed: 9, walks: 3 },
         },
       ],
+      archivedPlayers: [],
     });
   }
 
   try {
-    const [teamRow, rawPlayers, [battingQueryRes, pitchingQueryRes], periodsByPlayerId] = await Promise.all([
+    const [teamRow, rawPlayers, [battingQueryRes, pitchingQueryRes, matchAppQueryRes], periodsByPlayerId] = await Promise.all([
       db
         .select({
           id: teams.id,
@@ -11196,7 +11365,18 @@ app.get("/players", async (c) => {
           WHERE m.team_id = ? AND m.status = 'finished' AND ab.pitcher_id IS NOT NULL
           GROUP BY ab.pitcher_id
         `).bind(teamId),
-      ]).catch(() => [{ results: [] }, { results: [] }]),
+        c.env.DB.prepare(`
+          SELECT DISTINCT player_id AS playerId FROM (
+            SELECT ab.batter_id AS player_id FROM at_bats ab JOIN matches m ON ab.match_id = m.id WHERE m.team_id = ? AND ab.batter_id IS NOT NULL
+            UNION
+            SELECT ab.pitcher_id AS player_id FROM at_bats ab JOIN matches m ON ab.match_id = m.id WHERE m.team_id = ? AND ab.pitcher_id IS NOT NULL
+            UNION
+            SELECT ml.player_id AS player_id FROM match_lineups ml JOIN matches m ON ml.match_id = m.id WHERE m.team_id = ? AND ml.player_id IS NOT NULL
+            UNION
+            SELECT ba.runner_id AS player_id FROM base_advances ba JOIN matches m ON ba.match_id = m.id WHERE m.team_id = ? AND ba.runner_id IS NOT NULL
+          )
+        `).bind(teamId, teamId, teamId, teamId),
+      ]).catch(() => [{ results: [] }, { results: [] }, { results: [] }]),
       loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
     ]);
 
@@ -11234,6 +11414,7 @@ app.get("/players", async (c) => {
 
     const battingMap = new Map<string, BatterAggRow>();
     const pitchingMap = new Map<string, PitcherAggRow>();
+    const matchRecordPlayerIds = new Set<string>();
 
     for (const r of (battingQueryRes.results || []) as unknown as BatterAggRow[]) {
       if (r.playerId) {
@@ -11261,6 +11442,12 @@ app.get("/players", async (c) => {
       }
     }
 
+    for (const r of (matchAppQueryRes?.results || []) as unknown as Array<{ playerId?: string }>) {
+      if (r.playerId) {
+        matchRecordPlayerIds.add(r.playerId);
+      }
+    }
+
     const { byPlayerId: aggregatedPosMap } = await aggregateTeamPlayerPositions(
       c.env.DB,
       teamId,
@@ -11280,134 +11467,157 @@ app.get("/players", async (c) => {
     };
 
     const playersTodayKey = getTodayJstDateKey();
+    const prepareSortableEntry = (p: (typeof rawPlayers)[number]) => {
+      const rawPeriods = periodsByPlayerId.get(p.id) || [];
+      const effectiveToday = resolveEffectivePlayerConditionOnDate({
+        conditionPeriods: rawPeriods,
+        fallbackStatus: p.conditionStatus,
+        fallbackNote: p.conditionNote,
+        dateKey: playersTodayKey,
+        todayKey: playersTodayKey,
+      });
+      return {
+        raw: p,
+        rawPeriods,
+        effectiveToday,
+        conditionStatus: effectiveToday.status,
+        uniformNumber: p.uniformNumber,
+        name: p.name,
+      };
+    };
+
+    const formatDirectoryPlayer = ({
+      raw: p,
+      rawPeriods,
+      effectiveToday,
+    }: ReturnType<typeof prepareSortableEntry>) => {
+      const bStat = battingMap.get(p.id);
+      const pStat = pitchingMap.get(p.id);
+
+      const batting =
+        bStat && bStat.pa > 0
+          ? {
+              pa: bStat.pa,
+              ab: bStat.ab,
+              hits: bStat.hits,
+              hr: bStat.hr,
+              walks: bStat.walks,
+              avg:
+                bStat.ab > 0
+                  ? (bStat.hits / bStat.ab).toFixed(3).replace(/^0/, "")
+                  : ".000",
+            }
+          : null;
+
+      const pitching =
+        pStat && pStat.battersFaced > 0
+          ? {
+              battersFaced: pStat.battersFaced,
+              outs: pStat.outs,
+              inningsText: formatInningsText(pStat.outs),
+              strikeouts: pStat.strikeouts,
+              hitsAllowed: pStat.hitsAllowed,
+              walks: pStat.walks,
+            }
+          : null;
+
+      let parsedSubs: string[] = [];
+      if (Array.isArray(p.subPositions)) {
+        parsedSubs = p.subPositions;
+      } else if (typeof p.subPositions === "string") {
+        try {
+          const parsed = JSON.parse(p.subPositions);
+          if (Array.isArray(parsed)) parsedSubs = parsed;
+        } catch {}
+      }
+
+      const posAgg = aggregatedPosMap.get(p.id);
+
+      let joinedTs: number | null = null;
+      if (p.joinedAt instanceof Date) {
+        joinedTs = Math.floor(p.joinedAt.getTime() / 1000);
+      } else if (typeof p.joinedAt === "number") {
+        joinedTs = p.joinedAt;
+      }
+
+      const normalizedCondition = effectiveToday.status;
+      const resolvedPrivateNote =
+        normalizedCondition !== "active"
+          ? effectiveToday.note ?? p.conditionNote
+          : p.conditionNote;
+      const maskedPeriods = maskConditionPeriodsForViewer(rawPeriods, canManagePlayers);
+      const activeConditionPeriod = effectiveToday.period
+        ? maskConditionPeriodsForViewer([effectiveToday.period], canManagePlayers)[0] || null
+        : null;
+      const upcomingRaw = findUpcomingPlayerConditionPeriod(rawPeriods, playersTodayKey);
+      const upcomingConditionPeriod = upcomingRaw
+        ? maskConditionPeriodsForViewer([upcomingRaw], canManagePlayers)[0] || null
+        : null;
+
+      const profileDetails = parsePlayerProfileDetails(p.profileDetails);
+      const isSelf = Boolean(p.userId && callerPerm.searchUserIds.includes(p.userId));
+      const isLinkedChild = callerPerm.linkedChildIds.has(p.id);
+      const canEditProfile = canManagePlayers || isSelf || isLinkedChild;
+      const hasMatchRecords =
+        matchRecordPlayerIds.has(p.id) ||
+        Boolean(posAgg && posAgg.totalPositionGames > 0) ||
+        Boolean(bStat && bStat.pa > 0) ||
+        Boolean(pStat && pStat.battersFaced > 0);
+
+      return {
+        id: p.id,
+        name: p.name,
+        nameKana: p.nameKana || null,
+        uniformNumber: p.uniformNumber,
+        nickname: p.nickname || null,
+        primaryPosition: posAgg ? posAgg.primaryPosition : (p.primaryPosition || null),
+        subPositions: posAgg ? posAgg.subPositions : parsedSubs,
+        registeredPrimaryPosition: posAgg
+          ? posAgg.registeredPrimaryPosition
+          : (p.primaryPosition || null),
+        registeredSubPositions: parsedSubs,
+        positionCounts: posAgg ? posAgg.positionCounts : [],
+        totalPositionGames: posAgg ? posAgg.totalPositionGames : 0,
+        positionSource: posAgg ? posAgg.positionSource : "profile",
+        throws: p.throws || null,
+        bats: p.bats || null,
+        height: p.height ?? null,
+        weight: profileDetails.hideWeight ? null : (p.weight ?? null),
+        editableWeight: canEditProfile ? (p.weight ?? null) : null,
+        profileImageUrl: p.profileImageUrl || null,
+        notes: p.notes || null,
+        profileDetails,
+        isSelf,
+        isLinkedChild,
+        canEditProfile,
+        hasLinkedUser: Boolean(p.userId),
+        conditionStatus: normalizedCondition,
+        conditionNote: canManagePlayers ? resolvedPrivateNote || null : null,
+        conditionPeriods: maskedPeriods,
+        activeConditionPeriod,
+        upcomingConditionPeriod,
+        isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
+        isActive: p.isActive !== false,
+        hasMatchRecords,
+        joinedAt: joinedTs,
+        batting,
+        pitching,
+      };
+    };
+
     const sortedPlayers = rawPlayers
       .filter((p) => p.isActive !== false)
-      .map((p) => {
-        const rawPeriods = periodsByPlayerId.get(p.id) || [];
-        const effectiveToday = resolveEffectivePlayerConditionOnDate({
-          conditionPeriods: rawPeriods,
-          fallbackStatus: p.conditionStatus,
-          fallbackNote: p.conditionNote,
-          dateKey: playersTodayKey,
-          todayKey: playersTodayKey,
-        });
-        return {
-          raw: p,
-          rawPeriods,
-          effectiveToday,
-          conditionStatus: effectiveToday.status,
-          uniformNumber: p.uniformNumber,
-          name: p.name,
-        };
-      })
+      .map(prepareSortableEntry)
       .sort(comparePlayersByConditionAndUniform)
-      .map(({ raw: p, rawPeriods, effectiveToday }) => {
-        const bStat = battingMap.get(p.id);
-        const pStat = pitchingMap.get(p.id);
+      .map(formatDirectoryPlayer);
 
-        const batting =
-          bStat && bStat.pa > 0
-            ? {
-                pa: bStat.pa,
-                ab: bStat.ab,
-                hits: bStat.hits,
-                hr: bStat.hr,
-                walks: bStat.walks,
-                avg:
-                  bStat.ab > 0
-                    ? (bStat.hits / bStat.ab).toFixed(3).replace(/^0/, "")
-                    : ".000",
-              }
-            : null;
-
-        const pitching =
-          pStat && pStat.battersFaced > 0
-            ? {
-                battersFaced: pStat.battersFaced,
-                outs: pStat.outs,
-                inningsText: formatInningsText(pStat.outs),
-                strikeouts: pStat.strikeouts,
-                hitsAllowed: pStat.hitsAllowed,
-                walks: pStat.walks,
-              }
-            : null;
-
-        let parsedSubs: string[] = [];
-        if (Array.isArray(p.subPositions)) {
-          parsedSubs = p.subPositions;
-        } else if (typeof p.subPositions === "string") {
-          try {
-            const parsed = JSON.parse(p.subPositions);
-            if (Array.isArray(parsed)) parsedSubs = parsed;
-          } catch {}
-        }
-
-        const posAgg = aggregatedPosMap.get(p.id);
-
-        let joinedTs: number | null = null;
-        if (p.joinedAt instanceof Date) {
-          joinedTs = Math.floor(p.joinedAt.getTime() / 1000);
-        } else if (typeof p.joinedAt === "number") {
-          joinedTs = p.joinedAt;
-        }
-
-        const normalizedCondition = effectiveToday.status;
-        const resolvedPrivateNote =
-          normalizedCondition !== "active"
-            ? effectiveToday.note ?? p.conditionNote
-            : p.conditionNote;
-        const maskedPeriods = maskConditionPeriodsForViewer(rawPeriods, canManagePlayers);
-        const activeConditionPeriod = effectiveToday.period
-          ? maskConditionPeriodsForViewer([effectiveToday.period], canManagePlayers)[0] || null
-          : null;
-        const upcomingRaw = findUpcomingPlayerConditionPeriod(rawPeriods, playersTodayKey);
-        const upcomingConditionPeriod = upcomingRaw
-          ? maskConditionPeriodsForViewer([upcomingRaw], canManagePlayers)[0] || null
-          : null;
-
-        const profileDetails = parsePlayerProfileDetails(p.profileDetails);
-        const isSelf = Boolean(p.userId && callerPerm.searchUserIds.includes(p.userId));
-        const isLinkedChild = callerPerm.linkedChildIds.has(p.id);
-        const canEditProfile = canManagePlayers || isSelf || isLinkedChild;
-
-        return {
-          id: p.id,
-          name: p.name,
-          nameKana: p.nameKana || null,
-          uniformNumber: p.uniformNumber,
-          nickname: p.nickname || null,
-          primaryPosition: posAgg ? posAgg.primaryPosition : (p.primaryPosition || null),
-          subPositions: posAgg ? posAgg.subPositions : parsedSubs,
-          registeredPrimaryPosition: posAgg
-            ? posAgg.registeredPrimaryPosition
-            : (p.primaryPosition || null),
-          registeredSubPositions: parsedSubs,
-          positionCounts: posAgg ? posAgg.positionCounts : [],
-          totalPositionGames: posAgg ? posAgg.totalPositionGames : 0,
-          positionSource: posAgg ? posAgg.positionSource : "profile",
-          throws: p.throws || null,
-          bats: p.bats || null,
-          height: p.height ?? null,
-          weight: profileDetails.hideWeight ? null : (p.weight ?? null),
-          editableWeight: canEditProfile ? (p.weight ?? null) : null,
-          profileImageUrl: p.profileImageUrl || null,
-          notes: p.notes || null,
-          profileDetails,
-          isSelf,
-          isLinkedChild,
-          canEditProfile,
-          hasLinkedUser: Boolean(p.userId),
-          conditionStatus: normalizedCondition,
-          conditionNote: canManagePlayers ? resolvedPrivateNote || null : null,
-          conditionPeriods: maskedPeriods,
-          activeConditionPeriod,
-          upcomingConditionPeriod,
-          isCaptain: Boolean(teamRow.captainId && teamRow.captainId === p.id),
-          joinedAt: joinedTs,
-          batting,
-          pitching,
-        };
-      });
+    const archivedPlayers = canManagePlayers
+      ? rawPlayers
+          .filter((p) => p.isActive === false)
+          .map(prepareSortableEntry)
+          .sort(comparePlayersByConditionAndUniform)
+          .map(formatDirectoryPlayer)
+      : [];
 
     const mySelfPlayer = sortedPlayers.find((p) => p.isSelf) || null;
     const myLinkedChildIds = sortedPlayers
@@ -11433,11 +11643,506 @@ app.get("/players", async (c) => {
         captainId: teamRow.captainId || null,
       },
       players: sortedPlayers,
+      archivedPlayers,
     });
   } catch (err: unknown) {
     console.error("Failed to fetch LIFF players directory:", err);
     return c.json(
       { success: false, error: err instanceof Error ? err.message : "選手名鑑の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * ➕ 選手新規登録・一括登録API (POST /players/create)
+ * - 指導者・管理者（`canManagePlayers`）限定
+ * - 1名ずつの詳細登録およびテキスト一括登録（最大60名）の双方に対応
+ */
+app.post("/players/create", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+
+  interface PlayerCreateInputItem {
+    name?: string;
+    nameKana?: string | null;
+    uniformNumber?: string | null;
+    nickname?: string | null;
+    primaryPosition?: string | null;
+    throws?: string | null;
+    bats?: string | null;
+    gradeOrAge?: string | null;
+    joinedAt?: string | number | null;
+  }
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      userId?: string | null;
+      userName?: string | null;
+      players?: PlayerCreateInputItem[];
+      name?: string;
+      nameKana?: string | null;
+      uniformNumber?: string | null;
+      nickname?: string | null;
+      primaryPosition?: string | null;
+      throws?: string | null;
+      bats?: string | null;
+      gradeOrAge?: string | null;
+      joinedAt?: string | number | null;
+    };
+
+    const teamId = (body.teamId || "").trim();
+    const rawItems: PlayerCreateInputItem[] = Array.isArray(body.players)
+      ? body.players
+      : body.name
+        ? [
+            {
+              name: body.name,
+              nameKana: body.nameKana,
+              uniformNumber: body.uniformNumber,
+              nickname: body.nickname,
+              primaryPosition: body.primaryPosition,
+              throws: body.throws,
+              bats: body.bats,
+              gradeOrAge: body.gradeOrAge,
+              joinedAt: body.joinedAt,
+            },
+          ]
+        : [];
+
+    const validItems = rawItems
+      .map((item) => ({
+        name: (item.name || "").trim().slice(0, 50),
+        nameKana: item.nameKana ? item.nameKana.trim().slice(0, 80) : null,
+        uniformNumber: (item.uniformNumber ?? "").trim().slice(0, 8),
+        nickname: item.nickname ? item.nickname.trim().slice(0, 40) : null,
+        primaryPosition:
+          normalizeCanonicalPositionCode(item.primaryPosition) ||
+          (item.primaryPosition ? item.primaryPosition.trim().slice(0, 12) : null),
+        throws:
+          item.throws === "R" || item.throws === "L"
+            ? item.throws
+            : null,
+        bats:
+          item.bats === "R" || item.bats === "L" || item.bats === "S"
+            ? item.bats
+            : null,
+        gradeOrAge: item.gradeOrAge ? item.gradeOrAge.trim().slice(0, 24) : null,
+        joinedAt: item.joinedAt ?? null,
+      }))
+      .filter((item) => item.name.length > 0);
+
+    if (validItems.length === 0) {
+      return c.json({ success: false, error: "登録する選手名を入力してください" }, 400);
+    }
+    if (validItems.length > 60) {
+      return c.json(
+        { success: false, error: "一度に登録できる選手は最大60名までです" },
+        400
+      );
+    }
+
+    if (!teamId || teamId === "demo-team") {
+      const demoCreated = validItems.map((item, idx) => ({
+        id: `demo-player-new-${Date.now()}-${idx}`,
+        name: item.name,
+        nameKana: item.nameKana,
+        uniformNumber: item.uniformNumber,
+        nickname: item.nickname,
+        primaryPosition: item.primaryPosition,
+        throws: item.throws,
+        bats: item.bats,
+        gradeOrAge: item.gradeOrAge,
+      }));
+      return c.json({
+        success: true,
+        isDemo: true,
+        createdCount: demoCreated.length,
+        createdPlayers: demoCreated,
+      });
+    }
+
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        createdBy: teams.createdBy,
+        organizationId: teams.organizationId,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId: body.userId || extractHeaderUserId(c) || null,
+      userName: body.userName || extractHeaderUserName(c) || null,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+
+    if (!perm.canManagePlayers) {
+      return c.json(
+        {
+          success: false,
+          error: "選手を登録する権限がありません（監督・指導者・管理者のみ登録できます）",
+        },
+        403
+      );
+    }
+
+    const nowTs = Math.floor(Date.now() / 1000);
+    const createdPlayers: Array<{
+      id: string;
+      name: string;
+      uniformNumber: string;
+      joinedDateKey: string | null;
+    }> = [];
+
+    const insertStmts = validItems.map((item) => {
+      const newPlayerId = crypto.randomUUID();
+      const { unixSeconds: joinedAtSeconds, dateKey: joinedDateKey } =
+        parseDateInputToUnixSeconds(item.joinedAt);
+      const profileDetailsJson = item.gradeOrAge
+        ? JSON.stringify(parsePlayerProfileDetails({ gradeOrAge: item.gradeOrAge }))
+        : null;
+
+      createdPlayers.push({
+        id: newPlayerId,
+        name: item.name,
+        uniformNumber: item.uniformNumber,
+        joinedDateKey,
+      });
+
+      return c.env.DB.prepare(
+        `INSERT INTO players (
+          id, team_id, name, name_kana, uniform_number, nickname,
+          primary_position, throws, bats, profile_details,
+          is_active, condition_status, joined_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'active', ?, ?)`
+      ).bind(
+        newPlayerId,
+        teamId,
+        item.name,
+        item.nameKana || null,
+        item.uniformNumber,
+        item.nickname || null,
+        item.primaryPosition || null,
+        item.throws || null,
+        item.bats || null,
+        profileDetailsJson,
+        joinedAtSeconds,
+        nowTs
+      );
+    });
+
+    await c.env.DB.batch(insertStmts);
+
+    const joinCleanupTargets = createdPlayers.filter((cp) => Boolean(cp.joinedDateKey));
+    if (joinCleanupTargets.length > 0) {
+      await Promise.all(
+        joinCleanupTargets.map((cp) =>
+          cleanupPreJoinMatchAttendance(
+            c.env.DB,
+            teamId,
+            cp.id,
+            cp.joinedDateKey as string
+          ).catch(() => {})
+        )
+      );
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      createdCount: createdPlayers.length,
+      createdPlayers: createdPlayers.map(({ id, name, uniformNumber }) => ({
+        id,
+        name,
+        uniformNumber,
+      })),
+    });
+  } catch (err: unknown) {
+    console.error("Failed to create LIFF players:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手の登録に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 📦 選手の在籍外（卒団・退団）アーカイブ切替API (POST /players/:playerId/archive)
+ * - 過去の試合記録・通算成績を保持したまま `players.is_active` を切り替える
+ */
+app.post("/players/:playerId/archive", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      isActive?: boolean;
+      userId?: string | null;
+      userName?: string | null;
+    };
+
+    const teamId = (body.teamId || "").trim();
+    const nextIsActive = body.isActive === true;
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+        isActive: nextIsActive,
+      });
+    }
+
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          captainId: teams.captainId,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({ id: players.id, name: players.name })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId: body.userId || extractHeaderUserId(c) || null,
+      userName: body.userName || extractHeaderUserName(c) || null,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+
+    if (!perm.canManagePlayers) {
+      return c.json(
+        {
+          success: false,
+          error: "在籍ステータスを変更する権限がありません（監督・指導者・管理者のみ操作できます）",
+        },
+        403
+      );
+    }
+
+    await db
+      .update(players)
+      .set({ isActive: nextIsActive })
+      .where(and(eq(players.id, playerId), eq(players.teamId, teamId)));
+
+    if (!nextIsActive && teamRow.captainId === playerId) {
+      await db
+        .update(teams)
+        .set({ captainId: null })
+        .where(eq(teams.id, teamId));
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+      isActive: nextIsActive,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to toggle player archive status:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "在籍ステータスの更新に失敗しました",
+      },
+      500
+    );
+  }
+});
+
+/**
+ * 🗑️ 選手の完全削除API (DELETE /players/:playerId)
+ * - 誤登録削除用：過去の試合出場・打席・走塁記録が1件でもある場合は409で拒否し「在籍外（卒団・退団）」へ誘導する
+ */
+app.delete("/players/:playerId", async (c) => {
+  await ensurePlayerProfileColumns(c.env.DB);
+  const db = drizzle(c.env.DB);
+  const playerId = c.req.param("playerId");
+
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      teamId?: string;
+      userId?: string | null;
+      userName?: string | null;
+    };
+    const teamId = (c.req.query("teamId") || body.teamId || "").trim();
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        playerId,
+      });
+    }
+
+    const [teamRow, existingPlayer] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          createdBy: teams.createdBy,
+          organizationId: teams.organizationId,
+        })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+      db
+        .select({
+          id: players.id,
+          profileImageUrl: players.profileImageUrl,
+          profileDetails: players.profileDetails,
+        })
+        .from(players)
+        .where(and(eq(players.id, playerId), eq(players.teamId, teamId)))
+        .get(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "指定されたチームが見つかりません" }, 404);
+    }
+    if (!existingPlayer) {
+      return c.json({ success: false, error: "対象の選手が見つかりません" }, 404);
+    }
+
+    const perm = await resolveCallerPlayerEditPermissions(c, db, {
+      teamId,
+      userId: body.userId || extractHeaderUserId(c) || null,
+      userName: body.userName || extractHeaderUserName(c) || null,
+      createdBy: teamRow.createdBy,
+      organizationId: teamRow.organizationId,
+    });
+
+    if (!perm.canManagePlayers) {
+      return c.json(
+        {
+          success: false,
+          error: "選手を削除する権限がありません（監督・指導者・管理者のみ操作できます）",
+        },
+        403
+      );
+    }
+
+    const [abRow, advRow, lineupRow, jsonLineupRow] = await Promise.all([
+      c.env.DB.prepare(
+        `SELECT id FROM at_bats WHERE batter_id = ? OR pitcher_id = ? LIMIT 1`
+      )
+        .bind(playerId, playerId)
+        .first<{ id: string }>(),
+      c.env.DB.prepare(
+        `SELECT id FROM base_advances WHERE runner_id = ? LIMIT 1`
+      )
+        .bind(playerId)
+        .first<{ id: string }>()
+        .catch(() => null),
+      c.env.DB.prepare(
+        `SELECT id FROM match_lineups WHERE player_id = ? LIMIT 1`
+      )
+        .bind(playerId)
+        .first<{ id: string }>()
+        .catch(() => null),
+      c.env.DB.prepare(
+        `SELECT id FROM matches WHERE team_id = ? AND my_lineup LIKE ? LIMIT 1`
+      )
+        .bind(teamId, `%${playerId}%`)
+        .first<{ id: string }>()
+        .catch(() => null),
+    ]);
+
+    if (abRow || advRow || lineupRow || jsonLineupRow) {
+      return c.json(
+        {
+          success: false,
+          code: "HAS_MATCH_RECORDS",
+          error:
+            "過去の試合記録が存在するため完全削除できません。戦績データを保護するため「在籍外（卒団・退団）」へ移動してください。",
+        },
+        409
+      );
+    }
+
+    if (c.env.BUCKET) {
+      if (existingPlayer.profileImageUrl?.startsWith("/api/images/players/")) {
+        await c.env.BUCKET.delete(
+          existingPlayer.profileImageUrl.slice("/api/images/".length)
+        ).catch(() => {});
+      }
+      const details = parsePlayerProfileDetails(existingPlayer.profileDetails);
+      if (details.actionImageUrl?.startsWith("/api/images/players/")) {
+        await c.env.BUCKET.delete(
+          details.actionImageUrl.slice("/api/images/".length)
+        ).catch(() => {});
+      }
+    }
+
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `DELETE FROM player_condition_periods WHERE player_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(
+        `DELETE FROM parent_child_relations WHERE child_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(
+        `DELETE FROM team_group_members WHERE player_id = ?`
+      ).bind(playerId),
+      c.env.DB.prepare(`DELETE FROM attendances WHERE player_id = ?`).bind(
+        playerId
+      ),
+      c.env.DB.prepare(
+        `UPDATE teams SET captain_id = NULL WHERE id = ? AND captain_id = ?`
+      ).bind(teamId, playerId),
+      c.env.DB.prepare(`DELETE FROM players WHERE id = ? AND team_id = ?`).bind(
+        playerId,
+        teamId
+      ),
+    ]).catch(async () => {
+      await c.env.DB.prepare(
+        `DELETE FROM players WHERE id = ? AND team_id = ?`
+      )
+        .bind(playerId, teamId)
+        .run();
+    });
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      playerId,
+    });
+  } catch (err: unknown) {
+    console.error("Failed to delete player:", err);
+    return c.json(
+      {
+        success: false,
+        error: err instanceof Error ? err.message : "選手の削除に失敗しました",
+      },
       500
     );
   }
@@ -12465,6 +13170,20 @@ app.get("/tournaments", async (c) => {
       });
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "対象チームへのアクセス権限がありません",
+          isDemo: false,
+          tournaments: [],
+        },
+        403
+      );
+    }
+
+    await ensureAllSchemasOnce(c.env.DB);
     const rows = await db
       .select({
         id: tournaments.id,
@@ -12473,6 +13192,12 @@ app.get("/tournaments", async (c) => {
         category: tournaments.category,
       })
       .from(tournaments)
+      .where(
+        buildTeamSubqueryTenantWhere(
+          { organizationId: tournaments.organizationId, teamId: tournaments.teamId },
+          teamId
+        )
+      )
       .orderBy(desc(tournaments.createdAt))
       .all();
 

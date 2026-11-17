@@ -2,18 +2,20 @@
 "use client";
 
 import React, { useState } from "react";
-import { UserPlus, ArrowRight, Clock, RefreshCw } from "lucide-react";
+import { UserPlus, ArrowRight, Clock, RefreshCw, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { LiffPendingTeamItem } from "./LiffProvider";
 
 interface DemoBannerProps {
   onOpenJoinModal: () => void;
+  onOpenCreateClubModal?: () => void;
   pendingTeams?: LiffPendingTeamItem[];
   onRefreshStatus?: () => Promise<void> | void;
 }
 
 export function DemoBanner({
   onOpenJoinModal,
+  onOpenCreateClubModal,
   pendingTeams = [],
   onRefreshStatus,
 }: DemoBannerProps) {
@@ -89,7 +91,7 @@ export function DemoBanner({
                 type="button"
                 onClick={() => void handleRefreshClick()}
                 disabled={isRefreshing}
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-xs shadow-xs transition-all disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-xs shadow-xs transition-all disabled:opacity-60 cursor-pointer"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`}
@@ -101,7 +103,7 @@ export function DemoBanner({
             <button
               type="button"
               onClick={onOpenJoinModal}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-muted hover:bg-muted/80 active:scale-95 text-foreground font-black text-xs transition-all"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-muted hover:bg-muted/80 active:scale-95 text-foreground font-black text-xs transition-all cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5 text-primary" />
               <span>別の招待コードを入力</span>
@@ -114,40 +116,51 @@ export function DemoBanner({
 
   // 🌟 通常の体験デモチーム表示バナー
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card p-4 shadow-xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
-        <div className="flex items-start gap-2.5">
-          <img
-            src="/liff-logo.webp"
-            alt="iScoreCloud LINEミニアプリ"
-            width={36}
-            height={36}
-            className="w-9 h-9 rounded-[22%] border border-border bg-slate-900 object-contain shrink-0 mt-0.5 shadow-xs"
-          />
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-black text-foreground">
-                体験用デモチーム表示中
-              </span>
-              <span className="px-1.5 py-0.2 rounded-md bg-amber-500 text-white text-[9px] font-black tracking-wide">
-                SAMPLE
-              </span>
-            </div>
-            <p className="text-[11px] font-bold text-muted-foreground leading-snug">
-              現在はサンプルの予定・試合動画を表示しています。自分のチームに参加すると実際のデータが同期されます。
-            </p>
+    <div className="relative overflow-hidden rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card p-4 shadow-xs space-y-3">
+      <div className="flex items-start gap-2.5">
+        <img
+          src="/liff-logo.webp"
+          alt="iScoreCloud LINEミニアプリ"
+          width={36}
+          height={36}
+          className="w-9 h-9 rounded-[22%] border border-border bg-slate-900 object-contain shrink-0 mt-0.5 shadow-xs"
+        />
+        <div className="space-y-0.5 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs font-black text-foreground">
+              体験用デモチーム表示中
+            </span>
+            <span className="px-1.5 py-0.2 rounded-md bg-amber-500 text-white text-[9px] font-black tracking-wide">
+              SAMPLE
+            </span>
           </div>
+          <p className="text-[11px] font-bold text-muted-foreground leading-snug">
+            現在はサンプルデータを表示しています。招待コードで既存チームに参加するか、代表・監督の方は新しくチームを作成してすぐに利用開始できます。
+          </p>
         </div>
+      </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <button
           type="button"
           onClick={onOpenJoinModal}
-          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-xs shadow-xs transition-all shrink-0"
+          className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-xs shadow-xs transition-all cursor-pointer"
         >
           <UserPlus className="w-3.5 h-3.5" />
           <span>招待コードで参加</span>
           <ArrowRight className="w-3.5 h-3.5" />
         </button>
+
+        {onOpenCreateClubModal && (
+          <button
+            type="button"
+            onClick={onOpenCreateClubModal}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0f172a] hover:bg-slate-800 border border-slate-700 active:scale-95 text-white font-black text-xs shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5 text-teal-400" />
+            <span>新しくチームを作成</span>
+          </button>
+        )}
       </div>
     </div>
   );

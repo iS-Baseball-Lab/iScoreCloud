@@ -6,6 +6,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
+import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import {
   canManageCurrentTeam,
@@ -27,13 +28,27 @@ import {
 import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { UserPlus, ShieldCheck } from "lucide-react";
+import {
+  UserPlus,
+  ShieldCheck,
+  Check,
+  ChevronRight,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
 
 const JoinTeamModal = dynamic(
   () => import("@/components/liff/JoinTeamModal").then((m) => m.JoinTeamModal),
   { ssr: false }
 );
+
+interface HubOnboardingSummary {
+  activePlayerCount: number;
+  activeMemberCount: number;
+  venueCount: number;
+  hasActivity: boolean;
+}
 
 interface HubDataResponse {
   success: boolean;
@@ -48,6 +63,7 @@ interface HubDataResponse {
   events?: HubEventInputItem[];
   matches?: MatchCardData[];
   attendanceStatusConfig?: unknown;
+  onboardingSummary?: HubOnboardingSummary | null;
 }
 
 function resolveInitialHubCache(): HubDataResponse | null {
@@ -98,8 +114,18 @@ export default function LiffHubPage() {
   const [attendanceStatusConfig, setAttendanceStatusConfig] = useState<GroupStatusConfigSummary>(() =>
     normalizeGroupStatusSummaryConfig(initialCached?.attendanceStatusConfig)
   );
+  const [onboardingSummary, setOnboardingSummary] = useState<HubOnboardingSummary | null>(
+    initialCached?.onboardingSummary ?? null
+  );
+  const [isOnboardingDismissed, setIsOnboardingDismissed] = useState<boolean>(false);
+
   const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
+  const [hasLoaded, setHasLoaded] = useState<boolean>(Boolean(initialCached));
+  const [loadError, setLoadError] = useState<boolean>(false);
+
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [joinModalInitialMode, setJoinModalInitialMode] = useState<"join" | "create">("join");
+
   const hasLoadedRef = useRef<boolean>(Boolean(initialCached));
   const hubLoadFailedRef = useRef<boolean>(false);
   const lastAppliedAtRef = useRef<number>(initialCached ? Date.now() : 0);
@@ -115,22 +141,45 @@ export default function LiffHubPage() {
   // 招待URL（?join=...）からアクセスした際、未所属・未申請ユーザーのみ参加申請モーダルを自動で開く
   useEffect(() => {
     if (shouldOpenJoinModal) {
+      setJoinModalInitialMode("join");
       setIsJoinModalOpen(true);
     }
   }, [shouldOpenJoinModal]);
 
+  // チームごとの初期セットアップチェックリスト非表示状態を同期
+  useEffect(() => {
+    const tid = currentTeam?.id;
+    if (!tid || tid === "demo-team" || typeof window === "undefined") {
+      setIsOnboardingDismissed(false);
+      return;
+    }
+    try {
+      setIsOnboardingDismissed(
+        localStorage.getItem(`iscore_onboarding_dismissed_${tid}`) === "1"
+      );
+    } catch {
+      setIsOnboardingDismissed(false);
+    }
+  }, [currentTeam?.id]);
+
   const applyHubData = useCallback((data: HubDataResponse) => {
     if (!data || data.success === false) {
       hubLoadFailedRef.current = true;
+      if (!hasLoadedRef.current) {
+        setLoadError(true);
+      }
       setIsLoading(false);
       return;
     }
     hubLoadFailedRef.current = false;
+    setLoadError(false);
     setNextEvent(data.nextEvent ?? null);
     setEvents(Array.isArray(data.events) ? data.events : []);
     setMatches(Array.isArray(data.matches) ? data.matches : []);
     setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
+    setOnboardingSummary(data.onboardingSummary ?? null);
     hasLoadedRef.current = true;
+    setHasLoaded(true);
     lastAppliedAtRef.current = Date.now();
     setIsLoading(false);
   }, []);
@@ -175,6 +224,9 @@ export default function LiffHubPage() {
         applyHubData(data);
       } catch (error) {
         hubLoadFailedRef.current = true;
+        if (!hasLoadedRef.current) {
+          setLoadError(true);
+        }
         console.error("Failed to load hub data:", error);
         setIsLoading(false);
       }
@@ -201,7 +253,10 @@ export default function LiffHubPage() {
         setEvents([]);
         setMatches([]);
         setNextEvent(null);
+        setOnboardingSummary(null);
+        setLoadError(false);
         hasLoadedRef.current = false;
+        setHasLoaded(false);
       }
     }
     prevTeamIdRef.current = currentId;
@@ -251,6 +306,64 @@ export default function LiffHubPage() {
   }, [currentTeam?.id, loadHubData]);
 
   const teamName = currentTeam?.name || "チーム";
+  const canManageRealTeam = !isDemo && canManageCurrentTeam(currentTeam, false);
+
+  const onboardingSteps = onboardingSummary
+    ? [
+        {
+          id: "players",
+          title: "1. 在籍選手を登録する",
+          subtitle: "1名ずつ・名簿テキスト一括登録に対応",
+          done: onboardingSummary.activePlayerCount > 0,
+          href: "/liff/players?add=1",
+        },
+        {
+          id: "grounds",
+          title: "2. 活動グラウンドを登録する",
+          subtitle: "AI自動取得で駐車場・スパイク規定も設定",
+          done: onboardingSummary.venueCount > 0,
+          href: "/liff/grounds",
+        },
+        {
+          id: "invite",
+          title: "3. LINE招待リンクを共有する",
+          subtitle: "保護者・選手・スタッフをチームへ招待",
+          done: onboardingSummary.activeMemberCount > 1,
+          href: "/liff/admin",
+        },
+        {
+          id: "schedule",
+          title: "4. 最初の予定・試合を作成する",
+          subtitle: "練習・遠征予定や試合日程を登録",
+          done:
+            onboardingSummary.hasActivity ||
+            events.length > 0 ||
+            matches.length > 0,
+          href: "/liff/schedule",
+        },
+      ]
+    : [];
+
+  const completedStepCount = onboardingSteps.filter((s) => s.done).length;
+  const shouldShowOnboardingCard =
+    canManageRealTeam &&
+    !isOnboardingDismissed &&
+    onboardingSteps.length === 4 &&
+    completedStepCount < 4;
+
+  const handleDismissOnboarding = () => {
+    setIsOnboardingDismissed(true);
+    if (currentTeam?.id && typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          `iscore_onboarding_dismissed_${currentTeam.id}`,
+          "1"
+        );
+      } catch {
+        // ignore storage errors
+      }
+    }
+  };
 
   return (
     <div className="flex flex-col flex-1">
@@ -269,7 +382,14 @@ export default function LiffHubPage() {
           {isDemo && (
             <section>
               <DemoBanner
-                onOpenJoinModal={() => setIsJoinModalOpen(true)}
+                onOpenJoinModal={() => {
+                  setJoinModalInitialMode("join");
+                  setIsJoinModalOpen(true);
+                }}
+                onOpenCreateClubModal={() => {
+                  setJoinModalInitialMode("create");
+                  setIsJoinModalOpen(true);
+                }}
                 pendingTeams={pendingTeams}
                 onRefreshStatus={async () => {
                   await refreshTeams();
@@ -299,11 +419,14 @@ export default function LiffHubPage() {
               {isDemo && (
                 <button
                   type="button"
-                  onClick={() => setIsJoinModalOpen(true)}
-                  className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                  onClick={() => {
+                    setJoinModalInitialMode("join");
+                    setIsJoinModalOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-full bg-primary hover:bg-primary/90 active:scale-95 text-primary-foreground font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>参加申請</span>
+                  <span>参加・作成</span>
                 </button>
               )}
 
@@ -311,7 +434,7 @@ export default function LiffHubPage() {
                 <button
                   type="button"
                   onClick={login}
-                  className="px-3 py-1.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0"
+                  className="px-3 py-1.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] active:scale-95 text-white font-black text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                 >
                   <span>LINE連携</span>
                 </button>
@@ -319,20 +442,111 @@ export default function LiffHubPage() {
             </div>
           </div>
 
-          {/* 🌟 ヒーローセクション：タブ切り替え（直近の試合 / 直近の予定） */}
+          {/* 🚀 新規立ち上げチーム向け：初期セットアップ4ステップ（A-3 ソリッド規格） */}
+          {shouldShowOnboardingCard && (
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-slate-800 border border-slate-700 text-teal-400 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-xs font-black text-white truncate">
+                      チーム初期セットアップ（{completedStepCount}/4 完了）
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-300 truncate">
+                      上から順に進めるだけですぐにチーム運用を開始できます
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleDismissOnboarding}
+                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] font-black inline-flex items-center gap-0.5 shrink-0 cursor-pointer"
+                  aria-label="セットアップ案内を閉じる"
+                >
+                  <X className="w-3 h-3" />
+                  <span>閉じる</span>
+                </button>
+              </div>
+
+              <div className="px-4 pt-3 pb-1 bg-card">
+                <div className="h-2 w-full rounded-full bg-muted overflow-hidden border border-border">
+                  <div
+                    className="h-full bg-teal-500 transition-all duration-300"
+                    style={{ width: `${Math.max(8, (completedStepCount / 4) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 space-y-2 bg-card">
+                {onboardingSteps.map((step) => (
+                  <Link
+                    key={step.id}
+                    href={step.href}
+                    className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-all active:scale-[0.99] ${
+                      step.done
+                        ? "bg-muted/40 border-border opacity-75"
+                        : "bg-card border-border hover:border-primary/40 shadow-2xs"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                          step.done
+                            ? "bg-teal-600 text-white"
+                            : "bg-primary/12 text-primary border border-primary/30"
+                        }`}
+                      >
+                        {step.done ? <Check className="w-3.5 h-3.5" /> : "●"}
+                      </span>
+                      <div className="min-w-0">
+                        <span
+                          className={`text-xs font-black block truncate ${
+                            step.done ? "line-through text-muted-foreground" : "text-foreground"
+                          }`}
+                        >
+                          {step.title}
+                        </span>
+                        <span className="text-[10.5px] font-bold text-muted-foreground block truncate">
+                          {step.subtitle}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 flex items-center gap-1 text-[11px] font-black text-primary">
+                      <span>{step.done ? "完了" : "設定へ"}</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* 🌟 ヒーローセクション または 初期読込エラーカード */}
           <section>
-            <HubHeroSection
-              teamName={scoreTeamName}
-              isDemo={isDemo}
-              userId={profile?.userId || undefined}
-              userName={userName || undefined}
-              nextEvent={nextEvent as never}
-              eventsList={events}
-              latestMatch={matches[0] || null}
-              isLoading={isLoading && !hasLoadedRef.current}
-              attendanceStatusConfig={attendanceStatusConfig}
-              onRefreshHub={() => void loadHubData(currentTeam?.id, true)}
-            />
+            {!isLoading && !hasLoaded && loadError ? (
+              <LiffDataLoadErrorCard
+                title="ホームデータを読み込めませんでした"
+                onRetry={() => void loadHubData(currentTeam?.id, true)}
+                isRetrying={isLoading}
+              />
+            ) : (
+              <HubHeroSection
+                teamName={scoreTeamName}
+                isDemo={isDemo}
+                userId={profile?.userId || undefined}
+                userName={userName || undefined}
+                nextEvent={nextEvent as never}
+                eventsList={events}
+                latestMatch={matches[0] || null}
+                isLoading={isLoading && !hasLoaded}
+                attendanceStatusConfig={attendanceStatusConfig}
+                onRefreshHub={() => void loadHubData(currentTeam?.id, true)}
+              />
+            )}
           </section>
         </div>
       </div>
@@ -349,13 +563,17 @@ export default function LiffHubPage() {
           <HubCalendarSection eventsList={events} isDemo={isDemo} />
         </section>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div
+          className="h-8 w-full shrink-0 pointer-events-none select-none"
+          aria-hidden="true"
+        />
       </div>
 
-      {/* チーム参加申請モーダル */}
+      {/* チーム参加申請・新規チーム作成モーダル */}
       {isJoinModalOpen && (
         <JoinTeamModal
           isOpen={isJoinModalOpen}
+          initialMode={joinModalInitialMode}
           onClose={() => {
             clearPendingJoinCode();
             setIsJoinModalOpen(false);
