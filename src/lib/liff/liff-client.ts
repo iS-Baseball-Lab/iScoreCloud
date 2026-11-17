@@ -403,6 +403,8 @@ export function buildShareableLiffPageUrl(options: {
   explicitUrl?: string;
   pathname?: string | null;
   teamId?: string | null;
+  queryParams?: Record<string, string | null | undefined>;
+  inheritCurrentSearch?: boolean;
 }): string {
   const trimmedExplicit = options.explicitUrl?.trim() || "";
   if (trimmedExplicit.startsWith("https://")) {
@@ -422,7 +424,7 @@ export function buildShareableLiffPageUrl(options: {
       : `/${rawPath}`;
 
   const cleanSearch = new URLSearchParams();
-  if (typeof window !== "undefined") {
+  if (options.inheritCurrentSearch !== false && typeof window !== "undefined") {
     try {
       const currentParams = new URLSearchParams(window.location.search);
       currentParams.forEach((val, key) => {
@@ -432,6 +434,16 @@ export function buildShareableLiffPageUrl(options: {
       });
     } catch {
       // ignore query parse errors
+    }
+  }
+
+  if (options.queryParams) {
+    for (const [k, v] of Object.entries(options.queryParams)) {
+      if (v === null || v === undefined || !v.trim()) {
+        cleanSearch.delete(k);
+      } else if (!TRANSIENT_LIFF_QUERY_KEYS.has(k)) {
+        cleanSearch.set(k, v.trim());
+      }
     }
   }
 
@@ -633,3 +645,51 @@ export async function shareLiffPageViaLine(
   );
   return "opened_line_url";
 }
+
+/**
+ * 任意のプレーンテキスト（出欠集計連絡文など）を LINE の「送信先を選択」（`shareTargetPicker`）または `line.me/R/msg/text/` で転送する共通ヘルパー
+ * - LINEミニアプリ内・LIFF対応環境では `shareTargetPicker` によりグループ・トークルームを選択して直接送信
+ * - 送信先選択モーダルでキャンセルした場合は外部ブラウザを二重起動しない
+ */
+export async function sharePlainTextViaLine(options: {
+  text: string;
+  liff?: Liff | null;
+}): Promise<LiffShareOutcome> {
+  const cleanText = options.text.trim();
+  if (!cleanText) {
+    return "cancelled";
+  }
+
+  let activeLiff: Liff | null = options.liff || liffInstance;
+  if (!activeLiff) {
+    const initialized = await initLiff();
+    activeLiff = initialized.liff;
+  }
+
+  try {
+    if (activeLiff && activeLiff.isApiAvailable("shareTargetPicker")) {
+      const chunks: Array<{ type: "text"; text: string }> = [];
+      let remaining = cleanText;
+      while (remaining.length > 0 && chunks.length < 5) {
+        if (remaining.length <= 4500) {
+          chunks.push({ type: "text", text: remaining });
+          break;
+        }
+        let splitIdx = remaining.lastIndexOf("\n", 4500);
+        if (splitIdx <= 0) splitIdx = 4500;
+        chunks.push({ type: "text", text: remaining.slice(0, splitIdx) });
+        remaining = remaining.slice(splitIdx).replace(/^\n+/, "");
+      }
+      const res = await activeLiff.shareTargetPicker(chunks);
+      return res ? "shared" : "cancelled";
+    }
+  } catch (err) {
+    console.warn("shareTargetPicker plain text fallback to LINE URL scheme:", err);
+  }
+
+  openExternalLineShareUrl(
+    `https://line.me/R/msg/text/?${encodeURIComponent(cleanText)}`
+  );
+  return "opened_line_url";
+}
+
