@@ -59,6 +59,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "pm_location", ddl: "ALTER TABLE events ADD COLUMN pm_location text" },
     { name: "activity_groups", ddl: "ALTER TABLE events ADD COLUMN activity_groups text" },
     { name: "am_type", ddl: "ALTER TABLE events ADD COLUMN am_type text" },
+    { name: "pm_type", ddl: "ALTER TABLE events ADD COLUMN pm_type text" },
   ],
   attendances: [
     { name: "selected_group_id", ddl: "ALTER TABLE attendances ADD COLUMN selected_group_id text" },

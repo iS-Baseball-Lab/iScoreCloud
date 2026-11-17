@@ -240,6 +240,7 @@ app.get('/:id/calendar-matches', async (c) => {
     // 2. events (出欠日程) を取得
     const { results: eventsList } = await c.env.DB.prepare(`
       SELECT id, title, start_at as startAt, end_at as endAt, event_type as eventType, 
+             am_type as amType, pm_type as pmType,
              description, location, duty_group as dutyGroup, pm_start_at as pmStartAt, 
              pm_end_at as pmEndAt, pm_location as pmLocation, status
       FROM events
@@ -319,6 +320,8 @@ app.get('/:id/calendar-matches', async (c) => {
       return {
         id: e.id,
         type: e.eventType || 'event',
+        amType: e.amType || null,
+        pmType: e.pmType || null,
         source: 'event',
         date: dateStr,
         title: e.title,

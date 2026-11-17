@@ -49,13 +49,15 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
+    const { title, startAt, endAt, eventType, amType, pmType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
     }
 
     const eventId = `event_${crypto.randomUUID().replace(/-/g, '')}`;
+    const resolvedEventType = eventType || 'practice';
+    const hasInitialPm = Boolean(pmStartAt || pmLocation || (pmType && pmType !== 'off'));
 
     const result = await db.insert(events)
       .values({
@@ -64,7 +66,9 @@ app.post('/:teamId', async (c) => {
         title,
         startAt: new Date(startAt),
         endAt: endAt ? new Date(endAt) : null,
-        eventType: eventType || 'practice',
+        eventType: resolvedEventType,
+        amType: amType || resolvedEventType,
+        pmType: pmType || (hasInitialPm ? resolvedEventType : 'off'),
         description: description || '',
         location: location || '',
         dutyGroup: dutyGroup || null,
@@ -104,7 +108,7 @@ app.patch('/:teamId/:eventId', async (c) => {
     const { 
       title, startAt, endAt, eventType, description, location, dutyGroup, 
       pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups,
-      amTime, pmTime, amLocation, amType, pmType
+      amTime, pmTime, amLocation, amType, pmType, dateStr
     } = body;
 
     const existingEvent = await db.select().from(events).where(and(eq(events.id, eventId), eq(events.teamId, teamId))).get();
@@ -112,21 +116,37 @@ app.patch('/:teamId/:eventId', async (c) => {
       return c.json({ success: false, error: "指定されたイベントが見つかりません。" }, 404);
     }
 
-    const baseDateStr = existingEvent.startAt 
-      ? new Date(existingEvent.startAt).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0];
+    const baseDateStr =
+      typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
+        ? dateStr
+        : existingEvent.startAt
+          ? new Date(existingEvent.startAt).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0];
 
     const updateFields: Partial<typeof events.$inferInsert> = {};
     if (title !== undefined) updateFields.title = title;
     if (eventType !== undefined) updateFields.eventType = eventType;
     if (description !== undefined) updateFields.description = description;
-    if (location !== undefined) updateFields.location = location;
+    if (location !== undefined) {
+      updateFields.location = location;
+    } else if (amLocation !== undefined && amType !== "off") {
+      updateFields.location = amLocation || "";
+    }
     if (dutyGroup !== undefined) updateFields.dutyGroup = dutyGroup;
     if (targetGroup !== undefined) updateFields.targetGroup = targetGroup;
     if (needsLunch !== undefined) updateFields.needsLunch = Boolean(needsLunch);
     if (needsSnack !== undefined) updateFields.needsSnack = Boolean(needsSnack);
     if (status !== undefined) updateFields.status = status;
     if (amType !== undefined) updateFields.amType = amType;
+    if (pmType !== undefined) {
+      updateFields.pmType = pmType;
+    } else if (
+      amType !== undefined &&
+      existingEvent.pmType == null &&
+      (existingEvent.pmStartAt || existingEvent.pmLocation)
+    ) {
+      updateFields.pmType = existingEvent.eventType || "practice";
+    }
 
     // 時間のスマート計算
     if (amTime && typeof amTime === "string" && amType !== "off") {
@@ -167,7 +187,7 @@ app.patch('/:teamId/:eventId', async (c) => {
       if (pmEndAt !== undefined) updateFields.pmEndAt = pmEndAt ? new Date(pmEndAt) : null;
     }
 
-    if (pmLocation !== undefined) updateFields.pmLocation = pmLocation;
+    if (pmLocation !== undefined && pmType !== "off") updateFields.pmLocation = pmLocation;
     if (activityGroups !== undefined) {
       updateFields.activityGroups = typeof activityGroups === "string" ? activityGroups : (activityGroups ? JSON.stringify(activityGroups) : null);
     }
@@ -230,6 +250,7 @@ app.post('/:teamId/bulk', async (c) => {
 
     for (const item of eventList) {
       const startAtDate = new Date(item.startAt);
+      const hasItemPm = Boolean(item.pmStartAt || item.pmLocation || (item.pmType && item.pmType !== 'off'));
 
       // 既存レコードがあるか (明確なIDで突合)
       const existingRecord = (item.id && !item.id.startsWith("new_") && !item.id.startsWith("temp_")) 
@@ -245,6 +266,7 @@ app.post('/:teamId/bulk', async (c) => {
             endAt: item.endAt ? new Date(item.endAt) : null,
             eventType: item.eventType || 'practice',
             amType: item.amType || item.eventType || 'practice',
+            pmType: item.pmType || (hasItemPm ? (item.eventType || 'practice') : 'off'),
             description: item.description || '',
             location: item.location || '',
             dutyGroup: item.dutyGroup || null,
@@ -272,6 +294,7 @@ app.post('/:teamId/bulk', async (c) => {
             endAt: item.endAt ? new Date(item.endAt) : null,
             eventType: item.eventType || 'practice',
             amType: item.amType || item.eventType || 'practice',
+            pmType: item.pmType || (hasItemPm ? (item.eventType || 'practice') : 'off'),
             description: item.description || '',
             location: item.location || '',
             dutyGroup: item.dutyGroup || null,

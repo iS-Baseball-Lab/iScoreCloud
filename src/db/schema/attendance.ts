@@ -12,6 +12,7 @@ export const events = sqliteTable("events", {
   endAt: integer("end_at", { mode: "timestamp" }),
   eventType: text("event_type").$type<"match" | "practice" | "meeting" | "camp">().default("practice"),
   amType: text("am_type"),                                 // ☀️ 午前の活動種別（match | practice | meeting | camp | off）
+  pmType: text("pm_type"),                                 // 🌙 午後の活動種別（match | practice | meeting | camp | off）
   description: text("description"),
   location: text("location"),
   dutyGroup: text("duty_group"), // 当番班

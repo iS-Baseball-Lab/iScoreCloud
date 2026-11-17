@@ -43,10 +43,10 @@ export interface ScheduleDayItem {
   eventType?: "practice" | "match" | "camp" | "meeting";
   time?: string;
   location?: string;
-  amType: "practice" | "match" | "camp" | "off";
+  amType: "practice" | "match" | "camp" | "meeting" | "off";
   amTime: string;
   amLocation: string;
-  pmType: "practice" | "match" | "camp" | "off";
+  pmType: "practice" | "match" | "camp" | "meeting" | "off";
   pmTime: string;
   pmLocation: string;
   dutyGroup: string;
@@ -61,8 +61,8 @@ interface RawEventRecord {
   title?: string | null;
   targetGroup?: string | null;
   eventType?: "practice" | "match" | "camp" | "meeting" | string | null;
-  amType?: "practice" | "match" | "camp" | "off" | string | null;
-  pmType?: "practice" | "match" | "camp" | "off" | string | null;
+  amType?: "practice" | "match" | "camp" | "meeting" | "off" | string | null;
+  pmType?: "practice" | "match" | "camp" | "meeting" | "off" | string | null;
   startAt: string | Date;
   endAt?: string | Date | null;
   pmStartAt?: string | Date | null;
@@ -187,9 +187,15 @@ export function MonthlySchedulePlanner({
             const rawEnd = extractRawTimeHHMM(ev.endAt);
             const rawPmStart = extractRawTimeHHMM(ev.pmStartAt);
             const rawPmEnd = extractRawTimeHHMM(ev.pmEndAt);
-            const hasPm = Boolean(
-              ev.pmStartAt || ev.pmEndAt || (ev.pmType && ev.pmType !== "off")
-            );
+            const hasPm =
+              ev.pmType === "off"
+                ? false
+                : Boolean(
+                    ev.pmStartAt ||
+                      ev.pmEndAt ||
+                      ev.pmLocation ||
+                      (ev.pmType && ev.pmType !== "off")
+                  );
 
             const amEnd = hasPm
               ? rawEnd && (!rawPmStart || rawEnd <= rawPmStart)
@@ -210,28 +216,25 @@ export function MonthlySchedulePlanner({
                 : "practice"
             ) as "practice" | "match" | "camp" | "meeting";
 
-            const resolvedAmType = (
+            const resolvedAmType: ScheduleDayItem["amType"] =
+              ev.amType === "practice" ||
               ev.amType === "match" ||
               ev.amType === "camp" ||
+              ev.amType === "meeting" ||
               ev.amType === "off"
                 ? ev.amType
-                : resolvedEventType === "meeting"
-                ? "practice"
-                : resolvedEventType
-            ) as "practice" | "match" | "camp" | "off";
+                : resolvedEventType;
 
-            const resolvedPmType = (
+            const resolvedPmType: ScheduleDayItem["pmType"] =
+              ev.pmType === "practice" ||
               ev.pmType === "match" ||
               ev.pmType === "camp" ||
-              ev.pmType === "practice" ||
+              ev.pmType === "meeting" ||
               ev.pmType === "off"
                 ? ev.pmType
                 : hasPm
-                ? resolvedAmType === "off"
-                  ? "practice"
-                  : resolvedAmType
-                : "off"
-            ) as "practice" | "match" | "camp" | "off";
+                ? resolvedEventType
+                : "off";
 
             return {
               id: ev.id,
@@ -488,10 +491,14 @@ export function MonthlySchedulePlanner({
     };
     setSelectedDayItems(prev => prev.map(item => {
       if (item.dateStr === dateStr) {
+        const nextAmType =
+          item.amType === "off" && item.pmType !== "off" ? "off" : type;
+        const nextPmType = item.pmType === "off" ? "off" : type;
         return { 
           ...item, 
           eventType: type,
-          amType: type,
+          amType: nextAmType,
+          pmType: nextPmType,
           title: (!item.title || ["通常練習", "公式戦・試合", "合宿・遠征"].includes(item.title)) 
             ? titleMap[type] 
             : item.title,
@@ -565,22 +572,41 @@ export function MonthlySchedulePlanner({
             resolved.pmStart,
             resolved.pmEnd
           );
+          const hasAm = item.amType !== "off";
           const hasPm = item.pmType !== "off";
           const amLoc = item.amLocation || item.location || "確認中";
+          const pmLoc = item.pmLocation || amLoc;
+
+          const activeSlots = [
+            hasAm ? item.amType : null,
+            hasPm ? item.pmType : null,
+          ].filter(Boolean);
+          const resolvedOverallType = activeSlots.includes("match")
+            ? "match"
+            : activeSlots.includes("camp")
+            ? "camp"
+            : activeSlots.includes("meeting")
+            ? "meeting"
+            : item.eventType || "practice";
 
           return {
             id: item.id.startsWith("new_") ? undefined : item.id,
             title: item.title || "通常練習",
             targetGroup: item.targetGroup || "全体",
-            startAt: `${item.dateStr}T${am.start}:00`,
-            endAt: `${item.dateStr}T${am.end}:00`,
-            eventType: item.eventType || item.amType || "practice",
-            amType: item.amType || item.eventType || "practice",
-            location: amLoc,
+            startAt: hasAm
+              ? `${item.dateStr}T${am.start}:00`
+              : `${item.dateStr}T${pm.start}:00`,
+            endAt: hasAm
+              ? `${item.dateStr}T${am.end}:00`
+              : `${item.dateStr}T${pm.end}:00`,
+            eventType: resolvedOverallType,
+            amType: hasAm ? item.amType || "practice" : "off",
+            pmType: hasPm ? item.pmType || "practice" : "off",
+            location: hasAm ? amLoc : pmLoc,
             dutyGroup: item.dutyGroup || "1班",
             pmStartAt: hasPm ? `${item.dateStr}T${pm.start}:00` : null,
             pmEndAt: hasPm ? `${item.dateStr}T${pm.end}:00` : null,
-            pmLocation: hasPm ? item.pmLocation || amLoc : null,
+            pmLocation: hasPm ? pmLoc : null,
             needsLunch: Boolean(item.needsLunch),
             needsSnack: Boolean(item.needsSnack),
             description: item.memo || "",
@@ -971,7 +997,7 @@ export function MonthlySchedulePlanner({
                               />
 
                               <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
-                                ☀️ {it.amTime}
+                                {it.amType !== "off" ? `☀️ ${it.amTime}` : "☀️ なし"}
                                 {it.pmType !== "off" ? ` / 🌙 ${it.pmTime}` : ""}
                               </span>
                             </div>

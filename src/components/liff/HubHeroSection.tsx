@@ -66,6 +66,7 @@ export interface HubEventInputItem {
   endAt?: string;
   pmStartAt?: string | null;
   pmEndAt?: string | null;
+  hasAm?: boolean;
   hasPm?: boolean;
   eventType?: string;
   amType?: string;
@@ -93,14 +94,15 @@ interface HubWeeklyEventCardItem {
   title: string;
   dateStr?: string;
   date: string;
+  hasAm: boolean;
   hasPm: boolean;
-  eventType: "match" | "practice" | "camp" | "off";
+  eventType: "match" | "practice" | "camp" | "meeting" | "off";
   time: string;
   location: string;
-  amType: "match" | "practice" | "camp" | "off";
+  amType: "match" | "practice" | "camp" | "meeting" | "off";
   amTime: string;
   amLocation: string;
-  pmType: "match" | "practice" | "camp" | "off";
+  pmType: "match" | "practice" | "camp" | "meeting" | "off";
   pmTime: string;
   pmLocation: string;
   targetGroup: string;
@@ -433,32 +435,81 @@ export function HubHeroSection({
       });
 
       const mapEventData = (ev: HubEventInputItem): HubWeeklyEventCardItem => {
-        const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
-        
+        const isAmOff = ev.hasAm === false || ev.amType === "off";
+        const hasAm = !isAmOff;
+        const hasPm =
+          ev.pmType === "off"
+            ? false
+            : ev.hasPm !== undefined
+            ? ev.hasPm
+            : Boolean(
+                ev.pmStartAt ||
+                  ev.pmLocation ||
+                  ev.pmTime ||
+                  (ev.pmType && ev.pmType !== "off")
+              );
+
         // 午前時間の算出
-        let amTime = ev.amTime;
-        if (!amTime) {
+        let amTime = isAmOff ? "" : ev.amTime || "";
+        if (!isAmOff && !amTime) {
           const sHHMM = extractTime(ev.startAt) || "08:00";
           const eHHMM = extractTime(ev.endAt);
           const pmSHHMM = extractTime(ev.pmStartAt);
           amTime = hasPm
-            ? (eHHMM && pmSHHMM && eHHMM <= pmSHHMM ? `${sHHMM}〜${eHHMM}` : `${sHHMM}〜12:00`)
-            : (eHHMM ? `${sHHMM}〜${eHHMM}` : `${sHHMM}〜12:00`);
+            ? eHHMM && pmSHHMM && eHHMM <= pmSHHMM
+              ? `${sHHMM}〜${eHHMM}`
+              : `${sHHMM}〜12:00`
+            : eHHMM
+            ? `${sHHMM}〜${eHHMM}`
+            : `${sHHMM}〜12:00`;
         }
 
         // 午後時間の算出
-        let pmTime = ev.pmTime;
+        let pmTime = ev.pmTime || "";
         if (!pmTime && hasPm) {
           const pmSHHMM = extractTime(ev.pmStartAt) || "12:00";
           const pmEHHMM = extractTime(ev.pmEndAt) || extractTime(ev.endAt) || "18:00";
           pmTime = `${pmSHHMM}〜${pmEHHMM}`;
         }
 
-        const amLocation = ev.amLocation || ev.location || "グラウンド";
-        const pmLocation = ev.pmLocation || (hasPm && ev.pmLocation !== null ? (ev.pmLocation || "") : "");
+        const amLocation = isAmOff ? "" : ev.amLocation || ev.location || "グラウンド";
+        const pmLocation = hasPm
+          ? ev.pmLocation || ev.amLocation || ev.location || "グラウンド"
+          : "";
+
+        const resolvedAmType = (
+          isAmOff
+            ? "off"
+            : (ev.amType && ev.amType !== "off" ? ev.amType : ev.eventType) || "practice"
+        ) as HubWeeklyEventCardItem["amType"];
+
+        const resolvedPmType = (
+          hasPm
+            ? (ev.pmType && ev.pmType !== "off" ? ev.pmType : ev.eventType) || "practice"
+            : "off"
+        ) as HubWeeklyEventCardItem["pmType"];
+
+        const activeTypes = [
+          resolvedAmType !== "off" ? resolvedAmType : null,
+          resolvedPmType !== "off" ? resolvedPmType : null,
+        ].filter(Boolean);
+        const resolvedOverallType: HubWeeklyEventCardItem["eventType"] =
+          activeTypes.includes("match")
+            ? "match"
+            : activeTypes.includes("camp")
+            ? "camp"
+            : activeTypes.includes("meeting")
+            ? "meeting"
+            : ((ev.eventType as HubWeeklyEventCardItem["eventType"]) || "practice");
 
         // 🚗 配車は練習の場合は無し（試合・合宿または明示的な配車のみ）
-        const isMatchOrCamp = ev.eventType === "match" || ev.eventType === "camp" || ev.amType === "match" || ev.pmType === "match";
+        const isMatchOrCamp =
+          resolvedOverallType === "match" ||
+          resolvedOverallType === "camp" ||
+          resolvedAmType === "match" ||
+          resolvedPmType === "match" ||
+          resolvedAmType === "camp" ||
+          resolvedPmType === "camp";
         let carInfo = "";
         if (isMatchOrCamp) {
           carInfo = ev.carInfo || "配車調整中";
@@ -480,16 +531,17 @@ export function HubHeroSection({
           date:
             ev.date ||
             `${fallbackDateObj.getMonth() + 1}/${fallbackDateObj.getDate()}(${["日", "月", "火", "水", "木", "金", "土"][fallbackDateObj.getDay()]})`,
+          hasAm,
           hasPm,
-          eventType: (ev.amType || ev.eventType || "practice") as "match" | "practice" | "camp" | "off",
-          time: amTime,
-          location: amLocation,
-          amType: (ev.amType || ev.eventType || "practice") as "match" | "practice" | "camp" | "off",
+          eventType: resolvedOverallType,
+          time: hasAm ? amTime : pmTime || "時間調整中",
+          location: hasAm ? amLocation : pmLocation || ev.location || "グラウンド",
+          amType: resolvedAmType,
           amTime,
           amLocation,
-          pmType: (ev.pmType || (hasPm ? (ev.eventType || "practice") : "off")) as "match" | "practice" | "camp" | "off",
-          pmTime: hasPm ? (pmTime || "12:00〜18:00") : "",
-          pmLocation: hasPm ? (pmLocation || amLocation) : "",
+          pmType: resolvedPmType,
+          pmTime: hasPm ? pmTime || "12:00〜18:00" : "",
+          pmLocation,
           targetGroup: ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || "全体"),
           dutyGroup: ev.dutyGroup || undefined,
           carInfo,
@@ -532,6 +584,7 @@ export function HubHeroSection({
         title: "秋季大会 2回戦 vs レッドソックス",
         dateStr: satIso,
         date: `${satStr}(土)`,
+        hasAm: true,
         hasPm: false,
         eventType: "match",
         time: "08:00〜12:00",
@@ -557,6 +610,7 @@ export function HubHeroSection({
         title: "全日通常練習 & 守備連携・走塁強化",
         dateStr: sunIso,
         date: `${sunDateObj.getMonth() + 1}/${sunDateObj.getDate()}(日)`,
+        hasAm: true,
         hasPm: true,
         eventType: "practice",
         time: "08:00〜16:00",
@@ -770,6 +824,7 @@ export function HubHeroSection({
                 const pStatus = getEventAttendance(ev.id);
                 const cStatus = getEventCarStatus(ev.id);
                 const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("vs")));
+                const isCamp = !isMatch && (ev.eventType === "camp" || ev.amType === "camp" || ev.pmType === "camp");
                 const isOfficial = isMatch && Boolean(ev.title && (ev.title.includes("大会") || ev.title.includes("公式")));
                 const dateMatch = ev.date?.match(/^(.*?)(?:\((.)\))?$/);
                 const dateText = dateMatch ? dateMatch[1] : ev.date;
@@ -778,6 +833,34 @@ export function HubHeroSection({
                 const isSun = dayOfWeek === "日";
                 const displayDutyGroup =
                   (ev.activityGroups && ev.activityGroups[0]?.dutyGroup) || ev.dutyGroup;
+
+                const getSlotBadge = (slotType?: string) => {
+                  switch (slotType) {
+                    case "match":
+                      return {
+                        label: "⚾ 試合",
+                        badgeClass: "bg-primary/12 text-primary border-primary/25",
+                      };
+                    case "camp":
+                      return {
+                        label: "🏕️ 合宿",
+                        badgeClass:
+                          "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25",
+                      };
+                    case "meeting":
+                      return {
+                        label: "📋 ミーティング",
+                        badgeClass:
+                          "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/25",
+                      };
+                    default:
+                      return {
+                        label: "🏃 練習",
+                        badgeClass:
+                          "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25",
+                      };
+                  }
+                };
 
                 return (
                   <div
@@ -809,7 +892,7 @@ export function HubHeroSection({
                             )}
                           </div>
 
-                          {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
+                          {/* ⚾ 試合 / 🏕️ 合宿 / 🏃 練習 区分バッジ */}
                           <span
                             className={cn(
                               "px-2 py-0.5 rounded text-[10.5px] font-black shrink-0",
@@ -817,10 +900,12 @@ export function HubHeroSection({
                                 ? "bg-amber-400 text-slate-950"
                                 : isMatch
                                 ? "bg-primary text-primary-foreground"
+                                : isCamp
+                                ? "bg-amber-500 text-slate-950"
                                 : "bg-teal-500 text-slate-950"
                             )}
                           >
-                            {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : "🏃 練習"}
+                            {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : isCamp ? "🏕️ 合宿" : "🏃 練習"}
                           </span>
 
                           {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
@@ -863,7 +948,7 @@ export function HubHeroSection({
                             <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                                  <span>{ev.activityGroups[0].eventType === "match" ? "⚾" : "🏃"}</span>
+                                  <span>{ev.activityGroups[0].eventType === "match" ? "⚾" : ev.activityGroups[0].eventType === "camp" ? "🏕️" : "🏃"}</span>
                                   <span>{ev.activityGroups[0].name}</span>
                                 </span>
                                 {ev.activityGroups.length > 1 && (
@@ -884,34 +969,58 @@ export function HubHeroSection({
                               </div>
                             </div>
                           </div>
-                        ) : ev.hasPm && ev.pmTime ? (
+                        ) : (ev.hasPm && ev.pmTime) || !ev.hasAm || ev.amType === "off" ? (
                           /* ☀️🌙 午前/午後分割表示（Sky vs Indigo コントラスト） */
                           <div className="grid grid-cols-2 gap-2">
                             {/* ☀️ 【午前】（左） */}
-                            <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="px-1.5 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black flex items-center gap-1 shrink-0">
-                                  <span>☀️ 午前</span>
-                                </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                  ev.amType === "match"
-                                    ? "bg-primary/12 text-primary border-primary/25"
-                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                }`}>
-                                  {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                </span>
-                              </div>
-                              <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
-                                <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
-                                  <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                                  <span className="truncate">{ev.amTime || ev.time}</span>
+                            {ev.hasAm && ev.amType !== "off" ? (
+                              <div className="p-2.5 rounded-2xl bg-muted/35 border border-border/60 flex flex-col justify-between space-y-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black flex items-center gap-1 shrink-0">
+                                    <span>☀️ 午前</span>
+                                  </span>
+                                  {(() => {
+                                    const amBadge = getSlotBadge(ev.amType);
+                                    return (
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${amBadge.badgeClass}`}>
+                                        {amBadge.label}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
-                                <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
-                                  <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                                  <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
+                                  <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
+                                    <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
+                                    <span className="truncate">{ev.amTime || ev.time}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground/90 truncate">
+                                    <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                    <span className="truncate">{ev.amLocation || ev.location || "グラウンド"}</span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                            ) : (
+                              <div className="p-2.5 rounded-2xl bg-muted/25 border border-dashed border-border/60 opacity-75 flex flex-col justify-between space-y-2">
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="px-1.5 py-0.5 rounded-md bg-muted/50 text-muted-foreground border border-border/60 text-[10px] font-black flex items-center gap-1 shrink-0">
+                                    <span>☀️ 午前</span>
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 bg-muted/50 text-muted-foreground border-border/60">
+                                    🏖️ なし
+                                  </span>
+                                </div>
+                                <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground">
+                                    <Clock className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                    <span className="truncate">なし (午後集合)</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground truncate">
+                                    <MapPin className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                                    <span>—</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
 
                             {/* 🌙 【午後】（右） */}
                             <div className={`p-2.5 rounded-2xl border flex flex-col justify-between space-y-2 ${
@@ -930,15 +1039,18 @@ export function HubHeroSection({
                                 >
                                   <span>🌙 午後</span>
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                  !ev.hasPm || ev.pmType === "off"
-                                    ? "bg-muted/50 text-muted-foreground border-border/60"
-                                    : ev.pmType === "match"
-                                    ? "bg-primary/12 text-primary border-primary/25"
-                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                }`}>
-                                  {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                </span>
+                                {(() => {
+                                  const pmBadge = getSlotBadge(ev.pmType);
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
+                                      !ev.hasPm || ev.pmType === "off"
+                                        ? "bg-muted/50 text-muted-foreground border-border/60"
+                                        : pmBadge.badgeClass
+                                    }`}>
+                                      {!ev.hasPm || ev.pmType === "off" ? "🏖️ なし" : pmBadge.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div className="p-2 rounded-xl bg-card border border-border/60 space-y-1 shadow-2xs">
                                 <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -960,23 +1072,26 @@ export function HubHeroSection({
                                 <span className="px-1.5 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
                                   ☀️ 午前
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${
-                                  ev.eventType === "match"
-                                    ? "bg-primary/12 text-primary border-primary/25"
-                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                }`}>
-                                  {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                </span>
+                                {(() => {
+                                  const singleBadge = getSlotBadge(
+                                    ev.amType || ev.eventType
+                                  );
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${singleBadge.badgeClass}`}>
+                                      {singleBadge.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                               <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
                                 <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                                <span className="truncate font-black">{ev.time || "時間調整中"}</span>
+                                <span className="truncate font-black">{ev.amTime || ev.time || "時間調整中"}</span>
                               </div>
                               <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border/60 shadow-2xs">
                                 <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                                <span className="truncate font-black">{ev.location || "グラウンド"}</span>
+                                <span className="truncate font-black">{ev.amLocation || ev.location || "グラウンド"}</span>
                               </div>
                             </div>
                           </div>

@@ -66,7 +66,12 @@ import {
 
 const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
 const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
-const EVENT_TYPES = [
+const EVENT_TYPES: Array<{
+  id: Exclude<ActivitySlotType, "off">;
+  label: string;
+  icon: string;
+  color: string;
+}> = [
   { id: "practice", label: "練習", icon: "🏃", color: "border-teal-500/35 bg-teal-500/12 text-teal-700 dark:text-teal-300" },
   { id: "match", label: "試合", icon: "⚾", color: "border-primary/35 bg-primary/12 text-primary" },
   { id: "camp", label: "合宿", icon: "🏕️", color: "border-amber-500/35 bg-amber-500/12 text-amber-700 dark:text-amber-300" },
@@ -133,6 +138,87 @@ export interface ScheduleEvent {
   };
   groupAttendCount?: EventGroupAttendanceMap;
 }
+
+type ActivitySlotType = "match" | "practice" | "meeting" | "camp" | "off";
+
+const resolveOverallEventType = (
+  ...slotTypes: Array<ActivitySlotType | undefined | null>
+): "match" | "practice" | "meeting" | "camp" => {
+  const active = slotTypes.filter(
+    (t): t is "match" | "practice" | "meeting" | "camp" =>
+      Boolean(t && t !== "off")
+  );
+  if (active.includes("match")) return "match";
+  if (active.includes("camp")) return "camp";
+  if (active.includes("meeting")) return "meeting";
+  return "practice";
+};
+
+const getActivityTypeBadge = (type?: string | null) => {
+  switch (type) {
+    case "match":
+      return {
+        label: "⚾ 試合",
+        icon: "⚾",
+        badgeClass: "bg-primary/12 text-primary border-primary/25",
+      };
+    case "camp":
+      return {
+        label: "🏕️ 合宿",
+        icon: "🏕️",
+        badgeClass:
+          "bg-amber-500/12 text-amber-700 dark:text-amber-300 border-amber-500/25",
+      };
+    case "meeting":
+      return {
+        label: "📋 ミーティング",
+        icon: "📋",
+        badgeClass:
+          "bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border-indigo-500/25",
+      };
+    default:
+      return {
+        label: "🏃 練習",
+        icon: "🏃",
+        badgeClass:
+          "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25",
+      };
+  }
+};
+
+const normalizeScheduleEventRecord = (ev: ScheduleEvent): ScheduleEvent => {
+  const isAmOff = ev.hasAm === false || ev.amType === "off";
+  const hasExplicitPm =
+    ev.hasPm !== undefined
+      ? Boolean(ev.hasPm && ev.pmType !== "off")
+      : Boolean((ev.pmType && ev.pmType !== "off") || ev.pmTime);
+  const resolvedAmType: ActivitySlotType = isAmOff
+    ? "off"
+    : ev.amType || ev.eventType || "practice";
+  const resolvedPmType: ActivitySlotType = hasExplicitPm
+    ? ev.pmType && ev.pmType !== "off"
+      ? ev.pmType
+      : ev.eventType || "practice"
+    : "off";
+
+  return {
+    ...ev,
+    hasAm: !isAmOff,
+    amType: resolvedAmType,
+    hasPm: hasExplicitPm,
+    pmType: resolvedPmType,
+    needsLunch:
+      ev.needsLunch === true ||
+      (ev.needsLunch as unknown) === 1 ||
+      (ev.needsLunch as unknown) === "1" ||
+      (ev.needsLunch as unknown) === "true",
+    needsSnack:
+      ev.needsSnack === true ||
+      (ev.needsSnack as unknown) === 1 ||
+      (ev.needsSnack as unknown) === "1" ||
+      (ev.needsSnack as unknown) === "true",
+  };
+};
 
 export type AttendanceMarkType = "duty" | "help" | "setup" | "game" | "absent" | "pending" | "present" | "late" | "partial";
 
@@ -247,24 +333,7 @@ export default function LiffSchedulePage() {
     }>(`/api/liff/schedule?${schedParams.toString()}`);
     if (!hit?.events) return null;
     return {
-      events: hit.events.map((ev) => {
-        const isAmOff = ev.hasAm === false || ev.amType === "off";
-        return {
-          ...ev,
-          hasAm: !isAmOff,
-          amType: isAmOff ? ("off" as const) : (ev.amType || ev.eventType || "practice"),
-          needsLunch:
-            ev.needsLunch === true ||
-            (ev.needsLunch as unknown) === 1 ||
-            (ev.needsLunch as unknown) === "1" ||
-            (ev.needsLunch as unknown) === "true",
-          needsSnack:
-            ev.needsSnack === true ||
-            (ev.needsSnack as unknown) === 1 ||
-            (ev.needsSnack as unknown) === "1" ||
-            (ev.needsSnack as unknown) === "true",
-        };
-      }),
+      events: hit.events.map(normalizeScheduleEventRecord),
       attendanceStatusConfig: normalizeGroupStatusSummaryConfig(hit.attendanceStatusConfig),
       scheduleDefaultTimes: hit.scheduleDefaultTimes
         ? normalizeTeamScheduleDefaultTimes(hit.scheduleDefaultTimes)
@@ -664,24 +733,7 @@ export default function LiffSchedulePage() {
         }
         if (Array.isArray(data.events)) {
           setLoadError(false);
-          const normalizedEvents = data.events.map((ev) => {
-            const isAmOff = ev.hasAm === false || ev.amType === "off";
-            return {
-              ...ev,
-              hasAm: !isAmOff,
-              amType: isAmOff ? ("off" as const) : ev.amType || ev.eventType || "practice",
-              needsLunch:
-                ev.needsLunch === true ||
-                (ev.needsLunch as unknown) === 1 ||
-                (ev.needsLunch as unknown) === "1" ||
-                (ev.needsLunch as unknown) === "true",
-              needsSnack:
-                ev.needsSnack === true ||
-                (ev.needsSnack as unknown) === 1 ||
-                (ev.needsSnack as unknown) === "1" ||
-                (ev.needsSnack as unknown) === "true",
-            };
-          });
+          const normalizedEvents = data.events.map(normalizeScheduleEventRecord);
 
           const map: Record<string, AttendanceMarkType | string> = {};
           const pGrpMap: Record<string, string> = {};
@@ -724,7 +776,7 @@ export default function LiffSchedulePage() {
       setIsSavingEdit(true);
       const teamId = currentTeam?.id || "demo-team";
 
-      let finalEvent = { ...editingEvent };
+      const finalEvent: ScheduleEvent = { ...editingEvent };
       finalEvent.title = (editingEvent.title && editingEvent.title.trim()) || "通常練習";
 
       const defaultTimes = resolveDefaultScheduleTimesForDate(
@@ -734,25 +786,54 @@ export default function LiffSchedulePage() {
 
       // グループがある場合の親データ同期（2グループ以上で複数グループとして同期・保存）
       if (finalEvent.activityGroups && finalEvent.activityGroups.length > 1) {
-        const firstGrp = finalEvent.activityGroups[0];
+        const normalizedGroups: ActivityGroup[] = finalEvent.activityGroups.map((g) => {
+          const gAmActive = g.hasAm !== false && g.amType !== "off";
+          const gPmActive = Boolean(g.hasPm && g.pmType !== "off");
+          const gAmType: ActivitySlotType = gAmActive
+            ? g.amType && g.amType !== "off"
+              ? g.amType
+              : "practice"
+            : "off";
+          const gPmType: ActivitySlotType = gPmActive
+            ? g.pmType && g.pmType !== "off"
+              ? g.pmType
+              : "practice"
+            : "off";
+          return {
+            ...g,
+            hasAm: gAmActive,
+            amType: gAmType,
+            amTime: gAmActive ? g.amTime || defaultTimes.amTimeLabel : "",
+            amLocation: gAmActive ? g.amLocation || "" : "",
+            hasPm: gPmActive,
+            pmType: gPmType,
+            pmTime: gPmActive ? g.pmTime || defaultTimes.pmTimeLabel : "",
+            pmLocation: gPmActive ? g.pmLocation || g.amLocation || "" : "",
+            eventType: resolveOverallEventType(gAmType, gPmType),
+          };
+        });
+        finalEvent.activityGroups = normalizedGroups;
+
+        const firstGrp = normalizedGroups[0];
         if (firstGrp.targetGroup) {
           finalEvent.targetGroup = firstGrp.targetGroup;
         }
-        finalEvent.hasAm = firstGrp.hasAm !== false && firstGrp.amType !== "off";
-        finalEvent.amType = firstGrp.amType || "practice";
-        finalEvent.amTime = firstGrp.amTime || defaultTimes.amTimeLabel;
-        finalEvent.amLocation = firstGrp.amLocation || "";
+        finalEvent.hasAm = Boolean(firstGrp.hasAm);
+        finalEvent.amType = firstGrp.amType || "off";
+        finalEvent.amTime = firstGrp.hasAm ? firstGrp.amTime || defaultTimes.amTimeLabel : "";
+        finalEvent.amLocation = firstGrp.hasAm ? firstGrp.amLocation || "" : "";
 
-        finalEvent.hasPm = Boolean(firstGrp.hasPm && firstGrp.pmType !== "off");
-        finalEvent.pmType = firstGrp.pmType || "practice";
-        finalEvent.pmTime = firstGrp.pmTime || defaultTimes.pmTimeLabel;
-        finalEvent.pmLocation = firstGrp.pmLocation || firstGrp.amLocation || "";
+        finalEvent.hasPm = Boolean(firstGrp.hasPm);
+        finalEvent.pmType = firstGrp.pmType || "off";
+        finalEvent.pmTime = firstGrp.hasPm ? firstGrp.pmTime || defaultTimes.pmTimeLabel : "";
+        finalEvent.pmLocation = firstGrp.hasPm ? firstGrp.pmLocation || firstGrp.amLocation || "" : "";
 
-        const resolvedType = finalEvent.hasAm 
-          ? (firstGrp.amType && firstGrp.amType !== "off" ? firstGrp.amType : "practice")
-          : (firstGrp.pmType && firstGrp.pmType !== "off" ? firstGrp.pmType : "practice");
-        finalEvent.eventType = resolvedType;
-        finalEvent.location = finalEvent.hasAm ? (firstGrp.amLocation || "") : (firstGrp.pmLocation || "");
+        finalEvent.eventType = resolveOverallEventType(
+          ...normalizedGroups.flatMap((g) => [g.amType, g.pmType])
+        );
+        finalEvent.location = finalEvent.hasAm
+          ? firstGrp.amLocation || ""
+          : firstGrp.pmLocation || "";
 
         if (finalEvent.hasAm && finalEvent.hasPm) {
           finalEvent.time = `${finalEvent.amTime} / ${finalEvent.pmTime}`;
@@ -781,23 +862,49 @@ export default function LiffSchedulePage() {
         }
         finalEvent.activityGroups = undefined;
 
-        const isAmActive = editingEvent.hasAm !== false && editingEvent.amType !== "off";
-        const isPmActive = editingEvent.hasPm && editingEvent.pmType !== "off";
+        const isAmActive = finalEvent.hasAm !== false && finalEvent.amType !== "off";
+        const isPmActive = Boolean(finalEvent.hasPm && finalEvent.pmType !== "off");
+
+        const resolvedAmType: ActivitySlotType = isAmActive
+          ? finalEvent.amType && finalEvent.amType !== "off"
+            ? finalEvent.amType
+            : "practice"
+          : "off";
+        const resolvedPmType: ActivitySlotType = isPmActive
+          ? finalEvent.pmType && finalEvent.pmType !== "off"
+            ? finalEvent.pmType
+            : "practice"
+          : "off";
 
         finalEvent.hasAm = isAmActive;
+        finalEvent.amType = resolvedAmType;
+        finalEvent.amTime = isAmActive
+          ? finalEvent.amTime || defaultTimes.amTimeLabel
+          : "";
+        finalEvent.amLocation = isAmActive
+          ? finalEvent.amLocation || finalEvent.location || ""
+          : "";
+
         finalEvent.hasPm = isPmActive;
-        const resolvedSingleType = isAmActive 
-          ? (editingEvent.amType && editingEvent.amType !== "off" ? editingEvent.amType : "practice")
-          : (editingEvent.pmType && editingEvent.pmType !== "off" ? editingEvent.pmType : "practice");
-        finalEvent.eventType = resolvedSingleType;
-        finalEvent.location = isAmActive ? (editingEvent.amLocation || editingEvent.location || "") : (editingEvent.pmLocation || "");
+        finalEvent.pmType = resolvedPmType;
+        finalEvent.pmTime = isPmActive
+          ? finalEvent.pmTime || defaultTimes.pmTimeLabel
+          : "";
+        finalEvent.pmLocation = isPmActive
+          ? finalEvent.pmLocation || finalEvent.amLocation || finalEvent.location || ""
+          : "";
+
+        finalEvent.eventType = resolveOverallEventType(resolvedAmType, resolvedPmType);
+        finalEvent.location = isAmActive
+          ? finalEvent.amLocation
+          : finalEvent.pmLocation;
 
         if (isAmActive && isPmActive) {
-          finalEvent.time = `${editingEvent.amTime || defaultTimes.amTimeLabel} / ${editingEvent.pmTime || defaultTimes.pmTimeLabel}`;
+          finalEvent.time = `${finalEvent.amTime} / ${finalEvent.pmTime}`;
         } else if (isAmActive) {
-          finalEvent.time = editingEvent.amTime || defaultTimes.amTimeLabel;
+          finalEvent.time = finalEvent.amTime;
         } else if (isPmActive) {
-          finalEvent.time = editingEvent.pmTime || defaultTimes.pmTimeLabel;
+          finalEvent.time = finalEvent.pmTime;
         } else {
           finalEvent.time = "時間調整中";
         }
@@ -807,10 +914,16 @@ export default function LiffSchedulePage() {
         prev.map((ev) => (ev.id === finalEvent.id ? { ...finalEvent } : ev))
       );
 
+      if (teamId === "demo-team" || editingEvent.id.startsWith("demo-")) {
+        setEditingEvent(null);
+        return;
+      }
+
       const res = await fetch(`/api/events/${teamId}/${editingEvent.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          dateStr: finalEvent.dateStr,
           title: finalEvent.title,
           eventType: finalEvent.eventType,
           location: finalEvent.location,
@@ -825,7 +938,10 @@ export default function LiffSchedulePage() {
           pmType: finalEvent.hasPm ? finalEvent.pmType : "off",
           pmTime: finalEvent.hasPm ? finalEvent.pmTime : null,
           pmLocation: finalEvent.hasPm ? finalEvent.pmLocation : null,
-          activityGroups: finalEvent.activityGroups && finalEvent.activityGroups.length > 1 ? JSON.stringify(finalEvent.activityGroups) : null,
+          activityGroups:
+            finalEvent.activityGroups && finalEvent.activityGroups.length > 1
+              ? JSON.stringify(finalEvent.activityGroups)
+              : null,
         }),
       });
 
@@ -835,7 +951,7 @@ export default function LiffSchedulePage() {
 
       invalidateLiffApiCache();
       setEditingEvent(null);
-      await loadSchedule();
+      await loadSchedule(true);
     } catch (err) {
       console.error("Error saving event edit:", err);
     } finally {
@@ -939,8 +1055,32 @@ export default function LiffSchedulePage() {
     let list = eventsInCurrentMonth.filter((ev) => {
       if (selectedDateStr && ev.dateStr !== selectedDateStr) return false;
       if (filter === "all") return true;
-      if (filter === "match") return ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || ev.activityGroups?.some(g => g.eventType === "match");
-      if (filter === "practice") return ev.eventType === "practice" || ev.amType === "practice" || ev.pmType === "practice" || ev.activityGroups?.some(g => g.eventType === "practice");
+      if (filter === "match") {
+        return (
+          ev.eventType === "match" ||
+          ev.amType === "match" ||
+          ev.pmType === "match" ||
+          ev.activityGroups?.some(
+            (g) =>
+              g.eventType === "match" ||
+              g.amType === "match" ||
+              g.pmType === "match"
+          )
+        );
+      }
+      if (filter === "practice") {
+        return (
+          ev.eventType === "practice" ||
+          ev.amType === "practice" ||
+          ev.pmType === "practice" ||
+          ev.activityGroups?.some(
+            (g) =>
+              g.eventType === "practice" ||
+              g.amType === "practice" ||
+              g.pmType === "practice"
+          )
+        );
+      }
       return true;
     });
 
@@ -1020,7 +1160,7 @@ export default function LiffSchedulePage() {
             teamName={currentTeam?.name || "チーム"}
             isLiff={true}
             onSaved={() => {
-              loadSchedule();
+              void loadSchedule(true);
             }}
           />
         ) : (
@@ -1090,7 +1230,18 @@ export default function LiffSchedulePage() {
               const isSun = d.date.getDay() === 0;
               const isSat = d.date.getDay() === 6;
 
-              const hasMatch = dayEvents.some((e) => e.eventType === "match" || e.amType === "match" || e.pmType === "match" || e.activityGroups?.some(g => g.eventType === "match"));
+              const hasMatch = dayEvents.some(
+                (e) =>
+                  e.eventType === "match" ||
+                  e.amType === "match" ||
+                  e.pmType === "match" ||
+                  e.activityGroups?.some(
+                    (g) =>
+                      g.eventType === "match" ||
+                      g.amType === "match" ||
+                      g.pmType === "match"
+                  )
+              );
               const hasGroups = dayEvents.some((e) => e.activityGroups && e.activityGroups.length > 1);
 
               return (
@@ -1306,7 +1457,27 @@ export default function LiffSchedulePage() {
               const activeGroupId = activeGroupTabMap[ev.id] || (activityGroups[0]?.id || "default");
               const currentGroup = activityGroups.find(g => g.id === activeGroupId) || activityGroups[0];
 
-              const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match" || activityGroups.some(g => g.eventType === "match");
+              const isMatch =
+                ev.eventType === "match" ||
+                ev.amType === "match" ||
+                ev.pmType === "match" ||
+                activityGroups.some(
+                  (g) =>
+                    g.eventType === "match" ||
+                    g.amType === "match" ||
+                    g.pmType === "match"
+                );
+              const isCamp =
+                !isMatch &&
+                (ev.eventType === "camp" ||
+                  ev.amType === "camp" ||
+                  ev.pmType === "camp" ||
+                  activityGroups.some(
+                    (g) =>
+                      g.eventType === "camp" ||
+                      g.amType === "camp" ||
+                      g.pmType === "camp"
+                  ));
               const isOfficial = isMatch && Boolean(ev.title && (ev.title.includes("大会") || ev.title.includes("公式")));
               const displayDutyGroup = (hasActivityGroups && currentGroup?.dutyGroup) ? currentGroup.dutyGroup : ev.dutyGroup;
               const displayCarInfo = (hasActivityGroups && currentGroup?.carInfo) ? currentGroup.carInfo : ev.carInfo;
@@ -1358,15 +1529,23 @@ export default function LiffSchedulePage() {
                           )}
                         </div>
 
-                        {/* ⚾ 試合 / 🏃 練習 区分バッジ */}
+                        {/* ⚾ 試合 / 🏕️ 合宿 / 🏃 練習 区分バッジ */}
                         <span className={`px-2 py-0.5 rounded text-[10.5px] font-black shrink-0 ${
                           isOfficial
                             ? "bg-amber-400 text-slate-950"
                             : isMatch
                             ? "bg-primary text-primary-foreground"
+                            : isCamp
+                            ? "bg-amber-500 text-slate-950"
                             : "bg-teal-500 text-slate-950"
                         }`}>
-                          {isOfficial ? "🏆 公式戦" : isMatch ? "⚾ 試合" : "🏃 練習"}
+                          {isOfficial
+                            ? "🏆 公式戦"
+                            : isMatch
+                            ? "⚾ 試合"
+                            : isCamp
+                            ? "🏕️ 合宿"
+                            : "🏃 練習"}
                         </span>
 
                         {/* 🎯 対象チーム・グループバッジ（Aチーム/Bチーム/全体など） */}
@@ -1393,17 +1572,57 @@ export default function LiffSchedulePage() {
                         <button
                           type="button"
                           onClick={() => {
-                            let grps: ActivityGroup[] | undefined = undefined;
+                            const editDefaults = resolveDefaultScheduleTimesForDate(
+                              scheduleDefaultTimes,
+                              ev.dateStr || todayStr
+                            );
+
+                            let rawGrps: ActivityGroup[] | undefined = undefined;
                             if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 1) {
-                              grps = ev.activityGroups;
+                              rawGrps = ev.activityGroups;
                             } else if (typeof ev.activityGroups === "string") {
                               try {
-                                const parsed = JSON.parse(ev.activityGroups);
+                                const parsed: unknown = JSON.parse(ev.activityGroups);
                                 if (Array.isArray(parsed) && parsed.length > 1) {
-                                  grps = parsed;
+                                  rawGrps = parsed as ActivityGroup[];
                                 }
                               } catch {}
                             }
+
+                            const grps = rawGrps?.map((g) => {
+                              const gAmOff = g.hasAm === false || g.amType === "off";
+                              const gPmOff =
+                                g.hasPm === false ||
+                                g.pmType === "off" ||
+                                (g.hasPm === undefined && !g.pmTime && !g.pmType);
+                              return {
+                                ...g,
+                                hasAm: !gAmOff,
+                                amType: gAmOff
+                                  ? ("off" as const)
+                                  : g.amType && g.amType !== "off"
+                                  ? g.amType
+                                  : g.eventType || "practice",
+                                amTime: gAmOff
+                                  ? ""
+                                  : g.amTime || g.time || editDefaults.amTimeLabel,
+                                amLocation: gAmOff
+                                  ? ""
+                                  : g.amLocation || g.location || "",
+                                hasPm: !gPmOff,
+                                pmType: gPmOff
+                                  ? ("off" as const)
+                                  : g.pmType && g.pmType !== "off"
+                                  ? g.pmType
+                                  : g.eventType || "practice",
+                                pmTime: gPmOff
+                                  ? ""
+                                  : g.pmTime || editDefaults.pmTimeLabel,
+                                pmLocation: gPmOff
+                                  ? ""
+                                  : g.pmLocation || g.amLocation || g.location || "",
+                              };
+                            });
 
                             if (grps && grps.length > 1) {
                               setActiveEditGroupId(grps[0].id);
@@ -1412,10 +1631,10 @@ export default function LiffSchedulePage() {
                             }
 
                             const isAmOff = ev.hasAm === false || ev.amType === "off";
-                            const editDefaults = resolveDefaultScheduleTimesForDate(
-                              scheduleDefaultTimes,
-                              ev.dateStr || todayStr
-                            );
+                            const isPmOff =
+                              ev.hasPm === false ||
+                              ev.pmType === "off" ||
+                              (ev.hasPm === undefined && !ev.pmTime && !ev.pmType);
 
                             setEditingEvent({ 
                               ...ev, 
@@ -1424,13 +1643,21 @@ export default function LiffSchedulePage() {
                               needsSnack: Boolean(ev.needsSnack),
                               memo: ev.memo || "",
                               hasAm: !isAmOff,
-                              amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
+                              amType: isAmOff
+                                ? "off"
+                                : ev.amType && ev.amType !== "off"
+                                ? ev.amType
+                                : ev.eventType || "practice",
                               amTime: isAmOff ? "" : (ev.amTime || ev.time || editDefaults.amTimeLabel),
                               amLocation: isAmOff ? "" : (ev.amLocation || ev.location || ""),
-                              pmType: ev.pmType || "practice",
-                              pmTime: ev.pmTime || editDefaults.pmTimeLabel,
-                              pmLocation: ev.pmLocation || ev.amLocation || ev.location || "",
-                              hasPm: ev.hasPm !== undefined ? ev.hasPm : true,
+                              hasPm: !isPmOff,
+                              pmType: isPmOff
+                                ? "off"
+                                : ev.pmType && ev.pmType !== "off"
+                                ? ev.pmType
+                                : ev.eventType || "practice",
+                              pmTime: isPmOff ? "" : (ev.pmTime || editDefaults.pmTimeLabel),
+                              pmLocation: isPmOff ? "" : (ev.pmLocation || ev.amLocation || ev.location || ""),
                               dutyGroup: ev.dutyGroup || "1班",
                               activityGroups: grps,
                             });
@@ -1465,6 +1692,13 @@ export default function LiffSchedulePage() {
                         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
                           {activityGroups.map((grp) => {
                             const isSel = (activeGroupId === grp.id);
+                            const grpIcon = getActivityTypeBadge(
+                              grp.amType && grp.amType !== "off"
+                                ? grp.amType
+                                : grp.pmType && grp.pmType !== "off"
+                                ? grp.pmType
+                                : grp.eventType
+                            ).icon;
                             return (
                               <button
                                 key={grp.id}
@@ -1476,7 +1710,7 @@ export default function LiffSchedulePage() {
                                     : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
                                 }`}
                               >
-                                <span>{grp.amType === "match" || grp.eventType === "match" ? "⚾" : "🏃"}</span>
+                                <span>{grpIcon}</span>
                                 <span>{grp.name}</span>
                                 {grp.targetGroup && grp.targetGroup !== "全体" && (
                                   <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
@@ -1501,13 +1735,16 @@ export default function LiffSchedulePage() {
                                     <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                       <span>☀️ 午前</span>
                                     </span>
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                      currentGroup.amType === "match"
-                                        ? "bg-primary/12 text-primary border-primary/25"
-                                        : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                    }`}>
-                                      {currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                    </span>
+                                    {(() => {
+                                      const amBadge = getActivityTypeBadge(
+                                        currentGroup.amType || currentGroup.eventType
+                                      );
+                                      return (
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${amBadge.badgeClass}`}>
+                                          {amBadge.label}
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -1550,13 +1787,14 @@ export default function LiffSchedulePage() {
                                     <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                       <span>🌙 午後</span>
                                     </span>
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                      currentGroup.pmType === "match"
-                                        ? "bg-primary/12 text-primary border-primary/25"
-                                        : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                    }`}>
-                                      {currentGroup.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                    </span>
+                                    {(() => {
+                                      const pmBadge = getActivityTypeBadge(currentGroup.pmType);
+                                      return (
+                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${pmBadge.badgeClass}`}>
+                                          {pmBadge.label}
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                     <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -1600,23 +1838,26 @@ export default function LiffSchedulePage() {
                                   <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
                                     ☀️ 午前
                                   </span>
-                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                                    currentGroup.eventType === "match" || currentGroup.amType === "match"
-                                      ? "bg-primary/12 text-primary border-primary/25"
-                                      : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                  }`}>
-                                    {currentGroup.eventType === "match" || currentGroup.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                  </span>
+                                  {(() => {
+                                    const singleBadge = getActivityTypeBadge(
+                                      currentGroup.amType || currentGroup.eventType
+                                    );
+                                    return (
+                                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${singleBadge.badgeClass}`}>
+                                        {singleBadge.label}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                               <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                                 <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                                   <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                                  <span className="truncate font-black">{currentGroup.time || currentGroup.amTime || "時間調整中"}</span>
+                                  <span className="truncate font-black">{currentGroup.amTime || currentGroup.time || "時間調整中"}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                                   <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                                  <span className="truncate font-black">{currentGroup.location || currentGroup.amLocation || "グラウンド"}</span>
+                                  <span className="truncate font-black">{currentGroup.amLocation || currentGroup.location || "グラウンド"}</span>
                                 </div>
                               </div>
                             </div>
@@ -1634,13 +1875,14 @@ export default function LiffSchedulePage() {
                                 <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                   <span>☀️ 午前</span>
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                  ev.amType === "match"
-                                    ? "bg-primary/12 text-primary border-primary/25"
-                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                }`}>
-                                  {ev.amType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                </span>
+                                {(() => {
+                                  const amBadge = getActivityTypeBadge(ev.amType);
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${amBadge.badgeClass}`}>
+                                      {amBadge.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -1683,13 +1925,14 @@ export default function LiffSchedulePage() {
                                 <span className="px-2 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-[10.5px] font-black flex items-center gap-1 shrink-0">
                                   <span>🌙 午後</span>
                                 </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${
-                                  ev.pmType === "match"
-                                    ? "bg-primary/12 text-primary border-primary/25"
-                                    : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                                }`}>
-                                  {ev.pmType === "match" ? "⚾ 試合" : "🏃 練習"}
-                                </span>
+                                {(() => {
+                                  const pmBadge = getActivityTypeBadge(ev.pmType);
+                                  return (
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border shrink-0 ${pmBadge.badgeClass}`}>
+                                      {pmBadge.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div className="p-2 rounded-xl bg-card border border-border space-y-1">
                                 <div className="flex items-center gap-1.5 text-xs font-black text-foreground">
@@ -1733,23 +1976,26 @@ export default function LiffSchedulePage() {
                               <span className="px-2 py-0.5 rounded-md bg-sky-500/12 text-sky-700 dark:text-sky-300 border border-sky-500/25 text-[10px] font-black">
                                 ☀️ 午前
                               </span>
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                                ev.eventType === "match"
-                                  ? "bg-primary/12 text-primary border-primary/25"
-                                  : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                              }`}>
-                                {ev.eventType === "match" ? "⚾ 試合" : "🏃 練習"}
-                              </span>
+                              {(() => {
+                                const singleBadge = getActivityTypeBadge(
+                                  ev.amType || ev.eventType
+                                );
+                                return (
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${singleBadge.badgeClass}`}>
+                                    {singleBadge.label}
+                                  </span>
+                                );
+                              })()}
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-xs font-bold">
                             <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                               <Clock className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 shrink-0" />
-                              <span className="truncate font-black">{ev.time || "時間調整中"}</span>
+                              <span className="truncate font-black">{ev.amTime || ev.time || "時間調整中"}</span>
                             </div>
                             <div className="flex items-center gap-1.5 text-foreground bg-card p-2 rounded-xl border border-border">
                               <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                              <span className="truncate font-black">{ev.location || "グラウンド"}</span>
+                              <span className="truncate font-black">{ev.amLocation || ev.location || "グラウンド"}</span>
                             </div>
                           </div>
                         </div>
@@ -1916,18 +2162,58 @@ export default function LiffSchedulePage() {
         );
 
         const curHasAm = currentEditGroup
-          ? (currentEditGroup.hasAm !== false && currentEditGroup.amType !== "off")
-          : (editingEvent.hasAm !== false && editingEvent.amType !== "off");
-        const curAmType = currentEditGroup ? (currentEditGroup.amType || "practice") : (editingEvent.amType || editingEvent.eventType || "practice");
-        const curAmTime = currentEditGroup ? (currentEditGroup.amTime || editDateDefaults.amTimeLabel) : (editingEvent.amTime || editingEvent.time || editDateDefaults.amTimeLabel);
-        const curAmLocation = currentEditGroup ? (currentEditGroup.amLocation || "") : (editingEvent.amLocation || editingEvent.location || "");
-        
+          ? currentEditGroup.hasAm !== false && currentEditGroup.amType !== "off"
+          : editingEvent.hasAm !== false && editingEvent.amType !== "off";
+        const curAmType: ActivitySlotType = currentEditGroup
+          ? curHasAm
+            ? currentEditGroup.amType && currentEditGroup.amType !== "off"
+              ? currentEditGroup.amType
+              : "practice"
+            : "off"
+          : curHasAm
+          ? editingEvent.amType && editingEvent.amType !== "off"
+            ? editingEvent.amType
+            : editingEvent.eventType || "practice"
+          : "off";
+        const curAmTime = currentEditGroup
+          ? currentEditGroup.amTime || editDateDefaults.amTimeLabel
+          : editingEvent.amTime || editingEvent.time || editDateDefaults.amTimeLabel;
+        const curAmLocation = currentEditGroup
+          ? currentEditGroup.amLocation || ""
+          : editingEvent.amLocation || editingEvent.location || "";
+
         const curHasPm = currentEditGroup
-          ? (currentEditGroup.hasPm !== undefined ? currentEditGroup.hasPm : (currentEditGroup.pmType !== "off"))
-          : (editingEvent.hasPm !== undefined ? editingEvent.hasPm : true);
-        const curPmType = currentEditGroup ? (currentEditGroup.pmType || "practice") : (editingEvent.pmType || "practice");
-        const curPmTime = currentEditGroup ? (currentEditGroup.pmTime || editDateDefaults.pmTimeLabel) : (editingEvent.pmTime || editDateDefaults.pmTimeLabel);
-        const curPmLocation = currentEditGroup ? (currentEditGroup.pmLocation || currentEditGroup.amLocation || "") : (editingEvent.pmLocation || editingEvent.amLocation || "");
+          ? Boolean(
+              (currentEditGroup.hasPm !== undefined
+                ? currentEditGroup.hasPm
+                : currentEditGroup.pmType !== "off" &&
+                  Boolean(currentEditGroup.pmType || currentEditGroup.pmTime)) &&
+                currentEditGroup.pmType !== "off"
+            )
+          : Boolean(
+              (editingEvent.hasPm !== undefined
+                ? editingEvent.hasPm
+                : editingEvent.pmType !== "off" &&
+                  Boolean(editingEvent.pmType || editingEvent.pmTime)) &&
+                editingEvent.pmType !== "off"
+            );
+        const curPmType: ActivitySlotType = currentEditGroup
+          ? curHasPm
+            ? currentEditGroup.pmType && currentEditGroup.pmType !== "off"
+              ? currentEditGroup.pmType
+              : "practice"
+            : "off"
+          : curHasPm
+          ? editingEvent.pmType && editingEvent.pmType !== "off"
+            ? editingEvent.pmType
+            : "practice"
+          : "off";
+        const curPmTime = currentEditGroup
+          ? currentEditGroup.pmTime || editDateDefaults.pmTimeLabel
+          : editingEvent.pmTime || editDateDefaults.pmTimeLabel;
+        const curPmLocation = currentEditGroup
+          ? currentEditGroup.pmLocation || currentEditGroup.amLocation || ""
+          : editingEvent.pmLocation || editingEvent.amLocation || "";
         const curDutyGroup = currentEditGroup ? (currentEditGroup.dutyGroup || "1班") : (editingEvent.dutyGroup || "1班");
         const curCarInfo = currentEditGroup ? (currentEditGroup.carInfo || "") : (editingEvent.carInfo || "");
         const curTargetGroup = currentEditGroup ? (currentEditGroup.targetGroup || "全体") : (editingEvent.targetGroup || "全体");
@@ -1946,11 +2232,11 @@ export default function LiffSchedulePage() {
         const updateCurrentActivity = (updates: Partial<{
           targetGroup: string;
           hasAm: boolean;
-          amType: any;
+          amType: ActivitySlotType;
           amTime: string;
           amLocation: string;
           hasPm: boolean;
-          pmType: any;
+          pmType: ActivitySlotType;
           pmTime: string;
           pmLocation: string;
           dutyGroup: string;
@@ -2060,17 +2346,43 @@ export default function LiffSchedulePage() {
                           type="button"
                           onClick={() => {
                             const base = currentEditGroup || groups[0];
+                            const nextHasAm = base
+                              ? base.hasAm !== false && base.amType !== "off"
+                              : Boolean(editingEvent.hasAm && editingEvent.amType !== "off");
+                            const nextHasPm = base
+                              ? Boolean(base.hasPm && base.pmType !== "off")
+                              : Boolean(editingEvent.hasPm && editingEvent.pmType !== "off");
                             setEditingEvent({
                               ...editingEvent,
                               targetGroup: base?.targetGroup || editingEvent.targetGroup || "全体",
-                              hasAm: base ? (base.hasAm !== false && base.amType !== "off") : editingEvent.hasAm,
-                              amType: base?.amType || editingEvent.amType || "practice",
-                              amTime: base?.amTime || editingEvent.amTime || editDateDefaults.amTimeLabel,
-                              amLocation: base?.amLocation || editingEvent.amLocation || "",
-                              hasPm: base ? Boolean(base.hasPm && base.pmType !== "off") : editingEvent.hasPm,
-                              pmType: base?.pmType || editingEvent.pmType || "practice",
-                              pmTime: base?.pmTime || editingEvent.pmTime || editDateDefaults.pmTimeLabel,
-                              pmLocation: base?.pmLocation || editingEvent.pmLocation || "",
+                              hasAm: nextHasAm,
+                              amType: nextHasAm
+                                ? base?.amType && base.amType !== "off"
+                                  ? base.amType
+                                  : editingEvent.amType && editingEvent.amType !== "off"
+                                  ? editingEvent.amType
+                                  : "practice"
+                                : "off",
+                              amTime: nextHasAm
+                                ? base?.amTime || editingEvent.amTime || editDateDefaults.amTimeLabel
+                                : "",
+                              amLocation: nextHasAm
+                                ? base?.amLocation || editingEvent.amLocation || ""
+                                : "",
+                              hasPm: nextHasPm,
+                              pmType: nextHasPm
+                                ? base?.pmType && base.pmType !== "off"
+                                  ? base.pmType
+                                  : editingEvent.pmType && editingEvent.pmType !== "off"
+                                  ? editingEvent.pmType
+                                  : "practice"
+                                : "off",
+                              pmTime: nextHasPm
+                                ? base?.pmTime || editingEvent.pmTime || editDateDefaults.pmTimeLabel
+                                : "",
+                              pmLocation: nextHasPm
+                                ? base?.pmLocation || editingEvent.pmLocation || ""
+                                : "",
                               dutyGroup: base?.dutyGroup || editingEvent.dutyGroup || "1班",
                               carInfo: base?.carInfo || editingEvent.carInfo || "",
                               activityGroups: undefined,
@@ -2091,18 +2403,35 @@ export default function LiffSchedulePage() {
                         onClick={() => {
                           if (!hasGroups) {
                             // 単一から複数グループへ昇格（グループ1, グループ2）
+                            const g1HasAm =
+                              editingEvent.hasAm !== false && editingEvent.amType !== "off";
+                            const g1HasPm = Boolean(
+                              editingEvent.hasPm && editingEvent.pmType !== "off"
+                            );
                             const grp1: ActivityGroup = {
                               id: `grp_${Date.now()}_1`,
                               name: "グループ1",
                               targetGroup: editingEvent.targetGroup || "全体",
-                              hasAm: editingEvent.hasAm !== false && editingEvent.amType !== "off",
-                              amType: editingEvent.amType || "match",
-                              amTime: editingEvent.amTime || editDateDefaults.amTimeLabel,
-                              amLocation: editingEvent.amLocation || "",
-                              hasPm: editingEvent.hasPm !== undefined ? editingEvent.hasPm : true,
-                              pmType: editingEvent.pmType || "practice",
-                              pmTime: editingEvent.pmTime || editDateDefaults.pmTimeLabel,
-                              pmLocation: editingEvent.pmLocation || "",
+                              hasAm: g1HasAm,
+                              amType: g1HasAm
+                                ? editingEvent.amType && editingEvent.amType !== "off"
+                                  ? editingEvent.amType
+                                  : "practice"
+                                : "off",
+                              amTime: g1HasAm
+                                ? editingEvent.amTime || editDateDefaults.amTimeLabel
+                                : "",
+                              amLocation: g1HasAm ? editingEvent.amLocation || "" : "",
+                              hasPm: g1HasPm,
+                              pmType: g1HasPm
+                                ? editingEvent.pmType && editingEvent.pmType !== "off"
+                                  ? editingEvent.pmType
+                                  : "practice"
+                                : "off",
+                              pmTime: g1HasPm
+                                ? editingEvent.pmTime || editDateDefaults.pmTimeLabel
+                                : "",
+                              pmLocation: g1HasPm ? editingEvent.pmLocation || "" : "",
                               dutyGroup: editingEvent.dutyGroup || "1班",
                               carInfo: editingEvent.carInfo || "",
                             };
@@ -2173,6 +2502,13 @@ export default function LiffSchedulePage() {
                     ) : (
                       groups.map((grp) => {
                         const isSel = (currentEditGroup?.id === grp.id);
+                        const grpIcon = getActivityTypeBadge(
+                          grp.amType && grp.amType !== "off"
+                            ? grp.amType
+                            : grp.pmType && grp.pmType !== "off"
+                            ? grp.pmType
+                            : grp.eventType
+                        ).icon;
                         return (
                           <div
                             key={grp.id}
@@ -2187,7 +2523,7 @@ export default function LiffSchedulePage() {
                               onClick={() => setActiveEditGroupId(grp.id)}
                               className="flex items-center gap-1 cursor-pointer"
                             >
-                              <span>{grp.amType === "match" ? "⚾" : "🏃"}</span>
+                              <span>{grpIcon}</span>
                               <span>{grp.name}</span>
                               {grp.targetGroup && grp.targetGroup !== "全体" && (
                                 <span className={`px-1.5 py-0.2 rounded-md text-[9.5px] font-bold ${
@@ -2206,20 +2542,37 @@ export default function LiffSchedulePage() {
                                 const nextGroups = groups.filter(g => g.id !== grp.id);
                                 if (nextGroups.length <= 1) {
                                   // 残り1グループ以下になった場合は自動的に単一活動に復帰
-                                  const remaining = nextGroups[0];
+                                  const remaining = nextGroups[0] || grp;
+                                  const remHasAm =
+                                    remaining.hasAm !== false && remaining.amType !== "off";
+                                  const remHasPm = Boolean(
+                                    remaining.hasPm && remaining.pmType !== "off"
+                                  );
                                   setEditingEvent({
                                     ...editingEvent,
-                                    targetGroup: remaining?.targetGroup || grp.targetGroup || editingEvent.targetGroup || "全体",
-                                    hasAm: remaining ? (remaining.hasAm !== false && remaining.amType !== "off") : (grp.hasAm !== false && grp.amType !== "off"),
-                                    amType: remaining?.amType || grp.amType || "practice",
-                                    amTime: remaining?.amTime || grp.amTime || editDateDefaults.amTimeLabel,
-                                    amLocation: remaining?.amLocation || grp.amLocation || "",
-                                    hasPm: remaining ? Boolean(remaining.hasPm && remaining.pmType !== "off") : Boolean(grp.hasPm && grp.pmType !== "off"),
-                                    pmType: remaining?.pmType || grp.pmType || "practice",
-                                    pmTime: remaining?.pmTime || grp.pmTime || editDateDefaults.pmTimeLabel,
-                                    pmLocation: remaining?.pmLocation || grp.pmLocation || "",
-                                    dutyGroup: remaining?.dutyGroup || grp.dutyGroup || "1班",
-                                    carInfo: remaining?.carInfo || grp.carInfo || "",
+                                    targetGroup: remaining.targetGroup || editingEvent.targetGroup || "全体",
+                                    hasAm: remHasAm,
+                                    amType: remHasAm
+                                      ? remaining.amType && remaining.amType !== "off"
+                                        ? remaining.amType
+                                        : "practice"
+                                      : "off",
+                                    amTime: remHasAm
+                                      ? remaining.amTime || editDateDefaults.amTimeLabel
+                                      : "",
+                                    amLocation: remHasAm ? remaining.amLocation || "" : "",
+                                    hasPm: remHasPm,
+                                    pmType: remHasPm
+                                      ? remaining.pmType && remaining.pmType !== "off"
+                                        ? remaining.pmType
+                                        : "practice"
+                                      : "off",
+                                    pmTime: remHasPm
+                                      ? remaining.pmTime || editDateDefaults.pmTimeLabel
+                                      : "",
+                                    pmLocation: remHasPm ? remaining.pmLocation || "" : "",
+                                    dutyGroup: remaining.dutyGroup || "1班",
+                                    carInfo: remaining.carInfo || "",
                                     activityGroups: undefined,
                                   });
                                   setActiveEditGroupId("main");
@@ -2349,7 +2702,12 @@ export default function LiffSchedulePage() {
                               <button
                                 key={t.id}
                                 type="button"
-                                onClick={() => updateCurrentActivity({ amType: t.id as any })}
+                                onClick={() =>
+                                  updateCurrentActivity({
+                                    hasAm: true,
+                                    amType: t.id,
+                                  })
+                                }
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                   isSel ? t.color + " shadow-xs font-black" : "bg-card border-border text-muted-foreground hover:text-foreground"
                                 }`}
@@ -2480,7 +2838,12 @@ export default function LiffSchedulePage() {
                               <button
                                 key={t.id}
                                 type="button"
-                                onClick={() => updateCurrentActivity({ pmType: t.id as any })}
+                                onClick={() =>
+                                  updateCurrentActivity({
+                                    hasPm: true,
+                                    pmType: t.id,
+                                  })
+                                }
                                 className={`px-2.5 py-1 rounded-xl text-xs font-black border transition-all active:scale-95 cursor-pointer ${
                                   isSel ? t.color + " shadow-xs font-black" : "bg-card border-border text-muted-foreground hover:text-foreground"
                                 }`}

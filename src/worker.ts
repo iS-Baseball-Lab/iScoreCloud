@@ -36,6 +36,7 @@ import liffGroundsAiRoute from './api/liff/grounds-ai'
 import liffGalleryRoute from './api/liff/gallery'
 import liffAdminMgmtRoute from './api/liff/admin-management'
 import documentsRoute from './api/documents'
+import { ensureAllSchemasOnce } from './lib/db-helper'
 import {
   buildClearLiffSessionCookieHeader,
   buildLiffSessionSetCookieHeader,
@@ -148,6 +149,7 @@ app.use(
 
 const sharedTeamGuard = createSharedApiTeamIsolationMiddleware()
 app.use('/api/*', async (c, next) => {
+  await ensureAllSchemasOnce(c.env.DB)
   const pathname = new URL(c.req.url).pathname
   if (
     pathname.startsWith('/api/auth') ||

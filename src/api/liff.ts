@@ -86,6 +86,7 @@ import {
   DEFAULT_TEAM_SCHEDULE_TIMES,
   extractRawTimeHHMM,
   normalizeTeamScheduleDefaultTimes,
+  resolveDefaultScheduleTimesForDate,
 } from "@/lib/liff/schedule-default-times";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
@@ -587,6 +588,7 @@ const findSameDayScheduleEvent = <
     startAt: Date | number | string | null;
     eventType?: string | null;
     amType?: string | null;
+    pmType?: string | null;
   },
 >(
   eventRows: ReadonlyArray<T>,
@@ -599,7 +601,10 @@ const findSameDayScheduleEvent = <
   if (rawSameDay.length > 0) {
     return (
       rawSameDay.find(
-        (ev) => ev.eventType === "match" || ev.amType === "match"
+        (ev) =>
+          ev.eventType === "match" ||
+          ev.amType === "match" ||
+          ev.pmType === "match"
       ) || rawSameDay[0]
     );
   }
@@ -608,7 +613,10 @@ const findSameDayScheduleEvent = <
   );
   return (
     jstSameDay.find(
-      (ev) => ev.eventType === "match" || ev.amType === "match"
+      (ev) =>
+        ev.eventType === "match" ||
+        ev.amType === "match" ||
+        ev.pmType === "match"
     ) || jstSameDay[0]
   );
 };
@@ -1772,32 +1780,69 @@ app.get("/hub", async (c) => {
       const day = String(d.getDate()).padStart(2, "0");
       const dateStr = `${y}-${m}-${day}`;
 
+      const dateDefaults = resolveDefaultScheduleTimesForDate(hubTeamScheduleDefaults, dateStr);
+
+      let parsedHubGroups: Array<Record<string, unknown>> = [];
+      if (ev.activityGroups) {
+        try {
+          const parsed =
+            typeof ev.activityGroups === "string"
+              ? JSON.parse(ev.activityGroups)
+              : ev.activityGroups;
+          if (Array.isArray(parsed)) parsedHubGroups = parsed;
+        } catch {}
+      }
+
       const rawLocation = ev.location || targetTeam.homeGround || "グラウンド";
       const displayLocation = venueMap.get(rawLocation.trim()) || rawLocation;
 
       const rawPmLocation = ev.pmLocation ? ev.pmLocation.trim() : null;
       const displayPmLocation = rawPmLocation ? (venueMap.get(rawPmLocation) || rawPmLocation) : null;
 
-      const hasPm = !!ev.pmStartAt || !!displayPmLocation;
+      const isAmOff = ev.amType === "off";
+      const hasAm = !isAmOff;
+      const isPmOff = ev.pmType === "off";
+      const hasPm =
+        !isPmOff &&
+        (!!ev.pmStartAt ||
+          !!displayPmLocation ||
+          (!!ev.pmType && ev.pmType !== "off"));
+
+      const resolvedAmType = isAmOff
+        ? "off"
+        : (ev.amType || ev.eventType || "practice");
+      const resolvedPmType = hasPm
+        ? (ev.pmType && ev.pmType !== "off"
+            ? ev.pmType
+            : (ev.eventType || "practice"))
+        : "off";
 
       // 時間の安全抽出（UTC/JSTずれ防止）
-      const startHHMM = extractRawTimeHHMM(ev.startAt) || hubTeamScheduleDefaults.amStart;
+      const startHHMM = extractRawTimeHHMM(ev.startAt) || dateDefaults.amStart;
       const endHHMM = extractRawTimeHHMM(ev.endAt);
       const pmStartHHMM = extractRawTimeHHMM(ev.pmStartAt);
       const pmEndHHMM = extractRawTimeHHMM(ev.pmEndAt);
 
-      const amTime = hasPm
+      const amTime = isAmOff
+        ? ""
+        : hasPm
         ? (endHHMM && (pmEndHHMM || (pmStartHHMM && endHHMM <= pmStartHHMM))
             ? `${startHHMM}〜${endHHMM}`
-            : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`)
-        : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${hubTeamScheduleDefaults.amEnd}`);
+            : `${startHHMM}〜${dateDefaults.amEnd}`)
+        : (endHHMM ? `${startHHMM}〜${endHHMM}` : `${startHHMM}〜${dateDefaults.amEnd}`);
 
       const pmTime = hasPm
-        ? `${pmStartHHMM || hubTeamScheduleDefaults.summerPmStart}〜${pmEndHHMM || endHHMM || hubTeamScheduleDefaults.summerPmEnd}`
+        ? `${pmStartHHMM || (isAmOff ? startHHMM : dateDefaults.pmStart)}〜${pmEndHHMM || (!isAmOff && endHHMM && pmStartHHMM && endHHMM > pmStartHHMM ? endHHMM : dateDefaults.pmEnd)}`
         : "";
 
-      // 🚗 練習の場合は配車なし（試合または明示的な配車のみ）
-      const isMatch = ev.eventType === "match" || ev.eventType === "camp";
+      // 🚗 練習の場合は配車なし（試合・合宿または明示的な配車のみ）
+      const isMatch =
+        ev.eventType === "match" ||
+        ev.eventType === "camp" ||
+        resolvedAmType === "match" ||
+        resolvedAmType === "camp" ||
+        resolvedPmType === "match" ||
+        resolvedPmType === "camp";
       const carInfo = isMatch ? "配車調整中" : "";
 
       // 🎯 対象チーム・グループ（Aチーム/Bチーム/試合組/練習組/全体など）
@@ -1814,10 +1859,13 @@ app.get("/hub", async (c) => {
         endAt: ev.endAt,
         pmStartAt: ev.pmStartAt,
         pmEndAt: ev.pmEndAt,
+        hasAm,
+        amType: resolvedAmType,
         amTime,
+        pmType: resolvedPmType,
         pmTime,
-        location: displayLocation,
-        amLocation: displayLocation,
+        location: isAmOff ? (displayPmLocation || displayLocation) : displayLocation,
+        amLocation: isAmOff ? "" : displayLocation,
         pmLocation: displayPmLocation,
         hasPm,
         targetGroup: extractedTarget,
@@ -1827,6 +1875,7 @@ app.get("/hub", async (c) => {
         needsLunch: toBoolean(ev.needsLunch, hasPm || isMatch),
         needsSnack: toBoolean(ev.needsSnack, false),
         memo: ev.description || "",
+        activityGroups: parsedHubGroups.length > 0 ? parsedHubGroups : undefined,
         myStatus: (userAttendances[ev.id] as any) || "pending",
         attendCount: groupAtt.attendCount,
         groupAttendCount: groupAtt.groupAttendCount,
@@ -2092,6 +2141,14 @@ app.get("/schedule", async (c) => {
             dateStr: "2026-09-05",
             time: "08:00〜12:00 / 12:00〜18:00",
             location: "桜本小学校 グラウンド",
+            hasAm: true,
+            amType: "practice",
+            amTime: "08:00〜12:00",
+            amLocation: "桜本小学校 グラウンド",
+            hasPm: true,
+            pmType: "practice",
+            pmTime: "12:00〜18:00",
+            pmLocation: "桜本小学校 グラウンド",
             eventType: "practice",
             dutyGroup: "C班 (グラウンド整備)",
             needsLunch: true,
@@ -2105,8 +2162,16 @@ app.get("/schedule", async (c) => {
             title: "練習試合 vs グリーンライオンズ (ダブルヘッダー)",
             date: "9月6日(日)",
             dateStr: "2026-09-06",
-            time: "08:00 集合 (第1試合 09:00 / 第2試合 11:30)",
+            time: "08:00〜12:00 / 13:00〜16:00",
             location: "等々力球場",
+            hasAm: true,
+            amType: "match",
+            amTime: "08:00〜12:00",
+            amLocation: "等々力球場",
+            hasPm: true,
+            pmType: "match",
+            pmTime: "13:00〜16:00",
+            pmLocation: "等々力球場",
             eventType: "match",
             dutyGroup: "A班 (審判割当・配車)",
             needsLunch: true,
@@ -2362,18 +2427,33 @@ app.get("/schedule", async (c) => {
         }
       }
 
+      const dateDefaults = resolveDefaultScheduleTimesForDate(schedDefaultTimes, dateStr);
       const isAmOff = ev.amType === "off";
       const hasAm = !isAmOff;
-      const hasPm = !!ev.pmStartAt || !!ev.pmLocation;
+      const isPmOff = ev.pmType === "off";
+      const hasPm =
+        !isPmOff &&
+        (!!ev.pmStartAt ||
+          !!ev.pmLocation ||
+          (!!ev.pmType && ev.pmType !== "off"));
 
-      const startTimeStr = extractRawTimeHHMM(ev.startAt) || schedDefaultTimes.amStart;
+      const resolvedAmType = isAmOff
+        ? "off"
+        : (ev.amType || ev.eventType || "practice");
+      const resolvedPmType = hasPm
+        ? (ev.pmType && ev.pmType !== "off"
+            ? ev.pmType
+            : (ev.eventType || "practice"))
+        : "off";
+
+      const startTimeStr = extractRawTimeHHMM(ev.startAt) || dateDefaults.amStart;
       const rawEndStr = extractRawTimeHHMM(ev.endAt);
       const pmStartStr = extractRawTimeHHMM(ev.pmStartAt);
       const pmEndStr = extractRawTimeHHMM(ev.pmEndAt);
 
       const resolvedAmEndStr =
         hasPm && !pmEndStr && rawEndStr && pmStartStr && rawEndStr > pmStartStr
-          ? schedDefaultTimes.amEnd
+          ? dateDefaults.amEnd
           : rawEndStr;
 
       const formattedAmTime = isAmOff
@@ -2383,9 +2463,17 @@ app.get("/schedule", async (c) => {
         : `${startTimeStr} 集合`;
 
       let pmTime = "";
-      if (hasPm && pmStartStr) {
-        const effectivePmEnd = pmEndStr || rawEndStr || "";
-        pmTime = effectivePmEnd ? `${pmStartStr}〜${effectivePmEnd}` : `${pmStartStr}〜`;
+      if (hasPm) {
+        if (pmStartStr) {
+          const effectivePmEnd =
+            pmEndStr ||
+            (!isAmOff && rawEndStr && rawEndStr > pmStartStr
+              ? rawEndStr
+              : dateDefaults.pmEnd);
+          pmTime = effectivePmEnd ? `${pmStartStr}〜${effectivePmEnd}` : `${pmStartStr}〜`;
+        } else {
+          pmTime = dateDefaults.pmTimeLabel;
+        }
       }
 
       const rawLocation = ev.location || "グラウンド";
@@ -2394,7 +2482,10 @@ app.get("/schedule", async (c) => {
       const displayPmLocation = venueMap.get(rawPmLocation.trim()) || rawPmLocation;
 
       const extractedTarget = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
-      const isMatch = ev.eventType === "match" || ev.amType === "match";
+      const isMatch =
+        ev.eventType === "match" ||
+        resolvedAmType === "match" ||
+        resolvedPmType === "match";
 
       let overallTime = formattedAmTime;
       if (isAmOff && hasPm && pmTime) {
@@ -2422,11 +2513,11 @@ app.get("/schedule", async (c) => {
         amTime: formattedAmTime,
         amLocation: isAmOff ? "" : displayLocation,
         pmTime,
-        pmLocation: displayPmLocation,
+        pmLocation: hasPm ? displayPmLocation : "",
         hasPm,
         eventType: ev.eventType || "practice",
-        amType: isAmOff ? "off" : (ev.amType || ev.eventType || "practice"),
-        pmType: hasPm ? (ev.eventType || "practice") : "off",
+        amType: resolvedAmType,
+        pmType: resolvedPmType,
         dutyGroup: ev.dutyGroup || undefined,
         needsLunch: toBoolean(ev.needsLunch, isMatch || hasPm),
         needsSnack: toBoolean(ev.needsSnack, false),
@@ -3095,7 +3186,12 @@ app.get("/attendance-matrix", async (c) => {
         dayOfWeek: day,
         dutyGroup: ev.dutyGroup || "なし",
         location: ev.location || "グラウンド",
-        eventType: ev.eventType || "practice",
+        eventType:
+          ev.amType === "match" || ev.pmType === "match"
+            ? "match"
+            : ev.amType === "camp" || ev.pmType === "camp"
+            ? "camp"
+            : ev.eventType || "practice",
       };
     });
 
