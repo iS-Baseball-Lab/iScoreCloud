@@ -306,7 +306,8 @@ export function PlayerRosterManageModal({
       }
 
       invalidateLiffApiCache("/api/liff/");
-      const createdId = data.createdPlayers?.[0]?.id || `local-${Date.now()}`;
+      const fallbackPrefix = teamId === "demo-team" ? "demo-local" : "local";
+      const createdId = data.createdPlayers?.[0]?.id || `${fallbackPrefix}-${Date.now()}`;
       const summary: CreatedRosterPlayerSummary = {
         id: createdId,
         name: reqItem.name,
@@ -384,8 +385,9 @@ export function PlayerRosterManageModal({
       }
 
       invalidateLiffApiCache("/api/liff/");
+      const fallbackBulkPrefix = teamId === "demo-team" ? "demo-local-bulk" : "local-bulk";
       const summaries: CreatedRosterPlayerSummary[] = parsedBulkRows.map((row, idx) => ({
-        id: data.createdPlayers?.[idx]?.id || `local-bulk-${Date.now()}-${idx}`,
+        id: data.createdPlayers?.[idx]?.id || `${fallbackBulkPrefix}-${Date.now()}-${idx}`,
         name: row.name,
         nameKana: null,
         uniformNumber: row.uniformNumber,

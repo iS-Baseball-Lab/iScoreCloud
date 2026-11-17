@@ -1485,7 +1485,12 @@ export function createLiffTeamIsolationMiddleware(options?: {
     }
 
     const pathPlayerId =
-      segs[2] === "players" && segs[3] && segs[3] !== "growth" ? segs[3] : "";
+      segs[2] === "players" &&
+      segs[3] &&
+      segs[3] !== "growth" &&
+      segs[3] !== "create"
+        ? segs[3]
+        : "";
     const playerId =
       pathPlayerId ||
       (c.req.query("playerId") || "").trim() ||
@@ -1529,7 +1534,12 @@ export function createLiffTeamIsolationMiddleware(options?: {
           );
         }
       }
-      if (segs[3] === "photos" && segs[4] && !isDemoEntityId(segs[4])) {
+      if (
+        segs[3] === "photos" &&
+        segs[4] &&
+        segs[4] !== "delete" &&
+        !isDemoEntityId(segs[4])
+      ) {
         const ownerTeamId = await findTeamIdForGalleryPhoto(db, segs[4]);
         if (
           !ownerTeamId ||
