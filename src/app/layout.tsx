@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     shortcut: "/liff-logo.png?v=2",
     apple: [
       { url: "/apple-logo.png?v=2", sizes: "180x180", type: "image/png" },
-      { url: "/channel-icon-640x640.png?v=2", sizes: "640x640", type: "image/png" },
+      { url: "/channel-icon-640x640.png?v=3", sizes: "640x640", type: "image/png" },
     ],
   },
   openGraph: {
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/channel-icon-640x640.png?v=2",
+        url: "/channel-icon-640x640.png?v=3",
         width: 640,
         height: 640,
         alt: "iScoreCloud LINEミニアプリ",
@@ -44,7 +44,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
-    images: ["/channel-icon-640x640.png?v=2"],
+    images: ["/channel-icon-640x640.png?v=3"],
   },
   manifest: "/manifest.json",
 };
