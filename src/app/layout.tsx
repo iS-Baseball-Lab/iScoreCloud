@@ -16,11 +16,15 @@ export const metadata: Metadata = {
     "スマホ片手のベンチ入力から伝統的な早稲田式スコアブックの清書出力、出欠・配車・1球速報まで。いつものLINEミニアプリで完結する草野球・学童野球チーム向けプラットフォーム。",
   icons: {
     icon: [
-      { url: "/liff-logo.png", type: "image/png" },
-      { url: "/liff-logo.webp", type: "image/webp" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/liff-logo.png?v=2", type: "image/png", sizes: "640x640" },
+      { url: "/liff-logo.webp?v=2", type: "image/webp", sizes: "640x640" },
     ],
-    shortcut: "/liff-logo.png",
-    apple: "/channel-icon-640x640.png",
+    shortcut: "/liff-logo.png?v=2",
+    apple: [
+      { url: "/apple-logo.png?v=2", sizes: "180x180", type: "image/png" },
+      { url: "/channel-icon-640x640.png?v=2", sizes: "640x640", type: "image/png" },
+    ],
   },
   openGraph: {
     title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
@@ -30,7 +34,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/channel-icon-640x640.png",
+        url: "/channel-icon-640x640.png?v=2",
         width: 640,
         height: 640,
         alt: "iScoreCloud LINEミニアプリ",
@@ -40,7 +44,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "iScoreCloud | LINEで完結する野球スコアブック＆チーム運営",
-    images: ["/channel-icon-640x640.png"],
+    images: ["/channel-icon-640x640.png?v=2"],
   },
   manifest: "/manifest.json",
 };

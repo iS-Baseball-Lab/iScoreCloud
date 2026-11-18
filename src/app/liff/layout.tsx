@@ -9,11 +9,15 @@ export const metadata: Metadata = {
   description: "LINEで出欠回答・配車表・予定確認・試合動画がサクサク確認できる草野球・学童野球チーム向けミニアプリ「iScoreCloud LINEミニアプリ」",
   icons: {
     icon: [
-      { url: "/liff-logo.png", type: "image/png" },
-      { url: "/liff-logo.webp", type: "image/webp" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/liff-logo.png?v=2", type: "image/png", sizes: "640x640" },
+      { url: "/liff-logo.webp?v=2", type: "image/webp", sizes: "640x640" },
     ],
-    shortcut: "/liff-logo.png",
-    apple: "/channel-icon-640x640.png",
+    shortcut: "/liff-logo.png?v=2",
+    apple: [
+      { url: "/apple-logo.png?v=2", sizes: "180x180", type: "image/png" },
+      { url: "/channel-icon-640x640.png?v=2", sizes: "640x640", type: "image/png" },
+    ],
   },
   openGraph: {
     title: "iScoreCloud LINEミニアプリ",
@@ -22,7 +26,7 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/channel-icon-640x640.png",
+        url: "/channel-icon-640x640.png?v=2",
         width: 640,
         height: 640,
         alt: "iScoreCloud LINEミニアプリ",
@@ -32,7 +36,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: "iScoreCloud LINEミニアプリ",
-    images: ["/channel-icon-640x640.png"],
+    images: ["/channel-icon-640x640.png?v=2"],
   },
 };
 

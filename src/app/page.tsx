@@ -74,18 +74,18 @@ function BrandLogoImg({
 }) {
   return (
     <img
-      src="/liff-logo.webp"
+      src="/liff-logo.webp?v=2"
       alt="iScoreCloud"
       width={size}
       height={size}
       onError={(e) => {
         const img = e.currentTarget;
-        if (!img.src.endsWith("/liff-logo.png")) {
-          img.src = "/liff-logo.png";
+        if (!img.src.includes("/liff-logo.png")) {
+          img.src = "/liff-logo.png?v=2";
         }
       }}
       className={cn(
-        "rounded-[22%] bg-[#0f172a] border border-slate-700/80 object-contain shrink-0",
+        "rounded-[22%] bg-white border border-slate-200/90 dark:border-slate-700/70 shadow-2xs object-contain shrink-0",
         className
       )}
     />

@@ -77,25 +77,35 @@ function LiffBrandLogoMark({ compact = false }: { compact?: boolean }) {
       <span
         aria-hidden="true"
         className={cn(
-          "rounded-[22%] bg-[#0f172a] border-2 border-primary text-slate-50 shadow-xs flex items-center justify-center shrink-0 select-none",
+          "rounded-[22%] bg-white border border-slate-200 dark:border-slate-700 shadow-2xs flex items-center justify-center shrink-0 select-none",
           compact ? "h-7 w-7" : "h-9 w-9 sm:h-9.5 sm:w-9.5"
         )}
       >
-        <span
-          className={cn(
-            "font-black italic tracking-tighter leading-none",
-            compact ? "text-[10.5px]" : "text-[12px]"
-          )}
+        <svg
+          viewBox="0 0 32 32"
+          className={cn(compact ? "w-5 h-5" : "w-6 h-6")}
+          fill="none"
         >
-          i<span className="text-primary">S</span>
-        </span>
+          <path
+            d="M16 3.5L28.5 16L16 28.5L3.5 16L16 3.5Z"
+            fill="#0284c7"
+          />
+          <path
+            d="M16 3.5L19.8 7.3L11.1 16L19.8 24.7L16 28.5L3.5 16L16 3.5Z"
+            fill="#1e3a8a"
+          />
+          <path
+            d="M16 10.6L21.4 16L16 21.4L10.6 16L16 10.6Z"
+            fill="#ffffff"
+          />
+        </svg>
       </span>
     );
   }
 
   return (
     <img
-      src={stage === "webp" ? "/liff-logo.webp" : "/liff-logo.png"}
+      src={stage === "webp" ? "/liff-logo.webp?v=2" : "/liff-logo.png?v=2"}
       alt="iScoreCloud LINEミニアプリ"
       width={compact ? 28 : 36}
       height={compact ? 28 : 36}
@@ -105,7 +115,7 @@ function LiffBrandLogoMark({ compact = false }: { compact?: boolean }) {
         setStage((prev) => (prev === "webp" ? "png" : "fallback"));
       }}
       className={cn(
-        "rounded-[22%] shadow-xs object-contain shrink-0",
+        "rounded-[22%] bg-white border border-slate-200/90 dark:border-slate-700/70 shadow-2xs object-contain shrink-0",
         compact ? "h-7 w-7" : "h-9 w-9 sm:h-9.5 sm:w-9.5"
       )}
     />

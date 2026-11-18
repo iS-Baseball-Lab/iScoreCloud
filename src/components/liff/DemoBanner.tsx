@@ -39,11 +39,11 @@ export function DemoBanner({
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <img
-              src="/liff-logo.webp"
+              src="/liff-logo.webp?v=2"
               alt="iScoreCloud LINEミニアプリ"
               width={24}
               height={24}
-              className="w-6 h-6 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0"
+              className="w-6 h-6 rounded-[22%] bg-white object-contain shrink-0 shadow-2xs"
             />
             <span className="text-xs font-black text-white truncate">
               チーム参加・承認待ち
@@ -63,11 +63,11 @@ export function DemoBanner({
                 className="flex items-center gap-2.5 p-2.5 rounded-xl bg-muted border border-border"
               >
                 <img
-                  src={pt.logoImageUrl || "/liff-logo.webp"}
+                  src={pt.logoImageUrl || "/liff-logo.webp?v=2"}
                   alt={pt.name}
                   width={32}
                   height={32}
-                  className="w-8 h-8 rounded-lg bg-card border border-border object-contain shrink-0"
+                  className="w-8 h-8 rounded-lg bg-white border border-border object-contain shrink-0"
                 />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-black text-foreground truncate">
@@ -119,11 +119,11 @@ export function DemoBanner({
     <div className="relative overflow-hidden rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card p-4 shadow-xs space-y-3">
       <div className="flex items-start gap-2.5">
         <img
-          src="/liff-logo.webp"
+          src="/liff-logo.webp?v=2"
           alt="iScoreCloud LINEミニアプリ"
           width={36}
           height={36}
-          className="w-9 h-9 rounded-[22%] border border-border bg-slate-900 object-contain shrink-0 mt-0.5 shadow-xs"
+          className="w-9 h-9 rounded-[22%] border border-slate-200 dark:border-slate-700 bg-white object-contain shrink-0 mt-0.5 shadow-2xs"
         />
         <div className="space-y-0.5 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">

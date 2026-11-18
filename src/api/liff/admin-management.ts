@@ -452,7 +452,7 @@ liffAdminMgmtRouter.get("/teams", async (c) => {
         category: "gakudou",
         foundedYear: 2015,
         description: "全力疾走・笑顔でつなぐ全員野球！",
-        logoImageUrl: "/liff-logo.png",
+        logoImageUrl: "/demo-team-logo.svg",
         coverImageUrl: null,
       },
       currentSquad: demoSquadA,

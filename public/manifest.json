@@ -1,20 +1,32 @@
 {
   "name": "iScoreCloud",
   "short_name": "iScoreCloud",
-  "description": "次世代野球スコア記録アプリ",
+  "description": "LINEで完結する野球スコアブック＆チーム運営アプリ",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#18181b",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
   "icons": [
     {
-      "src": "/liff-logo.png",
+      "src": "/apple-logo.png?v=2",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png?v=2",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/channel-icon-640x640.png",
+      "src": "/liff-logo.png?v=2",
+      "sizes": "640x640",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/channel-icon-640x640.png?v=2",
       "sizes": "640x640",
       "type": "image/png",
       "purpose": "maskable"

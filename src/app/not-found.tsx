@@ -12,17 +12,17 @@ export default function NotFound() {
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img
-              src="/liff-logo.webp"
+              src="/liff-logo.webp?v=2"
               alt="iScoreCloud"
               width={32}
               height={32}
               onError={(e) => {
                 const img = e.currentTarget;
-                if (!img.src.endsWith("/liff-logo.png")) {
-                  img.src = "/liff-logo.png";
+                if (!img.src.includes("/liff-logo.png")) {
+                  img.src = "/liff-logo.png?v=2";
                 }
               }}
-              className="w-8 h-8 rounded-[22%] bg-slate-900 border border-slate-700 object-contain shrink-0"
+              className="w-8 h-8 rounded-[22%] bg-white object-contain shrink-0 shadow-xs"
             />
             <span className="text-sm font-black tracking-tight">
               iScoreCloud
