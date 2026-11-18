@@ -33,10 +33,10 @@ export interface AdminNavItem {
 export const ADMIN_MGMT_NAV_ITEMS: ReadonlyArray<AdminNavItem> = [
   {
     id: "hub",
-    label: "参加承認・LINE招待",
-    shortLabel: "承認・招待",
+    label: "メンバー・権限管理",
+    shortLabel: "メンバー・権限",
     href: "/liff/admin",
-    desc: "参加申請の承認・重複メンバー統合・招待リンク共有",
+    desc: "参加承認・メンバー手動追加・役職/兼務・LINE招待",
     icon: ShieldCheck,
   },
   {
@@ -46,14 +46,6 @@ export const ADMIN_MGMT_NAV_ITEMS: ReadonlyArray<AdminNavItem> = [
     href: "/liff/admin/teams",
     desc: "クラブ基本情報・A/B編成の追加・新クラブ立ち上げ",
     icon: Building2,
-  },
-  {
-    id: "roles",
-    label: "権限・役職管理",
-    shortLabel: "権限・役職",
-    href: "/liff/admin/roles",
-    desc: "監督・コーチ・管理者の兼務ロール・肩書のカスタム",
-    icon: KeyRound,
   },
   {
     id: "family",

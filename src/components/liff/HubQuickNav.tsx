@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, SlidersHorizontal, Plus } from "lucide-react";
+import { LayoutGrid, Lock, SlidersHorizontal, Plus } from "lucide-react";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
@@ -109,19 +109,29 @@ export function HubQuickNav() {
               >
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <span
-                  className={`w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
+                  className={`relative w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
                 >
                   <Icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                  {item.adminOnly && (
+                    <span
+                      aria-label="管理者専用"
+                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                    >
+                      <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                    </span>
+                  )}
                 </span>
                 <div className="space-y-0.5 min-w-0 w-full">
                   <h4 className="text-xs font-black text-foreground tracking-tight truncate">
                     {item.shortLabel}
                   </h4>
-                  <span
-                    className={`inline-block text-[9.5px] font-black px-1.5 py-0.2 rounded-full ${tone.badgeClass} font-mono`}
-                  >
-                    {item.badge}
-                  </span>
+                  {!item.adminOnly && item.badge && (
+                    <span
+                      className={`inline-block text-[9.5px] font-black px-1.5 py-0.2 rounded-full ${tone.badgeClass} font-mono`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </div>
               </Link>
             );
@@ -141,9 +151,17 @@ export function HubQuickNav() {
               >
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <span
-                  className={`w-9 h-9 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shrink-0 shadow-2xs`}
+                  className={`relative w-9 h-9 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shrink-0 shadow-2xs`}
                 >
                   <Icon className="w-4.5 h-4.5 group-hover:scale-110 transition-transform" />
+                  {item.adminOnly && (
+                    <span
+                      aria-label="管理者専用"
+                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                    >
+                      <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                    </span>
+                  )}
                 </span>
                 <div className="min-w-0 flex-1">
                   <h4 className="text-xs font-black text-foreground tracking-tight truncate">
@@ -172,15 +190,25 @@ export function HubQuickNav() {
                 <span aria-hidden="true" className={`pointer-events-none absolute inset-x-0 top-0 h-[3px] ${tone.topBarClass}`} />
                 <div className="flex items-center justify-between">
                   <span
-                    className={`w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
+                    className={`relative w-10 h-10 rounded-xl ${tone.iconBoxClass} flex items-center justify-center font-black shadow-2xs`}
                   >
                     <Icon className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    {item.adminOnly && (
+                      <span
+                        aria-label="管理者専用"
+                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                      >
+                        <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                      </span>
+                    )}
                   </span>
-                  <span
-                    className={`text-[10px] font-black px-2 py-0.5 rounded-full ${tone.badgeClass} font-mono`}
-                  >
-                    {item.badge}
-                  </span>
+                  {!item.adminOnly && item.badge && (
+                    <span
+                      className={`text-[10px] font-black px-2 py-0.5 rounded-full ${tone.badgeClass} font-mono`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </div>
                 <div className="mt-3.5 space-y-0.5">
                   <h4 className="text-base font-black text-foreground tracking-tight">

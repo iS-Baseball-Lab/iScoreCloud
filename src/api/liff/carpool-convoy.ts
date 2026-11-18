@@ -1119,6 +1119,97 @@ liffCarpoolConvoyRouter.put("/location", async (c) => {
 });
 
 /**
+ * GET /api/liff/carpool-convoy/maps-key
+ * クラブ共通 Google Maps JavaScript API キー設定状態の取得
+ */
+liffCarpoolConvoyRouter.get("/maps-key", async (c) => {
+  try {
+    const teamId = (c.req.query("teamId") || "").trim();
+    const rawUserName = (c.req.query("userName") || "").trim();
+    const envKey = resolveEnvGoogleMapsKey(c.env);
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        canManageMapsKey: true,
+        googleMapsKeySource: "none" as const,
+        googleMapsApiKey: null,
+      });
+    }
+
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "このチームへのアクセス権限がありません",
+          isForbidden: true,
+        },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB);
+    const [teamRow, allMembers] = await Promise.all([
+      db
+        .select({
+          id: teams.id,
+          organizationId: teams.organizationId,
+          createdBy: teams.createdBy,
+          orgGoogleMapsApiKey: organizations.googleMapsApiKey,
+        })
+        .from(teams)
+        .leftJoin(organizations, eq(teams.organizationId, organizations.id))
+        .where(eq(teams.id, teamId))
+        .get(),
+      db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    const { allowed: canManageMapsKey } = await resolveMapsKeyAccess({
+      db,
+      teamRow: {
+        id: teamRow.id,
+        organizationId: teamRow.organizationId,
+        createdBy: teamRow.createdBy,
+      },
+      allMembers,
+      expandedIds: access.candidateUserIds,
+      rawUserName: access.primaryUserName || rawUserName,
+      sessionUser: access.sessionUser,
+    });
+
+    const orgKey = (teamRow.orgGoogleMapsApiKey || "").trim() || null;
+    const source: "env" | "org" | "none" = envKey
+      ? "env"
+      : orgKey
+      ? "org"
+      : "none";
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      canManageMapsKey,
+      googleMapsKeySource: source,
+      // 環境変数キーは露出させず、クラブ設定キーのみ権限保持者に返却
+      googleMapsApiKey:
+        canManageMapsKey && source === "org" ? orgKey : null,
+    });
+  } catch (error) {
+    console.error("[GET /api/liff/carpool-convoy/maps-key] Error:", error);
+    return c.json(
+      { success: false, error: "Google Maps設定の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
  * PUT /api/liff/carpool-convoy/maps-key
  * クラブ共通 Google Maps JavaScript API キーの保存・解除（IT管理者・監督・指導者）
  */

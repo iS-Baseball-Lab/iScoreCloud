@@ -33,6 +33,7 @@ import {
   eventEquipments,
   teamGroups,
   teamGroupMembers,
+  teamRoleSettings,
 } from "@/db/schema";
 import type {
   OfficialPitcherDecision,
@@ -9521,38 +9522,54 @@ app.get("/admin/dashboard", async (c) => {
           memberId: "demo-mem-1",
           userId: "user-1",
           name: "田中 監督",
+          nameKana: "タナカ カントク",
           role: "manager",
+          subRoles: ["scorer"],
           memberType: "staff",
           subLabel: "監督",
           phone: "090-0000-1111",
+          isLineLinked: true,
         },
         {
           memberId: "demo-mem-2",
           userId: "user-2",
           name: "山田 IT担当",
+          nameKana: "ヤマダ アイティ",
           role: "admin",
+          subRoles: ["parent"],
           memberType: "staff",
           subLabel: "IT管理",
           phone: "090-0000-2222",
+          isLineLinked: true,
         },
         {
           memberId: "demo-mem-3",
           userId: "user-3",
           name: "高橋 コーチ",
+          nameKana: "タカハシ コーチ",
           role: "coach",
+          subRoles: ["parent", "scorer"],
           memberType: "staff",
           subLabel: "1班",
           phone: "090-0000-3333",
+          isLineLinked: true,
         },
         {
           memberId: "demo-mem-4",
-          userId: "user-4",
+          userId: null,
           name: "伊藤 父母会長",
+          nameKana: "イトウ フボカイチョウ",
           role: "parent",
-          memberType: "mother",
-          subLabel: "1班",
+          subRoles: ["staff"],
+          memberType: "parent",
+          subLabel: "2班",
           phone: "090-0000-4444",
+          isLineLinked: false,
         },
+      ],
+      roleSettings: [
+        { role: "manager", customLabel: "監督・代表" },
+        { role: "staff", customLabel: "事務局・役員" },
       ],
     });
   }
@@ -9672,29 +9689,92 @@ app.get("/admin/dashboard", async (c) => {
       }
     } catch {}
 
-    // 5. メンバー一覧クエリ（連絡先・参加申請・招待コードはチーム管理権限保持者のみに開示）
-    const allMembers = await db
-      .select({
-        memberId: teamMembers.id,
-        userId: teamMembers.userId,
-        name: teamMembers.name,
-        nameKana: teamMembers.nameKana,
-        memberType: teamMembers.memberType,
-        phone: teamMembers.phone,
-        email: teamMembers.email,
-        role: teamMembers.role,
-        status: teamMembers.status,
-        joinedAt: teamMembers.joinedAt,
-      })
-      .from(teamMembers)
-      .where(eq(teamMembers.teamId, teamId))
-      .orderBy(desc(teamMembers.joinedAt))
-      .all();
+    // 5. メンバー一覧・選手数・役職カスタム呼称を並列取得
+    const [allMembers, playersList, roleRows] = await Promise.all([
+      db
+        .select({
+          memberId: teamMembers.id,
+          userId: teamMembers.userId,
+          name: teamMembers.name,
+          nameKana: teamMembers.nameKana,
+          memberType: teamMembers.memberType,
+          phone: teamMembers.phone,
+          email: teamMembers.email,
+          role: teamMembers.role,
+          subRoles: teamMembers.subRoles,
+          status: teamMembers.status,
+          joinedAt: teamMembers.joinedAt,
+        })
+        .from(teamMembers)
+        .where(eq(teamMembers.teamId, teamId))
+        .orderBy(desc(teamMembers.joinedAt))
+        .all(),
+      db
+        .select({ id: players.id })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+      db
+        .select({
+          role: teamRoleSettings.role,
+          customLabel: teamRoleSettings.customLabel,
+        })
+        .from(teamRoleSettings)
+        .where(eq(teamRoleSettings.teamId, teamId))
+        .all()
+        .catch(() => [] as Array<{ role: string; customLabel: string }>),
+    ]);
+
+    const parseMemberSubRoles = (raw: string | null | undefined, primaryRole: string): string[] => {
+      if (!raw) return [];
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          return Array.from(
+            new Set(
+              parsed
+                .filter((s): s is string => typeof s === "string")
+                .map((s) => s.trim().toLowerCase())
+                .filter((s) => ALLOWED_ADMIN_MEMBER_ROLES.has(s) && s !== primaryRole)
+            )
+          );
+        }
+      } catch {
+        return Array.from(
+          new Set(
+            raw
+              .split(",")
+              .map((s) => s.trim().toLowerCase())
+              .filter((s) => ALLOWED_ADMIN_MEMBER_ROLES.has(s) && s !== primaryRole)
+          )
+        );
+      }
+      return [];
+    };
+
+    const rolePriority: Record<string, number> = {
+      admin: 0,
+      manager: 1,
+      coach: 2,
+      scorer: 3,
+      staff: 4,
+      parent: 5,
+      player: 6,
+      viewer: 7,
+    };
 
     const pendingRequests = allMembers
       .filter((m) => m.status === "pending")
       .map((m) => ({
-        ...m,
+        memberId: m.memberId,
+        userId: m.userId,
+        name: m.name,
+        nameKana: m.nameKana,
+        memberType: m.memberType,
+        phone: m.phone,
+        email: m.email,
+        role: m.role,
+        status: m.status,
         joinedAt: m.joinedAt
           ? new Date(m.joinedAt).toISOString()
           : new Date().toISOString(),
@@ -9702,18 +9782,30 @@ app.get("/admin/dashboard", async (c) => {
 
     const activeMembers = allMembers
       .filter((m) => m.status === "active")
-      .map((m) => ({
-        ...m,
-        subLabel: subLabelsMap[m.memberId] || "",
-        joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : undefined,
-      }));
-
-    // 選手数カウント
-    const playersList = await db
-      .select({ id: players.id })
-      .from(players)
-      .where(eq(players.teamId, teamId))
-      .all();
+      .map((m) => {
+        const normRole = (m.role || "parent").toLowerCase();
+        const safeRole = ALLOWED_ADMIN_MEMBER_ROLES.has(normRole) ? normRole : "parent";
+        return {
+          memberId: m.memberId,
+          userId: m.userId,
+          name: m.name || "名称未設定",
+          nameKana: m.nameKana || "",
+          memberType: m.memberType || "parent",
+          phone: m.phone || "",
+          email: m.email || "",
+          role: safeRole,
+          subRoles: parseMemberSubRoles(m.subRoles, safeRole),
+          subLabel: subLabelsMap[m.memberId] || "",
+          isLineLinked: Boolean(m.userId),
+          joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : undefined,
+        };
+      })
+      .sort((a, b) => {
+        const pa = rolePriority[a.role] ?? 99;
+        const pb = rolePriority[b.role] ?? 99;
+        if (pa !== pb) return pa - pb;
+        return a.name.localeCompare(b.name, "ja");
+      });
 
     return c.json({
       success: true,
@@ -9722,7 +9814,7 @@ app.get("/admin/dashboard", async (c) => {
       myRole,
       liffId: adminLiffId,
       miniAppUrl: adminMiniAppUrl,
-      googleMapsApiKey: canManage ? effectiveMapsKey : null,
+      googleMapsApiKey: canManage && mapsKeySource === "org" ? effectiveMapsKey : null,
       googleMapsKeySource: canManage ? mapsKeySource : "none",
       team: {
         id: targetTeam.id,
@@ -9739,6 +9831,10 @@ app.get("/admin/dashboard", async (c) => {
       },
       pendingRequests: canManage ? pendingRequests : [],
       activeMembers: canManage ? activeMembers : [],
+      roleSettings: roleRows.map((r) => ({
+        role: r.role.toLowerCase(),
+        customLabel: r.customLabel,
+      })),
     });
   } catch (error: unknown) {
     console.error("Failed to load admin dashboard:", error);

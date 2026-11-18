@@ -516,22 +516,23 @@ export function BottomNavSettingsSection() {
                   }`}
                 >
                   <span
-                    className={`w-8 h-8 rounded-xl ${tone.iconBoxClass} flex items-center justify-center shrink-0`}
+                    className={`relative w-8 h-8 rounded-xl ${tone.iconBoxClass} flex items-center justify-center shrink-0`}
                   >
                     <Icon className="w-4 h-4" />
+                    {item.adminOnly && (
+                      <span
+                        aria-label="管理者専用"
+                        className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                      >
+                        <Lock className="w-2 h-2 stroke-[2.5]" />
+                      </span>
+                    )}
                   </span>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1 min-w-0">
-                      <p className="text-xs font-black text-foreground truncate">
-                        {navShort}
-                      </p>
-                      {item.adminOnly && (
-                        <span className="px-1 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[8.5px] font-black shrink-0">
-                          管理者専用
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-xs font-black text-foreground truncate">
+                      {navShort}
+                    </p>
                     <p
                       className={`text-[10px] font-bold truncate ${
                         assignedSlot

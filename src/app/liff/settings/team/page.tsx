@@ -23,11 +23,13 @@ import {
   Clock,
   CalendarDays,
   ClipboardList,
+  Lock,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LineGroupReminderSettingsSection } from "@/components/liff/LineGroupReminderSettingsSection";
+import { GoogleMapsSettingsSection } from "@/components/liff/GoogleMapsSettingsSection";
 import {
   DEMO_TEAM_DEFAULT_LOGO_URL,
   useLiff,
@@ -754,7 +756,7 @@ export default function LiffTeamSettingsPage() {
       <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         <LiffPageHeader
           title="チーム表示・予定設定"
-          subtitle="ロゴ・背景写真・練習試合呼称・予定の標準時間"
+          subtitle="ロゴ・背景・予定時間・LINE/マップ連携"
           icon={
             <span className="w-8 h-8 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black">
               <SlidersHorizontal className="w-4 h-4" />
@@ -763,12 +765,12 @@ export default function LiffTeamSettingsPage() {
           showBack
         />
 
-        {/* チーム管理メニュー（組織・権限・車両）への直通ショートカット */}
+        {/* チーム管理メニュー（組織・メンバー権限・車両）への直通ショートカット */}
         {effectiveCanManageTeam && (
           <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
             <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
               <span className="text-xs font-black text-white">
-                チーム管理マスタ（組織・権限・車両）
+                チーム管理マスタ（組織・メンバー・車両）
               </span>
               <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9.5px] font-black">
                 管理者専用
@@ -789,16 +791,16 @@ export default function LiffTeamSettingsPage() {
                 </span>
               </Link>
               <Link
-                href="/liff/admin/roles"
+                href="/liff/admin?tab=members"
                 className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
               >
                 <div className="flex items-center justify-between">
-                  <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
                   <ChevronRight className="w-3 h-3 text-muted-foreground" />
                 </div>
-                <span className="font-black text-foreground">権限・役職</span>
+                <span className="font-black text-foreground">メンバー・権限</span>
                 <span className="text-[10px] font-bold text-muted-foreground">
-                  兼務・役職呼称
+                  承認・追加・兼務
                 </span>
               </Link>
               <Link
@@ -1676,7 +1678,14 @@ export default function LiffTeamSettingsPage() {
           canManageTeam={effectiveCanManageTeam}
         />
 
-        {/* ━━━ セクション 5: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
+        {/* ━━━ セクション 5: 🗺️ Google Maps 連携設定（隊列ライブマップ・球場AI検索） ━━━ */}
+        <GoogleMapsSettingsSection
+          teamId={currentTeam?.id || "demo-team"}
+          isDemoTeam={isDemoTeam}
+          canManageMapsKey={effectiveCanMutate}
+        />
+
+        {/* ━━━ セクション 6: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
         <section className="space-y-2.5">
           <p className="text-[11px] font-black text-muted-foreground tracking-wide pl-1">
             関連する規定・管理メニュー
@@ -1732,23 +1741,24 @@ export default function LiffTeamSettingsPage() {
 
           {effectiveCanManageTeam && (
             <Link
-              href="/liff/admin?tab=invite"
+              href="/liff/admin"
               className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
             >
-              <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+              <span className="relative w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
                 <ShieldCheck className="w-5 h-5" />
+                <span
+                  aria-label="管理者専用"
+                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                >
+                  <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                </span>
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-xs font-black text-foreground truncate">
-                    参加承認・LINE招待（Google Maps連携）
-                  </p>
-                  <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[9px] font-black shrink-0">
-                    管理者専用
-                  </span>
-                </div>
+                <p className="text-xs font-black text-foreground truncate">
+                  メンバー・権限管理
+                </p>
                 <p className="text-[10px] text-muted-foreground font-bold truncate">
-                  招待リンク共有・参加承認・隊列マップAPIキー設定
+                  参加承認・手動メンバー追加・役職/兼務・LINE招待
                 </p>
               </div>
               <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />

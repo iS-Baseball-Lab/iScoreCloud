@@ -334,8 +334,8 @@ const MENU_ITEMS: MenuItem[] = [
 
   // 🛡️ タブ3: 設定・管理（③ チーム管理 — 管理者専用：「人・組織」➔「車両・大会・備品」順）
   {
-    title: "参加承認・LINE招待",
-    subtitle: "参加申請の承認・招待リンク共有",
+    title: "メンバー・権限管理",
+    subtitle: "参加承認・手動追加・役職・招待",
     href: "/liff/admin",
     icon: ShieldCheck,
     colorClass: "bg-slate-500/12 text-slate-700 dark:text-slate-300",
@@ -351,17 +351,6 @@ const MENU_ITEMS: MenuItem[] = [
     icon: Building2,
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
-    category: "settings_admin" as const,
-    subGroup: "settings_admin",
-    adminOnly: true,
-  },
-  {
-    title: "権限・役職管理",
-    subtitle: "監督・コーチ・管理者の権限と肩書",
-    href: "/liff/admin/roles",
-    icon: KeyRound,
-    colorClass: "bg-amber-500/12 text-amber-700 dark:text-amber-400",
-    hoverBorderClass: "hover:border-amber-500/40",
     category: "settings_admin" as const,
     subGroup: "settings_admin",
     adminOnly: true,
@@ -822,7 +811,7 @@ export function LiffBottomNav() {
                   <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
                     <LayoutGrid className="w-4 h-4" />
                   </span>
-                  <h4 className="text-sm font-black text-white">メニュー一覧</h4>
+                  <h4 className="text-sm font-black text-white">メニュー</h4>
                 </div>
                 <button
                   type="button"
@@ -913,16 +902,18 @@ export function LiffBottomNav() {
                                 isFullWidth ? "col-span-2" : ""
                               }`}
                             >
-                              <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
+                              <span className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
                                 <ItemIcon className="w-5 h-5" />
-                              </span>
-                              <div className="min-w-0 flex-1">
                                 {item.adminOnly && (
-                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[8.5px] font-black leading-tight mb-0.5">
-                                    <Lock className="w-2 h-2 shrink-0" />
-                                    <span>管理者専用</span>
+                                  <span
+                                    aria-label="管理者専用"
+                                    className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                  >
+                                    <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
                                   </span>
                                 )}
+                              </span>
+                              <div className="min-w-0 flex-1">
                                 <p className="text-xs font-black text-foreground truncate">
                                   {item.title}
                                 </p>
@@ -957,16 +948,18 @@ export function LiffBottomNav() {
                         isFullWidth ? "col-span-2" : ""
                       }`}
                     >
-                      <span className={`w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
+                      <span className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
                         <ItemIcon className="w-5 h-5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
                         {item.adminOnly && (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[8.5px] font-black leading-tight mb-0.5">
-                            <Lock className="w-2 h-2 shrink-0" />
-                            <span>管理者専用</span>
+                          <span
+                            aria-label="管理者専用"
+                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                          >
+                            <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
                           </span>
                         )}
+                      </span>
+                      <div className="min-w-0 flex-1">
                         <p className="text-xs font-black text-foreground truncate">
                           {item.title}
                         </p>

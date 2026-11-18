@@ -1492,7 +1492,7 @@ export function warmupLiffEndpointForHref(
     triggerWarmupUrl(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
     return;
   }
-  if (cleanPath === "/liff/admin") {
+  if (cleanPath === "/liff/admin" || cleanPath === "/liff/admin/roles") {
     const aQs = new URLSearchParams({ teamId: tid });
     if (uid) aQs.set("userId", uid);
     triggerWarmupUrl(`/api/liff/admin/dashboard?${aQs.toString()}`);
@@ -1501,7 +1501,6 @@ export function warmupLiffEndpointForHref(
   const adminMgmtSubMap: Record<string, string> = {
     "/liff/admin/teams": "teams",
     "/liff/admin/cars": "cars",
-    "/liff/admin/roles": "roles",
     "/liff/admin/family": "family",
     "/liff/admin/tournaments": "tournaments",
     "/liff/admin/equipments": "equipments",
