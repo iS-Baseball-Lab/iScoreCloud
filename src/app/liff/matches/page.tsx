@@ -12,6 +12,7 @@ import { Match, type MatchDayOps } from "@/types/match";
 import {
   EXPLICIT_DEMO_STORAGE_KEY,
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
@@ -350,6 +351,7 @@ function MatchesContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
+  const { canMutate, canManagePlayers, canUsePaidAi } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 
@@ -1829,6 +1831,8 @@ function MatchesContent() {
     );
 
     const isDemoCurrentMatch = isDemo || isDemoMatchId(match.id);
+    const effectiveCanMutate = canMutate || isDemoCurrentMatch;
+    const effectiveCanDeleteMatch = canManagePlayers || isDemoCurrentMatch;
 
     const sharedStatsProps = {
       matchId: match.id,
@@ -2054,13 +2058,15 @@ function MatchesContent() {
                     </span>
                   )}
                 </div>
-                <Link
-                  href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0"
-                >
-                  <Edit3 className="w-3 h-3 text-sky-400" />
-                  <span>{filledStarters.length > 0 ? "編集" : "登録"}</span>
-                </Link>
+                {effectiveCanMutate && (
+                  <Link
+                    href={`/liff/matches/lineup?id=${encodeURIComponent(match.id)}`}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0"
+                  >
+                    <Edit3 className="w-3 h-3 text-sky-400" />
+                    <span>{filledStarters.length > 0 ? "編集" : "登録"}</span>
+                  </Link>
+                )}
               </div>
 
               <div className="p-3.5 space-y-3.5">
@@ -2275,16 +2281,20 @@ function MatchesContent() {
                         スタメンがまだ登録されていません
                       </p>
                       <p className="text-[11px] font-bold text-muted-foreground">
-                        スマホからスターティングメンバー・控え・欠席を設定できます
+                        {effectiveCanMutate
+                          ? "スマホからスターティングメンバー・控え・欠席を設定できます"
+                          : "指導者・担当者がスタメンを登録するとここに表示されます"}
                       </p>
                     </div>
-                    <Link
-                      href={`/liff/matches/lineup?id=${match.id}`}
-                      className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-2xs hover:bg-primary/90 active:scale-95 transition-all"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>出場メンバーを登録する</span>
-                    </Link>
+                    {effectiveCanMutate && (
+                      <Link
+                        href={`/liff/matches/lineup?id=${match.id}`}
+                        className="inline-flex items-center justify-center gap-1.5 h-9 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-black shadow-2xs hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>出場メンバーを登録する</span>
+                      </Link>
+                    )}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-border overflow-hidden bg-card">
@@ -3189,7 +3199,9 @@ function MatchesContent() {
               {!isRainout && (
                 <div className="px-4 py-2 bg-muted/50 border-t border-border flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] font-bold text-muted-foreground truncate">
-                    試合写真の共有・一括DL / LINE速報作成
+                    {effectiveCanMutate
+                      ? "試合写真の共有・一括DL / LINE速報作成"
+                      : "試合写真の閲覧・一括DL / LINE速報閲覧"}
                   </span>
                   <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                     <Link
@@ -3224,6 +3236,7 @@ function MatchesContent() {
                 isPreMatchMode={true}
                 hasSeparateCarpoolCard={hasSeparateCarpoolCard}
                 preMatchShareText={preMatchShareText}
+                canEdit={effectiveCanMutate}
                 onOpenEditor={handleOpenOpsEditor}
               />
               <MatchCarpoolSummarySection
@@ -3232,6 +3245,7 @@ function MatchesContent() {
                 scheduleSync={opsScheduleSync}
                 myIdentity={opsMyIdentity}
                 venueParkingInfo={match.venueParkingInfo}
+                canEdit={effectiveCanMutate}
                 onOpenEditor={handleOpenOpsEditor}
               />
               {lineupSection}
@@ -3269,6 +3283,7 @@ function MatchesContent() {
                 isPreMatchMode={false}
                 hasSeparateCarpoolCard={false}
                 preMatchShareText={preMatchShareText}
+                canEdit={effectiveCanMutate}
                 onOpenEditor={handleOpenOpsEditor}
               />
               {venueSection}
@@ -3356,6 +3371,7 @@ function MatchesContent() {
           )}
 
           {/* ⚙️ 6. ページ最下部：折りたたみ式の「試合データの修正・削除」まとめエリア */}
+          {effectiveCanMutate && (
           <section
             aria-label="試合データの修正・削除"
             className="pt-1"
@@ -3453,7 +3469,7 @@ function MatchesContent() {
                       <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                     </button>
 
-                    {!isRainout && hasPersonalStatsData && !isDemo && !isDemoMatchId(match.id) && (
+                    {!isRainout && hasPersonalStatsData && canUsePaidAi && !isDemoMatchId(match.id) && (
                       <Link
                         href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                           match.id
@@ -3499,7 +3515,7 @@ function MatchesContent() {
                       <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                     </Link>
 
-                    {!isRainout && !isDemo && !isDemoMatchId(match.id) && (
+                    {!isRainout && canUsePaidAi && !isDemoMatchId(match.id) && (
                       <Link
                         href={`/liff/tools/scorebook-import?matchId=${encodeURIComponent(
                           match.id
@@ -3554,7 +3570,7 @@ function MatchesContent() {
                       データの削除
                     </p>
 
-                    {!isDemo && !isDemoMatchId(match.id) && (
+                    {canUsePaidAi && !isDemoMatchId(match.id) && (
                       hasPersonalStatsData ? (
                         <button
                           type="button"
@@ -3584,32 +3600,39 @@ function MatchesContent() {
                       )
                     )}
 
-                    {/* 試合データ自体＋全関連データの完全削除 */}
-                    <button
-                      type="button"
-                      onClick={() => setShowDeleteMatchModal(true)}
-                      className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-950/70 border-2 border-rose-500 shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
-                          <AlertTriangle className="w-4 h-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-rose-700 dark:text-rose-300 leading-snug">
-                            この試合データ自体を削除
-                          </p>
-                          <p className="text-[10px] font-bold text-foreground/80 leading-snug mt-0.5">
-                            試合予定/結果・スコア・スタメン・打席成績・役割メモなど関連データもすべて完全消去
-                          </p>
+                    {/* 試合データ自体＋全関連データの完全削除（監督・指導者・管理者のみ） */}
+                    {effectiveCanDeleteMatch ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteMatchModal(true)}
+                        className="w-full flex items-center justify-between gap-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-950/70 border-2 border-rose-500 shadow-2xs active:scale-[0.99] transition-all text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-rose-700 dark:text-rose-300 leading-snug">
+                              この試合データ自体を削除
+                            </p>
+                            <p className="text-[10px] font-bold text-foreground/80 leading-snug mt-0.5">
+                              試合予定/結果・スコア・スタメン・打席成績・役割メモなど関連データもすべて完全消去
+                            </p>
+                          </div>
                         </div>
+                        <ChevronRight className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                      </button>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border bg-card px-3 py-2.5 text-[10.5px] font-bold text-muted-foreground">
+                        ※ 試合データ自体の完全削除は、監督・指導者・管理者のみ実行できます
                       </div>
-                      <ChevronRight className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
-                    </button>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           </section>
+          )}
 
           {showDeleteStatsModal && (
             <DeletePersonalStatsModal
@@ -3731,13 +3754,15 @@ function MatchesContent() {
           }
           showBack
           rightElement={
-            <Link
-              href="/liff/matches/lineup"
-              className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>スタメン編成</span>
-            </Link>
+            canMutate || isDemo ? (
+              <Link
+                href="/liff/matches/lineup"
+                className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>スタメン編成</span>
+              </Link>
+            ) : undefined
           }
           shareData={{
             title: `【試合・スコア】${scoreTeamName} 試合一覧`,
@@ -3881,15 +3906,17 @@ function MatchesContent() {
               title="試合データがありません"
               description="該当する試合がまだ登録されていないか、フィルター条件に一致しません"
             />
-            <div className="flex justify-center">
-              <Link
-                href="/liff/matches/lineup"
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>試合予定を作成してスタメンを登録する</span>
-              </Link>
-            </div>
+            {(canMutate || isDemo) && (
+              <div className="flex justify-center">
+                <Link
+                  href="/liff/matches/lineup"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>試合予定を作成してスタメンを登録する</span>
+                </Link>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3.5">

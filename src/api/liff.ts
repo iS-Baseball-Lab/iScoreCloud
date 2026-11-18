@@ -847,8 +847,13 @@ const DEMO_TEAM = {
   logoImageUrl: DEMO_TEAM_LOGO_URL as string | undefined,
   coverImageUrl: undefined as string | undefined,
   year: 2026,
+  role: "admin",
+  subRoles: [] as string[],
   isDemo: true,
   canManage: true,
+  canManagePlayers: true,
+  canEditScore: true,
+  canMutate: true,
 };
 
 const DEMO_NEXT_EVENT = {
@@ -1026,20 +1031,34 @@ app.get("/my-status", async (c) => {
 
     const activeTeams = allTeamsRows
       .filter((t) => access.isSystemAdmin || access.activeTeamIds.has(t.id))
-      .map((t) => ({
-        id: t.id,
-        name:
-          t.orgName && t.orgName !== t.name
-            ? `${t.orgName} ${t.name || "チーム"}`.trim()
-            : t.name || t.orgName || "チーム",
-        orgName: t.orgName || t.name || "チーム",
-        teamName: t.name || "チーム",
-        shortName: t.name || "チーム",
-        logoImageUrl: t.logoImageUrl || undefined,
-        coverImageUrl: t.coverImageUrl || undefined,
-        role: roleByTeamId.get(t.id) || (access.canManageTeamId(t.id) ? "admin" : "member"),
-        canManage: access.canManageTeamId(t.id),
-      }));
+      .map((t) => {
+        const grant = access.teamRoles.get(t.id);
+        return {
+          id: t.id,
+          name:
+            t.orgName && t.orgName !== t.name
+              ? `${t.orgName} ${t.name || "チーム"}`.trim()
+              : t.name || t.orgName || "チーム",
+          orgName: t.orgName || t.name || "チーム",
+          teamName: t.name || "チーム",
+          shortName: t.name || "チーム",
+          logoImageUrl: t.logoImageUrl || undefined,
+          coverImageUrl: t.coverImageUrl || undefined,
+          role:
+            grant?.role ||
+            roleByTeamId.get(t.id) ||
+            (access.canManageTeamId(t.id)
+              ? "admin"
+              : access.canMutateTeamData(t.id)
+              ? "parent"
+              : "viewer"),
+          subRoles: grant?.subRoles || [],
+          canManage: access.canManageTeamId(t.id),
+          canManagePlayers: access.canManagePlayersForTeam(t.id),
+          canEditScore: access.canEditScoreForTeam(t.id),
+          canMutate: access.canMutateTeamData(t.id),
+        };
+      });
 
     const pendingTeams = memberships
       .filter(
@@ -1429,30 +1448,41 @@ app.get("/hub", async (c) => {
     );
 
     const teamList = [
-      ...authorizedRealTeams.map((t) => ({
-        id: t.id,
-        name:
-          t.orgName && t.orgName !== t.name
-            ? `${t.orgName} ${t.name}`.trim()
-            : t.name,
-        orgName: t.orgName || t.name,
-        teamName: t.name,
-        shortName: t.shortName,
-        logoImageUrl: t.logoImageUrl || undefined,
-        coverImageUrl: t.coverImageUrl || undefined,
-        role:
-          access.teamRoles.get(t.id)?.role ||
-          (access.canManageTeamId(t.id) ? "admin" : "parent"),
-        canManage: access.canManageTeamId(t.id),
-        scoreTeamNameMode: extractScoreTeamNameModeFromJson(
-          t.scorebookSymbolRules
-        ),
-        practiceMatchLabel: extractPracticeMatchLabelFromJson(
-          t.scorebookSymbolRules
-        ),
-        isDemo: false,
-        isMember: true,
-      })),
+      ...authorizedRealTeams.map((t) => {
+        const grant = access.teamRoles.get(t.id);
+        return {
+          id: t.id,
+          name:
+            t.orgName && t.orgName !== t.name
+              ? `${t.orgName} ${t.name}`.trim()
+              : t.name,
+          orgName: t.orgName || t.name,
+          teamName: t.name,
+          shortName: t.shortName,
+          logoImageUrl: t.logoImageUrl || undefined,
+          coverImageUrl: t.coverImageUrl || undefined,
+          role:
+            grant?.role ||
+            (access.canManageTeamId(t.id)
+              ? "admin"
+              : access.canMutateTeamData(t.id)
+              ? "parent"
+              : "viewer"),
+          subRoles: grant?.subRoles || [],
+          canManage: access.canManageTeamId(t.id),
+          canManagePlayers: access.canManagePlayersForTeam(t.id),
+          canEditScore: access.canEditScoreForTeam(t.id),
+          canMutate: access.canMutateTeamData(t.id),
+          scoreTeamNameMode: extractScoreTeamNameModeFromJson(
+            t.scorebookSymbolRules
+          ),
+          practiceMatchLabel: extractPracticeMatchLabelFromJson(
+            t.scorebookSymbolRules
+          ),
+          isDemo: false,
+          isMember: true,
+        };
+      }),
       DEMO_TEAM,
     ];
 
@@ -4860,7 +4890,13 @@ app.get("/grounds", async (c) => {
       return c.json({
         success: true,
         isDemo: true,
-        venues: DEMO_VENUES,
+        canCreate: true,
+        canUseAiLookup: false,
+        venues: DEMO_VENUES.map((dv) => ({
+          ...dv,
+          canEdit: true,
+          canDelete: true,
+        })),
       });
     }
 
@@ -4871,6 +4907,9 @@ app.get("/grounds", async (c) => {
         403
       );
     }
+
+    const canCreate = access.isAuthenticated && access.canMutateTeamData(teamId);
+    const canUseAiLookup = canCreate;
 
     await ensureVenuesColumns(c.env.DB);
     const tenant = await resolveTeamTenantIds(db, teamId);
@@ -4889,8 +4928,28 @@ app.get("/grounds", async (c) => {
       return c.json({
         success: true,
         isDemo: false,
+        canCreate,
+        canUseAiLookup,
         venues: [],
       });
+    }
+
+    const venueIds = venuesList.map((v) => v.id);
+    const matchRefs =
+      !access.isSystemAdmin && venueIds.length > 0
+        ? await db
+            .select({ venueId: matches.venueId, teamId: matches.teamId })
+            .from(matches)
+            .where(inArray(matches.venueId, venueIds))
+            .all()
+        : [];
+    const crossTeamLockedVenueIds = new Set<string>();
+    if (!access.isSystemAdmin) {
+      for (const ref of matchRefs) {
+        if (ref.venueId && ref.teamId && !access.canAccessTeam(ref.teamId)) {
+          crossTeamLockedVenueIds.add(ref.venueId);
+        }
+      }
     }
 
     const categoryLabels: Record<string, string> = {
@@ -4928,6 +4987,10 @@ app.get("/grounds", async (c) => {
             : rawMapUrl;
           resolvedEmbedMapUrl = buildGoogleMapsEmbedFromUrl(expanded);
         }
+        const canMutateThisVenue =
+          canCreate &&
+          canCallerMutateTenantEntity(v, access) &&
+          !crossTeamLockedVenueIds.has(v.id);
         return {
           id: v.id,
           name: v.name,
@@ -4948,6 +5011,8 @@ app.get("/grounds", async (c) => {
           spikeRule: v.spikeRule || "ポイントスパイクまたはトレーニングシューズ",
           parkingInfo: v.parkingInfo || "駐車場ルールは管理者にお問い合わせください",
           notes: v.notes || "",
+          canEdit: canMutateThisVenue,
+          canDelete: canMutateThisVenue,
         };
       })
     );
@@ -4955,6 +5020,8 @@ app.get("/grounds", async (c) => {
     return c.json({
       success: true,
       isDemo: false,
+      canCreate,
+      canUseAiLookup,
       venues: formatted,
     });
   } catch (error: unknown) {

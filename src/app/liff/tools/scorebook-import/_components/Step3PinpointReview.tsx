@@ -142,6 +142,7 @@ interface Step3PinpointReviewProps {
   ) => void;
   onBack: () => void;
   onSave: () => void;
+  canSave?: boolean;
   isSaving: boolean;
   onReanalyzeInning?: (isTop: boolean, inning: number) => void;
   reanalyzingInningKey?: string | null;
@@ -166,6 +167,7 @@ export function Step3PinpointReview({
   onApplyStructureAndAtBats,
   onBack,
   onSave,
+  canSave = true,
   isSaving,
   onReanalyzeInning,
   reanalyzingInningKey = null,
@@ -2134,15 +2136,19 @@ export function Step3PinpointReview({
 
           <button
             type="button"
-            disabled={isSaving}
-            onClick={onSave}
-            className="flex-1 h-13 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+            disabled={!canSave || isSaving}
+            onClick={() => {
+              if (canSave) onSave();
+            }}
+            className="flex-1 h-13 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-md flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span>試合データ・成績を保存中...</span>
               </>
+            ) : !canSave ? (
+              <span>権限がないため保存できません</span>
             ) : (
               <>
                 <Save className="w-4 h-4" />

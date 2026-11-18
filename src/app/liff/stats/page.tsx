@@ -7,6 +7,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
@@ -252,6 +253,7 @@ function cleanUniform(raw: string): string {
 
 export default function LiffStatsPage() {
   const { currentTeam, isLoadingTeam } = useLiff();
+  const { canUsePaidAi } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
   const matchTypeMeta = useMemo(
@@ -1164,15 +1166,17 @@ export default function LiffStatsPage() {
                       title="打撃成績データがまだありません"
                       description="スコアブック取り込みまたはライブスコア入力を保存すると、個人打撃成績が自動集計されます"
                     />
-                    <div className="flex justify-center">
-                      <Link
-                        href="/liff/tools/scorebook-import"
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-                      >
-                        <ScanLine className="w-4 h-4" />
-                        <span>スコアブックを取り込む</span>
-                      </Link>
-                    </div>
+                    {canUsePaidAi && (
+                      <div className="flex justify-center">
+                        <Link
+                          href="/liff/tools/scorebook-import"
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                        >
+                          <ScanLine className="w-4 h-4" />
+                          <span>スコアブックを取り込む</span>
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1678,15 +1682,17 @@ export default function LiffStatsPage() {
                       title="投手成績データがまだありません"
                       description="スコアブック取り込みまたはライブスコア入力を保存すると、投手の投球回・失点・防御率が自動集計されます"
                     />
-                    <div className="flex justify-center">
-                      <Link
-                        href="/liff/tools/scorebook-import"
-                        className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
-                      >
-                        <ScanLine className="w-4 h-4" />
-                        <span>スコアブックを取り込む</span>
-                      </Link>
-                    </div>
+                    {canUsePaidAi && (
+                      <div className="flex justify-center">
+                        <Link
+                          href="/liff/tools/scorebook-import"
+                          className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shadow-xs hover:bg-primary/90 active:scale-95 transition-all"
+                        >
+                          <ScanLine className="w-4 h-4" />
+                          <span>スコアブックを取り込む</span>
+                        </Link>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <>

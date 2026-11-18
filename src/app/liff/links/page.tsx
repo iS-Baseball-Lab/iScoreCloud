@@ -9,7 +9,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import { sanitizeSafeExternalHref, validateSafeHttpUrl } from "@/lib/utils";
 import {
@@ -85,6 +85,8 @@ const LINK_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
 
 export default function LiffLinksPage() {
   const { currentTeam, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canMutate || isDemoMode;
   const initialCachedLinks = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -200,9 +202,9 @@ export default function LiffLinksPage() {
       } else {
         setNewImageUrl(data.imageUrl);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Image upload failed:", err);
-      setSubmitError(err.message || "画像のアップロードに失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "画像のアップロードに失敗しました");
     } finally {
       if (isEdit) setIsEditUploadingImage(false);
       else setIsUploadingImage(false);
@@ -212,6 +214,7 @@ export default function LiffLinksPage() {
   // 編集モーダルを開く
   const openEditModal = (link: LinkItem, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!effectiveCanEdit || (!isDemoMode && link.id.startsWith("demo-"))) return;
     setEditingLink(link);
     setEditTitle(link.title);
     setEditUrl(link.url);
@@ -226,7 +229,7 @@ export default function LiffLinksPage() {
   // 新規登録処理
   const handleCreateLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newUrl.trim()) return;
+    if (!effectiveCanEdit || !newTitle.trim() || !newUrl.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -286,7 +289,7 @@ export default function LiffLinksPage() {
   // 更新処理
   const handleUpdateLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingLink || !editTitle.trim() || !editUrl.trim()) return;
+    if (!effectiveCanEdit || !editingLink || !editTitle.trim() || !editUrl.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -327,9 +330,9 @@ export default function LiffLinksPage() {
 
       setEditingLink(null);
       loadLinks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating link:", err);
-      setSubmitError(err.message || "リンクの更新に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "リンクの更新に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -337,16 +340,20 @@ export default function LiffLinksPage() {
 
   // 削除処理
   const handleDeleteLink = async () => {
-    if (!editingLink) return;
+    if (!editingLink || !effectiveCanEdit) return;
     if (!confirm(`このリンク（${editingLink.title.slice(0, 20)}...）を削除してもよろしいですか？`)) return;
 
     try {
       setIsDeleting(true);
       setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
 
-      const res = await fetch(`/api/liff/links/${editingLink.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/liff/links/${encodeURIComponent(editingLink.id)}?teamId=${encodeURIComponent(teamId)}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
@@ -355,9 +362,9 @@ export default function LiffLinksPage() {
 
       setEditingLink(null);
       loadLinks();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error deleting link:", err);
-      setSubmitError(err.message || "リンクの削除に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "リンクの削除に失敗しました");
     } finally {
       setIsDeleting(false);
     }
@@ -548,18 +555,20 @@ export default function LiffLinksPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreateModalOpen(true);
-              setSubmitError(null);
-            }}
-            className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-            title="新しい関連リンクを追加"
-          >
-            <Plus className="w-4 h-4" />
-            <span>追加</span>
-          </button>
+          {effectiveCanEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setSubmitError(null);
+              }}
+              className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="新しい関連リンクを追加"
+            >
+              <Plus className="w-4 h-4" />
+              <span>追加</span>
+            </button>
+          )}
         </div>
 
         {/* 🏷️ カテゴリチップ一覧 */}
@@ -621,7 +630,9 @@ export default function LiffLinksPage() {
                   該当する関連リンクが見つかりませんでした
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  検索条件を変更するか、新しいリンクを登録してください。
+                  {effectiveCanEdit
+                    ? "検索条件を変更するか、新しいリンクを登録してください。"
+                    : "検索条件やカテゴリを変更して再度ご確認ください。"}
                 </p>
               </div>
             ) : (
@@ -691,14 +702,16 @@ export default function LiffLinksPage() {
                           </div>
 
                           {/* 編集ボタン */}
-                          <button
-                            type="button"
-                            onClick={(e) => openEditModal(link, e)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0"
-                            title="編集"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                          {effectiveCanEdit && (isDemoMode || !link.id.startsWith("demo-")) && (
+                            <button
+                              type="button"
+                              onClick={(e) => openEditModal(link, e)}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0"
+                              title="編集"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
 
                         {/* 説明文 */}

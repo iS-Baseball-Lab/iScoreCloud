@@ -29,7 +29,10 @@ import type {
   AdminCarsResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   invalidateLiffApiCache,
@@ -52,7 +55,7 @@ const BUS_CAPACITY_PRESETS = [14, 18, 22, 24, 28, 45, 55] as const;
 const CARGO_CAPACITY_PRESETS = [0, 1, 2, 4, 5, 8] as const;
 
 export default function LiffAdminCarsPage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, isDemo } = useLiff();
   const teamId = currentTeam?.id || "demo-team";
   const endpointUrl = `/api/liff/admin/mgmt/cars?teamId=${encodeURIComponent(
     teamId
@@ -311,7 +314,9 @@ export default function LiffAdminCarsPage() {
     totalCapacity: 0,
   };
 
-  const canManage = data ? data.canManage : true;
+  const canManage = data
+    ? Boolean(data.canManage)
+    : canManageCurrentTeam(currentTeam, isDemo);
 
   return (
     <AdminMgmtShell

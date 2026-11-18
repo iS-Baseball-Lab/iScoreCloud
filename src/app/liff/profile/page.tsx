@@ -192,6 +192,8 @@ export default function LiffProfilePage() {
   const [isJoinModalOpen, setIsJoinModalOpen] = useState<boolean>(false);
 
   const activeTeamId = currentTeam?.id || "demo-team";
+  const canEditProfile =
+    isLoggedIn || isDemoMode || providerIsDemo || activeTeamId === "demo-team";
 
   // デフォルト配車希望の読み込み
   useEffect(() => {
@@ -285,6 +287,10 @@ export default function LiffProfilePage() {
 
   // ─── 基本プロフィール保存 ─────────────────────────────
   const handleSaveProfile = async () => {
+    if (!canEditProfile) {
+      toast.info("LINE連携してログインするとプロフィールを保存できます");
+      return;
+    }
     const trimmed = displayName.trim();
     if (!trimmed) {
       toast.error("チーム内の表示名を入力してください");
@@ -351,6 +357,7 @@ export default function LiffProfilePage() {
 
   // ─── 選手本人（マイ選手カード）の紐付け登録 ────────────
   const handleLinkSelfPlayer = async (player: RosterPlayerItem) => {
+    if (!canEditProfile) return;
     if (player.isOtherUserLinked) {
       toast.error("この選手には既に別のアカウントが紐付けられています");
       return;
@@ -424,7 +431,7 @@ export default function LiffProfilePage() {
 
   // ─── 選手本人（マイ選手カード）の紐付け解除 ────────────
   const handleUnlinkSelfPlayer = async () => {
-    if (!mySelfPlayer) return;
+    if (!canEditProfile || !mySelfPlayer) return;
 
     setIsUpdatingSelfPlayer(true);
     try {
@@ -464,6 +471,7 @@ export default function LiffProfilePage() {
 
   // ─── お子様（選手）の紐付け追加 ────────────────────────
   const handleLinkChild = async (player: RosterPlayerItem) => {
+    if (!canEditProfile) return;
     if (myChildren.some((c) => c.childId === player.id)) {
       toast.info(`${player.name} 選手はすでに紐付けられています`);
       return;
@@ -531,6 +539,7 @@ export default function LiffProfilePage() {
 
   // ─── お子様（選手）の紐付け解除 ────────────────────────
   const handleUnlinkChild = async (item: LinkedChildItem) => {
+    if (!canEditProfile) return;
     setIsUpdatingChildId(item.childId);
     try {
       const res = await fetch(`/api/liff/profile/family/${encodeURIComponent(item.relationId)}`, {
@@ -562,6 +571,7 @@ export default function LiffProfilePage() {
 
   // ─── マイカー追加・編集フォーム制御 ────────────────────
   const openNewCarForm = () => {
+    if (!canEditProfile) return;
     setEditingCarId(null);
     setCarName("");
     setCarCapacity(4);
@@ -572,6 +582,7 @@ export default function LiffProfilePage() {
   };
 
   const openEditCarForm = (car: RegisteredCarItem) => {
+    if (!canEditProfile) return;
     setEditingCarId(car.id);
     setCarName(car.name);
     setCarCapacity(car.capacity || 4);
@@ -582,6 +593,7 @@ export default function LiffProfilePage() {
   };
 
   const handleSaveCar = async () => {
+    if (!canEditProfile) return;
     const trimmedCarName = carName.trim();
     if (!trimmedCarName) {
       toast.error("車種名を入力してください（例: セレナ）");
@@ -655,6 +667,7 @@ export default function LiffProfilePage() {
   };
 
   const handleDeleteCar = async (car: RegisteredCarItem) => {
+    if (!canEditProfile) return;
     setDeletingCarId(car.id);
     try {
       const res = await fetch(`/api/liff/profile/cars/${encodeURIComponent(car.id)}`, {
@@ -804,10 +817,11 @@ export default function LiffProfilePage() {
                   </label>
                   <input
                     type="text"
+                    disabled={!canEditProfile}
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     placeholder="例: 山田 太郎 / 山田（翔太父）"
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-background border border-border text-sm font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 disabled:opacity-65 disabled:cursor-not-allowed"
                   />
                   <p className="text-[10px] font-bold text-muted-foreground">
                     出欠一覧表や配車表でチーム全員に表示される名前です。LINE名がニックネームの方も分かりやすい表記に変更できます。
@@ -820,10 +834,11 @@ export default function LiffProfilePage() {
                     <label className="text-xs font-black text-foreground block">フリガナ</label>
                     <input
                       type="text"
+                      disabled={!canEditProfile}
                       value={nameKana}
                       onChange={(e) => setNameKana(e.target.value)}
                       placeholder="例: ヤマダ タロウ"
-                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 disabled:opacity-65 disabled:cursor-not-allowed"
                     />
                   </div>
 
@@ -834,10 +849,11 @@ export default function LiffProfilePage() {
                     </label>
                     <input
                       type="tel"
+                      disabled={!canEditProfile}
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="例: 090-1234-5678"
-                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 disabled:opacity-65 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -852,8 +868,9 @@ export default function LiffProfilePage() {
                         <button
                           key={opt.id}
                           type="button"
+                          disabled={!canEditProfile}
                           onClick={() => setMemberType(opt.id)}
-                          className={`py-2 px-2 rounded-2xl text-xs transition-all active:scale-95 border ${
+                          className={`py-2 px-2 rounded-2xl text-xs transition-all active:scale-95 border disabled:opacity-65 disabled:cursor-not-allowed ${
                             active
                               ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                               : "bg-muted/50 border-border text-muted-foreground hover:text-foreground font-bold"
@@ -879,8 +896,9 @@ export default function LiffProfilePage() {
                         <button
                           key={preset}
                           type="button"
+                          disabled={!canEditProfile}
                           onClick={() => setSubLabel(active ? "" : preset)}
-                          className={`px-2.5 py-1 rounded-xl text-[11px] transition-all active:scale-95 ${
+                          className={`px-2.5 py-1 rounded-xl text-[11px] transition-all active:scale-95 disabled:opacity-65 disabled:cursor-not-allowed ${
                             active
                               ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
                               : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
@@ -893,27 +911,38 @@ export default function LiffProfilePage() {
                   </div>
                   <input
                     type="text"
+                    disabled={!canEditProfile}
                     value={subLabel}
                     onChange={(e) => setSubLabel(e.target.value)}
                     placeholder="自由入力も可（例: 2班・会計 / 審判部）"
-                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    className="w-full px-3 py-2 rounded-2xl bg-background border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 disabled:opacity-65 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 {/* 基本情報保存ボタン */}
-                <button
-                  type="button"
-                  onClick={handleSaveProfile}
-                  disabled={isSavingProfile}
-                  className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {isSavingProfile ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  <span>基本プロフィールを保存</span>
-                </button>
+                {canEditProfile ? (
+                  <button
+                    type="button"
+                    onClick={handleSaveProfile}
+                    disabled={isSavingProfile}
+                    className="w-full py-3 px-4 rounded-2xl bg-primary hover:bg-primary/90 active:scale-[0.99] text-primary-foreground text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {isSavingProfile ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4" />
+                    )}
+                    <span>基本プロフィールを保存</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={login}
+                    className="w-full py-3 px-4 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] active:scale-[0.99] text-white text-xs sm:text-sm font-black shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>LINE連携してプロフィールを編集</span>
+                  </button>
+                )}
               </div>
             </section>
 
@@ -963,119 +992,132 @@ export default function LiffProfilePage() {
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={handleUnlinkSelfPlayer}
-                          disabled={isUpdatingSelfPlayer}
-                          className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
-                        >
-                          {isUpdatingSelfPlayer ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <X className="w-3.5 h-3.5" />
-                          )}
-                          <span>解除</span>
-                        </button>
+                        {canEditProfile && (
+                          <button
+                            type="button"
+                            onClick={handleUnlinkSelfPlayer}
+                            disabled={isUpdatingSelfPlayer}
+                            className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1 shrink-0"
+                          >
+                            {isUpdatingSelfPlayer ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <X className="w-3.5 h-3.5" />
+                            )}
+                            <span>解除</span>
+                          </button>
+                        )}
                       </div>
 
-                      <Link
-                        href={`/liff/players?playerId=${encodeURIComponent(mySelfPlayer.id)}&edit=1`}
-                        className="w-full py-2.5 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                        <span>自分の選手名鑑プロフィールを入力・編集する</span>
-                      </Link>
+                      {canEditProfile && (
+                        <Link
+                          href={`/liff/players?playerId=${encodeURIComponent(mySelfPlayer.id)}&edit=1`}
+                          className="w-full py-2.5 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-[0.99] flex items-center justify-center gap-1.5"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>自分の選手名鑑プロフィールを入力・編集する</span>
+                        </Link>
+                      )}
                     </div>
                   ) : (
                     <>
-                      <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border text-center">
+                      <div className="p-3.5 rounded-2xl bg-muted/35 border border-dashed border-border text-center space-y-1">
                         <p className="text-xs font-bold text-muted-foreground">
                           まだご自身の選手カードが紐付けられていません
                         </p>
+                        {!canEditProfile && (
+                          <p className="text-[11px] font-bold text-muted-foreground">
+                            ※ 選手カードの紐付けにはLINE連携が必要です
+                          </p>
+                        )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setIsSelfPlayerPickerOpen((prev) => !prev)}
-                        className="w-full py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-98 flex items-center justify-center gap-1.5"
-                      >
-                        {isSelfPlayerPickerOpen ? (
-                          <>
-                            <X className="w-4 h-4" />
-                            <span>選手一覧を閉じる</span>
-                          </>
-                        ) : (
-                          <>
-                            <IdCard className="w-4 h-4" />
-                            <span>選手名簿から自分のカードを選択する</span>
-                          </>
-                        )}
-                      </button>
+                      {canEditProfile && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setIsSelfPlayerPickerOpen((prev) => !prev)}
+                            className="w-full py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-xs transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                          >
+                            {isSelfPlayerPickerOpen ? (
+                              <>
+                                <X className="w-4 h-4" />
+                                <span>選手一覧を閉じる</span>
+                              </>
+                            ) : (
+                              <>
+                                <IdCard className="w-4 h-4" />
+                                <span>選手名簿から自分のカードを選択する</span>
+                              </>
+                            )}
+                          </button>
 
-                      {isSelfPlayerPickerOpen && (
-                        <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
-                          <div className="relative">
-                            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input
-                              type="text"
-                              value={playerSearchQuery}
-                              onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                              placeholder="名前・背番号で自分を検索..."
-                              className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                            />
-                          </div>
+                          {isSelfPlayerPickerOpen && (
+                            <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
+                              <div className="relative">
+                                <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                                <input
+                                  type="text"
+                                  value={playerSearchQuery}
+                                  onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                                  placeholder="名前・背番号で自分を検索..."
+                                  className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                                />
+                              </div>
 
-                          {filteredPlayers.length === 0 ? (
-                            <p className="text-xs font-bold text-muted-foreground text-center py-4">
-                              該当する選手が見つかりません
-                            </p>
-                          ) : (
-                            <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
-                              {filteredPlayers.map((player) => {
-                                const isOtherTaken = Boolean(player.isOtherUserLinked);
-                                return (
-                                  <button
-                                    key={player.id}
-                                    type="button"
-                                    disabled={isOtherTaken || isUpdatingSelfPlayer}
-                                    onClick={() => handleLinkSelfPlayer(player)}
-                                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                                      isOtherTaken
-                                        ? "bg-muted/60 border-border text-muted-foreground opacity-65 cursor-not-allowed"
-                                        : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
-                                        {formatUniformBadge(player.uniformNumber)}
-                                      </span>
-                                      <span className="text-xs font-black truncate">
-                                        {player.name}
-                                      </span>
-                                      {player.primaryPosition && (
-                                        <span className="text-[10px] font-bold text-muted-foreground shrink-0">
-                                          {player.primaryPosition}
+                              {filteredPlayers.length === 0 ? (
+                                <p className="text-xs font-bold text-muted-foreground text-center py-4">
+                                  該当する選手が見つかりません
+                                </p>
+                              ) : (
+                                <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
+                                  {filteredPlayers.map((player) => {
+                                    const isOtherTaken = Boolean(player.isOtherUserLinked);
+                                    return (
+                                      <button
+                                        key={player.id}
+                                        type="button"
+                                        disabled={isOtherTaken || isUpdatingSelfPlayer}
+                                        onClick={() => handleLinkSelfPlayer(player)}
+                                        className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                                          isOtherTaken
+                                            ? "bg-muted/60 border-border text-muted-foreground opacity-65 cursor-not-allowed"
+                                            : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
+                                            {formatUniformBadge(player.uniformNumber)}
+                                          </span>
+                                          <span className="text-xs font-black truncate">
+                                            {player.name}
+                                          </span>
+                                          {player.primaryPosition && (
+                                            <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                                              {player.primaryPosition}
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
+                                          {isUpdatingSelfPlayer ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                          ) : isOtherTaken ? (
+                                            <span className="text-[10px] text-muted-foreground">
+                                              連携済
+                                            </span>
+                                          ) : (
+                                            <span className="text-primary">これを選択</span>
+                                          )}
                                         </span>
-                                      )}
-                                    </div>
-
-                                    <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
-                                      {isUpdatingSelfPlayer ? (
-                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                                      ) : isOtherTaken ? (
-                                        <span className="text-[10px] text-muted-foreground">
-                                          連携済
-                                        </span>
-                                      ) : (
-                                        <span className="text-primary">これを選択</span>
-                                      )}
-                                    </span>
-                                  </button>
-                                );
-                              })}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
+                        </>
                       )}
                     </>
                   )}
@@ -1129,117 +1171,127 @@ export default function LiffProfilePage() {
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <Link
-                              href={`/liff/players?playerId=${encodeURIComponent(child.childId)}&edit=1`}
-                              className="py-1.5 px-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black transition-all active:scale-95 flex items-center gap-1"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              <span>名鑑入力</span>
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => handleUnlinkChild(child)}
-                              disabled={isUpdatingChildId === child.childId}
-                              className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1"
-                            >
-                              {isUpdatingChildId === child.childId ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <X className="w-3.5 h-3.5" />
-                              )}
-                              <span>解除</span>
-                            </button>
-                          </div>
+                          {canEditProfile && (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <Link
+                                href={`/liff/players?playerId=${encodeURIComponent(child.childId)}&edit=1`}
+                                className="py-1.5 px-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-[11px] font-black transition-all active:scale-95 flex items-center gap-1"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>名鑑入力</span>
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => handleUnlinkChild(child)}
+                                disabled={isUpdatingChildId === child.childId}
+                                className="py-1.5 px-2.5 rounded-xl bg-card hover:bg-rose-500/10 text-muted-foreground hover:text-rose-600 border border-border text-[11px] font-bold transition-all active:scale-95 flex items-center gap-1"
+                              >
+                                {isUpdatingChildId === child.childId ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <X className="w-3.5 h-3.5" />
+                                )}
+                                <span>解除</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {/* 選手名簿ピッカー開閉ボタン */}
-                  <button
-                    type="button"
-                    onClick={() => setIsChildPickerOpen((prev) => !prev)}
-                    className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
-                  >
-                    {isChildPickerOpen ? (
-                      <>
-                        <X className="w-4 h-4" />
-                        <span>選手一覧を閉じる</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4 text-primary" />
-                        <span>選手名簿からお子様を追加</span>
-                      </>
-                    )}
-                  </button>
+                  {canEditProfile ? (
+                    <>
+                      {/* 選手名簿ピッカー開閉ボタン */}
+                      <button
+                        type="button"
+                        onClick={() => setIsChildPickerOpen((prev) => !prev)}
+                        className="w-full py-2.5 px-3 rounded-2xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-98 flex items-center justify-center gap-1.5"
+                      >
+                        {isChildPickerOpen ? (
+                          <>
+                            <X className="w-4 h-4" />
+                            <span>選手一覧を閉じる</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4 text-primary" />
+                            <span>選手名簿からお子様を追加</span>
+                          </>
+                        )}
+                      </button>
 
-                  {/* インライン選手名簿ピッカー */}
-                  {isChildPickerOpen && (
-                    <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={playerSearchQuery}
-                          onChange={(e) => setPlayerSearchQuery(e.target.value)}
-                          placeholder="名前・背番号で選手を検索..."
-                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                        />
-                      </div>
+                      {/* インライン選手名簿ピッカー */}
+                      {isChildPickerOpen && (
+                        <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5">
+                          <div className="relative">
+                            <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              value={playerSearchQuery}
+                              onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                              placeholder="名前・背番号で選手を検索..."
+                              className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                            />
+                          </div>
 
-                      {filteredPlayers.length === 0 ? (
-                        <p className="text-xs font-bold text-muted-foreground text-center py-4">
-                          該当する選手が見つかりません
-                        </p>
-                      ) : (
-                        <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
-                          {filteredPlayers.map((player) => {
-                            const isLinked = linkedChildIds.has(player.id);
-                            const isBusy = isUpdatingChildId === player.id;
-                            return (
-                              <button
-                                key={player.id}
-                                type="button"
-                                disabled={isLinked || isBusy}
-                                onClick={() => handleLinkChild(player)}
-                                className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
-                                  isLinked
-                                    ? "bg-emerald-500/12 border-emerald-500/25 text-emerald-700 dark:text-emerald-400 cursor-default"
-                                    : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
-                                    {formatUniformBadge(player.uniformNumber)}
-                                  </span>
-                                  <span className="text-xs font-black truncate">{player.name}</span>
-                                  {player.primaryPosition && (
-                                    <span className="text-[10px] font-bold text-muted-foreground shrink-0">
-                                      {player.primaryPosition}
+                          {filteredPlayers.length === 0 ? (
+                            <p className="text-xs font-bold text-muted-foreground text-center py-4">
+                              該当する選手が見つかりません
+                            </p>
+                          ) : (
+                            <div className="max-h-56 overflow-y-auto space-y-1.5 pr-0.5">
+                              {filteredPlayers.map((player) => {
+                                const isLinked = linkedChildIds.has(player.id);
+                                const isBusy = isUpdatingChildId === player.id;
+                                return (
+                                  <button
+                                    key={player.id}
+                                    type="button"
+                                    disabled={isLinked || isBusy}
+                                    onClick={() => handleLinkChild(player)}
+                                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-left transition-all ${
+                                      isLinked
+                                        ? "bg-emerald-500/12 border-emerald-500/25 text-emerald-700 dark:text-emerald-400 cursor-default"
+                                        : "bg-card hover:bg-muted border-border text-foreground active:scale-[0.99]"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="min-w-[36px] px-1.5 py-0.5 rounded-lg bg-muted text-foreground text-[11px] font-black text-center shrink-0">
+                                        {formatUniformBadge(player.uniformNumber)}
+                                      </span>
+                                      <span className="text-xs font-black truncate">{player.name}</span>
+                                      {player.primaryPosition && (
+                                        <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                                          {player.primaryPosition}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
+                                      {isBusy ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                                      ) : isLinked ? (
+                                        <>
+                                          <Check className="w-3.5 h-3.5" />
+                                          <span>紐付け済</span>
+                                        </>
+                                      ) : (
+                                        <span className="text-primary">＋ 追加</span>
+                                      )}
                                     </span>
-                                  )}
-                                </div>
-
-                                <span className="text-[11px] font-black shrink-0 flex items-center gap-1">
-                                  {isBusy ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                                  ) : isLinked ? (
-                                    <>
-                                      <Check className="w-3.5 h-3.5" />
-                                      <span>紐付け済</span>
-                                    </>
-                                  ) : (
-                                    <span className="text-primary">＋ 追加</span>
-                                  )}
-                                </span>
-                              </button>
-                            );
-                          })}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
-                    </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] font-bold text-muted-foreground text-center py-0.5">
+                      ※ お子様の追加・変更にはLINE連携が必要です
+                    </p>
                   )}
                 </div>
               </section>
@@ -1341,36 +1393,42 @@ export default function LiffProfilePage() {
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => openEditCarForm(car)}
-                              className="p-2 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95"
-                              title="車両を編集"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteCar(car)}
-                              disabled={deletingCarId === car.id}
-                              className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
-                              title="車両を削除"
-                            >
-                              {deletingCarId === car.id ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
+                          {canEditProfile && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openEditCarForm(car)}
+                                className="p-2 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground transition-all active:scale-95"
+                                title="車両を編集"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCar(car)}
+                                disabled={deletingCarId === car.id}
+                                className="p-2 rounded-xl bg-card hover:bg-rose-500/10 border border-border text-muted-foreground hover:text-rose-600 transition-all active:scale-95"
+                                title="車両を削除"
+                              >
+                                {deletingCarId === car.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   )}
 
                   {/* マイカー追加・編集フォーム */}
-                  {isCarFormOpen ? (
+                  {!canEditProfile ? (
+                    <p className="text-[11px] font-bold text-muted-foreground text-center py-0.5">
+                      ※ マイカーの追加・変更にはLINE連携が必要です
+                    </p>
+                  ) : isCarFormOpen ? (
                     <div className="p-3.5 rounded-2xl bg-muted/35 border border-border space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-black text-foreground">

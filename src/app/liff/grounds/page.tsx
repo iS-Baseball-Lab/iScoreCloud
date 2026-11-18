@@ -9,7 +9,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   buildGoogleMapsEmbedFromUrl,
@@ -61,6 +61,8 @@ interface VenueInfo {
   spikeRule: string;
   parkingInfo: string;
   notes: string;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 const VENUE_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
@@ -327,20 +329,39 @@ function VenueCardMapEmbed({
 
 export default function LiffGroundsPage() {
   const { currentTeam } = useLiff();
+  const { isDemoMode, canMutate, canUsePaidAi } = useLiffPermissions();
   const initialCachedGrounds = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
       currentTeam?.id ||
       localStorage.getItem("iscore_selectedTeamId") ||
       "demo-team";
-    return peekLiffApiCache<{ success: boolean; venues?: VenueInfo[] }>(
-      `/api/liff/grounds?teamId=${tid}`
-    );
+    return peekLiffApiCache<{
+      success: boolean;
+      venues?: VenueInfo[];
+      canCreate?: boolean;
+      canUseAiLookup?: boolean;
+    }>(`/api/liff/grounds?teamId=${tid}`);
   }, [currentTeam?.id]);
 
   const [venues, setVenues] = useState<VenueInfo[]>(
     () => initialCachedGrounds?.venues ?? []
   );
+  const [serverCanCreate, setServerCanCreate] = useState<boolean | null>(
+    () =>
+      typeof initialCachedGrounds?.canCreate === "boolean"
+        ? initialCachedGrounds.canCreate
+        : null
+  );
+  const [serverCanUseAi, setServerCanUseAi] = useState<boolean | null>(
+    () =>
+      typeof initialCachedGrounds?.canUseAiLookup === "boolean"
+        ? initialCachedGrounds.canUseAiLookup
+        : null
+  );
+  const canCreateGround = serverCanCreate ?? canMutate;
+  const canUseGroundAi = (serverCanUseAi ?? canUsePaidAi) && canUsePaidAi;
+
   const [isLoading, setIsLoading] = useState<boolean>(
     () => !initialCachedGrounds?.venues
   );
@@ -392,22 +413,53 @@ export default function LiffGroundsPage() {
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    setServerCanCreate(null);
+    setServerCanUseAi(null);
+    setIsModalOpen(false);
+    setEditingVenue(null);
+    setDeleteTarget(null);
+    setAiCandidate(null);
+  }, [currentTeam?.id]);
+
   const loadGrounds = useCallback(async () => {
     try {
       const teamId = currentTeam?.id || "demo-team";
       const url = `/api/liff/grounds?teamId=${teamId}`;
-      const cached = peekLiffApiCache<{ success: boolean; venues?: VenueInfo[] }>(url);
+      const cached = peekLiffApiCache<{
+        success: boolean;
+        venues?: VenueInfo[];
+        canCreate?: boolean;
+        canUseAiLookup?: boolean;
+      }>(url);
       if (cached?.venues) {
         setVenues(cached.venues);
+        if (typeof cached.canCreate === "boolean") {
+          setServerCanCreate(cached.canCreate);
+        }
+        if (typeof cached.canUseAiLookup === "boolean") {
+          setServerCanUseAi(cached.canUseAiLookup);
+        }
         setIsLoading(false);
       } else {
         setIsLoading(true);
       }
       const res = await fetch(url);
       if (res.ok) {
-        const data = (await res.json()) as { success: boolean; venues?: VenueInfo[] };
+        const data = (await res.json()) as {
+          success: boolean;
+          venues?: VenueInfo[];
+          canCreate?: boolean;
+          canUseAiLookup?: boolean;
+        };
         if (Array.isArray(data.venues)) {
           setVenues(data.venues);
+        }
+        if (typeof data.canCreate === "boolean") {
+          setServerCanCreate(data.canCreate);
+        }
+        if (typeof data.canUseAiLookup === "boolean") {
+          setServerCanUseAi(data.canUseAiLookup);
         }
       }
     } catch (err) {
@@ -793,9 +845,15 @@ export default function LiffGroundsPage() {
 
     try {
       setIsSubmitting(true);
-      const res = await fetch(`/api/liff/grounds/${deleteTarget.id}`, {
-        method: "DELETE",
-      });
+      const teamId = currentTeam?.id || "demo-team";
+      const res = await fetch(
+        `/api/liff/grounds/${deleteTarget.id}?teamId=${encodeURIComponent(
+          teamId
+        )}`,
+        {
+          method: "DELETE",
+        }
+      );
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) throw new Error(data.error || "削除に失敗しました");
 
@@ -927,14 +985,16 @@ export default function LiffGroundsPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenCreate}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shrink-0 hover:bg-primary/90 transition-all active:scale-95 shadow-xs cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>追加</span>
-          </button>
+          {canCreateGround && (
+            <button
+              type="button"
+              onClick={handleOpenCreate}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-primary text-primary-foreground text-xs font-black shrink-0 hover:bg-primary/90 transition-all active:scale-95 shadow-xs cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>追加</span>
+            </button>
+          )}
         </div>
 
         {/* 🏷️ 分類（カテゴリ）タブフィルター */}
@@ -987,8 +1047,12 @@ export default function LiffGroundsPage() {
             </p>
             <p className="text-xs text-muted-foreground">
               {venues.length === 0
-                ? "本拠地やよく使う試合会場を登録すると、スケジュール作成や駐車場ルールの共有がスムーズになります。"
-                : "条件を変更するか、新しい球場・施設を登録してください。"}
+                ? canCreateGround
+                  ? "本拠地やよく使う試合会場を登録すると、スケジュール作成や駐車場ルールの共有がスムーズになります。"
+                  : "チームの管理者・スタッフまたは保護者が球場・施設を登録すると、ここに表示されます。"
+                : canCreateGround
+                ? "条件を変更するか、新しい球場・施設を登録してください。"
+                : "検索条件やカテゴリを変更して再度お試しください。"}
             </p>
             <div className="flex items-center justify-center gap-2 pt-1">
               {(selectedCategory !== "all" || searchQuery) && (
@@ -1003,13 +1067,15 @@ export default function LiffGroundsPage() {
                   すべて表示
                 </button>
               )}
-              <button
-                type="button"
-                onClick={handleOpenCreate}
-                className="px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-xs"
-              >
-                ＋ 新規登録
-              </button>
+              {canCreateGround && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreate}
+                  className="px-4 py-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black transition-all active:scale-95 shadow-xs"
+                >
+                  ＋ 新規登録
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -1019,6 +1085,8 @@ export default function LiffGroundsPage() {
               const CatIcon = catBadge.icon;
               const isCopied = copiedId === venue.id;
               const navUrls = buildVenueCardMapUrls(venue, "roadmap");
+              const canEditThisVenue = venue.canEdit ?? canCreateGround;
+              const canDeleteThisVenue = venue.canDelete ?? canCreateGround;
 
               return (
                 <div
@@ -1068,25 +1136,31 @@ export default function LiffGroundsPage() {
                       </div>
                     </div>
 
-                    {/* 管理ボタン群（編集 ＆ 削除） */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(venue)}
-                        className="p-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-all cursor-pointer"
-                        title="球場情報を編集"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteTarget(venue)}
-                        className="p-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-rose-500/20 hover:border-rose-400/40 text-slate-300 hover:text-rose-300 transition-all cursor-pointer"
-                        title="球場情報を削除"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {/* 管理ボタン群（編集 ＆ 削除：権限がある場合のみ表示） */}
+                    {(canEditThisVenue || canDeleteThisVenue) && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canEditThisVenue && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(venue)}
+                            className="p-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white transition-all cursor-pointer"
+                            title="球場情報を編集"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {canDeleteThisVenue && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteTarget(venue)}
+                            className="p-1.5 rounded-xl border border-slate-700 bg-slate-800 hover:bg-rose-500/20 hover:border-rose-400/40 text-slate-300 hover:text-rose-300 transition-all cursor-pointer"
+                            title="球場情報を削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* 🗺️ カード内埋め込み Google Map（地図 / 航空写真 ワンタップ切替付き） */}
@@ -1233,14 +1307,25 @@ export default function LiffGroundsPage() {
                     <Sparkles className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
                     <span>AIで公式情報・Googleマップから自動取得</span>
                   </span>
-                  <span className="px-1.5 py-0.5 rounded bg-teal-600 text-white text-[9.5px] font-black shrink-0">
-                    Web ＋ Map連携
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
+                      canUseGroundAi
+                        ? "bg-teal-600 text-white"
+                        : "bg-slate-700 text-slate-200"
+                    }`}
+                  >
+                    {canUseGroundAi
+                      ? "Web ＋ Map連携"
+                      : isDemoMode
+                      ? "デモモード対象外"
+                      : "利用不可"}
                   </span>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                   <input
                     type="text"
+                    disabled={!canUseGroundAi}
                     value={aiSearchQuery}
                     onChange={(e) => {
                       setAiSearchQuery(e.target.value);
@@ -1249,19 +1334,27 @@ export default function LiffGroundsPage() {
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();
-                        if (!isAiLoading && (aiSearchQuery.trim() || formName.trim())) {
+                        if (
+                          canUseGroundAi &&
+                          !isAiLoading &&
+                          (aiSearchQuery.trim() || formName.trim())
+                        ) {
                           void handleAiLookup();
                         }
                       }
                     }}
                     placeholder="検索する施設名（例: 〇〇市民球場、〇〇市 〇〇緑地野球場）"
-                    className="flex-1 px-3 py-2 rounded-xl bg-card border border-border text-[11px] font-bold placeholder:font-medium placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-teal-500/40 focus:outline-hidden"
+                    className="flex-1 px-3 py-2 rounded-xl bg-card border border-border text-[11px] font-bold placeholder:font-medium placeholder:text-muted-foreground/70 focus:ring-2 focus:ring-teal-500/40 focus:outline-hidden disabled:opacity-50"
                   />
                   <button
                     type="button"
                     onClick={() => void handleAiLookup()}
-                    disabled={isAiLoading || (!aiSearchQuery.trim() && !formName.trim())}
-                    className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                    disabled={
+                      !canUseGroundAi ||
+                      isAiLoading ||
+                      (!aiSearchQuery.trim() && !formName.trim())
+                    }
+                    className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                   >
                     {isAiLoading ? (
                       <>
@@ -1278,7 +1371,11 @@ export default function LiffGroundsPage() {
                 </div>
 
                 <p className="text-[10px] font-bold text-muted-foreground leading-snug">
-                  施設名（必要なら自治体名も追記可）から公式案内・Googleマップを検証し、郵便番号付き住所・専用駐車場・スパイク規定を抽出します。
+                  {canUseGroundAi
+                    ? "施設名（必要なら自治体名も追記可）から公式案内・Googleマップを検証し、郵便番号付き住所・専用駐車場・スパイク規定を抽出します。"
+                    : isDemoMode
+                    ? "※ 体験デモモードではAI自動取得は利用できません（下の各項目を手入力して登録をお試しいただけます）。"
+                    : "※ 現在のアカウント権限ではAI自動取得は利用できません。"}
                 </p>
               </div>
 

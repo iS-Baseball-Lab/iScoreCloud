@@ -131,7 +131,7 @@ export function AdminMgmtShell({
           showBack
           rightElement={
             <div className="flex items-center gap-1.5">
-              {headerRight}
+              {canManage && !isLoading ? headerRight : null}
               {onRefresh && (
                 <button
                   type="button"
@@ -151,38 +151,40 @@ export function AdminMgmtShell({
         />
 
         {/* 7つの管理メニュー横断クイックスイッチャー */}
-        <nav
-          aria-label="管理メニュー切替"
-          className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
-        >
-          {ADMIN_MGMT_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive =
-              item.href === "/liff/admin"
-                ? pathname === "/liff/admin"
-                : pathname.startsWith(item.href);
+        {(canManage || isLoading) && (
+          <nav
+            aria-label="管理メニュー切替"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
+          >
+            {ADMIN_MGMT_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive =
+                item.href === "/liff/admin"
+                  ? pathname === "/liff/admin"
+                  : pathname.startsWith(item.href);
 
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                onPointerDown={() => warmupLiffEndpointForHref(item.href)}
-                className={`h-8 px-2.5 rounded-xl border text-xs flex items-center gap-1.5 shrink-0 transition-colors ${
-                  isActive
-                    ? "bg-[#0f172a] text-white border-[#0f172a] font-black shadow-xs"
-                    : "bg-card text-foreground border-border hover:bg-muted font-bold"
-                }`}
-              >
-                <Icon
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    isActive ? "text-teal-400" : "text-muted-foreground"
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  onPointerDown={() => warmupLiffEndpointForHref(item.href)}
+                  className={`h-8 px-2.5 rounded-xl border text-xs flex items-center gap-1.5 shrink-0 transition-colors ${
+                    isActive
+                      ? "bg-[#0f172a] text-white border-[#0f172a] font-black shadow-xs"
+                      : "bg-card text-foreground border-border hover:bg-muted font-bold"
                   }`}
-                />
-                <span>{item.shortLabel}</span>
-              </Link>
-            );
-          })}
-        </nav>
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      isActive ? "text-teal-400" : "text-muted-foreground"
+                    }`}
+                  />
+                  <span>{item.shortLabel}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         {isDemo && (
           <div className="px-3.5 py-2 rounded-xl border border-amber-500/40 bg-amber-500/12 text-amber-900 dark:text-amber-200 text-[11px] font-bold flex items-center justify-between gap-2">

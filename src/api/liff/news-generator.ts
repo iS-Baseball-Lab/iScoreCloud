@@ -120,6 +120,7 @@ function extractMatchLineLiveAssignees(matchDayOpsRaw: string | null | undefined
 interface CallerReporterContext {
   identity: LiffMyMatchIdentity;
   canManageOrScore: boolean;
+  canMutate: boolean;
 }
 
 async function resolveCallerReporterContext(
@@ -130,6 +131,7 @@ async function resolveCallerReporterContext(
   const access = await resolveCallerTeamAccess(c);
   const canManageOrScore =
     access.canManageTeamId(teamId) || access.canEditScoreForTeam(teamId);
+  const canMutate = access.isAuthenticated && access.canMutateTeamData(teamId);
 
   const [teamMemberRows, dbUserRows] = await Promise.all([
     db
@@ -203,6 +205,7 @@ async function resolveCallerReporterContext(
       childNames: [],
     },
     canManageOrScore,
+    canMutate,
   };
 }
 
@@ -411,6 +414,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           memberName: null,
           displayName: null,
           canManageOrScore: true,
+          canMutate: true,
         },
         matches: [],
         players: [],
@@ -699,6 +703,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         memberName: callerCtx.identity.memberName,
         displayName: callerCtx.identity.displayName,
         canManageOrScore: callerCtx.canManageOrScore,
+        canMutate: callerCtx.canMutate,
       },
       matches: formattedMatches,
       players: activePlayers,

@@ -10,7 +10,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   FileText,
@@ -100,6 +100,8 @@ function getExternalBrowserUrl(url: string | null | undefined): string {
 
 export default function LiffDocumentsPage() {
   const { currentTeam, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canMutate || isDemoMode;
   const initialCachedDocs = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -247,6 +249,7 @@ export default function LiffDocumentsPage() {
 
   // 編集モーダルを開く
   const openEditModal = (doc: TeamDocument) => {
+    if (!effectiveCanEdit || (!isDemoMode && doc.id.startsWith("demo-"))) return;
     setEditingDoc(doc);
     setEditTitle(doc.title);
     setEditCategory(doc.category);
@@ -276,7 +279,7 @@ export default function LiffDocumentsPage() {
   // 新規登録処理
   const handleCreateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    if (!effectiveCanEdit || !newTitle.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -333,7 +336,7 @@ export default function LiffDocumentsPage() {
         if (!uploadSuccess) {
           try {
             finalFileUrl = await fileToBase64(selectedFile);
-          } catch (base64Err) {
+          } catch {
             throw new Error("ファイルの読み込みに失敗しました。もう一度お試しください。");
           }
         }
@@ -375,9 +378,9 @@ export default function LiffDocumentsPage() {
       setNewFileUrl("");
       setNewDescription("");
       loadDocuments();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating document:", err);
-      setSubmitError(err.message || "資料の登録に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "資料の登録に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -386,7 +389,7 @@ export default function LiffDocumentsPage() {
   // 更新処理
   const handleUpdateDocument = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingDoc || !editTitle.trim()) return;
+    if (!effectiveCanEdit || !editingDoc || !editTitle.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -465,9 +468,9 @@ export default function LiffDocumentsPage() {
 
       setEditingDoc(null);
       loadDocuments();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating document:", err);
-      setSubmitError(err.message || "資料の更新に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "資料の更新に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -475,16 +478,20 @@ export default function LiffDocumentsPage() {
 
   // 削除処理
   const handleDeleteDocument = async () => {
-    if (!editingDoc) return;
+    if (!editingDoc || !effectiveCanEdit) return;
     if (!confirm(`「${editingDoc.title}」を削除してもよろしいですか？`)) return;
 
     try {
       setIsDeleting(true);
       setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
 
-      const res = await fetch(`/api/liff/documents/${editingDoc.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/liff/documents/${encodeURIComponent(editingDoc.id)}?teamId=${encodeURIComponent(teamId)}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
@@ -493,9 +500,9 @@ export default function LiffDocumentsPage() {
 
       setEditingDoc(null);
       loadDocuments();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error deleting document:", err);
-      setSubmitError(err.message || "資料の削除に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "資料の削除に失敗しました");
     } finally {
       setIsDeleting(false);
     }
@@ -616,19 +623,21 @@ export default function LiffDocumentsPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreateModalOpen(true);
-              setSelectedFile(null);
-              setSubmitError(null);
-            }}
-            className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-            title="新しいチーム資料を追加"
-          >
-            <Plus className="w-4 h-4" />
-            <span>追加</span>
-          </button>
+          {effectiveCanEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setSelectedFile(null);
+                setSubmitError(null);
+              }}
+              className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="新しいチーム資料を追加"
+            >
+              <Plus className="w-4 h-4" />
+              <span>追加</span>
+            </button>
+          )}
         </div>
 
         {/* 形式フィルター (すべて / Excel / PDF / Word / 画像) */}
@@ -792,7 +801,9 @@ export default function LiffDocumentsPage() {
                 <div className="space-y-1">
                   <h4 className="text-sm font-black text-foreground">登録されている資料はありません</h4>
                   <p className="text-xs font-bold text-muted-foreground">
-                    上の「追加」ボタンからExcel・PDF・写真を直接アップロードできます。
+                    {effectiveCanEdit
+                      ? "上の「追加」ボタンからExcel・PDF・写真を直接アップロードできます。"
+                      : "検索条件を変更するか、資料の公開をお待ちください。"}
                   </p>
                 </div>
               </div>
@@ -879,15 +890,17 @@ export default function LiffDocumentsPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(doc)}
-                            className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-xs font-black"
-                            title="資料を編集・削除"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>編集</span>
-                          </button>
+                          {effectiveCanEdit && (isDemoMode || !doc.id.startsWith("demo-")) && (
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(doc)}
+                              className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-xs font-black"
+                              title="資料を編集・削除"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>編集</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"

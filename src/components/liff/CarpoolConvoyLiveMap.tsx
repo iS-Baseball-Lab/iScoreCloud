@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { LiffSelect } from "@/components/liff/LiffSelect";
+import { useLiffPermissions } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   Car,
@@ -387,9 +388,17 @@ export function CarpoolConvoyLiveMap({
   userId,
   userName,
 }: CarpoolConvoyLiveMapProps) {
+  const { canManageTeam, canManagePlayers, canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveIsDemo = isDemoMode || teamId === "demo-team";
+  const canShareConvoyLocation =
+    eventId === "convoy-test"
+      ? canManagePlayers || effectiveIsDemo
+      : canMutate || effectiveIsDemo;
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [snapshot, setSnapshot] = useState<ConvoySnapshotResponse | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const canManageMapsKey = Boolean(snapshot?.canConfigureMapsKey) && (canManageTeam || effectiveIsDemo);
 
   // 自分が発信する号車ID（"" = 現地待機・発信しない）
   const [myCarpoolId, setMyCarpoolId] = useState<string>("");
@@ -655,7 +664,18 @@ export function CarpoolConvoyLiveMap({
           }),
           keepalive: true,
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403 || res.status === 409) {
+            const errJson = (await res.json().catch(() => ({}))) as { error?: string };
+            if (watchIdRef.current !== null && typeof navigator !== "undefined") {
+              navigator.geolocation?.clearWatch(watchIdRef.current);
+              watchIdRef.current = null;
+            }
+            setIsBroadcasting(false);
+            toast.error(errJson.error || "位置共有の権限がないため停止しました");
+          }
+          return;
+        }
         const json = (await res.json()) as {
           success: boolean;
           state?: ConvoyVehicleLiveState;
@@ -678,7 +698,7 @@ export function CarpoolConvoyLiveMap({
         // 次回のwatchPosition更新時に自動再送
       }
     },
-    [teamId, eventId, direction, snapshot?.myDisplayName, userId, userName]
+    [teamId, eventId, direction, snapshot?.myDisplayName, effectiveUserId, effectiveUserName]
   );
 
   const stopBroadcasting = useCallback(
@@ -690,7 +710,7 @@ export function CarpoolConvoyLiveMap({
       await releaseWakeLock();
       setIsBroadcasting(false);
 
-      if (myCarpoolId) {
+      if (myCarpoolId && canShareConvoyLocation) {
         const nextStatus = opts?.finalStatus ?? myDraftStatus;
         await pushLiveUpdate({
           carpoolId: myCarpoolId,
@@ -701,11 +721,15 @@ export function CarpoolConvoyLiveMap({
         });
       }
     },
-    [myCarpoolId, myDraftStatus, pushLiveUpdate, releaseWakeLock]
+    [myCarpoolId, canShareConvoyLocation, myDraftStatus, pushLiveUpdate, releaseWakeLock]
   );
 
   const startBroadcasting = useCallback(
     async (initialStatus?: ConvoyVehicleStatus) => {
+      if (!canShareConvoyLocation) {
+        toast.error("閲覧専用メンバーのため位置情報の発信はできません");
+        return;
+      }
       if (!myCarpoolId) {
         toast.error("発信する号車を選択してください");
         return;
@@ -848,6 +872,10 @@ export function CarpoolConvoyLiveMap({
 
   const handleSelectStamp = useCallback(
     async (nextStatus: ConvoyVehicleStatus) => {
+      if (!canShareConvoyLocation) {
+        toast.error("閲覧専用メンバーのため状況スタンプの発信はできません");
+        return;
+      }
       if (!myCarpoolId) {
         toast.error("発信する号車を選択してください");
         return;
@@ -1434,12 +1462,12 @@ export function CarpoolConvoyLiveMap({
           </button>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {snapshot?.canConfigureMapsKey &&
-              snapshot.googleMapsKeySource !== "env" && (
+            {canManageMapsKey &&
+              snapshot?.googleMapsKeySource !== "env" && (
                 <button
                   type="button"
                   onClick={() => {
-                    setApiKeyInput(snapshot.googleMapsApiKey || "");
+                    setApiKeyInput(snapshot?.googleMapsApiKey || "");
                     setIsKeyModalOpen(true);
                   }}
                   title="Google Maps APIキー設定"
@@ -1747,11 +1775,11 @@ export function CarpoolConvoyLiveMap({
                         ? "⚠️ APIキー制限を確認してください（レーダー表示中）"
                         : "📡 隊列レーダー表示中"}
                     </span>
-                    {snapshot?.canConfigureMapsKey && (
+                    {canManageMapsKey && (
                       <button
                         type="button"
                         onClick={() => {
-                          setApiKeyInput(snapshot.googleMapsApiKey || "");
+                          setApiKeyInput(snapshot?.googleMapsApiKey || "");
                           setIsKeyModalOpen(true);
                         }}
                         className="px-2.5 py-1 rounded-xl bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[11px] font-black shadow-xs flex items-center gap-1 cursor-pointer"
@@ -1808,133 +1836,141 @@ export function CarpoolConvoyLiveMap({
 
             {/* ==================== 2. 自分の号車：位置発信スイッチ ＆ ワンタップ状況スタンプ ==================== */}
             <div className="p-3.5 bg-muted/40 space-y-3">
-              {/* 発信号車セレクター ＋ 位置共有ON/OFFスイッチ */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-xs font-black text-foreground shrink-0">
-                    自分の号車:
-                  </span>
-                  <LiffSelect
-                    value={myCarpoolId}
-                    disabled={isBroadcasting}
-                    onChange={(nextId) => {
-                      setMyCarpoolId(nextId);
-                      const c = cars.find((item) => item.carpoolId === nextId);
-                      if (c) setSelectedCarNumber(c.carNumber);
-                    }}
-                    options={[
-                      ...cars.map((car) => ({
-                        value: car.carpoolId,
-                        label: `${car.carNumber}号車: ${car.driverName}`,
-                        badge: car.isCargo ? "道具車" : undefined,
-                        badgeTone: "amber" as const,
-                        sublabel: car.carModel
-                          ? `${car.carModel}（乗車 ${car.passengers.length}/${car.capacity}名）`
-                          : `乗車 ${car.passengers.length}/${car.capacity}名`,
-                      })),
-                      {
-                        value: "",
-                        label: "現地待機・乗車なし（閲覧のみ）",
-                        sublabel:
-                          "現在地の発信は行わず、隊列マップの閲覧のみ行います",
-                      },
-                    ]}
-                    title="自分の号車を選択"
-                    subtitle="運転手・同乗者のどちらからでも号車の位置を共有できます"
-                    ariaLabel="自分の号車を選択"
-                    accent="teal"
-                    size="sm"
-                    searchable={false}
-                    className="min-w-0 flex-1 h-9"
-                  />
-                </div>
+              {canShareConvoyLocation ? (
+                <>
+                  {/* 発信号車セレクター ＋ 位置共有ON/OFFスイッチ */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="text-xs font-black text-foreground shrink-0">
+                        自分の号車:
+                      </span>
+                      <LiffSelect
+                        value={myCarpoolId}
+                        disabled={isBroadcasting}
+                        onChange={(nextId) => {
+                          setMyCarpoolId(nextId);
+                          const c = cars.find((item) => item.carpoolId === nextId);
+                          if (c) setSelectedCarNumber(c.carNumber);
+                        }}
+                        options={[
+                          ...cars.map((car) => ({
+                            value: car.carpoolId,
+                            label: `${car.carNumber}号車: ${car.driverName}`,
+                            badge: car.isCargo ? "道具車" : undefined,
+                            badgeTone: "amber" as const,
+                            sublabel: car.carModel
+                              ? `${car.carModel}（乗車 ${car.passengers.length}/${car.capacity}名）`
+                              : `乗車 ${car.passengers.length}/${car.capacity}名`,
+                          })),
+                          {
+                            value: "",
+                            label: "現地待機・乗車なし（閲覧のみ）",
+                            sublabel:
+                              "現在地の発信は行わず、隊列マップの閲覧のみ行います",
+                          },
+                        ]}
+                        title="自分の号車を選択"
+                        subtitle="運転手・同乗者のどちらからでも号車の位置を共有できます"
+                        ariaLabel="自分の号車を選択"
+                        accent="teal"
+                        size="sm"
+                        searchable={false}
+                        className="min-w-0 flex-1 h-9"
+                      />
+                    </div>
 
-                {myCarpoolId && (
-                  <button
-                    type="button"
-                    onClick={handleToggleSharing}
-                    className={`h-9 px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0 ${
-                      isBroadcasting
-                        ? "bg-teal-600 hover:bg-teal-700 text-white"
-                        : "bg-[#0f172a] hover:bg-slate-800 text-white"
-                    }`}
-                  >
-                    <Radio className="w-3.5 h-3.5" />
-                    <span>{isBroadcasting ? "位置共有 ON" : "位置共有を開始"}</span>
-                  </button>
-                )}
-              </div>
+                    {myCarpoolId && (
+                      <button
+                        type="button"
+                        onClick={handleToggleSharing}
+                        className={`h-9 px-3.5 rounded-xl text-xs font-black flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0 ${
+                          isBroadcasting
+                            ? "bg-teal-600 hover:bg-teal-700 text-white"
+                            : "bg-[#0f172a] hover:bg-slate-800 text-white"
+                        }`}
+                      >
+                        <Radio className="w-3.5 h-3.5" />
+                        <span>{isBroadcasting ? "位置共有 ON" : "位置共有を開始"}</span>
+                      </button>
+                    )}
+                  </div>
 
-              {/* 補足ステータス案内（同乗者発信・スリープ防止・プライバシー保護） */}
-              {myCarpoolId ? (
-                <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-muted-foreground">
-                  <span>
-                    💡 運転手だけでなく
-                    <strong className="text-foreground">助手席・同乗者のスマホ</strong>
-                    からも発信できます
-                  </span>
-                  {isBroadcasting ? (
-                    <span className="text-teal-600 dark:text-teal-400 font-black">
-                      {isWakeLockActive
-                        ? "● 画面スリープ防止中"
-                        : "● 5秒おきに現在地を送信中"}
-                    </span>
+                  {/* 補足ステータス案内（同乗者発信・スリープ防止・プライバシー保護） */}
+                  {myCarpoolId ? (
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-muted-foreground">
+                      <span>
+                        💡 運転手だけでなく
+                        <strong className="text-foreground">助手席・同乗者のスマホ</strong>
+                        からも発信できます
+                      </span>
+                      {isBroadcasting ? (
+                        <span className="text-teal-600 dark:text-teal-400 font-black">
+                          {isWakeLockActive
+                            ? "● 画面スリープ防止中"
+                            : "● 5秒おきに現在地を送信中"}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1">
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          OFF時は位置送信されません
+                        </span>
+                      )}
+                    </div>
                   ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      OFF時は位置送信されません
-                    </span>
+                    <p className="text-xs font-bold text-muted-foreground">
+                      自分の位置は送信せず、向かってくる各号車の状況と残り距離をリアルタイム確認できます。
+                    </p>
                   )}
-                </div>
+
+                  {/* 安全運転・道路交通法遵守の注意表示（ソリッド表示） */}
+                  <div className="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/12 text-[11px] font-black text-amber-900 dark:text-amber-200 leading-snug">
+                    ⚠️ 運転中のスマホ操作・画面注視は厳禁です。共有操作や確認は必ず停車中または同乗者が行ってください。
+                  </div>
+
+                  {gpsErrorMsg && (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-bold">
+                      {gpsErrorMsg}
+                    </div>
+                  )}
+
+                  {/* ワンタップ状況スタンプ（4種） */}
+                  {myCarpoolId && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-black text-muted-foreground">
+                          ワンタップ状況スタンプ（文字入力不要）
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {STAMP_OPTIONS.map((st) => {
+                          const currentLiveStatus =
+                            snapshot?.states[myCarpoolId]?.status;
+                          const isActive =
+                            (isBroadcasting || currentLiveStatus === "arrived") &&
+                            (currentLiveStatus || myDraftStatus) === st.status;
+                          return (
+                            <button
+                              key={st.status}
+                              type="button"
+                              onClick={() => void handleSelectStamp(st.status)}
+                              className={`h-9 px-1.5 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                isActive
+                                  ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                                  : "bg-card text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              {st.buttonLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-xs font-bold text-muted-foreground">
-                  自分の位置は送信せず、向かってくる各号車の状況と残り距離をリアルタイム確認できます。
+                  閲覧専用モードのため、現在地・状況スタンプの発信は行えません（各号車の位置と残り距離はリアルタイム確認できます）。
                 </p>
-              )}
-
-              {/* 安全運転・道路交通法遵守の注意表示（ソリッド表示） */}
-              <div className="px-3 py-2 rounded-xl border border-amber-500/40 bg-amber-500/12 text-[11px] font-black text-amber-900 dark:text-amber-200 leading-snug">
-                ⚠️ 運転中のスマホ操作・画面注視は厳禁です。共有操作や確認は必ず停車中または同乗者が行ってください。
-              </div>
-
-              {gpsErrorMsg && (
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs font-bold">
-                  {gpsErrorMsg}
-                </div>
-              )}
-
-              {/* ワンタップ状況スタンプ（4種） */}
-              {myCarpoolId && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black text-muted-foreground">
-                      ワンタップ状況スタンプ（文字入力不要）
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {STAMP_OPTIONS.map((st) => {
-                      const currentLiveStatus =
-                        snapshot?.states[myCarpoolId]?.status;
-                      const isActive =
-                        (isBroadcasting || currentLiveStatus === "arrived") &&
-                        (currentLiveStatus || myDraftStatus) === st.status;
-                      return (
-                        <button
-                          key={st.status}
-                          type="button"
-                          onClick={() => void handleSelectStamp(st.status)}
-                          className={`h-9 px-1.5 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
-                            isActive
-                              ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
-                              : "bg-card text-foreground border-border hover:bg-muted"
-                          }`}
-                        >
-                          {st.buttonLabel}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
               )}
 
               {/* Googleマップ音声カーナビ起動ボタン（公式ブランドカラー #1A73E8 単色ソリッド） */}

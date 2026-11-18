@@ -23,7 +23,10 @@ import type {
   AdminRolesResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import {
   LiffSelect,
   type LiffSelectBadgeTone,
@@ -119,7 +122,7 @@ const ROLE_MASTER_LIST: ReadonlyArray<RoleMasterDef> = [
 ];
 
 export default function LiffAdminRolesPage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, isDemo } = useLiff();
   const teamId = currentTeam?.id || "demo-team";
   const endpointUrl = `/api/liff/admin/mgmt/roles?teamId=${encodeURIComponent(
     teamId
@@ -422,7 +425,9 @@ export default function LiffAdminRolesPage() {
     });
   }, [data?.members, roleFilter, searchQuery, getDisplayRoleLabel]);
 
-  const canManage = data ? data.canManage : true;
+  const canManage = data
+    ? Boolean(data.canManage)
+    : canManageCurrentTeam(currentTeam, isDemo);
 
   return (
     <AdminMgmtShell

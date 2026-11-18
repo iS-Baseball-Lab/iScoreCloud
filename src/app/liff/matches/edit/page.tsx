@@ -9,6 +9,7 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
@@ -36,6 +37,7 @@ import {
   Tent,
   Building2,
   Info,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -173,6 +175,9 @@ function LiffMatchEditContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId") || "";
   const { currentTeam } = useLiff();
+  const { canMutate, canManagePlayers } = useLiffPermissions();
+  const effectiveCanEdit = canMutate || isDemoMatchId(matchId);
+  const effectiveCanDelete = canManagePlayers && !isDemoMatchId(matchId);
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 
@@ -522,6 +527,10 @@ function LiffMatchEditContent() {
     : (loadedMatch?.opponentScore ?? computedOppTotal);
 
   const handleSave = async () => {
+    if (!effectiveCanEdit) {
+      toast.error("閲覧専用メンバーのため試合情報を変更できません");
+      return;
+    }
     const opponentTrimmed = opponent.trim();
     if (!opponentTrimmed) {
       toast.error("対戦相手を入力してください");
@@ -635,7 +644,7 @@ function LiffMatchEditContent() {
   };
 
   const handleDeleteMatch = async () => {
-    if (!matchId || isDeleting) return;
+    if (!effectiveCanDelete || !matchId || isDeleting) return;
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/matches/${encodeURIComponent(matchId)}`, {
@@ -706,6 +715,18 @@ function LiffMatchEditContent() {
           }
           showBack
         />
+
+        {!effectiveCanEdit && (
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-2.5 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-black text-white">閲覧専用モード</span>
+            </div>
+            <div className="p-3.5 text-xs font-bold text-muted-foreground leading-relaxed">
+              現在のアカウント権限では試合情報の変更・保存はできません。編集が必要な場合はチームの指導者または管理者へご相談ください。
+            </div>
+          </div>
+        )}
 
         {/* 📋 1. 対戦カード・日時・レギュレーション（A-3 上帯ダークキャップ） */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -1404,40 +1425,44 @@ function LiffMatchEditContent() {
           </div>
         </section>
 
-        {/* 💾 保存ボタン */}
-        <div className="space-y-3 pt-1">
-          <Button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={isSaving}
-            className="w-full h-12 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-xs flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
-          >
-            {isSaving ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>保存中...</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>変更を保存する</span>
-              </>
-            )}
-          </Button>
-
-          {!isDemoMatchId(matchId) && (
-            <div className="pt-4 border-t border-border">
-              <button
+        {/* 💾 保存・削除ボタン（権限に応じて表示制御） */}
+        {(effectiveCanEdit || effectiveCanDelete) && (
+          <div className="space-y-3 pt-1">
+            {effectiveCanEdit && (
+              <Button
                 type="button"
-                onClick={() => setShowDeleteModal(true)}
-                className="w-full h-11 rounded-2xl border border-rose-300 dark:border-rose-800 bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-black flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all cursor-pointer"
+                onClick={() => void handleSave()}
+                disabled={isSaving}
+                className="w-full h-12 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-black shadow-xs flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>この試合自体を削除する</span>
-              </button>
-            </div>
-          )}
-        </div>
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>保存中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>変更を保存する</span>
+                  </>
+                )}
+              </Button>
+            )}
+
+            {effectiveCanDelete && (
+              <div className="pt-4 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(true)}
+                  className="w-full h-11 rounded-2xl border border-rose-300 dark:border-rose-800 bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-black flex items-center justify-center gap-1.5 active:scale-[0.99] transition-all cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>この試合自体を削除する</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>

@@ -20,7 +20,10 @@ import type {
   AdminEquipmentsResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import {
   invalidateLiffApiCache,
   peekLiffApiCache,
@@ -91,7 +94,7 @@ const EQUIPMENT_PRESETS: ReadonlyArray<EquipmentPreset> = [
 ];
 
 export default function LiffAdminEquipmentsPage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, isDemo } = useLiff();
   const teamId = currentTeam?.id || "demo-team";
   const endpointUrl = `/api/liff/admin/mgmt/equipments?teamId=${encodeURIComponent(
     teamId

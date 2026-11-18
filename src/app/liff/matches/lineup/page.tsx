@@ -11,6 +11,7 @@ import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   EXPLICIT_DEMO_STORAGE_KEY,
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
 import { buildLiffHubUrl, invalidateLiffApiCache } from "@/lib/liff/api-cache";
@@ -226,6 +227,7 @@ function LiffLineupContent() {
   const urlMatchId = searchParams.get("id");
   const urlTeamId = searchParams.get("teamId");
   const { currentTeam, profile, isLoadingTeam, isDemo } = useLiff();
+  const { canMutate, canUsePaidAi } = useLiffPermissions();
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const preferredTeamId = useMemo(() => {
@@ -993,8 +995,15 @@ function LiffLineupContent() {
     setOpponentBench((prev) => prev.filter((_, idx) => idx !== targetIndex));
   };
 
+  const effectiveCanEditLineup =
+    canMutate || isDemo || Boolean(selectedMatchId && isDemoMatchId(selectedMatchId));
+
   // スタメン・控え・欠席の保存処理（Web版と完全互換のAPIに保存）
   const handleSaveLineups = async () => {
+    if (!effectiveCanEditLineup) {
+      toast.error("閲覧専用メンバーのためスタメンを保存できません");
+      return;
+    }
     if (!selectedMatchId) {
       toast.error("登録対象の試合を選択してください");
       return;
@@ -1186,16 +1195,30 @@ function LiffLineupContent() {
               : undefined
           }
           rightElement={
-            <button
-              type="button"
-              onClick={() => setIsCreateMatchModalOpen(true)}
-              className="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>新規試合</span>
-            </button>
+            canMutate || isDemo ? (
+              <button
+                type="button"
+                onClick={() => setIsCreateMatchModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>新規試合</span>
+              </button>
+            ) : undefined
           }
         />
+
+        {!effectiveCanEditLineup && (
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-2.5 flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+              <span className="text-xs font-black text-white">閲覧専用モード</span>
+            </div>
+            <div className="p-3.5 text-xs font-bold text-muted-foreground leading-relaxed">
+              現在のアカウント権限では出場メンバー・出欠の変更保存はできません（LINE連絡用テキストのコピー・共有は利用できます）。
+            </div>
+          </div>
+        )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             ⚾ 対象試合カード & 試合切替セレクター
@@ -1205,16 +1228,22 @@ function LiffLineupContent() {
             <EmptyState
               icon={Shield}
               title="登録されている試合がありません"
-              description="まずは試合予定を作成すると、スタメン・控え・欠席を登録できます"
+              description={
+                canMutate || isDemo
+                  ? "まずは試合予定を作成すると、スタメン・控え・欠席を登録できます"
+                  : "チームの指導者・担当者が試合予定を作成すると、ここに出場メンバーが表示されます"
+              }
             />
-            <Button
-              type="button"
-              onClick={() => setIsCreateMatchModalOpen(true)}
-              className="w-full h-12 rounded-2xl font-black text-sm gap-2 shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              新しい試合予定を作成する
-            </Button>
+            {(canMutate || isDemo) && (
+              <Button
+                type="button"
+                onClick={() => setIsCreateMatchModalOpen(true)}
+                className="w-full h-12 rounded-2xl font-black text-sm gap-2 shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                新しい試合予定を作成する
+              </Button>
+            )}
           </div>
         ) : (
           <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -1354,6 +1383,7 @@ function LiffLineupContent() {
           <>
             {currentMatch &&
               currentMatch.status === "finished" &&
+              canUsePaidAi &&
               !isDemoMatchId(currentMatch.id) && (
                 <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-primary bg-card shadow-xs flex items-center justify-between gap-2 flex-wrap">
                   <div className="min-w-0">
@@ -1419,54 +1449,56 @@ function LiffLineupContent() {
             </div>
 
             {/* テンプレート読込・保存 / 相手一括生成 */}
-            <div className="flex justify-between items-center">
-              {activeTab === "myTeam" ? (
-                <div className="flex gap-2 w-full">
-                  <LiffSelect
-                    value={selectedTemplateId}
-                    onChange={handleLoadTemplate}
-                    options={[
-                      {
-                        value: "",
-                        label: "テンプレート読込",
-                        sublabel: "選択状態をクリアします",
-                      },
-                      ...templates.map((t) => ({
-                        value: t.id,
-                        label: t.name,
-                      })),
-                    ]}
-                    placeholder="テンプレート読込"
-                    title="オーダーテンプレート読込"
-                    subtitle="保存済みのスタメン構成を呼び出します"
-                    triggerPrefix={
-                      <FolderOpen className="w-4 h-4 text-primary shrink-0" />
-                    }
-                    searchable={templates.length >= 8}
-                    className="flex-1 min-w-0 h-11 rounded-2xl px-3.5 shadow-xs"
-                  />
+            {effectiveCanEditLineup && (
+              <div className="flex justify-between items-center">
+                {activeTab === "myTeam" ? (
+                  <div className="flex gap-2 w-full">
+                    <LiffSelect
+                      value={selectedTemplateId}
+                      onChange={handleLoadTemplate}
+                      options={[
+                        {
+                          value: "",
+                          label: "テンプレート読込",
+                          sublabel: "選択状態をクリアします",
+                        },
+                        ...templates.map((t) => ({
+                          value: t.id,
+                          label: t.name,
+                        })),
+                      ]}
+                      placeholder="テンプレート読込"
+                      title="オーダーテンプレート読込"
+                      subtitle="保存済みのスタメン構成を呼び出します"
+                      triggerPrefix={
+                        <FolderOpen className="w-4 h-4 text-primary shrink-0" />
+                      }
+                      searchable={templates.length >= 8}
+                      className="flex-1 min-w-0 h-11 rounded-2xl px-3.5 shadow-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsTemplateModalOpen(true)}
+                      className="h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black px-4 text-xs shadow-xs"
+                    >
+                      <Save className="w-4 h-4 mr-1.5" />
+                      テンプレ保存
+                    </Button>
+                  </div>
+                ) : (
                   <Button
                     type="button"
+                    onClick={handleFillDummyOpponent}
                     variant="outline"
-                    onClick={() => setIsTemplateModalOpen(true)}
-                    className="h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black px-4 text-xs shadow-xs"
+                    className="w-full h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black text-xs shadow-xs"
                   >
-                    <Save className="w-4 h-4 mr-1.5" />
-                    テンプレ保存
+                    <Wand2 className="w-4 h-4 mr-1.5" />
+                    相手スタメンを一括生成
                   </Button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={handleFillDummyOpponent}
-                  variant="outline"
-                  className="w-full h-11 rounded-2xl border border-primary/25 bg-primary/10 hover:bg-primary/15 text-primary font-black text-xs shadow-xs"
-                >
-                  <Wand2 className="w-4 h-4 mr-1.5" />
-                  相手スタメンを一括生成
-                </Button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 ⚾ 【セクション1】スターティングメンバー
@@ -1536,7 +1568,9 @@ function LiffLineupContent() {
                         {activeTab === "myTeam" ? (
                           <button
                             type="button"
+                            disabled={!effectiveCanEditLineup}
                             onClick={() => {
+                              if (!effectiveCanEditLineup) return;
                               if (teamPlayers.length === 0) {
                                 toast.error("チームに選手が登録されていません。Web版またはメンバー管理から選手を登録してください。");
                                 return;
@@ -1555,7 +1589,12 @@ function LiffLineupContent() {
                               );
                               setModalStep(currentSlot.playerId ? "position" : "player");
                             }}
-                            className="flex-1 min-h-11 py-1.5 px-2.5 bg-transparent border-none font-bold text-sm rounded-xl focus:outline-none hover:bg-muted/40 active:bg-muted/60 transition-colors flex items-center justify-between min-w-0 cursor-pointer"
+                            className={cn(
+                              "flex-1 min-h-11 py-1.5 px-2.5 bg-transparent border-none font-bold text-sm rounded-xl focus:outline-none transition-colors flex items-center justify-between min-w-0",
+                              effectiveCanEditLineup
+                                ? "hover:bg-muted/40 active:bg-muted/60 cursor-pointer"
+                                : "cursor-default"
+                            )}
                           >
                             <div className="flex items-center gap-2 overflow-hidden mr-2 min-w-0">
                               {posDef ? (
@@ -1588,7 +1627,9 @@ function LiffLineupContent() {
                                         ? `#${myLineup[index].uniformNumber} `
                                         : ""
                                       }${myLineup[index].name}`
-                                      : "タップして選手・守備を選択..."}
+                                      : effectiveCanEditLineup
+                                        ? "タップして選手・守備を選択..."
+                                        : "未登録"}
                                   </span>
                                   {(starterCondStatus === "restricted" ||
                                     starterCondStatus === "rehab") && (
@@ -1614,12 +1655,15 @@ function LiffLineupContent() {
                                   )}
                               </div>
                             </div>
-                            <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                            {effectiveCanEditLineup && (
+                              <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                            )}
                           </button>
                         ) : (
                           <>
                             <LiffSelect
                               value={player.position}
+                              disabled={!effectiveCanEditLineup}
                               onChange={(val) => {
                                 const list = [...opponentLineup];
                                 list[index] = { ...list[index], position: val };
@@ -1678,6 +1722,7 @@ function LiffLineupContent() {
                             <Input
                               placeholder="背番"
                               maxLength={4}
+                              disabled={!effectiveCanEditLineup}
                               className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
                               value={player.uniformNumber || ""}
                               onChange={(e) => {
@@ -1692,6 +1737,7 @@ function LiffLineupContent() {
 
                             <Input
                               placeholder="相手選手名"
+                              disabled={!effectiveCanEditLineup}
                               className={cn(
                                 "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
                                 isCompleted ? "text-foreground" : "text-muted-foreground"
@@ -1706,7 +1752,7 @@ function LiffLineupContent() {
                           </>
                         )}
 
-                        {index >= 9 && (
+                        {effectiveCanEditLineup && index >= 9 && (
                           <button
                             type="button"
                             onClick={() => handleRemoveBatter(activeTab, index)}
@@ -1728,15 +1774,17 @@ function LiffLineupContent() {
                 </div>
 
                 {/* EDH（全員打撃）対応: 打順追加ボタン */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleAddBatter(activeTab)}
-                  className="w-full h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>打順（バッター）を追加（全員打撃対応）</span>
-                </Button>
+                {effectiveCanEditLineup && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleAddBatter(activeTab)}
+                    className="w-full h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>打順（バッター）を追加（全員打撃対応）</span>
+                  </Button>
+                )}
               </div>
             </section>
 
@@ -1868,19 +1916,24 @@ function LiffLineupContent() {
                               <button
                                 type="button"
                                 onClick={() => {
+                                  if (!effectiveCanEditLineup) return;
                                   if (isLockedBySchedule) {
                                     toast.error("出欠管理で欠席登録されているため、控えに変更できません。");
                                     return;
                                   }
                                   setAttendance((prev) => ({ ...prev, [player.id]: "bench" }));
                                 }}
-                                disabled={isLockedBySchedule}
+                                disabled={!effectiveCanEditLineup || isLockedBySchedule}
                                 className={cn(
-                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all",
                                   status === "bench"
                                     ? "bg-card text-foreground shadow-sm border border-border font-black"
                                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent",
-                                  isLockedBySchedule && "opacity-45 cursor-not-allowed"
+                                  !effectiveCanEditLineup
+                                    ? "cursor-default"
+                                    : isLockedBySchedule
+                                      ? "opacity-45 cursor-not-allowed"
+                                      : "cursor-pointer"
                                 )}
                               >
                                 <UserCheck
@@ -1893,11 +1946,14 @@ function LiffLineupContent() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setAttendance((prev) => ({ ...prev, [player.id]: "absent" }))
-                                }
+                                disabled={!effectiveCanEditLineup}
+                                onClick={() => {
+                                  if (!effectiveCanEditLineup) return;
+                                  setAttendance((prev) => ({ ...prev, [player.id]: "absent" }));
+                                }}
                                 className={cn(
-                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all",
+                                  effectiveCanEditLineup ? "cursor-pointer" : "cursor-default",
                                   status === "absent"
                                     ? "bg-card text-foreground shadow-sm border border-border font-black"
                                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
@@ -1913,12 +1969,15 @@ function LiffLineupContent() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  setAttendance((prev) => ({ ...prev, [player.id]: "excluded" }))
-                                }
+                                disabled={!effectiveCanEditLineup}
+                                onClick={() => {
+                                  if (!effectiveCanEditLineup) return;
+                                  setAttendance((prev) => ({ ...prev, [player.id]: "excluded" }));
+                                }}
                                 title="入団前・ベンチ外・未帯同としてこの試合から除外"
                                 className={cn(
-                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all cursor-pointer",
+                                  "flex-1 flex items-center justify-center py-1.5 px-1 rounded-xl text-[10.5px] sm:text-[11px] transition-all",
+                                  effectiveCanEditLineup ? "cursor-pointer" : "cursor-default",
                                   status === "excluded"
                                     ? "bg-card text-foreground shadow-sm border border-border font-black"
                                     : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
@@ -1989,6 +2048,7 @@ function LiffLineupContent() {
 
                             <LiffSelect
                               value={benchPlayer.position || ""}
+                              disabled={!effectiveCanEditLineup}
                               onChange={(val) => {
                                 setOpponentBench((prev) => {
                                   const next = [...prev];
@@ -2043,6 +2103,7 @@ function LiffLineupContent() {
                             <Input
                               placeholder="背番"
                               maxLength={4}
+                              disabled={!effectiveCanEditLineup}
                               className="w-14 h-11 px-1.5 rounded-xl bg-muted/45 border border-border text-center font-mono tabular-nums font-black text-xs focus-visible:ring-1 shrink-0"
                               value={benchPlayer.uniformNumber || ""}
                               onChange={(e) => {
@@ -2057,6 +2118,7 @@ function LiffLineupContent() {
 
                             <Input
                               placeholder="相手控え選手名"
+                              disabled={!effectiveCanEditLineup}
                               className={cn(
                                 "flex-1 h-11 border-none bg-transparent font-bold text-sm focus-visible:ring-0 min-w-0",
                                 hasInput ? "text-foreground" : "text-muted-foreground"
@@ -2072,40 +2134,44 @@ function LiffLineupContent() {
                               }}
                             />
 
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveOpponentBench(bIdx)}
-                              className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all shrink-0 cursor-pointer"
-                              title="この控え枠を削除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {effectiveCanEditLineup && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveOpponentBench(bIdx)}
+                                className="p-2 rounded-xl text-rose-500 hover:bg-rose-500/10 active:scale-95 transition-all shrink-0 cursor-pointer"
+                                title="この控え枠を削除"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         );
                       })}
                     </div>
                   )}
 
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => handleAddOpponentBench(1)}
-                      className="flex-1 h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>控え選手を追加</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => handleAddOpponentBench(5)}
-                      className="h-11 px-3.5 rounded-2xl border border-border bg-muted/50 hover:bg-muted text-foreground font-black text-xs flex items-center justify-center gap-1 active:scale-[0.98] transition-all cursor-pointer shadow-xs shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-primary" />
-                      <span>5枠追加</span>
-                    </Button>
-                  </div>
+                  {effectiveCanEditLineup && (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleAddOpponentBench(1)}
+                        className="flex-1 h-11 rounded-2xl border border-dashed border-primary/35 bg-card text-primary font-black text-xs flex items-center justify-center gap-1.5 hover:bg-primary/5 active:scale-[0.98] transition-all cursor-pointer shadow-xs"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>控え選手を追加</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handleAddOpponentBench(5)}
+                        className="h-11 px-3.5 rounded-2xl border border-border bg-muted/50 hover:bg-muted text-foreground font-black text-xs flex items-center justify-center gap-1 active:scale-[0.98] transition-all cursor-pointer shadow-xs shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-primary" />
+                        <span>5枠追加</span>
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </section>
             )}
@@ -2114,24 +2180,26 @@ function LiffLineupContent() {
                 💾 保存 & LINEテキストコピー アクション
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             <div className="pt-4 space-y-2.5">
-              <Button
-                type="button"
-                onClick={handleSaveLineups}
-                disabled={isSaving}
-                className="w-full h-14 rounded-2xl text-base font-black tracking-wide shadow-md shadow-primary/25 active:scale-[0.98] transition-all gap-2"
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>保存中...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-5 h-5" />
-                    <span>スタメン・出欠を保存する</span>
-                  </>
-                )}
-              </Button>
+              {effectiveCanEditLineup && (
+                <Button
+                  type="button"
+                  onClick={handleSaveLineups}
+                  disabled={isSaving}
+                  className="w-full h-14 rounded-2xl text-base font-black tracking-wide shadow-md shadow-primary/25 active:scale-[0.98] transition-all gap-2"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>保存中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      <span>スタメン・出欠を保存する</span>
+                    </>
+                  )}
+                </Button>
+              )}
 
               <Button
                 type="button"

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
@@ -300,6 +300,8 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
 
 export default function LiffSchedulePage() {
   const { currentTeam, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveCanEditSchedule = canMutate || isDemoMode;
   const practiceMatchLabel = usePracticeMatchLabel();
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
@@ -375,15 +377,22 @@ export default function LiffSchedulePage() {
   const [activeTab, setActiveTab] = useState<"list" | "planner">("list");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && effectiveCanEditSchedule) {
       const params = new URLSearchParams(window.location.search);
       if (params.get("tab") === "planner") {
         setActiveTab("planner");
       }
     }
-  }, []);
+  }, [effectiveCanEditSchedule]);
+
+  useEffect(() => {
+    if (!effectiveCanEditSchedule && activeTab === "planner") {
+      setActiveTab("list");
+    }
+  }, [effectiveCanEditSchedule, activeTab]);
 
   const handleTabChange = (tab: "list" | "planner") => {
+    if (tab === "planner" && !effectiveCanEditSchedule) return;
     setActiveTab(tab);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -1125,36 +1134,38 @@ export default function LiffSchedulePage() {
         />
 
         {/* 🔀 タブ切り替え（予定一覧 / スケジューラー） */}
-        <div className="flex bg-muted p-1 rounded-2xl border border-border gap-1">
-          <button
-            type="button"
-            onClick={() => handleTabChange("list")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
-              activeTab === "list"
-                ? "bg-card text-foreground shadow-sm border border-border font-black"
-                : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
-            )}
-          >
-            <CalendarIcon className={cn("w-3.5 h-3.5", activeTab === "list" ? "text-primary" : "text-muted-foreground")} />
-            <span>予定一覧・カレンダー</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleTabChange("planner")}
-            className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
-              activeTab === "planner"
-                ? "bg-card text-foreground shadow-sm border border-border font-black"
-                : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
-            )}
-          >
-            <Sparkles className={cn("w-3.5 h-3.5", activeTab === "planner" ? "text-primary" : "text-muted-foreground")} />
-            <span>予定スケジューラー</span>
-          </button>
-        </div>
+        {effectiveCanEditSchedule && (
+          <div className="flex bg-muted p-1 rounded-2xl border border-border gap-1">
+            <button
+              type="button"
+              onClick={() => handleTabChange("list")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
+                activeTab === "list"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
+              )}
+            >
+              <CalendarIcon className={cn("w-3.5 h-3.5", activeTab === "list" ? "text-primary" : "text-muted-foreground")} />
+              <span>予定一覧・カレンダー</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleTabChange("planner")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl text-xs transition-all cursor-pointer",
+                activeTab === "planner"
+                  ? "bg-card text-foreground shadow-sm border border-border font-black"
+                  : "text-muted-foreground hover:text-foreground font-bold border border-transparent active:scale-95"
+              )}
+            >
+              <Sparkles className={cn("w-3.5 h-3.5", activeTab === "planner" ? "text-primary" : "text-muted-foreground")} />
+              <span>予定スケジューラー</span>
+            </button>
+          </div>
+        )}
 
-        {activeTab === "planner" ? (
+        {effectiveCanEditSchedule && activeTab === "planner" ? (
           <MonthlySchedulePlanner
             teamId={currentTeam?.id || "team_1"}
             teamName={currentTeam?.name || "チーム"}
@@ -1430,7 +1441,9 @@ export default function LiffSchedulePage() {
               <p className="text-xs font-bold text-muted-foreground">
                 {selectedDateStr
                   ? "カレンダーの他の日付を選択するか「すべての予定を表示」を押してください。"
-                  : "上のカレンダーで別の月を選択するか、スケジューラーから予定を登録してください。"}
+                  : effectiveCanEditSchedule
+                  ? "上のカレンダーで別の月を選択するか、スケジューラーから予定を登録してください。"
+                  : "上のカレンダーで別の月を選択して予定を確認してください。"}
               </p>
               {!showPastDates && eventsInCurrentMonth.length > 0 && !selectedDateStr && (
                 <p className="text-xs text-primary font-bold mt-2">
@@ -1567,107 +1580,109 @@ export default function LiffSchedulePage() {
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 ml-auto">
-                        {/* ✏️ 編集ボタン */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const editDefaults = resolveDefaultScheduleTimesForDate(
-                              scheduleDefaultTimes,
-                              ev.dateStr || todayStr
-                            );
+                      {effectiveCanEditSchedule && (
+                        <div className="flex items-center gap-2 shrink-0 ml-auto">
+                          {/* ✏️ 編集ボタン */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const editDefaults = resolveDefaultScheduleTimesForDate(
+                                scheduleDefaultTimes,
+                                ev.dateStr || todayStr
+                              );
 
-                            let rawGrps: ActivityGroup[] | undefined = undefined;
-                            if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 1) {
-                              rawGrps = ev.activityGroups;
-                            } else if (typeof ev.activityGroups === "string") {
-                              try {
-                                const parsed: unknown = JSON.parse(ev.activityGroups);
-                                if (Array.isArray(parsed) && parsed.length > 1) {
-                                  rawGrps = parsed as ActivityGroup[];
-                                }
-                              } catch {}
-                            }
+                              let rawGrps: ActivityGroup[] | undefined = undefined;
+                              if (Array.isArray(ev.activityGroups) && ev.activityGroups.length > 1) {
+                                rawGrps = ev.activityGroups;
+                              } else if (typeof ev.activityGroups === "string") {
+                                try {
+                                  const parsed: unknown = JSON.parse(ev.activityGroups);
+                                  if (Array.isArray(parsed) && parsed.length > 1) {
+                                    rawGrps = parsed as ActivityGroup[];
+                                  }
+                                } catch {}
+                              }
 
-                            const grps = rawGrps?.map((g) => {
-                              const gAmOff = g.hasAm === false || g.amType === "off";
-                              const gPmOff =
-                                g.hasPm === false ||
-                                g.pmType === "off" ||
-                                (g.hasPm === undefined && !g.pmTime && !g.pmType);
-                              return {
-                                ...g,
-                                hasAm: !gAmOff,
-                                amType: gAmOff
-                                  ? ("off" as const)
-                                  : g.amType && g.amType !== "off"
-                                  ? g.amType
-                                  : g.eventType || "practice",
-                                amTime: gAmOff
-                                  ? ""
-                                  : g.amTime || g.time || editDefaults.amTimeLabel,
-                                amLocation: gAmOff
-                                  ? ""
-                                  : g.amLocation || g.location || "",
-                                hasPm: !gPmOff,
-                                pmType: gPmOff
-                                  ? ("off" as const)
-                                  : g.pmType && g.pmType !== "off"
-                                  ? g.pmType
-                                  : g.eventType || "practice",
-                                pmTime: gPmOff
-                                  ? ""
-                                  : g.pmTime || editDefaults.pmTimeLabel,
-                                pmLocation: gPmOff
-                                  ? ""
-                                  : g.pmLocation || g.amLocation || g.location || "",
-                              };
-                            });
+                              const grps = rawGrps?.map((g) => {
+                                const gAmOff = g.hasAm === false || g.amType === "off";
+                                const gPmOff =
+                                  g.hasPm === false ||
+                                  g.pmType === "off" ||
+                                  (g.hasPm === undefined && !g.pmTime && !g.pmType);
+                                return {
+                                  ...g,
+                                  hasAm: !gAmOff,
+                                  amType: gAmOff
+                                    ? ("off" as const)
+                                    : g.amType && g.amType !== "off"
+                                    ? g.amType
+                                    : g.eventType || "practice",
+                                  amTime: gAmOff
+                                    ? ""
+                                    : g.amTime || g.time || editDefaults.amTimeLabel,
+                                  amLocation: gAmOff
+                                    ? ""
+                                    : g.amLocation || g.location || "",
+                                  hasPm: !gPmOff,
+                                  pmType: gPmOff
+                                    ? ("off" as const)
+                                    : g.pmType && g.pmType !== "off"
+                                    ? g.pmType
+                                    : g.eventType || "practice",
+                                  pmTime: gPmOff
+                                    ? ""
+                                    : g.pmTime || editDefaults.pmTimeLabel,
+                                  pmLocation: gPmOff
+                                    ? ""
+                                    : g.pmLocation || g.amLocation || g.location || "",
+                                };
+                              });
 
-                            if (grps && grps.length > 1) {
-                              setActiveEditGroupId(grps[0].id);
-                            } else {
-                              setActiveEditGroupId("main");
-                            }
+                              if (grps && grps.length > 1) {
+                                setActiveEditGroupId(grps[0].id);
+                              } else {
+                                setActiveEditGroupId("main");
+                              }
 
-                            const isAmOff = ev.hasAm === false || ev.amType === "off";
-                            const isPmOff =
-                              ev.hasPm === false ||
-                              ev.pmType === "off" ||
-                              (ev.hasPm === undefined && !ev.pmTime && !ev.pmType);
+                              const isAmOff = ev.hasAm === false || ev.amType === "off";
+                              const isPmOff =
+                                ev.hasPm === false ||
+                                ev.pmType === "off" ||
+                                (ev.hasPm === undefined && !ev.pmTime && !ev.pmType);
 
-                            setEditingEvent({ 
-                              ...ev, 
-                              title: (ev.title && ev.title.trim()) ? ev.title : "通常練習",
-                              needsLunch: Boolean(ev.needsLunch), 
-                              needsSnack: Boolean(ev.needsSnack),
-                              memo: ev.memo || "",
-                              hasAm: !isAmOff,
-                              amType: isAmOff
-                                ? "off"
-                                : ev.amType && ev.amType !== "off"
-                                ? ev.amType
-                                : ev.eventType || "practice",
-                              amTime: isAmOff ? "" : (ev.amTime || ev.time || editDefaults.amTimeLabel),
-                              amLocation: isAmOff ? "" : (ev.amLocation || ev.location || ""),
-                              hasPm: !isPmOff,
-                              pmType: isPmOff
-                                ? "off"
-                                : ev.pmType && ev.pmType !== "off"
-                                ? ev.pmType
-                                : ev.eventType || "practice",
-                              pmTime: isPmOff ? "" : (ev.pmTime || editDefaults.pmTimeLabel),
-                              pmLocation: isPmOff ? "" : (ev.pmLocation || ev.amLocation || ev.location || ""),
-                              dutyGroup: ev.dutyGroup || "1班",
-                              activityGroups: grps,
-                            });
-                          }}
-                          className="py-1 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black border border-slate-700 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5 text-sky-300" />
-                          <span>編集</span>
-                        </button>
-                      </div>
+                              setEditingEvent({ 
+                                ...ev, 
+                                title: (ev.title && ev.title.trim()) ? ev.title : "通常練習",
+                                needsLunch: Boolean(ev.needsLunch), 
+                                needsSnack: Boolean(ev.needsSnack),
+                                memo: ev.memo || "",
+                                hasAm: !isAmOff,
+                                amType: isAmOff
+                                  ? "off"
+                                  : ev.amType && ev.amType !== "off"
+                                  ? ev.amType
+                                  : ev.eventType || "practice",
+                                amTime: isAmOff ? "" : (ev.amTime || ev.time || editDefaults.amTimeLabel),
+                                amLocation: isAmOff ? "" : (ev.amLocation || ev.location || ""),
+                                hasPm: !isPmOff,
+                                pmType: isPmOff
+                                  ? "off"
+                                  : ev.pmType && ev.pmType !== "off"
+                                  ? ev.pmType
+                                  : ev.eventType || "practice",
+                                pmTime: isPmOff ? "" : (ev.pmTime || editDefaults.pmTimeLabel),
+                                pmLocation: isPmOff ? "" : (ev.pmLocation || ev.amLocation || ev.location || ""),
+                                dutyGroup: ev.dutyGroup || "1班",
+                                activityGroups: grps,
+                              });
+                            }}
+                            className="py-1 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black border border-slate-700 active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-sky-300" />
+                            <span>編集</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* ② タイトル ＆ 当番班バッジ */}

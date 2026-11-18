@@ -5,6 +5,7 @@ import React from "react";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { useLiffPermissions } from "@/components/liff/LiffProvider";
 import {
   Wand2,
   Car,
@@ -17,6 +18,9 @@ import {
 } from "lucide-react";
 
 export default function LiffCarpoolGeneratorPage() {
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const canEditCarpool = canMutate || isDemoMode;
+
   return (
     <div className="flex flex-col flex-1">
       <LiffHeader />
@@ -58,11 +62,11 @@ export default function LiffCarpoolGeneratorPage() {
               </p>
             </div>
             <Link
-              href="/liff/carpool?openEditor=1"
+              href={canEditCarpool ? "/liff/carpool?openEditor=1" : "/liff/carpool"}
               className="w-full h-10 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all"
             >
               <Car className="w-4 h-4 shrink-0" />
-              <span>簡易配車を作成・編集する</span>
+              <span>{canEditCarpool ? "簡易配車を作成・編集する" : "現在の配車状況を確認する"}</span>
               <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </Link>
           </div>

@@ -44,7 +44,10 @@ import {
   LiffSelect,
   type LiffSelectBadgeTone,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import {
   invalidateLiffApiCache,
   warmupLiffEndpointForHref,
@@ -707,15 +710,11 @@ function LiffAdminDashboardContent() {
 
   const pendingCount = data?.pendingRequests?.length || 0;
   const isAuthorized =
-    data?.canManage ||
-    providerDemo ||
-    data?.isDemo ||
-    currentTeam?.role === "admin" ||
-    currentTeam?.role === "manager" ||
-    (typeof window !== "undefined" && (
-      localStorage.getItem("iscore_user_role") === "admin" ||
-      localStorage.getItem("iscore_setting_user_role") === "admin"
-    ));
+    providerDemo || data?.isDemo
+      ? true
+      : data
+      ? Boolean(data.canManage)
+      : canManageCurrentTeam(currentTeam, false);
 
   return (
     <div className="flex flex-col flex-1 bg-background text-foreground">
@@ -754,34 +753,36 @@ function LiffAdminDashboardContent() {
         </div>
 
         {/* 7つの管理メニュー横断クイックスイッチャー */}
-        <nav
-          aria-label="管理メニュー切替"
-          className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
-        >
-          {ADMIN_MGMT_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.href === "/liff/admin";
-            return (
-              <Link
-                key={item.id}
-                href={item.href}
-                onPointerDown={() => warmupLiffEndpointForHref(item.href)}
-                className={`h-8 px-2.5 rounded-xl border text-xs flex items-center gap-1.5 shrink-0 transition-colors ${
-                  isActive
-                    ? "bg-[#0f172a] text-white border-[#0f172a] font-black shadow-xs"
-                    : "bg-card text-foreground border-border hover:bg-muted font-bold"
-                }`}
-              >
-                <Icon
-                  className={`w-3.5 h-3.5 shrink-0 ${
-                    isActive ? "text-teal-400" : "text-muted-foreground"
+        {(isAuthorized || isLoading) && (
+          <nav
+            aria-label="管理メニュー切替"
+            className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1"
+          >
+            {ADMIN_MGMT_NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              const isActive = item.href === "/liff/admin";
+              return (
+                <Link
+                  key={item.id}
+                  href={item.href}
+                  onPointerDown={() => warmupLiffEndpointForHref(item.href)}
+                  className={`h-8 px-2.5 rounded-xl border text-xs flex items-center gap-1.5 shrink-0 transition-colors ${
+                    isActive
+                      ? "bg-[#0f172a] text-white border-[#0f172a] font-black shadow-xs"
+                      : "bg-card text-foreground border-border hover:bg-muted font-bold"
                   }`}
-                />
-                <span>{item.shortLabel}</span>
-              </Link>
-            );
-          })}
-        </nav>
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      isActive ? "text-teal-400" : "text-muted-foreground"
+                    }`}
+                  />
+                  <span>{item.shortLabel}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         {/* 🔒 権限エラー表示（監督・管理者でない場合） */}
         {!isLoading && !isAuthorized && (

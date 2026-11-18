@@ -24,7 +24,10 @@ import type {
   AdminTournamentsResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   invalidateLiffApiCache,
@@ -42,7 +45,7 @@ const TOURNAMENT_CATEGORIES = [
 ] as const;
 
 export default function LiffAdminTournamentsPage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, isDemo } = useLiff();
   const teamId = currentTeam?.id || "demo-team";
   const endpointUrl = `/api/liff/admin/mgmt/tournaments?teamId=${encodeURIComponent(
     teamId
@@ -267,7 +270,9 @@ export default function LiffAdminTournamentsPage() {
     });
   }, [data?.tournaments, seasonFilter, searchQuery]);
 
-  const canManage = data ? data.canManage : true;
+  const canManage = data
+    ? Boolean(data.canManage)
+    : canManageCurrentTeam(currentTeam, isDemo);
 
   return (
     <AdminMgmtShell

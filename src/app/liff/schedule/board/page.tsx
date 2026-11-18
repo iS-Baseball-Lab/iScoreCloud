@@ -8,7 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { AttendanceSummaryShareModal } from "@/components/liff/AttendanceSummaryShareModal";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   PLAYER_CONDITION_META,
@@ -570,6 +570,8 @@ function parseUrlMonthParam(raw: string | null): string | null {
 
 function AttendanceMatrixBoardContent() {
   const { liff, profile, currentTeam, isDemo } = useLiff();
+  const { canMutate } = useLiffPermissions();
+  const effectiveCanMutate = canMutate || isDemo;
   const searchParams = useSearchParams();
   const urlGroupTab = parseUrlGroupTab(searchParams.get("group"));
   const urlMonthParam = parseUrlMonthParam(searchParams.get("month"));
@@ -1328,18 +1330,21 @@ function AttendanceMatrixBoardContent() {
 
     try {
       if (teamId && teamId !== "demo-team") {
-        await fetch("/api/liff/attendance-matrix/member-order", {
+        const res = await fetch("/api/liff/attendance-matrix/member-order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ teamId, memberSortOrder: newOrder }),
         });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
       }
+      invalidateLiffApiCache();
       toast.success("メンバー列の並び順を保存しました！");
       setIsOrderModalOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Order save error:", err);
-      toast.success("並び順を端末に保存しました");
-      setIsOrderModalOpen(false);
+      toast.error("並び順のサーバー保存に失敗しました");
     } finally {
       setIsSavingOrder(false);
     }
@@ -1523,18 +1528,21 @@ function AttendanceMatrixBoardContent() {
 
     try {
       if (teamId && teamId !== "demo-team") {
-        await fetch("/api/liff/attendance-matrix/sub-labels", {
+        const res = await fetch("/api/liff/attendance-matrix/sub-labels", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ teamId, memberSubLabels: tempSubLabels }),
         });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
       }
+      invalidateLiffApiCache();
       toast.success("班・サブラベル設定を保存しました！");
       setIsSubLabelsModalOpen(false);
     } catch (err: unknown) {
       console.error("SubLabels save error:", err);
-      toast.success("班・サブラベルを端末に保存しました");
-      setIsSubLabelsModalOpen(false);
+      toast.error("班・サブラベルの保存に失敗しました");
     } finally {
       setIsSavingSubLabels(false);
     }
@@ -1753,6 +1761,7 @@ function AttendanceMatrixBoardContent() {
 
   // 編集権限チェック
   const canEditPerson = useCallback((personId: string, _groupType: string) => {
+    if (!effectiveCanMutate) return false;
     if (isDemo) return true; // デモ時は自由に操作可能
     // 🌟 管理者・指導者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
     if ((myInfo.isITAdmin || myInfo.isManager) && isManagerOverrideMode) return true;
@@ -1761,7 +1770,7 @@ function AttendanceMatrixBoardContent() {
     if (myInfo.memberIds && myInfo.memberIds.includes(personId)) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
     return false;
-  }, [isDemo, myInfo, isManagerOverrideMode]);
+  }, [effectiveCanMutate, isDemo, myInfo, isManagerOverrideMode]);
 
   // セルクリック時の処理
   const handleCellClick = (event: EventItem, person: MemberPerson) => {
@@ -1872,6 +1881,7 @@ function AttendanceMatrixBoardContent() {
 
   // 日別メモモーダルを開く
   const handleOpenDayNoteModal = (ev: EventItem) => {
+    if (!effectiveCanMutate) return;
     setEditingDayNote({
       eventId: ev.id,
       eventTitle: ev.title,
@@ -1882,7 +1892,7 @@ function AttendanceMatrixBoardContent() {
 
   // 日別メモ保存処理
   const handleSaveDayNote = async (newDescription: string) => {
-    if (!editingDayNote) return;
+    if (!editingDayNote || !effectiveCanMutate) return;
     setIsSavingDayNote(true);
     const { eventId } = editingDayNote;
 
@@ -1892,15 +1902,19 @@ function AttendanceMatrixBoardContent() {
     try {
       const teamId = currentTeam?.id || "demo-team";
       if (teamId !== "demo-team") {
-        await fetch("/api/liff/attendance-matrix/event-note", {
+        const res = await fetch("/api/liff/attendance-matrix/event-note", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ eventId, description: newDescription }),
         });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
       }
+      invalidateLiffApiCache();
       toast.success("日別メモを保存しました");
       setEditingDayNote(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Save day note error:", err);
       toast.error("日別メモの保存に失敗しました");
     } finally {
@@ -1989,66 +2003,68 @@ function AttendanceMatrixBoardContent() {
               )}
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              {/* ステータス設定ボタン */}
-              <button
-                type="button"
-                onClick={handleOpenStatusConfigModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
-                title="グループ別の確認項目・名称・意味合いを設定"
-              >
-                <SlidersHorizontal className="w-3 h-3 text-primary" />
-                <span>項目設定</span>
-              </button>
-
-              {/* メンバー並び順設定ボタン */}
-              <button
-                type="button"
-                onClick={handleOpenOrderModal}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
-                title="グループ内のメンバー列の並び順を設定"
-              >
-                <ArrowUpDown className="w-3 h-3 text-primary" />
-                <span>並び順設定</span>
-              </button>
-
-              {/* 🏷️ メンバー班・サブラベル設定ボタン */}
-              {myInfo.isManager && (
+            {effectiveCanMutate && (
+              <div className="flex items-center gap-1 shrink-0">
+                {/* ステータス設定ボタン */}
                 <button
                   type="button"
-                  onClick={handleOpenSubLabelsModal}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0 cursor-pointer"
-                  title="メンバーの班（1班・2班等）やサブラベルを一括設定"
+                  onClick={handleOpenStatusConfigModal}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
+                  title="グループ別の確認項目・名称・意味合いを設定"
                 >
-                  <Tag className="w-3 h-3 text-primary" />
-                  <span>班・ラベル</span>
+                  <SlidersHorizontal className="w-3 h-3 text-primary" />
+                  <span>項目設定</span>
                 </button>
-              )}
 
-              {(myInfo.isITAdmin || myInfo.isManager) && (
+                {/* メンバー並び順設定ボタン */}
                 <button
                   type="button"
-                  onClick={() => setIsManagerOverrideMode((prev) => !prev)}
-                  className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border cursor-pointer ${
-                    isManagerOverrideMode
-                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35 shadow-2xs"
-                      : "bg-muted text-muted-foreground border-border hover:text-foreground"
-                  }`}
+                  onClick={handleOpenOrderModal}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
+                  title="グループ内のメンバー列の並び順を設定"
                 >
-                  {isManagerOverrideMode ? (
-                    <>
-                      <Unlock className="w-3 h-3" />
-                      <span>代理入力ON</span>
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-3 h-3" />
-                      <span>通常入力</span>
-                    </>
-                  )}
+                  <ArrowUpDown className="w-3 h-3 text-primary" />
+                  <span>並び順設定</span>
                 </button>
-              )}
-            </div>
+
+                {/* 🏷️ メンバー班・サブラベル設定ボタン */}
+                {myInfo.isManager && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSubLabelsModal}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0 cursor-pointer"
+                    title="メンバーの班（1班・2班等）やサブラベルを一括設定"
+                  >
+                    <Tag className="w-3 h-3 text-primary" />
+                    <span>班・ラベル</span>
+                  </button>
+                )}
+
+                {(myInfo.isITAdmin || myInfo.isManager) && (
+                  <button
+                    type="button"
+                    onClick={() => setIsManagerOverrideMode((prev) => !prev)}
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border cursor-pointer ${
+                      isManagerOverrideMode
+                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35 shadow-2xs"
+                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                    }`}
+                  >
+                    {isManagerOverrideMode ? (
+                      <>
+                        <Unlock className="w-3 h-3" />
+                        <span>代理入力ON</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="w-3 h-3" />
+                        <span>通常入力</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 凡例アイコン（グループで有効なステータスのみ・横幅いっぱいに均等配置・タップで意味表示） */}
@@ -2104,13 +2120,15 @@ function AttendanceMatrixBoardContent() {
                   <Info className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
                   <span>確認項目の意味合い・判断基準</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={handleOpenStatusConfigModal}
-                  className="text-[9.5px] font-black text-primary hover:underline cursor-pointer shrink-0"
-                >
-                  項目設定を編集 &gt;
-                </button>
+                {effectiveCanMutate && (
+                  <button
+                    type="button"
+                    onClick={handleOpenStatusConfigModal}
+                    className="text-[9.5px] font-black text-primary hover:underline cursor-pointer shrink-0"
+                  >
+                    項目設定を編集 &gt;
+                  </button>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -2349,9 +2367,9 @@ function AttendanceMatrixBoardContent() {
                       return (
                         <th
                           key={person.id}
-                          onClick={myInfo.isManager ? () => handleOpenSingleSubLabelModal(person) : undefined}
+                          onClick={effectiveCanMutate && myInfo.isManager ? () => handleOpenSingleSubLabelModal(person) : undefined}
                           className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border align-middle transition-colors select-none ${
-                            myInfo.isManager ? "cursor-pointer hover:brightness-95" : ""
+                            effectiveCanMutate && myInfo.isManager ? "cursor-pointer hover:brightness-95" : ""
                           } ${
                             isMe
                               ? "bg-primary/15 text-primary font-black"
@@ -2363,7 +2381,7 @@ function AttendanceMatrixBoardContent() {
                             pCond !== "active"
                               ? `（${pCondMeta.label}${periodLabel ? `: ${periodLabel}` : ""}）`
                               : ""
-                          }${myInfo.isManager ? ": タップして班・ラベルを変更" : ""}`}
+                          }${effectiveCanMutate && myInfo.isManager ? ": タップして班・ラベルを変更" : ""}`}
                         >
                           <div className="flex flex-col items-center justify-center leading-none py-0.5">
                             {person.uniformNumber ? (
@@ -2427,7 +2445,7 @@ function AttendanceMatrixBoardContent() {
                                 >
                                   {pCondMeta.matrixTag}
                                 </span>
-                              ) : myInfo.isManager ? (
+                              ) : myInfo.isManager && effectiveCanMutate ? (
                                 <span
                                   className="text-[7.5px] font-bold text-muted-foreground/60 hover:text-primary px-0.5 py-0.2 rounded hover:bg-primary/10 leading-tight transition-colors"
                                   title="タップして班・ラベルを設定"
@@ -2518,9 +2536,19 @@ function AttendanceMatrixBoardContent() {
                           {/* 💬 日別メモ・備考の表示 */}
                           {ev.description && (
                             <p
-                              onClick={() => handleOpenDayNoteModal(ev)}
-                              className="text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 cursor-pointer hover:underline flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25"
-                              title={`備考: ${ev.description} (タップして編集)`}
+                              onClick={
+                                effectiveCanMutate
+                                  ? () => handleOpenDayNoteModal(ev)
+                                  : undefined
+                              }
+                              className={`text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 ${
+                                effectiveCanMutate ? "cursor-pointer hover:underline" : ""
+                              }`}
+                              title={
+                                effectiveCanMutate
+                                  ? `備考: ${ev.description} (タップして編集)`
+                                  : `備考: ${ev.description}`
+                              }
                             >
                               <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
                               <span className="truncate">{ev.description}</span>

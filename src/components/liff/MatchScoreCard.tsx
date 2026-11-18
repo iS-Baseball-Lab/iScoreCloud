@@ -30,7 +30,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MatchDayOps } from "@/types/match";
-import { usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import {
+  useLiff,
+  useLiffPermissions,
+  usePracticeMatchLabel,
+} from "@/components/liff/LiffProvider";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import {
   parseSafeMatchDate,
@@ -47,7 +51,6 @@ import {
   type LiffMatchScheduleSyncInfo,
   type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
-import { useLiff } from "@/components/liff/LiffProvider";
 
 export interface MatchCardData {
   id: string;
@@ -269,6 +272,7 @@ function MatchCountdown({ date }: { date: string }) {
 export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false, isLoading = false }: MatchScoreCardProps) {
   const router = useRouter();
   const { profile, currentTeam } = useLiff();
+  const { canMutate } = useLiffPermissions();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
   const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
   const [isPlayingVideo, setIsPlayingVideo] = useState(false);
@@ -300,6 +304,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
     return <MatchScoreCardSkeleton />;
   }
 
+  const canEditMatch = canMutate || isDemoMatchId(match.id);
   const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
 
   const parsedMatchDate = parseSafeMatchDate(match.date);
@@ -660,7 +665,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 {footerStatusLabel}
               </span>
               <div className="flex items-center justify-end gap-1.5 ml-auto">
-                {!isRainout && (
+                {canEditMatch && !isRainout && (
                   <Link
                     href={`/liff/matches/lineup?id=${match.id}`}
                     onPointerDown={() => router.prefetch("/liff/matches/lineup")}
@@ -1132,7 +1137,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                       className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg bg-card border border-border text-foreground hover:border-primary/40 hover:bg-muted/50 text-[11px] sm:text-xs font-black transition-all active:scale-95 shadow-2xs shrink-0 whitespace-nowrap"
                     >
                       <Megaphone className="w-3.5 h-3.5 text-primary shrink-0" />
-                      <span>速報作成</span>
+                      <span>{canEditMatch ? "速報作成" : "速報閲覧"}</span>
                     </Link>
                   ) : (
                     <span className="text-[10px] font-bold text-muted-foreground pl-1">
@@ -1141,7 +1146,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   )}
 
                   <div className="flex items-center justify-end gap-1.5 ml-auto">
-                    {!isRainout && (
+                    {canEditMatch && !isRainout && (
                       <Link
                         href={`/liff/matches/lineup?id=${match.id}`}
                         onPointerDown={() => router.prefetch("/liff/matches/lineup")}

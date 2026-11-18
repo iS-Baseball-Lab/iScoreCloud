@@ -18,7 +18,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { EmptyState } from "@/components/layout/EmptyState";
 import {
   invalidateLiffApiCache,
@@ -111,6 +111,7 @@ function LiffGalleryContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentTeam, profile, isDemo } = useLiff();
+  const { canUsePaidAi, isDemoMode } = useLiffPermissions();
 
   const activeTeamId = useMemo(() => {
     if (currentTeam?.id) return currentTeam.id;
@@ -119,6 +120,9 @@ function LiffGalleryContent() {
     }
     return "demo-team";
   }, [currentTeam?.id]);
+
+  const isEffectiveDemo = isDemo || isDemoMode || activeTeamId === "demo-team";
+  const canUploadGallery = canUsePaidAi && !isEffectiveDemo;
 
   const albumIdParam = (searchParams.get("albumId") || "").trim();
   const matchIdParam = (searchParams.get("matchId") || "").trim();
@@ -389,10 +393,14 @@ function LiffGalleryContent() {
   // 新規作成 or 追加アップロードモーダルを開く
   const openUploadModal = useCallback(
     (mode: "new" | "existing", presetMatch?: GalleryMatchCandidate | null) => {
-      if (isDemo || activeTeamId === "demo-team") {
+      if (isEffectiveDemo) {
         toast.info(
           "体験デモチームではアップロードはシミュレーション制限されています（一括ZIPダウンロードはお試しいただけます！）"
         );
+        return;
+      }
+      if (!canUploadGallery) {
+        toast.info("閲覧専用メンバーのため、写真のアップロードやアルバム作成は行えません");
         return;
       }
       setUploadTargetMode(mode);
@@ -417,7 +425,7 @@ function LiffGalleryContent() {
       }
       setIsUploadModalOpen(true);
     },
-    [activeTeamId, isDemo]
+    [canUploadGallery, isEffectiveDemo]
   );
 
   const handleMatchSelectInUploadForm = useCallback(
@@ -1044,7 +1052,7 @@ function LiffGalleryContent() {
                       )}
                     </div>
 
-                    {activeAlbum.canManage && !isDemo && (
+                    {activeAlbum.canManage && canUploadGallery && (
                       <button
                         type="button"
                         onClick={openEditAlbumModal}
@@ -1102,7 +1110,7 @@ function LiffGalleryContent() {
                             )}
                           </div>
                         </div>
-                        {activeAlbum.canManage && !isDemo && (
+                        {activeAlbum.canManage && canUploadGallery && (
                           <button
                             type="button"
                             disabled={isPurgingOriginals}
@@ -1118,15 +1126,21 @@ function LiffGalleryContent() {
                     )}
 
                     {/* 主要アクションボタン群（写真追加 / 選択してDL / 全件一括DL） */}
-                    <div className="grid grid-cols-2 gap-2 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => openUploadModal("existing")}
-                        className="h-11 px-3 rounded-xl bg-primary text-primary-foreground font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
-                      >
-                        <Upload className="w-4 h-4 shrink-0" />
-                        <span>写真を追加登録</span>
-                      </button>
+                    <div
+                      className={`grid gap-2 pt-0.5 ${
+                        canUploadGallery ? "grid-cols-2" : "grid-cols-1"
+                      }`}
+                    >
+                      {canUploadGallery && (
+                        <button
+                          type="button"
+                          onClick={() => openUploadModal("existing")}
+                          className="h-11 px-3 rounded-xl bg-primary text-primary-foreground font-black text-xs inline-flex items-center justify-center gap-1.5 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
+                        >
+                          <Upload className="w-4 h-4 shrink-0" />
+                          <span>写真を追加登録</span>
+                        </button>
+                      )}
 
                       <button
                         type="button"
@@ -1211,7 +1225,7 @@ function LiffGalleryContent() {
                         </span>
                       </button>
 
-                      {selectedDeletableIds.length > 0 && !isDemo && (
+                      {selectedDeletableIds.length > 0 && canUploadGallery && (
                         <button
                           type="button"
                           disabled={isDeletingPhotos}
@@ -1237,14 +1251,16 @@ function LiffGalleryContent() {
                       title="まだ写真が登録されていません"
                       description="NO PHOTOS IN ALBUM"
                     />
-                    <button
-                      type="button"
-                      onClick={() => openUploadModal("existing")}
-                      className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-sm inline-flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <span>このアルバムに写真を一括追加する</span>
-                    </button>
+                    {canUploadGallery && (
+                      <button
+                        type="button"
+                        onClick={() => openUploadModal("existing")}
+                        className="w-full h-12 rounded-2xl bg-primary text-primary-foreground font-black text-sm inline-flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>このアルバムに写真を一括追加する</span>
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
@@ -1340,7 +1356,7 @@ function LiffGalleryContent() {
             />
 
             {/* 試合詳細画面から ?matchId=... で遷移してきた場合のワンタップ作成バナー */}
-            {matchIdParam && matchedCandidateForParam && (
+            {matchIdParam && matchedCandidateForParam && canUploadGallery && (
               <div className="rounded-2xl border-2 border-primary bg-card shadow-xs overflow-hidden">
                 <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
                   <span className="text-xs font-black flex items-center gap-1.5">
@@ -1428,14 +1444,22 @@ function LiffGalleryContent() {
                   </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openUploadModal("new", matchedCandidateForParam)}
-                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 stroke-[3]" />
-                  <span>新しいアルバム作成・写真を一括登録</span>
-                </button>
+                {canUploadGallery ? (
+                  <button
+                    type="button"
+                    onClick={() => openUploadModal("new", matchedCandidateForParam)}
+                    className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-xs hover:opacity-95 active:scale-98 transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                    <span>新しいアルバム作成・写真を一括登録</span>
+                  </button>
+                ) : (
+                  <div className="rounded-xl border border-border bg-muted/45 px-3 py-2.5 text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    {isEffectiveDemo
+                      ? "※ 体験デモモードでは写真のアップロードは対象外です（アルバム閲覧・選択ZIPダウンロードはお試しいただけます）"
+                      : "※ 閲覧専用メンバーのため、アルバム作成・写真アップロードは行えません（写真の閲覧・一括ダウンロードはご利用いただけます）"}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1502,7 +1526,7 @@ function LiffGalleryContent() {
                   }
                   description="TEAM PHOTO GALLERY"
                 />
-                {albums.length === 0 && (
+                {albums.length === 0 && canUploadGallery && (
                   <button
                     type="button"
                     onClick={() => openUploadModal("new", null)}
@@ -1581,7 +1605,11 @@ function LiffGalleryContent() {
                         ) : (
                           <div className="h-20 rounded-xl border border-dashed border-border bg-muted/40 flex items-center justify-center gap-2 text-xs font-bold text-muted-foreground">
                             <Images className="w-4 h-4" />
-                            <span>写真未登録（タップして追加）</span>
+                            <span>
+                              {canUploadGallery
+                                ? "写真未登録（タップして追加）"
+                                : "写真未登録"}
+                            </span>
                           </div>
                         )}
                       </Link>
@@ -1780,7 +1808,7 @@ function LiffGalleryContent() {
                   )}
               </div>
 
-              {currentLightboxPhoto.canDelete && !isDemo && (
+              {currentLightboxPhoto.canDelete && canUploadGallery && (
                 <button
                   type="button"
                   disabled={isDeletingPhotos}

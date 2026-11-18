@@ -48,7 +48,10 @@ import {
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManagePlayersCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { peekLiffApiCache, invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
@@ -474,7 +477,9 @@ function LiffPlayersDirectoryContent() {
   const [loadError, setLoadError] = useState<boolean>(false);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(() => Boolean(initialCachedPlayers?.isDemo));
   const [canManagePlayers, setCanManagePlayers] = useState<boolean>(() =>
-    Boolean(initialCachedPlayers?.canManagePlayers || initialCachedPlayers?.isDemo)
+    initialCachedPlayers
+      ? Boolean(initialCachedPlayers.canManagePlayers || initialCachedPlayers.isDemo)
+      : canManagePlayersCurrentTeam(currentTeam, providerDemo)
   );
   const [canClaimSelfPlayer, setCanClaimSelfPlayer] = useState<boolean>(() =>
     Boolean(initialCachedPlayers?.canClaimSelfPlayer)
@@ -550,9 +555,10 @@ function LiffPlayersDirectoryContent() {
     []
   );
 
-  // 背景コンテキスト（選択チーム）変更時にオーバーレイを自動リセット（規約遵守）
+  // 背景コンテキスト（選択チーム）変更時にオーバーレイ＆権限初期状態を自動リセット（規約遵守）
   useEffect(() => {
     setLoadError(false);
+    setCanManagePlayers(canManagePlayersCurrentTeam(currentTeam, providerDemo));
     setSelectedPlayerId(null);
     setIsPortraitZoomOpen(false);
     setPhotoModalTarget(null);
@@ -563,7 +569,7 @@ function LiffPlayersDirectoryContent() {
     setIsConditionEditorOpen(false);
     setIsSelfClaimModalOpen(false);
     setConfirmingClaimPlayerId(null);
-  }, [currentTeam?.id]);
+  }, [currentTeam?.id, currentTeam?.role, currentTeam?.canManagePlayers, providerDemo]);
 
   // 詳細モーダルで別選手に切り替えた際、コンディション編集フォームを対象選手の値に同期
   useEffect(() => {

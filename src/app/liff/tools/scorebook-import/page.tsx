@@ -6,7 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
@@ -78,6 +78,7 @@ import {
   Settings,
   Clock,
   Edit3,
+  BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { DeletePersonalStatsOptions } from "@/components/matches/DeletePersonalStatsModal";
@@ -272,13 +273,22 @@ function crossFillOppositePitchers(
 }
 
 export default function LiffScorebookImportPage() {
-  const { currentTeam } = useLiff();
+  const { currentTeam, isDemo } = useLiff();
+  const { canUsePaidAi, isDemoMode } = useLiffPermissions();
 
   const [step, setStep] = useState<WizardStep>(1);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
+  const [isDemoContext, setIsDemoContext] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
+  const isEffectiveDemo =
+    isDemoContext ||
+    isDemo ||
+    isDemoMode ||
+    currentTeam?.id === "demo-team" ||
+    resolvedTeamId === "demo-team";
+  const effectiveCanImport = canUsePaidAi && !isEffectiveDemo;
   const [teamLegendUrl, setTeamLegendUrl] = useState<string | null>(null);
   const [roster, setRoster] = useState<ScorebookRosterPlayer[]>([]);
   const [matches, setMatches] = useState<ScorebookMatchSummary[]>([]);
@@ -418,10 +428,14 @@ export default function LiffScorebookImportPage() {
         throw new Error(data.error || "初期データの取得に失敗しました");
       }
 
+      setIsDemoContext(Boolean(data.isDemo));
       const effectiveTeamId = data.team?.id || qTeam || "default";
       if (data.team) {
         setResolvedTeamId(data.team.id);
         setTeamLegendUrl(data.team.scorebookLegendUrl);
+      } else {
+        setResolvedTeamId(qTeam);
+        setTeamLegendUrl(null);
       }
       setRoster(data.roster || []);
       const fetchedMatches = data.matches || [];
@@ -625,7 +639,9 @@ export default function LiffScorebookImportPage() {
 
   const handleDeleteSavedScorebook = useCallback(
     async (options: DeletePersonalStatsOptions) => {
-      if (!selectedMatchId || isDeletingSavedScorebook) return;
+      if (!effectiveCanImport || !selectedMatchId || isDeletingSavedScorebook) {
+        return;
+      }
       setIsDeletingSavedScorebook(true);
       setErrorBanner(null);
       try {
@@ -694,6 +710,7 @@ export default function LiffScorebookImportPage() {
       }
     },
     [
+      effectiveCanImport,
       selectedMatchId,
       isDeletingSavedScorebook,
       resolvedTeamId,
@@ -713,7 +730,13 @@ export default function LiffScorebookImportPage() {
 
   // 試合詳細画面などから `?matchId=...&mode=edit` で遷移してきた場合は自動的に保存済みデータをStep 3へ展開
   useEffect(() => {
-    if (isLoadingContext || didAutoLoadEditQueryRef.current) return;
+    if (
+      !effectiveCanImport ||
+      isLoadingContext ||
+      didAutoLoadEditQueryRef.current
+    ) {
+      return;
+    }
     const modeParam = getClientQueryParam("mode");
     const urlMatchId = getClientQueryParam("matchId");
     if (modeParam === "edit" && urlMatchId) {
@@ -722,7 +745,7 @@ export default function LiffScorebookImportPage() {
         fallbackToStep1IfEmpty: true,
       });
     }
-  }, [isLoadingContext, handleLoadSavedScorebook]);
+  }, [effectiveCanImport, isLoadingContext, handleLoadSavedScorebook]);
 
   // スコア設定画面から戻ってきた際のみ、登録された早見表URLを同期（カメラ・ファイル選択復帰時の不要な通信競合を防止）
   useEffect(() => {
@@ -1147,6 +1170,7 @@ export default function LiffScorebookImportPage() {
     battingOrder: "first" | "second";
     innings: number;
   }) => {
+    if (!effectiveCanImport) return;
     try {
       setIsCreatingMatch(true);
       setErrorBanner(null);
@@ -1304,7 +1328,7 @@ export default function LiffScorebookImportPage() {
   };
 
   const handleStartAnalyzeStructure = async () => {
-    if (!selectedMatchId) return;
+    if (!effectiveCanImport || !selectedMatchId) return;
     setIsAnalyzingStructure(true);
     setErrorBanner(null);
     const stage1Start = Date.now();
@@ -1407,7 +1431,7 @@ export default function LiffScorebookImportPage() {
   };
 
   const handleRescanSingleSide = async (isTop: boolean) => {
-    if (!selectedMatchId) return;
+    if (!effectiveCanImport || !selectedMatchId) return;
     const imgState = isTop ? topImage : bottomImage;
     if (!imgState.processed) return;
 
@@ -1773,7 +1797,7 @@ export default function LiffScorebookImportPage() {
 
   // 5. Stage 2: イニング並列・高速ディープ解析（逐次リアルタイム保持・エラー耐性・未完了回のみ再開対応）
   const handleStartDeepAnalysis = async (opts?: { onlyMissing?: boolean }) => {
-    if (!selectedMatchId) return;
+    if (!effectiveCanImport || !selectedMatchId) return;
     const onlyMissing = Boolean(opts && opts.onlyMissing === true);
 
     setIsAnalyzingInnings(true);
@@ -2442,7 +2466,7 @@ export default function LiffScorebookImportPage() {
     isTop: boolean,
     inning: number
   ) => {
-    if (!selectedMatchId || reanalyzingInningKey) return;
+    if (!effectiveCanImport || !selectedMatchId || reanalyzingInningKey) return;
     const structure = isTop ? topStructure : bottomStructure;
     const imgState = isTop ? topImage : bottomImage;
     if (!structure || !imgState.processed) return;
@@ -2640,7 +2664,12 @@ export default function LiffScorebookImportPage() {
 
   // 5-C. Step 3 ワンタップ「打順抜け・3アウト超過 AI自動補正」（既に読込済みの下書きデータでも全回再解析なしで数秒でピンポイント復元）
   const handleManualRepairOrderGaps = async () => {
-    if (!selectedMatchId || isRepairingOrderGaps || reanalyzingInningKey) {
+    if (
+      !effectiveCanImport ||
+      !selectedMatchId ||
+      isRepairingOrderGaps ||
+      reanalyzingInningKey
+    ) {
       return;
     }
     setIsRepairingOrderGaps(true);
@@ -2793,7 +2822,7 @@ export default function LiffScorebookImportPage() {
 
   // 6. 最終D1保存処理（R2シート画像＋無劣化スナップショットも同時永続化）
   const handleSaveToDatabase = async () => {
-    if (!selectedMatchId) return;
+    if (!effectiveCanImport || !selectedMatchId) return;
     setIsSaving(true);
     setErrorBanner(null);
 
@@ -2989,6 +3018,50 @@ export default function LiffScorebookImportPage() {
           }
         />
 
+        {/* 権限不足・体験デモ時の A-3 案内カード */}
+        {!isLoadingContext && !effectiveCanImport && (
+          <section className="rounded-2xl border border-border bg-card shadow-xs p-3.5 space-y-2.5 overflow-hidden">
+            <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center justify-center shrink-0">
+                  <ScanLine className="w-3.5 h-3.5" />
+                </span>
+                <p className="text-xs font-black text-white truncate">
+                  {isEffectiveDemo
+                    ? "体験デモモード（AI解析・クラウド保存は対象外）"
+                    : "閲覧専用モード（AI解析・成績登録は権限が必要）"}
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black shrink-0">
+                {isEffectiveDemo ? "体験デモ対象外" : "閲覧専用"}
+              </span>
+            </div>
+
+            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+              {isEffectiveDemo
+                ? "体験デモモードでは紙スコアブックのAI解析・クラウド保存は対象外です。試合一覧からサンプル試合の「清書スコアブックシート」や「1マス記号解説」をすぐにご体験いただけます。"
+                : "現在のアカウント権限（閲覧専用・未連携）では、AIスコアブック解析や成績データの登録・削除は行えません。"}
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+              <Link
+                href="/liff/matches"
+                className="h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all"
+              >
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span>試合一覧・清書スコアブックを見る</span>
+              </Link>
+              <Link
+                href="/liff/settings/score"
+                className="h-10 px-3 rounded-xl bg-muted hover:bg-accent border border-border text-foreground text-xs font-black flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+              >
+                <Settings className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>スコア設定・早見表を見る</span>
+              </Link>
+            </div>
+          </section>
+        )}
+
         {/* ステップインジケーター */}
         <div className="space-y-2">
           <div className="grid grid-cols-3 gap-1.5">
@@ -3017,7 +3090,7 @@ export default function LiffScorebookImportPage() {
           </div>
 
           {/* 自動下書き保存ステータスバー */}
-          {step !== 4 && lastAutoSavedAt && (
+          {step !== 4 && effectiveCanImport && lastAutoSavedAt && (
             <div className="px-3 py-1.5 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
                 <Save className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -3038,53 +3111,58 @@ export default function LiffScorebookImportPage() {
         </div>
 
         {/* 前回の途中データがある場合のオンデマンド復元バナー（初期表示時はメモリに読み込まず軽快に起動） */}
-        {step === 1 && availableDraftMeta && !lastAutoSavedAt && (
-          <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
-            <div className="flex items-start gap-2">
-              <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-0.5 min-w-0">
-                <p className="text-xs font-black text-foreground">
-                  前回入力途中の下書き（{formatSavedTime(availableDraftMeta.savedAt)} 保存 / STEP {availableDraftMeta.step}）があります
-                </p>
-                <p className="text-[10px] font-bold text-muted-foreground">
-                  新しく撮影を始める場合はこのまま下へ進めます。前回の続きを開く場合は「続きから復元」を押してください。
-                </p>
+        {step === 1 &&
+          effectiveCanImport &&
+          availableDraftMeta &&
+          !lastAutoSavedAt && (
+            <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
+              <div className="flex items-start gap-2">
+                <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-xs font-black text-foreground">
+                    前回入力途中の下書き（
+                    {formatSavedTime(availableDraftMeta.savedAt)} 保存 / STEP{" "}
+                    {availableDraftMeta.step}）があります
+                  </p>
+                  <p className="text-[10px] font-bold text-muted-foreground">
+                    新しく撮影を始める場合はこのまま下へ進めます。前回の続きを開く場合は「続きから復元」を押してください。
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isRestoringDraft}
+                  onClick={() => void handleRestoreSavedDraft()}
+                  className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                >
+                  {isRestoringDraft ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>復元中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>続きから復元</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={isRestoringDraft}
+                  onClick={() => void handleDiscardDraft()}
+                  className="py-2 px-3 rounded-xl bg-muted hover:bg-destructive/10 border border-border text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>破棄</span>
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={isRestoringDraft}
-                onClick={() => void handleRestoreSavedDraft()}
-                className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-              >
-                {isRestoringDraft ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>復元中...</span>
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    <span>続きから復元</span>
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                disabled={isRestoringDraft}
-                onClick={() => void handleDiscardDraft()}
-                className="py-2 px-3 rounded-xl bg-muted hover:bg-destructive/10 border border-border text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>破棄</span>
-              </button>
-            </div>
-          </div>
-        )}
+          )}
 
         {/* 前回の途中入力を復元した際の通知バナー */}
-        {step !== 4 && restoredDraftBannerAt && (
+        {step !== 4 && effectiveCanImport && restoredDraftBannerAt && (
           <div className="p-3 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -3137,10 +3215,18 @@ export default function LiffScorebookImportPage() {
                 }}
                 onCreateMatch={handleCreateMatch}
                 isCreatingMatch={isCreatingMatch}
-                onLoadSavedScorebook={() => void handleLoadSavedScorebook()}
+                canImport={effectiveCanImport}
+                isDemoMode={isEffectiveDemo}
+                onLoadSavedScorebook={
+                  effectiveCanImport
+                    ? () => void handleLoadSavedScorebook()
+                    : undefined
+                }
                 isLoadingSavedScorebook={isLoadingSavedScorebook}
-                onRequestDeleteSavedScorebook={() =>
-                  setShowDeleteSavedModal(true)
+                onRequestDeleteSavedScorebook={
+                  effectiveCanImport
+                    ? () => setShowDeleteSavedModal(true)
+                    : undefined
                 }
                 isDeletingSavedScorebook={isDeletingSavedScorebook}
                 importScope={importScope}
@@ -3184,7 +3270,9 @@ export default function LiffScorebookImportPage() {
                 bottomStructure={bottomStructure}
                 onChangeStructure={handleUpdateStructureWithSync}
                 onRescanSide={
-                  hasLocalProcessedForScope ? handleRescanSingleSide : undefined
+                  effectiveCanImport && hasLocalProcessedForScope
+                    ? handleRescanSingleSide
+                    : undefined
                 }
                 isRescanningSide={isAnalyzingStructure}
                 structureProgressLabel={structureProgressLabel}
@@ -3195,7 +3283,7 @@ export default function LiffScorebookImportPage() {
                   setStep(1);
                 }}
                 onStartDeepAnalysis={
-                  hasLocalProcessedForScope
+                  effectiveCanImport && hasLocalProcessedForScope
                     ? () => void handleStartDeepAnalysis({ onlyMissing: false })
                     : undefined
                 }
@@ -3254,15 +3342,17 @@ export default function LiffScorebookImportPage() {
                           保存済みデータの再編集モード
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        disabled={isSaving || isDeletingSavedScorebook}
-                        onClick={() => setShowDeleteSavedModal(true)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 hover:text-white text-[10px] font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                      >
-                        <Trash2 className="w-3 h-3 shrink-0" />
-                        <span>個人データ削除</span>
-                      </button>
+                      {effectiveCanImport && (
+                        <button
+                          type="button"
+                          disabled={isSaving || isDeletingSavedScorebook}
+                          onClick={() => setShowDeleteSavedModal(true)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 hover:text-white text-[10px] font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Trash2 className="w-3 h-3 shrink-0" />
+                          <span>個人データ削除</span>
+                        </button>
+                      )}
                     </div>
                     <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
                       打席結果・1球順序・走者進塁（または「骨格確認へ戻る」で打順・選手交代・登板投手）を修正して保存すると、スコアボードと個人成績が最新内容で再集計されます。
@@ -3297,14 +3387,15 @@ export default function LiffScorebookImportPage() {
                   }}
                   onSave={handleSaveToDatabase}
                   isSaving={isSaving}
+                  canSave={effectiveCanImport}
                   onReanalyzeInning={
-                    hasAnyLocalProcessedImage
+                    effectiveCanImport && hasAnyLocalProcessedImage
                       ? handleReanalyzeSingleInning
                       : undefined
                   }
                   reanalyzingInningKey={reanalyzingInningKey}
                   onRepairOrderGaps={
-                    hasAnyLocalProcessedImage
+                    effectiveCanImport && hasAnyLocalProcessedImage
                       ? () => void handleManualRepairOrderGaps()
                       : undefined
                   }
@@ -3439,7 +3530,7 @@ export default function LiffScorebookImportPage() {
           </>
         )}
 
-        {selectedMatch && showDeleteSavedModal && (
+        {effectiveCanImport && selectedMatch && showDeleteSavedModal && (
           <DeletePersonalStatsModal
             isOpen={showDeleteSavedModal}
             matchId={selectedMatch.id}

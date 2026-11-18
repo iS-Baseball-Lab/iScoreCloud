@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { MatchScoreCard, MatchScoreCardSkeleton } from "@/components/liff/MatchScoreCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
+import { useLiffPermissions } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   DEMO_GROUP_ATTEND_COUNT_LIST,
@@ -169,6 +170,8 @@ export function HubHeroSection({
   attendanceStatusConfig,
   onRefreshHub,
 }: HubHeroSectionProps) {
+  const { canMutate } = useLiffPermissions();
+  const effectiveCanRespond = canMutate || isDemo;
   const [activeTab, setActiveTab] = useState<"score" | "next">("score");
 
   // ユーザーの立場とお子様リスト
@@ -321,6 +324,7 @@ export function HubHeroSection({
 
   // 保護者本人の出欠変更（DB保存 & 即時反映）
   const setEventAttendance = async (id: string, status: "present" | "absent" | "pending" | "late") => {
+    if (!effectiveCanRespond) return;
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
     if (typeof window !== "undefined") {
       localStorage.setItem(`iscore_my_att_${id}`, status);
@@ -351,6 +355,7 @@ export function HubHeroSection({
 
   // お子様（選手）の出欠変更（DB保存）
   const setChildAttendance = async (eventId: string, childId: string, status: "present" | "absent" | "pending" | "late") => {
+    if (!effectiveCanRespond) return;
     setChildAttendanceMap(prev => ({
       ...prev,
       [eventId]: {
@@ -381,6 +386,7 @@ export function HubHeroSection({
   };
 
   const setEventCarStatus = (id: string, carStatus: "can_drive" | "need_ride" | "not_needed") => {
+    if (!effectiveCanRespond) return;
     setCarStatusMap(prev => ({ ...prev, [id]: carStatus }));
     const currentAtt = attendanceMap[id];
     if (currentAtt) {
@@ -1252,7 +1258,7 @@ export function HubHeroSection({
                                     <Users className="w-4 h-4" />
                                   </span>
                                   <div className="flex items-center gap-2 text-xs font-black text-foreground">
-                                    <span>出欠を回答・確認</span>
+                                    <span>{effectiveCanRespond ? "出欠を回答・確認" : "出欠を確認"}</span>
                                     {/* 現在のステータス要約バッジ */}
                                     <span
                                       className={`px-2.5 py-0.5 rounded-full text-[10.5px] font-black border ${
@@ -1290,8 +1296,24 @@ export function HubHeroSection({
                                 </div>
                               </button>
 
+                              {/* 展開時の中身（閲覧専用） */}
+                              {expandedAttendance[ev.id] && !effectiveCanRespond && (
+                                <div className="p-3 rounded-2xl bg-muted/40 border border-border space-y-2 mt-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                                  <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                                    閲覧専用モードのため、出欠・配車の回答変更はできません。全体の回答状況は出欠一覧表から確認できます。
+                                  </p>
+                                  <Link
+                                    href="/liff/schedule/board"
+                                    className="inline-flex items-center gap-1 text-xs font-black text-primary hover:underline"
+                                  >
+                                    <span>出欠一覧表を確認する</span>
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </Link>
+                                </div>
+                              )}
+
                               {/* 展開時の中身 */}
-                              {expandedAttendance[ev.id] && (
+                              {expandedAttendance[ev.id] && effectiveCanRespond && (
                                 <div className="space-y-3 pt-1 animate-in fade-in slide-in-from-top-1 duration-150">
                                   {/* 👦 1. 保護者の場合: お子様（選手）の出欠回答 */}
                                   {userRole === "parent" &&

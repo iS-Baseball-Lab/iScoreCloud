@@ -50,6 +50,7 @@ import {
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 import {
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
@@ -98,6 +99,7 @@ interface CallerReporterInfo {
   memberName: string | null;
   displayName: string | null;
   canManageOrScore: boolean;
+  canMutate?: boolean;
 }
 
 interface PersonalFreeReportEntry {
@@ -191,6 +193,7 @@ function resolveInitialMatchAccessMode(params: {
   draftEditorOwnerKey: string | null | undefined;
   myOwnerKey: string;
   canManageOrScore: boolean;
+  canMutate?: boolean;
   isDemoTeam?: boolean;
 }): MatchAccessMode {
   const {
@@ -198,8 +201,12 @@ function resolveInitialMatchAccessMode(params: {
     draftEditorOwnerKey,
     myOwnerKey,
     canManageOrScore,
+    canMutate,
     isDemoTeam,
   } = params;
+  if (!isDemoTeam && canMutate === false) {
+    return "view";
+  }
   if (draftEditorOwnerKey && draftEditorOwnerKey !== myOwnerKey) {
     return "view";
   }
@@ -417,6 +424,7 @@ function LiffNewsGeneratorContent() {
     searchParams.get("matchId") || searchParams.get("id") || "";
 
   const { currentTeam, isDemo, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 
@@ -466,6 +474,15 @@ function LiffNewsGeneratorContent() {
     displayName: null,
     canManageOrScore: false,
   });
+  const effectiveCanMutate =
+    resolvedTeamId === "demo-team" ||
+    isDemo ||
+    isDemoMode ||
+    (callerReporter.canMutate ?? canMutate);
+  const effectiveCanMutateRef = useRef<boolean>(effectiveCanMutate);
+  useEffect(() => {
+    effectiveCanMutateRef.current = effectiveCanMutate;
+  }, [effectiveCanMutate]);
   const [cloudEditorOwnerKey, setCloudEditorOwnerKey] = useState<string | null>(
     null
   );
@@ -639,6 +656,15 @@ function LiffNewsGeneratorContent() {
           editorUpdatedAt: Date.now(),
         });
         return true;
+      }
+      if (!effectiveCanMutateRef.current) {
+        matchAccessModeRef.current = "view";
+        setMatchAccessMode("view");
+        setViewerHalfOverride(null);
+        if (!silent) {
+          toast.info("閲覧専用メンバーのため、閲覧モードで表示しています");
+        }
+        return false;
       }
 
       setIsClaimingLock(true);
@@ -1229,6 +1255,7 @@ function LiffNewsGeneratorContent() {
             draftEditorOwnerKey: draftOwnerKey,
             myOwnerKey: personalOwnerKey,
             canManageOrScore: fetchedCaller.canManageOrScore,
+            canMutate: fetchedCaller.canMutate ?? effectiveCanMutateRef.current,
             isDemoTeam: false,
           });
           matchAccessModeRef.current = initialAccess;
@@ -1291,7 +1318,9 @@ function LiffNewsGeneratorContent() {
               void claimMatchEditorLock(resolvedMatchKey, false, true);
             } else if (initialAccess === "view") {
               toast.info(
-                draftEditorName
+                fetchedCaller.canMutate === false
+                  ? "閲覧専用メンバーのため、閲覧モードで表示しています"
+                  : draftEditorName
                   ? `${draftEditorName}さんが入力担当のため、閲覧モードで表示しています`
                   : "担当以外のメンバーのため、閲覧モードで表示しています"
               );
@@ -1468,7 +1497,7 @@ function LiffNewsGeneratorContent() {
         bundle?.cloudDraft?.updatedByName ?? targetMatch?.editorName ?? null;
 
       let resolvedAccess: MatchAccessMode;
-      if (options?.desiredMode === "view") {
+      if (options?.desiredMode === "view" || !effectiveCanMutateRef.current) {
         resolvedAccess = "view";
         setCloudEditorOwnerKey(draftOwnerKey);
         setCloudEditorName(draftEditorName);
@@ -1485,6 +1514,8 @@ function LiffNewsGeneratorContent() {
           draftEditorOwnerKey: draftOwnerKey,
           myOwnerKey: personalOwnerKey,
           canManageOrScore: callerReporterRef.current.canManageOrScore,
+          canMutate:
+            callerReporterRef.current.canMutate ?? effectiveCanMutateRef.current,
           isDemoTeam: false,
         });
         setCloudEditorOwnerKey(draftOwnerKey);
@@ -1681,7 +1712,7 @@ function LiffNewsGeneratorContent() {
       saveTimerRef.current = null;
     }
 
-    if (resolvedTeamId !== "demo-team") {
+    if (resolvedTeamId !== "demo-team" && effectiveCanMutateRef.current) {
       await fetch(
         `/api/liff/news-generator/draft?teamId=${encodeURIComponent(
           resolvedTeamId
@@ -1771,9 +1802,12 @@ function LiffNewsGeneratorContent() {
         return;
       }
 
-      if (resolvedTeamId === "demo-team") {
+      if (resolvedTeamId === "demo-team" || !effectiveCanMutateRef.current) {
         hasPendingLocalSaveRef.current = false;
-        setLastSyncedAt(Date.now());
+        queuedPushRef.current = false;
+        if (isFreeMode || resolvedTeamId === "demo-team") {
+          setLastSyncedAt(Date.now());
+        }
         return;
       }
 
@@ -2487,7 +2521,10 @@ function LiffNewsGeneratorContent() {
       await handleDeleteCurrentFreeEntry();
       return;
     }
-    if (isReadOnlyViewer) {
+    if (
+      isReadOnlyViewer ||
+      (resolvedTeamId !== "demo-team" && !effectiveCanMutateRef.current)
+    ) {
       setShowResetConfirm(false);
       return;
     }
@@ -2813,6 +2850,7 @@ function LiffNewsGeneratorContent() {
     (entrySelectedMatch?.lineLiveAssignees.length ?? 0) > 0;
   const entryIsMyAssigned = Boolean(entrySelectedMatch?.isMyLineLiveAssigned);
   const entryShouldDefaultToViewer =
+    !effectiveCanMutate ||
     entryLockedByOther ||
     (resolvedTeamId !== "demo-team" &&
       entryHasAssignees &&
@@ -2877,7 +2915,7 @@ function LiffNewsGeneratorContent() {
   };
 
   const handleOpenTakeoverModal = (targetMatchId: string) => {
-    if (!targetMatchId) return;
+    if (!targetMatchId || !effectiveCanMutate) return;
     setTakeoverTargetMatchId(targetMatchId);
     setShowTakeoverConfirmModal(true);
   };
@@ -3082,15 +3120,25 @@ function LiffNewsGeneratorContent() {
               <div className="flex items-center gap-1 shrink-0">
                 {selectedMatchKey &&
                   (isReadOnlyViewer ? (
-                    <button
-                      type="button"
-                      onClick={() => handleOpenTakeoverModal(selectedMatchKey)}
-                      className="h-7 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-400/50 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
-                      title="閲覧モード中（タップで担当引き継ぎ）"
-                    >
-                      <Eye className="w-3 h-3 shrink-0" />
-                      <span>閲覧</span>
-                    </button>
+                    effectiveCanMutate ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenTakeoverModal(selectedMatchKey)}
+                        className="h-7 px-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white border border-sky-400/50 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                        title="閲覧モード中（タップで担当引き継ぎ）"
+                      >
+                        <Eye className="w-3 h-3 shrink-0" />
+                        <span>閲覧</span>
+                      </button>
+                    ) : (
+                      <span
+                        className="h-7 px-2 rounded-lg bg-slate-800 text-sky-300 border border-slate-700 text-[10px] font-black inline-flex items-center gap-0.5"
+                        title="閲覧専用モード"
+                      >
+                        <Eye className="w-3 h-3 shrink-0" />
+                        <span>閲覧専用</span>
+                      </span>
+                    )
                   ) : (
                     <button
                       type="button"
@@ -3371,7 +3419,11 @@ function LiffNewsGeneratorContent() {
             editorDisplayName={effectiveEditorDisplayName}
             viewerHalfOverride={viewerHalfOverride}
             onChangeViewerHalfOverride={setViewerHalfOverride}
-            onRequestTakeover={() => handleOpenTakeoverModal(selectedMatchKey)}
+            onRequestTakeover={
+              effectiveCanMutate
+                ? () => handleOpenTakeoverModal(selectedMatchKey)
+                : undefined
+            }
           />
         )}
 
@@ -3779,7 +3831,9 @@ function LiffNewsGeneratorContent() {
                                     : "bg-emerald-600 text-white border-emerald-600"
                                 )}
                               >
-                                {entryShouldDefaultToViewer
+                                {!effectiveCanMutate
+                                  ? "閲覧専用"
+                                  : entryShouldDefaultToViewer
                                   ? "閲覧対象"
                                   : entryHasAssignees && entryIsMyAssigned
                                   ? "あなたが担当"
@@ -3807,17 +3861,19 @@ function LiffNewsGeneratorContent() {
                                 <ArrowRight className="w-4 h-4 shrink-0" />
                               </button>
 
-                              <button
-                                type="button"
-                                disabled={isApplyingEntryChoice || !entryMatchId}
-                                onClick={() =>
-                                  handleOpenTakeoverModal(entryMatchId)
-                                }
-                                className="w-full h-9 px-3 rounded-xl border border-border bg-muted/70 hover:bg-accent text-[11px] font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
-                              >
-                                <ArrowLeftRight className="w-3.5 h-3.5 text-primary shrink-0" />
-                                <span>担当変更・引き継いで自分が入力する</span>
-                              </button>
+                              {effectiveCanMutate && (
+                                <button
+                                  type="button"
+                                  disabled={isApplyingEntryChoice || !entryMatchId}
+                                  onClick={() =>
+                                    handleOpenTakeoverModal(entryMatchId)
+                                  }
+                                  className="w-full h-9 px-3 rounded-xl border border-border bg-muted/70 hover:bg-accent text-[11px] font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-98 cursor-pointer"
+                                >
+                                  <ArrowLeftRight className="w-3.5 h-3.5 text-primary shrink-0" />
+                                  <span>担当変更・引き継いで自分が入力する</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="space-y-2">

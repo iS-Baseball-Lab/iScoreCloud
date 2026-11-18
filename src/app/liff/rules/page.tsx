@@ -10,7 +10,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   AlertTriangle,
@@ -103,6 +103,8 @@ interface RuleItem {
 
 export default function LiffRulesPage() {
   const { currentTeam, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canMutate || isDemoMode;
   const initialCachedRules = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -218,9 +220,9 @@ export default function LiffRulesPage() {
       } else {
         setNewImageUrl(data.imageUrl);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Image upload failed:", err);
-      setSubmitError(err.message || "画像のアップロードに失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "画像のアップロードに失敗しました");
     } finally {
       if (isEdit) setIsEditUploadingImage(false);
       else setIsUploadingImage(false);
@@ -230,7 +232,7 @@ export default function LiffRulesPage() {
   // PDFアップロードハンドラー
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !effectiveCanEdit) return;
 
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       setSubmitError("PDFファイル（.pdf）を選択してください");
@@ -273,9 +275,9 @@ export default function LiffRulesPage() {
         setNewPdfUrl(url);
         setNewPdfName(name);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("PDF upload failed:", err);
-      setSubmitError(err.message || "PDFのアップロードに失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "PDFのアップロードに失敗しました");
     } finally {
       if (isEdit) {
         setIsEditUploadingPdf(false);
@@ -289,6 +291,7 @@ export default function LiffRulesPage() {
 
   // 編集モーダルを開く
   const openEditModal = (rule: RuleItem) => {
+    if (!effectiveCanEdit || (!isDemoMode && rule.id.startsWith("demo-"))) return;
     setEditingRule(rule);
     setEditTitle(rule.title);
     setEditContent(rule.content);
@@ -304,7 +307,7 @@ export default function LiffRulesPage() {
   // 新規登録処理
   const handleCreateRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newContent.trim()) return;
+    if (!effectiveCanEdit || !newTitle.trim() || !newContent.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -341,9 +344,9 @@ export default function LiffRulesPage() {
       setNewPdfUrl("");
       setNewPdfName("");
       loadRules();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating rule:", err);
-      setSubmitError(err.message || "ルール & 注意事項の登録に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "ルール & 注意事項の登録に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -352,7 +355,7 @@ export default function LiffRulesPage() {
   // 更新処理
   const handleUpdateRule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingRule || !editTitle.trim() || !editContent.trim()) return;
+    if (!effectiveCanEdit || !editingRule || !editTitle.trim() || !editContent.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -382,9 +385,11 @@ export default function LiffRulesPage() {
 
       setEditingRule(null);
       loadRules();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating rule:", err);
-      setSubmitError(err.message || "ルール & 注意事項の更新に失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "ルール & 注意事項の更新に失敗しました"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -392,16 +397,20 @@ export default function LiffRulesPage() {
 
   // 削除処理
   const handleDeleteRule = async () => {
-    if (!editingRule) return;
+    if (!editingRule || !effectiveCanEdit) return;
     if (!confirm(`このルール & 注意事項（${editingRule.title.slice(0, 20)}...）を削除してもよろしいですか？`)) return;
 
     try {
       setIsDeleting(true);
       setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
 
-      const res = await fetch(`/api/liff/rules/${editingRule.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/liff/rules/${encodeURIComponent(editingRule.id)}?teamId=${encodeURIComponent(teamId)}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
@@ -410,9 +419,11 @@ export default function LiffRulesPage() {
 
       setEditingRule(null);
       loadRules();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error deleting rule:", err);
-      setSubmitError(err.message || "ルール & 注意事項の削除に失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "ルール & 注意事項の削除に失敗しました"
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -527,18 +538,20 @@ export default function LiffRulesPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreateModalOpen(true);
-              setSubmitError(null);
-            }}
-            className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-            title="新しいルール & 注意事項を追加"
-          >
-            <Plus className="w-4 h-4" />
-            <span>追加</span>
-          </button>
+          {effectiveCanEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setSubmitError(null);
+              }}
+              className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="新しいルール & 注意事項を追加"
+            >
+              <Plus className="w-4 h-4" />
+              <span>追加</span>
+            </button>
+          )}
         </div>
 
         {/* 🏷️ カテゴリチップ一覧 */}
@@ -600,7 +613,9 @@ export default function LiffRulesPage() {
                   該当するルール & 注意事項が見つかりませんでした
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  検索条件を変更するか、新しいルール & 注意事項を登録してください。
+                  {effectiveCanEdit
+                    ? "検索条件を変更するか、新しいルール & 注意事項を登録してください。"
+                    : "検索条件やカテゴリを変更して再度ご確認ください。"}
                 </p>
               </div>
             ) : (
@@ -677,17 +692,19 @@ export default function LiffRulesPage() {
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditModal(rule);
-                            }}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
-                            title="編集"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                          {effectiveCanEdit && (isDemoMode || !rule.id.startsWith("demo-")) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(rule);
+                              }}
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all"
+                              title="編集"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
                           <div
                             className={`p-1.5 rounded-lg text-muted-foreground transition-transform duration-200 ${

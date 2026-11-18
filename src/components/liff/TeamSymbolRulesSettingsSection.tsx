@@ -49,6 +49,8 @@ export interface TeamSymbolRulesSettingsSectionProps {
   teamId: string;
   teamName: string;
   isDemo?: boolean;
+  canEdit?: boolean;
+  canExtractAi?: boolean;
   savedLegendUrl: string | null;
   initialCloudRules: ScorebookSymbolRules | null;
   isLoadingTeam: boolean;
@@ -60,6 +62,8 @@ export function TeamSymbolRulesSettingsSection({
   teamId,
   teamName,
   isDemo = false,
+  canEdit = true,
+  canExtractAi = true,
   savedLegendUrl,
   initialCloudRules,
   isLoadingTeam,
@@ -128,6 +132,7 @@ export function TeamSymbolRulesSettingsSection({
       nextRules: ScorebookSymbolRules,
       toastLabel?: string
     ): Promise<void> => {
+      if (!canEdit) return;
       const sanitized = sanitizeScorebookSymbolRules(
         nextRules,
         DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES
@@ -174,7 +179,7 @@ export function TeamSymbolRulesSettingsSection({
         setIsSaving(false);
       }
     },
-    [effectiveTeamKey, isDemo, teamId, onRulesChange]
+    [canEdit, effectiveTeamKey, isDemo, teamId, onRulesChange]
   );
 
   const handleFieldSelect = <K extends keyof ScorebookSymbolRules>(
@@ -182,6 +187,7 @@ export function TeamSymbolRulesSettingsSection({
     val: ScorebookSymbolRules[K],
     label: string
   ) => {
+    if (!canEdit) return;
     const next: ScorebookSymbolRules = {
       ...rules,
       [key]: val,
@@ -190,6 +196,7 @@ export function TeamSymbolRulesSettingsSection({
   };
 
   const handleApplyPreset = (presetLabel: string, presetRules: ScorebookSymbolRules) => {
+    if (!canEdit) return;
     void persistRules(
       {
         ...presetRules,
@@ -202,6 +209,7 @@ export function TeamSymbolRulesSettingsSection({
   };
 
   const handleExtractFromLegendWithAi = async () => {
+    if (!canExtractAi) return;
     if (!savedLegendUrl) {
       toast.error("先に上の「スコア記号早見表」画像を登録してください");
       return;
@@ -486,7 +494,11 @@ export function TeamSymbolRulesSettingsSection({
           </h2>
         </div>
 
-        {isSaving ? (
+        {!canEdit ? (
+          <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-black shrink-0">
+            閲覧専用
+          </span>
+        ) : isSaving ? (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-primary/20 text-blue-300 border border-primary/40 text-[10px] font-black shrink-0">
             <Loader2 className="w-3 h-3 animate-spin" />
             保存中...
@@ -521,7 +533,7 @@ export function TeamSymbolRulesSettingsSection({
               <span>現在の「チーム記号ルール」プレビュー</span>
             </span>
             <span className="text-[10px] font-bold text-muted-foreground">
-              タップで即反映
+              {canEdit ? "タップで即反映" : "チーム共通設定"}
             </span>
           </div>
           <ScorebookSymbolSamplePreview rules={rules} />
@@ -534,14 +546,16 @@ export function TeamSymbolRulesSettingsSection({
             >
               <Printer className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                本物の清書マス目で「スコア記号 早見表」を作成・印刷・登録
+                {canExtractAi || isDemo
+                  ? "本物の清書マス目で「スコア記号 早見表」を作成・印刷・登録"
+                  : "本物の清書マス目で「スコア記号 早見表」を表示・A4出力・印刷"}
               </span>
             </button>
           )}
         </div>
 
         {/* 登録済み早見表画像からのAIワンタップ自動抽出ボタン */}
-        {!isLoadingTeam && savedLegendUrl && (
+        {!isLoadingTeam && savedLegendUrl && canExtractAi && (
           <div className="space-y-2">
             <button
               type="button"
@@ -570,34 +584,46 @@ export function TeamSymbolRulesSettingsSection({
           </div>
         )}
 
+        {!isLoadingTeam && savedLegendUrl && !canExtractAi && isDemo && (
+          <div className="p-2.5 rounded-xl bg-muted/45 border border-border text-[11px] font-bold text-muted-foreground leading-snug">
+            ※ 体験デモモードでは早見表画像からのAI自動読取は対象外です（下のテンプレートや個別選択はお試しいただけます）
+          </div>
+        )}
+
         {/* 1. かんたん一括プリセット */}
-        <div className="rounded-2xl border border-[#cbd5e1] dark:border-border bg-[#eef2f6] dark:bg-muted/40 overflow-hidden">
-          <div className="bg-card border-b border-[#cbd5e1] dark:border-border px-3 py-2 flex items-center justify-between gap-2">
-            <span className="text-xs font-black text-foreground">
-              一括テンプレートからまとめてセット
-            </span>
-            <span className="text-[10px] font-bold text-muted-foreground shrink-0">
-              あとから個別変更OK
-            </span>
+        {canEdit ? (
+          <div className="rounded-2xl border border-[#cbd5e1] dark:border-border bg-[#eef2f6] dark:bg-muted/40 overflow-hidden">
+            <div className="bg-card border-b border-[#cbd5e1] dark:border-border px-3 py-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-foreground">
+                一括テンプレートからまとめてセット
+              </span>
+              <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                あとから個別変更OK
+              </span>
+            </div>
+            <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {SCOREBOOK_SYMBOL_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => handleApplyPreset(preset.label, preset.rules)}
+                  className="p-2.5 rounded-xl border border-[#cbd5e1] dark:border-border bg-card hover:bg-muted/60 hover:border-primary/50 text-left transition-all active:scale-[0.98] shadow-2xs cursor-pointer"
+                >
+                  <p className="text-xs font-black text-foreground leading-tight">
+                    {preset.label}
+                  </p>
+                  <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-1">
+                    {preset.description}
+                  </p>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {SCOREBOOK_SYMBOL_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => handleApplyPreset(preset.label, preset.rules)}
-                className="p-2.5 rounded-xl border border-[#cbd5e1] dark:border-border bg-card hover:bg-muted/60 hover:border-primary/50 text-left transition-all active:scale-[0.98] shadow-2xs cursor-pointer"
-              >
-                <p className="text-xs font-black text-foreground leading-tight">
-                  {preset.label}
-                </p>
-                <p className="text-[10px] font-bold text-muted-foreground leading-snug mt-1">
-                  {preset.description}
-                </p>
-              </button>
-            ))}
+        ) : (
+          <div className="p-3 rounded-xl bg-muted/45 border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
+            ※ 閲覧専用メンバーのため、チーム記号ルールの変更・保存は行えません（現在の設定と早見表のA4出力はご確認いただけます）
           </div>
-        </div>
+        )}
 
         {/* 2. カテゴリ別・各記号の詳細カスタマイズ（全22項目・各項目独立カード枠＋見出し帯） */}
         <div className="pt-3 border-t-2 border-slate-200 dark:border-border space-y-5">
@@ -607,7 +633,9 @@ export function TeamSymbolRulesSettingsSection({
                 項目ごとの詳細ルール選択（全22項目）
               </h3>
               <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
-                5つのカテゴリ別に整理しています。各見本をタップすると即座に保存されます。
+                {canEdit
+                  ? "5つのカテゴリ別に整理しています。各見本をタップすると即座に保存されます。"
+                  : "5つのカテゴリ別に現在のチーム設定を表示しています（閲覧専用）。"}
               </p>
             </div>
           </div>
@@ -683,6 +711,7 @@ export function TeamSymbolRulesSettingsSection({
                             <button
                               key={opt.value}
                               type="button"
+                              disabled={!canEdit}
                               onClick={() =>
                                 handleFieldSelect(
                                   sec.key,
@@ -691,7 +720,8 @@ export function TeamSymbolRulesSettingsSection({
                                 )
                               }
                               className={cn(
-                                "p-2 rounded-xl text-left transition-all active:scale-[0.98] cursor-pointer flex flex-col gap-1.5",
+                                "p-2 rounded-xl text-left transition-all flex flex-col gap-1.5 disabled:opacity-85 disabled:cursor-default",
+                                canEdit && "active:scale-[0.98] cursor-pointer",
                                 isActive
                                   ? "bg-blue-50 dark:bg-primary/15 text-primary border-2 border-primary shadow-xs"
                                   : "bg-card border border-[#cbd5e1] dark:border-border text-foreground hover:border-slate-400 shadow-2xs"
@@ -755,6 +785,7 @@ export function TeamSymbolRulesSettingsSection({
                   <input
                     type="text"
                     maxLength={80}
+                    disabled={!canEdit}
                     value={rules.customNote || ""}
                     onChange={(e) =>
                       setRules((prev) => ({
@@ -763,9 +794,9 @@ export function TeamSymbolRulesSettingsSection({
                       }))
                     }
                     placeholder="例: 臨時代走はTR表記、タイブレーク開始走者はTB"
-                    className="w-full h-10 pl-3 pr-8 rounded-xl bg-card border border-[#cbd5e1] dark:border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary"
+                    className="w-full h-10 pl-3 pr-8 rounded-xl bg-card border border-[#cbd5e1] dark:border-border text-xs font-bold text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:border-primary disabled:opacity-75 disabled:cursor-default"
                   />
-                  {Boolean(rules.customNote) && (
+                  {canEdit && Boolean(rules.customNote) && (
                     <button
                       type="button"
                       disabled={isSaving}
@@ -782,14 +813,16 @@ export function TeamSymbolRulesSettingsSection({
                     </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={() => void persistRules(rules, "補足メモ")}
-                  className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  保存
-                </button>
+                {canEdit && (
+                  <button
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => void persistRules(rules, "補足メモ")}
+                    className="h-10 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    保存
+                  </button>
+                )}
               </div>
             </div>
           </div>

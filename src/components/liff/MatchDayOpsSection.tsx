@@ -65,6 +65,7 @@ interface MatchDayGuideAndRolesSectionProps {
   isPreMatchMode: boolean;
   hasSeparateCarpoolCard: boolean;
   preMatchShareText: string;
+  canEdit?: boolean;
   onOpenEditor: (initialTab?: MatchDayOpsEditorTab) => void;
 }
 
@@ -75,6 +76,7 @@ export function MatchDayGuideAndRolesSection({
   isPreMatchMode,
   hasSeparateCarpoolCard,
   preMatchShareText,
+  canEdit = true,
   onOpenEditor,
 }: MatchDayGuideAndRolesSectionProps) {
   const [isShareCopied, setIsShareCopied] = useState(false);
@@ -109,14 +111,16 @@ export function MatchDayGuideAndRolesSection({
                 {filledRoles.length}枠
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => onOpenEditor("roles")}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
-            >
-              <Edit3 className="w-3 h-3 text-amber-400" />
-              <span>編集</span>
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => onOpenEditor("roles")}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
+              >
+                <Edit3 className="w-3 h-3 text-amber-400" />
+                <span>編集</span>
+              </button>
+            )}
           </div>
 
           <div className="p-3.5 divide-y divide-border">
@@ -196,7 +200,7 @@ export function MatchDayGuideAndRolesSection({
           <span className="truncate">当日のしおり・審判/スコア担当</span>
         </h2>
 
-        {!hasSeparateCarpoolCard && ops?.carpoolMode !== "none" && (
+        {canEdit && !hasSeparateCarpoolCard && ops?.carpoolMode !== "none" && (
           <button
             type="button"
             onClick={() => onOpenEditor("carpool")}
@@ -223,14 +227,16 @@ export function MatchDayGuideAndRolesSection({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenEditor("guide")}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
-          >
-            <Edit3 className="w-3 h-3 text-amber-400" />
-            <span>{hasGuideOrRoles ? "編集" : "設定"}</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => onOpenEditor("guide")}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
+            >
+              <Edit3 className="w-3 h-3 text-amber-400" />
+              <span>{hasGuideOrRoles ? "編集" : "設定"}</span>
+            </button>
+          )}
         </div>
 
         <div className="p-3.5 space-y-3.5">
@@ -270,24 +276,26 @@ export function MatchDayGuideAndRolesSection({
                 title="当日の集合・審判/スコア担当が未設定です"
                 description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を1タップで共有できます"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenEditor("guide")}
-                  className="h-9 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
-                >
-                  <ClipboardList className="w-3.5 h-3.5 shrink-0" />
-                  <span>集合・しおり設定</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenEditor("roles")}
-                  className="h-9 px-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span>審判・担当を割当</span>
-                </button>
-              </div>
+              {canEdit && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenEditor("guide")}
+                    className="h-9 px-3 rounded-xl bg-primary text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs hover:bg-primary/90 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                    <span>集合・しおり設定</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEditor("roles")}
+                    className="h-9 px-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>審判・担当を割当</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <>
@@ -399,28 +407,38 @@ export function MatchDayGuideAndRolesSection({
                     <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
                     <span>審判・スコアラー・運営担当</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => onOpenEditor("roles")}
-                    className="text-[11px] font-black text-primary hover:underline cursor-pointer"
-                  >
-                    {filledRoles.length > 0 ? "役割を変更" : "＋ 担当を割り当てる"}
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenEditor("roles")}
+                      className="text-[11px] font-black text-primary hover:underline cursor-pointer"
+                    >
+                      {filledRoles.length > 0 ? "役割を変更" : "＋ 担当を割り当てる"}
+                    </button>
+                  )}
                 </div>
 
                 {filledRoles.length === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenEditor("roles")}
-                    className="w-full rounded-xl bg-muted/40 hover:bg-muted/70 border border-dashed border-border p-3 text-center transition-colors cursor-pointer"
-                  >
-                    <p className="text-xs font-black text-foreground">
-                      審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
-                    </p>
-                    <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
-                      タップして保護者メンバーから1タップ選択できます
-                    </p>
-                  </button>
+                  canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => onOpenEditor("roles")}
+                      className="w-full rounded-xl bg-muted/40 hover:bg-muted/70 border border-dashed border-border p-3 text-center transition-colors cursor-pointer"
+                    >
+                      <p className="text-xs font-black text-foreground">
+                        審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
+                      </p>
+                      <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
+                        タップして保護者メンバーから1タップ選択できます
+                      </p>
+                    </button>
+                  ) : (
+                    <div className="w-full rounded-xl bg-muted/35 border border-dashed border-border p-3 text-center">
+                      <p className="text-xs font-bold text-muted-foreground">
+                        審判・スコアラー等の運営担当は未登録です
+                      </p>
+                    </div>
+                  )
                 ) : (
                   <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border">
                     {filledRoles.map((role) => (
@@ -518,6 +536,7 @@ interface MatchCarpoolSummarySectionProps {
   scheduleSync: LiffMatchScheduleSyncInfo | null;
   myIdentity: LiffMyMatchIdentity | null;
   venueParkingInfo?: string | null;
+  canEdit?: boolean;
   onOpenEditor: (initialTab?: MatchDayOpsEditorTab) => void;
 }
 
@@ -546,6 +565,7 @@ export function MatchCarpoolSummarySection({
   scheduleSync,
   myIdentity,
   venueParkingInfo,
+  canEdit = true,
   onOpenEditor,
 }: MatchCarpoolSummarySectionProps) {
   const cars = useMemo(() => scheduleSync?.cars || [], [scheduleSync]);
@@ -586,7 +606,7 @@ export function MatchCarpoolSummarySection({
           <span className="truncate">遠征・配車サマリー</span>
         </h2>
 
-        {!isNoCarpool && (
+        {canEdit && !isNoCarpool && (
           <Link
             href="/liff/tools/carpool-generator"
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
@@ -622,14 +642,16 @@ export function MatchCarpoolSummarySection({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => onOpenEditor("carpool")}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
-          >
-            <Edit3 className="w-3 h-3 text-teal-400" />
-            <span>編集</span>
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => onOpenEditor("carpool")}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[11px] font-black transition-all active:scale-95 shrink-0 cursor-pointer"
+            >
+              <Edit3 className="w-3 h-3 text-teal-400" />
+              <span>編集</span>
+            </button>
+          )}
         </div>
 
         <div className="p-3.5 space-y-3">

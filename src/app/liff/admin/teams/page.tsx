@@ -25,7 +25,10 @@ import type {
   AdminTeamsResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   invalidateLiffApiCache,
@@ -64,6 +67,7 @@ export default function LiffAdminTeamsPage() {
   const {
     currentTeam,
     profile,
+    isDemo,
     isLoggedIn,
     login,
     selectTeam,
@@ -419,7 +423,9 @@ export default function LiffAdminTeamsPage() {
     }
   };
 
-  const canManage = data ? data.canManage : true;
+  const canManage = data
+    ? Boolean(data.canManage)
+    : canManageCurrentTeam(currentTeam, isDemo);
 
   return (
     <AdminMgmtShell

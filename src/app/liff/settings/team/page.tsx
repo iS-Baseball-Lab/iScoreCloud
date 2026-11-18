@@ -29,6 +29,7 @@ import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect"
 import {
   DEMO_TEAM_DEFAULT_LOGO_URL,
   useLiff,
+  useLiffPermissions,
   usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
@@ -176,6 +177,14 @@ export default function LiffTeamSettingsPage() {
     updateCurrentTeamLogo,
     updateCurrentTeamCover,
   } = useLiff();
+  const { canManageTeam, canManagePlayers, canMutate, isDemoMode } =
+    useLiffPermissions();
+  const isDemoTeam = Boolean(
+    isDemoMode || currentTeam?.id === "demo-team" || currentTeam?.isDemo
+  );
+  const effectiveCanManageTeam = canManageTeam || isDemoTeam;
+  const effectiveCanManageLogoCover = canManagePlayers || isDemoTeam;
+  const effectiveCanMutate = canMutate || isDemoTeam;
   const activePracticeLabel = usePracticeMatchLabel();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -276,7 +285,7 @@ export default function LiffTeamSettingsPage() {
   const handleLogoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || !effectiveCanManageLogoCover) return;
 
     const targetTeamId = currentTeam?.id || "demo-team";
     setIsUploadingLogo(true);
@@ -311,7 +320,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleRemoveLogo = async () => {
-    if (!logoPreviewUrl || isUploadingLogo) return;
+    if (!effectiveCanManageLogoCover || !logoPreviewUrl || isUploadingLogo) return;
     const targetTeamId = currentTeam?.id || "demo-team";
     setIsUploadingLogo(true);
     try {
@@ -339,7 +348,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleRestoreDemoDefaultLogo = () => {
-    if (isUploadingLogo) return;
+    if (!effectiveCanManageLogoCover || isUploadingLogo) return;
     setLogoPreviewUrl(DEMO_TEAM_DEFAULT_LOGO_URL);
     updateCurrentTeamLogo(DEMO_TEAM_DEFAULT_LOGO_URL);
     invalidateLiffApiCache();
@@ -347,7 +356,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleRemoveCover = async () => {
-    if (!coverPreviewUrl || isRemovingCover) return;
+    if (!effectiveCanManageLogoCover || !coverPreviewUrl || isRemovingCover) return;
     const targetTeamId = currentTeam?.id || "demo-team";
     setIsRemovingCover(true);
     try {
@@ -395,6 +404,7 @@ export default function LiffTeamSettingsPage() {
     rawLabel: string,
     silentToast = false
   ) => {
+    if (!effectiveCanMutate) return;
     const nextLabel = sanitizePracticeMatchLabel(
       rawLabel,
       DEFAULT_PRACTICE_MATCH_LABEL
@@ -437,6 +447,7 @@ export default function LiffTeamSettingsPage() {
     nextConfig: TeamScheduleDefaultTimes,
     silentToast = false
   ) => {
+    if (!effectiveCanMutate) return;
     const targetTeamId = currentTeam?.id || "demo-team";
     const normalized = normalizeTeamScheduleDefaultTimes(nextConfig);
     setScheduleTimes(normalized);
@@ -470,6 +481,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleToggleSummerMonth = (month: number) => {
+    if (!effectiveCanMutate) return;
     setScheduleTimes((prev) => {
       const set = new Set(prev.summerMonths);
       if (set.has(month)) {
@@ -485,6 +497,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleResetScheduleTimes = () => {
+    if (!effectiveCanMutate) return;
     const resetValue: TeamScheduleDefaultTimes = {
       ...DEFAULT_TEAM_SCHEDULE_TIMES,
       summerMonths: [...DEFAULT_TEAM_SCHEDULE_TIMES.summerMonths],
@@ -495,12 +508,18 @@ export default function LiffTeamSettingsPage() {
   const handleSaveAll = () => {
     const tid = currentTeam?.id || "demo-team";
     saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
-    const trimmedPractice = customPracticeLabelInput.trim();
-    if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
-      void persistPracticeMatchLabel(trimmedPractice, true);
+    if (effectiveCanMutate) {
+      const trimmedPractice = customPracticeLabelInput.trim();
+      if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
+        void persistPracticeMatchLabel(trimmedPractice, true);
+      }
+      void persistScheduleDefaultTimes(scheduleTimes, true);
     }
-    void persistScheduleDefaultTimes(scheduleTimes, true);
-    toast.success("チーム表示・予定設定を保存しました");
+    toast.success(
+      effectiveCanMutate
+        ? "チーム表示・予定設定を保存しました"
+        : "この端末の活動グループ設定を保存しました"
+    );
   };
 
   const handleAddGroup = () => {
@@ -550,57 +569,59 @@ export default function LiffTeamSettingsPage() {
         />
 
         {/* チーム管理メニュー（組織・権限・車両）への直通ショートカット */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
-            <span className="text-xs font-black text-white">
-              チーム管理マスタ（組織・権限・車両）
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9.5px] font-black">
-              管理者専用
-            </span>
-          </div>
-          <div className="p-3 grid grid-cols-3 gap-2 text-xs">
-            <Link
-              href="/liff/admin/teams"
-              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
-            >
-              <div className="flex items-center justify-between">
-                <Layers className="w-3.5 h-3.5 text-primary" />
-                <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <span className="font-black text-foreground">チーム・編成</span>
-              <span className="text-[10px] font-bold text-muted-foreground">
-                名称・A/B編成
+        {effectiveCanManageTeam && (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="px-4 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-white">
+                チーム管理マスタ（組織・権限・車両）
               </span>
-            </Link>
-            <Link
-              href="/liff/admin/roles"
-              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
-            >
-              <div className="flex items-center justify-between">
-                <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <span className="font-black text-foreground">権限・役職</span>
-              <span className="text-[10px] font-bold text-muted-foreground">
-                兼務・役職呼称
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9.5px] font-black">
+                管理者専用
               </span>
-            </Link>
-            <Link
-              href="/liff/admin/cars"
-              className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
-            >
-              <div className="flex items-center justify-between">
-                <Car className="w-3.5 h-3.5 text-teal-600" />
-                <ChevronRight className="w-3 h-3 text-muted-foreground" />
-              </div>
-              <span className="font-black text-foreground">車両・バス</span>
-              <span className="text-[10px] font-bold text-muted-foreground">
-                マイクロ・道具車
-              </span>
-            </Link>
-          </div>
-        </section>
+            </div>
+            <div className="p-3 grid grid-cols-3 gap-2 text-xs">
+              <Link
+                href="/liff/admin/teams"
+                className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+              >
+                <div className="flex items-center justify-between">
+                  <Layers className="w-3.5 h-3.5 text-primary" />
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                </div>
+                <span className="font-black text-foreground">チーム・編成</span>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  名称・A/B編成
+                </span>
+              </Link>
+              <Link
+                href="/liff/admin/roles"
+                className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+              >
+                <div className="flex items-center justify-between">
+                  <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                </div>
+                <span className="font-black text-foreground">権限・役職</span>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  兼務・役職呼称
+                </span>
+              </Link>
+              <Link
+                href="/liff/admin/cars"
+                className="p-2.5 rounded-xl border border-border bg-background hover:bg-muted flex flex-col justify-between gap-1"
+              >
+                <div className="flex items-center justify-between">
+                  <Car className="w-3.5 h-3.5 text-teal-600" />
+                  <ChevronRight className="w-3 h-3 text-muted-foreground" />
+                </div>
+                <span className="font-black text-foreground">車両・バス</span>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  マイクロ・道具車
+                </span>
+              </Link>
+            </div>
+          </section>
+        )}
 
         {/* ━━━ セクション 1: 🛡️ チームロゴ・背景・表示呼称 ━━━ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -612,7 +633,7 @@ export default function LiffTeamSettingsPage() {
               <h2 className="text-sm font-black text-white truncate">ロゴ・背景写真・表示呼称</h2>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
-              チーム共通
+              {effectiveCanMutate ? "チーム共通" : "閲覧モード"}
             </span>
           </div>
 
@@ -650,59 +671,67 @@ export default function LiffTeamSettingsPage() {
                     上部ヘッダー・チーム切替メニュー・選手名鑑などに表示されます。
                   </p>
 
-                  <input
-                    ref={logoFileInputRef}
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    onChange={handleLogoFileChange}
-                    className="hidden"
-                  />
+                  {effectiveCanManageLogoCover ? (
+                    <>
+                      <input
+                        ref={logoFileInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        onChange={handleLogoFileChange}
+                        className="hidden"
+                      />
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={isUploadingLogo}
-                      onClick={() => logoFileInputRef.current?.click()}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
-                    >
-                      {isUploadingLogo ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                          <span>反映中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <ImagePlus className="w-3.5 h-3.5 shrink-0" />
-                          <span>{logoPreviewUrl ? "ロゴを変更" : "ロゴを設定"}</span>
-                        </>
-                      )}
-                    </button>
-
-                    {logoPreviewUrl && (
-                      <button
-                        type="button"
-                        disabled={isUploadingLogo}
-                        onClick={handleRemoveLogo}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>削除</span>
-                      </button>
-                    )}
-
-                    {(currentTeam?.id === "demo-team" || currentTeam?.isDemo) &&
-                      logoPreviewUrl !== DEMO_TEAM_DEFAULT_LOGO_URL && (
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           disabled={isUploadingLogo}
-                          onClick={handleRestoreDemoDefaultLogo}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                          onClick={() => logoFileInputRef.current?.click()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
                         >
-                          <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                          <span>初期ロゴに戻す</span>
+                          {isUploadingLogo ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                              <span>反映中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <ImagePlus className="w-3.5 h-3.5 shrink-0" />
+                              <span>{logoPreviewUrl ? "ロゴを変更" : "ロゴを設定"}</span>
+                            </>
+                          )}
                         </button>
-                      )}
-                  </div>
+
+                        {logoPreviewUrl && (
+                          <button
+                            type="button"
+                            disabled={isUploadingLogo}
+                            onClick={handleRemoveLogo}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>削除</span>
+                          </button>
+                        )}
+
+                        {(currentTeam?.id === "demo-team" || currentTeam?.isDemo) &&
+                          logoPreviewUrl !== DEMO_TEAM_DEFAULT_LOGO_URL && (
+                            <button
+                              type="button"
+                              disabled={isUploadingLogo}
+                              onClick={handleRestoreDemoDefaultLogo}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                              <span>初期ロゴに戻す</span>
+                            </button>
+                          )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[10.5px] font-bold text-muted-foreground">
+                      ※ ロゴの変更・削除は監督・指導者・管理者のみ行えます
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -770,55 +799,74 @@ export default function LiffTeamSettingsPage() {
                       選手名鑑ページ上部のチーム情報ヘッダー背景に表示されます（集合写真・円陣・ホームグラウンド写真など）。
                     </p>
 
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={isRemovingCover}
-                        onClick={() => setIsCoverModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
-                      >
-                        <ImagePlus className="w-3.5 h-3.5 shrink-0" />
-                        <span>
-                          {coverPreviewUrl ? "背景画像を変更" : "背景画像を設定"}
-                        </span>
-                      </button>
-
-                      {coverPreviewUrl && (
+                    {effectiveCanManageLogoCover ? (
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           disabled={isRemovingCover}
-                          onClick={() => void handleRemoveCover()}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                          onClick={() => setIsCoverModalOpen(true)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-60"
                         >
-                          {isRemovingCover ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                          ) : (
-                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                          )}
-                          <span>削除</span>
+                          <ImagePlus className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {coverPreviewUrl ? "背景画像を変更" : "背景画像を設定"}
+                          </span>
                         </button>
-                      )}
-                    </div>
+
+                        {coverPreviewUrl && (
+                          <button
+                            type="button"
+                            disabled={isRemovingCover}
+                            onClick={() => void handleRemoveCover()}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                          >
+                            {isRemovingCover ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            )}
+                            <span>削除</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[10.5px] font-bold text-muted-foreground">
+                        ※ 背景画像の変更・削除は監督・指導者・管理者のみ行えます
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
 
             {/* クラブ名称・カテゴリー・編成変更への案内（重複排除） */}
-            <Link
-              href="/liff/admin/teams"
-              className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-muted/40 hover:bg-muted border border-border transition-colors"
-            >
-              <div className="min-w-0">
-                <p className="text-xs font-black text-foreground truncate">
-                  現在の表示チーム：{currentTeam?.name || "チーム"}
-                </p>
-                <p className="text-[10.5px] font-bold text-muted-foreground leading-snug mt-0.5">
-                  クラブ名称・所属カテゴリー・A/B編成の追加は「チーム・編成管理」で行えます
-                </p>
+            {effectiveCanManageTeam ? (
+              <Link
+                href="/liff/admin/teams"
+                className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-muted/40 hover:bg-muted border border-border transition-colors"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">
+                    現在の表示チーム：{currentTeam?.name || "チーム"}
+                  </p>
+                  <p className="text-[10.5px] font-bold text-muted-foreground leading-snug mt-0.5">
+                    クラブ名称・所属カテゴリー・A/B編成の追加は「チーム・編成管理」で行えます
+                  </p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </Link>
+            ) : (
+              <div className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-muted/40 border border-border">
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-foreground truncate">
+                    現在の表示チーム：{currentTeam?.name || "チーム"}
+                  </p>
+                  <p className="text-[10.5px] font-bold text-muted-foreground leading-snug mt-0.5">
+                    クラブ名称・所属カテゴリー・A/B編成の追加はチーム管理者が行えます
+                  </p>
+                </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </Link>
+            )}
 
             {/* 練習試合の呼称設定（練習試合 / OP戦 / オープン戦 / 自由入力） */}
             <div className="space-y-2.5 pt-3 border-t border-border">
@@ -839,10 +887,10 @@ export default function LiffTeamSettingsPage() {
                     <button
                       key={preset}
                       type="button"
-                      disabled={isSavingPracticeLabel}
+                      disabled={!effectiveCanMutate || isSavingPracticeLabel}
                       onClick={() => void persistPracticeMatchLabel(preset)}
                       className={cn(
-                        "py-2 px-2 rounded-xl border text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 truncate",
+                        "py-2 px-2 rounded-xl border text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed truncate",
                         isSelected
                           ? "border-2 border-primary bg-primary/10 text-primary font-black shadow-2xs"
                           : "border-border bg-muted/35 hover:bg-muted text-foreground font-bold"
@@ -854,30 +902,32 @@ export default function LiffTeamSettingsPage() {
                 })}
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  maxLength={12}
-                  value={customPracticeLabelInput}
-                  onChange={(e) => setCustomPracticeLabelInput(e.target.value)}
-                  placeholder="自由入力 (例: 練習戦, 紅白戦, TM)"
-                  className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-                />
-                <button
-                  type="button"
-                  disabled={
-                    isSavingPracticeLabel ||
-                    !customPracticeLabelInput.trim() ||
-                    customPracticeLabelInput.trim() === activePracticeLabel
-                  }
-                  onClick={() =>
-                    void persistPracticeMatchLabel(customPracticeLabelInput)
-                  }
-                  className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-45 shrink-0"
-                >
-                  {isSavingPracticeLabel ? "保存中..." : "適用"}
-                </button>
-              </div>
+              {effectiveCanMutate && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    maxLength={12}
+                    value={customPracticeLabelInput}
+                    onChange={(e) => setCustomPracticeLabelInput(e.target.value)}
+                    placeholder="自由入力 (例: 練習戦, 紅白戦, TM)"
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+                  />
+                  <button
+                    type="button"
+                    disabled={
+                      isSavingPracticeLabel ||
+                      !customPracticeLabelInput.trim() ||
+                      customPracticeLabelInput.trim() === activePracticeLabel
+                    }
+                    onClick={() =>
+                      void persistPracticeMatchLabel(customPracticeLabelInput)
+                    }
+                    className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-45 shrink-0"
+                  >
+                    {isSavingPracticeLabel ? "保存中..." : "適用"}
+                  </button>
+                </div>
+              )}
 
               <p className="text-[10px] text-muted-foreground font-bold leading-relaxed">
                 ※ 試合カード・チーム成績・個人成績・スタメン編成・試合速報ジェネレータなどの表記にチーム全体で反映されます
@@ -962,7 +1012,7 @@ export default function LiffTeamSettingsPage() {
                   </div>
                 </div>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
-                  チーム共通
+                  {effectiveCanMutate ? "チーム共通" : "閲覧専用"}
                 </span>
               </div>
 
@@ -992,6 +1042,7 @@ export default function LiffTeamSettingsPage() {
                       accent="teal"
                       size="sm"
                       searchable={false}
+                      disabled={!effectiveCanMutate}
                       className="w-full"
                     />
                     <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1005,6 +1056,7 @@ export default function LiffTeamSettingsPage() {
                       accent="teal"
                       size="sm"
                       searchable={false}
+                      disabled={!effectiveCanMutate}
                       className="w-full"
                     />
                   </div>
@@ -1057,6 +1109,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                       <span className="text-[11px] font-black text-muted-foreground">〜</span>
@@ -1079,6 +1132,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                     </div>
@@ -1092,9 +1146,11 @@ export default function LiffTeamSettingsPage() {
                           <button
                             key={m}
                             type="button"
+                            disabled={!effectiveCanMutate}
                             onClick={() => handleToggleSummerMonth(m)}
                             className={cn(
-                              "py-1.5 rounded-lg text-[11px] font-black border transition-all active:scale-95 cursor-pointer tabular-nums",
+                              "py-1.5 rounded-lg text-[11px] font-black border transition-all tabular-nums disabled:opacity-70 disabled:cursor-default",
+                              effectiveCanMutate && "active:scale-95 cursor-pointer",
                               isSummer
                                 ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
                                 : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-border hover:border-teal-500/40"
@@ -1145,6 +1201,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                       <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1158,6 +1215,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                     </div>
@@ -1186,6 +1244,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                       <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1199,6 +1258,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
+                        disabled={!effectiveCanMutate}
                         className="w-full"
                       />
                     </div>
@@ -1206,36 +1266,42 @@ export default function LiffTeamSettingsPage() {
                 </div>
 
                 {/* セクション内アクションバー（初期値リセット ＆ 即時保存） */}
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <button
-                    type="button"
-                    disabled={isSavingScheduleTimes}
-                    onClick={handleResetScheduleTimes}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                    <span>初期値に戻す</span>
-                  </button>
+                {effectiveCanMutate ? (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      disabled={isSavingScheduleTimes}
+                      onClick={handleResetScheduleTimes}
+                      className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-border bg-card hover:bg-muted text-xs font-black text-muted-foreground hover:text-foreground active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                      <span>初期値に戻す</span>
+                    </button>
 
-                  <button
-                    type="button"
-                    disabled={isSavingScheduleTimes}
-                    onClick={() => void persistScheduleDefaultTimes(scheduleTimes, false)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {isSavingScheduleTimes ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                        <span>保存中...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-3.5 h-3.5 shrink-0" />
-                        <span>初期時間を保存</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                    <button
+                      type="button"
+                      disabled={isSavingScheduleTimes}
+                      onClick={() => void persistScheduleDefaultTimes(scheduleTimes, false)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingScheduleTimes ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span>保存中...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-3.5 h-3.5 shrink-0" />
+                          <span>初期時間を保存</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[11px] font-bold text-muted-foreground pt-0.5">
+                    ※ 閲覧専用メンバーのため、チーム共通の初期時間設定は変更できません
+                  </p>
+                )}
               </div>
             </section>
           );
@@ -1295,28 +1361,30 @@ export default function LiffTeamSettingsPage() {
             </Link>
           </div>
 
-          <Link
-            href="/liff/admin?tab=invite"
-            className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
-          >
-            <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
-              <ShieldCheck className="w-5 h-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-black text-foreground truncate">
-                  参加承認・LINE招待（Google Maps連携）
+          {effectiveCanManageTeam && (
+            <Link
+              href="/liff/admin?tab=invite"
+              className="p-3.5 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 flex items-center gap-3 group active:scale-98 transition-all"
+            >
+              <span className="w-10 h-10 rounded-xl bg-slate-500/12 text-slate-700 dark:text-slate-300 flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform">
+                <ShieldCheck className="w-5 h-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-black text-foreground truncate">
+                    参加承認・LINE招待（Google Maps連携）
+                  </p>
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[9px] font-black shrink-0">
+                    管理者専用
+                  </span>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-bold truncate">
+                  招待リンク共有・参加承認・隊列マップAPIキー設定
                 </p>
-                <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[9px] font-black shrink-0">
-                  管理者専用
-                </span>
               </div>
-              <p className="text-[10px] text-muted-foreground font-bold truncate">
-                招待リンク共有・参加承認・隊列マップAPIキー設定
-              </p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
-          </Link>
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary shrink-0" />
+            </Link>
+          )}
         </section>
 
         {/* 💾 一括保存ボタン */}
@@ -1327,14 +1395,18 @@ export default function LiffTeamSettingsPage() {
             className="w-full py-3.5 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>表示・予定設定を保存する</span>
+            <span>
+              {effectiveCanMutate
+                ? "表示・予定設定を保存する"
+                : "活動グループ設定を保存する"}
+            </span>
           </button>
         </div>
 
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
-      {isCoverModalOpen && (
+      {isCoverModalOpen && effectiveCanManageLogoCover && (
         <TeamCoverPhotoModal
           isOpen={isCoverModalOpen}
           teamId={currentTeam?.id || "demo-team"}

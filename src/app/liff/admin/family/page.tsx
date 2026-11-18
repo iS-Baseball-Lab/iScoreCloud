@@ -19,7 +19,10 @@ import type {
   AdminFamilyResponse,
 } from "@/api/liff/admin-management";
 import { AdminMgmtShell } from "@/components/liff/AdminMgmtShell";
-import { useLiff } from "@/components/liff/LiffProvider";
+import {
+  canManageCurrentTeam,
+  useLiff,
+} from "@/components/liff/LiffProvider";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   invalidateLiffApiCache,
@@ -27,7 +30,7 @@ import {
 } from "@/lib/liff/api-cache";
 
 export default function LiffAdminFamilyPage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, isDemo } = useLiff();
   const teamId = currentTeam?.id || "demo-team";
   const endpointUrl = `/api/liff/admin/mgmt/family?teamId=${encodeURIComponent(
     teamId
@@ -323,7 +326,9 @@ export default function LiffAdminFamilyPage() {
     });
   }, [data?.adultMembers, dutyDraft, searchQuery]);
 
-  const canManage = data ? data.canManage : true;
+  const canManage = data
+    ? Boolean(data.canManage)
+    : canManageCurrentTeam(currentTeam, isDemo);
 
   return (
     <AdminMgmtShell

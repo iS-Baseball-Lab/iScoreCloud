@@ -9,7 +9,7 @@ import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { useLiff } from "@/components/liff/LiffProvider";
+import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   HelpCircle,
@@ -48,6 +48,8 @@ const FAQ_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
 
 export default function LiffFaqPage() {
   const { currentTeam, profile } = useLiff();
+  const { canMutate, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canMutate || isDemoMode;
   const initialCachedFaqs = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -118,6 +120,7 @@ export default function LiffFaqPage() {
 
   // 編集モーダルを開く
   const openEditModal = (faq: FaqItem) => {
+    if (!effectiveCanEdit || (!isDemoMode && faq.id.startsWith("demo-"))) return;
     setEditingFaq(faq);
     setEditQuestion(faq.question);
     setEditAnswer(faq.answer);
@@ -129,7 +132,7 @@ export default function LiffFaqPage() {
   // 新規登録処理
   const handleCreateFaq = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newQuestion.trim() || !newAnswer.trim()) return;
+    if (!effectiveCanEdit || !newQuestion.trim() || !newAnswer.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -158,9 +161,9 @@ export default function LiffFaqPage() {
       setNewQuestion("");
       setNewAnswer("");
       loadFaqs();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating FAQ:", err);
-      setSubmitError(err.message || "Q&Aの登録に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "Q&Aの登録に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -169,7 +172,7 @@ export default function LiffFaqPage() {
   // 更新処理
   const handleUpdateFaq = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingFaq || !editQuestion.trim() || !editAnswer.trim()) return;
+    if (!effectiveCanEdit || !editingFaq || !editQuestion.trim() || !editAnswer.trim()) return;
 
     try {
       setIsSubmitting(true);
@@ -195,9 +198,9 @@ export default function LiffFaqPage() {
 
       setEditingFaq(null);
       loadFaqs();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error updating FAQ:", err);
-      setSubmitError(err.message || "Q&Aの更新に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "Q&Aの更新に失敗しました");
     } finally {
       setIsSubmitting(false);
     }
@@ -205,16 +208,20 @@ export default function LiffFaqPage() {
 
   // 削除処理
   const handleDeleteFaq = async () => {
-    if (!editingFaq) return;
+    if (!editingFaq || !effectiveCanEdit) return;
     if (!confirm(`このQ&A（${editingFaq.question.slice(0, 20)}...）を削除してもよろしいですか？`)) return;
 
     try {
       setIsDeleting(true);
       setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
 
-      const res = await fetch(`/api/liff/faqs/${editingFaq.id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/liff/faqs/${encodeURIComponent(editingFaq.id)}?teamId=${encodeURIComponent(teamId)}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       const data = (await res.json()) as { success: boolean; error?: string };
       if (!data.success) {
@@ -223,9 +230,9 @@ export default function LiffFaqPage() {
 
       setEditingFaq(null);
       loadFaqs();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error deleting FAQ:", err);
-      setSubmitError(err.message || "Q&Aの削除に失敗しました");
+      setSubmitError(err instanceof Error ? err.message : "Q&Aの削除に失敗しました");
     } finally {
       setIsDeleting(false);
     }
@@ -339,18 +346,20 @@ export default function LiffFaqPage() {
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsCreateModalOpen(true);
-              setSubmitError(null);
-            }}
-            className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-            title="新しいQ&Aを追加"
-          >
-            <Plus className="w-4 h-4" />
-            <span>追加</span>
-          </button>
+          {effectiveCanEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreateModalOpen(true);
+                setSubmitError(null);
+              }}
+              className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="新しいQ&Aを追加"
+            >
+              <Plus className="w-4 h-4" />
+              <span>追加</span>
+            </button>
+          )}
         </div>
 
         {/* カテゴリフィルター */}
@@ -409,7 +418,9 @@ export default function LiffFaqPage() {
                 <div className="space-y-1">
                   <h4 className="text-sm font-black text-foreground">該当するQ&Aがありません</h4>
                   <p className="text-xs font-bold text-muted-foreground">
-                    上の「追加」ボタンから新しい質問と回答を登録できます。
+                    {effectiveCanEdit
+                      ? "上の「追加」ボタンから新しい質問と回答を登録できます。"
+                      : "検索条件やカテゴリを変更して再度ご確認ください。"}
                   </p>
                 </div>
               </div>
@@ -463,15 +474,17 @@ export default function LiffFaqPage() {
                         </button>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(faq)}
-                            className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
-                            title="Q&Aを編集・削除"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            <span>編集</span>
-                          </button>
+                          {effectiveCanEdit && (isDemoMode || !faq.id.startsWith("demo-")) && (
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(faq)}
+                              className="p-1.5 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-all flex items-center gap-1 text-[11px] font-black"
+                              title="Q&Aを編集・削除"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                              <span>編集</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"

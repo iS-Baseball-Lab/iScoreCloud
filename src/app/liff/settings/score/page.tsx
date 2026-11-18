@@ -47,7 +47,11 @@ const OfficialBaseballRulesGuideModal = dynamic(
     ),
   { ssr: false }
 );
-import { useLiff, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
+import {
+  useLiff,
+  useLiffPermissions,
+  usePracticeMatchLabel,
+} from "@/components/liff/LiffProvider";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
   loadCachedTeamSymbolRules,
@@ -116,10 +120,16 @@ interface StagedLegendState {
 
 export default function LiffScoreSettingsPage() {
   const { currentTeam, refreshTeams } = useLiff();
+  const { canMutate, isDemoMode, canUsePaidAi } = useLiffPermissions();
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [isDemoContext, setIsDemoContext] = useState(false);
+  const isEffectiveDemo =
+    isDemoContext || isDemoMode || currentTeam?.id === "demo-team";
+  const effectiveCanEditRules = canMutate || isEffectiveDemo;
+  const canManageCloudLegend = canUsePaidAi && !isEffectiveDemo;
+
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
   const [resolvedTeamName, setResolvedTeamName] = useState<string>("");
   const [resolvedOrgName, setResolvedOrgName] = useState<string>("");
@@ -331,7 +341,7 @@ export default function LiffScoreSettingsPage() {
   };
 
   const handleSelectLegendFile = (file: File | null) => {
-    if (!file) return;
+    if (!file || !canManageCloudLegend) return;
     const mime = (file.type || "").toLowerCase();
     const name = (file.name || "").toLowerCase();
     const isRejectedDoc =
@@ -397,7 +407,7 @@ export default function LiffScoreSettingsPage() {
 
   // 4. R2 + D1 へスコア記号早見表を保存
   const handleSaveLegendToCloud = async () => {
-    if (!stagedLegend?.processed || isSavingLegend) return;
+    if (!canManageCloudLegend || !stagedLegend?.processed || isSavingLegend) return;
     try {
       setIsSavingLegend(true);
       setErrorMessage(null);
@@ -440,6 +450,7 @@ export default function LiffScoreSettingsPage() {
   // 4-B. アプリ内で生成した清書マス版「スコア記号早見表」をそのままクラウド登録
   const handleSaveGeneratedLegendToCloud = useCallback(
     async (file: File) => {
+      if (!canManageCloudLegend && !isEffectiveDemo) return;
       setIsSavingLegend(true);
       setErrorMessage(null);
       try {
@@ -449,7 +460,7 @@ export default function LiffScoreSettingsPage() {
           maxLongEdge: 2000,
         });
 
-        if (isDemoContext) {
+        if (isEffectiveDemo) {
           setSavedLegendUrl(processed.dataUrl);
           setStagedLegend(null);
           toast.success(
@@ -483,12 +494,12 @@ export default function LiffScoreSettingsPage() {
         setIsSavingLegend(false);
       }
     },
-    [currentTeam?.id, isDemoContext, resolvedTeamId]
+    [canManageCloudLegend, currentTeam?.id, isEffectiveDemo, resolvedTeamId]
   );
 
   // 5. 登録済み早見表の解除
   const handleClearSavedLegend = async () => {
-    if (isSavingLegend) return;
+    if (!canManageCloudLegend || isSavingLegend) return;
     try {
       setIsSavingLegend(true);
       setErrorMessage(null);
@@ -531,7 +542,7 @@ export default function LiffScoreSettingsPage() {
 
   // ⚠️ 内部DBスキーマでは organizations (`orgName`) = チーム名、teams (`squadName`/`teamName`) = 構成名
   const effectiveTeamKey =
-    isDemoContext || currentTeam?.id === "demo-team"
+    isEffectiveDemo
       ? "demo-team"
       : (resolvedTeamId || currentTeam?.id || "").trim();
 
@@ -566,7 +577,13 @@ export default function LiffScoreSettingsPage() {
   const handleSelectScoreTeamNameMode = async (
     nextMode: ScoreTeamNameDisplayMode
   ) => {
-    if (isSavingTeamNameMode || scoreTeamNameMode === nextMode) return;
+    if (
+      !effectiveCanEditRules ||
+      isSavingTeamNameMode ||
+      scoreTeamNameMode === nextMode
+    ) {
+      return;
+    }
 
     const targetKey = effectiveTeamKey || "demo-team";
     const nextRules = sanitizeScorebookSymbolRules(
@@ -610,7 +627,7 @@ export default function LiffScoreSettingsPage() {
     const modeLabel =
       nextMode === "organization" ? "チーム名" : "構成名";
 
-    if (isDemoContext || targetKey === "demo-team" || !resolvedTeamId) {
+    if (isEffectiveDemo || targetKey === "demo-team" || !resolvedTeamId) {
       toast.success(`スコア表示の自チーム名を「${modeLabel}」に変更しました`);
       return;
     }
@@ -658,7 +675,7 @@ export default function LiffScoreSettingsPage() {
 
   return (
     <div className="flex flex-col flex-1">
-      {isCameraModalOpen && (
+      {isCameraModalOpen && canManageCloudLegend && (
         <ScorebookCameraModal
           isOpen={isCameraModalOpen}
           title="スコア記号早見表を撮影"
@@ -674,7 +691,11 @@ export default function LiffScoreSettingsPage() {
           onClose={() => setIsChartGeneratorOpen(false)}
           teamName={effectiveScoreDisplayTeamName}
           rules={activeSymbolRules}
-          onRegisterLegendToCloud={handleSaveGeneratedLegendToCloud}
+          onRegisterLegendToCloud={
+            canManageCloudLegend || isEffectiveDemo
+              ? handleSaveGeneratedLegendToCloud
+              : undefined
+          }
         />
       )}
 
@@ -759,7 +780,11 @@ export default function LiffScoreSettingsPage() {
                   スコア表示の自チーム名
                 </label>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/25 shrink-0">
-                  {isSavingTeamNameMode ? "保存中..." : "チーム共通設定"}
+                  {!effectiveCanEditRules
+                    ? "閲覧専用"
+                    : isSavingTeamNameMode
+                    ? "保存中..."
+                    : "チーム共通設定"}
                 </span>
               </div>
 
@@ -787,11 +812,11 @@ export default function LiffScoreSettingsPage() {
                     <button
                       key={opt.id}
                       type="button"
-                      disabled={isSavingTeamNameMode}
+                      disabled={!effectiveCanEditRules || isSavingTeamNameMode}
                       onClick={() =>
                         void handleSelectScoreTeamNameMode(opt.id)
                       }
-                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-1.5 disabled:opacity-60 ${
+                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-1.5 disabled:opacity-60 disabled:cursor-not-allowed ${
                         isActive
                           ? "bg-primary/12 border-2 border-primary shadow-2xs"
                           : "bg-muted/45 border-border hover:bg-muted/70"
@@ -1165,36 +1190,44 @@ export default function LiffScoreSettingsPage() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={isSavingLegend}
-                    onClick={() => setIsCameraModalOpen(true)}
-                    className="py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Camera className="w-4 h-4 shrink-0" />
-                    <span>カメラで撮り直す</span>
-                  </button>
+                {canManageCloudLegend ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={isSavingLegend}
+                      onClick={() => setIsCameraModalOpen(true)}
+                      className="py-2.5 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Camera className="w-4 h-4 shrink-0" />
+                      <span>カメラで撮り直す</span>
+                    </button>
 
-                  {isSavingLegend ? (
-                    <span className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                      <ImagePlus className="w-4 h-4 text-primary shrink-0" />
-                      <span>アルバムから変更</span>
-                    </span>
-                  ) : (
-                    <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
-                      <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
-                      <span className="pointer-events-none">アルバムから変更</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        aria-label="スコア記号早見表をアルバムから変更"
-                        onChange={handleLegendInputChange}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                      />
-                    </div>
-                  )}
-                </div>
+                    {isSavingLegend ? (
+                      <span className="py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                        <ImagePlus className="w-4 h-4 text-primary shrink-0" />
+                        <span>アルバムから変更</span>
+                      </span>
+                    ) : (
+                      <div className="relative overflow-hidden py-2.5 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                        <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
+                        <span className="pointer-events-none">アルバムから変更</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          aria-label="スコア記号早見表をアルバムから変更"
+                          onChange={handleLegendInputChange}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-2xl bg-muted/60 border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    {isEffectiveDemo
+                      ? "※ 体験デモモードではクラウド早見表の画像アップロード・変更は対象外です（下のボタンから早見表のA4出力をお試しいただけます）"
+                      : "※ 閲覧専用メンバーのため、チーム共通の早見表画像の変更・削除は行えません"}
+                  </div>
+                )}
 
                 <button
                   type="button"
@@ -1204,46 +1237,49 @@ export default function LiffScoreSettingsPage() {
                 >
                   <FileSpreadsheet className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    清書マス目で「チーム早見表」を作り直す（A4出力・そのまま登録）
+                    {canManageCloudLegend || isEffectiveDemo
+                      ? "清書マス目で「チーム早見表」を作り直す（A4出力・そのまま登録）"
+                      : "清書マス目で「チーム早見表」を確認・A4出力する"}
                   </span>
                 </button>
 
-                {!confirmClearLegend ? (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setConfirmClearLegend(true)}
-                      className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center gap-1 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>登録済みの早見表を削除する</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-black text-destructive">
-                      早見表の登録を解除しますか？
-                    </span>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                {canManageCloudLegend &&
+                  (!confirmClearLegend ? (
+                    <div className="flex justify-end">
                       <button
                         type="button"
-                        onClick={() => setConfirmClearLegend(false)}
-                        disabled={isSavingLegend}
-                        className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                        onClick={() => setConfirmClearLegend(true)}
+                        className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        やめる
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleClearSavedLegend()}
-                        disabled={isSavingLegend}
-                        className="px-3 py-1.5 rounded-xl bg-destructive text-white text-[11px] font-black cursor-pointer"
-                      >
-                        {isSavingLegend ? "削除中..." : "削除する"}
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>登録済みの早見表を削除する</span>
                       </button>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-destructive">
+                        早見表の登録を解除しますか？
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmClearLegend(false)}
+                          disabled={isSavingLegend}
+                          className="px-2.5 py-1.5 rounded-xl bg-card border border-border text-[11px] font-black text-foreground cursor-pointer"
+                        >
+                          やめる
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleClearSavedLegend()}
+                          disabled={isSavingLegend}
+                          className="px-3 py-1.5 rounded-xl bg-destructive text-white text-[11px] font-black cursor-pointer"
+                        >
+                          {isSavingLegend ? "削除中..." : "削除する"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
               </div>
             ) : (
               /* 未登録時のアップロードエリア */
@@ -1259,36 +1295,44 @@ export default function LiffScoreSettingsPage() {
                     成美堂・早稲田式・独自ルールなど、普段お使いのスコアブック記載例ページを撮影して登録してください
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
-                  <button
-                    type="button"
-                    disabled={isSavingLegend}
-                    onClick={() => setIsCameraModalOpen(true)}
-                    className="py-3 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    <Camera className="w-4 h-4 shrink-0" />
-                    <span>カメラ撮影</span>
-                  </button>
+                {canManageCloudLegend ? (
+                  <div className="grid grid-cols-2 gap-2.5 w-full pt-1">
+                    <button
+                      type="button"
+                      disabled={isSavingLegend}
+                      onClick={() => setIsCameraModalOpen(true)}
+                      className="py-3 px-3 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Camera className="w-4 h-4 shrink-0" />
+                      <span>カメラ撮影</span>
+                    </button>
 
-                  {isSavingLegend ? (
-                    <span className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
-                      <ImagePlus className="w-4 h-4 text-primary shrink-0" />
-                      <span>アルバム選択</span>
-                    </span>
-                  ) : (
-                    <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
-                      <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
-                      <span className="pointer-events-none">アルバム選択</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        aria-label="スコア記号早見表をアルバムから選択"
-                        onChange={handleLegendInputChange}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                      />
-                    </div>
-                  )}
-                </div>
+                    {isSavingLegend ? (
+                      <span className="py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 opacity-50">
+                        <ImagePlus className="w-4 h-4 text-primary shrink-0" />
+                        <span>アルバム選択</span>
+                      </span>
+                    ) : (
+                      <div className="relative overflow-hidden py-3 px-3 rounded-2xl bg-card border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-2xs hover:bg-muted">
+                        <ImagePlus className="w-4 h-4 text-primary shrink-0 pointer-events-none" />
+                        <span className="pointer-events-none">アルバム選択</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          aria-label="スコア記号早見表をアルバムから選択"
+                          onChange={handleLegendInputChange}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                        />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="w-full p-2.5 rounded-2xl bg-card border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
+                    {isEffectiveDemo
+                      ? "体験デモモードではクラウド早見表の画像アップロードは対象外です。下のボタンから清書早見表の作成・A4出力をご体験いただけます。"
+                      : "閲覧専用メンバーのため、チーム共通の早見表画像の登録は行えません。"}
+                  </div>
+                )}
                 <button
                   type="button"
                   disabled={isSavingLegend}
@@ -1297,7 +1341,9 @@ export default function LiffScoreSettingsPage() {
                 >
                   <FileSpreadsheet className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    本物の清書マス目で早見表を新規作成（A4出力・そのまま登録）
+                    {canManageCloudLegend || isEffectiveDemo
+                      ? "本物の清書マス目で早見表を新規作成（A4出力・そのまま登録）"
+                      : "本物の清書マス目で早見表を確認・A4出力する"}
                   </span>
                 </button>
               </div>
@@ -1309,7 +1355,9 @@ export default function LiffScoreSettingsPage() {
         <TeamSymbolRulesSettingsSection
           teamId={resolvedTeamId}
           teamName={effectiveScoreDisplayTeamName}
-          isDemo={isDemoContext}
+          isDemo={isEffectiveDemo}
+          canEdit={effectiveCanEditRules}
+          canExtractAi={canManageCloudLegend}
           savedLegendUrl={savedLegendUrl}
           initialCloudRules={savedTeamSymbolRules}
           isLoadingTeam={isLoadingTeam}
@@ -1429,13 +1477,15 @@ export default function LiffScoreSettingsPage() {
 
         {/* ━━━ クイック移動アクション ━━━ */}
         <div className="space-y-2.5 pt-1">
-          <Link
-            href="/liff/tools/scorebook-import"
-            className="w-full h-13 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all"
-          >
-            <ScanLine className="w-4 h-4" />
-            <span>スコアブック取り込み画面へ進む</span>
-          </Link>
+          {canManageCloudLegend && (
+            <Link
+              href="/liff/tools/scorebook-import"
+              className="w-full h-13 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all"
+            >
+              <ScanLine className="w-4 h-4" />
+              <span>スコアブック取り込み画面へ進む</span>
+            </Link>
+          )}
 
           <Link
             href="/liff/settings/team"

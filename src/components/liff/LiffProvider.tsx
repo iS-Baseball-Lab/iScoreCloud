@@ -166,11 +166,39 @@ export interface LiffTeamItem {
   logoImageUrl?: string;
   coverImageUrl?: string;
   role?: string;
+  subRoles?: string[];
   canManage?: boolean;
+  canManagePlayers?: boolean;
+  canEditScore?: boolean;
+  canMutate?: boolean;
   isDemo?: boolean;
   isMember?: boolean;
   scoreTeamNameMode?: ScoreTeamNameDisplayMode;
   practiceMatchLabel?: string;
+}
+
+const STAFF_ROLES_SET = new Set(["admin", "manager", "coach", "scorer", "staff"]);
+const SCORE_EDIT_ROLES_SET = new Set(["admin", "manager", "coach", "scorer"]);
+const MUTABLE_ROLES_SET = new Set([
+  "admin",
+  "manager",
+  "coach",
+  "scorer",
+  "staff",
+  "parent",
+]);
+
+function hasAnyMatchingRole(
+  team: LiffTeamItem | null | undefined,
+  allowedSet: Set<string>
+): boolean {
+  if (!team) return false;
+  const primary = (team.role || "").toLowerCase();
+  if (primary && allowedSet.has(primary)) return true;
+  if (Array.isArray(team.subRoles)) {
+    return team.subRoles.some((sr) => allowedSet.has((sr || "").toLowerCase()));
+  }
+  return false;
 }
 
 export function canManageCurrentTeam(
@@ -181,7 +209,59 @@ export function canManageCurrentTeam(
   if (!team) return false;
   if (typeof team.canManage === "boolean") return team.canManage;
   const r = (team.role || "").toLowerCase();
-  return r === "admin" || r === "manager";
+  if (r === "admin" || r === "manager") return true;
+  if (Array.isArray(team.subRoles)) {
+    return team.subRoles.some((sr) => {
+      const s = (sr || "").toLowerCase();
+      return s === "admin" || s === "manager";
+    });
+  }
+  return false;
+}
+
+export function canManagePlayersCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canManagePlayers === "boolean") return team.canManagePlayers;
+  if (team.canManage === true) return true;
+  return hasAnyMatchingRole(team, STAFF_ROLES_SET);
+}
+
+export function canEditScoreCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canEditScore === "boolean") return team.canEditScore;
+  if (team.canManage === true) return true;
+  return hasAnyMatchingRole(team, SCORE_EDIT_ROLES_SET);
+}
+
+export function canMutateCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean,
+  isLoggedIn = true
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team || !isLoggedIn) return false;
+  if (typeof team.canMutate === "boolean") return team.canMutate;
+  if (team.canManage === true || team.canManagePlayers === true) return true;
+  return hasAnyMatchingRole(team, MUTABLE_ROLES_SET);
+}
+
+export function canUsePaidCloudFeatures(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean,
+  isLoggedIn = true
+): boolean {
+  if (isDemo || !team || team.isDemo || team.id === "demo-team" || !isLoggedIn) {
+    return false;
+  }
+  return canMutateCurrentTeam(team, false, isLoggedIn);
 }
 
 export interface LiffPendingTeamItem {
@@ -787,6 +867,13 @@ export function LiffProvider({
           prev.shortName === activeTeam!.shortName &&
           prev.logoImageUrl === activeTeam!.logoImageUrl &&
           prev.coverImageUrl === activeTeam!.coverImageUrl &&
+          prev.role === activeTeam!.role &&
+          JSON.stringify(prev.subRoles || []) ===
+            JSON.stringify(activeTeam!.subRoles || []) &&
+          prev.canManage === activeTeam!.canManage &&
+          prev.canManagePlayers === activeTeam!.canManagePlayers &&
+          prev.canEditScore === activeTeam!.canEditScore &&
+          prev.canMutate === activeTeam!.canMutate &&
           prev.isDemo === activeTeam!.isDemo &&
           prev.scoreTeamNameMode === activeTeam!.scoreTeamNameMode &&
           prev.practiceMatchLabel === activeTeam!.practiceMatchLabel
@@ -1431,3 +1518,37 @@ export function usePracticeMatchLabel(): string {
     currentTeam?.practiceMatchLabel
   );
 }
+
+/**
+ * 全LIFF画面で統一利用する権限判定フック（サーバー `src/lib/team-access.ts` の5階層と完全同期）
+ * - `canManageTeam`: 監督・管理者・クラブオーナー（IT管理コンソール `/liff/admin/*`、Google Mapsキー設定）
+ * - `canManagePlayers`: 監督・管理者・コーチ・スコアラー・スタッフ（選手登録/削除、試合本体削除、チームロゴ・背景画像変更）
+ * - `canEditScore`: 監督・管理者・コーチ・スコアラー（公式記録・スコア編集）
+ * - `canMutate`: 承認済み編集可能メンバー（スタッフ・保護者・本人選手紐付済。`viewer`［閲覧専用］・未ログイン・未紐付選手は `false`）
+ * - `canUsePaidAi`: 有償クラウドAI解析・R2アップロード・スコアブッククラウド保存（体験デモモード・未ログイン・閲覧専用は `false`）
+ */
+export function useLiffPermissions() {
+  const { currentTeam, isDemo, isLoggedIn, isLoadingTeam, profile } = useLiff();
+  const isDemoMode = Boolean(
+    isDemo || !currentTeam || currentTeam.isDemo || currentTeam.id === "demo-team"
+  );
+  const effectiveLoggedIn = Boolean(
+    isLoggedIn || (profile?.userId && profile.userId !== "cached-user")
+  );
+
+  return {
+    isDemoMode,
+    isLoadingTeam,
+    isLoggedIn: effectiveLoggedIn,
+    canManageTeam: canManageCurrentTeam(currentTeam, isDemo),
+    canManagePlayers: canManagePlayersCurrentTeam(currentTeam, isDemo),
+    canEditScore: canEditScoreCurrentTeam(currentTeam, isDemo),
+    canMutate: canMutateCurrentTeam(currentTeam, isDemo, effectiveLoggedIn),
+    canUsePaidAi: canUsePaidCloudFeatures(
+      currentTeam,
+      isDemo,
+      effectiveLoggedIn
+    ),
+  };
+}
+
