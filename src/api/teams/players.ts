@@ -498,7 +498,7 @@ app.patch("/:teamId/players/:playerId", async (c) => {
   const body = (await c.req.json()) as {
     name: string;
     nameKana?: string | null;
-    uniformNumber: string;
+    uniformNumber?: string | null;
     primaryPosition?: string | null;
     throws?: string | null;
     bats?: string | null;
@@ -509,6 +509,23 @@ app.patch("/:teamId/players/:playerId", async (c) => {
     conditionStatus?: string;
     conditionNote?: string | null;
   };
+  const rawUniform =
+    typeof body.uniformNumber === "string"
+      ? body.uniformNumber
+          .replace(/[０-９]/g, (ch) =>
+            String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+          )
+          .trim()
+          .replace(/^[#＃]+/, "")
+      : "";
+  const normalizedUniform =
+    rawUniform === "-" ||
+    rawUniform === "--" ||
+    rawUniform === "ー" ||
+    rawUniform === "なし" ||
+    rawUniform === "未設定"
+      ? ""
+      : rawUniform.slice(0, 6);
   const { unixSeconds: joinedAtSeconds, dateKey: joinedDateKey } =
     parseDateInputToUnixSeconds(body.joinedAt);
   try {
@@ -527,7 +544,7 @@ app.patch("/:teamId/players/:playerId", async (c) => {
         .bind(
           body.name,
           body.nameKana ?? null,
-          body.uniformNumber,
+          normalizedUniform,
           body.primaryPosition ?? null,
           body.throws ?? null,
           body.bats ?? null,
@@ -550,7 +567,7 @@ app.patch("/:teamId/players/:playerId", async (c) => {
         .bind(
           body.name,
           body.nameKana ?? null,
-          body.uniformNumber,
+          normalizedUniform,
           body.primaryPosition ?? null,
           body.throws ?? null,
           body.bats ?? null,

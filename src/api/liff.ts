@@ -6128,7 +6128,10 @@ function buildDemoStatsResponse() {
       id: DEMO_TEAM.id,
       name: DEMO_TEAM.name,
       orgName: DEMO_TEAM.orgName,
-      logoImageUrl: DEMO_TEAM.logoImageUrl,
+      teamName: DEMO_TEAM.teamName,
+      managerName: DEMO_TEAM.managerName || null,
+      logoImageUrl: DEMO_TEAM.logoImageUrl || null,
+      coverImageUrl: DEMO_TEAM.coverImageUrl || null,
       year: DEMO_TEAM.year || 2026,
     },
     stats: allSummary,
@@ -6156,7 +6159,10 @@ app.get("/stats", async (c) => {
         .select({
           id: teams.id,
           name: teams.name,
+          managerName: teams.managerName,
           orgName: organizations.name,
+          logoImageUrl: organizations.logoImageUrl,
+          coverImageUrl: organizations.coverImageUrl,
           year: teams.year,
         })
         .from(teams)
@@ -7529,6 +7535,10 @@ app.get("/stats", async (c) => {
           ? `${teamRow.orgName ? `${teamRow.orgName} ` : ""}${teamRow.name}`.trim()
           : "チーム",
         orgName: teamRow?.orgName || teamRow?.name || "チーム",
+        teamName: teamRow?.name || "",
+        managerName: teamRow?.managerName || null,
+        logoImageUrl: teamRow?.logoImageUrl || null,
+        coverImageUrl: teamRow?.coverImageUrl || null,
         year: teamRow?.year || new Date().getFullYear(),
       },
       stats: sectionsByFilter.all.summary,
@@ -12664,7 +12674,7 @@ app.post("/players/:playerId/profile", async (c) => {
       userName?: string | null;
       // 指導者・管理者限定項目
       name?: string;
-      uniformNumber?: string;
+      uniformNumber?: string | null;
       isCaptain?: boolean;
       joinedAt?: string | number | null;
       // 本人・保護者・指導者共通項目
@@ -12679,6 +12689,32 @@ app.post("/players/:playerId/profile", async (c) => {
       notes?: string | null;
       profileDetails?: Partial<PlayerProfileDetails> | null;
     };
+
+    const normalizeSubmittedUniform = (raw: string | null | undefined): string => {
+      if (raw === null || raw === undefined) return "";
+      const cleaned = raw
+        .replace(/[０-９]/g, (ch) =>
+          String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+        )
+        .trim()
+        .replace(/^[#＃]+/, "");
+      if (
+        !cleaned ||
+        cleaned === "-" ||
+        cleaned === "--" ||
+        cleaned === "ー" ||
+        cleaned === "なし" ||
+        cleaned === "未設定"
+      ) {
+        return "";
+      }
+      return cleaned.slice(0, 6);
+    };
+
+    const hasUniformField = Object.prototype.hasOwnProperty.call(
+      body,
+      "uniformNumber"
+    );
 
     const teamId = (body.teamId || c.req.query("teamId") || "").trim();
 
@@ -12739,8 +12775,9 @@ app.post("/players/:playerId/profile", async (c) => {
           ? body.name.trim().slice(0, 40)
           : undefined;
       const demoUniform =
-        typeof body.uniformNumber === "string" && body.uniformNumber.trim()
-          ? body.uniformNumber.trim().replace(/^#/, "").slice(0, 6)
+        hasUniformField &&
+        (typeof body.uniformNumber === "string" || body.uniformNumber === null)
+          ? normalizeSubmittedUniform(body.uniformNumber)
           : undefined;
       const demoJoined =
         body.joinedAt !== undefined
@@ -12753,7 +12790,7 @@ app.post("/players/:playerId/profile", async (c) => {
         playerId,
         updated: {
           ...(demoName ? { name: demoName } : {}),
-          ...(demoUniform ? { uniformNumber: demoUniform } : {}),
+          ...(demoUniform !== undefined ? { uniformNumber: demoUniform } : {}),
           ...(typeof body.isCaptain === "boolean" ? { isCaptain: body.isCaptain } : {}),
           ...(demoJoined !== undefined ? { joinedAt: demoJoined } : {}),
           nameKana: cleanNameKana,
@@ -12848,9 +12885,11 @@ app.post("/players/:playerId/profile", async (c) => {
       if (typeof body.name === "string" && body.name.trim()) {
         nextName = body.name.trim().slice(0, 40);
       }
-      if (typeof body.uniformNumber === "string" && body.uniformNumber.trim()) {
-        const cleanedNum = body.uniformNumber.trim().replace(/^#/, "").slice(0, 6);
-        if (cleanedNum) nextUniform = cleanedNum;
+      if (
+        hasUniformField &&
+        (typeof body.uniformNumber === "string" || body.uniformNumber === null)
+      ) {
+        nextUniform = normalizeSubmittedUniform(body.uniformNumber);
       }
       if (typeof body.isCaptain === "boolean") {
         if (body.isCaptain && teamRow.captainId !== playerId) {

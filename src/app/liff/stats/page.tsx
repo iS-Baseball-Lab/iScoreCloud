@@ -2,10 +2,12 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
+  canManagePlayersCurrentTeam,
   useLiff,
   useLiffPermissions,
   usePracticeMatchLabel,
@@ -30,7 +32,17 @@ import {
   CheckCircle2,
   BookOpen,
   Scale,
+  IdCard,
+  ImagePlus,
 } from "lucide-react";
+
+const TeamCoverPhotoModal = dynamic(
+  () =>
+    import("@/components/liff/TeamCoverPhotoModal").then(
+      (m) => m.TeamCoverPhotoModal
+    ),
+  { ssr: false }
+);
 
 type StatsFilterKey = "all" | "official" | "exchange" | "practice";
 type StatsMainTab = "matches" | "batting" | "pitching";
@@ -155,15 +167,21 @@ interface StatsSectionData {
   qualification?: StatsQualificationData;
 }
 
+interface StatsTeamMeta {
+  id: string;
+  name: string;
+  orgName: string;
+  teamName?: string;
+  managerName?: string | null;
+  logoImageUrl?: string | null;
+  coverImageUrl?: string | null;
+  year: number;
+}
+
 interface LiffStatsApiResponse {
   success: boolean;
   isDemo?: boolean;
-  team?: {
-    id: string;
-    name: string;
-    orgName: string;
-    year: number;
-  };
+  team?: StatsTeamMeta;
   stats?: TeamStatsSummary | null;
   sectionsByFilter?: Record<StatsFilterKey, StatsSectionData>;
   matches?: StatsMatchItem[];
@@ -253,7 +271,14 @@ function cleanUniform(raw: string): string {
 }
 
 export default function LiffStatsPage() {
-  const { currentTeam, isLoadingTeam } = useLiff();
+  const {
+    currentTeam,
+    isLoadingTeam,
+    isDemo: providerDemo,
+    profile,
+    updateCurrentTeamCover,
+    refreshTeams,
+  } = useLiff();
   const { canUsePaidAi } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
@@ -273,6 +298,7 @@ export default function LiffStatsPage() {
     "all" | "imported" | "unimported"
   >("all");
   const [batterSort, setBatterSort] = useState<BatterSortKey>("hits");
+  const [isTeamCoverModalOpen, setIsTeamCoverModalOpen] = useState<boolean>(false);
   const initialCachedStats = useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -284,6 +310,12 @@ export default function LiffStatsPage() {
     );
   }, [currentTeam?.id]);
 
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() =>
+    Boolean(initialCachedStats?.isDemo)
+  );
+  const [teamMeta, setTeamMeta] = useState<StatsTeamMeta | null>(
+    () => initialCachedStats?.team ?? null
+  );
   const [seasonYear, setSeasonYear] = useState<number>(
     () => initialCachedStats?.team?.year || new Date().getFullYear()
   );
@@ -317,7 +349,11 @@ export default function LiffStatsPage() {
           ? peekLiffApiCache<LiffStatsApiResponse>(url)
           : null;
         if (syncCached && syncCached.success !== false) {
-          if (syncCached.team?.year) setSeasonYear(syncCached.team.year);
+          setIsDemoMode(Boolean(syncCached.isDemo));
+          if (syncCached.team) {
+            setTeamMeta(syncCached.team);
+            if (syncCached.team.year) setSeasonYear(syncCached.team.year);
+          }
           if (syncCached.sectionsByFilter) setSectionsByFilter(syncCached.sectionsByFilter);
           if (Array.isArray(syncCached.matches)) setMatchesList(syncCached.matches);
           setLoadError(false);
@@ -339,8 +375,12 @@ export default function LiffStatsPage() {
           return;
         }
         setLoadError(false);
-        if (data.team?.year) {
-          setSeasonYear(data.team.year);
+        setIsDemoMode(Boolean(data.isDemo));
+        if (data.team) {
+          setTeamMeta(data.team);
+          if (data.team.year) {
+            setSeasonYear(data.team.year);
+          }
         }
         if (data.sectionsByFilter) {
           setSectionsByFilter(data.sectionsByFilter);
@@ -563,6 +603,34 @@ export default function LiffStatsPage() {
       ? `${practiceMatchLabel} 成績`
       : `${seasonYear}シーズン 通算成績`;
 
+  const activeTeamId =
+    currentTeam?.id || teamMeta?.id || "demo-team";
+  const effectiveUserId =
+    profile?.userId ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_user_id") ||
+        localStorage.getItem("iscore_userId") ||
+        ""
+      : "");
+  const effectiveUserName =
+    profile?.displayName ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("iscore_user_name") || ""
+      : "");
+  const canManageCover = canManagePlayersCurrentTeam(
+    currentTeam,
+    providerDemo || isDemoMode
+  );
+  const teamHeadline =
+    teamMeta?.orgName || currentTeam?.orgName || currentTeam?.name || "チーム";
+  const teamSubname = teamMeta?.teamName || currentTeam?.teamName || "";
+  const effectiveTeamLogoUrl =
+    currentTeam?.logoImageUrl || teamMeta?.logoImageUrl || null;
+  const effectiveTeamCoverUrl =
+    currentTeam?.coverImageUrl || teamMeta?.coverImageUrl || null;
+  const teamInitials =
+    teamHeadline.replace(/\s+/g, "").slice(0, 2).toUpperCase() || "TM";
+
   const teamDisplayName = scoreTeamName;
   const sharePayload = {
     title: `【チーム成績】${teamDisplayName} ${summary.wins}勝${summary.losses}敗${
@@ -576,52 +644,242 @@ export default function LiffStatsPage() {
   const countExchange = sectionsByFilter.exchange.summary.totalMatches;
   const countPractice = sectionsByFilter.practice.summary.totalMatches;
 
+  const filterBadgeLabel =
+    filter === "official"
+      ? "公式戦"
+      : filter === "exchange"
+      ? "交流戦"
+      : filter === "practice"
+      ? practiceMatchLabel
+      : "通算戦績";
+
   return (
     <div className="flex flex-col flex-1">
       <LiffHeader shareData={sharePayload} />
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
         {/* ページ内ヘッダー（メニュー項目「チーム成績」と完全統一） */}
         <LiffPageHeader
           title="チーム成績"
-          subtitle={`${seasonYear}年度 勝敗・得失点・個人成績`}
+          subtitle="勝敗・得失点・個人成績"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <Trophy className="w-4 h-4" />
             </span>
           }
           showBack
+          rightElement={
+            <Link
+              href="/liff/players"
+              className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
+            >
+              <IdCard className="w-3.5 h-3.5" />
+              <span>選手名鑑</span>
+            </Link>
+          }
           shareData={sharePayload}
         />
 
-        {/* 試合種別フィルターチップ */}
-        <div className="grid grid-cols-4 gap-1.5">
-          {(
-            [
-              { key: "all" as const, label: "すべて", count: countAll },
-              { key: "official" as const, label: "🏆 公式戦", count: countOfficial },
-              { key: "exchange" as const, label: "🤝 交流戦", count: countExchange },
-              { key: "practice" as const, label: `⚾ ${practiceMatchLabel}`, count: countPractice },
-            ] as const
-          ).map((item) => {
-            const active = filter === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
-                className={cn(
-                  "py-1.5 px-1 rounded-xl text-[11px] transition-all truncate tabular-nums",
-                  active
-                    ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                    : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted/50 font-bold"
-                )}
+        {/* ━━━ 🏟️ チーム成績 チーム情報ヘッダー（選手名鑑と統一：境界オーバーラップ型 × 背景カバー写真対応） ━━━ */}
+        <section className="relative overflow-hidden rounded-2xl border border-border bg-card text-foreground shadow-xs">
+          {/* 上部ワイドステージ（背景カバー写真を遮らない最小限の角バッジ配置） */}
+          <div className="relative h-36 sm:h-40 w-full p-3.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary overflow-hidden">
+            {effectiveTeamCoverUrl ? (
+              <>
+                <img
+                  src={effectiveTeamCoverUrl}
+                  alt=""
+                  decoding="async"
+                  className="pointer-events-none select-none absolute inset-0 w-full h-full object-cover object-center"
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 bg-slate-950/20"
+                />
+              </>
+            ) : (
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 160 160"
+                className="pointer-events-none absolute -right-6 -top-6 w-40 h-40 text-slate-800"
+                fill="none"
               >
-                {item.label} ({item.count})
-              </button>
-            );
-          })}
-        </div>
+                <rect
+                  x="80"
+                  y="14"
+                  width="92"
+                  height="92"
+                  rx="10"
+                  transform="rotate(45 80 14)"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                />
+                <circle cx="80" cy="80" r="16" stroke="currentColor" strokeWidth="6" />
+              </svg>
+            )}
+
+            <div className="relative z-10 flex items-start justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black tracking-wider shadow-2xs">
+                  {seasonYear}年度
+                </span>
+                {(isDemoMode || providerDemo) && (
+                  <span className="px-2 py-0.5 rounded bg-[#0f172a] text-slate-200 border border-slate-700 text-[10px] font-black shadow-2xs">
+                    DEMO
+                  </span>
+                )}
+              </div>
+
+              {canManageCover && (
+                <button
+                  type="button"
+                  onClick={() => setIsTeamCoverModalOpen(true)}
+                  className="px-2.5 py-1 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-slate-100 border border-slate-700 text-[10.5px] font-black flex items-center gap-1 shadow-2xs active:scale-95 transition-all cursor-pointer shrink-0"
+                >
+                  <ImagePlus className="w-3 h-3 text-teal-400 shrink-0" />
+                  <span>{effectiveTeamCoverUrl ? "背景変更" : "背景写真"}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 下部純白ボディ（丸枠チームロゴ境界オーバーラップ ＋ チーム情報 ＋ 試合種別サマリーバー） */}
+          <div className="px-3.5 pb-3.5 pt-2 bg-card space-y-3">
+            {/* 境界オーバーラップ行：左に円形チームロゴ、右に勝敗・勝率サマリー */}
+            <div className="relative z-20 flex items-end justify-between gap-2.5 -mt-9">
+              <div className="w-16 h-16 rounded-full border-[3px] border-card bg-card shadow-sm ring-2 ring-primary/20 overflow-hidden flex items-center justify-center shrink-0">
+                {effectiveTeamLogoUrl ? (
+                  <img
+                    src={effectiveTeamLogoUrl}
+                    alt={teamHeadline}
+                    width={64}
+                    height={64}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="w-full h-full bg-primary/10 text-primary flex items-center justify-center font-black text-base select-none">
+                    {teamInitials}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap justify-end pb-0.5">
+                {summary.totalMatches > 0 && (
+                  <span className="px-2 py-1 rounded-xl bg-emerald-500/12 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-black tabular-nums">
+                    勝率 {summary.winRate}
+                  </span>
+                )}
+                <div className="px-2.5 py-1 rounded-xl bg-muted border border-border flex items-baseline gap-1 shadow-2xs">
+                  <span className="text-[10px] font-black text-muted-foreground tracking-wider">
+                    {filterBadgeLabel}
+                  </span>
+                  <span className="text-base font-black italic tracking-tight tabular-nums text-foreground leading-none">
+                    {summary.wins}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground">勝</span>
+                  <span className="text-base font-black italic tracking-tight tabular-nums text-foreground leading-none">
+                    {summary.losses}
+                  </span>
+                  <span className="text-[10px] font-bold text-muted-foreground">敗</span>
+                  {summary.draws > 0 && (
+                    <>
+                      <span className="text-sm font-black italic tracking-tight tabular-nums text-foreground leading-none">
+                        {summary.draws}
+                      </span>
+                      <span className="text-[10px] font-bold text-muted-foreground">分</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* チーム名称・構成・監督・代表指標 */}
+            <div className="space-y-1">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-foreground leading-snug">
+                {teamHeadline}
+              </h2>
+
+              {(Boolean(teamSubname && teamSubname !== teamHeadline) ||
+                Boolean(teamMeta?.managerName) ||
+                summary.totalMatches > 0) && (
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-muted-foreground flex-wrap">
+                  {teamSubname && teamSubname !== teamHeadline && (
+                    <span className="text-muted-foreground font-black">
+                      {teamSubname}
+                    </span>
+                  )}
+                  {teamMeta?.managerName && (
+                    <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-foreground text-[10.5px] font-black">
+                      監督: {teamMeta.managerName}
+                    </span>
+                  )}
+                  {summary.totalMatches > 0 && (
+                    <span className="px-2 py-0.5 rounded-md bg-primary/10 border border-primary/25 text-primary text-[10.5px] font-black tabular-nums">
+                      打率 {summary.teamAvg} / 防御率 {summary.teamEra}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 試合種別サマリーバー（タップで即絞り込み連動） */}
+            <div className="grid grid-cols-4 gap-1.5 pt-2.5 border-t border-border">
+              {(
+                [
+                  { key: "all" as const, label: "すべて", count: countAll, dot: "bg-primary" },
+                  { key: "official" as const, label: "公式戦", count: countOfficial, dot: "bg-amber-500" },
+                  { key: "exchange" as const, label: "交流戦", count: countExchange, dot: "bg-sky-500" },
+                  {
+                    key: "practice" as const,
+                    label: practiceMatchLabel,
+                    count: countPractice,
+                    dot: "bg-teal-500",
+                  },
+                ] as const
+              ).map((item) => {
+                const active = filter === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() =>
+                      setFilter(active && item.key !== "all" ? "all" : item.key)
+                    }
+                    className={cn(
+                      "py-2 px-2 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer",
+                      active
+                        ? "bg-primary/12 text-primary border-primary/40 shadow-2xs"
+                        : "bg-muted hover:bg-muted/80 border-border text-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span className={cn("w-2 h-2 rounded-full shrink-0", item.dot)} />
+                      <span
+                        className={cn(
+                          "text-[10px] font-black truncate",
+                          active ? "text-primary" : "text-muted-foreground"
+                        )}
+                      >
+                        {item.label}
+                      </span>
+                    </div>
+                    <p className="text-sm font-black tabular-nums mt-0.5 pl-3.5">
+                      {item.count}
+                      <span
+                        className={cn(
+                          "text-[10px] font-bold ml-0.5",
+                          active ? "text-primary/80" : "text-muted-foreground"
+                        )}
+                      >
+                        試合
+                      </span>
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         {isLoading ? (
           <div className="rounded-2xl border border-border bg-card p-12 flex flex-col items-center justify-center gap-2.5 shadow-xs">
@@ -2113,8 +2371,34 @@ export default function LiffStatsPage() {
           </>
         )}
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div
+          className="h-8 w-full shrink-0 pointer-events-none select-none"
+          aria-hidden="true"
+        />
       </div>
+
+      {/* ━━━ 🏟️ チームヘッダー背景画像（カバー写真）設定モーダル ━━━ */}
+      {isTeamCoverModalOpen && (
+        <TeamCoverPhotoModal
+          isOpen={isTeamCoverModalOpen}
+          teamId={activeTeamId}
+          teamName={teamHeadline}
+          logoImageUrl={effectiveTeamLogoUrl}
+          currentCoverUrl={effectiveTeamCoverUrl}
+          userId={effectiveUserId || null}
+          userName={effectiveUserName || null}
+          onClose={() => setIsTeamCoverModalOpen(false)}
+          onCoverUpdated={(nextCoverUrl) => {
+            setTeamMeta((prev) =>
+              prev ? { ...prev, coverImageUrl: nextCoverUrl } : prev
+            );
+            updateCurrentTeamCover(nextCoverUrl || undefined);
+            if (!(isDemoMode || providerDemo || activeTeamId === "demo-team")) {
+              void refreshTeams();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

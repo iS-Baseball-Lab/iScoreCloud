@@ -407,8 +407,11 @@ function formatThrowsBats(throws: string | null, bats: string | null): string | 
 
 function cleanUniformNumber(raw: string | null | undefined): string {
   if (!raw) return "--";
-  const c = raw.trim().replace(/^#/, "");
-  return c || "--";
+  const c = raw.trim().replace(/^[#＃]+/, "");
+  if (!c || c === "-" || c === "--" || c === "ー" || c === "なし" || c === "未設定") {
+    return "--";
+  }
+  return c;
 }
 
 function hydrateDirectoryPlayer(p: DirectoryPlayer): DirectoryPlayer {
@@ -709,7 +712,10 @@ function LiffPlayersDirectoryContent() {
             ...p,
             name: payload.updated.name || p.name,
             nameKana: payload.updated.nameKana,
-            uniformNumber: payload.updated.uniformNumber || p.uniformNumber,
+            uniformNumber:
+              payload.updated.uniformNumber !== undefined
+                ? payload.updated.uniformNumber
+                : p.uniformNumber,
             nickname: payload.updated.nickname,
             registeredPrimaryPosition: payload.updated.registeredPrimaryPosition,
             registeredSubPositions: payload.updated.registeredSubPositions,
@@ -813,7 +819,7 @@ function LiffPlayersDirectoryContent() {
                 ...p,
                 ...(pOv?.name ? { name: pOv.name } : {}),
                 ...(pOv?.nameKana !== undefined ? { nameKana: pOv.nameKana } : {}),
-                ...(pOv?.uniformNumber ? { uniformNumber: pOv.uniformNumber } : {}),
+                ...(pOv?.uniformNumber !== undefined ? { uniformNumber: pOv.uniformNumber } : {}),
                 ...(pOv?.nickname !== undefined ? { nickname: pOv.nickname } : {}),
                 ...(pOv?.registeredPrimaryPosition !== undefined
                   ? {
@@ -2226,7 +2232,7 @@ function LiffPlayersDirectoryContent() {
                       aria-hidden="true"
                       className="pointer-events-none absolute inset-0 bg-slate-950/20"
                     />
-                    {!hasCustomActionBg && (
+                    {!hasCustomActionBg && numStr !== "--" && (
                       <span
                         aria-hidden="true"
                         className="pointer-events-none select-none absolute right-1.5 -bottom-2 text-[64px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums group-hover:scale-105 transition-transform duration-300"
@@ -2891,7 +2897,7 @@ function LiffPlayersDirectoryContent() {
                     aria-hidden="true"
                     className="pointer-events-none absolute inset-0 bg-slate-950/20"
                   />
-                  {!hasCustomModalActionBg && (
+                  {!hasCustomModalActionBg && numStr !== "--" && (
                     <span
                       aria-hidden="true"
                       className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums"

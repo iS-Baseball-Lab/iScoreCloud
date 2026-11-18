@@ -112,8 +112,28 @@ const CUSTOM_TEAM_VALUE = "__custom__";
 
 function cleanUniform(raw: string | null | undefined): string {
   if (!raw) return "--";
-  const trimmed = raw.trim().replace(/^#/, "");
-  return trimmed || "--";
+  const trimmed = raw
+    .replace(/[０-９]/g, (ch) =>
+      String.fromCharCode(ch.charCodeAt(0) - 0xfee0)
+    )
+    .trim()
+    .replace(/^[#＃]+/, "");
+  if (
+    !trimmed ||
+    trimmed === "-" ||
+    trimmed === "--" ||
+    trimmed === "ー" ||
+    trimmed === "なし" ||
+    trimmed === "未設定"
+  ) {
+    return "--";
+  }
+  return trimmed;
+}
+
+function normalizeUniformInput(raw: string | null | undefined): string {
+  const cleaned = cleanUniform(raw);
+  return cleaned === "--" ? "" : cleaned.slice(0, 6);
 }
 
 export function PlayerProfileEditModal({
@@ -178,7 +198,7 @@ export function PlayerProfileEditModal({
       : { ...EMPTY_PLAYER_PROFILE_DETAILS, playStyleTags: [] };
 
     setOfficialName(player.name || "");
-    setUniformNumber(player.uniformNumber?.replace(/^#/, "") || "");
+    setUniformNumber(normalizeUniformInput(player.uniformNumber));
     setIsCaptain(Boolean(player.isCaptain));
     setJoinedDateStr(formatUnixTimestampToDateInput(player.joinedAt));
 
@@ -281,7 +301,9 @@ export function PlayerProfileEditModal({
 
   if (!isOpen || !player || typeof document === "undefined") return null;
 
-  const numStr = cleanUniform(uniformNumber || player.uniformNumber);
+  const numStr = cleanUniform(
+    canManagePlayers ? uniformNumber : player.uniformNumber
+  );
   const initial = (officialName || player.name).replace(/\s+/g, "").slice(0, 1) || "選";
 
   const togglePlayStyleTag = (tagId: PlayStyleTagId) => {
@@ -363,7 +385,7 @@ export function PlayerProfileEditModal({
             ...(canManagePlayers
               ? {
                   name: officialName.trim(),
-                  uniformNumber: uniformNumber.trim().replace(/^#/, "") || player.uniformNumber,
+                  uniformNumber: normalizeUniformInput(uniformNumber),
                   isCaptain,
                   joinedAt: joinedDateStr.trim() || null,
                 }
@@ -499,7 +521,7 @@ export function PlayerProfileEditModal({
             <div className="min-w-0 space-y-0.5">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10.5px] font-black tabular-nums">
-                  #{numStr}
+                  {numStr === "--" ? "背番号なし" : `#${numStr}`}
                 </span>
                 <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-teal-300 text-[10px] font-black">
                   {editorRoleBadge}
@@ -591,19 +613,33 @@ export function PlayerProfileEditModal({
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-black text-foreground block">
-                      背番号
-                    </label>
+                    <div className="flex items-center justify-between gap-1">
+                      <label className="text-[11px] font-black text-foreground">
+                        背番号
+                      </label>
+                      {uniformNumber.trim() !== "" && (
+                        <button
+                          type="button"
+                          onClick={() => setUniformNumber("")}
+                          className="px-1.5 py-0.2 rounded bg-muted hover:bg-muted/80 border border-border text-[9.5px] font-bold text-muted-foreground transition-colors cursor-pointer"
+                        >
+                          なし
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       maxLength={6}
                       value={uniformNumber}
                       onChange={(e) => setUniformNumber(e.target.value)}
-                      placeholder="10"
+                      placeholder="未設定"
                       className="w-full px-3 py-2 rounded-xl bg-background border border-border text-xs font-black tabular-nums text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
                 </div>
+                <p className="text-[10px] font-bold text-muted-foreground -mt-1.5">
+                  ※ 背番号を空欄（「なし」タップ）にして保存すると「背番号なし」へ更新できます。
+                </p>
 
                 {/* 入団日（途中入団選手の過去試合控え混入防止） */}
                 <div className="p-2.5 rounded-xl bg-muted/40 border border-border space-y-1.5">
@@ -662,7 +698,7 @@ export function PlayerProfileEditModal({
             <div className="px-3.5 py-2 rounded-xl bg-card border border-border flex items-center gap-2 text-[11px] font-bold text-muted-foreground">
               <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span>
-                背番号（#{numStr}）・正式選手名（{player.name}）はスコアブック連動のため指導者管理です
+                背番号（{numStr === "--" ? "なし" : `#${numStr}`}）・正式選手名（{player.name}）はスコアブック連動のため指導者管理です
               </span>
             </div>
           )}

@@ -215,8 +215,11 @@ function getPosMeta(raw: string | null | undefined): PositionLabelMeta {
 
 function cleanUniform(raw: string | null | undefined): string {
   if (!raw) return "--";
-  const c = raw.trim().replace(/^#/, "");
-  return c || "--";
+  const c = raw.trim().replace(/^[#＃]/, "");
+  if (!c || c === "-" || c === "--" || c === "ー" || c === "なし" || c === "未設定") {
+    return "--";
+  }
+  return c;
 }
 
 function formatShortDate(raw: string): string {
@@ -894,7 +897,7 @@ function applyDemoGrowthOverrides(
       ...rp,
       ...(po?.name ? { name: po.name } : {}),
       ...(po?.nameKana !== undefined ? { nameKana: po.nameKana } : {}),
-      ...(po?.uniformNumber ? { uniformNumber: po.uniformNumber } : {}),
+      ...(po?.uniformNumber !== undefined ? { uniformNumber: po.uniformNumber } : {}),
       ...(po?.profileImageUrl !== undefined
         ? { profileImageUrl: po.profileImageUrl }
         : {}),
@@ -975,7 +978,7 @@ function applyDemoGrowthOverrides(
       ...p,
       ...(po?.name ? { name: po.name } : {}),
       ...(po?.nameKana !== undefined ? { nameKana: po.nameKana } : {}),
-      ...(po?.uniformNumber ? { uniformNumber: po.uniformNumber } : {}),
+      ...(po?.uniformNumber !== undefined ? { uniformNumber: po.uniformNumber } : {}),
       ...(po?.nickname !== undefined ? { nickname: po.nickname } : {}),
       ...(po?.throws !== undefined ? { throws: po.throws } : {}),
       ...(po?.bats !== undefined ? { bats: po.bats } : {}),
@@ -1369,7 +1372,7 @@ function PlayerGrowthContent() {
                       aria-hidden="true"
                       className="pointer-events-none absolute inset-0 bg-slate-950/20"
                     />
-                    {!hasCustomActionBg && (
+                    {!hasCustomActionBg && numStr !== "--" && (
                       <span
                         aria-hidden="true"
                         className="pointer-events-none select-none absolute right-2.5 -bottom-4 text-[104px] font-black tracking-tighter leading-none text-white/[0.22] tabular-nums"
