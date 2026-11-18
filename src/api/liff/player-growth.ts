@@ -28,6 +28,7 @@ import {
 } from "@/lib/liff/player-positions-and-growth";
 import { normalizeLegacyForceOutAtBat } from "@/lib/liff/scorebook-fielding";
 import {
+  calculateOfficialEra,
   classifyAtBatResultToken,
   evaluateHalfInningEarnedRunDetails,
   evaluateMatchPitcherDecisions,
@@ -35,6 +36,7 @@ import {
   isMidAtBatStrikeoutChargedToPriorBatter,
   isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
+  normalizeRegulationInnings,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
@@ -652,6 +654,7 @@ interface RawGamePitchingLog {
   hbp: number;
   runs: number;
   earnedRuns: number;
+  scheduledInnings?: number;
   decision?: OfficialPitcherDecision;
   completeGame?: boolean;
   shutout?: boolean;
@@ -987,6 +990,12 @@ function buildSectionFromGameLogs(
   const pitchingTrend: PlayerPitchingTrendItem[] = [];
 
   if (pitchingLogs.length > 0) {
+    const avgPitchingInnings =
+      pitchingLogs.reduce((s, pg) => s + (pg.scheduledInnings || 7), 0) /
+      pitchingLogs.length;
+    const eraRegInnings = normalizeRegulationInnings(avgPitchingInnings, 7);
+    const regOutsFactor = eraRegInnings * 3;
+
     let pWins = 0;
     let pLosses = 0;
     let pSaves = 0;
@@ -1025,7 +1034,7 @@ function buildSectionFromGameLogs(
       pRuns += pg.runs;
       pEr += pg.earnedRuns;
 
-      const cumEraVal = pOuts > 0 ? (pEr * 21) / pOuts : 0;
+      const cumEraVal = calculateOfficialEra(pEr, pOuts, eraRegInnings);
       const cumWhipVal = pOuts > 0 ? ((pHits + pBb) * 3) / pOuts : 0;
       const gameStrikeRate =
         pg.pitchesThrown > 0
@@ -1062,10 +1071,13 @@ function buildSectionFromGameLogs(
       });
     }
 
-    const finalEra = pOuts > 0 ? ((pEr * 21) / pOuts).toFixed(2) : "-.--";
+    const finalEra =
+      pOuts > 0
+        ? calculateOfficialEra(pEr, pOuts, eraRegInnings).toFixed(2)
+        : "-.--";
     const finalWhip =
       pOuts > 0 ? (((pHits + pBb) * 3) / pOuts).toFixed(2) : "-.--";
-    const finalK7 = pOuts > 0 ? ((pK * 21) / pOuts).toFixed(2) : "0.00";
+    const finalK7 = pOuts > 0 ? ((pK * regOutsFactor) / pOuts).toFixed(2) : "0.00";
     const finalKBb =
       pBb > 0 ? (pK / pBb).toFixed(2) : pK > 0 ? `${pK}.00` : "0.00";
 
@@ -2729,6 +2741,7 @@ liffPlayerGrowthRouter.get("/", async (c) => {
             hbp: targetPitcherAcc.hbp,
             runs: targetPitcherAcc.runs,
             earnedRuns: targetPitcherAcc.earnedRuns,
+            scheduledInnings: m.innings || 7,
             decision: targetDecision?.decision ?? "none",
             completeGame: targetDecision?.completeGame ?? false,
             shutout: targetDecision?.shutout ?? false,

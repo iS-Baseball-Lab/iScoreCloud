@@ -1049,10 +1049,13 @@ export function validateScorebookSheet(
       });
     }
 
-    const preTotalOuts = inningEvents.reduce(
-      (sum, x) => sum + Math.max(0, x.outsInPlay),
-      0
+    const initialTiebreakOuts = Math.min(
+      2,
+      Math.max(0, firstAb.tiebreakInitialOuts || 0)
     );
+    const preTotalOuts =
+      initialTiebreakOuts +
+      inningEvents.reduce((sum, x) => sum + Math.max(0, x.outsInPlay), 0);
     const preTotalRuns = inningEvents.reduce(
       (sum, x) => sum + Math.max(0, x.runsInPlay),
       0
@@ -1067,7 +1070,7 @@ export function validateScorebookSheet(
       expectedNextBatterOrder === null ||
       firstAb.battingOrder === expectedNextBatterOrder;
 
-    let inningOuts = 0;
+    let inningOuts = initialTiebreakOuts;
     let inningRuns = 0;
     const inningSnapshots = simulateSheetRunners(inningEvents, structure);
 
@@ -2026,7 +2029,12 @@ function rebalanceInningOutsAfterRecovery(
     }
   }
 
-  let totalOuts = cloned.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+  const initialOuts = Math.min(
+    2,
+    Math.max(0, cloned[0]?.tiebreakInitialOuts || 0)
+  );
+  let totalOuts =
+    initialOuts + cloned.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
 
   // ケース1: 2アウト＋最終打者が野選/封殺(fc)で outsInPlay=0 になっていた場合 ➔ 1塁走者封殺の1アウトを補完して3アウト化
   const last = cloned[cloned.length - 1];
@@ -2071,7 +2079,7 @@ function rebalanceInningOutsAfterRecovery(
   }
 
   // endingOuts を先頭から単調増加（1〜3）に整える
-  let runningOuts = 0;
+  let runningOuts = initialOuts;
   for (const ab of cloned) {
     runningOuts = Math.min(3, runningOuts + Math.max(0, ab.outsInPlay));
     ab.endingOuts = runningOuts;
@@ -2948,8 +2956,10 @@ export function reconcileSheetExcessOutsDeterministically(
         ? inningsMap.get(nextInn) || []
         : [];
 
+    const getInitOuts = (arr: ScorebookV2AtBat[]): number =>
+      Math.min(2, Math.max(0, arr[0]?.tiebreakInitialOuts || 0));
     const sumOuts = (arr: ScorebookV2AtBat[]): number =>
-      arr.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+      getInitOuts(arr) + arr.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
 
     // 2-A. 次イニング先頭と同じ打順が前イニング末尾にも重複しており、前イニングが3アウト超過（または既に3アウト到達済み）の場合
     while (
@@ -2977,7 +2987,7 @@ export function reconcileSheetExcessOutsDeterministically(
 
     // 2-C. 累積3アウト到達時点の打順の「次の打順」から次イニングがピタリと始まっている場合、それより後ろの余剰行は100%切り線・ノイズなので除去
     if (nextList.length > 0 && list.length >= 4) {
-      let cOuts = 0;
+      let cOuts = getInitOuts(list);
       let threeIdx = -1;
       for (let i = 0; i < list.length; i++) {
         cOuts += Math.max(0, list[i].outsInPlay);
@@ -2998,7 +3008,7 @@ export function reconcileSheetExcessOutsDeterministically(
 
     // 2-D. 次イニングが存在しない最終イニング等で、先頭から無走者のまま3アウト完了した後ろに余剰行がある場合
     if (nextList.length === 0 && list.length >= 4) {
-      let cOuts = 0;
+      let cOuts = getInitOuts(list);
       let threeIdx = -1;
       for (let i = 0; i < list.length; i++) {
         cOuts += Math.max(0, list[i].outsInPlay);
@@ -3051,7 +3061,7 @@ export function reconcileSheetExcessOutsDeterministically(
     }
 
     // endingOuts を先頭から単調増加（最大3）に同期
-    let monoOuts = 0;
+    let monoOuts = getInitOuts(list);
     for (const ab of list) {
       monoOuts = Math.min(3, monoOuts + Math.max(0, ab.outsInPlay));
       if (ab.endingOuts !== monoOuts) {
@@ -3075,7 +3085,10 @@ export function reconcileSheetExcessOutsDeterministically(
     changed = true;
     for (const inn of sortedInnings) {
       const list = inningsMap.get(inn) || [];
-      let monoOuts = 0;
+      let monoOuts = Math.min(
+        2,
+        Math.max(0, list[0]?.tiebreakInitialOuts || 0)
+      );
       for (const ab of list) {
         monoOuts = Math.min(3, monoOuts + Math.max(0, ab.outsInPlay));
         ab.endingOuts = monoOuts;

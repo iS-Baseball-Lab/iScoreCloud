@@ -587,7 +587,9 @@ export function Step2StructureCheck({
           )}
         </div>
         <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-          ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を正解アンカーとして、次のステップで全投球・全打席を精密解析します。
+          {activeSheetDataUrl
+            ? "ここで確定した「各回の得点」「打者一巡(2列)の有無」「打順・途中交代・投手」を正解アンカーとして、次のステップで全投球・全打席を精密解析します。"
+            : "ここで確定した「打順・途中交代・登板投手・各回得点」をもとに、次のステップ（STEP 3）で打席・1球データを入力・検算します。"}
         </p>
         {structureTotalMs !== null && structureTotalMs > 0 && (
           <div className="pt-0.5 flex items-center gap-1.5 flex-wrap text-[10px] font-black tabular-nums">
@@ -2408,7 +2410,7 @@ export function Step2StructureCheck({
             className="h-13 px-4 rounded-2xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
           >
             <ChevronLeft className="w-4 h-4" />
-            <span>画像選択へ</span>
+            <span>{activeSheetDataUrl ? "画像選択へ" : "STEP 1へ"}</span>
           </button>
 
           {onStartDeepAnalysis ? (

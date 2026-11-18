@@ -22,9 +22,11 @@ import {
   evaluateMatchPitcherDecisions,
   extractFieldingCreditsForAtBat,
   formatOfficialBaseballRate,
+  formatOfficialEra,
   isMidAtBatStrikeoutChargedToPriorBatter,
   isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
+  normalizeRegulationInnings,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
@@ -2073,6 +2075,8 @@ app.get("/:id/stats", async (c) => {
         ? Math.min(individualEarnedRunsSum, totalTeamEarnedRuns)
         : individualEarnedRunsSum;
 
+    const eraRegulationInnings = normalizeRegulationInnings(match.innings, 7);
+
     const pitcherStatsList = orderedPitchers.map(
       ({ sortOrder: _so, manualDecision: _md, ...p }) => {
         const inningsInt = Math.floor(p.outs / 3);
@@ -2080,13 +2084,12 @@ app.get("/:id/stats", async (c) => {
         const ipStr =
           inningsFrac > 0 ? `${inningsInt}.${inningsFrac}` : `${inningsInt}.0`;
 
-        const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
         const dec = decisionEval?.byPitcherKey.get(p.id);
 
         return {
           ...p,
           ip: ipStr,
-          era: p.outs > 0 ? eraVal.toFixed(2) : "0.00",
+          era: formatOfficialEra(p.earnedRuns, p.outs, eraRegulationInnings, "0.00"),
           decision: dec?.decision ?? "none",
           completeGame: dec?.completeGame ?? false,
           shutout: dec?.shutout ?? false,
@@ -2105,6 +2108,7 @@ app.get("/:id/stats", async (c) => {
         individualEarnedRunsSum,
         teamShutout: decisionEval?.teamShutout ?? false,
         teamShutoutExplanation: decisionEval?.teamShutoutExplanation,
+        scheduledInnings: eraRegulationInnings,
       },
       gameDetails,
     });

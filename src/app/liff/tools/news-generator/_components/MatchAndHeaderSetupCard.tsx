@@ -173,6 +173,14 @@ export function MatchAndHeaderSetupCard({
                 <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[10.5px] font-black">
                   {doc.battingOrder === "first" ? "自チーム先攻 (表)" : "自チーム後攻 (裏)"}
                 </span>
+                <span className="px-1.5 py-0.5 rounded-md bg-muted border border-border text-foreground text-[10px] font-black">
+                  {doc.regulationInnings || 7}回制
+                </span>
+                {(doc.opponentBatterCount || 9) > 9 && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-[10px] font-black">
+                    相手{doc.opponentBatterCount}人打順
+                  </span>
+                )}
                 <span className="text-[11px] font-black text-muted-foreground">
                   {doc.dateText || "日付未設定"}
                 </span>
@@ -411,7 +419,7 @@ export function MatchAndHeaderSetupCard({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="space-y-1">
                   <label className="block text-[10.5px] font-black text-muted-foreground">
                     スコア表・先攻略称
@@ -463,6 +471,40 @@ export function MatchAndHeaderSetupCard({
                       label: `${n}回制`,
                     }))}
                     title="規定イニングを選択"
+                    size="sm"
+                    searchable={false}
+                    className="w-full h-9"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10.5px] font-black text-muted-foreground">
+                    相手打順人数
+                  </label>
+                  <LiffSelect
+                    value={String(doc.opponentBatterCount || 9)}
+                    onChange={(val) => {
+                      const nextCount = Math.min(
+                        25,
+                        Math.max(9, Number(val) || 9)
+                      );
+                      onChangeDoc((p) => ({
+                        ...p,
+                        opponentBatterCount: nextCount,
+                        nextOpponentOrder: Math.min(
+                          Math.max(1, p.nextOpponentOrder || 1),
+                          nextCount
+                        ),
+                      }));
+                    }}
+                    options={Array.from({ length: 17 }, (_, i) => i + 9).map(
+                      (n) => ({
+                        value: String(n),
+                        label:
+                          n === 9 ? "9人（通常）" : `${n}人（全員打制）`,
+                      })
+                    )}
+                    title="相手の打順人数を選択"
+                    subtitle="練習試合・学童野球などの全員打ち（10人以上打順）に対応します"
                     size="sm"
                     searchable={false}
                     className="w-full h-9"

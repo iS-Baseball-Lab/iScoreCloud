@@ -635,7 +635,10 @@ export function simulateSheetRunners(
       }
     });
 
-    let outs = 0;
+    let outs = Math.min(
+      2,
+      Math.max(0, inningAtBats[0]?.tiebreakInitialOuts || 0)
+    );
     let currentBases = createEmptyBaseMap();
     const retiredOrScoredOrders = new Set<number>();
     const retiredOrScoredNames = new Set<string>();

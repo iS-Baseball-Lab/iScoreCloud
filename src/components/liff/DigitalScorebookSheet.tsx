@@ -5728,7 +5728,7 @@ export function DigitalScorebookSheet({
                   model.pitcherTotals.earnedRuns
                   ? `個人自責計${model.pitcherTotals.individualEarnedRunsSum}`
                   : "",
-                "防御率は7回制換算",
+                `防御率は${model.pitcherTotals.eraRegulationInnings || 7}回制換算`,
               ]
                 .filter(Boolean)
                 .join(" / ")}`}

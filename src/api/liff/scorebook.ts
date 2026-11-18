@@ -51,6 +51,13 @@ import {
   resolveActiveMatchupFromStructure,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
+import { sanitizeLiveReportDocument } from "@/lib/liff/live-report-v2";
+import {
+  buildDirectDigitalScorebookDraft,
+  convertLiveReportToScorebookDraft,
+  type SavedMatchLineupInput,
+  type SavedOpponentLineupInput,
+} from "@/lib/liff/scorebook-live-converter";
 import type { WorkerEnv } from "@/types/api";
 import {
   isNonPitchMoundEvent,
@@ -91,6 +98,7 @@ const {
   baseAdvances,
   playLogs,
   matchScorebookSnapshots,
+  matchLiveReports,
 } = schema;
 
 async function requireScorebookAiAccess(
@@ -528,49 +536,115 @@ liffScorebookRouter.get("/context", async (c) => {
     }
 
     await ensurePlayerProfileColumns(c.env.DB);
-    const [rosterRows, matchRows, distinctAbResult] = await Promise.all([
-      db
-        .select({
-          id: players.id,
-          name: players.name,
-          nameKana: players.nameKana,
-          uniformNumber: players.uniformNumber,
-          primaryPosition: players.primaryPosition,
-          bats: players.bats,
-          isActive: players.isActive,
-          conditionStatus: players.conditionStatus,
-        })
-        .from(players)
-        .where(eq(players.teamId, targetTeam.id))
-        .all(),
-      db
-        .select({
-          id: matches.id,
-          opponent: matches.opponent,
-          date: matches.date,
-          matchType: matches.matchType,
-          tournamentId: matches.tournamentId,
-          tournamentName: tournaments.name,
-          battingOrder: matches.battingOrder,
-          innings: matches.innings,
-          status: matches.status,
-          myScore: matches.myScore,
-          opponentScore: matches.opponentScore,
-          myInningScores: matches.myInningScores,
-          opponentInningScores: matches.opponentInningScores,
-        })
-        .from(matches)
-        .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
-        .where(eq(matches.teamId, targetTeam.id))
-        .orderBy(desc(matches.date), desc(matches.createdAt))
-        .all(),
-      c.env.DB.prepare(
-        `SELECT DISTINCT ab.match_id AS matchId FROM at_bats ab JOIN matches m ON ab.match_id = m.id WHERE m.team_id = ?`
-      )
-        .bind(targetTeam.id)
-        .all()
-        .catch(() => ({ results: [] })),
-    ]);
+    const [rosterRows, matchRows, distinctAbResult, liveReportRows] =
+      await Promise.all([
+        db
+          .select({
+            id: players.id,
+            name: players.name,
+            nameKana: players.nameKana,
+            uniformNumber: players.uniformNumber,
+            primaryPosition: players.primaryPosition,
+            bats: players.bats,
+            isActive: players.isActive,
+            conditionStatus: players.conditionStatus,
+          })
+          .from(players)
+          .where(eq(players.teamId, targetTeam.id))
+          .all(),
+        db
+          .select({
+            id: matches.id,
+            opponent: matches.opponent,
+            date: matches.date,
+            matchType: matches.matchType,
+            tournamentId: matches.tournamentId,
+            tournamentName: tournaments.name,
+            battingOrder: matches.battingOrder,
+            innings: matches.innings,
+            status: matches.status,
+            myScore: matches.myScore,
+            opponentScore: matches.opponentScore,
+            myInningScores: matches.myInningScores,
+            opponentInningScores: matches.opponentInningScores,
+            myLineup: matches.myLineup,
+            opponentLineup: matches.opponentLineup,
+          })
+          .from(matches)
+          .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
+          .where(eq(matches.teamId, targetTeam.id))
+          .orderBy(desc(matches.date), desc(matches.createdAt))
+          .all(),
+        c.env.DB.prepare(
+          `SELECT DISTINCT ab.match_id AS matchId FROM at_bats ab JOIN matches m ON ab.match_id = m.id WHERE m.team_id = ?`
+        )
+          .bind(targetTeam.id)
+          .all()
+          .catch(() => ({ results: [] })),
+        db
+          .select({
+            id: matchLiveReports.id,
+            matchId: matchLiveReports.matchId,
+            reportJson: matchLiveReports.reportJson,
+            updatedAt: matchLiveReports.updatedAt,
+          })
+          .from(matchLiveReports)
+          .where(eq(matchLiveReports.teamId, targetTeam.id))
+          .all()
+          .catch(() => []),
+      ]);
+
+    const matchIds = matchRows.map((m) => m.id);
+    const savedLineupMatchIds = new Set<string>();
+    const snapshotMatchIds = new Set<string>();
+    if (matchIds.length > 0) {
+      const [lineupDistinctRows, snapRows] = await Promise.all([
+        db
+          .selectDistinct({ matchId: matchLineups.matchId })
+          .from(matchLineups)
+          .where(inArray(matchLineups.matchId, matchIds))
+          .all()
+          .catch(() => []),
+        db
+          .select({ matchId: matchScorebookSnapshots.matchId })
+          .from(matchScorebookSnapshots)
+          .where(inArray(matchScorebookSnapshots.matchId, matchIds))
+          .all()
+          .catch(() => []),
+      ]);
+      for (const l of lineupDistinctRows) savedLineupMatchIds.add(l.matchId);
+      for (const s of snapRows) snapshotMatchIds.add(s.matchId);
+    }
+
+    const liveReportMetaByMatchId = new Map<
+      string,
+      { playCount: number; hasAnyHalf: boolean; updatedAt: number }
+    >();
+    for (const lr of liveReportRows) {
+      if (!lr.matchId || lr.id !== `match:${lr.matchId}` || !lr.reportJson) {
+        continue;
+      }
+      try {
+        const parsedRaw = JSON.parse(lr.reportJson) as unknown;
+        const doc = sanitizeLiveReportDocument(parsedRaw);
+        if (!doc) continue;
+        const playCount = doc.halfInnings.reduce(
+          (sum, h) =>
+            sum + h.entries.filter((e) => e.entryType === "batter").length,
+          0
+        );
+        const hasAnyHalf = doc.halfInnings.some(
+          (h) => h.entries.length > 0 || h.manualRunsOverride !== null
+        );
+        liveReportMetaByMatchId.set(lr.matchId, {
+          playCount,
+          hasAnyHalf,
+          updatedAt: lr.updatedAt,
+        });
+      } catch {
+        // ignore invalid live report json
+      }
+    }
 
     const periodsByPlayerId = await loadTeamPlayerConditionPeriodsMap(
       c.env.DB,
@@ -617,7 +691,7 @@ liffScorebookRouter.get("/context", async (c) => {
       }));
 
     // すでに打席データが入っている試合ID一覧を取得
-    const existingAtBatMatchIds = new Set<string>();
+    const existingAtBatMatchIds = new Set<string>(snapshotMatchIds);
     for (const r of (distinctAbResult.results || []) as Array<{ matchId?: string }>) {
       if (r.matchId) existingAtBatMatchIds.add(r.matchId);
     }
@@ -626,23 +700,43 @@ liffScorebookRouter.get("/context", async (c) => {
       .sort((a, b) =>
         b.date.replace(/\//g, "-").localeCompare(a.date.replace(/\//g, "-"))
       )
-      .map((m) => ({
-        id: m.id,
-        opponent: m.opponent,
-        date: m.date,
-        matchType: (m.matchType as "official" | "practice" | "exchange") || "practice",
-        tournamentName:
-          m.tournamentName ||
-          (m.tournamentId && !m.tournamentId.includes("-") ? m.tournamentId : null),
-        battingOrder: m.battingOrder === "second" ? "second" : "first",
-        innings: m.innings || 7,
-        status: m.status,
-        myScore: m.myScore ?? 0,
-        opponentScore: m.opponentScore ?? 0,
-        myInningScores: safeParseNumberArray(m.myInningScores),
-        opponentInningScores: safeParseNumberArray(m.opponentInningScores),
-        hasExistingAtBats: existingAtBatMatchIds.has(m.id),
-      }));
+      .map((m) => {
+        const myJsonLineup = safeParseLineupArray(m.myLineup);
+        const oppJsonLineup = safeParseLineupArray(m.opponentLineup);
+        const liveMeta = liveReportMetaByMatchId.get(m.id);
+        const hasLiveReport = Boolean(
+          liveMeta && (liveMeta.playCount > 0 || liveMeta.hasAnyHalf)
+        );
+        return {
+          id: m.id,
+          opponent: m.opponent,
+          date: m.date,
+          matchType:
+            (m.matchType as "official" | "practice" | "exchange") || "practice",
+          tournamentName:
+            m.tournamentName ||
+            (m.tournamentId && !m.tournamentId.includes("-")
+              ? m.tournamentId
+              : null),
+          battingOrder: m.battingOrder === "second" ? "second" : "first",
+          innings: m.innings || 7,
+          status: m.status,
+          myScore: m.myScore ?? 0,
+          opponentScore: m.opponentScore ?? 0,
+          myInningScores: safeParseNumberArray(m.myInningScores),
+          opponentInningScores: safeParseNumberArray(m.opponentInningScores),
+          hasExistingAtBats: existingAtBatMatchIds.has(m.id),
+          hasSavedLineup:
+            savedLineupMatchIds.has(m.id) ||
+            myJsonLineup.some((e) => Boolean((e.name || e.playerName || "").trim())),
+          hasOpponentLineup: oppJsonLineup.some((e) =>
+            Boolean((e.name || e.playerName || "").trim())
+          ),
+          hasLiveReport,
+          liveReportPlayCount: liveMeta?.playCount ?? 0,
+          liveReportUpdatedAt: liveMeta?.updatedAt ?? null,
+        };
+      });
 
     const parsedSymbolRules = parseScorebookSymbolRulesJson(
       targetTeam.scorebookSymbolRules
@@ -670,6 +764,222 @@ liffScorebookRouter.get("/context", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: `コンテキスト取得エラー: ${msg}` }, 500);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1-A2. 紙スコア写真なしの「直接デジタル手入力」＆「LINE速報からの下書き生成」（AI課金ゼロ）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+liffScorebookRouter.get("/match-init", async (c) => {
+  await ensureMatchLineupColumns(c.env.DB);
+  const db = drizzle(c.env.DB, { schema });
+
+  try {
+    const requestedTeamId = (c.req.query("teamId") || "").trim();
+    const matchId = (c.req.query("matchId") || "").trim();
+    const mode =
+      c.req.query("mode") === "from-live" ? "from-live" : "manual";
+
+    if (!matchId) {
+      return c.json({ success: false, error: "試合IDが指定されていません" }, 400);
+    }
+
+    if (!requestedTeamId || requestedTeamId === "demo-team") {
+      const demoDraft = buildDirectDigitalScorebookDraft({
+        battingOrder: "first",
+        scheduledInnings: 7,
+      });
+      return c.json({
+        success: true,
+        mode,
+        ...demoDraft,
+      });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (
+      !access.isAuthenticated ||
+      (!access.canEditScoreForTeam(requestedTeamId) &&
+        !access.canMutateTeamData(requestedTeamId))
+    ) {
+      return c.json(
+        { success: false, error: "スコアデータを編集する権限がありません" },
+        403
+      );
+    }
+
+    const match = await db
+      .select({
+        id: matches.id,
+        teamId: matches.teamId,
+        opponent: matches.opponent,
+        battingOrder: matches.battingOrder,
+        innings: matches.innings,
+        myInningScores: matches.myInningScores,
+        opponentInningScores: matches.opponentInningScores,
+        myLineup: matches.myLineup,
+        opponentLineup: matches.opponentLineup,
+      })
+      .from(matches)
+      .where(and(eq(matches.id, matchId), eq(matches.teamId, requestedTeamId)))
+      .get();
+
+    if (!match) {
+      return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
+    }
+
+    const [rosterRows, savedLineupRows, liveReportRow] = await Promise.all([
+      db
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          primaryPosition: players.primaryPosition,
+          bats: players.bats,
+          isActive: players.isActive,
+        })
+        .from(players)
+        .where(eq(players.teamId, match.teamId))
+        .all(),
+      db
+        .select({
+          battingOrder: matchLineups.battingOrder,
+          position: matchLineups.position,
+          isStarting: matchLineups.isStarting,
+          playerId: matchLineups.playerId,
+          playerName: players.name,
+          uniformNumber: players.uniformNumber,
+          bats: players.bats,
+        })
+        .from(matchLineups)
+        .innerJoin(players, eq(matchLineups.playerId, players.id))
+        .where(eq(matchLineups.matchId, match.id))
+        .orderBy(asc(matchLineups.battingOrder))
+        .all()
+        .catch(() => []),
+      mode === "from-live"
+        ? db
+            .select()
+            .from(matchLiveReports)
+            .where(
+              and(
+                eq(matchLiveReports.id, `match:${match.id}`),
+                eq(matchLiveReports.teamId, match.teamId)
+              )
+            )
+            .get()
+            .catch(() => undefined)
+        : Promise.resolve(undefined),
+    ]);
+
+    const activeRoster: ScorebookRosterPlayer[] = rosterRows
+      .filter((r) => r.isActive !== false)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        nameKana: r.nameKana,
+        uniformNumber: r.uniformNumber,
+        primaryPosition: r.primaryPosition,
+        bats: r.bats,
+      }));
+
+    const startersFromTable = savedLineupRows.filter(
+      (l) => l.isStarting !== false
+    );
+    const jsonMyLineup = safeParseLineupArray(match.myLineup);
+    const mySavedLineup: SavedMatchLineupInput[] =
+      startersFromTable.length > 0
+        ? startersFromTable.map((s) => ({
+            battingOrder: s.battingOrder,
+            position: s.position,
+            playerId: s.playerId,
+            playerName: s.playerName,
+            uniformNumber: s.uniformNumber,
+            bats: s.bats,
+          }))
+        : jsonMyLineup.map((item, idx) => ({
+            battingOrder: item.battingOrder || item.order || idx + 1,
+            position: item.position || "",
+            playerId: item.playerId || null,
+            playerName: (item.name || item.playerName || "").trim(),
+            uniformNumber: item.uniformNumber || "",
+            bats: item.bats ?? null,
+          }));
+
+    const jsonOppLineup = safeParseLineupArray(match.opponentLineup);
+    const oppSavedLineup: SavedOpponentLineupInput[] = jsonOppLineup.map(
+      (item, idx) => ({
+        battingOrder: item.battingOrder || item.order || idx + 1,
+        position: item.position || "",
+        playerName: (item.name || item.playerName || "").trim(),
+        uniformNumber: item.uniformNumber || "",
+        bats: item.bats ?? null,
+      })
+    );
+
+    if (mode === "from-live") {
+      if (!liveReportRow?.reportJson) {
+        return c.json(
+          {
+            success: false,
+            error: "この試合に紐づくLINE速報データが見つかりません",
+          },
+          404
+        );
+      }
+      let parsedLiveRaw: unknown = null;
+      try {
+        parsedLiveRaw = JSON.parse(liveReportRow.reportJson);
+      } catch {
+        parsedLiveRaw = null;
+      }
+      const liveDoc = sanitizeLiveReportDocument(parsedLiveRaw);
+      if (!liveDoc) {
+        return c.json(
+          {
+            success: false,
+            error: "LINE速報データの形式を読み取れませんでした",
+          },
+          400
+        );
+      }
+
+      const converted = convertLiveReportToScorebookDraft({
+        doc: liveDoc,
+        rosterPlayers: activeRoster,
+        savedMyLineup: mySavedLineup,
+        savedOpponentLineup: oppSavedLineup,
+      });
+
+      return c.json({
+        success: true,
+        mode: "from-live",
+        ...converted,
+      });
+    }
+
+    const directDraft = buildDirectDigitalScorebookDraft({
+      battingOrder: match.battingOrder === "second" ? "second" : "first",
+      scheduledInnings: match.innings || 7,
+      myLineup: mySavedLineup,
+      opponentLineup: oppSavedLineup,
+      rosterPlayers: activeRoster,
+      myInningScores: safeParseNumberArray(match.myInningScores),
+      opponentInningScores: safeParseNumberArray(match.opponentInningScores),
+    });
+
+    return c.json({
+      success: true,
+      mode: "manual",
+      ...directDraft,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      { success: false, error: `スコアブック下書き初期化エラー: ${msg}` },
+      500
+    );
   }
 });
 
@@ -1257,8 +1567,11 @@ interface SavedJsonLineupEntry {
   order?: number;
   battingOrder?: number;
   name?: string;
+  playerName?: string;
+  playerId?: string | null;
   uniformNumber?: string;
   position?: string;
+  bats?: string | null;
 }
 
 function safeParseLineupArray(
@@ -1765,12 +2078,15 @@ ${battingTeamContext}${scoreboardHintText}
     const baseInnings: ScorebookInningMeta[] =
       inningMergeMap.size > 0
         ? Array.from(inningMergeMap.values()).sort((a, b) => a.inning - b.inning)
-        : Array.from({ length: Math.min(7, match.innings || 7) }, (_, i) => ({
-          inning: i + 1,
-          columnCount: 1,
-          runs: scoreboardHintScores[i] ?? 0,
-          hits: 0,
-        }));
+        : Array.from(
+            { length: Math.min(12, Math.max(1, match.innings || 7)) },
+            (_, i) => ({
+              inning: i + 1,
+              columnCount: 1,
+              runs: scoreboardHintScores[i] ?? 0,
+              hits: 0,
+            })
+          );
 
     const regularizedGrid = regularizeSheetGridGeometry(
       normalizedBatters,
@@ -5122,10 +5438,11 @@ liffScorebookRouter.get("/saved", async (c) => {
             }
           }
           const battingOrder =
-            parsedOrder >= 1 && parsedOrder <= 15
+            parsedOrder >= 1 && parsedOrder <= 25
               ? parsedOrder
               : fallbackNextOrder;
-          fallbackNextOrder = (battingOrder % 9) + 1;
+          const orderCycleLen = Math.max(9, battersByOrder.size, battingOrder);
+          fallbackNextOrder = (battingOrder % orderCycleLen) + 1;
 
           const batterName =
             linkedBatter?.name ||

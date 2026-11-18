@@ -21,8 +21,8 @@ interface CreateMatchRequest {
   venueId?: string;
   battingOrder: 'first' | 'second';
   benchSide?: '1B' | '3B' | 'unknown'; // 🌟 追加：ベンチ位置
-  innings: 6 | 7 | 9;                  // 🌟 追加：イニング数
-  inningCount?: 6 | 7 | 9;
+  innings: 5 | 6 | 7 | 9;              // 🌟 追加：イニング数（5/6/7/9回制対応）
+  inningCount?: 5 | 6 | 7 | 9;
   surfaceDetails?: string;
   status: 'scheduled' | 'started' | 'finished' | 'rainout'; // 🌟 追加：3つの導線対応
   myScore?: number;                    // 🌟 追加：QUICK SCORE用
@@ -112,8 +112,13 @@ app.post('/create', async (c) => {
       // 🌟 現場仕様：当日決まるかもしれないベンチ位置を保存
       benchSide: body.benchSide || 'unknown',
 
-      // 🌟 フロントから inningCount と innings の両方のキー名に100%安全対応
-      innings: body.innings || (body as any).inningCount || 7,
+      // 🌟 フロントから inningCount と innings の両方のキー名に100%安全対応（5/6/7/9回制）
+      innings:
+        body.innings === 5 || body.innings === 6 || body.innings === 9
+          ? body.innings
+          : body.inningCount === 5 || body.inningCount === 6 || body.inningCount === 9
+          ? body.inningCount
+          : 7,
       currentInning: 1,
       isBottom: false, // SQLiteでは自動で 0 になります
 

@@ -249,6 +249,8 @@ export interface ScorebookV2AtBat {
   strikes: number;
   pitches: CanonicalPitchResult[];
   advances: ScorebookV2Advance[];
+  /** イニング先頭打席でのタイブレーク開始時アウト数（例: 一死満塁スタート時は 1、無死一・二塁時は 0 または未指定） */
+  tiebreakInitialOuts?: 0 | 1 | 2;
   /** この打席開始時点で塁上の先行走者に代走・臨時代走が起用された場合の記録（任意） */
   pinchRunners?: ScorebookPinchRunnerEntry[];
   /** カウント途中で代打が出た際の前打者記録（規則 9.15(b)・任意） */
@@ -298,6 +300,11 @@ export interface ScorebookMatchSummary {
   myInningScores: number[];
   opponentInningScores: number[];
   hasExistingAtBats: boolean;
+  hasSavedLineup?: boolean;
+  hasOpponentLineup?: boolean;
+  hasLiveReport?: boolean;
+  liveReportPlayCount?: number;
+  liveReportUpdatedAt?: number | null;
 }
 
 export interface AtBatResultPreset {

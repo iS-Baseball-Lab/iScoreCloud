@@ -15,6 +15,7 @@ import {
   usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
 import { buildLiffHubUrl, invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -264,6 +265,10 @@ function LiffLineupContent() {
   const [newMatchType, setNewMatchType] = useState<"practice" | "official" | "exchange">("practice");
   const [newTournamentName, setNewTournamentName] = useState("");
   const [newBattingOrder, setNewBattingOrder] = useState<"first" | "second">("first");
+  const [newInnings, setNewInnings] = useState<5 | 6 | 7 | 9>(() => {
+    const d = loadLiffScoreSettings().defaultInnings;
+    return d === 5 || d === 6 || d === 9 ? d : 7;
+  });
   const [newVenue, setNewVenue] = useState("");
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
 
@@ -908,7 +913,7 @@ function LiffLineupContent() {
           battingOrder: newBattingOrder,
           surfaceDetails: newVenue.trim() || "グラウンド",
           venueName: newVenue.trim() || "グラウンド",
-          innings: 7,
+          innings: newInnings,
           myScore: 0,
           opponentScore: 0,
           myInningScores: [],
@@ -938,11 +943,6 @@ function LiffLineupContent() {
         return;
       }
 
-      const defaultInnings =
-        typeof window !== "undefined"
-          ? Number(localStorage.getItem("iscore_setting_default_innings") || "7")
-          : 7;
-
       const res = await fetch("/api/matches/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -954,7 +954,7 @@ function LiffLineupContent() {
           tournamentName: newMatchType !== "practice" ? newTournamentName.trim() : undefined,
           battingOrder: newBattingOrder,
           surfaceDetails: newVenue.trim() || undefined,
-          innings: (defaultInnings === 6 || defaultInnings === 9 ? defaultInnings : 7) as 6 | 7 | 9,
+          innings: newInnings,
           status: "scheduled",
         }),
       });
@@ -2692,33 +2692,53 @@ function LiffLineupContent() {
                   </div>
                 )}
 
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNewBattingOrder("first")}
-                      className={cn(
-                        "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                        newBattingOrder === "first"
-                          ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
-                      )}
-                    >
-                      先攻（表）
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewBattingOrder("second")}
-                      className={cn(
-                        "py-2 rounded-xl text-xs border transition-all cursor-pointer",
-                        newBattingOrder === "second"
-                          ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                          : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
-                      )}
-                    >
-                      後攻（裏）
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">先攻・後攻（仮設定可）</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewBattingOrder("first")}
+                        className={cn(
+                          "py-2.5 rounded-xl text-xs border transition-all cursor-pointer",
+                          newBattingOrder === "first"
+                            ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                            : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                        )}
+                      >
+                        先攻（表）
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewBattingOrder("second")}
+                        className={cn(
+                          "py-2.5 rounded-xl text-xs border transition-all cursor-pointer",
+                          newBattingOrder === "second"
+                            ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
+                            : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted/50 font-bold"
+                        )}
+                      >
+                        後攻（裏）
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-black text-foreground">規定イニング</label>
+                    <LiffSelect
+                      value={String(newInnings)}
+                      onChange={(v: string) => {
+                        const n = Number(v);
+                        setNewInnings(n === 5 || n === 6 || n === 9 ? n : 7);
+                      }}
+                      title="規定イニングを選択"
+                      options={[
+                        { value: "5", label: "5回制（低学年・短縮等）" },
+                        { value: "6", label: "6回制（学童公式・標準）" },
+                        { value: "7", label: "7回制（中学・軟式一般）" },
+                        { value: "9", label: "9回制（高校・硬式一般）" },
+                      ]}
+                    />
                   </div>
                 </div>
 

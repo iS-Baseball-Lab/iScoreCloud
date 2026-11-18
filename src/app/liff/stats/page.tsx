@@ -142,6 +142,7 @@ interface StatsQualificationData {
   regulationPa: number;
   regulationOuts: number;
   regulationIp: string;
+  eraRegulationInnings?: 5 | 6 | 7 | 9;
   avgLeaderId: string | null;
   isAvgReferenceOnly: boolean;
   isEraReferenceOnly: boolean;
@@ -1976,7 +1977,7 @@ export default function LiffStatsPage() {
                           個人投手成績一覧（{activeSection.pitchingStats.length}名）
                         </h3>
                         <span className="text-[10px] font-bold text-slate-300">
-                          防御率は7回制換算
+                          防御率は{activeSection.qualification?.eraRegulationInnings ?? 7}回制換算
                         </span>
                       </div>
 

@@ -38,6 +38,8 @@ import {
   Lock,
   UserCheck,
   ArrowLeftRight,
+  WifiOff,
+  BookOpen,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -47,6 +49,7 @@ import {
   type LiffSelectBadgeTone,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
+import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 import {
   useLiff,
@@ -115,6 +118,7 @@ interface MatchOptionWithDraft extends LiveReportMatchOption {
 
 interface MatchBundlePayload {
   matchId: string;
+  opponentBatterCount?: number;
   lineup: Array<{
     order: number;
     position: string;
@@ -170,6 +174,7 @@ interface DraftApiResponse {
   merged?: boolean;
   conflict?: boolean;
   forbiddenViewerOnly?: boolean;
+  syncedMatchScore?: boolean;
   editorOwnerKey?: string | null;
   report?: LiveReportV2Document | null;
   cloudDraft?: MatchBundlePayload["cloudDraft"];
@@ -424,7 +429,7 @@ function LiffNewsGeneratorContent() {
     searchParams.get("matchId") || searchParams.get("id") || "";
 
   const { currentTeam, isDemo, profile } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
+  const { canMutate, canEditScore, isDemoMode } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 
@@ -523,9 +528,15 @@ function LiffNewsGeneratorContent() {
   const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [lastSyncedBy, setLastSyncedBy] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine !== false
+  );
+  const [retryAttempt, setRetryAttempt] = useState<number>(0);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttemptRef = useRef<number>(0);
   const isHydratingRef = useRef<boolean>(true);
   const docRef = useRef<LiveReportV2Document>(doc);
   const reportModeRef = useRef<ReportSourceMode>(reportMode);
@@ -800,6 +811,8 @@ function LiffNewsGeneratorContent() {
         venueName: matchOpt.venueShortName || matchOpt.venueName || "",
         battingOrder: matchOpt.battingOrder,
         regulationInnings: matchOpt.innings || 7,
+        opponentBatterCount:
+          bundle?.opponentBatterCount || matchOpt.opponentBatterCount || 9,
         reporterNames: effectiveReporters,
       });
 
@@ -1816,6 +1829,22 @@ function LiffNewsGeneratorContent() {
         return;
       }
 
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        setIsOnline(false);
+        hasPendingLocalSaveRef.current = true;
+        if (!silent) {
+          toast.info(
+            "オフラインのため端末内に保持しました（電波復帰後に自動送信します）"
+          );
+        }
+        return;
+      }
+
       const requestDraftId = activeDraftIdRef.current;
       const requestMatchId =
         !isFreeMode && selectedMatchKey ? selectedMatchKey : null;
@@ -1857,6 +1886,8 @@ function LiffNewsGeneratorContent() {
         if (res.status === 409 || res.status === 403) {
           hasPendingLocalSaveRef.current = false;
           queuedPushRef.current = false;
+          retryAttemptRef.current = 0;
+          setRetryAttempt(0);
           matchAccessModeRef.current = "view";
           setMatchAccessMode("view");
           setViewerHalfOverride(null);
@@ -1896,6 +1927,10 @@ function LiffNewsGeneratorContent() {
         }
 
         if (res.ok && json.success) {
+          setIsOnline(true);
+          retryAttemptRef.current = 0;
+          setRetryAttempt(0);
+
           const serverDoc =
             (json.report
               ? sanitizeLiveReportDocument(json.report, scoreTeamName)
@@ -1909,6 +1944,11 @@ function LiffNewsGeneratorContent() {
           baseUpdatedAtRef.current = nextUpdatedAt;
           setLastSyncedAt(nextUpdatedAt);
           setLastSyncedBy(effectiveEditorName);
+
+          if (json.syncedMatchScore) {
+            invalidateLiffApiCache("/api/liff/hub");
+            invalidateLiffApiCache("/api/liff/matches");
+          }
 
           if (!isFreeMode) {
             const effectiveOwner = json.editorOwnerKey ?? personalOwnerKey;
@@ -1941,8 +1981,44 @@ function LiffNewsGeneratorContent() {
         }
       } catch (err) {
         console.error(err);
+        hasPendingLocalSaveRef.current = true;
+        const currentlyOffline =
+          typeof navigator !== "undefined" && navigator.onLine === false;
+        if (currentlyOffline) {
+          setIsOnline(false);
+        }
+        if (
+          (reportModeRef.current === "free" ||
+            matchAccessModeRef.current === "edit") &&
+          resolvedTeamId !== "demo-team" &&
+          effectiveCanMutateRef.current
+        ) {
+          const nextAttempt = retryAttemptRef.current + 1;
+          retryAttemptRef.current = nextAttempt;
+          setRetryAttempt(nextAttempt);
+          if (!currentlyOffline) {
+            if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+            const delayMs = Math.min(
+              12_000,
+              3000 * Math.pow(2, Math.min(2, nextAttempt - 1))
+            );
+            retryTimerRef.current = setTimeout(() => {
+              retryTimerRef.current = null;
+              if (
+                hasPendingLocalSaveRef.current &&
+                !isHydratingRef.current &&
+                (reportModeRef.current === "free" ||
+                  matchAccessModeRef.current === "edit")
+              ) {
+                void pushDraftToCloud({ silent: true });
+              }
+            }, delayMs);
+          }
+        }
         if (!silent) {
-          toast.error("保存に失敗しました（端末内には保存済です）");
+          toast.error(
+            "通信エラーのため端末内に保持しました（電波復帰後に自動再送します）"
+          );
         }
       } finally {
         isPushingRef.current = false;
@@ -2335,9 +2411,103 @@ function LiffNewsGeneratorContent() {
   );
 
   const handlePullLatestCloudDraft = async () => {
-    flushPendingSaveNow(false);
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (
+      hasPendingLocalSaveRef.current &&
+      !isHydratingRef.current &&
+      (reportModeRef.current === "free" ||
+        matchAccessModeRef.current === "edit")
+    ) {
+      await pushDraftToCloud({ silent: false });
+    }
     await pullLatestFromCloud(false);
   };
+
+  // 電波断絶・復帰検知 ＆ ページ離脱時 keepalive フラッシュ
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (
+        hasPendingLocalSaveRef.current &&
+        !isHydratingRef.current &&
+        (reportModeRef.current === "free" ||
+          matchAccessModeRef.current === "edit")
+      ) {
+        void pushDraftToCloud({ silent: true });
+      } else if (reportModeRef.current === "match") {
+        void pullLatestFromCloud(true);
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+
+    const handlePageHide = () => {
+      flushPendingSaveNow(true);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("pagehide", handlePageHide);
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [pushDraftToCloud, pullLatestFromCloud, flushPendingSaveNow]);
+
+  const canBridgeToScorebookImport = Boolean(
+    reportMode === "match" &&
+      selectedMatchKey &&
+      resolvedTeamId !== "demo-team" &&
+      !isDemo &&
+      !isDemoMode &&
+      (canEditScore || effectiveCanMutate)
+  );
+
+  const handleBridgeToScorebookImport = useCallback(async () => {
+    if (!selectedMatchKey || !canBridgeToScorebookImport) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (
+      hasPendingLocalSaveRef.current &&
+      !isHydratingRef.current &&
+      matchAccessModeRef.current === "edit"
+    ) {
+      await pushDraftToCloud({ silent: true });
+    }
+    router.push(
+      `/liff/tools/scorebook-import?matchId=${encodeURIComponent(
+        selectedMatchKey
+      )}&mode=from-live`
+    );
+  }, [
+    selectedMatchKey,
+    canBridgeToScorebookImport,
+    pushDraftToCloud,
+    router,
+  ]);
 
   // バックグラウンド自動同期（閲覧モードは4.5秒間隔でリアルタイム追従・担当入力中は引継検知の軽量チェック）
   useEffect(() => {
@@ -2410,14 +2580,34 @@ function LiffNewsGeneratorContent() {
         flushPendingSaveNow(true);
       } else if (document.visibilityState === "visible") {
         lastSyncActivityAtRef.current = Date.now();
-        void pullLatestFromCloud(true);
+        if (
+          hasPendingLocalSaveRef.current &&
+          !isHydratingRef.current &&
+          matchAccessModeRef.current === "edit"
+        ) {
+          void pushDraftToCloud({ silent: true }).then(() =>
+            pullLatestFromCloud(true)
+          );
+        } else {
+          void pullLatestFromCloud(true);
+        }
         scheduleNextPoll();
       }
     };
 
     const handleWindowFocus = () => {
       lastSyncActivityAtRef.current = Date.now();
-      void pullLatestFromCloud(true);
+      if (
+        hasPendingLocalSaveRef.current &&
+        !isHydratingRef.current &&
+        matchAccessModeRef.current === "edit"
+      ) {
+        void pushDraftToCloud({ silent: true }).then(() =>
+          pullLatestFromCloud(true)
+        );
+      } else {
+        void pullLatestFromCloud(true);
+      }
       scheduleNextPoll();
     };
 
@@ -2442,6 +2632,7 @@ function LiffNewsGeneratorContent() {
     reportMode,
     matchAccessMode,
     pullLatestFromCloud,
+    pushDraftToCloud,
     flushPendingSaveNow,
   ]);
 
@@ -2583,6 +2774,10 @@ function LiffNewsGeneratorContent() {
             selectedMatch.venueShortName || selectedMatch.venueName || "",
           battingOrder: selectedMatch.battingOrder,
           regulationInnings: selectedMatch.innings || 7,
+          opponentBatterCount:
+            activeBundle?.opponentBatterCount ||
+            selectedMatch.opponentBatterCount ||
+            9,
           reporterNames:
             selectedMatch.lineLiveAssignees.length > 0
               ? selectedMatch.lineLiveAssignees.join("、")
@@ -3165,13 +3360,34 @@ function LiffNewsGeneratorContent() {
                   </button>
                 )}
 
+                {canBridgeToScorebookImport && totalEntriesCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleBridgeToScorebookImport()}
+                    className="h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-400/45 text-[10px] font-black inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="このLINE速報データからスコアブック下書きを自動生成（AI消費ゼロ）"
+                  >
+                    <BookOpen className="w-3 h-3 shrink-0" />
+                    <span>清書</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handlePullLatestCloudDraft}
                   disabled={isSyncingCloud}
-                  className="h-7 px-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
+                  className={cn(
+                    "h-7 px-2 rounded-lg text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 border",
+                    !isOnline || retryAttempt > 0
+                      ? "bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border-amber-400/50"
+                      : "bg-slate-800 hover:bg-slate-700 text-slate-100 border-slate-700"
+                  )}
                   title={
-                    resolvedTeamId === "demo-team"
+                    !isOnline
+                      ? "圏外・オフラインのため端末内に安全保持中（電波復帰後に自動再送）"
+                      : retryAttempt > 0
+                      ? "未送信データを自動再送待機中（タップで今すぐ再送）"
+                      : resolvedTeamId === "demo-team"
                       ? "体験デモ端末保持"
                       : lastSyncedAt
                       ? `最終更新 ${formatSyncTimeLabel(lastSyncedAt)}${
@@ -3181,12 +3397,22 @@ function LiffNewsGeneratorContent() {
                   }
                 >
                   {isSyncingCloud ? (
-                    <RefreshCw className="w-3 h-3 text-sky-400 animate-spin" />
+                    <RefreshCw className="w-3 h-3 text-sky-400 animate-spin shrink-0" />
+                  ) : !isOnline ? (
+                    <WifiOff className="w-3 h-3 text-amber-300 shrink-0" />
+                  ) : retryAttempt > 0 ? (
+                    <RefreshCw className="w-3 h-3 text-amber-300 shrink-0" />
                   ) : (
-                    <Cloud className="w-3 h-3 text-emerald-400" />
+                    <Cloud className="w-3 h-3 text-emerald-400 shrink-0" />
                   )}
                   <span>
-                    {lastSyncedAt ? formatSyncTimeLabel(lastSyncedAt) : "同期"}
+                    {!isOnline
+                      ? "オフライン保持"
+                      : retryAttempt > 0
+                      ? "再送待機"
+                      : lastSyncedAt
+                      ? formatSyncTimeLabel(lastSyncedAt)
+                      : "同期"}
                   </span>
                 </button>
               </div>
@@ -3415,6 +3641,11 @@ function LiffNewsGeneratorContent() {
             onShareLine={handleShareLine}
             copied={copied}
             onOpenFullPreview={() => setActiveTab("preview")}
+            onOpenScorebookImport={
+              canBridgeToScorebookImport
+                ? () => void handleBridgeToScorebookImport()
+                : undefined
+            }
             readOnly={isReadOnlyViewer}
             editorDisplayName={effectiveEditorDisplayName}
             viewerHalfOverride={viewerHalfOverride}

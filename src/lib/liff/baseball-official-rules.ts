@@ -152,6 +152,55 @@ export function formatOfficialBaseballRate(
   return fixed.startsWith("0.") ? fixed.slice(1) : fixed;
 }
 
+export type RegulationInningsCount = 5 | 6 | 7 | 9;
+
+/**
+ * 試合の規定イニング数を公式集計対象の 5 / 6 / 7 / 9 回制へ正規化する（学童5・6回制、軟式・中学7回制、高校・一般9回制）。
+ */
+export function normalizeRegulationInnings(
+  raw?: number | null,
+  fallback: RegulationInningsCount = 7
+): RegulationInningsCount {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) {
+    return fallback;
+  }
+  const rounded = Math.round(raw);
+  if (rounded <= 5) return 5;
+  if (rounded === 6) return 6;
+  if (rounded >= 8) return 9;
+  return 7;
+}
+
+/**
+ * 規定イニング数（5 / 6 / 7 / 9回制）に応じた公式防御率（ERA = 自責点 × 規定イニング × 3 ÷ 投球アウト数）を算出する。
+ */
+export function calculateOfficialEra(
+  earnedRuns: number,
+  outs: number,
+  regulationInnings?: number | null
+): number {
+  if (outs <= 0 || !Number.isFinite(earnedRuns) || !Number.isFinite(outs)) {
+    return 0;
+  }
+  const regInnings = normalizeRegulationInnings(regulationInnings, 7);
+  return (Math.max(0, earnedRuns) * regInnings * 3) / outs;
+}
+
+/**
+ * 規定イニング数（5 / 6 / 7 / 9回制）に応じた公式防御率文字列（小数第2位）を返す。
+ */
+export function formatOfficialEra(
+  earnedRuns: number,
+  outs: number,
+  regulationInnings?: number | null,
+  zeroOutsFallback: "0.00" | "-.--" = "0.00"
+): string {
+  if (outs <= 0 || !Number.isFinite(outs)) {
+    return zeroOutsFallback;
+  }
+  return calculateOfficialEra(earnedRuns, outs, regulationInnings).toFixed(2);
+}
+
 export interface ClassifiedAtBatResultMeta {
   effectiveResult: string;
   isUnfinishedRunnerOut: boolean;
@@ -991,6 +1040,7 @@ export interface HalfInningAtBatPitchingInput {
     battingOrder?: number;
     pinchRunners?: ScorebookV2AtBat["pinchRunners"];
     midAtBatPriorPitcher?: MidAtBatPriorPitcherInfo | null;
+    tiebreakInitialOuts?: ScorebookV2AtBat["tiebreakInitialOuts"];
   }) | null;
   advances: HalfInningAdvanceEventInput[];
 }
@@ -1494,7 +1544,10 @@ export function evaluateHalfInningEarnedRunDetails(
     return tok;
   };
 
-  let actualOuts = 0;
+  let actualOuts = Math.min(
+    2,
+    Math.max(0, plays[0]?.snapAb?.tiebreakInitialOuts || 0)
+  );
   const firstPitcherKey =
     plays.find((p) => Boolean(p.priorPitcherKey || p.pitcherKey))
       ?.priorPitcherKey ||
@@ -3430,22 +3483,32 @@ function formatOutsAsInningsJa(outs: number): string {
 /**
  * 規定イニング数と実際の総守備アウト数から、先発投手の勝利資格アウト数を算出する（公認野球規則 9.17(a)）。
  * - 9回制: 原則 5回（15アウト）。5回コールド等の短縮試合（守備アウト 15 以下）では 4回（12アウト）。
- * - 7回制（JSBB軟式・中学・学童等）: 原則 4回（12アウト）。4回コールド等の短縮試合（守備アウト 12 以下）では 3回（9アウト）。
+ * - 7回制（JSBB軟式・中学等）: 原則 4回（12アウト）。4回コールド等の短縮試合（守備アウト 12 以下）では 3回（9アウト）。
+ * - 5・6回制（学童野球等）: 原則 3回（9アウト）。3回コールド・時間制限等の短縮試合（守備アウト 9 以下）では 2回（6アウト）。
  */
 export function getStarterWinQualifyingOuts(
   scheduledInnings: number,
   totalDefenseOuts: number
 ): number {
+  const regInnings = normalizeRegulationInnings(scheduledInnings, 7);
   if (totalDefenseOuts <= 0) {
-    return scheduledInnings >= 8 ? 15 : 12;
+    if (regInnings >= 9) return 15;
+    if (regInnings <= 6) return 9;
+    return 12;
   }
-  if (scheduledInnings >= 8) {
+  if (regInnings >= 9) {
     if (totalDefenseOuts <= 15) {
       return Math.min(12, totalDefenseOuts);
     }
     return 15;
   }
-  // 7回制以下
+  if (regInnings <= 6) {
+    if (totalDefenseOuts <= 9) {
+      return Math.min(6, totalDefenseOuts);
+    }
+    return 9;
+  }
+  // 7回制
   if (totalDefenseOuts <= 12) {
     return Math.min(9, totalDefenseOuts);
   }
@@ -3491,15 +3554,22 @@ export function evaluateMatchPitcherDecisions(
     input.scheduledInnings,
     totalDefenseOuts
   );
+  const regInnings = normalizeRegulationInnings(input.scheduledInnings, 7);
   const isShortenedGame =
-    input.scheduledInnings >= 8
+    regInnings >= 9
       ? totalDefenseOuts > 0 && totalDefenseOuts <= 15
+      : regInnings <= 6
+      ? totalDefenseOuts > 0 && totalDefenseOuts <= 9
       : totalDefenseOuts > 0 && totalDefenseOuts <= 12;
   const regulationSystemLabel =
-    input.scheduledInnings >= 8
+    regInnings >= 9
       ? isShortenedGame
         ? "9回制（5回以下の短縮試合）"
         : "9回制"
+      : regInnings <= 6
+      ? isShortenedGame
+        ? `${regInnings}回制（3回以下の短縮試合）`
+        : `${regInnings}回制`
       : isShortenedGame
       ? "7回制（4回以下の短縮試合）"
       : "7回制";

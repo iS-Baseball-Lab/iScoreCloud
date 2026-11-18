@@ -20,7 +20,10 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import { ScorebookSingleCellThumbnail } from "@/components/liff/ScorebookCellGuideModal";
 import {
   buildTeamEarnedRunDiscrepancyExplanation,
+  formatOfficialEra,
+  normalizeRegulationInnings,
   type OfficialPitcherDecisionExplanation,
+  type RegulationInningsCount,
 } from "@/lib/liff/baseball-official-rules";
 import { getPositionBadgeInfo } from "@/lib/liff/demo-lineup";
 import { repairPlayLogForceOutDescription } from "@/lib/liff/scorebook-fielding";
@@ -113,6 +116,7 @@ export interface LiffTeamPitchingMeta {
   individualEarnedRunsSum: number;
   teamShutout: boolean;
   teamShutoutExplanation?: OfficialPitcherDecisionExplanation;
+  scheduledInnings?: RegulationInningsCount;
 }
 
 export interface LiffMatchGameDetails {
@@ -1600,6 +1604,10 @@ export function MatchStatsSection({
         teamShutoutExplanation:
           teamPitchingMeta.teamShutoutExplanation ??
           oppScorebookModel?.pitcherTotals.teamShutoutExplanation,
+        scheduledInnings:
+          teamPitchingMeta.scheduledInnings ??
+          oppScorebookModel?.pitcherTotals.eraRegulationInnings ??
+          7,
       };
     }
     if (oppScorebookModel) {
@@ -1611,12 +1619,15 @@ export function MatchStatsSection({
         teamShutout: Boolean(oppScorebookModel.pitcherTotals.teamShutout),
         teamShutoutExplanation:
           oppScorebookModel.pitcherTotals.teamShutoutExplanation,
+        scheduledInnings:
+          oppScorebookModel.pitcherTotals.eraRegulationInnings ?? 7,
       };
     }
     return {
       teamEarnedRuns: pitcherTotal.earnedRuns,
       individualEarnedRunsSum: pitcherTotal.earnedRuns,
       teamShutout: pitcherTotal.outs > 0 && pitcherTotal.runs === 0,
+      scheduledInnings: 7,
     };
   }, [
     teamPitchingMeta,
@@ -1627,6 +1638,10 @@ export function MatchStatsSection({
   ]);
 
   const effectiveTeamEarnedRuns = resolvedTeamPitchingMeta.teamEarnedRuns;
+  const eraRegulationInnings = normalizeRegulationInnings(
+    resolvedTeamPitchingMeta.scheduledInnings,
+    7
+  );
 
   const teamIpStr = useMemo(() => {
     const innInt = Math.floor(pitcherTotal.outs / 3);
@@ -1634,10 +1649,16 @@ export function MatchStatsSection({
     return innFrac > 0 ? `${innInt}.${innFrac}` : `${innInt}.0`;
   }, [pitcherTotal.outs]);
 
-  const teamEraStr = useMemo(() => {
-    if (pitcherTotal.outs <= 0) return "0.00";
-    return ((effectiveTeamEarnedRuns * 7 * 3) / pitcherTotal.outs).toFixed(2);
-  }, [effectiveTeamEarnedRuns, pitcherTotal.outs]);
+  const teamEraStr = useMemo(
+    () =>
+      formatOfficialEra(
+        effectiveTeamEarnedRuns,
+        pitcherTotal.outs,
+        eraRegulationInnings,
+        "0.00"
+      ),
+    [effectiveTeamEarnedRuns, pitcherTotal.outs, eraRegulationInnings]
+  );
 
   const pitcherRuleExplanations = useMemo<
     Array<{
@@ -2420,7 +2441,7 @@ export function MatchStatsSection({
           <div className="flex items-center gap-2 shrink-0">
             {pitcherStats.length > 0 && (
               <span className="text-[10px] font-black font-mono tabular-nums text-muted-foreground">
-                防御率 {teamEraStr}（7回制換算）
+                防御率 {teamEraStr}（{eraRegulationInnings}回制換算）
               </span>
             )}
             <button

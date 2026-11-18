@@ -85,6 +85,7 @@ interface LiveAtBatPadCardProps {
     override: { inning: number; isBottom: boolean } | null
   ) => void;
   onRequestTakeover?: () => void;
+  onOpenScorebookImport?: () => void;
 }
 
 const INFIELD_DIRECTIONS = ["投", "捕", "一", "二", "三", "遊"] as const;
@@ -740,6 +741,7 @@ export function LiveAtBatPadCard({
   viewerHalfOverride = null,
   onChangeViewerHalfOverride,
   onRequestTakeover,
+  onOpenScorebookImport,
 }: LiveAtBatPadCardProps) {
   const [mounted, setMounted] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"inning" | "full">("inning");
@@ -789,6 +791,7 @@ export function LiveAtBatPadCard({
   const [subPlayerId, setSubPlayerId] = useState<string>("");
   const [subNewName, setSubNewName] = useState<string>("");
   const [subNewPos, setSubNewPos] = useState<string>("1");
+  const [subRunnerBase, setSubRunnerBase] = useState<LiveReportBaseNum>(1);
   const [subCustomNote, setSubCustomNote] = useState<string>("");
 
   // 直前走塁追記モーダル
@@ -1054,7 +1057,9 @@ export function LiveAtBatPadCard({
         const next = ((prev.nextMyOrder - 1 + delta + limit) % limit) + 1;
         return { ...prev, nextMyOrder: next };
       }
-      const next = ((prev.nextOpponentOrder - 1 + delta + 9) % 9) + 1;
+      const oppLimit = Math.max(9, prev.opponentBatterCount || 9);
+      const next =
+        ((prev.nextOpponentOrder - 1 + delta + oppLimit) % oppLimit) + 1;
       return { ...prev, nextOpponentOrder: next };
     });
   };
@@ -1066,6 +1071,10 @@ export function LiveAtBatPadCard({
       entryType: "batter",
       battingOrder: currentOrder,
       batterName: isMyAttack ? activeBatterSlot?.playerName || "" : "",
+      batterPlayerId: isMyAttack ? activeBatterSlot?.playerId || null : null,
+      resultCode: selectedDirect || selectedBatted || undefined,
+      battedDirection: selectedDirection || undefined,
+      rbi: finalRunsScored > 0 ? finalRunsScored : undefined,
       playText: finalPlayText,
       reactionText: reactionText.trim(),
       outsAfter: finalOutsAfter,
@@ -1097,6 +1106,7 @@ export function LiveAtBatPadCard({
       }
 
       const limitMy = Math.max(9, prev.lineup.length);
+      const limitOpp = Math.max(9, prev.opponentBatterCount || 9);
       return {
         ...prev,
         halfInnings: halves,
@@ -1104,7 +1114,7 @@ export function LiveAtBatPadCard({
           ? (prev.nextMyOrder % limitMy) + 1
           : prev.nextMyOrder,
         nextOpponentOrder: !isMyAttack
-          ? (prev.nextOpponentOrder % 9) + 1
+          ? (prev.nextOpponentOrder % limitOpp) + 1
           : prev.nextOpponentOrder,
       };
     });
@@ -1561,6 +1571,9 @@ export function LiveAtBatPadCard({
   // 選手交代モーダルを開く
   const openSubstitutionModal = () => {
     if (readOnly) return;
+    const defaultRunnerBase: LiveReportBaseNum =
+      effectiveRunnersBefore[0] || 1;
+    setSubRunnerBase(defaultRunnerBase);
     if (isMyAttack) {
       setSubType("PH");
       setSubSlotOrder(currentOrder);
@@ -1625,8 +1638,14 @@ export function LiveAtBatPadCard({
 
     if (!subNewName.trim()) return;
     const targetActiveSlot = activeLineup.find((s) => s.order === subSlotOrder);
+    const runnerOnSelectedBase =
+      subType === "PR" || subType === "TR"
+        ? autoSituation.runnerNames?.[subRunnerBase] || ""
+        : "";
+    const replacedRawName =
+      runnerOnSelectedBase || targetActiveSlot?.playerName || "";
     const oldDisplay = formatPlayerReportName(
-      targetActiveSlot?.playerName || "",
+      replacedRawName,
       doc.showSurnameOnly
     );
     const newDisplay = formatPlayerReportName(subNewName, doc.showSurnameOnly);
@@ -1638,10 +1657,26 @@ export function LiveAtBatPadCard({
         ? "代打"
         : subType === "PR"
         ? "代走"
+        : subType === "TR"
+        ? "臨時代走"
         : "守備交代";
+    const basePrefix =
+      (subType === "PR" || subType === "TR") &&
+      effectiveRunnersBefore.length > 1
+        ? `(${subRunnerBase}塁)`
+        : "";
     const eventText = oldDisplay
-      ? `${typeLabel} ${oldDisplay}→${newDisplay}`
-      : `${typeLabel} ${newDisplay}`;
+      ? `${typeLabel}${basePrefix} ${oldDisplay}→${newDisplay}`
+      : `${typeLabel}${basePrefix} ${newDisplay}`;
+
+    const resolvedNewPos =
+      subType === "TR"
+        ? normalizeReportPositionCode(targetActiveSlot?.position || "打")
+        : normalizeReportPositionCode(
+            subType === "P"
+              ? "1"
+              : subNewPos || targetActiveSlot?.position || "打"
+          );
 
     const subEntry: LiveReportPlayEntry = {
       id: `sub-${Date.now()}`,
@@ -1655,30 +1690,47 @@ export function LiveAtBatPadCard({
       runsScored: 0,
       chainedPlays: [],
       eventText,
+      subMeta: {
+        subType,
+        slotOrder: subSlotOrder,
+        oldName: replacedRawName,
+        newName: subNewName.trim(),
+        newPosition: resolvedNewPos,
+        playerId: subPlayerId || null,
+        runnerBase:
+          subType === "PR" || subType === "TR" ? subRunnerBase : null,
+      },
     };
 
     onChangeDoc((prev) => {
-      const nextLineup = prev.lineup.map((slot) => {
-        if (slot.order !== subSlotOrder) return slot;
-        return {
-          ...slot,
-          substitutions: [
-            ...slot.substitutions,
-            {
-              id: `lsub-${Date.now()}`,
-              inning: prev.activeInning,
-              isBottom: prev.activeIsBottom,
-              subType,
-              oldName: targetActiveSlot?.playerName || slot.playerName,
-              newName: subNewName.trim(),
-              newPosition: normalizeReportPositionCode(
-                subType === "P" ? "1" : subNewPos || slot.position
-              ),
-              playerId: subPlayerId || null,
-            },
-          ],
-        };
-      });
+      // 臨時代走（TR）は塁上の走者のみ一時交代し、元の打順枠・守備位置は維持する
+      const nextLineup =
+        subType === "TR"
+          ? prev.lineup
+          : prev.lineup.map((slot) => {
+              if (slot.order !== subSlotOrder) return slot;
+              return {
+                ...slot,
+                substitutions: [
+                  ...slot.substitutions,
+                  {
+                    id: `lsub-${Date.now()}`,
+                    inning: prev.activeInning,
+                    isBottom: prev.activeIsBottom,
+                    subType,
+                    oldName:
+                      replacedRawName ||
+                      targetActiveSlot?.playerName ||
+                      slot.playerName,
+                    newName: subNewName.trim(),
+                    newPosition: normalizeReportPositionCode(
+                      subType === "P" ? "1" : subNewPos || slot.position
+                    ),
+                    playerId: subPlayerId || null,
+                  },
+                ],
+              };
+            });
 
       const halves = [...prev.halfInnings];
       const idx = halves.findIndex(
@@ -2459,7 +2511,10 @@ export function LiveAtBatPadCard({
                   </button>
                 ) : (
                   <span className="text-[10.5px] font-bold text-muted-foreground ml-1 truncate">
-                    相手打者（番号のみ）
+                    相手打者
+                    {(doc.opponentBatterCount || 9) > 9
+                      ? `（全${doc.opponentBatterCount}人打順）`
+                      : "（番号のみ）"}
                   </span>
                 )}
               </div>
@@ -3324,27 +3379,42 @@ export function LiveAtBatPadCard({
                 </div>
               </div>
 
-              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsGameSetPanelOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
-                >
-                  閉じる
-                </button>
-                {onShareLine && (
+              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 space-y-2 shrink-0">
+                {!readOnly && onOpenScorebookImport && (
                   <button
                     type="button"
                     onClick={() => {
                       setIsGameSetPanelOpen(false);
-                      onShareLine();
+                      onOpenScorebookImport();
                     }}
-                    className="flex-1 py-2.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    className="w-full py-2.5 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                   >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>LINEで速報送信</span>
+                    <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>この速報からスコアブック清書へ引き継ぐ</span>
                   </button>
                 )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsGameSetPanelOpen(false)}
+                    className="flex-1 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                  >
+                    閉じる
+                  </button>
+                  {onShareLine && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsGameSetPanelOpen(false);
+                        onShareLine();
+                      }}
+                      className="flex-1 py-2.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black inline-flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>LINEで速報送信</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>,
@@ -3383,12 +3453,13 @@ export function LiveAtBatPadCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
-                <div className="grid grid-cols-5 gap-1 bg-muted p-1 rounded-xl border border-border">
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 bg-muted p-1 rounded-xl border border-border">
                   {(
                     [
                       { id: "P", label: "投手交代" },
                       { id: "PH", label: "代打" },
                       { id: "PR", label: "代走" },
+                      { id: "TR", label: "臨時代走" },
                       { id: "DEF", label: "守備交代" },
                       { id: "NOTE", label: "自由行" },
                     ] as const
@@ -3399,6 +3470,21 @@ export function LiveAtBatPadCard({
                       onClick={() => {
                         setSubType(t.id);
                         if (t.id === "P") setSubNewPos("1");
+                        if (t.id === "PR" || t.id === "TR") {
+                          const defaultBase: LiveReportBaseNum =
+                            effectiveRunnersBefore[0] || 1;
+                          setSubRunnerBase(defaultBase);
+                          const rName = autoSituation.runnerNames?.[defaultBase];
+                          if (rName) {
+                            const matchedSlot = activeLineup.find(
+                              (s) => s.playerName && s.playerName === rName
+                            );
+                            if (matchedSlot) {
+                              setSubSlotOrder(matchedSlot.order);
+                              setSubNewPos(matchedSlot.position);
+                            }
+                          }
+                        }
                       }}
                       className={cn(
                         "py-1.5 rounded-lg text-[11px] font-black cursor-pointer",
@@ -3427,9 +3513,80 @@ export function LiveAtBatPadCard({
                   </div>
                 ) : (
                   <>
+                    {(subType === "PR" || subType === "TR") && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-black text-muted-foreground">
+                          どの塁の走者に{subType === "TR" ? "臨時代走" : "代走"}を送りますか？
+                        </label>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {([1, 2, 3] as const).map((bNum) => {
+                            const isOccupied =
+                              effectiveRunnersBefore.includes(bNum);
+                            const rName = autoSituation.runnerNames?.[bNum];
+                            const selected = subRunnerBase === bNum;
+                            return (
+                              <button
+                                key={bNum}
+                                type="button"
+                                onClick={() => {
+                                  setSubRunnerBase(bNum);
+                                  if (rName) {
+                                    const matchedSlot = activeLineup.find(
+                                      (s) =>
+                                        s.playerName && s.playerName === rName
+                                    );
+                                    if (matchedSlot) {
+                                      setSubSlotOrder(matchedSlot.order);
+                                      setSubNewPos(matchedSlot.position);
+                                    }
+                                  }
+                                }}
+                                className={cn(
+                                  "py-2 px-2 rounded-xl border text-left transition-all cursor-pointer",
+                                  selected
+                                    ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                                    : isOccupied
+                                    ? "bg-amber-500/12 border-amber-500/40 text-foreground"
+                                    : "bg-card border-border text-muted-foreground"
+                                )}
+                              >
+                                <span className="block text-[11px] font-black">
+                                  {bNum}塁走者
+                                </span>
+                                <span
+                                  className={cn(
+                                    "block text-[10px] font-bold truncate",
+                                    selected
+                                      ? "text-primary-foreground/90"
+                                      : "text-muted-foreground"
+                                  )}
+                                >
+                                  {rName
+                                    ? formatPlayerReportName(
+                                        rName,
+                                        doc.showSurnameOnly
+                                      )
+                                    : isOccupied
+                                    ? "走者あり"
+                                    : "走者なし"}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {subType === "TR" && (
+                          <p className="px-2.5 py-1.5 rounded-xl bg-amber-500/12 border border-amber-500/30 text-[10.5px] font-bold text-amber-900 dark:text-amber-200 leading-relaxed">
+                            ※臨時代走（TR）はこのイニングの塁上走者のみ交代し、元の選手（捕手・投手等）の打順・守備位置は維持されます。
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="space-y-1.5">
                       <label className="block text-xs font-black text-muted-foreground">
-                        交代する打順枠（以降の打席も自動で新選手名に更新されます）
+                        {subType === "TR"
+                          ? "元の走者の打順枠（打順・守備位置は変更されません）"
+                          : "交代する打順枠（以降の打席も自動で新選手名に更新されます）"}
                       </label>
                       <LiffSelect
                         value={String(subSlotOrder)}
@@ -3449,38 +3606,52 @@ export function LiveAtBatPadCard({
                             s.position
                           )} ${s.playerName || "未登録"}）`,
                         }))}
-                        title="交代する打順枠を選択"
+                        title="対象の打順枠を選択"
                         size="md"
                         searchable={false}
                         className="w-full"
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <label className="block text-[11px] font-black text-muted-foreground">
-                          守備位置
-                        </label>
-                        <LiffSelect
-                          value={normalizeReportPositionCode(subNewPos)}
-                          onChange={(val) => setSubNewPos(val)}
-                          options={[
-                            ...POSITION_OPTIONS.map((p) => ({
-                              value: p.code,
-                              label: p.shortLabel,
-                            })),
-                            { value: "打", label: "打" },
-                          ]}
-                          title="交代後の守備位置を選択"
-                          size="md"
-                          searchable={false}
-                          className="w-full"
-                        />
-                      </div>
+                    <div
+                      className={cn(
+                        "grid gap-2",
+                        subType === "TR" ? "grid-cols-1" : "grid-cols-3"
+                      )}
+                    >
+                      {subType !== "TR" && (
+                        <div className="space-y-1">
+                          <label className="block text-[11px] font-black text-muted-foreground">
+                            守備位置
+                          </label>
+                          <LiffSelect
+                            value={normalizeReportPositionCode(subNewPos)}
+                            onChange={(val) => setSubNewPos(val)}
+                            options={[
+                              ...POSITION_OPTIONS.map((p) => ({
+                                value: p.code,
+                                label: p.shortLabel,
+                              })),
+                              { value: "打", label: "打" },
+                            ]}
+                            title="交代後の守備位置を選択"
+                            size="md"
+                            searchable={false}
+                            className="w-full"
+                          />
+                        </div>
+                      )}
 
-                      <div className="col-span-2 space-y-1">
+                      <div
+                        className={cn(
+                          "space-y-1",
+                          subType === "TR" ? "col-span-1" : "col-span-2"
+                        )}
+                      >
                         <label className="block text-[11px] font-black text-muted-foreground">
-                          交代で入る選手（名簿選択 or 手入力）
+                          {subType === "TR"
+                            ? "臨時代走で走る選手（名簿選択 or 手入力）"
+                            : "交代で入る選手（名簿選択 or 手入力）"}
                         </label>
                         {rosterPlayers.length > 0 && (
                           <LiffSelect
@@ -3509,7 +3680,7 @@ export function LiveAtBatPadCard({
                               })),
                             ]}
                             placeholder="チーム名簿から選ぶ..."
-                            title="交代で入る選手を選択"
+                            title="選手を選択"
                             size="sm"
                             searchable={true}
                             searchPlaceholder="選手名・背番号で検索..."
@@ -3520,7 +3691,7 @@ export function LiveAtBatPadCard({
                           type="text"
                           value={subNewName}
                           onChange={(e) => setSubNewName(e.target.value)}
-                          placeholder="新しい選手名を入力"
+                          placeholder="選手名を入力"
                           className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                         />
                       </div>

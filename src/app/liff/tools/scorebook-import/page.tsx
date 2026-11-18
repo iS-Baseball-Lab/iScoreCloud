@@ -29,6 +29,7 @@ import {
 } from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
+  listScorebookDraftMetas,
   loadScorebookDraft,
   peekScorebookDraftMeta,
   reconstructFileFromDataUrlAsync,
@@ -125,6 +126,20 @@ interface SavedScorebookApiResponse {
   bottomAtBats?: ScorebookV2AtBat[];
   topImageUrl?: string | null;
   bottomImageUrl?: string | null;
+  error?: string;
+}
+
+interface MatchInitApiResponse {
+  success: boolean;
+  matchId?: string;
+  mode?: "manual" | "from-live";
+  importScope?: ImportScopeMode;
+  topStructure?: ScorebookSheetStructure | null;
+  bottomStructure?: ScorebookSheetStructure | null;
+  topAtBats?: ScorebookV2AtBat[];
+  bottomAtBats?: ScorebookV2AtBat[];
+  hasLiveReport?: boolean;
+  convertedPlayCount?: number;
   error?: string;
 }
 
@@ -274,7 +289,8 @@ function crossFillOppositePitchers(
 
 export default function LiffScorebookImportPage() {
   const { currentTeam, isDemo } = useLiff();
-  const { canUsePaidAi, isDemoMode } = useLiffPermissions();
+  const { canUsePaidAi, canEditScore, canMutate, isDemoMode } =
+    useLiffPermissions();
 
   const [step, setStep] = useState<WizardStep>(1);
   const [isLoadingContext, setIsLoadingContext] = useState(true);
@@ -288,7 +304,10 @@ export default function LiffScorebookImportPage() {
     isDemoMode ||
     currentTeam?.id === "demo-team" ||
     resolvedTeamId === "demo-team";
-  const effectiveCanImport = canUsePaidAi && !isEffectiveDemo;
+  const canUseAiScan = canUsePaidAi && !isEffectiveDemo;
+  const effectiveCanEditScore =
+    (canEditScore || canMutate || canUsePaidAi) && !isEffectiveDemo;
+  const effectiveCanImport = canUseAiScan;
   const [teamLegendUrl, setTeamLegendUrl] = useState<string | null>(null);
   const [roster, setRoster] = useState<ScorebookRosterPlayer[]>([]);
   const [matches, setMatches] = useState<ScorebookMatchSummary[]>([]);
@@ -325,6 +344,11 @@ export default function LiffScorebookImportPage() {
   const didVisitScoreSettingsRef = useRef(false);
 
   const [isCreatingMatch, setIsCreatingMatch] = useState(false);
+  const [isInitializingDigitalDraft, setIsInitializingDigitalDraft] =
+    useState(false);
+  const [initializingDigitalMode, setInitializingDigitalMode] = useState<
+    "manual" | "from-live" | null
+  >(null);
   const [isAnalyzingStructure, setIsAnalyzingStructure] = useState(false);
   const [structureProgressLabel, setStructureProgressLabel] = useState("");
   const [structureStartedAtMs, setStructureStartedAtMs] = useState<
@@ -400,6 +424,7 @@ export default function LiffScorebookImportPage() {
   const [isDraftReady, setIsDraftReady] = useState(false);
   const [availableDraftMeta, setAvailableDraftMeta] =
     useState<ScorebookDraftMeta | null>(null);
+  const [allDraftMetas, setAllDraftMetas] = useState<ScorebookDraftMeta[]>([]);
   const [isRestoringDraft, setIsRestoringDraft] = useState(false);
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
   const [restoredDraftBannerAt, setRestoredDraftBannerAt] = useState<
@@ -412,6 +437,18 @@ export default function LiffScorebookImportPage() {
     const mm = String(d.getMinutes()).padStart(2, "0");
     return `${hh}:${mm}`;
   };
+
+  const refreshDraftMetas = useCallback(
+    (teamKey: string, targetMatchId?: string) => {
+      const list = listScorebookDraftMetas(teamKey);
+      setAllDraftMetas(list);
+      const draftMeta = targetMatchId
+        ? peekScorebookDraftMeta(teamKey, targetMatchId)
+        : peekScorebookDraftMeta(teamKey);
+      setAvailableDraftMeta(draftMeta);
+    },
+    []
+  );
 
   // 1. チーム選手名鑑・試合一覧の読み込み（初期表示時は巨大画像の自動展開を行わずメモリ負荷ゼロで起動）
   const fetchContext = useCallback(async () => {
@@ -459,12 +496,17 @@ export default function LiffScorebookImportPage() {
           setSelectedMatchId((prev) => prev || preferredMatchId);
         }
 
-        // 軽量メタ情報（約150B）のみで前回下書きの有無を確認し、必要時のみボタン押下で復元する
-        const draftMeta = peekScorebookDraftMeta(effectiveTeamId);
-        setAvailableDraftMeta(draftMeta);
+        // 軽量メタ情報のみで該当試合（ダブルヘッダー分離対応）の下書き有無を確認
+        refreshDraftMetas(effectiveTeamId, preferredMatchId || undefined);
         setIsDraftReady(true);
-      } else if (preferredMatchId) {
-        setSelectedMatchId((prev) => prev || preferredMatchId);
+      } else {
+        if (preferredMatchId) {
+          setSelectedMatchId((prev) => prev || preferredMatchId);
+        }
+        refreshDraftMetas(
+          effectiveTeamId,
+          selectedMatchId || preferredMatchId || undefined
+        );
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -473,21 +515,39 @@ export default function LiffScorebookImportPage() {
     } finally {
       setIsLoadingContext(false);
     }
-  }, [currentTeam?.id]);
+  }, [currentTeam?.id, refreshDraftMetas, selectedMatchId]);
 
-  const handleRestoreSavedDraft = async () => {
+  // Step 1 で対象試合を切り替えた際、その試合専用の下書き有無（ダブルヘッダー分離）を再判定
+  useEffect(() => {
+    if (!isDraftReady || step !== 1 || lastAutoSavedAt !== null) return;
+    const teamKey = resolvedTeamId || currentTeam?.id || "default";
+    refreshDraftMetas(teamKey, selectedMatchId || undefined);
+  }, [
+    isDraftReady,
+    step,
+    selectedMatchId,
+    lastAutoSavedAt,
+    resolvedTeamId,
+    currentTeam?.id,
+    refreshDraftMetas,
+  ]);
+
+  const handleRestoreSavedDraft = async (overrideMatchId?: string) => {
     if (isRestoringDraft) return;
     setIsRestoringDraft(true);
     setErrorBanner(null);
     try {
       const teamKey = resolvedTeamId || currentTeam?.id || "default";
-      const draft = await loadScorebookDraft(teamKey);
+      const targetMatchId =
+        (overrideMatchId || selectedMatchId || "").trim() || undefined;
+      const draft = await loadScorebookDraft(teamKey, targetMatchId);
       if (!draft) {
-        await clearScorebookDraft(teamKey);
-        setAvailableDraftMeta(null);
+        await clearScorebookDraft(teamKey, targetMatchId);
+        refreshDraftMetas(teamKey, selectedMatchId || undefined);
         return;
       }
 
+      const prefs = loadLiffScoreSettings();
       setImportScope(draft.importScope);
       const matchExists = matches.some((m) => m.id === draft.selectedMatchId);
       if (matchExists) {
@@ -505,6 +565,8 @@ export default function LiffScorebookImportPage() {
           enhancePencil: draft.topImage.enhancePencil,
           processed: draft.topImage.processed,
         });
+      } else {
+        setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
       }
 
       if (draft.bottomImage.processed) {
@@ -518,6 +580,10 @@ export default function LiffScorebookImportPage() {
           enhancePencil: draft.bottomImage.enhancePencil,
           processed: draft.bottomImage.processed,
         });
+      } else {
+        setBottomImage(
+          createInitialSheetImageState(prefs.defaultEnhancePencil)
+        );
       }
 
       setLegendOverride(draft.legendOverride);
@@ -565,6 +631,108 @@ export default function LiffScorebookImportPage() {
       setIsRestoringDraft(false);
     }
   };
+
+  // 1-A0. 紙スコア写真なしの「直接デジタル手入力」または「LINE試合速報データからの下書き生成」（AI消費ゼロ）
+  const handleInitializeDigitalScorebook = useCallback(
+    async (mode: "manual" | "from-live", overrideMatchId?: string) => {
+      const targetId = (overrideMatchId || selectedMatchId || "").trim();
+      if (!effectiveCanEditScore || !targetId || isInitializingDigitalDraft) {
+        return;
+      }
+
+      setIsInitializingDigitalDraft(true);
+      setInitializingDigitalMode(mode);
+      setErrorBanner(null);
+      try {
+        const qTeam =
+          resolvedTeamId ||
+          currentTeam?.id ||
+          getClientQueryParam("teamId") ||
+          "";
+        const res = await fetch(
+          `/api/liff/scorebook/match-init?teamId=${encodeURIComponent(
+            qTeam
+          )}&matchId=${encodeURIComponent(targetId)}&mode=${mode}`
+        );
+        const data = (await res.json()) as MatchInitApiResponse;
+        if (!res.ok || !data.success) {
+          throw new Error(
+            data.error || "デジタルスコアブックの初期展開に失敗しました"
+          );
+        }
+
+        const prefs = loadLiffScoreSettings();
+        completedChunkCacheRef.current.clear();
+        setSelectedMatchId(targetId);
+        setImportScope(data.importScope || "both");
+        setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
+        setBottomImage(
+          createInitialSheetImageState(prefs.defaultEnhancePencil)
+        );
+        setLegendOverride(null);
+        setSavedTopImageUrl(null);
+        setSavedBottomImageUrl(null);
+
+        const loadedTopStruct = data.topStructure ?? null;
+        const loadedBottomStruct = data.bottomStructure ?? null;
+        const reconciledTop = reconcileSheetExcessOutsDeterministically(
+          data.topAtBats || [],
+          loadedTopStruct
+        ).atBats;
+        const reconciledBottom = reconcileSheetExcessOutsDeterministically(
+          data.bottomAtBats || [],
+          loadedBottomStruct
+        ).atBats;
+
+        setTopStructure(loadedTopStruct);
+        setBottomStructure(loadedBottomStruct);
+        setTopAtBats(reconciledTop);
+        setBottomAtBats(reconciledBottom);
+        setTimingSummary(null);
+        setStructureTotalMs(null);
+        setStructureCompletedTimings([]);
+        setDeepTotalDurationMs(null);
+        setDeepCompletedTimings([]);
+        setAvailableDraftMeta(null);
+        setRestoredDraftBannerAt(null);
+        setSaveSummary(null);
+        setIsEditingSavedMatch(false);
+        setHasDirtyReEdit(false);
+
+        const totalGeneratedAtBats =
+          reconciledTop.length + reconciledBottom.length;
+        if (mode === "from-live" && totalGeneratedAtBats > 0) {
+          setStep(3);
+          toast.success(
+            `LINE試合速報（${
+              data.convertedPlayCount || totalGeneratedAtBats
+            }プレー）からスコアブック下書きを生成しました`
+          );
+        } else {
+          setStep(2);
+          toast.success(
+            mode === "from-live"
+              ? "登録スタメン・骨格を展開しました（STEP 2で確認後に入力できます）"
+              : "デジタル手入力シートを準備しました（打順・投手を確認後に入力できます）"
+          );
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorBanner(msg);
+        toast.error(msg || "デジタルスコアブックの初期展開に失敗しました");
+      } finally {
+        setIsInitializingDigitalDraft(false);
+        setInitializingDigitalMode(null);
+      }
+    },
+    [
+      selectedMatchId,
+      effectiveCanEditScore,
+      isInitializingDigitalDraft,
+      resolvedTeamId,
+      currentTeam?.id,
+    ]
+  );
 
   // 1-A. 保存済みスコアブックデータ（スナップショット＋R2画像 または リレーショナルDB復元）の読み込み
   const handleLoadSavedScorebook = useCallback(
@@ -639,7 +807,11 @@ export default function LiffScorebookImportPage() {
 
   const handleDeleteSavedScorebook = useCallback(
     async (options: DeletePersonalStatsOptions) => {
-      if (!effectiveCanImport || !selectedMatchId || isDeletingSavedScorebook) {
+      if (
+        !effectiveCanEditScore ||
+        !selectedMatchId ||
+        isDeletingSavedScorebook
+      ) {
         return;
       }
       setIsDeletingSavedScorebook(true);
@@ -660,13 +832,13 @@ export default function LiffScorebookImportPage() {
         }
 
         const teamKey = resolvedTeamId || currentTeam?.id || "default";
-        const draftMeta = peekScorebookDraftMeta(teamKey);
+        const draftMeta = peekScorebookDraftMeta(teamKey, selectedMatchId);
         if (
           draftMeta?.selectedMatchId === selectedMatchId ||
           isEditingSavedMatch
         ) {
-          await clearScorebookDraft(teamKey);
-          setAvailableDraftMeta(null);
+          await clearScorebookDraft(teamKey, selectedMatchId);
+          refreshDraftMetas(teamKey, selectedMatchId);
           setLastAutoSavedAt(null);
           setRestoredDraftBannerAt(null);
         }
@@ -710,13 +882,14 @@ export default function LiffScorebookImportPage() {
       }
     },
     [
-      effectiveCanImport,
+      effectiveCanEditScore,
       selectedMatchId,
       isDeletingSavedScorebook,
       resolvedTeamId,
       currentTeam?.id,
       isEditingSavedMatch,
       fetchContext,
+      refreshDraftMetas,
     ]
   );
 
@@ -728,10 +901,10 @@ export default function LiffScorebookImportPage() {
     fetchContext();
   }, [fetchContext]);
 
-  // 試合詳細画面などから `?matchId=...&mode=edit` で遷移してきた場合は自動的に保存済みデータをStep 3へ展開
+  // 試合詳細やLINE試合速報から `?matchId=...&mode=edit|from-live|manual` で遷移してきた場合は自動展開
   useEffect(() => {
     if (
-      !effectiveCanImport ||
+      !effectiveCanEditScore ||
       isLoadingContext ||
       didAutoLoadEditQueryRef.current
     ) {
@@ -739,13 +912,22 @@ export default function LiffScorebookImportPage() {
     }
     const modeParam = getClientQueryParam("mode");
     const urlMatchId = getClientQueryParam("matchId");
-    if (modeParam === "edit" && urlMatchId) {
+    if (!urlMatchId) return;
+    if (modeParam === "edit") {
       didAutoLoadEditQueryRef.current = true;
       void handleLoadSavedScorebook(urlMatchId, {
         fallbackToStep1IfEmpty: true,
       });
+    } else if (modeParam === "from-live" || modeParam === "manual") {
+      didAutoLoadEditQueryRef.current = true;
+      void handleInitializeDigitalScorebook(modeParam, urlMatchId);
     }
-  }, [effectiveCanImport, isLoadingContext, handleLoadSavedScorebook]);
+  }, [
+    effectiveCanEditScore,
+    isLoadingContext,
+    handleLoadSavedScorebook,
+    handleInitializeDigitalScorebook,
+  ]);
 
   // スコア設定画面から戻ってきた際のみ、登録された早見表URLを同期（カメラ・ファイル選択復帰時の不要な通信競合を防止）
   useEffect(() => {
@@ -814,7 +996,11 @@ export default function LiffScorebookImportPage() {
 
     if (!hasMeaningfulWork) {
       if (lastAutoSavedAt !== null) {
-        void clearScorebookDraft(teamKey);
+        void clearScorebookDraft(teamKey, selectedMatchId || undefined).then(
+          () => {
+            refreshDraftMetas(teamKey, selectedMatchId || undefined);
+          }
+        );
         setLastAutoSavedAt(null);
       }
       return;
@@ -845,6 +1031,7 @@ export default function LiffScorebookImportPage() {
         timingSummary,
       }).then((savedTs) => {
         setLastAutoSavedAt(savedTs);
+        setAllDraftMetas(listScorebookDraftMetas(teamKey));
       });
     }, 350);
 
@@ -873,9 +1060,18 @@ export default function LiffScorebookImportPage() {
     lastAutoSavedAt,
     isEditingSavedMatch,
     hasDirtyReEdit,
+    refreshDraftMetas,
   ]);
 
-  const handleDiscardDraft = async () => {
+  const handleDiscardDraft = async (overrideMatchId?: string) => {
+    const teamKey = resolvedTeamId || currentTeam?.id || "default";
+    if (overrideMatchId && overrideMatchId !== selectedMatchId) {
+      await clearScorebookDraft(teamKey, overrideMatchId);
+      refreshDraftMetas(teamKey, selectedMatchId || undefined);
+      toast.success("指定した試合の下書きを破棄しました");
+      return;
+    }
+
     preprocessSeqRef.current.top += 1;
     preprocessSeqRef.current.bottom += 1;
     if (sliderDebounceRef.current.top) {
@@ -886,8 +1082,7 @@ export default function LiffScorebookImportPage() {
       clearTimeout(sliderDebounceRef.current.bottom);
       sliderDebounceRef.current.bottom = null;
     }
-    const teamKey = resolvedTeamId || currentTeam?.id || "default";
-    await clearScorebookDraft(teamKey);
+    await clearScorebookDraft(teamKey, selectedMatchId || undefined);
     const prefs = loadLiffScoreSettings();
     setImportScope(prefs.defaultImportScope);
     setTopImage(createInitialSheetImageState(prefs.defaultEnhancePencil));
@@ -916,7 +1111,7 @@ export default function LiffScorebookImportPage() {
     cooledModelsRef.current.clear();
     setSaveSummary(null);
     setErrorBanner(null);
-    setAvailableDraftMeta(null);
+    refreshDraftMetas(teamKey, selectedMatchId || undefined);
     setLastAutoSavedAt(null);
     setRestoredDraftBannerAt(null);
     setStep(1);
@@ -1170,7 +1365,7 @@ export default function LiffScorebookImportPage() {
     battingOrder: "first" | "second";
     innings: number;
   }) => {
-    if (!effectiveCanImport) return;
+    if (!effectiveCanEditScore) return;
     try {
       setIsCreatingMatch(true);
       setErrorBanner(null);
@@ -2822,7 +3017,7 @@ export default function LiffScorebookImportPage() {
 
   // 6. 最終D1保存処理（R2シート画像＋無劣化スナップショットも同時永続化）
   const handleSaveToDatabase = async () => {
-    if (!effectiveCanImport || !selectedMatchId) return;
+    if (!effectiveCanEditScore || !selectedMatchId) return;
     setIsSaving(true);
     setErrorBanner(null);
 
@@ -2928,7 +3123,8 @@ export default function LiffScorebookImportPage() {
       );
 
       const teamKey = resolvedTeamId || currentTeam?.id || "default";
-      await clearScorebookDraft(teamKey);
+      await clearScorebookDraft(teamKey, selectedMatchId);
+      refreshDraftMetas(teamKey, selectedMatchId);
       setLastAutoSavedAt(null);
       setRestoredDraftBannerAt(null);
       setHasDirtyReEdit(false);
@@ -2997,8 +3193,8 @@ export default function LiffScorebookImportPage() {
 
       <div className="p-4 space-y-4">
         <LiffPageHeader
-          title="スコアAI取込"
-          subtitle="紙スコアブックの撮影・AIデータ化"
+          title="スコアAI取込・清書"
+          subtitle="紙スコアAIデータ化・LINE速報清書・デジタル入力"
           icon={
             <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
               <ScanLine className="w-4 h-4" />
@@ -3019,7 +3215,7 @@ export default function LiffScorebookImportPage() {
         />
 
         {/* 権限不足・体験デモ時の A-3 案内カード */}
-        {!isLoadingContext && !effectiveCanImport && (
+        {!isLoadingContext && !effectiveCanEditScore && (
           <section className="rounded-2xl border border-border bg-card shadow-xs p-3.5 space-y-2.5 overflow-hidden">
             <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -3066,7 +3262,7 @@ export default function LiffScorebookImportPage() {
         <div className="space-y-2">
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { num: 1 as const, label: "1. 撮影・前処理" },
+              { num: 1 as const, label: "1. 試合・取込元" },
               { num: 2 as const, label: "2. 骨格確認" },
               { num: 3 as const, label: "3. 1球検算・保存" },
             ].map((s) => {
@@ -3090,7 +3286,7 @@ export default function LiffScorebookImportPage() {
           </div>
 
           {/* 自動下書き保存ステータスバー */}
-          {step !== 4 && effectiveCanImport && lastAutoSavedAt && (
+          {step !== 4 && effectiveCanEditScore && lastAutoSavedAt && (
             <div className="px-3 py-1.5 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 min-w-0">
                 <Save className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -3112,7 +3308,7 @@ export default function LiffScorebookImportPage() {
 
         {/* 前回の途中データがある場合のオンデマンド復元バナー（初期表示時はメモリに読み込まず軽快に起動） */}
         {step === 1 &&
-          effectiveCanImport &&
+          effectiveCanEditScore &&
           availableDraftMeta &&
           !lastAutoSavedAt && (
             <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs space-y-2.5">
@@ -3120,12 +3316,12 @@ export default function LiffScorebookImportPage() {
                 <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-0.5 min-w-0">
                   <p className="text-xs font-black text-foreground">
-                    前回入力途中の下書き（
+                    この試合の入力途中の下書き（
                     {formatSavedTime(availableDraftMeta.savedAt)} 保存 / STEP{" "}
                     {availableDraftMeta.step}）があります
                   </p>
                   <p className="text-[10px] font-bold text-muted-foreground">
-                    新しく撮影を始める場合はこのまま下へ進めます。前回の続きを開く場合は「続きから復元」を押してください。
+                    新しく入力・撮影を始める場合はこのまま下へ進めます。前回の続きを開く場合は「続きから復元」を押してください。
                   </p>
                 </div>
               </div>
@@ -3133,7 +3329,11 @@ export default function LiffScorebookImportPage() {
                 <button
                   type="button"
                   disabled={isRestoringDraft}
-                  onClick={() => void handleRestoreSavedDraft()}
+                  onClick={() =>
+                    void handleRestoreSavedDraft(
+                      availableDraftMeta.selectedMatchId || undefined
+                    )
+                  }
                   className="flex-1 py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                 >
                   {isRestoringDraft ? (
@@ -3151,7 +3351,11 @@ export default function LiffScorebookImportPage() {
                 <button
                   type="button"
                   disabled={isRestoringDraft}
-                  onClick={() => void handleDiscardDraft()}
+                  onClick={() =>
+                    void handleDiscardDraft(
+                      availableDraftMeta.selectedMatchId || undefined
+                    )
+                  }
                   className="py-2 px-3 rounded-xl bg-muted hover:bg-destructive/10 border border-border text-xs font-black text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -3162,7 +3366,7 @@ export default function LiffScorebookImportPage() {
           )}
 
         {/* 前回の途中入力を復元した際の通知バナー */}
-        {step !== 4 && effectiveCanImport && restoredDraftBannerAt && (
+        {step !== 4 && effectiveCanEditScore && restoredDraftBannerAt && (
           <div className="p-3 rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card shadow-xs flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <CheckCircle2 className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -3191,12 +3395,18 @@ export default function LiffScorebookImportPage() {
           </div>
         )}
 
-        {isLoadingContext || (isLoadingSavedScorebook && step === 1) ? (
+        {isLoadingContext ||
+        ((isLoadingSavedScorebook || isInitializingDigitalDraft) &&
+          step === 1) ? (
           <div className="py-16 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-7 h-7 animate-spin text-primary" />
             <p className="text-xs font-bold text-muted-foreground">
               {isLoadingSavedScorebook
                 ? "保存済みの打席・成績データを呼び出し中..."
+                : isInitializingDigitalDraft
+                ? initializingDigitalMode === "from-live"
+                  ? "LINE試合速報データからスコアブック下書きを生成中..."
+                  : "デジタル手入力シートを準備中..."
                 : "チーム選手名鑑・試合情報を読み込み中..."}
             </p>
           </div>
@@ -3212,23 +3422,49 @@ export default function LiffScorebookImportPage() {
                   setSavedBottomImageUrl(null);
                   setIsEditingSavedMatch(false);
                   setHasDirtyReEdit(false);
+                  setLastAutoSavedAt(null);
+                  setRestoredDraftBannerAt(null);
                 }}
                 onCreateMatch={handleCreateMatch}
                 isCreatingMatch={isCreatingMatch}
-                canImport={effectiveCanImport}
+                canImport={canUseAiScan}
+                canEditDigitalScore={effectiveCanEditScore}
                 isDemoMode={isEffectiveDemo}
                 onLoadSavedScorebook={
-                  effectiveCanImport
+                  effectiveCanEditScore
                     ? () => void handleLoadSavedScorebook()
                     : undefined
                 }
                 isLoadingSavedScorebook={isLoadingSavedScorebook}
                 onRequestDeleteSavedScorebook={
-                  effectiveCanImport
+                  effectiveCanEditScore
                     ? () => setShowDeleteSavedModal(true)
                     : undefined
                 }
                 isDeletingSavedScorebook={isDeletingSavedScorebook}
+                onStartManualScorebook={
+                  effectiveCanEditScore
+                    ? () => void handleInitializeDigitalScorebook("manual")
+                    : undefined
+                }
+                onStartFromLiveReport={
+                  effectiveCanEditScore
+                    ? () => void handleInitializeDigitalScorebook("from-live")
+                    : undefined
+                }
+                isInitializingDigitalDraft={isInitializingDigitalDraft}
+                initializingDigitalMode={initializingDigitalMode}
+                savedDraftMetas={allDraftMetas}
+                onResumeDraftForMatch={
+                  effectiveCanEditScore
+                    ? (matchId) => void handleRestoreSavedDraft(matchId)
+                    : undefined
+                }
+                onDiscardDraftForMatch={
+                  effectiveCanEditScore
+                    ? (matchId) => void handleDiscardDraft(matchId)
+                    : undefined
+                }
                 importScope={importScope}
                 onChangeImportScope={setImportScope}
                 topImage={topImage}
@@ -3270,7 +3506,7 @@ export default function LiffScorebookImportPage() {
                 bottomStructure={bottomStructure}
                 onChangeStructure={handleUpdateStructureWithSync}
                 onRescanSide={
-                  effectiveCanImport && hasLocalProcessedForScope
+                  canUseAiScan && hasLocalProcessedForScope
                     ? handleRescanSingleSide
                     : undefined
                 }
@@ -3283,7 +3519,7 @@ export default function LiffScorebookImportPage() {
                   setStep(1);
                 }}
                 onStartDeepAnalysis={
-                  effectiveCanImport && hasLocalProcessedForScope
+                  canUseAiScan && hasLocalProcessedForScope
                     ? () => void handleStartDeepAnalysis({ onlyMissing: false })
                     : undefined
                 }
@@ -3317,8 +3553,10 @@ export default function LiffScorebookImportPage() {
                 reanalyzingInningKey={reanalyzingInningKey}
                 preservedAtBatsCount={preservedAtBatsCount}
                 missingInningsCount={missingInningsCount}
-                onResumeMissingInnings={() =>
-                  void handleStartDeepAnalysis({ onlyMissing: true })
+                onResumeMissingInnings={
+                  canUseAiScan && hasLocalProcessedForScope
+                    ? () => void handleStartDeepAnalysis({ onlyMissing: true })
+                    : undefined
                 }
                 onProceedWithCompleted={() => {
                   setErrorBanner(null);
@@ -3342,7 +3580,7 @@ export default function LiffScorebookImportPage() {
                           保存済みデータの再編集モード
                         </p>
                       </div>
-                      {effectiveCanImport && (
+                      {effectiveCanEditScore && (
                         <button
                           type="button"
                           disabled={isSaving || isDeletingSavedScorebook}
@@ -3387,15 +3625,15 @@ export default function LiffScorebookImportPage() {
                   }}
                   onSave={handleSaveToDatabase}
                   isSaving={isSaving}
-                  canSave={effectiveCanImport}
+                  canSave={effectiveCanEditScore}
                   onReanalyzeInning={
-                    effectiveCanImport && hasAnyLocalProcessedImage
+                    canUseAiScan && hasAnyLocalProcessedImage
                       ? handleReanalyzeSingleInning
                       : undefined
                   }
                   reanalyzingInningKey={reanalyzingInningKey}
                   onRepairOrderGaps={
-                    effectiveCanImport && hasAnyLocalProcessedImage
+                    canUseAiScan && hasAnyLocalProcessedImage
                       ? () => void handleManualRepairOrderGaps()
                       : undefined
                   }

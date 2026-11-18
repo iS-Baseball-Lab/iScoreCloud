@@ -685,6 +685,7 @@ interface AtBatModalRunnerEditorProps {
   snapshot?: AtBatRunnerSnapshot;
   batters: ScorebookBatterSlot[];
   isMyTeamBatting?: boolean;
+  isLeadOffOfHalfInning?: boolean;
   roster?: ScorebookRosterPlayer[];
   runnerCellCrops?: Partial<Record<OccupiedBaseKey, PrecedingRunnerCellCrop>>;
   onJumpToRunnerAtBat?: (atBatId: string) => void;
@@ -734,6 +735,7 @@ const QUICK_EVENT_PRESETS: ReadonlyArray<{
   { label: "+暴投(WP)", from: "1B", to: "2B", method: "wp", isOut: false },
   { label: "+捕逸(PB)", from: "1B", to: "2B", method: "pb", isOut: false },
   { label: "+ボーク(BK)", from: "1B", to: "2B", method: "balk", isOut: false },
+  { label: "+タイブレーク3塁", from: "3B", to: "3B", method: "tiebreak", isOut: false },
   { label: "+タイブレーク2塁", from: "2B", to: "2B", method: "tiebreak", isOut: false },
   { label: "+タイブレーク1塁", from: "1B", to: "1B", method: "tiebreak", isOut: false },
   { label: "+アピール死", from: "1B", to: "1B", method: "appeal_out", isOut: true },
@@ -748,6 +750,29 @@ function isHoldMarker(adv: ScorebookV2Advance): boolean {
   );
 }
 
+function resolvePrecedingSlotRunnerName(
+  batters: readonly ScorebookBatterSlot[],
+  currentOrder: number,
+  inning: number,
+  offsetBack: 1 | 2 | 3
+): string {
+  const maxOrd = Math.max(9, batters.length || 9);
+  const targetOrd =
+    (((Math.max(1, currentOrder || 1) - 1 - offsetBack) % maxOrd) + maxOrd) %
+      maxOrd +
+    1;
+  const slot = batters.find((b) => b.battingOrder === targetOrd);
+  if (!slot) return "";
+  let activeName = slot.name || "";
+  for (const sub of slot.substitutions || []) {
+    if (sub.subType === "TR") continue;
+    if (sub.inningEntered <= inning && sub.name.trim()) {
+      activeName = sub.name.trim();
+    }
+  }
+  return activeName;
+}
+
 /**
  * 打席編集モーダル内の「走者状況（打席前➔打席後）＆ 前の走者のインプレー進塁・走塁ワンタップエディタ」
  */
@@ -756,6 +781,7 @@ export function AtBatModalRunnerEditor({
   snapshot,
   batters,
   isMyTeamBatting = false,
+  isLeadOffOfHalfInning = false,
   roster = [],
   runnerCellCrops,
   onJumpToRunnerAtBat,
@@ -1302,6 +1328,65 @@ export function AtBatModalRunnerEditor({
           }
         }
       }
+
+      if (preset.method === "tiebreak") {
+        const offsetBack: 1 | 2 | 3 =
+          resolvedFrom === "3B" ? 3 : resolvedFrom === "2B" ? 2 : 1;
+        const maxOrd = Math.max(9, batters.length || 9);
+        const targetOrd =
+          (((Math.max(1, prev.battingOrder || 1) - 1 - offsetBack) % maxOrd) +
+            maxOrd) %
+            maxOrd +
+          1;
+        const resolvedTiebreakName =
+          resolvePrecedingSlotRunnerName(
+            batters,
+            prev.battingOrder,
+            prev.inning,
+            offsetBack
+          ) ||
+          basesBefore[resolvedFrom]?.name ||
+          "";
+        const newAdv: ScorebookV2Advance = {
+          id: crypto.randomUUID(),
+          runnerName: resolvedTiebreakName,
+          from: resolvedFrom,
+          to: resolvedFrom,
+          method: "tiebreak",
+          isOut: false,
+        };
+        const withoutSameBaseTiebreak = prev.advances.filter(
+          (a) => !(a.method === "tiebreak" && a.from === resolvedFrom)
+        );
+        const nextAdvances = sortAdvancesClosestToHomeFirst([
+          ...withoutSameBaseTiebreak,
+          newAdv,
+        ]);
+        const effectiveBasesBefore: BaseRunnerMap = {
+          ...basesBefore,
+          [resolvedFrom]: {
+            battingOrder: targetOrd,
+            name: resolvedTiebreakName,
+            playerId: null,
+          },
+        };
+        const synced = computeSyncedStatsFromAdvances(
+          prev,
+          nextAdvances,
+          outsBefore,
+          effectiveBasesBefore
+        );
+        return {
+          ...prev,
+          resultCode: synced.downgradedResultCode ?? prev.resultCode,
+          advances: nextAdvances,
+          outsInPlay: synced.outsInPlay,
+          runsInPlay: synced.runsInPlay,
+          rbi: synced.rbi,
+          confidence: "high",
+        };
+      }
+
       const runnerOnTargetFrom =
         basesBefore[resolvedFrom]?.name ||
         resolveDefaultManualRunner(prev.advances).name;
@@ -1326,6 +1411,116 @@ export function AtBatModalRunnerEditor({
       );
       return {
         ...prev,
+        resultCode: synced.downgradedResultCode ?? prev.resultCode,
+        advances: nextAdvances,
+        outsInPlay: synced.outsInPlay,
+        runsInPlay: synced.runsInPlay,
+        rbi: synced.rbi,
+        confidence: "high",
+      };
+    });
+  };
+
+  const handleApplyTiebreakPreset = (
+    mode: "zero_out_12" | "one_out_loaded" | "clear"
+  ) => {
+    onUpdateAtBat((prev) => {
+      const nonTiebreakAdvances = prev.advances.filter(
+        (a) => a.method !== "tiebreak"
+      );
+      if (mode === "clear") {
+        const nonTiebreakBases: BaseRunnerMap = {
+          "1B": prev.advances.some(
+            (a) => a.method === "tiebreak" && a.from === "1B"
+          )
+            ? null
+            : basesBefore["1B"],
+          "2B": prev.advances.some(
+            (a) => a.method === "tiebreak" && a.from === "2B"
+          )
+            ? null
+            : basesBefore["2B"],
+          "3B": prev.advances.some(
+            (a) => a.method === "tiebreak" && a.from === "3B"
+          )
+            ? null
+            : basesBefore["3B"],
+        };
+        const nextPrev: ScorebookV2AtBat = {
+          ...prev,
+          tiebreakInitialOuts: undefined,
+        };
+        const synced = computeSyncedStatsFromAdvances(
+          nextPrev,
+          nonTiebreakAdvances,
+          0,
+          nonTiebreakBases
+        );
+        return {
+          ...nextPrev,
+          advances: nonTiebreakAdvances,
+          outsInPlay: synced.outsInPlay,
+          runsInPlay: synced.runsInPlay,
+          rbi: synced.rbi,
+          confidence: "high",
+        };
+      }
+
+      const targetBases: ReadonlyArray<OccupiedBaseKey> =
+        mode === "one_out_loaded" ? ["3B", "2B", "1B"] : ["2B", "1B"];
+      const initialOuts = mode === "one_out_loaded" ? 1 : undefined;
+      const maxOrd = Math.max(9, batters.length || 9);
+
+      const seededMap: BaseRunnerMap = {
+        "1B": null,
+        "2B": null,
+        "3B": null,
+      };
+      const tiebreakRows: ScorebookV2Advance[] = targetBases.map((bKey) => {
+        const offsetBack: 1 | 2 | 3 =
+          bKey === "3B" ? 3 : bKey === "2B" ? 2 : 1;
+        const targetOrd =
+          (((Math.max(1, prev.battingOrder || 1) - 1 - offsetBack) % maxOrd) +
+            maxOrd) %
+            maxOrd +
+          1;
+        const rName = resolvePrecedingSlotRunnerName(
+          batters,
+          prev.battingOrder,
+          prev.inning,
+          offsetBack
+        );
+        seededMap[bKey] = {
+          battingOrder: targetOrd,
+          name: rName,
+          playerId: null,
+        };
+        return {
+          id: crypto.randomUUID(),
+          runnerName: rName,
+          from: bKey,
+          to: bKey,
+          method: "tiebreak",
+          isOut: false,
+        };
+      });
+
+      const nextAdvances = sortAdvancesClosestToHomeFirst([
+        ...tiebreakRows,
+        ...nonTiebreakAdvances,
+      ]);
+      const nextPrev: ScorebookV2AtBat = {
+        ...prev,
+        tiebreakInitialOuts: initialOuts,
+      };
+      const synced = computeSyncedStatsFromAdvances(
+        nextPrev,
+        nextAdvances,
+        initialOuts ?? 0,
+        seededMap
+      );
+      return {
+        ...nextPrev,
         resultCode: synced.downgradedResultCode ?? prev.resultCode,
         advances: nextAdvances,
         outsInPlay: synced.outsInPlay,
@@ -1365,14 +1560,25 @@ export function AtBatModalRunnerEditor({
   const handleDeleteExplicitAdvanceRow = (advId: string) => {
     onUpdateAtBat((prev) => {
       const nextAdvances = prev.advances.filter((a) => a.id !== advId);
+      const hasRemainingTiebreak = nextAdvances.some(
+        (a) => a.method === "tiebreak"
+      );
+      const nextInitialOuts = hasRemainingTiebreak
+        ? prev.tiebreakInitialOuts
+        : undefined;
+      const effectiveOuts = hasRemainingTiebreak ? outsBefore : 0;
+      const nextPrev: ScorebookV2AtBat = {
+        ...prev,
+        tiebreakInitialOuts: nextInitialOuts,
+      };
       const synced = computeSyncedStatsFromAdvances(
-        prev,
+        nextPrev,
         nextAdvances,
-        outsBefore,
+        effectiveOuts,
         basesBefore
       );
       return {
-        ...prev,
+        ...nextPrev,
         advances: nextAdvances,
         outsInPlay: synced.outsInPlay,
         runsInPlay: synced.runsInPlay,
@@ -1381,6 +1587,22 @@ export function AtBatModalRunnerEditor({
       };
     });
   };
+
+  const hasActiveTiebreak =
+    atBat.advances.some((a) => a.method === "tiebreak") ||
+    Boolean(atBat.tiebreakInitialOuts);
+  const showTiebreakQuickBar =
+    atBat.inning >= 2 && (isLeadOffOfHalfInning || hasActiveTiebreak);
+  const isZeroOut12Tiebreak =
+    !atBat.tiebreakInitialOuts &&
+    atBat.advances.some((a) => a.method === "tiebreak" && a.from === "1B") &&
+    atBat.advances.some((a) => a.method === "tiebreak" && a.from === "2B") &&
+    !atBat.advances.some((a) => a.method === "tiebreak" && a.from === "3B");
+  const isOneOutLoadedTiebreak =
+    atBat.tiebreakInitialOuts === 1 &&
+    atBat.advances.some((a) => a.method === "tiebreak" && a.from === "1B") &&
+    atBat.advances.some((a) => a.method === "tiebreak" && a.from === "2B") &&
+    atBat.advances.some((a) => a.method === "tiebreak" && a.from === "3B");
 
   return (
     <div className="p-3 rounded-2xl border border-border bg-card shadow-xs space-y-3 overflow-hidden">
@@ -1499,6 +1721,53 @@ export function AtBatModalRunnerEditor({
           )}
         </div>
       </div>
+
+      {/* 1-B. イニング先頭打者のタイブレーク1タップ初期配置バー（無死一・二塁 / 一死満塁 / 解除） */}
+      {showTiebreakQuickBar && (
+        <div className="p-2.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black">
+              タイブレーク
+            </span>
+            <span className="text-[10px] font-bold text-muted-foreground">
+              前位打者を自動配置（自責点対象外）
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleApplyTiebreakPreset("zero_out_12")}
+              className={`px-2.5 py-1 rounded-lg border text-[10px] font-black transition-all cursor-pointer active:scale-95 ${
+                isZeroOut12Tiebreak
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                  : "bg-card hover:bg-accent text-foreground border-border"
+              }`}
+            >
+              無死一・二塁
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyTiebreakPreset("one_out_loaded")}
+              className={`px-2.5 py-1 rounded-lg border text-[10px] font-black transition-all cursor-pointer active:scale-95 ${
+                isOneOutLoadedTiebreak
+                  ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                  : "bg-card hover:bg-accent text-foreground border-border"
+              }`}
+            >
+              一死満塁
+            </button>
+            {hasActiveTiebreak && (
+              <button
+                type="button"
+                onClick={() => handleApplyTiebreakPreset("clear")}
+                className="px-2 py-1 rounded-lg bg-card hover:bg-destructive/10 border border-border text-[10px] font-black text-muted-foreground hover:text-destructive transition-all cursor-pointer active:scale-95"
+              >
+                解除
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 2. 塁上にいる各先行走者（3塁走者 ➔ 2塁走者 ➔ 1塁走者）のワンタップ進塁カード */}
       {precedingRunners.length > 0 ? (

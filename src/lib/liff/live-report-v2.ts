@@ -244,6 +244,7 @@ export function createInitialLiveReportDocument(params?: {
   venueName?: string;
   battingOrder?: "first" | "second";
   regulationInnings?: number;
+  opponentBatterCount?: number;
   reporterNames?: string;
 }): LiveReportV2Document {
   const myTeam = params?.myTeamName || "自チーム";
@@ -251,6 +252,11 @@ export function createInitialLiveReportDocument(params?: {
   const battingOrder = params?.battingOrder || "first";
   const myShort = deriveScoreboardShortName(myTeam);
   const oppShort = opp ? deriveScoreboardShortName(opp) : "相　手";
+  const opponentBatterCount =
+    typeof params?.opponentBatterCount === "number" &&
+    Number.isFinite(params.opponentBatterCount)
+      ? Math.max(9, Math.min(25, Math.round(params.opponentBatterCount)))
+      : 9;
 
   return {
     version: 2,
@@ -263,6 +269,7 @@ export function createInitialLiveReportDocument(params?: {
     endTime: "",
     battingOrder,
     regulationInnings: params?.regulationInnings || 7,
+    opponentBatterCount,
     firstTeamShortName: battingOrder === "first" ? myShort : oppShort,
     secondTeamShortName: battingOrder === "first" ? oppShort : myShort,
     showSurnameOnly: true,
@@ -281,7 +288,7 @@ export function createInitialLiveReportDocument(params?: {
 }
 
 // =========================================================
-// 3. アクティブ打順・守備解決（途中交代反映）
+// 3. アクティブ打順・守備解決（途中交代反映・臨時代走TRは打順/守備を保持）
 // =========================================================
 
 export function compareHalfInningOrder(
@@ -313,6 +320,8 @@ export function resolveActiveLineupAtInning(
     let currentPlayerId = slot.playerId;
 
     for (const sub of slot.substitutions) {
+      // 臨時代走（TR）は塁上のみの一時交代であり、元の捕手・投手の打順と守備位置を維持する
+      if (sub.subType === "TR") continue;
       if (
         compareHalfInningOrder(sub.inning, sub.isBottom, inning, isBottom) <= 0
       ) {
@@ -374,7 +383,7 @@ export function findActiveDefenderByDirection(
 }
 
 // =========================================================
-// 4. イニング内状況計算（アウト・残塁・得点・累計スコア）
+// 4. イニング内状況計算（アウト・残塁・走者氏名・得点・累計スコア）
 // =========================================================
 
 export function normalizeRunnersList(
@@ -421,6 +430,7 @@ export interface HalfInningLiveSituation {
   outs: number;
   runners: LiveReportBaseNum[];
   runs: number;
+  runnerNames?: Partial<Record<LiveReportBaseNum, string>>;
 }
 
 export function computeHalfInningSituation(
@@ -431,31 +441,107 @@ export function computeHalfInningSituation(
       outs: 0,
       runners: [],
       runs: half?.manualRunsOverride ?? 0,
+      runnerNames: {},
     };
   }
 
   let outs = 0;
   let runners: LiveReportBaseNum[] = [];
+  let runnerNames: Partial<Record<LiveReportBaseNum, string>> = {};
+
   for (const entry of half.entries) {
-    if (entry.entryType !== "batter") continue;
-    if (entry.chainedPlays && entry.chainedPlays.length > 0) {
-      const lastChain = entry.chainedPlays[entry.chainedPlays.length - 1];
-      outs = lastChain.outsAfter;
-      runners = normalizeRunnersList(lastChain.runnersAfter);
-    } else {
-      outs = entry.outsAfter;
-      runners = normalizeRunnersList(entry.runnersAfter);
+    if (entry.entryType === "substitution") {
+      const meta = entry.subMeta;
+      if (meta && (meta.subType === "PR" || meta.subType === "TR") && meta.newName) {
+        if (meta.runnerBase && runners.includes(meta.runnerBase)) {
+          runnerNames = { ...runnerNames, [meta.runnerBase]: meta.newName };
+        } else {
+          const matchedBase = ([3, 2, 1] as const).find(
+            (b) =>
+              runners.includes(b) &&
+              meta.oldName &&
+              runnerNames[b] &&
+              runnerNames[b] === meta.oldName
+          );
+          const fallbackBase =
+            matchedBase ??
+            (runners.length === 1 ? runners[0] : undefined);
+          if (fallbackBase) {
+            runnerNames = { ...runnerNames, [fallbackBase]: meta.newName };
+          }
+        }
+      }
+      continue;
     }
-    if (outs >= 3) {
+    if (entry.entryType !== "batter") continue;
+
+    const prevRunners = [...runners];
+    const prevNames = { ...runnerNames };
+    const finalOuts =
+      entry.chainedPlays && entry.chainedPlays.length > 0
+        ? entry.chainedPlays[entry.chainedPlays.length - 1]!.outsAfter
+        : entry.outsAfter;
+    const finalRunners =
+      finalOuts >= 3
+        ? []
+        : normalizeRunnersList(
+            entry.chainedPlays && entry.chainedPlays.length > 0
+              ? entry.chainedPlays[entry.chainedPlays.length - 1]!.runnersAfter
+              : entry.runnersAfter
+          );
+
+    if (finalOuts >= 3) {
       outs = 3;
       runners = [];
+      runnerNames = {};
+      continue;
     }
+
+    // 先行走者を先の塁から順に新しい残塁リストの先の塁へ対応付け、残った最も若い塁を打者走者に割り当てる
+    const nextNames: Partial<Record<LiveReportBaseNum, string>> = {};
+    const prevDesc = [...prevRunners].sort((a, b) => b - a);
+    const nextDesc = [...finalRunners].sort((a, b) => b - a);
+    const batterLabel =
+      entry.batterName.trim() || `${entry.battingOrder}番打者`;
+
+    // 打者が出塁していない（アウト増かつ走者数が増えず、単打/四死球等でない）かを簡易判定
+    const batterLikelySafe =
+      finalRunners.length > prevRunners.length ||
+      /ヒット|安打|二塁打|三塁打|四球|敬遠|死球|エラー|失策|野選|振り逃げセーフ|振逃出塁|封殺/.test(
+        entry.playText
+      );
+
+    if (batterLikelySafe && nextDesc.length > 0) {
+      const batterBase = nextDesc[nextDesc.length - 1]!;
+      nextNames[batterBase] = batterLabel;
+      const slotsForPrev = nextDesc.slice(0, -1);
+      for (let i = 0; i < slotsForPrev.length; i++) {
+        const toB = slotsForPrev[i]!;
+        const fromB = prevDesc[i];
+        if (fromB && prevNames[fromB]) {
+          nextNames[toB] = prevNames[fromB];
+        }
+      }
+    } else {
+      for (let i = 0; i < nextDesc.length; i++) {
+        const toB = nextDesc[i]!;
+        const fromB = prevDesc[i];
+        if (fromB && prevNames[fromB]) {
+          nextNames[toB] = prevNames[fromB];
+        }
+      }
+    }
+
+    outs = finalOuts;
+    runners = finalRunners;
+    runnerNames = nextNames;
   }
 
   return {
     outs,
     runners,
     runs: getHalfInningRuns(half),
+    runnerNames,
   };
 }
 
@@ -2510,12 +2596,14 @@ export function formatStartingLineupBlock(doc: LiveReportV2Document): string {
       );
       if (!baseName) return `${slot.order}.${pos}`;
 
-      if (!doc.appendSubsToTopLineup || slot.substitutions.length === 0) {
+      const permanentSubs = slot.substitutions.filter(
+        (s) => s.subType !== "TR" && s.newName.trim().length > 0
+      );
+      if (!doc.appendSubsToTopLineup || permanentSubs.length === 0) {
         return `${slot.order}.${pos} ${baseName}`;
       }
 
-      const subTrail = slot.substitutions
-        .filter((s) => s.newName.trim().length > 0)
+      const subTrail = permanentSubs
         .map(
           (s) =>
             `→${formatPlayerReportName(s.newName, doc.showSurnameOnly)}(${
@@ -2954,7 +3042,11 @@ export function sanitizeLiveReportDocument(
           inning: typeof sub.inning === "number" ? sub.inning : 1,
           isBottom: Boolean(sub.isBottom),
           subType:
-            st === "P" || st === "PH" || st === "PR" || st === "DEF"
+            st === "P" ||
+            st === "PH" ||
+            st === "PR" ||
+            st === "TR" ||
+            st === "DEF"
               ? st
               : "DEF",
           oldName: typeof sub.oldName === "string" ? sub.oldName : "",
@@ -2992,6 +3084,30 @@ export function sanitizeLiveReportDocument(
           };
         }
       );
+
+      let subMeta: LiveReportPlayEntry["subMeta"] = undefined;
+      if (e.subMeta && typeof e.subMeta === "object") {
+        const sm = e.subMeta as Record<string, unknown>;
+        const smType = sm.subType;
+        const rb = sm.runnerBase;
+        subMeta = {
+          subType:
+            smType === "P" ||
+            smType === "PH" ||
+            smType === "PR" ||
+            smType === "TR" ||
+            smType === "DEF"
+              ? smType
+              : "DEF",
+          slotOrder: typeof sm.slotOrder === "number" ? sm.slotOrder : 1,
+          oldName: typeof sm.oldName === "string" ? sm.oldName : "",
+          newName: typeof sm.newName === "string" ? sm.newName : "",
+          newPosition: typeof sm.newPosition === "string" ? sm.newPosition : "",
+          playerId: typeof sm.playerId === "string" ? sm.playerId : null,
+          runnerBase: rb === 1 || rb === 2 || rb === 3 ? rb : null,
+        };
+      }
+
       return {
         id: typeof e.id === "string" ? e.id : `ent-${eIdx}`,
         entryType:
@@ -3000,6 +3116,9 @@ export function sanitizeLiveReportDocument(
             : "batter",
         battingOrder: typeof e.battingOrder === "number" ? e.battingOrder : 1,
         batterName: typeof e.batterName === "string" ? e.batterName : "",
+        ...(typeof e.batterPlayerId === "string" || e.batterPlayerId === null
+          ? { batterPlayerId: e.batterPlayerId }
+          : {}),
         playText: typeof e.playText === "string" ? e.playText : "",
         reactionText: typeof e.reactionText === "string" ? e.reactionText : "",
         outsAfter:
@@ -3009,9 +3128,17 @@ export function sanitizeLiveReportDocument(
         runnersAfter: Array.isArray(e.runnersAfter)
           ? normalizeRunnersList(e.runnersAfter as number[])
           : [],
-        runsScored: typeof e.runsScored === "number" ? e.runsScored : 0,
+        runsScored: typeof e.runsScored === "number" ? cSafeNonNegInt(e.runsScored) : 0,
         chainedPlays,
         eventText: typeof e.eventText === "string" ? e.eventText : "",
+        ...(typeof e.resultCode === "string" && e.resultCode
+          ? { resultCode: e.resultCode }
+          : {}),
+        ...(typeof e.battedDirection === "string" && e.battedDirection
+          ? { battedDirection: e.battedDirection }
+          : {}),
+        ...(typeof e.rbi === "number" ? { rbi: Math.max(0, Math.round(e.rbi)) } : {}),
+        ...(subMeta ? { subMeta } : {}),
       };
     });
 
@@ -3023,6 +3150,11 @@ export function sanitizeLiveReportDocument(
         typeof h.manualRunsOverride === "number" ? h.manualRunsOverride : null,
     };
   });
+
+  const rawOppBatterCount =
+    typeof obj.opponentBatterCount === "number"
+      ? Math.max(9, Math.min(25, Math.round(obj.opponentBatterCount)))
+      : 9;
 
   return {
     version: 2,
@@ -3039,6 +3171,7 @@ export function sanitizeLiveReportDocument(
     battingOrder: obj.battingOrder === "second" ? "second" : "first",
     regulationInnings:
       typeof obj.regulationInnings === "number" ? obj.regulationInnings : 7,
+    opponentBatterCount: rawOppBatterCount,
     firstTeamShortName:
       typeof obj.firstTeamShortName === "string"
         ? obj.firstTeamShortName
@@ -3064,6 +3197,10 @@ export function sanitizeLiveReportDocument(
     reporterNames:
       typeof obj.reporterNames === "string" ? obj.reporterNames : "",
   };
+}
+
+function cSafeNonNegInt(val: number): number {
+  return Number.isFinite(val) ? Math.max(0, Math.round(val)) : 0;
 }
 
 // =========================================================
@@ -3096,6 +3233,23 @@ function isSameChainedPlay(
   );
 }
 
+function isSameSubMeta(
+  a: LiveReportPlayEntry["subMeta"],
+  b: LiveReportPlayEntry["subMeta"]
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return (
+    a.subType === b.subType &&
+    a.slotOrder === b.slotOrder &&
+    a.oldName === b.oldName &&
+    a.newName === b.newName &&
+    a.newPosition === b.newPosition &&
+    a.playerId === b.playerId &&
+    (a.runnerBase ?? null) === (b.runnerBase ?? null)
+  );
+}
+
 function isSamePlayEntry(
   a: LiveReportPlayEntry,
   b: LiveReportPlayEntry
@@ -3105,11 +3259,16 @@ function isSamePlayEntry(
     a.entryType !== b.entryType ||
     a.battingOrder !== b.battingOrder ||
     a.batterName !== b.batterName ||
+    (a.batterPlayerId ?? null) !== (b.batterPlayerId ?? null) ||
     a.playText !== b.playText ||
     a.reactionText !== b.reactionText ||
     a.outsAfter !== b.outsAfter ||
     a.runsScored !== b.runsScored ||
     a.eventText !== b.eventText ||
+    (a.resultCode ?? "") !== (b.resultCode ?? "") ||
+    (a.battedDirection ?? "") !== (b.battedDirection ?? "") ||
+    (a.rbi ?? null) !== (b.rbi ?? null) ||
+    !isSameSubMeta(a.subMeta, b.subMeta) ||
     !isSameRunnersArray(a.runnersAfter, b.runnersAfter) ||
     a.chainedPlays.length !== b.chainedPlays.length
   ) {
@@ -3783,6 +3942,20 @@ export function mergeLiveReportDocuments({
     );
   }
 
+  const mergedOpponentBatterCount = Math.max(
+    9,
+    Math.min(
+      25,
+      pickScalar3Way(
+        base?.opponentBatterCount,
+        remote.opponentBatterCount ?? 9,
+        local.opponentBatterCount ?? 9,
+        hasBase
+      ) || 9
+    )
+  );
+  const localOppLimit = Math.max(9, local.opponentBatterCount || 9);
+
   const mergedLastOpp = getLastBatterSnapshotForSide(
     mergedHalfInnings,
     mergedBattingOrder,
@@ -3797,7 +3970,7 @@ export function mergeLiveReportDocuments({
     false
   );
   const expectedLocalNextOpp = localLastOpp
-    ? (localLastOpp.battingOrder % 9) + 1
+    ? (localLastOpp.battingOrder % localOppLimit) + 1
     : 1;
   const localManuallyShiftedOpp =
     hasBase &&
@@ -3812,7 +3985,8 @@ export function mergeLiveReportDocuments({
   ) {
     nextOpponentOrder = local.nextOpponentOrder;
   } else if (mergedLastOpp && mergedLastOpp.entryId !== baseLastOpp?.entryId) {
-    nextOpponentOrder = (mergedLastOpp.battingOrder % 9) + 1;
+    nextOpponentOrder =
+      (mergedLastOpp.battingOrder % mergedOpponentBatterCount) + 1;
   } else {
     nextOpponentOrder = pickScalar3Way(
       base?.nextOpponentOrder,
@@ -3965,6 +4139,7 @@ export function mergeLiveReportDocuments({
       local.regulationInnings,
       hasBase
     ),
+    opponentBatterCount: mergedOpponentBatterCount,
     firstTeamShortName: pickScalar3Way(
       base?.firstTeamShortName,
       remote.firstTeamShortName,

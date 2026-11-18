@@ -22,6 +22,9 @@ import {
   AlertCircle,
   Scan,
   RotateCcw,
+  Zap,
+  PenLine,
+  ArrowRight,
 } from "lucide-react";
 import { ScorebookCameraModal } from "@/components/liff/ScorebookCameraModal";
 import {
@@ -32,6 +35,7 @@ import { usePracticeMatchLabel } from "@/components/liff/LiffProvider";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import { loadLiffScoreSettings } from "@/lib/liff/score-settings";
 import { bilinearGridPoint, clamp1000 } from "@/lib/liff/scorebook-grid";
+import type { ScorebookDraftMeta } from "@/lib/liff/scorebook-draft";
 import { ActionStatusBanner } from "./ActionStatusBanner";
 import {
   FourCornerFineTuner,
@@ -118,6 +122,14 @@ interface Step1MatchAndImagesProps {
   onRequestDeleteSavedScorebook?: () => void;
   isDeletingSavedScorebook?: boolean;
   canImport?: boolean;
+  canEditDigitalScore?: boolean;
+  onStartManualScorebook?: () => void;
+  onStartFromLiveReport?: () => void;
+  isInitializingDigitalDraft?: boolean;
+  initializingDigitalMode?: "manual" | "from-live" | null;
+  savedDraftMetas?: ScorebookDraftMeta[];
+  onResumeDraftForMatch?: (matchId: string) => void;
+  onDiscardDraftForMatch?: (matchId: string) => void;
   isDemoMode?: boolean;
 }
 
@@ -442,8 +454,18 @@ export function Step1MatchAndImages({
   onRequestDeleteSavedScorebook,
   isDeletingSavedScorebook = false,
   canImport = true,
+  canEditDigitalScore,
+  onStartManualScorebook,
+  onStartFromLiveReport,
+  isInitializingDigitalDraft = false,
+  initializingDigitalMode = null,
+  savedDraftMetas = [],
+  onResumeDraftForMatch,
+  onDiscardDraftForMatch,
   isDemoMode = false,
 }: Step1MatchAndImagesProps) {
+  const effectiveCanEditDigital = canEditDigitalScore ?? canImport;
+  const isDigitalInitBusy = Boolean(isInitializingDigitalDraft);
   const practiceMatchLabel = usePracticeMatchLabel();
   const lastCameraTargetRef = useRef<ImagePickerTarget>("top");
   const [cameraTarget, setCameraTarget] = useState<ImagePickerTarget | null>(
@@ -473,10 +495,10 @@ export function Step1MatchAndImages({
   }, []);
 
   useEffect(() => {
-    if (!canImport && showCreateForm) {
+    if (!effectiveCanEditDigital && showCreateForm) {
       setShowCreateForm(false);
     }
-  }, [canImport, showCreateForm]);
+  }, [effectiveCanEditDigital, showCreateForm]);
 
   const [openCropSide, setOpenCropSide] = useState<"top" | "bottom" | null>(
     null
@@ -571,11 +593,12 @@ export function Step1MatchAndImages({
     !topImage.isProcessing &&
     !bottomImage.isProcessing &&
     !isLegendProcessing &&
-    !isAnalyzingStructure;
+    !isAnalyzingStructure &&
+    !isDigitalInitBusy;
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canImport || !newOpponent.trim()) return;
+    if (!effectiveCanEditDigital || !newOpponent.trim()) return;
     await onCreateMatch({
       opponent: newOpponent.trim(),
       date: newDate,
@@ -1021,7 +1044,7 @@ export function Step1MatchAndImages({
             </h2>
           </div>
 
-          {canImport ? (
+          {effectiveCanEditDigital ? (
             <button
               type="button"
               onClick={() => setShowCreateForm((prev) => !prev)}
@@ -1037,12 +1060,12 @@ export function Step1MatchAndImages({
           )}
         </div>
 
-        {!showCreateForm || !canImport ? (
+        {!showCreateForm || !effectiveCanEditDigital ? (
           <div className="space-y-2.5">
             {matches.length === 0 ? (
               <div className="p-4 rounded-2xl border border-dashed border-border bg-card shadow-xs text-center space-y-2">
                 <p className="text-xs font-bold text-muted-foreground">
-                  {canImport
+                  {effectiveCanEditDigital
                     ? "まだ試合が登録されていません。「新規試合を作成」から試合枠を作成してください。"
                     : "まだ試合が登録されていません。"}
                 </p>
@@ -1128,16 +1151,28 @@ export function Step1MatchAndImages({
                       return {
                         value: m.id,
                         label: `${m.date} vs ${m.opponent}（${orderTag}）`,
-                        badge: m.hasExistingAtBats ? "取込済" : "未取込",
-                        badgeTone: m.hasExistingAtBats ? "emerald" : "slate",
+                        badge: m.hasExistingAtBats
+                          ? "取込済"
+                          : m.hasLiveReport
+                          ? "速報あり"
+                          : "未取込",
+                        badgeTone: m.hasExistingAtBats
+                          ? "emerald"
+                          : m.hasLiveReport
+                          ? "teal"
+                          : "slate",
                         sublabel: m.tournamentName
                           ? `${m.tournamentName}${
                               m.hasExistingAtBats
                                 ? ` / 現在スコア ${m.myScore}-${m.opponentScore}`
+                                : m.hasLiveReport
+                                ? ` / LINE速報 ${m.liveReportPlayCount || 0}プレー記録済`
                                 : ""
                             }`
                           : m.hasExistingAtBats
                           ? `現在スコア: ${m.myScore} - ${m.opponentScore}`
+                          : m.hasLiveReport
+                          ? `LINE速報: ${m.liveReportPlayCount || 0}プレー記録済`
                           : undefined,
                         keywords: `${m.opponent} ${m.date} ${
                           m.tournamentName || ""
@@ -1201,7 +1236,7 @@ export function Step1MatchAndImages({
               );
             })()}
 
-            {canImport &&
+            {effectiveCanEditDigital &&
               selectedMatch?.hasExistingAtBats &&
               onLoadSavedScorebook && (
                 <div className="p-3.5 rounded-2xl border border-border border-l-4 border-l-emerald-500 bg-card shadow-xs space-y-2.5">
@@ -1223,7 +1258,8 @@ export function Step1MatchAndImages({
                     disabled={
                       isLoadingSavedScorebook ||
                       isDeletingSavedScorebook ||
-                      isAnalyzingStructure
+                      isAnalyzingStructure ||
+                      isDigitalInitBusy
                     }
                     onClick={onLoadSavedScorebook}
                     className="w-full h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs active:scale-98 transition-all cursor-pointer"
@@ -1247,7 +1283,8 @@ export function Step1MatchAndImages({
                       disabled={
                         isLoadingSavedScorebook ||
                         isDeletingSavedScorebook ||
-                        isAnalyzingStructure
+                        isAnalyzingStructure ||
+                        isDigitalInitBusy
                       }
                       onClick={onRequestDeleteSavedScorebook}
                       className="w-full h-9 px-3 rounded-xl bg-card hover:bg-rose-50 dark:hover:bg-rose-950/50 disabled:opacity-50 border border-rose-300 dark:border-rose-800 text-rose-600 dark:text-rose-400 text-[11px] font-black flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
@@ -1267,6 +1304,188 @@ export function Step1MatchAndImages({
                   )}
                 </div>
               )}
+
+            {/* 紙スコア写真なしの「LINE速報から清書生成」＆「直接デジタル手入力」（AI消費ゼロ） */}
+            {effectiveCanEditDigital &&
+              selectedMatch &&
+              (onStartManualScorebook || onStartFromLiveReport) && (
+                <div className="rounded-2xl border border-border bg-card shadow-xs p-3.5 space-y-2.5 overflow-hidden">
+                  <div className="-mx-3.5 -mt-3.5 px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <PenLine className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                      <span className="text-xs font-black text-white truncate">
+                        紙スコア写真なしで記録・清書
+                      </span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-black shrink-0">
+                      AI消費ゼロ
+                    </span>
+                  </div>
+
+                  <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                    紙スコアブックを撮影しなくても、当日のLINE試合速報データからの自動清書や、登録スタメンを使った直接デジタル手入力がすぐに行えます。
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {onStartFromLiveReport && (
+                      <button
+                        type="button"
+                        disabled={
+                          !selectedMatch.hasLiveReport ||
+                          isDigitalInitBusy ||
+                          isLoadingSavedScorebook ||
+                          isAnalyzingStructure
+                        }
+                        onClick={onStartFromLiveReport}
+                        className={`p-2.5 rounded-xl border text-left space-y-1 transition-all flex flex-col justify-between ${
+                          selectedMatch.hasLiveReport
+                            ? "bg-primary/10 hover:bg-primary/15 border-primary/35 cursor-pointer active:scale-98"
+                            : "bg-muted border-border opacity-60 cursor-not-allowed"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-foreground">
+                            {isDigitalInitBusy &&
+                            initializingDigitalMode === "from-live" ? (
+                              <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+                            ) : (
+                              <Zap className="w-3.5 h-3.5 text-primary shrink-0" />
+                            )}
+                            <span>LINE試合速報から下書き生成</span>
+                          </span>
+                          <ArrowRight className="w-3.5 h-3.5 text-primary shrink-0" />
+                        </div>
+                        <div className="flex items-center justify-between gap-1 text-[10px] font-bold">
+                          <span className="text-muted-foreground">
+                            {selectedMatch.hasLiveReport
+                              ? "速報の全打席・交代・得点を自動展開"
+                              : "この試合のLINE速報データはまだありません"}
+                          </span>
+                          {selectedMatch.hasLiveReport && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-primary text-primary-foreground text-[9px] font-black shrink-0">
+                              {selectedMatch.liveReportPlayCount || 0}プレー
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    )}
+
+                    {onStartManualScorebook && (
+                      <button
+                        type="button"
+                        disabled={
+                          isDigitalInitBusy ||
+                          isLoadingSavedScorebook ||
+                          isAnalyzingStructure
+                        }
+                        onClick={onStartManualScorebook}
+                        className="p-2.5 rounded-xl border border-border bg-muted hover:bg-accent text-left space-y-1 transition-all flex flex-col justify-between cursor-pointer active:scale-98 disabled:opacity-50"
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-foreground">
+                            {isDigitalInitBusy &&
+                            initializingDigitalMode === "manual" ? (
+                              <Loader2 className="w-3.5 h-3.5 text-primary animate-spin shrink-0" />
+                            ) : (
+                              <PenLine className="w-3.5 h-3.5 text-primary shrink-0" />
+                            )}
+                            <span>写真なしで直接デジタル手入力</span>
+                          </span>
+                          <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        </div>
+                        <div className="flex items-center justify-between gap-1 text-[10px] font-bold">
+                          <span className="text-muted-foreground">
+                            1打席ずつタップで公式スコアを作成
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-foreground text-[9px] font-black shrink-0">
+                            {selectedMatch.hasSavedLineup
+                              ? "スタメン登録済"
+                              : "空シート作成"}
+                          </span>
+                        </div>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+            {/* ダブルヘッダー対応: 他試合で保存されている途中下書き一覧 */}
+            {effectiveCanEditDigital &&
+              onResumeDraftForMatch &&
+              (() => {
+                const otherDrafts = savedDraftMetas.filter(
+                  (d) => d.selectedMatchId && d.selectedMatchId !== selectedMatchId
+                );
+                if (otherDrafts.length === 0) return null;
+                return (
+                  <div className="p-3 rounded-2xl border border-border bg-muted space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-black text-foreground flex items-center gap-1">
+                        <RotateCcw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>他試合の保存済み下書き（ダブルヘッダー分離）</span>
+                      </span>
+                      <span className="text-[10px] font-black text-muted-foreground">
+                        {otherDrafts.length}件
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {otherDrafts.slice(0, 4).map((draftItem) => {
+                        const targetMatch = matches.find(
+                          (m) => m.id === draftItem.selectedMatchId
+                        );
+                        if (!targetMatch) return null;
+                        const dTime = new Date(draftItem.savedAt);
+                        const hhmm = `${String(dTime.getHours()).padStart(
+                          2,
+                          "0"
+                        )}:${String(dTime.getMinutes()).padStart(2, "0")}`;
+                        return (
+                          <div
+                            key={draftItem.selectedMatchId}
+                            className="px-2.5 py-2 rounded-xl bg-card border border-border flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-black text-foreground truncate">
+                                {targetMatch.date} vs {targetMatch.opponent}
+                              </p>
+                              <p className="text-[10px] font-bold text-muted-foreground">
+                                STEP {draftItem.step} で保存（{hhmm}）
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onResumeDraftForMatch(
+                                    draftItem.selectedMatchId
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-black cursor-pointer active:scale-95"
+                              >
+                                復元
+                              </button>
+                              {onDiscardDraftForMatch && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onDiscardDraftForMatch(
+                                      draftItem.selectedMatchId
+                                    )
+                                  }
+                                  className="p-1.5 rounded-lg bg-muted hover:bg-destructive/10 text-muted-foreground hover:text-destructive cursor-pointer active:scale-95"
+                                  aria-label="他試合の下書きを破棄"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
           </div>
         ) : (
           <form

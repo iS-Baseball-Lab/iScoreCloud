@@ -627,7 +627,7 @@ export function Step3PinpointReview({
     for (const ab of pruned) {
       if (ab.inning !== activeInn) {
         activeInn = ab.inning;
-        cumOuts = 0;
+        cumOuts = Math.max(0, Math.min(2, ab.tiebreakInitialOuts || 0));
       }
       cumOuts = Math.min(3, cumOuts + Math.max(0, ab.outsInPlay));
       result.push({
@@ -956,8 +956,12 @@ export function Step3PinpointReview({
   const handleAddAtBatInInning = (inning: number) => {
     const inInning = currentList.filter((a) => a.inning === inning);
     const lastInInning = inInning[inInning.length - 1];
+    const priorInnings = currentList.filter((a) => a.inning < inning);
+    const lastPrior = priorInnings[priorInnings.length - 1];
     const nextOrder = lastInInning
       ? (lastInInning.battingOrder % maxBattingOrder) + 1
+      : lastPrior
+      ? (lastPrior.battingOrder % maxBattingOrder) + 1
       : 1;
     const resolved = currentStructure
       ? resolveActiveMatchupFromStructure(currentStructure, inning, nextOrder)
@@ -1744,12 +1748,14 @@ export function Step3PinpointReview({
               return null;
             }
 
-            const innRuns = currentList
-              .filter((a) => a.inning === inn)
-              .reduce((s, a) => s + a.runsInPlay, 0);
-            const innOuts = currentList
-              .filter((a) => a.inning === inn)
-              .reduce((s, a) => s + a.outsInPlay, 0);
+            const innAllAtBats = currentList.filter((a) => a.inning === inn);
+            const innRuns = innAllAtBats.reduce(
+              (s, a) => s + a.runsInPlay,
+              0
+            );
+            const innOuts =
+              (innAllAtBats[0]?.tiebreakInitialOuts || 0) +
+              innAllAtBats.reduce((s, a) => s + a.outsInPlay, 0);
             const currentInningKey = `${isTop ? "top" : "bottom"}-${inn}`;
             const isReanalyzingThisInning =
               reanalyzingInningKey === currentInningKey;
@@ -1817,9 +1823,11 @@ export function Step3PinpointReview({
                       }`}
                     >
                       <p className="text-[11px] font-bold text-foreground">
-                        このイニングの打席が0件です（AI再解析または手動で打席追加できます）
+                        {onReanalyzeInning
+                          ? "このイニングの打席が0件です（AI再解析または手動で打席追加できます）"
+                          : "このイニングの打席はまだ入力されていません"}
                       </p>
-                      {onReanalyzeInning && (
+                      {onReanalyzeInning ? (
                         <button
                           type="button"
                           disabled={isAnyReanalyzing || isSaving}
@@ -1837,6 +1845,18 @@ export function Step3PinpointReview({
                               <span>この回だけAI再解析する</span>
                             </>
                           )}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleAddAtBatInInning(inn)}
+                          className="mx-auto px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>
+                            {inn}回{isTop ? "表" : "裏"}の先頭打席を追加する
+                          </span>
                         </button>
                       )}
                     </div>
@@ -4700,6 +4720,7 @@ export function Step3PinpointReview({
                   snapshot={editingRunnerSnapshot}
                   batters={currentStructure?.batters || []}
                   isMyTeamBatting={Boolean(currentStructure?.isMyTeamBatting)}
+                  isLeadOffOfHalfInning={editingIndexWithinInning === 0}
                   roster={roster}
                   runnerCellCrops={runnerCellCropMap}
                   onJumpToRunnerAtBat={(runnerAbId) =>

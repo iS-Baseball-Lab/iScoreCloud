@@ -4,7 +4,7 @@ export type LiveReportOutputMode = "full" | "latest_inning" | "lineup" | "game_s
 
 export type LiveReportBaseNum = 1 | 2 | 3;
 
-export type LiveReportSubType = "P" | "PH" | "PR" | "DEF";
+export type LiveReportSubType = "P" | "PH" | "PR" | "TR" | "DEF";
 
 export interface LiveReportLineupSubRecord {
   id: string;
@@ -15,6 +15,16 @@ export interface LiveReportLineupSubRecord {
   newName: string;
   newPosition: string;
   playerId: string | null;
+}
+
+export interface LiveReportSubMeta {
+  subType: LiveReportSubType;
+  slotOrder: number;
+  oldName: string;
+  newName: string;
+  newPosition: string;
+  playerId: string | null;
+  runnerBase?: LiveReportBaseNum | null;
 }
 
 export interface LiveReportLineupSlot {
@@ -43,6 +53,8 @@ export interface LiveReportPlayEntry {
   battingOrder: number;
   /** 打者氏名（自チーム攻撃回で使用。相手攻撃回は出力時に省略） */
   batterName: string;
+  /** 打者選手ID（自チーム攻撃回・任意） */
+  batterPlayerId?: string | null;
   /** 打撃・走塁結果本文（例: "空三振", "右前適時ヒット1点", "中前ヒット中暴投", "遊内野安打"） */
   playText: string;
   /** 応援・好守備リアクション追記（例: "❗️", "赤羽ナイスキャッチ❗️", "‼️ナイスバッティング‼️"） */
@@ -57,6 +69,11 @@ export interface LiveReportPlayEntry {
   chainedPlays: LiveReportChainedPlay[];
   /** 選手交代・自由メモ行のテキスト（entryType !== "batter" 時） */
   eventText: string;
+  /** スコアブック下書き自動変換用の構造化コード（任意・後方互換） */
+  resultCode?: string;
+  battedDirection?: string;
+  rbi?: number;
+  subMeta?: LiveReportSubMeta;
 }
 
 export interface LiveReportHalfInning {
@@ -79,6 +96,8 @@ export interface LiveReportV2Document {
   /** 自チームの先攻("first"=表攻撃) / 後攻("second"=裏攻撃) */
   battingOrder: "first" | "second";
   regulationInnings: number;
+  /** 相手チームの打順人数（通常9人、全員打ちルール時は10〜25人） */
+  opponentBatterCount?: number;
   firstTeamShortName: string;
   secondTeamShortName: string;
   /** 選手名を苗字のみで出力するか */
@@ -106,6 +125,7 @@ export interface LiveReportMatchOption {
   status: string;
   battingOrder: "first" | "second";
   innings: number;
+  opponentBatterCount?: number;
   myScore: number;
   opponentScore: number;
   myInningScores: number[];

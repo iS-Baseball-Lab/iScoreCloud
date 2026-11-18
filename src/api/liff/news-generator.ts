@@ -21,6 +21,7 @@ import {
   extractScoreTeamNameModeFromJson,
 } from "@/lib/liff/scorebook-symbol-rules";
 import {
+  computeScoreboardSummary,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
@@ -81,6 +82,39 @@ function safeParseJson<T>(raw: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function resolveOpponentBatterCountFromJson(raw: string | null | undefined): number {
+  const arr = safeParseJson<unknown[]>(raw, []);
+  if (!Array.isArray(arr) || arr.length === 0) return 9;
+  let maxOrd = arr.length;
+  for (const item of arr) {
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>;
+      const ord =
+        typeof rec.battingOrder === "number"
+          ? rec.battingOrder
+          : typeof rec.order === "number"
+          ? rec.order
+          : 0;
+      if (ord > maxOrd) maxOrd = ord;
+    }
+  }
+  return Math.max(9, Math.min(25, Math.round(maxOrd)));
+}
+
+function trimPlayedInningScores(scores: ReadonlyArray<number | null>): number[] {
+  let lastPlayedIdx = -1;
+  for (let i = scores.length - 1; i >= 0; i--) {
+    if (scores[i] !== null && scores[i] !== undefined) {
+      lastPlayedIdx = i;
+      break;
+    }
+  }
+  if (lastPlayedIdx < 0) return [];
+  return scores
+    .slice(0, lastPlayedIdx + 1)
+    .map((v) => (v === null || v === undefined ? 0 : Math.max(0, Math.round(v))));
 }
 
 function cleanReporterDisplayName(raw: string): string {
@@ -221,6 +255,7 @@ function isCallerAssignedToLineLive(
 
 export interface ServerMatchBundlePayload {
   matchId: string;
+  opponentBatterCount?: number;
   lineup: Array<{
     order: number;
     position: string;
@@ -253,6 +288,7 @@ async function loadMatchBundleFromDb(
       id: matches.id,
       teamId: matches.teamId,
       myLineup: matches.myLineup,
+      opponentLineup: matches.opponentLineup,
     })
     .from(matches)
     .where(and(eq(matches.id, matchId), eq(matches.teamId, teamId)))
@@ -260,6 +296,9 @@ async function loadMatchBundleFromDb(
 
   if (!matchRow) return null;
 
+  const opponentBatterCount = resolveOpponentBatterCountFromJson(
+    matchRow.opponentLineup
+  );
   const draftId = `match:${matchId}`;
 
   const [lineupRows, snapRow, logRows, draftRow] = await Promise.all([
@@ -373,6 +412,9 @@ async function loadMatchBundleFromDb(
       safeParseJson<unknown>(draftRow.reportJson, null)
     );
     if (parsedDoc) {
+      if ((parsedDoc.opponentBatterCount || 9) === 9 && opponentBatterCount > 9) {
+        parsedDoc.opponentBatterCount = opponentBatterCount;
+      }
       cloudDraft = {
         draftId: draftRow.id,
         report: parsedDoc,
@@ -385,6 +427,7 @@ async function loadMatchBundleFromDb(
 
   return {
     matchId,
+    opponentBatterCount,
     lineup: resolvedLineup,
     scorebookSnapshot,
     playLogs: logRows,
@@ -460,6 +503,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           myInningScores: matches.myInningScores,
           opponentInningScores: matches.opponentInningScores,
           myLineup: matches.myLineup,
+          opponentLineup: matches.opponentLineup,
           matchDayOps: matches.matchDayOps,
           tournamentName: tournaments.name,
           venueName: venues.name,
@@ -612,6 +656,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         status: m.status,
         battingOrder: m.battingOrder === "second" ? "second" : "first",
         innings: m.innings || 7,
+        opponentBatterCount: resolveOpponentBatterCountFromJson(m.opponentLineup),
         myScore: m.myScore || 0,
         opponentScore: m.opponentScore || 0,
         myInningScores: safeParseIntArray(m.myInningScores),
@@ -1195,9 +1240,87 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
         },
       });
 
+    // 試合連動モード時：公式スコアブック未登録かつ雨天中止でない試合なら matches のスコア・イニング・ステータスを自動同期
+    let syncedMatchScore = false;
+    if (!isPersonalFreeDraft && matchIdVal) {
+      const [matchRow, snapRow, anyAbRow] = await Promise.all([
+        db
+          .select({
+            id: matches.id,
+            status: matches.status,
+          })
+          .from(matches)
+          .where(and(eq(matches.id, matchIdVal), eq(matches.teamId, teamId)))
+          .get()
+          .catch(() => undefined),
+        db
+          .select({ matchId: matchScorebookSnapshots.matchId })
+          .from(matchScorebookSnapshots)
+          .where(eq(matchScorebookSnapshots.matchId, matchIdVal))
+          .get()
+          .catch(() => undefined),
+        db
+          .select({ id: atBats.id })
+          .from(atBats)
+          .where(eq(atBats.matchId, matchIdVal))
+          .limit(1)
+          .get()
+          .catch(() => undefined),
+      ]);
+
+      const hasScorebook = Boolean(snapRow || anyAbRow);
+      const hasRecordedScoringOrPlay = sanitized.halfInnings.some(
+        (h) => h.entries.length > 0 || h.manualRunsOverride !== null
+      );
+
+      if (
+        matchRow &&
+        matchRow.status !== "rainout" &&
+        !hasScorebook &&
+        (hasRecordedScoringOrPlay || sanitized.isGameFinished)
+      ) {
+        const summary = computeScoreboardSummary(sanitized);
+        const isMyFirst = sanitized.battingOrder === "first";
+        const myScoresArr = trimPlayedInningScores(
+          isMyFirst ? summary.firstInningScores : summary.secondInningScores
+        );
+        const oppScoresArr = trimPlayedInningScores(
+          isMyFirst ? summary.secondInningScores : summary.firstInningScores
+        );
+        const myScoreVal = isMyFirst ? summary.firstTotal : summary.secondTotal;
+        const oppScoreVal = isMyFirst
+          ? summary.secondTotal
+          : summary.firstTotal;
+        const myScoresJson = JSON.stringify(myScoresArr);
+        const oppScoresJson = JSON.stringify(oppScoresArr);
+
+        await db
+          .update(matches)
+          .set({
+            myScore: myScoreVal,
+            opponentScore: oppScoreVal,
+            myInningScores: myScoresJson,
+            opponentInningScores: oppScoresJson,
+            liveMyScore: myScoreVal,
+            liveOpponentScore: oppScoreVal,
+            liveMyInningScores: myScoresJson,
+            liveOpponentInningScores: oppScoresJson,
+            liveStatus: sanitized.isGameFinished ? "completed" : "draft",
+            status: sanitized.isGameFinished ? "finished" : "live",
+            battingOrder: sanitized.battingOrder,
+            currentInning: Math.max(1, sanitized.activeInning || 1),
+            isBottom: Boolean(sanitized.activeIsBottom),
+          })
+          .where(and(eq(matches.id, matchIdVal), eq(matches.teamId, teamId)));
+
+        syncedMatchScore = true;
+      }
+    }
+
     return c.json({
       success: true,
       merged: false,
+      syncedMatchScore,
       report: sanitized,
       editorOwnerKey: nextEditorOwnerKey,
       updatedAt: now,

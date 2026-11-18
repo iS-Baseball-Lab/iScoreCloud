@@ -309,7 +309,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
 
   const parsedMatchDate = parseSafeMatchDate(match.date);
   const isFuture = Boolean(
-    parsedMatchDate && parsedMatchDate.getTime() > Date.now() && match.status !== "finished"
+    parsedMatchDate &&
+      parsedMatchDate.getTime() > Date.now() &&
+      match.status !== "finished" &&
+      match.status !== "live"
   );
   const isLive = match.status === "live";
   const isRainout = match.status === "rainout";

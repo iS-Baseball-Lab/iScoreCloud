@@ -96,14 +96,17 @@ import {
   evaluateOfficialBattingTitleQualification,
   evaluateOfficialStreaks,
   extractFieldingCreditsForAtBat,
+  formatOfficialEra,
   getOfficialRegulationPitchingOuts,
   isMidAtBatStrikeoutChargedToPriorBatter,
   isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
+  normalizeRegulationInnings,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
   type OfficialStreakGameLogInput,
+  type RegulationInningsCount,
 } from "@/lib/liff/baseball-official-rules";
 import {
   DEFAULT_PRACTICE_MATCH_LABEL,
@@ -5382,6 +5385,7 @@ interface LiffStatsQualificationPayload {
   regulationPa: number;
   regulationOuts: number;
   regulationIp: string;
+  eraRegulationInnings?: RegulationInningsCount;
   avgLeaderId: string | null;
   isAvgReferenceOnly: boolean;
   isEraReferenceOnly: boolean;
@@ -6993,6 +6997,10 @@ app.get("/stats", async (c) => {
               0
             ) / targetMatches.length
           : 7;
+      const eraRegulationInnings = normalizeRegulationInnings(
+        avgScheduledInnings,
+        7
+      );
 
       const eligibleBatters = Array.from(batterMap.values()).filter(
         (b) =>
@@ -7103,7 +7111,6 @@ app.get("/stats", async (c) => {
           const fullInn = Math.floor(p.outs / 3);
           const remOuts = p.outs % 3;
           const ip = remOuts > 0 ? `${fullInn}.${remOuts}` : `${fullInn}.0`;
-          const eraVal = p.outs > 0 ? (p.earnedRuns * 7 * 3) / p.outs : 0;
           const whipVal =
             p.outs > 0 ? ((p.hitsAllowed + p.walks) * 3) / p.outs : 0;
           return {
@@ -7127,7 +7134,12 @@ app.get("/stats", async (c) => {
             hitByPitch: p.hitByPitch,
             runs: p.runs,
             earnedRuns: p.earnedRuns,
-            era: p.outs > 0 ? eraVal.toFixed(2) : "0.00",
+            era: formatOfficialEra(
+              p.earnedRuns,
+              p.outs,
+              eraRegulationInnings,
+              "0.00"
+            ),
             whip: p.outs > 0 ? whipVal.toFixed(2) : "0.00",
             isRegulationQualified:
               regulationOuts > 0 && p.outs >= regulationOuts,
@@ -7224,10 +7236,12 @@ app.get("/stats", async (c) => {
               : ".000",
           teamHomeRuns: totalHr,
           teamStolenBases: totalSb,
-          teamEra:
-            totalPitcherOuts > 0
-              ? ((totalEffectiveTeamEr * 7 * 3) / totalPitcherOuts).toFixed(2)
-              : "0.00",
+          teamEra: formatOfficialEra(
+            totalEffectiveTeamEr,
+            totalPitcherOuts,
+            eraRegulationInnings,
+            "0.00"
+          ),
         },
         battingStats,
         pitchingStats,
@@ -7235,6 +7249,7 @@ app.get("/stats", async (c) => {
           regulationPa: battingTitleEval.regulationPa,
           regulationOuts,
           regulationIp,
+          eraRegulationInnings,
           avgLeaderId: battingTitleEval.leaderId,
           isAvgReferenceOnly: battingTitleEval.isReferenceRecordOnly,
           isEraReferenceOnly: !pitchingStats.some((p) => p.isRegulationQualified),

@@ -6,16 +6,19 @@ import {
   evaluateMatchPitcherDecisions,
   extractFieldingCreditsForAtBat,
   formatOfficialBaseballRate,
+  formatOfficialEra,
   hasCompanionCaughtStealingOnSameStealAttempt,
   isAerialMultiOutAtBat,
   isMidAtBatStrikeoutChargedToPriorBatter,
   isMidAtBatWalkChargedToPriorPitcher,
   mapSnapshotAdvancesToPitchingEvents,
+  normalizeRegulationInnings,
   type HalfInningAdvanceEventInput,
   type HalfInningAtBatPitchingInput,
   type MatchDefenseInningChronologyInput,
   type OfficialEarnedRunExplanation,
   type OfficialPitcherDecisionExplanation,
+  type RegulationInningsCount,
 } from "@/lib/liff/baseball-official-rules";
 import {
   extractRelayChainFromHitDirection,
@@ -272,6 +275,7 @@ export interface CompiledPitcherTotals {
   individualEarnedRunsSum?: number;
   teamShutout?: boolean;
   teamShutoutExplanation?: OfficialPitcherDecisionExplanation;
+  eraRegulationInnings?: RegulationInningsCount;
   eraDisplay: string;
 }
 
@@ -309,9 +313,12 @@ function isUnfinishedAtBatCode(
   return !s || s === "other" || s === "runner_out";
 }
 
-function formatRegulationEra(earnedRuns: number, outs: number): string {
-  if (outs <= 0) return "0.00";
-  return ((earnedRuns * 7 * 3) / outs).toFixed(2);
+function formatRegulationEra(
+  earnedRuns: number,
+  outs: number,
+  regulationInnings?: number | null
+): string {
+  return formatOfficialEra(earnedRuns, outs, regulationInnings, "0.00");
 }
 
 function normalizeFieldingPosCode(raw: string | null | undefined): string {
@@ -3040,7 +3047,11 @@ function compilePitcherRows(
         balks: p.balks,
         runsAllowed: p.runsAllowed,
         earnedRuns: p.earnedRuns,
-        eraDisplay: formatRegulationEra(p.earnedRuns, p.outsRecorded),
+        eraDisplay: formatRegulationEra(
+          p.earnedRuns,
+          p.outsRecorded,
+          matchMeta.scheduledInnings
+        ),
         decision: dec?.decision ?? "none",
         completeGame: dec?.completeGame ?? false,
         shutout: dec?.shutout ?? false,
@@ -3052,6 +3063,10 @@ function compilePitcherRows(
 
   const totOuts = pitcherRows.reduce((s, p) => s + p.outsRecorded, 0);
   const totIndividualEarned = pitcherRows.reduce((s, p) => s + p.earnedRuns, 0);
+  const eraRegulationInnings = normalizeRegulationInnings(
+    matchMeta.scheduledInnings,
+    7
+  );
   // 公認野球規則 9.16(i) 注: 失策後のイニング途中交代で個人自責点合計がチーム自責点を上回る場合、チーム成績は再構成後のチーム自責点を採用
   const effectiveTeamEarned =
     absByInning.size > 0
@@ -3078,7 +3093,12 @@ function compilePitcherRows(
     individualEarnedRunsSum: totIndividualEarned,
     teamShutout: decisionEval.teamShutout,
     teamShutoutExplanation: decisionEval.teamShutoutExplanation,
-    eraDisplay: formatRegulationEra(effectiveTeamEarned, totOuts),
+    eraRegulationInnings,
+    eraDisplay: formatRegulationEra(
+      effectiveTeamEarned,
+      totOuts,
+      eraRegulationInnings
+    ),
   };
 
   return {
