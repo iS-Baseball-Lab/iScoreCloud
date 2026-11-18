@@ -94,7 +94,7 @@ export function LegacyDeviceCompatibilityBanner() {
             }}
           >
             <img
-              src="/liff-logo.webp?v=2"
+              src="/liff-logo.webp?v=3"
               alt="iScoreCloud LINEミニアプリ"
               width={32}
               height={32}

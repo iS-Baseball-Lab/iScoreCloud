@@ -16,11 +16,11 @@ export const metadata: Metadata = {
     "スマホ片手のベンチ入力から伝統的な早稲田式スコアブックの清書出力、出欠・配車・1球速報まで。いつものLINEミニアプリで完結する草野球・学童野球チーム向けプラットフォーム。",
   icons: {
     icon: [
-      { url: "/favicon.ico?v=2", sizes: "any" },
-      { url: "/liff-logo.png?v=2", type: "image/png", sizes: "640x640" },
-      { url: "/liff-logo.webp?v=2", type: "image/webp", sizes: "640x640" },
+      { url: "/favicon.ico?v=3", sizes: "any" },
+      { url: "/liff-logo.png?v=3", type: "image/png", sizes: "640x640" },
+      { url: "/liff-logo.webp?v=3", type: "image/webp", sizes: "640x640" },
     ],
-    shortcut: "/liff-logo.png?v=2",
+    shortcut: "/liff-logo.png?v=3",
     apple: [
       { url: "/apple-logo.png?v=2", sizes: "180x180", type: "image/png" },
       { url: "/channel-icon-640x640.png?v=3", sizes: "640x640", type: "image/png" },

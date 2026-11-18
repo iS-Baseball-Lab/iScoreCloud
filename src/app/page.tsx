@@ -66,7 +66,7 @@ const CORE_PILLARS: PillarItem[] = [
 ];
 
 function BrandLogoImg({
-  size = 36,
+  size = 40,
   className,
 }: {
   size?: number;
@@ -74,18 +74,18 @@ function BrandLogoImg({
 }) {
   return (
     <img
-      src="/liff-logo.webp?v=2"
+      src="/liff-logo.webp?v=3"
       alt="iScoreCloud"
       width={size}
       height={size}
       onError={(e) => {
         const img = e.currentTarget;
         if (!img.src.includes("/liff-logo.png")) {
-          img.src = "/liff-logo.png?v=2";
+          img.src = "/liff-logo.png?v=3";
         }
       }}
       className={cn(
-        "rounded-[22%] bg-white border border-slate-200/90 dark:border-slate-700/70 shadow-2xs object-contain shrink-0",
+        "rounded-[22%] bg-white dark:border dark:border-slate-700/70 object-contain shrink-0",
         className
       )}
     />
@@ -157,7 +157,7 @@ export default function LandingPage() {
             id="header-brand-link"
             className="flex items-center gap-2.5 hover:opacity-85 transition-opacity min-w-0"
           >
-            <BrandLogoImg size={36} className="w-9 h-9" />
+            <BrandLogoImg size={40} className="w-10 h-10" />
             <div className="flex items-baseline gap-0.5 truncate">
               <span className="text-xl sm:text-2xl font-black tracking-tight text-foreground">
                 iScore

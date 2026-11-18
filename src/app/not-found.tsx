@@ -12,14 +12,14 @@ export default function NotFound() {
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img
-              src="/liff-logo.webp?v=2"
+              src="/liff-logo.webp?v=3"
               alt="iScoreCloud"
               width={32}
               height={32}
               onError={(e) => {
                 const img = e.currentTarget;
                 if (!img.src.includes("/liff-logo.png")) {
-                  img.src = "/liff-logo.png?v=2";
+                  img.src = "/liff-logo.png?v=3";
                 }
               }}
               className="w-8 h-8 rounded-[22%] bg-white object-contain shrink-0 shadow-xs"

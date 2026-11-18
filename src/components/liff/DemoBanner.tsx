@@ -39,7 +39,7 @@ export function DemoBanner({
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <img
-              src="/liff-logo.webp?v=2"
+              src="/liff-logo.webp?v=3"
               alt="iScoreCloud LINEミニアプリ"
               width={24}
               height={24}
@@ -63,7 +63,7 @@ export function DemoBanner({
                 className="flex items-center gap-2.5 p-2.5 rounded-xl bg-muted border border-border"
               >
                 <img
-                  src={pt.logoImageUrl || "/liff-logo.webp?v=2"}
+                  src={pt.logoImageUrl || "/liff-logo.webp?v=3"}
                   alt={pt.name}
                   width={32}
                   height={32}
@@ -119,7 +119,7 @@ export function DemoBanner({
     <div className="relative overflow-hidden rounded-2xl border border-border border-l-4 border-l-amber-500 bg-card p-4 shadow-xs space-y-3">
       <div className="flex items-start gap-2.5">
         <img
-          src="/liff-logo.webp?v=2"
+          src="/liff-logo.webp?v=3"
           alt="iScoreCloud LINEミニアプリ"
           width={36}
           height={36}

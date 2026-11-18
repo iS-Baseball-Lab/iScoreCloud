@@ -801,7 +801,7 @@ function LiffAdminDashboardContent() {
                     contents: [
                       {
                         type: "image",
-                        url: "https://iscorecloud.com/liff-logo.png?v=2",
+                        url: "https://iscorecloud.com/liff-logo.png?v=3",
                         size: "40px",
                         aspectRatio: "1:1",
                         aspectMode: "fit",
@@ -1814,7 +1814,7 @@ function LiffAdminDashboardContent() {
                   <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-4 py-3 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <img
-                        src="/liff-logo.webp?v=2"
+                        src="/liff-logo.webp?v=3"
                         alt="iScoreCloud LINEミニアプリ"
                         width={32}
                         height={32}

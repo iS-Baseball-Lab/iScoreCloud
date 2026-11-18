@@ -558,7 +558,7 @@ export async function shareLiffPageViaLine(
                   contents: [
                     {
                       type: "image",
-                      url: "https://iscorecloud.com/liff-logo.png?v=2",
+                      url: "https://iscorecloud.com/liff-logo.png?v=3",
                       size: "38px",
                       aspectRatio: "1:1",
                       aspectMode: "fit",

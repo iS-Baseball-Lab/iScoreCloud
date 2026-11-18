@@ -165,7 +165,7 @@ export function OpenLineMiniAppButton({
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-4 py-3.5 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <img
-                    src="/liff-logo.webp?v=2"
+                    src="/liff-logo.webp?v=3"
                     alt="iScoreCloud LINEミニアプリ"
                     width={36}
                     height={36}
