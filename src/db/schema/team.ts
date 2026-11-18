@@ -45,6 +45,9 @@ export const teams = sqliteTable('teams', {
   attendanceStatusConfig: text('attendance_status_config'),
   memberSubLabels: text('member_sub_labels'),
   scheduleDefaultTimes: text('schedule_default_times'),
+  scheduleSettings: text('schedule_settings'),
+  scoreSettings: text('score_settings'),
+  cheerSongsJson: text('cheer_songs_json'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

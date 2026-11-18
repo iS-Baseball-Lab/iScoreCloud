@@ -35,6 +35,21 @@ import {
 } from "@/lib/liff/api-cache";
 import { sanitizeSafeExternalHref, validateSafeHttpUrl } from "@/lib/utils";
 
+type TournamentRow = Omit<AdminTournamentItem, "pitchLimitRule"> & {
+  pitchLimitRule: string | null;
+};
+
+type TournamentsPageData = Omit<AdminTournamentsResponse, "tournaments"> & {
+  tournaments: TournamentRow[];
+};
+
+const PITCH_LIMIT_PRESETS = [
+  "1日70球以内（学童規定）",
+  "1日100球以内（中学規定）",
+  "1日85球以内",
+  "制限なし",
+] as const;
+
 const TOURNAMENT_CATEGORIES = [
   { value: "gakudou", label: "学童（小学生）" },
   { value: "chugaku", label: "中学（軟式・硬式）" },
@@ -53,10 +68,10 @@ export default function LiffAdminTournamentsPage() {
 
   const initialCached = useMemo(() => {
     if (typeof window === "undefined") return null;
-    return peekLiffApiCache<AdminTournamentsResponse>(endpointUrl);
+    return peekLiffApiCache<TournamentsPageData>(endpointUrl);
   }, [endpointUrl]);
 
-  const [data, setData] = useState<AdminTournamentsResponse | null>(
+  const [data, setData] = useState<TournamentsPageData | null>(
     initialCached
   );
   const [isLoading, setIsLoading] = useState<boolean>(!initialCached);
@@ -77,11 +92,12 @@ export default function LiffAdminTournamentsPage() {
   const [timeLimit, setTimeLimit] = useState("");
   const [coldGameRule, setColdGameRule] = useState("");
   const [tiebreakerRule, setTiebreakerRule] = useState("");
+  const [pitchLimitRule, setPitchLimitRule] = useState<string | null>("");
   const [bracketUrl, setBracketUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
   // 削除確認モーダル
-  const [deletingItem, setDeletingItem] = useState<AdminTournamentItem | null>(
+  const [deletingItem, setDeletingItem] = useState<TournamentRow | null>(
     null
   );
   const [isDeleting, setIsDeleting] = useState(false);
@@ -91,7 +107,7 @@ export default function LiffAdminTournamentsPage() {
       if (bypassCache) {
         setIsRefreshing(true);
       } else {
-        const syncHit = peekLiffApiCache<AdminTournamentsResponse>(endpointUrl);
+        const syncHit = peekLiffApiCache<TournamentsPageData>(endpointUrl);
         if (syncHit) {
           setData(syncHit);
           setIsLoading(false);
@@ -107,7 +123,7 @@ export default function LiffAdminTournamentsPage() {
             ? { headers: { "x-iscore-bypass-cache": "1" } }
             : undefined
         );
-        const json = (await res.json()) as AdminTournamentsResponse;
+        const json = (await res.json()) as TournamentsPageData;
         if (res.ok && json.success) {
           setData(json);
         } else if (json.error) {
@@ -136,21 +152,29 @@ export default function LiffAdminTournamentsPage() {
   }, [data?.tournaments]);
 
   const openCreateModal = () => {
+    const defaultCat = data?.teamCategory || "gakudou";
     setEditingId(null);
     setName("");
     setSeason(String(new Date().getFullYear()));
-    setCategory(data?.teamCategory || "gakudou");
+    setCategory(defaultCat);
     setOrganizer("");
     setStartDate("");
     setEndDate("");
     setTimeLimit("1時間30分（新しいイニングに入らない）");
     setColdGameRule("3回10点・5回7点差");
     setTiebreakerRule("無死一・二塁 継続打順");
+    setPitchLimitRule(
+      defaultCat === "chugaku"
+        ? "1日100球以内（中学規定）"
+        : defaultCat === "gakudou"
+          ? "1日70球以内（学童規定）"
+          : ""
+    );
     setBracketUrl("");
     setIsModalOpen(true);
   };
 
-  const openEditModal = (item: AdminTournamentItem) => {
+  const openEditModal = (item: TournamentRow) => {
     setEditingId(item.id);
     setName(item.name);
     setSeason(item.season || String(new Date().getFullYear()));
@@ -161,6 +185,7 @@ export default function LiffAdminTournamentsPage() {
     setTimeLimit(item.timeLimit || "");
     setColdGameRule(item.coldGameRule || "");
     setTiebreakerRule(item.tiebreakerRule || "");
+    setPitchLimitRule(item.pitchLimitRule ?? "");
     setBracketUrl(item.bracketUrl || "");
     setIsModalOpen(true);
   };
@@ -188,6 +213,7 @@ export default function LiffAdminTournamentsPage() {
 
     setIsSaving(true);
     try {
+      const trimmedPitchRule = (pitchLimitRule || "").trim();
       const res = await fetch("/api/liff/admin/mgmt/tournaments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -204,6 +230,7 @@ export default function LiffAdminTournamentsPage() {
           timeLimit: timeLimit.trim(),
           coldGameRule: coldGameRule.trim(),
           tiebreakerRule: tiebreakerRule.trim(),
+          pitchLimitRule: trimmedPitchRule ? trimmedPitchRule : null,
           bracketUrl: normalizedBracketUrl,
         }),
       });
@@ -427,12 +454,18 @@ export default function LiffAdminTournamentsPage() {
                       {item.tiebreakerRule}
                     </span>
                   )}
+                  {item.pitchLimitRule && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-black text-amber-900 dark:text-amber-200">
+                      <span aria-hidden="true">⚾</span>
+                      <span>{item.pitchLimitRule}</span>
+                    </span>
+                  )}
                 </div>
 
-                {item.bracketUrl && (
+                {item.bracketUrl && /^https?:\/\//i.test(item.bracketUrl.trim()) && (
                   <div className="pt-1">
                     <a
-                      href={sanitizeSafeExternalHref(item.bracketUrl)}
+                      href={sanitizeSafeExternalHref(item.bracketUrl.trim())}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 text-[11px] font-black text-primary hover:underline"
@@ -594,6 +627,38 @@ export default function LiffAdminTournamentsPage() {
                     placeholder="例: 7回裏終了同点時 無死一・二塁 継続打順"
                     className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[11px] font-black text-muted-foreground">
+                    ⚾ 1日の球数制限規定（任意）
+                  </label>
+                  <input
+                    type="text"
+                    value={pitchLimitRule ?? ""}
+                    onChange={(e) => setPitchLimitRule(e.target.value)}
+                    placeholder="例: 1日70球以内（学童規定）"
+                    className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {PITCH_LIMIT_PRESETS.map((preset) => {
+                      const active = (pitchLimitRule || "").trim() === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setPitchLimitRule(preset)}
+                          className={`h-7 px-2.5 rounded-lg border text-[11px] transition-colors cursor-pointer ${
+                            active
+                              ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                              : "bg-muted text-foreground border-border hover:bg-background font-bold"
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="space-y-1">

@@ -3108,6 +3108,24 @@ export function sanitizeLiveReportDocument(
         };
       }
 
+      const rawPitches = Array.isArray(e.pitches)
+        ? e.pitches.filter(
+            (
+              p
+            ): p is "ball" | "strike" | "foul" | "in_play" =>
+              p === "ball" ||
+              p === "strike" ||
+              p === "foul" ||
+              p === "in_play"
+          )
+        : undefined;
+      const rawPitchCount =
+        typeof e.pitchCount === "number" && Number.isFinite(e.pitchCount)
+          ? Math.max(0, Math.min(60, Math.round(e.pitchCount)))
+          : rawPitches
+          ? rawPitches.length
+          : undefined;
+
       return {
         id: typeof e.id === "string" ? e.id : `ent-${eIdx}`,
         entryType:
@@ -3139,6 +3157,16 @@ export function sanitizeLiveReportDocument(
           : {}),
         ...(typeof e.rbi === "number" ? { rbi: Math.max(0, Math.round(e.rbi)) } : {}),
         ...(subMeta ? { subMeta } : {}),
+        ...(rawPitches && rawPitches.length > 0 ? { pitches: rawPitches } : {}),
+        ...(rawPitchCount !== undefined && rawPitchCount > 0
+          ? { pitchCount: rawPitchCount }
+          : {}),
+        ...(typeof e.pitcherPlayerId === "string" || e.pitcherPlayerId === null
+          ? { pitcherPlayerId: e.pitcherPlayerId }
+          : {}),
+        ...(typeof e.pitcherName === "string" && e.pitcherName.trim()
+          ? { pitcherName: e.pitcherName.trim() }
+          : {}),
       };
     });
 
@@ -3155,6 +3183,42 @@ export function sanitizeLiveReportDocument(
     typeof obj.opponentBatterCount === "number"
       ? Math.max(9, Math.min(25, Math.round(obj.opponentBatterCount)))
       : 9;
+
+  let pitcherPitchAdjustments: Record<string, number> | undefined = undefined;
+  if (
+    obj.pitcherPitchAdjustments &&
+    typeof obj.pitcherPitchAdjustments === "object" &&
+    !Array.isArray(obj.pitcherPitchAdjustments)
+  ) {
+    const cleanedAdj: Record<string, number> = {};
+    for (const [k, v] of Object.entries(
+      obj.pitcherPitchAdjustments as Record<string, unknown>
+    )) {
+      const key = k.trim();
+      if (!key || typeof v !== "number" || !Number.isFinite(v)) continue;
+      const rounded = Math.round(v);
+      if (rounded !== 0) {
+        cleanedAdj[key] = Math.max(-200, Math.min(250, rounded));
+      }
+    }
+    if (Object.keys(cleanedAdj).length > 0) {
+      pitcherPitchAdjustments = cleanedAdj;
+    }
+  }
+
+  let pitchLimitOverride: number | "none" | null | undefined = undefined;
+  if (obj.pitchLimitOverride === "none") {
+    pitchLimitOverride = "none";
+  } else if (obj.pitchLimitOverride === null) {
+    pitchLimitOverride = null;
+  } else if (
+    typeof obj.pitchLimitOverride === "number" &&
+    Number.isFinite(obj.pitchLimitOverride) &&
+    obj.pitchLimitOverride >= 20 &&
+    obj.pitchLimitOverride <= 250
+  ) {
+    pitchLimitOverride = Math.round(obj.pitchLimitOverride);
+  }
 
   return {
     version: 2,
@@ -3196,6 +3260,8 @@ export function sanitizeLiveReportDocument(
       typeof obj.closingComment === "string" ? obj.closingComment : "",
     reporterNames:
       typeof obj.reporterNames === "string" ? obj.reporterNames : "",
+    ...(pitcherPitchAdjustments ? { pitcherPitchAdjustments } : {}),
+    ...(pitchLimitOverride !== undefined ? { pitchLimitOverride } : {}),
   };
 }
 
@@ -3250,6 +3316,19 @@ function isSameSubMeta(
   );
 }
 
+function isSamePitchesArray(
+  a: LiveReportPlayEntry["pitches"],
+  b: LiveReportPlayEntry["pitches"]
+): boolean {
+  const pa = a || [];
+  const pb = b || [];
+  if (pa.length !== pb.length) return false;
+  for (let i = 0; i < pa.length; i++) {
+    if (pa[i] !== pb[i]) return false;
+  }
+  return true;
+}
+
 function isSamePlayEntry(
   a: LiveReportPlayEntry,
   b: LiveReportPlayEntry
@@ -3268,6 +3347,10 @@ function isSamePlayEntry(
     (a.resultCode ?? "") !== (b.resultCode ?? "") ||
     (a.battedDirection ?? "") !== (b.battedDirection ?? "") ||
     (a.rbi ?? null) !== (b.rbi ?? null) ||
+    (a.pitchCount ?? 0) !== (b.pitchCount ?? 0) ||
+    (a.pitcherPlayerId ?? null) !== (b.pitcherPlayerId ?? null) ||
+    (a.pitcherName ?? "") !== (b.pitcherName ?? "") ||
+    !isSamePitchesArray(a.pitches, b.pitches) ||
     !isSameSubMeta(a.subMeta, b.subMeta) ||
     !isSameRunnersArray(a.runnersAfter, b.runnersAfter) ||
     a.chainedPlays.length !== b.chainedPlays.length
@@ -3578,6 +3661,63 @@ function mergeExistingPlayEntry3Way(
     ? localEnt.runsScored
     : remoteEnt.runsScored;
 
+  const localChangedPitches = hasBase
+    ? !isSamePitchesArray(localEnt.pitches, baseEnt?.pitches) ||
+      (localEnt.pitchCount ?? 0) !== (baseEnt?.pitchCount ?? 0)
+    : Boolean(
+        (localEnt.pitches && localEnt.pitches.length > 0) ||
+          (localEnt.pitchCount ?? 0) > 0
+      ) &&
+      !(
+        (remoteEnt.pitches && remoteEnt.pitches.length > 0) ||
+        (remoteEnt.pitchCount ?? 0) > 0
+      );
+
+  const pitches = localChangedPitches ? localEnt.pitches : remoteEnt.pitches;
+  const pitchCount = localChangedPitches
+    ? localEnt.pitchCount
+    : remoteEnt.pitchCount;
+  const batterPlayerId = pickScalar3Way(
+    baseEnt?.batterPlayerId ?? null,
+    remoteEnt.batterPlayerId ?? null,
+    localEnt.batterPlayerId ?? null,
+    hasBase
+  );
+  const resultCode = pickScalar3Way(
+    baseEnt?.resultCode ?? "",
+    remoteEnt.resultCode ?? "",
+    localEnt.resultCode ?? "",
+    hasBase
+  );
+  const battedDirection = pickScalar3Way(
+    baseEnt?.battedDirection ?? "",
+    remoteEnt.battedDirection ?? "",
+    localEnt.battedDirection ?? "",
+    hasBase
+  );
+  const rbi = pickScalar3Way(
+    baseEnt?.rbi ?? undefined,
+    remoteEnt.rbi,
+    localEnt.rbi,
+    hasBase
+  );
+  const pitcherPlayerId = pickScalar3Way(
+    baseEnt?.pitcherPlayerId ?? null,
+    remoteEnt.pitcherPlayerId ?? null,
+    localEnt.pitcherPlayerId ?? null,
+    hasBase
+  );
+  const pitcherName = pickScalar3Way(
+    baseEnt?.pitcherName ?? "",
+    remoteEnt.pitcherName ?? "",
+    localEnt.pitcherName ?? "",
+    hasBase
+  );
+  const subMeta =
+    hasBase && !isSameSubMeta(localEnt.subMeta, baseEnt?.subMeta)
+      ? localEnt.subMeta
+      : remoteEnt.subMeta ?? localEnt.subMeta;
+
   return {
     id: remoteEnt.id,
     entryType: pickScalar3Way(
@@ -3598,6 +3738,7 @@ function mergeExistingPlayEntry3Way(
       localEnt.batterName,
       hasBase
     ),
+    ...(batterPlayerId !== null ? { batterPlayerId } : {}),
     playText: pickScalar3Way(
       baseEnt?.playText,
       remoteEnt.playText,
@@ -3624,6 +3765,14 @@ function mergeExistingPlayEntry3Way(
       localEnt.eventText,
       hasBase
     ),
+    ...(resultCode ? { resultCode } : {}),
+    ...(battedDirection ? { battedDirection } : {}),
+    ...(typeof rbi === "number" ? { rbi } : {}),
+    ...(subMeta ? { subMeta } : {}),
+    ...(pitches && pitches.length > 0 ? { pitches } : {}),
+    ...(typeof pitchCount === "number" && pitchCount > 0 ? { pitchCount } : {}),
+    ...(pitcherPlayerId ? { pitcherPlayerId } : {}),
+    ...(pitcherName ? { pitcherName } : {}),
   };
 }
 
@@ -3644,12 +3793,19 @@ function collapseSimultaneousSameBatterEntry(
 
   return {
     ...remoteNewEnt,
+    ...localNewEnt,
+    id: remoteNewEnt.id,
     batterName: localNewEnt.batterName || remoteNewEnt.batterName,
     playText: localNewEnt.playText || remoteNewEnt.playText,
     reactionText: mergedReaction,
     outsAfter: localNewEnt.outsAfter,
     runnersAfter: normalizeRunnersList(localNewEnt.runnersAfter),
     runsScored: localNewEnt.runsScored,
+    pitches:
+      localNewEnt.pitches && localNewEnt.pitches.length > 0
+        ? localNewEnt.pitches
+        : remoteNewEnt.pitches,
+    pitchCount: localNewEnt.pitchCount ?? remoteNewEnt.pitchCount,
     chainedPlays: mergeChainedPlays3Way(
       [],
       remoteNewEnt.chainedPlays,
@@ -4093,6 +4249,28 @@ export function mergeLiveReportDocuments({
       )
     : remote.isGameFinished || local.isGameFinished;
 
+  const mergedPitchLimitOverride = pickScalar3Way(
+    base?.pitchLimitOverride ?? undefined,
+    remote.pitchLimitOverride,
+    local.pitchLimitOverride,
+    hasBase
+  );
+
+  const mergedPitchAdj: Record<string, number> = {};
+  const adjKeys = new Set<string>([
+    ...Object.keys(remote.pitcherPitchAdjustments || {}),
+    ...Object.keys(local.pitcherPitchAdjustments || {}),
+  ]);
+  for (const key of adjKeys) {
+    const bVal = base?.pitcherPitchAdjustments?.[key] ?? 0;
+    const rVal = remote.pitcherPitchAdjustments?.[key] ?? 0;
+    const lVal = local.pitcherPitchAdjustments?.[key] ?? 0;
+    const chosen = hasBase ? (lVal !== bVal ? lVal : rVal) : lVal || rVal;
+    if (chosen !== 0) {
+      mergedPitchAdj[key] = chosen;
+    }
+  }
+
   return {
     version: 2,
     matchId: local.matchId ?? remote.matchId ?? null,
@@ -4189,6 +4367,211 @@ export function mergeLiveReportDocuments({
       local.reporterNames,
       hasBase
     ),
+    ...(Object.keys(mergedPitchAdj).length > 0
+      ? { pitcherPitchAdjustments: mergedPitchAdj }
+      : {}),
+    ...(mergedPitchLimitOverride !== undefined
+      ? { pitchLimitOverride: mergedPitchLimitOverride }
+      : {}),
+  };
+}
+
+// =========================================================
+// 9. ライブ速報 球数集計エンジン（投手別球数 ＆ 現在マウンド上の投手解決）
+// =========================================================
+
+export function toLivePitcherKey(
+  playerId: string | null | undefined,
+  playerName: string | null | undefined
+): string {
+  const cleanId = (playerId || "").trim();
+  if (cleanId) return `id:${cleanId}`;
+  const cleanName = (playerName || "").trim();
+  if (cleanName) return `name:${cleanName}`;
+  return "id:__my_default_pitcher__";
+}
+
+export function resolveActiveMyPitcherAtHalfInning(
+  doc: LiveReportV2Document,
+  inning: number,
+  isBottom: boolean
+): { key: string; playerId: string | null; playerName: string } {
+  let pitcherId: string | null = null;
+  let pitcherName = "";
+
+  for (const slot of doc.lineup) {
+    if (normalizeReportPositionCode(slot.position) === "1") {
+      pitcherId = slot.playerId || null;
+      pitcherName = (slot.playerName || "").trim();
+      break;
+    }
+  }
+
+  const allSubs: Array<LiveReportLineupSubRecord & { slotOrder: number }> = [];
+  for (const slot of doc.lineup) {
+    for (const sub of slot.substitutions || []) {
+      if (
+        compareHalfInningOrder(sub.inning, sub.isBottom, inning, isBottom) <= 0
+      ) {
+        allSubs.push({ ...sub, slotOrder: slot.order });
+      }
+    }
+  }
+  allSubs.sort((a, b) =>
+    compareHalfInningOrder(a.inning, a.isBottom, b.inning, b.isBottom)
+  );
+
+  for (const sub of allSubs) {
+    const normNewPos = normalizeReportPositionCode(sub.newPosition);
+    if (sub.subType === "P" || normNewPos === "1") {
+      pitcherId = sub.playerId || null;
+      pitcherName = (sub.newName || "").trim();
+    }
+  }
+
+  return {
+    key: toLivePitcherKey(pitcherId, pitcherName),
+    playerId: pitcherId,
+    playerName: pitcherName || "自チーム投手",
+  };
+}
+
+export interface LiveReportPitcherCountSummary {
+  activeMyPitcherKey: string;
+  activeMyPitcherId: string | null;
+  activeMyPitcherName: string;
+  activeMyPitcherPitches: number;
+  myPitchers: Array<{
+    key: string;
+    playerId: string | null;
+    playerName: string;
+    pitches: number;
+  }>;
+  opponentTotalPitches: number;
+}
+
+export function computeLiveReportPitchCounts(
+  doc: LiveReportV2Document
+): LiveReportPitcherCountSummary {
+  const activePitcher = resolveActiveMyPitcherAtHalfInning(
+    doc,
+    doc.activeInning,
+    doc.activeIsBottom
+  );
+
+  const pitcherMap = new Map<
+    string,
+    { key: string; playerId: string | null; playerName: string; pitches: number }
+  >();
+  let opponentTotalPitches = 0;
+
+  const ensurePitcher = (
+    key: string,
+    playerId: string | null,
+    playerName: string
+  ) => {
+    let rec = pitcherMap.get(key);
+    if (!rec) {
+      rec = {
+        key,
+        playerId,
+        playerName: playerName || "自チーム投手",
+        pitches: 0,
+      };
+      pitcherMap.set(key, rec);
+    } else if (!rec.playerName && playerName) {
+      rec.playerName = playerName;
+    }
+    return rec;
+  };
+
+  ensurePitcher(
+    activePitcher.key,
+    activePitcher.playerId,
+    activePitcher.playerName
+  );
+
+  const sortedHalves = [...doc.halfInnings].sort((a, b) =>
+    compareHalfInningOrder(a.inning, a.isBottom, b.inning, b.isBottom)
+  );
+
+  for (const half of sortedHalves) {
+    const isMyBatting = isMyTeamBattingHalf(doc.battingOrder, half.isBottom);
+    let currentHalfPitcher = !isMyBatting
+      ? resolveActiveMyPitcherAtHalfInning(doc, half.inning, half.isBottom)
+      : null;
+
+    for (const ent of half.entries) {
+      if (
+        !isMyBatting &&
+        ent.entryType === "substitution" &&
+        ent.subMeta &&
+        (ent.subMeta.subType === "P" ||
+          normalizeReportPositionCode(ent.subMeta.newPosition) === "1")
+      ) {
+        const nextId = ent.subMeta.playerId || null;
+        const nextName = (ent.subMeta.newName || "").trim() || "自チーム投手";
+        currentHalfPitcher = {
+          key: toLivePitcherKey(nextId, nextName),
+          playerId: nextId,
+          playerName: nextName,
+        };
+      }
+
+      if (ent.entryType !== "batter") continue;
+      const abPitches =
+        typeof ent.pitchCount === "number" && ent.pitchCount > 0
+          ? ent.pitchCount
+          : ent.pitches?.length ?? 0;
+      if (abPitches <= 0) continue;
+
+      if (isMyBatting) {
+        opponentTotalPitches += abPitches;
+      } else {
+        const resolvedId =
+          ent.pitcherPlayerId !== undefined
+            ? ent.pitcherPlayerId
+            : currentHalfPitcher?.playerId ?? null;
+        const resolvedName =
+          ent.pitcherName?.trim() ||
+          currentHalfPitcher?.playerName ||
+          "自チーム投手";
+        const key = toLivePitcherKey(resolvedId, resolvedName);
+        const rec = ensurePitcher(key, resolvedId, resolvedName);
+        rec.pitches += abPitches;
+      }
+    }
+  }
+
+  const adjustments = doc.pitcherPitchAdjustments || {};
+  for (const [adjKey, delta] of Object.entries(adjustments)) {
+    if (!Number.isFinite(delta) || delta === 0) continue;
+    if (adjKey === "__opponent__") {
+      opponentTotalPitches = Math.max(0, opponentTotalPitches + delta);
+      continue;
+    }
+    const existing = pitcherMap.get(adjKey);
+    if (existing) {
+      existing.pitches = Math.max(0, existing.pitches + delta);
+    } else if (adjKey === activePitcher.key) {
+      const rec = ensurePitcher(
+        activePitcher.key,
+        activePitcher.playerId,
+        activePitcher.playerName
+      );
+      rec.pitches = Math.max(0, rec.pitches + delta);
+    }
+  }
+
+  const activeRec = pitcherMap.get(activePitcher.key);
+
+  return {
+    activeMyPitcherKey: activePitcher.key,
+    activeMyPitcherId: activePitcher.playerId,
+    activeMyPitcherName: activePitcher.playerName,
+    activeMyPitcherPitches: activeRec?.pitches ?? 0,
+    myPitchers: Array.from(pitcherMap.values()),
+    opponentTotalPitches,
   };
 }
 

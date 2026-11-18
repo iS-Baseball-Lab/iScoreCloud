@@ -11,7 +11,7 @@ import {
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   AlertTriangle,
   ChevronDown,
@@ -58,30 +58,24 @@ const RULE_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
   { value: "general", label: "💡 その他・心得" },
 ];
 
+function isValidHttpUrl(url: string | null | undefined): boolean {
+  return Boolean(url && /^https?:\/\//i.test(url.trim()));
+}
+
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (isValidHttpUrl(url)) return url.trim();
+  if (!url.startsWith("/") && url.includes(":")) return "";
   if (typeof window !== "undefined") {
     return `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
   }
   return `https://iscorecloud.com${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
-function getPdfViewerUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("data:")) return url;
-  const abs = getAbsoluteUrl(url);
-  // ローカル環境（localhost）はGoogle Docs Viewerから到達できないため直接URLを返す
-  if (abs.includes("localhost") || abs.includes("127.0.0.1")) {
-    return url;
-  }
-  return `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
-}
-
 function getExternalBrowserUrl(url: string | null | undefined): string {
   const abs = getAbsoluteUrl(url);
-  if (!abs) return "";
+  if (!isValidHttpUrl(abs)) return "";
   const sep = abs.includes("?") ? "&" : "?";
   return `${abs}${sep}openExternalBrowser=1`;
 }
@@ -336,6 +330,7 @@ export default function LiffRulesPage() {
         throw new Error(data.error || "ルール & 注意事項の登録に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/rules");
       setIsCreateModalOpen(false);
       setNewTitle("");
       setNewContent("");
@@ -383,6 +378,7 @@ export default function LiffRulesPage() {
         throw new Error(data.error || "ルール & 注意事項の更新に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/rules");
       setEditingRule(null);
       loadRules();
     } catch (err: unknown) {
@@ -417,6 +413,7 @@ export default function LiffRulesPage() {
         throw new Error(data.error || "ルール & 注意事項の削除に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/rules");
       setEditingRule(null);
       loadRules();
     } catch (err: unknown) {
@@ -777,15 +774,17 @@ export default function LiffRulesPage() {
                                     <Eye className="w-3 h-3" />
                                     <span>全画面</span>
                                   </button>
-                                  <a
-                                    href={getExternalBrowserUrl(rule.pdfUrl)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="px-2 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
-                                  >
-                                    <ExternalLink className="w-3 h-3" />
-                                    <span>ブラウザ</span>
-                                  </a>
+                                  {isValidHttpUrl(getExternalBrowserUrl(rule.pdfUrl)) && (
+                                    <a
+                                      href={getExternalBrowserUrl(rule.pdfUrl)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2 py-1 rounded-lg border border-border hover:bg-muted text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] font-bold transition-colors"
+                                    >
+                                      <ExternalLink className="w-3 h-3" />
+                                      <span>ブラウザ</span>
+                                    </a>
+                                  )}
                                 </div>
                               </div>
 
@@ -802,24 +801,37 @@ export default function LiffRulesPage() {
                                   💡 枠内でスクロール閲覧できます。表示されない場合は「ブラウザで開く」をお試しください。
                                 </span>
                                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                                  <a
-                                    href={getExternalBrowserUrl(rule.pdfUrl)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5"
-                                  >
-                                    <span>ブラウザで開く</span>
-                                    <ExternalLink className="w-2.5 h-2.5" />
-                                  </a>
-                                  <span className="text-border">•</span>
-                                  <a
-                                    href={getAbsoluteUrl(rule.pdfUrl)}
-                                    download={rule.pdfName || "添付資料.pdf"}
-                                    className="text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center gap-0.5"
-                                  >
-                                    <span>保存</span>
-                                    <Download className="w-2.5 h-2.5" />
-                                  </a>
+                                  {isValidHttpUrl(getExternalBrowserUrl(rule.pdfUrl)) && (
+                                    <a
+                                      href={getExternalBrowserUrl(rule.pdfUrl)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] font-black text-primary hover:underline flex items-center gap-0.5"
+                                    >
+                                      <span>ブラウザで開く</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                  {isValidHttpUrl(getExternalBrowserUrl(rule.pdfUrl)) &&
+                                    (isValidHttpUrl(getAbsoluteUrl(rule.pdfUrl)) ||
+                                      rule.pdfUrl.startsWith("data:")) && (
+                                      <span className="text-border">•</span>
+                                    )}
+                                  {(isValidHttpUrl(getAbsoluteUrl(rule.pdfUrl)) ||
+                                    rule.pdfUrl.startsWith("data:")) && (
+                                    <a
+                                      href={
+                                        rule.pdfUrl.startsWith("data:")
+                                          ? rule.pdfUrl
+                                          : getAbsoluteUrl(rule.pdfUrl)
+                                      }
+                                      download={rule.pdfName || "添付資料.pdf"}
+                                      className="text-[10px] font-black text-muted-foreground hover:text-foreground flex items-center gap-0.5"
+                                    >
+                                      <span>保存</span>
+                                      <Download className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -834,140 +846,205 @@ export default function LiffRulesPage() {
           </div>
         </section>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* 🖼️ 画像拡大モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && previewImageModalUrl && createPortal(
-        <div
-          onClick={() => setPreviewImageModalUrl(null)}
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200"
-        >
-          <div className="relative max-w-2xl max-h-[90vh] w-full flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => setPreviewImageModalUrl(null)}
-              className="absolute -top-10 right-0 p-1.5 rounded-full bg-slate-900 text-slate-200 border border-slate-700 hover:bg-slate-800 hover:text-white"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <img
-              src={previewImageModalUrl}
-              alt="拡大画像"
-              className="max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl border border-slate-700"
-            />
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {/* 📄 PDF全画面閲覧モーダル */}
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && previewPdfModal && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+      {mounted &&
+        typeof document !== "undefined" &&
+        previewImageModalUrl &&
+        createPortal(
           <div
-            className="absolute inset-0"
-            onClick={() => setPreviewPdfModal(null)}
-          />
-          <div className="relative w-full max-w-4xl h-[92vh] rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col z-10 animate-in zoom-in-95 duration-200">
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
-                  <FileText className="w-4 h-4" />
-                </span>
-                <div className="min-w-0">
+            onClick={() => setPreviewImageModalUrl(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </span>
                   <h3 className="text-xs sm:text-sm font-black text-white truncate">
-                    {previewPdfModal.name}
+                    参考画像・図解の拡大表示
                   </h3>
-                  <p className="text-[10px] text-slate-300 font-bold">PDFプレビュー表示</p>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={getExternalBrowserUrl(previewPdfModal.url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1.5 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 hover:bg-primary/30 text-xs font-black flex items-center gap-1 transition-colors"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">ブラウザで開く</span>
-                </a>
-                <a
-                  href={getAbsoluteUrl(previewPdfModal.url)}
-                  download={previewPdfModal.name}
-                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 hover:text-white text-xs font-black flex items-center gap-1 transition-colors"
-                  title="ダウンロード"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">保存</span>
-                </a>
                 <button
                   type="button"
-                  onClick={() => setPreviewPdfModal(null)}
+                  onClick={() => setPreviewImageModalUrl(null)}
                   className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
-            </div>
 
-            <div className="flex-1 bg-muted/35 relative w-full h-full overflow-y-auto p-2 sm:p-4 flex items-center justify-center">
-              <div className="w-full max-w-2xl h-auto my-auto rounded-2xl overflow-hidden">
-                <PdfCanvasViewer
-                  url={previewPdfModal.url}
-                  title={previewPdfModal.name}
-                  aspectRatioA4={true}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 bg-muted/35 flex items-center justify-center">
+                <img
+                  src={previewImageModalUrl}
+                  alt="拡大画像"
+                  className="max-h-[72dvh] max-w-full rounded-xl object-contain border border-border bg-card"
                 />
               </div>
+
+              <div className="shrink-0 px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3 border-t border-border bg-card flex items-center justify-between gap-2">
+                <span className="text-[10.5px] font-bold text-muted-foreground">
+                  💡 ピンチ操作や長押しで保存できます
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImageModalUrl(null)}
+                  className="px-4 py-2 rounded-xl bg-card border border-border text-foreground hover:bg-muted font-black text-xs transition-all cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {/* ➕ 新規登録モーダル (ポータル描画) */}
+      {/* 📄 PDF全画面閲覧モーダル */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+      {mounted &&
+        typeof document !== "undefined" &&
+        previewPdfModal &&
+        createPortal(
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={() => setPreviewPdfModal(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
           >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
-                  <AlertTriangle className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-black text-white">新しいルール & 注意事項の登録</h3>
-                  <p className="text-[10px] text-slate-300 font-bold">
-                    チーム共通ルールや活動上の注意を共有
-                  </p>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-4xl h-[90dvh] max-h-[90dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col z-10"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                      {previewPdfModal.name}
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold">PDFプレビュー表示</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {isValidHttpUrl(getExternalBrowserUrl(previewPdfModal.url)) && (
+                    <a
+                      href={getExternalBrowserUrl(previewPdfModal.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1.5 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 hover:bg-primary/30 text-xs font-black flex items-center gap-1 transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">ブラウザで開く</span>
+                    </a>
+                  )}
+                  {(isValidHttpUrl(getAbsoluteUrl(previewPdfModal.url)) ||
+                    previewPdfModal.url.startsWith("data:")) && (
+                    <a
+                      href={
+                        previewPdfModal.url.startsWith("data:")
+                          ? previewPdfModal.url
+                          : getAbsoluteUrl(previewPdfModal.url)
+                      }
+                      download={previewPdfModal.name}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 hover:bg-slate-700 hover:text-white text-xs font-black flex items-center gap-1 transition-colors"
+                      title="ダウンロード"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">保存</span>
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPdfModal(null)}
+                    className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto">
-              {submitError && (
-                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
+              <div className="flex-1 min-h-0 bg-muted/35 relative w-full overflow-y-auto p-2 sm:p-4 flex items-center justify-center">
+                <div className="w-full max-w-2xl h-auto my-auto rounded-2xl overflow-hidden">
+                  <PdfCanvasViewer
+                    url={previewPdfModal.url}
+                    title={previewPdfModal.name}
+                    aspectRatioA4={true}
+                  />
                 </div>
-              )}
+              </div>
 
-              <form onSubmit={handleCreateRule} className="space-y-4 text-xs font-bold">
+              <div className="shrink-0 px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3 border-t border-border bg-card flex items-center justify-between gap-2">
+                <span className="text-[10.5px] font-bold text-muted-foreground truncate">
+                  {previewPdfModal.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPdfModal(null)}
+                  className="px-4 py-2 rounded-xl bg-card border border-border text-foreground hover:bg-muted font-black text-xs transition-all cursor-pointer shrink-0"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* ➕ 新規登録モーダル (ポータル描画・ボトムシート対応) */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted &&
+        typeof document !== "undefined" &&
+        isCreateModalOpen &&
+        createPortal(
+          <div
+            onClick={() => setIsCreateModalOpen(false)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <form
+              onSubmit={handleCreateRule}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
+                    <AlertTriangle className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-white">新しいルール & 注意事項の登録</h3>
+                    <p className="text-[10px] text-slate-300 font-bold">
+                      チーム共通ルールや活動上の注意を共有
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 p-5 space-y-4 overflow-y-auto text-xs font-bold">
+                {submitError && (
+                  <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitError}</span>
+                  </div>
+                )}
+
                 {/* 🔥 重要バッジ・フラグ選択 */}
                 <div
                   onClick={() => setNewIsImportant(!newIsImportant)}
@@ -978,13 +1055,19 @@ export default function LiffRulesPage() {
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                      newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                    }`}>
+                    <span
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                        newIsImportant
+                          ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
                       <Flame className="w-4 h-4" />
                     </span>
                     <div>
-                      <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
+                      <span className="font-black text-xs text-foreground block">
+                        重要ルールに設定する
+                      </span>
                       <span className="text-[10px] text-muted-foreground font-bold block">
                         一覧の上部に優先表示され、目立つ重要バッジが付きます
                       </span>
@@ -994,6 +1077,7 @@ export default function LiffRulesPage() {
                     type="checkbox"
                     checked={newIsImportant}
                     onChange={(e) => setNewIsImportant(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
                     className="w-4 h-4 rounded accent-primary"
                   />
                 </div>
@@ -1078,7 +1162,7 @@ export default function LiffRulesPage() {
                       <button
                         type="button"
                         onClick={() => setNewImageUrl("")}
-                        className="text-[10px] text-destructive hover:underline font-bold"
+                        className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
                       >
                         画像を削除
                       </button>
@@ -1087,7 +1171,13 @@ export default function LiffRulesPage() {
 
                   {newImageUrl ? (
                     <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
-                      <img src={newImageUrl} alt="プレビュー" loading="lazy" decoding="async" className="max-h-40 w-full object-cover" />
+                      <img
+                        src={newImageUrl}
+                        alt="プレビュー"
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-40 w-full object-cover"
+                      />
                     </div>
                   ) : (
                     <div>
@@ -1151,15 +1241,22 @@ export default function LiffRulesPage() {
                           <p className="text-xs font-black text-foreground truncate">
                             {newPdfName || "添付PDFファイル"}
                           </p>
-                          <a
-                            href={newPdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
-                          >
-                            <span>プレビュー確認</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
+                          {(isValidHttpUrl(getAbsoluteUrl(newPdfUrl)) ||
+                            newPdfUrl.startsWith("data:")) && (
+                            <a
+                              href={
+                                newPdfUrl.startsWith("data:")
+                                  ? newPdfUrl
+                                  : getAbsoluteUrl(newPdfUrl)
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                            >
+                              <span>プレビュー確認</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
                         </div>
                       </div>
                       <button
@@ -1203,74 +1300,79 @@ export default function LiffRulesPage() {
                     </div>
                   )}
                 </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || !newTitle.trim() || !newContent.trim()}
-                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>登録中...</span>
-                      </>
-                    ) : (
-                      <span>登録する</span>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {/* ✏️ 編集・削除モーダル (ポータル描画) */}
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && editingRule && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
-                  <Pencil className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-black text-white">ルール & 注意事項の編集</h3>
-                  <p className="text-[10px] text-slate-300 font-bold">内容の更新または削除</p>
-                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setEditingRule(null)}
-                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto">
-              {submitError && (
-                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
+              <div className="shrink-0 px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !newTitle.trim() || !newContent.trim()}
+                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>登録中...</span>
+                    </>
+                  ) : (
+                    <span>登録する</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* ✏️ 編集・削除モーダル (ポータル描画・ボトムシート対応) */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted &&
+        typeof document !== "undefined" &&
+        editingRule &&
+        createPortal(
+          <div
+            onClick={() => setEditingRule(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <form
+              onSubmit={handleUpdateRule}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
+                    <Pencil className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-white">ルール & 注意事項の編集</h3>
+                    <p className="text-[10px] text-slate-300 font-bold">内容の更新または削除</p>
+                  </div>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setEditingRule(null)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-              <form onSubmit={handleUpdateRule} className="space-y-4 text-xs font-bold">
+              <div className="flex-1 min-h-0 p-5 space-y-4 overflow-y-auto text-xs font-bold">
+                {submitError && (
+                  <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitError}</span>
+                  </div>
+                )}
+
                 {/* 🔥 重要バッジ・フラグ選択 */}
                 <div
                   onClick={() => setEditIsImportant(!editIsImportant)}
@@ -1281,13 +1383,19 @@ export default function LiffRulesPage() {
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                      editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                    }`}>
+                    <span
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                        editIsImportant
+                          ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
                       <Flame className="w-4 h-4" />
                     </span>
                     <div>
-                      <span className="font-black text-xs text-foreground block">重要ルールに設定する</span>
+                      <span className="font-black text-xs text-foreground block">
+                        重要ルールに設定する
+                      </span>
                       <span className="text-[10px] text-muted-foreground font-bold block">
                         一覧の上部に優先表示され、目立つ重要バッジが付きます
                       </span>
@@ -1297,6 +1405,7 @@ export default function LiffRulesPage() {
                     type="checkbox"
                     checked={editIsImportant}
                     onChange={(e) => setEditIsImportant(e.target.checked)}
+                    onClick={(e) => e.stopPropagation()}
                     className="w-4 h-4 rounded accent-primary"
                   />
                 </div>
@@ -1379,7 +1488,7 @@ export default function LiffRulesPage() {
                       <button
                         type="button"
                         onClick={() => setEditImageUrl("")}
-                        className="text-[10px] text-destructive hover:underline font-bold"
+                        className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
                       >
                         画像を削除
                       </button>
@@ -1388,7 +1497,13 @@ export default function LiffRulesPage() {
 
                   {editImageUrl ? (
                     <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-40 flex items-center justify-center">
-                      <img src={editImageUrl} alt="プレビュー" loading="lazy" decoding="async" className="max-h-40 w-full object-cover" />
+                      <img
+                        src={editImageUrl}
+                        alt="プレビュー"
+                        loading="lazy"
+                        decoding="async"
+                        className="max-h-40 w-full object-cover"
+                      />
                     </div>
                   ) : (
                     <div>
@@ -1452,15 +1567,22 @@ export default function LiffRulesPage() {
                           <p className="text-xs font-black text-foreground truncate">
                             {editPdfName || "添付PDFファイル"}
                           </p>
-                          <a
-                            href={editPdfUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
-                          >
-                            <span>プレビュー確認</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
+                          {(isValidHttpUrl(getAbsoluteUrl(editPdfUrl)) ||
+                            editPdfUrl.startsWith("data:")) && (
+                            <a
+                              href={
+                                editPdfUrl.startsWith("data:")
+                                  ? editPdfUrl
+                                  : getAbsoluteUrl(editPdfUrl)
+                              }
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[10px] text-primary hover:underline font-bold flex items-center gap-0.5 mt-0.5"
+                            >
+                              <span>プレビュー確認</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                          )}
                         </div>
                       </div>
                       <button
@@ -1504,48 +1626,47 @@ export default function LiffRulesPage() {
                     </div>
                   )}
                 </div>
+              </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-border">
+              <div className="shrink-0 px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteRule}
+                  disabled={isDeleting}
+                  className="px-3 py-2 rounded-xl border border-rose-500 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>削除</span>
+                </button>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={handleDeleteRule}
-                    disabled={isDeleting}
-                    className="px-3 py-2 rounded-xl border border-rose-500 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setEditingRule(null)}
+                    className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>削除</span>
+                    キャンセル
                   </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingRule(null)}
-                      className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
-                    >
-                      キャンセル
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting || !editTitle.trim() || !editContent.trim()}
-                      className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>更新中...</span>
-                        </>
-                      ) : (
-                        <span>保存する</span>
-                      )}
-                    </button>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !editTitle.trim() || !editContent.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>更新中...</span>
+                      </>
+                    ) : (
+                      <span>保存する</span>
+                    )}
+                  </button>
                 </div>
-              </form>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+              </div>
+            </form>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

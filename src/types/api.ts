@@ -106,6 +106,7 @@ export interface CreateMatchBody {
   benchSide?: "1B" | "3B" | "unknown";
   location?: string;
   innings?: number;
+  tournamentId?: string | null;
   tournamentName?: string;
   venueId?: string | null;
   matchDayOps?: MatchDayOps | null;
@@ -120,6 +121,7 @@ export interface UpdateMatchBody {
   location?: string;
   surfaceDetails?: string | null;
   innings?: number;
+  tournamentId?: string | null;
   tournamentName?: string;
   venueId?: string | null;
   status?: "scheduled" | "live" | "finished" | "rainout";
@@ -195,7 +197,15 @@ export interface MatchRow {
 
   weather: string | null;
   youtubeUrl: string | null;
+  tournamentId?: string | null;
   tournamentName?: string | null;
+  tournamentCategory?: string | null;
+  tournamentOrganizer?: string | null;
+  tournamentBracketUrl?: string | null;
+  tournamentTimeLimit?: string | null;
+  tournamentColdGameRule?: string | null;
+  tournamentTiebreakerRule?: string | null;
+  tournamentPitchLimitRule?: string | null;
   venueName?: string | null;
   venueAddress?: string | null;
   venueMapUrl?: string | null;

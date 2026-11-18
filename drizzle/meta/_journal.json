@@ -337,6 +337,13 @@
       "when": 1794960000000,
       "tag": "0047_phase1_venue_tournament_tenant_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1794963600000,
+      "tag": "0048_phase3_pitch_carpool_settings",
+      "breakpoints": true
     }
   ]
 }

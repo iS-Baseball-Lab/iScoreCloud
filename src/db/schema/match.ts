@@ -24,6 +24,7 @@ export const tournaments = sqliteTable("tournaments", {
   timeLimit: text("time_limit"), // 例: "1時間30分 (新しいイニングに入らない)"
   coldGameRule: text("cold_game_rule"), // 例: "3回10点、5回7点差"
   tiebreakerRule: text("tiebreaker_rule"), // 例: "タイブレーク: 1アウト満塁から"
+  pitchLimitRule: text("pitch_limit_rule"), // 例: "1日70球以内（学童規定）"
   startDate: text("start_date"), // 大会開幕日
   endDate: text("end_date"), // 大会終了日
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),

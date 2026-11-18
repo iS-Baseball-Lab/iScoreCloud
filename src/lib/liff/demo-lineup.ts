@@ -86,6 +86,10 @@ export interface LineupPlayer {
   activeConditionPeriod?: PlayerConditionPeriod | null;
   joinedAt?: number | string | null;
   createdAt?: number | string | null;
+  yesterdayPitches?: number;
+  last7DaysPitches?: number;
+  lastPitchedDate?: string | null;
+  lastPitchedPitches?: number | null;
 }
 
 export interface MyLineupSlot {
@@ -286,7 +290,13 @@ export interface DemoMatchCardItem {
   venueShortName?: string | null;
   venueParkingInfo?: string | null;
   surfaceDetails?: string | null;
+  tournamentId?: string | null;
   tournamentName?: string | null;
+  tournamentTimeLimit?: string | null;
+  tournamentColdGameRule?: string | null;
+  tournamentTiebreakerRule?: string | null;
+  tournamentPitchLimitRule?: string | null;
+  tournamentBracketUrl?: string | null;
   battingOrder?: "first" | "second";
   innings?: number;
   myInningScores?: number[];
@@ -298,7 +308,16 @@ export interface DemoMatchCardItem {
 }
 
 export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
-  { id: "demo-p-1", name: "鈴木 蓮", uniformNumber: "1", isActive: 1 },
+  {
+    id: "demo-p-1",
+    name: "鈴木 蓮",
+    uniformNumber: "1",
+    isActive: 1,
+    yesterdayPitches: 58,
+    last7DaysPitches: 92,
+    lastPitchedDate: "2026-11-07",
+    lastPitchedPitches: 58,
+  },
   { id: "demo-p-2", name: "伊藤 蒼", uniformNumber: "2", isActive: 1 },
   { id: "demo-p-3", name: "高橋 陸", uniformNumber: "3", isActive: 1 },
   { id: "demo-p-4", name: "渡辺 陽向", uniformNumber: "4", isActive: 1 },
@@ -324,7 +343,16 @@ export const DEMO_LINEUP_PLAYERS: LineupPlayer[] = [
       },
     ],
   },
-  { id: "demo-p-10", name: "山田 翔太", uniformNumber: "10", isActive: 1 },
+  {
+    id: "demo-p-10",
+    name: "山田 翔太",
+    uniformNumber: "10",
+    isActive: 1,
+    yesterdayPitches: 0,
+    last7DaysPitches: 42,
+    lastPitchedDate: "2026-11-03",
+    lastPitchedPitches: 42,
+  },
   { id: "demo-p-11", name: "佐藤 陽太", uniformNumber: "11", isActive: 1 },
   {
     id: "demo-p-12",
@@ -350,7 +378,12 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
   "demo-match-1": {
     id: "demo-match-1",
     opponent: "横浜ベイブルース",
+    tournamentId: "demo-trn-1",
     tournamentName: "川崎市秋季大会 1回戦",
+    tournamentTimeLimit: "85分（新しいイニングに入らない）",
+    tournamentColdGameRule: "4回10点差・5回7点差",
+    tournamentTiebreakerRule: "7回以降 無死一・二塁（継続打順）",
+    tournamentPitchLimitRule: "1日70球以内（学童規定）",
     date: "2026/08/23",
     status: "finished",
     myScore: 7,
@@ -410,7 +443,12 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
   "demo-match-3": {
     id: "demo-match-3",
     opponent: "レッドソックス",
+    tournamentId: "demo-trn-1",
     tournamentName: "秋季大会 2回戦",
+    tournamentTimeLimit: "85分（新しいイニングに入らない）",
+    tournamentColdGameRule: "4回10点差・5回7点差",
+    tournamentTiebreakerRule: "7回以降 無死一・二塁（継続打順）",
+    tournamentPitchLimitRule: "1日70球以内（学童規定）",
     date: "2026/11/08 09:30",
     status: "scheduled",
     myScore: 0,

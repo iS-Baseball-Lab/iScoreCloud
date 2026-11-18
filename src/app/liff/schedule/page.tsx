@@ -7,7 +7,7 @@ import Link from "next/link";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff, useLiffPermissions, usePracticeMatchLabel } from "@/components/liff/LiffProvider";
-import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
@@ -64,8 +64,16 @@ import {
   EyeOff,
 } from "lucide-react";
 
-const TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "高学年", "低学年", "試合組", "練習組"];
-const DUTY_GROUPS = ["1班", "2班", "3班", "4班", "なし"];
+const DEFAULT_TARGET_GROUPS = ["全体", "Aチーム", "Bチーム", "低学年", "体験・見学"];
+const DEFAULT_DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
+interface TeamScheduleSettingsPayload {
+  success: boolean;
+  settings?: {
+    targetGroups?: string[];
+    dutyGroups?: string[];
+    useDutyGroups?: boolean;
+  };
+}
 const EVENT_TYPES: Array<{
   id: Exclude<ActivitySlotType, "off">;
   label: string;
@@ -463,6 +471,84 @@ export default function LiffSchedulePage() {
     }));
   };
 
+  // チーム活動グループ・当番班設定 (D1同期)
+  const initialTeamScheduleSettings = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    const hit = peekLiffApiCache<TeamScheduleSettingsPayload>(
+      `/api/liff/team-schedule-settings?teamId=${encodeURIComponent(tid)}`
+    );
+    return hit?.settings ?? null;
+  }, [currentTeam?.id]);
+
+  const [teamTargetGroups, setTeamTargetGroups] = useState<string[]>(
+    () => initialTeamScheduleSettings?.targetGroups ?? DEFAULT_TARGET_GROUPS
+  );
+  const [teamDutyGroups, setTeamDutyGroups] = useState<string[]>(
+    () => initialTeamScheduleSettings?.dutyGroups ?? []
+  );
+  const [useDutyGroups, setUseDutyGroups] = useState<boolean>(
+    () => Boolean(initialTeamScheduleSettings?.useDutyGroups)
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const tid =
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
+    let cancelled = false;
+
+    try {
+      const localRaw = localStorage.getItem(`i-score-target-groups:${tid}`);
+      if (localRaw) {
+        const parsed: unknown = JSON.parse(localRaw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+          if (valid.length > 0) {
+            setTeamTargetGroups(valid);
+          }
+        }
+      }
+    } catch {}
+
+    const applySettings = (payload?: TeamScheduleSettingsPayload | null) => {
+      if (cancelled || !payload?.settings) return;
+      if (Array.isArray(payload.settings.targetGroups) && payload.settings.targetGroups.length > 0) {
+        setTeamTargetGroups(payload.settings.targetGroups);
+      }
+      if (Array.isArray(payload.settings.dutyGroups)) {
+        setTeamDutyGroups(payload.settings.dutyGroups);
+      }
+      if (typeof payload.settings.useDutyGroups === "boolean") {
+        setUseDutyGroups(payload.settings.useDutyGroups);
+      }
+    };
+
+    void fetchLiffJsonSWR<TeamScheduleSettingsPayload>(
+      `/api/liff/team-schedule-settings?teamId=${encodeURIComponent(tid)}`,
+      { onRevalidate: (fresh) => applySettings(fresh) }
+    )
+      .then((data) => applySettings(data))
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTeam?.id]);
+
+  const effectiveTargetGroups = useMemo(() => {
+    const base = teamTargetGroups.length > 0 ? teamTargetGroups : DEFAULT_TARGET_GROUPS;
+    return base.includes("全体") ? base : ["全体", ...base];
+  }, [teamTargetGroups]);
+
+  const effectiveDutyGroups = useMemo(() => {
+    return teamDutyGroups;
+  }, [teamDutyGroups]);
+
   // チーム切替時にキャッシュ済み初期時間を同期
   useEffect(() => {
     setScheduleDefaultTimes(loadCachedTeamScheduleDefaultTimes(currentTeam?.id));
@@ -548,14 +634,14 @@ export default function LiffSchedulePage() {
 
   const VALID_ATTENDANCE_STATUSES = ["duty", "help", "setup", "game", "present", "late", "partial", "absent"];
 
-  const getChildAttendance = (eventId: string, childId: string) => {
+  const getChildAttendance = (eventId: string, childId: string): AttendanceMarkType | string => {
     if (childAttendanceMap[eventId]?.[childId] && childAttendanceMap[eventId][childId] !== "pending") {
       return childAttendanceMap[eventId][childId];
     }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_child_att_${eventId}_${childId}`);
       if (cached && VALID_ATTENDANCE_STATUSES.includes(cached)) {
-        return cached as any;
+        return cached as AttendanceMarkType;
       }
     }
     return childAttendanceMap[eventId]?.[childId] || "pending";
@@ -565,17 +651,17 @@ export default function LiffSchedulePage() {
     return childGroupMap[eventId]?.[childId] || defaultGroupId || "";
   };
 
-  const getEventAttendance = (eventId: string, defaultStatus?: string) => {
+  const getEventAttendance = (eventId: string, defaultStatus?: string): AttendanceMarkType | string => {
     if (attendanceMap[eventId] && attendanceMap[eventId] !== "pending") {
       return attendanceMap[eventId];
     }
     if (typeof window !== "undefined") {
       const cached = localStorage.getItem(`iscore_my_att_${eventId}`);
       if (cached && VALID_ATTENDANCE_STATUSES.includes(cached)) {
-        return cached as any;
+        return cached as AttendanceMarkType;
       }
     }
-    return (attendanceMap[eventId] || defaultStatus || "pending") as any;
+    return attendanceMap[eventId] || defaultStatus || "pending";
   };
 
   const getParentSelectedGroup = (eventId: string, defaultGroupId?: string) => {
@@ -866,7 +952,10 @@ export default function LiffSchedulePage() {
           finalEvent.pmType = singleGrp.pmType || "practice";
           finalEvent.pmTime = singleGrp.pmTime || defaultTimes.pmTimeLabel;
           finalEvent.pmLocation = singleGrp.pmLocation || "";
-          finalEvent.dutyGroup = singleGrp.dutyGroup || "1班";
+          finalEvent.dutyGroup =
+            singleGrp.dutyGroup && singleGrp.dutyGroup !== "なし"
+              ? singleGrp.dutyGroup
+              : "";
           finalEvent.carInfo = singleGrp.carInfo || "";
         }
         finalEvent.activityGroups = undefined;
@@ -1170,6 +1259,14 @@ export default function LiffSchedulePage() {
             teamId={currentTeam?.id || "team_1"}
             teamName={currentTeam?.name || "チーム"}
             isLiff={true}
+            currentDate={currentDate}
+            onDateChange={(nextDate) => {
+              setCurrentDate(nextDate);
+              setSelectedDateStr(null);
+            }}
+            targetGroups={effectiveTargetGroups}
+            dutyGroups={effectiveDutyGroups}
+            useDutyGroups={useDutyGroups}
             onSaved={() => {
               void loadSchedule(true);
             }}
@@ -1401,7 +1498,7 @@ export default function LiffSchedulePage() {
 
         {/* ローディング */}
         {isLoading && !loadError ? (
-          <div className="space-y-3.5 animate-pulse">
+          <div className="space-y-3.5">
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
@@ -1635,6 +1732,10 @@ export default function LiffSchedulePage() {
                                   pmLocation: gPmOff
                                     ? ""
                                     : g.pmLocation || g.amLocation || g.location || "",
+                                  dutyGroup:
+                                    g.dutyGroup && g.dutyGroup !== "なし"
+                                      ? g.dutyGroup
+                                      : "",
                                 };
                               });
 
@@ -1672,7 +1773,10 @@ export default function LiffSchedulePage() {
                                   : ev.eventType || "practice",
                                 pmTime: isPmOff ? "" : (ev.pmTime || editDefaults.pmTimeLabel),
                                 pmLocation: isPmOff ? "" : (ev.pmLocation || ev.amLocation || ev.location || ""),
-                                dutyGroup: ev.dutyGroup || "1班",
+                                dutyGroup:
+                                  ev.dutyGroup && ev.dutyGroup !== "なし"
+                                    ? ev.dutyGroup
+                                    : "",
                                 activityGroups: grps,
                               });
                             }}
@@ -2161,7 +2265,7 @@ export default function LiffSchedulePage() {
       </div>
 
       {/* 🌟 予定の個別詳細編集モーダル（広々レイアウト ＆ 午前午後常に設定 ＆ 横並び入力） */}
-      {mounted && editingEvent && createPortal(
+      {mounted && typeof document !== "undefined" && editingEvent && createPortal(
         (() => {
         const hasGroups = Boolean(editingEvent.activityGroups && editingEvent.activityGroups.length > 0);
         const groups = editingEvent.activityGroups || [];
@@ -2229,9 +2333,22 @@ export default function LiffSchedulePage() {
         const curPmLocation = currentEditGroup
           ? currentEditGroup.pmLocation || currentEditGroup.amLocation || ""
           : editingEvent.pmLocation || editingEvent.amLocation || "";
-        const curDutyGroup = currentEditGroup ? (currentEditGroup.dutyGroup || "1班") : (editingEvent.dutyGroup || "1班");
+        const rawCurDutyGroup = currentEditGroup
+          ? currentEditGroup.dutyGroup || ""
+          : editingEvent.dutyGroup || "";
+        const curDutyGroup = rawCurDutyGroup === "なし" ? "" : rawCurDutyGroup;
         const curCarInfo = currentEditGroup ? (currentEditGroup.carInfo || "") : (editingEvent.carInfo || "");
         const curTargetGroup = currentEditGroup ? (currentEditGroup.targetGroup || "全体") : (editingEvent.targetGroup || "全体");
+        const modalTargetGroups = effectiveTargetGroups.includes(curTargetGroup)
+          ? effectiveTargetGroups
+          : [...effectiveTargetGroups, curTargetGroup];
+        const baseDutyGroups =
+          effectiveDutyGroups.length > 0 ? effectiveDutyGroups : DEFAULT_DUTY_GROUPS;
+        const modalDutyGroupOptions = [
+          ...baseDutyGroups.filter((g) => g !== "なし"),
+          ...(curDutyGroup && !baseDutyGroups.includes(curDutyGroup) ? [curDutyGroup] : []),
+          "なし",
+        ];
         const amRange = parseTimeRangeLabel(
           curAmTime,
           editDateDefaults.amStart,
@@ -2273,9 +2390,9 @@ export default function LiffSchedulePage() {
         };
 
         return (
-          <div className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
+          <div className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150">
             <div
-              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
+              className="w-full max-w-2xl rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col animate-in slide-in-from-bottom-4 duration-200"
               onClick={(e) => e.stopPropagation()}
             >
               {/* モーダルヘッダー: A-3 上帯ダークキャップ */}
@@ -2367,6 +2484,11 @@ export default function LiffSchedulePage() {
                             const nextHasPm = base
                               ? Boolean(base.hasPm && base.pmType !== "off")
                               : Boolean(editingEvent.hasPm && editingEvent.pmType !== "off");
+                            const collapsedDuty =
+                              (base?.dutyGroup && base.dutyGroup !== "なし" ? base.dutyGroup : "") ||
+                              (editingEvent.dutyGroup && editingEvent.dutyGroup !== "なし"
+                                ? editingEvent.dutyGroup
+                                : "");
                             setEditingEvent({
                               ...editingEvent,
                               targetGroup: base?.targetGroup || editingEvent.targetGroup || "全体",
@@ -2398,7 +2520,7 @@ export default function LiffSchedulePage() {
                               pmLocation: nextHasPm
                                 ? base?.pmLocation || editingEvent.pmLocation || ""
                                 : "",
-                              dutyGroup: base?.dutyGroup || editingEvent.dutyGroup || "1班",
+                              dutyGroup: collapsedDuty,
                               carInfo: base?.carInfo || editingEvent.carInfo || "",
                               activityGroups: undefined,
                             });
@@ -2423,10 +2545,17 @@ export default function LiffSchedulePage() {
                             const g1HasPm = Boolean(
                               editingEvent.hasPm && editingEvent.pmType !== "off"
                             );
+                            const g1Target = editingEvent.targetGroup || "全体";
+                            const g2Target =
+                              effectiveTargetGroups.find(
+                                (g) => g !== "全体" && g !== g1Target
+                              ) ||
+                              effectiveTargetGroups.find((g) => g !== "全体") ||
+                              "全体";
                             const grp1: ActivityGroup = {
                               id: `grp_${Date.now()}_1`,
                               name: "グループ1",
-                              targetGroup: editingEvent.targetGroup || "全体",
+                              targetGroup: g1Target,
                               hasAm: g1HasAm,
                               amType: g1HasAm
                                 ? editingEvent.amType && editingEvent.amType !== "off"
@@ -2447,13 +2576,16 @@ export default function LiffSchedulePage() {
                                 ? editingEvent.pmTime || editDateDefaults.pmTimeLabel
                                 : "",
                               pmLocation: g1HasPm ? editingEvent.pmLocation || "" : "",
-                              dutyGroup: editingEvent.dutyGroup || "1班",
+                              dutyGroup:
+                                editingEvent.dutyGroup && editingEvent.dutyGroup !== "なし"
+                                  ? editingEvent.dutyGroup
+                                  : "",
                               carInfo: editingEvent.carInfo || "",
                             };
                             const grp2: ActivityGroup = {
                               id: `grp_${Date.now()}_2`,
-                              name: "グループ2",
-                              targetGroup: "Bチーム",
+                              name: g2Target !== "全体" ? `${g2Target}組` : "グループ2",
+                              targetGroup: g2Target,
                               hasAm: true,
                               amType: "practice",
                               amTime: editDateDefaults.amTimeLabel,
@@ -2462,7 +2594,7 @@ export default function LiffSchedulePage() {
                               pmType: "off",
                               pmTime: editDateDefaults.pmTimeLabel,
                               pmLocation: "",
-                              dutyGroup: "2班",
+                              dutyGroup: "",
                               carInfo: "",
                             };
                             setEditingEvent({
@@ -2485,7 +2617,7 @@ export default function LiffSchedulePage() {
                               pmType: "off",
                               pmTime: editDateDefaults.pmTimeLabel,
                               pmLocation: "",
-                              dutyGroup: "2班",
+                              dutyGroup: "",
                               carInfo: "",
                             };
                             setEditingEvent({
@@ -2586,7 +2718,10 @@ export default function LiffSchedulePage() {
                                       ? remaining.pmTime || editDateDefaults.pmTimeLabel
                                       : "",
                                     pmLocation: remHasPm ? remaining.pmLocation || "" : "",
-                                    dutyGroup: remaining.dutyGroup || "1班",
+                                    dutyGroup:
+                                      remaining.dutyGroup && remaining.dutyGroup !== "なし"
+                                        ? remaining.dutyGroup
+                                        : "",
                                     carInfo: remaining.carInfo || "",
                                     activityGroups: undefined,
                                   });
@@ -2641,7 +2776,7 @@ export default function LiffSchedulePage() {
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        {TARGET_GROUPS.map((tg) => {
+                        {modalTargetGroups.map((tg) => {
                           const isSel = curTargetGroup === tg;
                           return (
                             <button
@@ -2957,18 +3092,31 @@ export default function LiffSchedulePage() {
 
                   {/* グループ固有の当番班・配車（複数グループ時） */}
                   {hasGroups && currentEditGroup && (
-                    <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border">
-                      <div>
-                        <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">このグループの当番班</label>
-                        <input
-                          type="text"
-                          value={curDutyGroup}
-                          onChange={(e) => updateCurrentActivity({ dutyGroup: e.target.value })}
-                          placeholder="例: 1班"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
-                        />
+                    useDutyGroups || Boolean(curDutyGroup) ? (
+                      <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-border">
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">このグループの当番班</label>
+                          <input
+                            type="text"
+                            value={curDutyGroup}
+                            onChange={(e) => updateCurrentActivity({ dutyGroup: e.target.value })}
+                            placeholder="当番なしは空欄"
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">このグループの配車</label>
+                          <input
+                            type="text"
+                            value={curCarInfo}
+                            onChange={(e) => updateCurrentActivity({ carInfo: e.target.value })}
+                            placeholder="例: 3台/現地集合"
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
+                          />
+                        </div>
                       </div>
-                      <div>
+                    ) : (
+                      <div className="pt-2 border-t border-border">
                         <label className="text-[10px] font-bold text-muted-foreground block mb-0.5">このグループの配車</label>
                         <input
                           type="text"
@@ -2978,32 +3126,71 @@ export default function LiffSchedulePage() {
                           className="w-full px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden"
                         />
                       </div>
-                    </div>
+                    )
                   )}
                 </div>
 
                 {/* 📋 4. 全体共通情報（当番班・弁当・補食・連絡事項） */}
                 <div className="space-y-3 p-3.5 rounded-2xl bg-muted/35 border border-border">
                   {/* 当番班（グループ分けなし時） */}
-                  {!hasGroups && (
+                  {!hasGroups && useDutyGroups && (
                     <div>
                       <label className="text-[10px] font-bold text-muted-foreground block mb-1">当番班</label>
-                      <div className="grid grid-cols-5 gap-1">
-                        {DUTY_GROUPS.map((dg) => (
-                          <button
-                            key={dg}
-                            type="button"
-                            onClick={() => setEditingEvent({ ...editingEvent, dutyGroup: dg })}
-                            className={`py-1 text-center rounded-lg text-[11px] transition-all active:scale-95 cursor-pointer ${
-                              editingEvent.dutyGroup === dg
-                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-black shadow-2xs"
-                                : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted font-bold"
-                            }`}
-                          >
-                            {dg}
-                          </button>
-                        ))}
+                      <div className="flex flex-wrap gap-1.5">
+                        {modalDutyGroupOptions.map((dg) => {
+                          const isNone = dg === "なし";
+                          const isSel = isNone ? !curDutyGroup : curDutyGroup === dg;
+                          return (
+                            <button
+                              key={dg}
+                              type="button"
+                              onClick={() =>
+                                setEditingEvent({
+                                  ...editingEvent,
+                                  dutyGroup: isNone ? "" : dg,
+                                })
+                              }
+                              className={`px-3 py-1.5 text-center rounded-lg text-[11px] transition-all active:scale-95 cursor-pointer ${
+                                isSel
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 font-black shadow-2xs"
+                                  : "bg-card border border-border text-muted-foreground hover:text-foreground hover:bg-muted font-bold"
+                              }`}
+                            >
+                              {dg}
+                            </button>
+                          );
+                        })}
                       </div>
+                    </div>
+                  )}
+
+                  {!hasGroups && !useDutyGroups && Boolean(curDutyGroup) && (
+                    <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-card border border-border">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span className="text-[11px] font-bold text-muted-foreground">現在の当番班:</span>
+                        <span className="text-xs font-black text-foreground truncate">{curDutyGroup}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingEvent({ ...editingEvent, dutyGroup: "" })}
+                        className="px-2.5 py-1 rounded-lg bg-muted hover:bg-rose-500/12 text-muted-foreground hover:text-rose-600 dark:hover:text-rose-400 border border-border text-[10.5px] font-black transition-all active:scale-95 cursor-pointer shrink-0"
+                      >
+                        解除
+                      </button>
+                    </div>
+                  )}
+
+                  {!hasGroups && !useDutyGroups && !curDutyGroup && (
+                    <div className="flex items-center justify-between gap-2 text-[10.5px] font-bold text-muted-foreground">
+                      <span>当番班: 未使用</span>
+                      <Link
+                        href="/liff/settings/team"
+                        onClick={() => setEditingEvent(null)}
+                        className="text-primary hover:underline font-black"
+                      >
+                        チーム設定で当番班を使う ➔
+                      </Link>
                     </div>
                   )}
 
@@ -3085,7 +3272,7 @@ export default function LiffSchedulePage() {
               </div>
 
               {/* モーダルフッター */}
-              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),24px)] sm:pb-3.5 border-t border-border flex items-center justify-between bg-card shrink-0 gap-3">
+              <div className="px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border flex items-center justify-between bg-card shrink-0 gap-3">
                 <button
                   type="button"
                   onClick={() => setEditingEvent(null)}

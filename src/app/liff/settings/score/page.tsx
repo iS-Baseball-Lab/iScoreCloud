@@ -60,7 +60,11 @@ import {
   type ScorebookSymbolRules,
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/scorebook-symbol-rules";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  fetchLiffJsonSWR,
+  invalidateLiffApiCache,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   ensureCompactApiImage,
@@ -69,6 +73,7 @@ import {
 } from "@/lib/liff/scorebook-image";
 import {
   DEFAULT_LIFF_SCORE_SETTINGS,
+  hydrateLiffScoreSettingsFromServer,
   loadLiffScoreSettings,
   loadTeamScoreNameDisplayMode,
   saveLiffScoreSettings,
@@ -80,6 +85,15 @@ import {
 } from "@/lib/liff/score-settings";
 import type { ImportScopeMode } from "@/types/scorebook-v2";
 import { toast } from "sonner";
+
+interface ScoreSettingsApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  canEdit?: boolean;
+  orgCategory?: string;
+  settings?: LiffScoreSettings;
+  error?: string;
+}
 
 interface ScoreContextApiResponse {
   success: boolean;
@@ -120,7 +134,8 @@ interface StagedLegendState {
 
 export default function LiffScoreSettingsPage() {
   const { currentTeam, refreshTeams } = useLiff();
-  const { canMutate, isDemoMode, canUsePaidAi } = useLiffPermissions();
+  const { canMutate, canEditScore, isDemoMode, canUsePaidAi } =
+    useLiffPermissions();
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
@@ -129,6 +144,19 @@ export default function LiffScoreSettingsPage() {
     isDemoContext || isDemoMode || currentTeam?.id === "demo-team";
   const effectiveCanEditRules = canMutate || isEffectiveDemo;
   const canManageCloudLegend = canUsePaidAi && !isEffectiveDemo;
+
+  const [serverCanEditScoreSettings, setServerCanEditScoreSettings] =
+    useState<boolean | null>(null);
+  const [orgCategory, setOrgCategory] = useState<string>("other");
+  const [isSavingScoreSettings, setIsSavingScoreSettings] = useState(false);
+  const [scoreSettingsSavedStamp, setScoreSettingsSavedStamp] =
+    useState<boolean>(false);
+
+  const effectiveCanEditScoreSettings = isEffectiveDemo
+    ? true
+    : serverCanEditScoreSettings !== null
+    ? serverCanEditScoreSettings
+    : Boolean(canMutate || canEditScore);
 
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
   const [resolvedTeamName, setResolvedTeamName] = useState<string>("");
@@ -147,8 +175,8 @@ export default function LiffScoreSettingsPage() {
   const [confirmClearLegend, setConfirmClearLegend] = useState(false);
   const [isZoomOpen, setIsZoomOpen] = useState(false);
 
-  const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(
-    DEFAULT_LIFF_SCORE_SETTINGS
+  const [scoreSettings, setScoreSettings] = useState<LiffScoreSettings>(() =>
+    loadLiffScoreSettings(currentTeam?.id)
   );
   const [activeSymbolRules, setActiveSymbolRules] =
     useState<ScorebookSymbolRules>(DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES);
@@ -157,10 +185,68 @@ export default function LiffScoreSettingsPage() {
   const [isRulesGuideOpen, setIsRulesGuideOpen] = useState(false);
   const stageSeqRef = useRef<number>(0);
 
-  // 1. 端末保存のスコア取込初期設定を読み込み
+  // 1. チーム別のスコア規定・球数制限設定をローカル即時復元＋D1からSWR同期
   useEffect(() => {
-    setScoreSettings(loadLiffScoreSettings());
-  }, []);
+    const qTeam = currentTeam?.id || getClientQueryParam("teamId") || "demo-team";
+    setScoreSettings(loadLiffScoreSettings(qTeam));
+    setServerCanEditScoreSettings(null);
+    setScoreSettingsSavedStamp(false);
+
+    let cancelled = false;
+    const url = `/api/liff/score-settings?teamId=${encodeURIComponent(qTeam)}`;
+    const cached = peekLiffApiCache<ScoreSettingsApiResponse>(url);
+    if (cached?.success && cached.settings) {
+      const hydrated = hydrateLiffScoreSettingsFromServer(
+        qTeam,
+        cached.settings
+      );
+      setScoreSettings(hydrated);
+      if (typeof cached.canEdit === "boolean") {
+        setServerCanEditScoreSettings(cached.canEdit);
+      }
+      if (cached.orgCategory) {
+        setOrgCategory(cached.orgCategory);
+      }
+    }
+
+    void fetchLiffJsonSWR<ScoreSettingsApiResponse>(url, {
+      onRevalidate: (fresh) => {
+        if (cancelled || !fresh?.success || !fresh.settings) return;
+        const hydrated = hydrateLiffScoreSettingsFromServer(
+          qTeam,
+          fresh.settings
+        );
+        setScoreSettings(hydrated);
+        if (typeof fresh.canEdit === "boolean") {
+          setServerCanEditScoreSettings(fresh.canEdit);
+        }
+        if (fresh.orgCategory) {
+          setOrgCategory(fresh.orgCategory);
+        }
+      },
+    })
+      .then((res) => {
+        if (cancelled || !res?.success || !res.settings) return;
+        const hydrated = hydrateLiffScoreSettingsFromServer(
+          qTeam,
+          res.settings
+        );
+        setScoreSettings(hydrated);
+        if (typeof res.canEdit === "boolean") {
+          setServerCanEditScoreSettings(res.canEdit);
+        }
+        if (res.orgCategory) {
+          setOrgCategory(res.orgCategory);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch score settings:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTeam?.id]);
 
   // 2. チーム登録済みの「スコア記号早見表」URLを取得
   const fetchTeamLegendContext = useCallback(async () => {
@@ -530,14 +616,57 @@ export default function LiffScoreSettingsPage() {
     }
   };
 
-  const updateLocalSetting = <K extends keyof LiffScoreSettings>(
+  const updateLocalSetting = async <K extends keyof LiffScoreSettings>(
     key: K,
     value: LiffScoreSettings[K],
     toastLabel: string
   ) => {
-    const updated = saveLiffScoreSettings({ [key]: value });
+    if (!effectiveCanEditScoreSettings) {
+      toast.error("閲覧専用メンバーのため設定は変更できません");
+      return;
+    }
+    const targetTeamId =
+      (resolvedTeamId || currentTeam?.id || getClientQueryParam("teamId") || "demo-team").trim();
+    const updated = saveLiffScoreSettings({ [key]: value }, targetTeamId);
     setScoreSettings(updated);
-    toast.success(`${toastLabel}を変更しました`);
+
+    if (isEffectiveDemo || targetTeamId === "demo-team") {
+      setScoreSettingsSavedStamp(true);
+      toast.success(`${toastLabel}を変更しました`);
+      return;
+    }
+
+    setIsSavingScoreSettings(true);
+    try {
+      const res = await fetch("/api/liff/score-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: targetTeamId,
+          settings: updated,
+        }),
+      });
+      const json = (await res.json()) as ScoreSettingsApiResponse;
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || "スコア設定の保存に失敗しました");
+      }
+      if (json.settings) {
+        const synced = hydrateLiffScoreSettingsFromServer(
+          targetTeamId,
+          json.settings
+        );
+        setScoreSettings(synced);
+      }
+      invalidateLiffApiCache("/api/liff/score-settings");
+      setScoreSettingsSavedStamp(true);
+      toast.success(`${toastLabel}を保存しました（チーム共通）`);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "スコア設定の保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsSavingScoreSettings(false);
+    }
   };
 
   // ⚠️ 内部DBスキーマでは organizations (`orgName`) = チーム名、teams (`squadName`/`teamName`) = 構成名
@@ -767,12 +896,34 @@ export default function LiffScoreSettingsPage() {
                 試合・スコア規定
               </h2>
             </div>
-            <span className="text-[10px] font-bold text-slate-300 shrink-0">
-              試合作成・表記に反映
-            </span>
+            {isSavingScoreSettings ? (
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700 inline-flex items-center gap-1 shrink-0">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>保存中...</span>
+              </span>
+            ) : !effectiveCanEditScoreSettings ? (
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                閲覧専用
+              </span>
+            ) : scoreSettingsSavedStamp ? (
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 inline-flex items-center gap-1 shrink-0">
+                <CheckCircle2 className="w-3 h-3" />
+                <span>チーム保存済</span>
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                チーム共通設定
+              </span>
+            )}
           </div>
 
           <div className="p-4 space-y-4">
+            {!effectiveCanEditScoreSettings && (
+              <div className="p-2.5 rounded-xl bg-muted/50 border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
+                ※ 閲覧専用メンバーのため、チーム共通の試合・スコア規定は変更できません
+              </div>
+            )}
+
             {/* 0. スコア表示の自チーム名（チーム名 [organizations] vs 構成名 [teams]） */}
             <div className="space-y-2 pb-3.5 border-b border-border">
               <div className="flex items-center justify-between gap-2">
@@ -877,7 +1028,7 @@ export default function LiffScoreSettingsPage() {
                 <LiffSelect
                   value={String(scoreSettings.defaultInnings)}
                   onChange={(val) =>
-                    updateLocalSetting(
+                    void updateLocalSetting(
                       "defaultInnings",
                       Number(val),
                       "規定イニング初期値"
@@ -892,6 +1043,7 @@ export default function LiffScoreSettingsPage() {
                   title="規定イニング初期値"
                   accent="slate"
                   searchable={false}
+                  disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                   className="w-full bg-muted/35"
                 />
               </div>
@@ -903,7 +1055,7 @@ export default function LiffScoreSettingsPage() {
                 <LiffSelect
                   value={scoreSettings.defaultMatchType}
                   onChange={(val) =>
-                    updateLocalSetting(
+                    void updateLocalSetting(
                       "defaultMatchType",
                       val as ScoreDefaultMatchType,
                       "新規試合の初期種別"
@@ -917,6 +1069,7 @@ export default function LiffScoreSettingsPage() {
                   title="新規試合の初期種別"
                   accent="slate"
                   searchable={false}
+                  disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                   className="w-full bg-muted/35"
                 />
               </div>
@@ -940,10 +1093,11 @@ export default function LiffScoreSettingsPage() {
                     <button
                       key={m.id}
                       type="button"
+                      disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                       onClick={() =>
-                        updateLocalSetting("mercyRule", m.id, "コールド規定")
+                        void updateLocalSetting("mercyRule", m.id, "コールド規定")
                       }
-                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         isActive
                           ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                           : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
@@ -974,14 +1128,15 @@ export default function LiffScoreSettingsPage() {
                     <button
                       key={p.id}
                       type="button"
+                      disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                       onClick={() =>
-                        updateLocalSetting(
+                        void updateLocalSetting(
                           "positionNotation",
                           p.id,
                           "守備位置の表記形式"
                         )
                       }
-                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer ${
+                      className={`py-2 px-1 rounded-2xl text-xs font-bold transition-all active:scale-95 border cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         isActive
                           ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                           : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
@@ -1006,14 +1161,15 @@ export default function LiffScoreSettingsPage() {
               </div>
               <button
                 type="button"
+                disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                 onClick={() =>
-                  updateLocalSetting(
+                  void updateLocalSetting(
                     "dhDefault",
                     !scoreSettings.dhDefault,
                     "DH制初期値"
                   )
                 }
-                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer ${
+                className={`w-12 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                   scoreSettings.dhDefault
                     ? "bg-primary"
                     : "bg-muted border border-border"
@@ -1027,6 +1183,120 @@ export default function LiffScoreSettingsPage() {
                   }`}
                 />
               </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ━━━ セクション 1.5: ⚾ 1日の球数制限・肩肘保護アラート基準 ━━━ */}
+        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <h2 className="text-sm font-black text-white truncate">
+                ⚾ 1日の球数制限・肩肘保護アラート基準
+              </h2>
+              <p className="text-[10px] font-bold text-slate-300 truncate">
+                試合スコア入力・投球数モニタの注意／交代準備ライン
+              </p>
+            </div>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0 tabular-nums">
+              {scoreSettings.pitchCountLimit === null
+                ? "自動判定"
+                : `${scoreSettings.pitchCountLimit}球上限`}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="grid grid-cols-1 gap-2">
+              {(
+                [
+                  {
+                    limit: null,
+                    title: "大会規定・カテゴリから自動判定",
+                    badge:
+                      orgCategory === "gakudou"
+                        ? "学童 70球目安"
+                        : orgCategory === "chugaku" ||
+                          orgCategory === "junior_high"
+                        ? "中学 100球目安"
+                        : "標準",
+                    desc: "大会ごとの設定値、または所属カテゴリ規定を自動適用します",
+                  },
+                  {
+                    limit: 70,
+                    title: "学童基準 70球上限",
+                    badge: "50注意 / 60準備",
+                    desc: "全日本軟式野球連盟 学童部ガイドライン（1日70球以内）",
+                  },
+                  {
+                    limit: 85,
+                    title: "85球上限",
+                    badge: "65注意 / 75準備",
+                    desc: "高学年ローカル大会・少年硬式などの85球制限基準",
+                  },
+                  {
+                    limit: 100,
+                    title: "中学基準 100球上限",
+                    badge: "75注意 / 85準備",
+                    desc: "中学軟式・シニア等の1日100球制限ガイドライン",
+                  },
+                  {
+                    limit: 120,
+                    title: "120球上限",
+                    badge: "90注意 / 105準備",
+                    desc: "高校・一般カテゴリ等のコンディション管理目安",
+                  },
+                ] as ReadonlyArray<{
+                  limit: number | null;
+                  title: string;
+                  badge: string;
+                  desc: string;
+                }>
+              ).map((opt) => {
+                const isSelected = scoreSettings.pitchCountLimit === opt.limit;
+                return (
+                  <button
+                    key={opt.limit === null ? "auto" : String(opt.limit)}
+                    type="button"
+                    disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
+                    onClick={() =>
+                      void updateLocalSetting(
+                        "pitchCountLimit",
+                        opt.limit,
+                        "1日の球数制限基準"
+                      )
+                    }
+                    className={`p-3 rounded-2xl border text-left transition-all active:scale-[0.99] cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed space-y-1 ${
+                      isSelected
+                        ? "bg-teal-500/12 border-2 border-teal-600 shadow-2xs"
+                        : "bg-muted/40 border-border hover:bg-muted/70"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`text-xs font-black ${
+                          isSelected
+                            ? "text-teal-800 dark:text-teal-300"
+                            : "text-foreground"
+                        }`}
+                      >
+                        {opt.title}
+                      </span>
+                      <span
+                        className={`text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 tabular-nums ${
+                          isSelected
+                            ? "bg-teal-600 text-white"
+                            : "bg-card text-muted-foreground border border-border"
+                        }`}
+                      >
+                        {opt.badge}
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                      {opt.desc}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -1395,14 +1665,15 @@ export default function LiffScoreSettingsPage() {
                     <button
                       key={opt.id}
                       type="button"
+                      disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                       onClick={() =>
-                        updateLocalSetting(
+                        void updateLocalSetting(
                           "defaultImportScope",
                           opt.id,
                           "シート範囲の初期値"
                         )
                       }
-                      className={`py-2.5 px-2 rounded-2xl border text-[11px] transition-all active:scale-95 cursor-pointer ${
+                      className={`py-2.5 px-2 rounded-2xl border text-[11px] transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
                         isActive
                           ? "bg-primary/12 text-primary border-primary shadow-2xs font-black"
                           : "bg-muted/50 border-border text-muted-foreground hover:text-foreground font-bold"
@@ -1444,14 +1715,15 @@ export default function LiffScoreSettingsPage() {
                     <button
                       key={String(opt.value)}
                       type="button"
+                      disabled={!effectiveCanEditScoreSettings || isSavingScoreSettings}
                       onClick={() =>
-                        updateLocalSetting(
+                        void updateLocalSetting(
                           "defaultEnhancePencil",
                           opt.value,
                           "初期画質モード"
                         )
                       }
-                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer space-y-0.5 ${
+                      className={`p-3 rounded-2xl border text-left transition-all active:scale-95 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed space-y-0.5 ${
                         isActive
                           ? "bg-primary/12 text-primary border-primary shadow-2xs"
                           : "bg-muted/50 border-border text-foreground"

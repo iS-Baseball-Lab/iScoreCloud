@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Plus,
@@ -51,18 +52,51 @@ import {
   type BattedPlayVariant,
   type DirectOutcomeCode,
   type DirectPlayVariant,
+  type LiveReportPitcherCountSummary,
   type QuickBaserunningCode,
   type SimulatedPlayCandidate,
 } from "@/lib/liff/live-report-v2";
 import type {
+  PitchAlertEvaluation,
+  PitchAlertLevel,
+  PitchLimitSpec,
+} from "@/lib/liff/pitch-workload";
+import type {
   LiveReportBaseNum,
   LiveReportHalfInning,
   LiveReportOutputMode,
+  LiveReportPitchType,
   LiveReportPlayEntry,
   LiveReportRosterPlayer,
   LiveReportSubType,
   LiveReportV2Document,
 } from "@/types/live-report-v2";
+
+function getPitchAlertBannerClasses(level: PitchAlertLevel): string {
+  if (level === "limit") {
+    return "bg-red-600 border-red-700 text-white";
+  }
+  if (level === "prepare") {
+    return "bg-orange-50 border-orange-400 text-orange-950";
+  }
+  if (level === "caution") {
+    return "bg-amber-50 border-amber-300 text-amber-900";
+  }
+  return "";
+}
+
+function getPitchAlertChipClasses(level: PitchAlertLevel): string {
+  if (level === "limit") {
+    return "bg-red-600 text-white border-red-700";
+  }
+  if (level === "prepare") {
+    return "bg-orange-500 text-white border-orange-600";
+  }
+  if (level === "caution") {
+    return "bg-amber-200 text-amber-950 border-amber-400";
+  }
+  return "bg-card text-foreground border-border";
+}
 
 interface LiveAtBatPadCardProps {
   doc: LiveReportV2Document;
@@ -71,6 +105,14 @@ interface LiveAtBatPadCardProps {
   ) => void;
   rosterPlayers: ReadonlyArray<LiveReportRosterPlayer>;
   activeContextKey: string;
+  pendingPitches: ReadonlyArray<LiveReportPitchType>;
+  onChangePendingPitches: React.Dispatch<
+    React.SetStateAction<LiveReportPitchType[]>
+  >;
+  pitchSummary: LiveReportPitcherCountSummary;
+  pitchSpec: PitchLimitSpec;
+  pitchAlert: PitchAlertEvaluation;
+  viewerPitchAlerts?: ReadonlyArray<PitchAlertEvaluation>;
   outputMode?: LiveReportOutputMode;
   onChangeOutputMode?: (mode: LiveReportOutputMode) => void;
   onCopyText?: () => void;
@@ -730,6 +772,12 @@ export function LiveAtBatPadCard({
   onChangeDoc,
   rosterPlayers,
   activeContextKey,
+  pendingPitches,
+  onChangePendingPitches,
+  pitchSummary,
+  pitchSpec,
+  pitchAlert,
+  viewerPitchAlerts,
   outputMode = "full",
   onChangeOutputMode,
   onCopyText,
@@ -1064,8 +1112,132 @@ export function LiveAtBatPadCard({
     });
   };
 
+  const pendingBallStrikeCount = useMemo(() => {
+    let balls = 0;
+    let strikes = 0;
+    for (const p of pendingPitches) {
+      if (p === "ball") {
+        balls += 1;
+      } else if (p === "strike") {
+        strikes += 1;
+      } else if (p === "foul" && strikes < 2) {
+        strikes += 1;
+      }
+    }
+    return { balls, strikes };
+  }, [pendingPitches]);
+
+  const liveMyPitcherTotal =
+    pitchSummary.activeMyPitcherPitches +
+    (!isMyAttack ? pendingPitches.length : 0);
+  const liveOpponentPitchTotal =
+    pitchSummary.opponentTotalPitches +
+    (isMyAttack ? pendingPitches.length : 0);
+
+  const handleAppendPendingPitch = (pitchType: "ball" | "strike" | "foul") => {
+    if (readOnly) return;
+    onChangePendingPitches((prev) => [...prev, pitchType]);
+  };
+
+  const handleQuickPitchDelta = (delta: 1 | -1) => {
+    if (readOnly) return;
+    const targetKey = isMyAttack
+      ? "__opponent__"
+      : pitchSummary.activeMyPitcherKey;
+
+    if (delta === -1 && pendingPitches.length > 0) {
+      onChangePendingPitches((prev) => prev.slice(0, -1));
+      return;
+    }
+
+    const currentBaseTotal = isMyAttack
+      ? pitchSummary.opponentTotalPitches
+      : pitchSummary.activeMyPitcherPitches;
+    if (delta === -1 && currentBaseTotal <= 0) {
+      return;
+    }
+
+    onChangeDoc((prev) => {
+      const nextAdj = { ...(prev.pitcherPitchAdjustments || {}) };
+      const cur = typeof nextAdj[targetKey] === "number" ? nextAdj[targetKey] : 0;
+      const updated = cur + delta;
+      if (updated === 0) {
+        delete nextAdj[targetKey];
+      } else {
+        nextAdj[targetKey] = updated;
+      }
+      return {
+        ...prev,
+        pitcherPitchAdjustments: nextAdj,
+      };
+    });
+  };
+
+  const handleQuickSwitchPitchRule = (target: 70 | 100 | "none") => {
+    if (readOnly) return;
+    onChangeDoc((prev) => ({
+      ...prev,
+      pitchLimitOverride: prev.pitchLimitOverride === target ? null : target,
+    }));
+  };
+
   const handleRecordAtBat = () => {
     if (readOnly || !finalPlayText) return;
+
+    const hasExistingPitches =
+      doc.halfInnings.some((h) =>
+        h.entries.some(
+          (e) =>
+            (Array.isArray(e.pitches) && e.pitches.length > 0) ||
+            (typeof e.pitchCount === "number" && e.pitchCount > 0)
+        )
+      ) ||
+      Object.values(doc.pitcherPitchAdjustments || {}).some(
+        (v) => typeof v === "number" && v !== 0
+      );
+    const isPitchTrackingActive =
+      pendingPitches.length > 0 || hasExistingPitches;
+
+    let attachedPitches: LiveReportPitchType[] | undefined = undefined;
+    if (isPitchTrackingActive) {
+      const finalPitches: LiveReportPitchType[] = [...pendingPitches];
+      const balls = pendingBallStrikeCount.balls;
+      const strikes = pendingBallStrikeCount.strikes;
+
+      const isIntentionalWalk =
+        selectedDirect === "ibb" ||
+        (!selectedDirect && !selectedBatted && finalPlayText.includes("敬遠"));
+      const isWalk =
+        !isIntentionalWalk &&
+        (selectedDirect === "walk" ||
+          (!selectedDirect && !selectedBatted && finalPlayText.includes("四球")));
+      const isStrikeout =
+        selectedDirect === "strikeout_swing" ||
+        selectedDirect === "strikeout_look" ||
+        selectedDirect === "dropped_3rd_out" ||
+        selectedDirect === "dropped_3rd_safe" ||
+        (selectedBatted === "double_play" &&
+          selectedBattedVariant === "dp_strikeout_cs") ||
+        (!selectedDirect &&
+          !selectedBatted &&
+          (finalPlayText.includes("三振") || finalPlayText.includes("振逃")));
+
+      if (isIntentionalWalk) {
+        // 敬遠で pendingPitches が空ならそのまま空配列
+      } else if (isWalk) {
+        if (balls < 4) {
+          finalPitches.push("ball");
+        }
+      } else if (isStrikeout) {
+        if (strikes < 3) {
+          finalPitches.push("strike");
+        }
+      } else {
+        finalPitches.push("in_play");
+      }
+      attachedPitches = finalPitches;
+    }
+
     const newEntry: LiveReportPlayEntry = {
       id: `ab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       entryType: "batter",
@@ -1082,6 +1254,18 @@ export function LiveAtBatPadCard({
       runsScored: finalRunsScored,
       chainedPlays: [],
       eventText: "",
+      ...(attachedPitches !== undefined
+        ? {
+            pitches: attachedPitches,
+            pitchCount: attachedPitches.length,
+            ...(!isMyAttack
+              ? {
+                  pitcherPlayerId: pitchSummary.activeMyPitcherId,
+                  pitcherName: pitchSummary.activeMyPitcherName,
+                }
+              : {}),
+          }
+        : {}),
     };
 
     onChangeDoc((prev) => {
@@ -1119,6 +1303,7 @@ export function LiveAtBatPadCard({
       };
     });
 
+    onChangePendingPitches([]);
     setShowCustomOverride(false);
     setManualStartOuts(null);
     setManualStartRunners(null);
@@ -1990,9 +2175,9 @@ export function LiveAtBatPadCard({
             </div>
           </div>
 
-          {/* ライブ状況サマリー帯（アウト・走者・現在打席） */}
-          <div className="shrink-0 px-3 py-1.5 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-            <div className="flex items-center gap-2 min-w-0">
+          {/* ライブ状況サマリー帯（アウト・走者・現在打席・投手球数） */}
+          <div className="shrink-0 px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 font-black text-slate-100 shrink-0">
                 <span>
                   {autoSituation.outs >= 3
@@ -2025,12 +2210,65 @@ export function LiveAtBatPadCard({
                   )}
                 </span>
               )}
+
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-md border font-black text-[10px] tabular-nums shrink-0",
+                  pitchAlert.level !== "none"
+                    ? getPitchAlertChipClasses(pitchAlert.level)
+                    : "bg-slate-800 border-slate-700 text-slate-200"
+                )}
+              >
+                <span>
+                  ⚾{" "}
+                  {formatPlayerReportName(
+                    pitchSummary.activeMyPitcherName,
+                    doc.showSurnameOnly
+                  )}
+                  : {pitchSummary.activeMyPitcherPitches}球
+                  {pitchSpec.limit ? `/${pitchSpec.limit}` : ""}
+                </span>
+                {pitchAlert.badgeText && <span>({pitchAlert.badgeText})</span>}
+              </span>
             </div>
 
             <span className="text-[10.5px] font-bold text-sky-300 shrink-0">
               入力担当: {reporterLabel}
             </span>
           </div>
+
+          {(() => {
+            const effectiveViewerAlerts =
+              viewerPitchAlerts && viewerPitchAlerts.length > 0
+                ? viewerPitchAlerts
+                : pitchAlert.level !== "none"
+                ? [pitchAlert]
+                : [];
+            if (effectiveViewerAlerts.length === 0) return null;
+            return (
+              <div className="shrink-0 px-2.5 py-1.5 bg-slate-950 border-b border-slate-800 space-y-1">
+                {effectiveViewerAlerts.map((alertItem, idx) => (
+                  <div
+                    key={`viewer-pitch-alert-${idx}`}
+                    className={cn(
+                      "px-2.5 py-1.5 rounded-lg border flex items-start gap-1.5",
+                      getPitchAlertBannerClasses(alertItem.level)
+                    )}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <div className="min-w-0 flex-1 leading-tight">
+                      <p className="text-[11px] font-black">
+                        {alertItem.bannerTitle}
+                      </p>
+                      <p className="text-[10px] font-bold opacity-95 mt-0.5">
+                        {alertItem.bannerDetail}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* 速報本文（画面いっぱいにゆったり表示） */}
           <div
@@ -2256,6 +2494,42 @@ export function LiveAtBatPadCard({
             </div>
           </div>
 
+          {/* 球数制限・肩肘保護ソリッドアラートバナー（到達時のみ表示・外枠スクロール0） */}
+          {pitchAlert.level !== "none" && (
+            <div className="shrink-0 px-2.5 py-1 bg-slate-950 border-b border-slate-800">
+              <div
+                className={cn(
+                  "px-2 py-1 rounded-lg border flex items-center justify-between gap-2",
+                  getPitchAlertBannerClasses(pitchAlert.level)
+                )}
+              >
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <div className="min-w-0 leading-tight">
+                    <p className="text-[10.5px] font-black truncate">
+                      {pitchAlert.bannerTitle}
+                    </p>
+                    <p className="text-[9.5px] font-bold truncate opacity-95">
+                      {pitchAlert.bannerDetail}
+                    </p>
+                  </div>
+                </div>
+                {pitchAlert.badgeText && (
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 border",
+                      pitchAlert.level === "limit"
+                        ? "bg-white text-red-700 border-red-200"
+                        : getPitchAlertChipClasses(pitchAlert.level)
+                    )}
+                  >
+                    {pitchAlert.badgeText}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* モニター本文（自動で残り縦幅いっぱいに伸縮し、長くなったらここだけスクロール） */}
           <div
             ref={monitorScrollRef}
@@ -2457,7 +2731,7 @@ export function LiveAtBatPadCard({
               </div>
             </div>
 
-            {/* 下段: 現在の打者 ＆ 選手交代・微調整・試合終了 */}
+            {/* 中段: 現在の打者 ＆ 選手交代・微調整・試合終了 */}
             <div className="flex items-center justify-between gap-1 pt-1 border-t border-border/70">
               <div className="flex items-center gap-1 min-w-0 flex-1">
                 <button
@@ -2560,6 +2834,126 @@ export function LiveAtBatPadCard({
                     )}
                   />
                   <span>{doc.isGameFinished ? "終了ON" : "終了"}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 下段: 球数カウンター ＆ 規定ワンタップ切替ピル */}
+            <div className="pt-1 border-t border-border/70 space-y-1">
+              <div className="flex items-center justify-between gap-1 min-w-0">
+                <div className="flex items-center gap-1 min-w-0 overflow-hidden">
+                  <span className="text-[10px] font-black text-foreground truncate tabular-nums">
+                    ⚾{" "}
+                    {formatPlayerReportName(
+                      pitchSummary.activeMyPitcherName,
+                      doc.showSurnameOnly
+                    )}
+                    : {liveMyPitcherTotal}球
+                    {pitchSpec.limit ? `/${pitchSpec.limit}` : ""}
+                  </span>
+                  {pitchAlert.level !== "none" && pitchAlert.badgeText && (
+                    <span
+                      className={cn(
+                        "px-1.5 py-0.5 rounded border text-[9px] font-black leading-none shrink-0 tabular-nums",
+                        getPitchAlertChipClasses(pitchAlert.level)
+                      )}
+                    >
+                      {pitchAlert.badgeText}
+                    </span>
+                  )}
+                  {isMyAttack &&
+                    (liveOpponentPitchTotal > 0 || pendingPitches.length > 0) && (
+                      <span className="text-[9.5px] font-bold text-muted-foreground shrink-0 tabular-nums">
+                        ｜相手投:{liveOpponentPitchTotal}球
+                      </span>
+                    )}
+                  {pendingPitches.length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded bg-[#0f172a] text-amber-300 text-[9px] font-black font-mono leading-none shrink-0 tabular-nums">
+                      B{pendingBallStrikeCount.balls}-S{pendingBallStrikeCount.strikes}(
+                      {pendingPitches.length}球)
+                    </span>
+                  )}
+                </div>
+
+                {/* 球数規定ワンタップ切替ピル (70球 / 100球 / なし) */}
+                <div className="inline-flex items-center bg-card border border-border rounded-lg p-0.5 shrink-0">
+                  {(
+                    [
+                      { target: 70 as const, label: "70球", activeLimit: 70 },
+                      { target: 100 as const, label: "100球", activeLimit: 100 },
+                      { target: "none" as const, label: "なし", activeLimit: null },
+                    ] as const
+                  ).map((item) => {
+                    const isManualSelected = doc.pitchLimitOverride === item.target;
+                    const isEffectiveDefault =
+                      doc.pitchLimitOverride == null &&
+                      pitchSpec.limit === item.activeLimit;
+                    return (
+                      <button
+                        key={String(item.target)}
+                        type="button"
+                        onClick={() => handleQuickSwitchPitchRule(item.target)}
+                        title={`1日の球数制限基準を「${item.label}」に切替（再タップで規定自動へ戻す）`}
+                        className={cn(
+                          "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none transition-colors cursor-pointer",
+                          isManualSelected
+                            ? "bg-[#0f172a] text-white"
+                            : isEffectiveDefault
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 1行球数入力バー: [ボール +1] [ストライク +1] [ファウル +1] [+1] [-1] */}
+              <div className="grid grid-cols-[1fr_1.15fr_1.05fr_auto_auto] gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleAppendPendingPitch("ball")}
+                  className="h-6 px-1.5 rounded-lg border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black inline-flex items-center justify-center whitespace-nowrap cursor-pointer active:scale-95"
+                >
+                  ボール +1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAppendPendingPitch("strike")}
+                  className="h-6 px-1.5 rounded-lg border border-amber-500 bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10px] font-black inline-flex items-center justify-center whitespace-nowrap cursor-pointer active:scale-95"
+                >
+                  ストライク +1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAppendPendingPitch("foul")}
+                  className="h-6 px-1.5 rounded-lg border border-slate-600 bg-slate-700 hover:bg-slate-800 text-white text-[10px] font-black inline-flex items-center justify-center whitespace-nowrap cursor-pointer active:scale-95"
+                >
+                  ファウル +1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickPitchDelta(1)}
+                  title="打席内訳なしで球数のみ+1加算"
+                  className="h-6 px-2 rounded-lg border border-border bg-card hover:bg-muted text-foreground text-[10px] font-black font-mono tabular-nums inline-flex items-center justify-center cursor-pointer active:scale-95"
+                >
+                  +1
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    pendingPitches.length === 0 &&
+                    (isMyAttack
+                      ? pitchSummary.opponentTotalPitches <= 0
+                      : pitchSummary.activeMyPitcherPitches <= 0)
+                  }
+                  onClick={() => handleQuickPitchDelta(-1)}
+                  title="直前の1球または球数補正を-1減算"
+                  className="h-6 px-2 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-foreground text-[10px] font-black font-mono tabular-nums inline-flex items-center justify-center cursor-pointer active:scale-95 disabled:cursor-not-allowed"
+                >
+                  -1
                 </button>
               </div>
             </div>

@@ -77,7 +77,15 @@ export interface Match {
   benchSide?: BenchSide | null;
   venueId?: string | null;
   surfaceDetails?: string;
+  tournamentId?: string | null;
   tournamentName?: string;
+  tournamentCategory?: string | null;
+  tournamentOrganizer?: string | null;
+  tournamentBracketUrl?: string | null;
+  tournamentTimeLimit?: string | null;
+  tournamentColdGameRule?: string | null;
+  tournamentTiebreakerRule?: string | null;
+  tournamentPitchLimitRule?: string | null;
   venueName?: string;
   venueShortName?: string | null;
   venueAddress?: string | null;

@@ -67,6 +67,7 @@ export const eventCarpools = sqliteTable("event_carpools", {
   carType: text("car_type").$type<"normal" | "cargo" | "bus">().default("normal"), // その日の車両区分
   highwayFee: integer("highway_fee").default(0), // 高速料金 (往復)
   parkingFee: integer("parking_fee").default(0), // 駐車場料金
+  returnRidersJson: text("return_riders_json"), // 帰り便のみの個別乗車メンバー差分JSON (null = 行き便と同じ)
 }, (table) => ({
   eventIdx: index("idx_event_carpools_event_id").on(table.eventId),
   driverIdx: index("idx_event_carpools_driver_id").on(table.driverId),

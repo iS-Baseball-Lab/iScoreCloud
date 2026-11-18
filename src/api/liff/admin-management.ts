@@ -201,6 +201,7 @@ export interface AdminTournamentItem {
   timeLimit: string;
   coldGameRule: string;
   tiebreakerRule: string;
+  pitchLimitRule: string;
   startDate: string;
   endDate: string;
   teamMatchCount: number;
@@ -2220,6 +2221,7 @@ liffAdminMgmtRouter.get("/tournaments", async (c) => {
           timeLimit: "1時間30分（新しいイニングに入らない）",
           coldGameRule: "3回10点・5回7点差",
           tiebreakerRule: "無死一・二塁 継続打順",
+          pitchLimitRule: "1日70球以内（学童規定）",
           startDate: "2026-04-05",
           endDate: "2026-05-17",
           teamMatchCount: 4,
@@ -2235,6 +2237,7 @@ liffAdminMgmtRouter.get("/tournaments", async (c) => {
           timeLimit: "1時間20分",
           coldGameRule: "4回10点・5回7点差",
           tiebreakerRule: "引き分けあり",
+          pitchLimitRule: "1日70球以内（学童規定）",
           startDate: "2026-07-01",
           endDate: "2026-08-30",
           teamMatchCount: 6,
@@ -2312,6 +2315,7 @@ liffAdminMgmtRouter.get("/tournaments", async (c) => {
     timeLimit: t.timeLimit || "",
     coldGameRule: t.coldGameRule || "",
     tiebreakerRule: t.tiebreakerRule || "",
+    pitchLimitRule: t.pitchLimitRule || "",
     startDate: t.startDate || "",
     endDate: t.endDate || "",
     teamMatchCount: myMatchCountMap.get(t.id) || 0,
@@ -2343,6 +2347,7 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
     timeLimit?: string;
     coldGameRule?: string;
     tiebreakerRule?: string;
+    pitchLimitRule?: string;
     startDate?: string;
     endDate?: string;
   };
@@ -2384,6 +2389,7 @@ liffAdminMgmtRouter.post("/tournaments", async (c) => {
     timeLimit: body.timeLimit ? body.timeLimit.trim() || null : null,
     coldGameRule: body.coldGameRule ? body.coldGameRule.trim() || null : null,
     tiebreakerRule: body.tiebreakerRule ? body.tiebreakerRule.trim() || null : null,
+    pitchLimitRule: body.pitchLimitRule ? body.pitchLimitRule.trim() || null : null,
     startDate: body.startDate ? body.startDate.trim() || null : null,
     endDate: body.endDate ? body.endDate.trim() || null : null,
   };

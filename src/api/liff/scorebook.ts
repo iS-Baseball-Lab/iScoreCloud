@@ -21,6 +21,7 @@ import {
   type ScorebookSymbolRules,
   type ScoreTeamNameDisplayMode,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { parseLiffScoreSettingsJson } from "@/lib/liff/score-settings";
 import { extractFieldingCreditsForAtBat } from "@/lib/liff/baseball-official-rules";
 import {
   defaultGenericDirection,
@@ -517,6 +518,8 @@ liffScorebookRouter.get("/context", async (c) => {
         id: teams.id,
         name: teams.name,
         orgName: organizations.name,
+        orgCategory: organizations.category,
+        scoreSettings: teams.scoreSettings,
         scorebookLegendUrl: teams.scorebookLegendUrl,
         scorebookSymbolRules: teams.scorebookSymbolRules,
       })
@@ -755,6 +758,8 @@ liffScorebookRouter.get("/context", async (c) => {
             : resolvedOrgName,
         orgName: resolvedOrgName,
         squadName: resolvedSquadName,
+        orgCategory: targetTeam.orgCategory || "other",
+        scoreSettings: parseLiffScoreSettingsJson(targetTeam.scoreSettings),
         scorebookLegendUrl: targetTeam.scorebookLegendUrl,
         scorebookSymbolRules: parsedSymbolRules,
       },

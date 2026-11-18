@@ -46,6 +46,8 @@ export interface LiveReportChainedPlay {
   runsScored: number;
 }
 
+export type LiveReportPitchType = "ball" | "strike" | "foul" | "in_play";
+
 export interface LiveReportPlayEntry {
   id: string;
   entryType: "batter" | "substitution" | "note";
@@ -74,6 +76,14 @@ export interface LiveReportPlayEntry {
   battedDirection?: string;
   rbi?: number;
   subMeta?: LiveReportSubMeta;
+  /** 1球ごと球数カウント配列（"ball" | "strike" | "foul" | "in_play"） */
+  pitches?: LiveReportPitchType[];
+  /** この打席で投じた球数合計（pitches.length または手動補正値） */
+  pitchCount?: number;
+  /** 投球した投手ID（主に自チーム守備イニングでの肩肘保護・球数集計用） */
+  pitcherPlayerId?: string | null;
+  /** 投球した投手氏名 */
+  pitcherName?: string;
 }
 
 export interface LiveReportHalfInning {
@@ -115,6 +125,10 @@ export interface LiveReportV2Document {
   isGameFinished: boolean;
   closingComment: string;
   reporterNames: string;
+  /** 投手ごとの球数手動微調整（key = playerId || `name:${playerName}` || "__opponent__"） */
+  pitcherPitchAdjustments?: Record<string, number>;
+  /** この試合の球数制限手動上書き（70 / 85 / 100 / "none" / null=大会規定・チーム設定に従う） */
+  pitchLimitOverride?: number | "none" | null;
 }
 
 export interface LiveReportMatchOption {
@@ -130,7 +144,14 @@ export interface LiveReportMatchOption {
   opponentScore: number;
   myInningScores: number[];
   opponentInningScores: number[];
+  tournamentId?: string | null;
   tournamentName: string | null;
+  tournamentCategory?: string | null;
+  tournamentTimeLimit?: string | null;
+  tournamentColdGameRule?: string | null;
+  tournamentTiebreakerRule?: string | null;
+  tournamentPitchLimitRule?: string | null;
+  tournamentBracketUrl?: string | null;
   venueName: string | null;
   venueShortName: string | null;
   hasScorebook: boolean;

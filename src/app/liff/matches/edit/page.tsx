@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
   useLiff,
   useLiffPermissions,
@@ -38,6 +39,9 @@ import {
   Building2,
   Info,
   Lock,
+  ExternalLink,
+  Flame,
+  Snowflake,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -45,6 +49,7 @@ import { extractYouTubeVideoId } from "@/lib/youtube";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
   getDemoMatchById,
+  getHydratedDemoMatchCards,
   isDemoMatchId,
   saveCustomDemoMatch,
 } from "@/lib/liff/demo-lineup";
@@ -85,6 +90,11 @@ interface LiffTournamentItem {
   name: string;
   season: string;
   category: string;
+  timeLimit?: string | null;
+  coldGameRule?: string | null;
+  tiebreakerRule?: string | null;
+  pitchLimitRule?: string | null;
+  bracketUrl?: string | null;
 }
 
 interface LiffTournamentsApiResponse {
@@ -212,9 +222,10 @@ function LiffMatchEditContent() {
   const [surfaceNote, setSurfaceNote] = useState<string>("");
   const [showVenueSuggestions, setShowVenueSuggestions] = useState<boolean>(false);
 
-  // 大会候補ステート
+  // 大会候補・選択ステート
   const [tournaments, setTournaments] = useState<LiffTournamentItem[]>([]);
-  const [showTournamentSuggestions, setShowTournamentSuggestions] =
+  const [selectedTournamentId, setSelectedTournamentId] = useState<string>("");
+  const [isTournamentNameManuallyEdited, setIsTournamentNameManuallyEdited] =
     useState<boolean>(false);
 
   // イニングスコア編集ステート（未変更時はDB既存スコアをそのまま温存）
@@ -273,6 +284,32 @@ function LiffMatchEditContent() {
           }
           if (cancelled) return;
 
+          const demoCards = getHydratedDemoMatchCards();
+          const demoTournamentMap = new Map<string, LiffTournamentItem>();
+          for (const card of demoCards) {
+            const cName = (card.tournamentName || "").trim();
+            if (!cName || (card.matchType !== "official" && card.matchType !== "exchange")) {
+              continue;
+            }
+            const cId = card.tournamentId || `demo-t-${cName}`;
+            if (!demoTournamentMap.has(cId)) {
+              const yearMatch = (card.date || "").match(/^(\d{4})/);
+              demoTournamentMap.set(cId, {
+                id: cId,
+                name: cName,
+                season: yearMatch ? yearMatch[1] : String(new Date().getFullYear()),
+                category: card.matchType === "exchange" ? "league" : "gakudou",
+                timeLimit: card.tournamentTimeLimit || null,
+                coldGameRule: card.tournamentColdGameRule || null,
+                tiebreakerRule: card.tournamentTiebreakerRule || null,
+                pitchLimitRule: card.tournamentPitchLimitRule || null,
+                bracketUrl: card.tournamentBracketUrl || null,
+              });
+            }
+          }
+          const demoTournaments = Array.from(demoTournamentMap.values());
+          setTournaments(demoTournaments);
+
           const { date, time } = splitMatchDateAndTime(demoMatch.date);
           const normalizedType: EditableMatchType =
             demoMatch.matchType === "official"
@@ -288,13 +325,37 @@ function LiffMatchEditContent() {
             oppArr.length
           );
 
+          const demoTName = (demoMatch.tournamentName || "").trim();
+          const matchedDemoById = demoMatch.tournamentId
+            ? demoTournaments.find((t) => t.id === demoMatch.tournamentId)
+            : undefined;
+          const matchedDemoByName =
+            !matchedDemoById && demoTName
+              ? demoTournaments.find((t) => t.name.trim() === demoTName)
+              : undefined;
+          const initialDemoTid = matchedDemoById
+            ? matchedDemoById.id
+            : matchedDemoByName
+              ? matchedDemoByName.id
+              : demoTName
+                ? "__custom__"
+                : "";
+
           setLoadedMatch(demoMatch);
           setHasScorebook(Boolean(demoMatch.hasScorebook));
           setOpponent(demoMatch.opponent || "");
           setMatchDate(date);
           setMatchTime(time);
           setMatchType(normalizedType);
-          setTournamentName(demoMatch.tournamentName || "");
+          setSelectedTournamentId(initialDemoTid);
+          setTournamentName(matchedDemoById ? demoTName || matchedDemoById.name : demoTName);
+          setIsTournamentNameManuallyEdited(
+            Boolean(
+              matchedDemoById &&
+                demoTName &&
+                demoTName !== matchedDemoById.name.trim()
+            )
+          );
           setBattingOrder(demoMatch.battingOrder === "second" ? "second" : "first");
           setBenchSide(
             demoMatch.benchSide === "1B" || demoMatch.benchSide === "3B"
@@ -347,10 +408,12 @@ function LiffMatchEditContent() {
           }
         }
 
+        let loadedTournaments: LiffTournamentItem[] = [];
         if (tournamentsRes && tournamentsRes.ok) {
           const tJson = (await tournamentsRes.json()) as LiffTournamentsApiResponse;
           if (Array.isArray(tJson.tournaments)) {
-            setTournaments(tJson.tournaments);
+            loadedTournaments = tJson.tournaments;
+            setTournaments(loadedTournaments);
           }
         }
 
@@ -369,6 +432,26 @@ function LiffMatchEditContent() {
         )
           ? ""
           : rawTournament;
+
+        const matchedById = m.tournamentId
+          ? loadedTournaments.find((t) => t.id === m.tournamentId)
+          : undefined;
+        const matchedByName =
+          !matchedById && cleanedTournament
+            ? loadedTournaments.find((t) => t.name.trim() === cleanedTournament)
+            : undefined;
+        const resolvedTournamentId = matchedById
+          ? matchedById.id
+          : matchedByName
+            ? matchedByName.id
+            : m.tournamentId
+              ? m.tournamentId
+              : cleanedTournament
+                ? "__custom__"
+                : "";
+        const resolvedTournamentName = matchedById
+          ? cleanedTournament || matchedById.name
+          : cleanedTournament;
 
         const myArr = parseStoredInningArray(m.myInningScores);
         const oppArr = parseStoredInningArray(m.opponentInningScores);
@@ -389,7 +472,15 @@ function LiffMatchEditContent() {
         setMatchDate(date);
         setMatchTime(time);
         setMatchType(normalizedType);
-        setTournamentName(cleanedTournament);
+        setSelectedTournamentId(resolvedTournamentId);
+        setTournamentName(resolvedTournamentName);
+        setIsTournamentNameManuallyEdited(
+          Boolean(
+            matchedById &&
+              resolvedTournamentName &&
+              resolvedTournamentName !== matchedById.name.trim()
+          )
+        );
         setBattingOrder(m.battingOrder === "second" ? "second" : "first");
         setBenchSide(
           m.benchSide === "1B" || m.benchSide === "3B" ? m.benchSide : "unknown"
@@ -430,7 +521,7 @@ function LiffMatchEditContent() {
     return () => {
       cancelled = true;
     };
-  }, [matchId, currentTeam?.id]);
+  }, [matchId, currentTeam?.id, practiceMatchLabel]);
 
   // 規定イニング変更時にスコア入力配列の長さを調整（既存の延長回入力がある場合は切り捨てない）
   const scoreboardInningCount = useMemo(
@@ -496,11 +587,73 @@ function LiffMatchEditContent() {
     );
   }, [venues, customVenueText]);
 
-  const filteredTournaments = useMemo(() => {
-    const q = tournamentName.trim().toLowerCase();
-    if (!q) return tournaments;
-    return tournaments.filter((t) => t.name.toLowerCase().includes(q));
-  }, [tournaments, tournamentName]);
+  const selectedTournamentObj = useMemo(() => {
+    if (!selectedTournamentId || selectedTournamentId === "__custom__") return null;
+    return tournaments.find((t) => t.id === selectedTournamentId) || null;
+  }, [tournaments, selectedTournamentId]);
+
+  const tournamentSelectOptions = useMemo(() => {
+    const opts = [
+      { value: "", label: "未選択（大会を指定しない）" },
+      ...tournaments.map((t) => ({
+        value: t.id,
+        label: t.season ? `${t.name}（${t.season}年）` : t.name,
+      })),
+    ];
+    if (
+      selectedTournamentId &&
+      selectedTournamentId !== "__custom__" &&
+      !tournaments.some((t) => t.id === selectedTournamentId)
+    ) {
+      opts.push({
+        value: selectedTournamentId,
+        label: tournamentName.trim() || "選択中の大会",
+      });
+    }
+    opts.push({ value: "__custom__", label: "自由入力・新規大会名" });
+    return opts;
+  }, [tournaments, selectedTournamentId, tournamentName]);
+
+  const selectedTournamentRulesPreview = useMemo(() => {
+    if (!selectedTournamentId || selectedTournamentId === "__custom__") return null;
+    const sameAsLoaded = loadedMatch?.tournamentId === selectedTournamentId;
+    const timeLimit = (
+      selectedTournamentObj?.timeLimit ??
+      (sameAsLoaded ? loadedMatch?.tournamentTimeLimit : null) ??
+      ""
+    ).trim();
+    const coldGameRule = (
+      selectedTournamentObj?.coldGameRule ??
+      (sameAsLoaded ? loadedMatch?.tournamentColdGameRule : null) ??
+      ""
+    ).trim();
+    const tiebreakerRule = (
+      selectedTournamentObj?.tiebreakerRule ??
+      (sameAsLoaded ? loadedMatch?.tournamentTiebreakerRule : null) ??
+      ""
+    ).trim();
+    const pitchLimitRule = (
+      selectedTournamentObj?.pitchLimitRule ??
+      (sameAsLoaded ? loadedMatch?.tournamentPitchLimitRule : null) ??
+      ""
+    ).trim();
+    const rawBracket = (
+      selectedTournamentObj?.bracketUrl ??
+      (sameAsLoaded ? loadedMatch?.tournamentBracketUrl : null) ??
+      ""
+    ).trim();
+    const bracketUrl = /^https?:\/\//i.test(rawBracket) ? rawBracket : "";
+    if (!timeLimit && !coldGameRule && !tiebreakerRule && !pitchLimitRule && !bracketUrl) {
+      return null;
+    }
+    return {
+      timeLimit,
+      coldGameRule,
+      tiebreakerRule,
+      pitchLimitRule,
+      bracketUrl,
+    };
+  }, [selectedTournamentId, selectedTournamentObj, loadedMatch]);
 
   const youtubeVideoId = useMemo(
     () => extractYouTubeVideoId(youtubeUrl.trim() || null),
@@ -548,10 +701,20 @@ function LiffMatchEditContent() {
     setIsSaving(true);
     try {
       const combinedDate = matchTime ? `${matchDate} ${matchTime}` : matchDate;
-      const effectiveTournamentName =
-        matchType === "official" || matchType === "exchange"
-          ? tournamentName.trim()
-          : "";
+      const isTournamentMatch = matchType === "official" || matchType === "exchange";
+      const effectiveTournamentId =
+        isTournamentMatch &&
+        selectedTournamentId &&
+        selectedTournamentId !== "__custom__"
+          ? selectedTournamentId
+          : null;
+      const effectiveTournamentName = isTournamentMatch
+        ? effectiveTournamentId &&
+          !isTournamentNameManuallyEdited &&
+          selectedTournamentObj
+          ? selectedTournamentObj.name
+          : tournamentName.trim()
+        : "";
 
       const effectiveSurfaceDetails = selectedVenueId
         ? surfaceNote.trim() || null
@@ -566,7 +729,23 @@ function LiffMatchEditContent() {
           opponent: opponentTrimmed,
           date: combinedDate,
           matchType,
+          tournamentId: effectiveTournamentId,
           tournamentName: effectiveTournamentName || undefined,
+          tournamentTimeLimit: effectiveTournamentId
+            ? selectedTournamentRulesPreview?.timeLimit || null
+            : null,
+          tournamentColdGameRule: effectiveTournamentId
+            ? selectedTournamentRulesPreview?.coldGameRule || null
+            : null,
+          tournamentTiebreakerRule: effectiveTournamentId
+            ? selectedTournamentRulesPreview?.tiebreakerRule || null
+            : null,
+          tournamentPitchLimitRule: effectiveTournamentId
+            ? selectedTournamentRulesPreview?.pitchLimitRule || null
+            : null,
+          tournamentBracketUrl: effectiveTournamentId
+            ? selectedTournamentRulesPreview?.bracketUrl || null
+            : null,
           battingOrder,
           benchSide,
           innings,
@@ -594,6 +773,7 @@ function LiffMatchEditContent() {
         opponent: opponentTrimmed,
         date: combinedDate,
         matchType,
+        tournamentId: effectiveTournamentId,
         tournamentName: effectiveTournamentName,
         battingOrder,
         benchSide,
@@ -845,59 +1025,142 @@ function LiffMatchEditContent() {
               </div>
             </div>
 
-            {/* 大会名（公式戦・交流戦のとき表示） */}
+            {/* 大会選択 ＆ 大会規定プレビュー（公式戦・交流戦のとき表示） */}
             {(matchType === "official" || matchType === "exchange") && (
-              <div className="space-y-1.5 relative">
+              <div className="space-y-2">
                 <label className="text-[11px] font-black text-foreground flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
                     <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                    <span>{matchType === "official" ? "大会名" : "交流戦・リーグ名"}</span>
+                    <span>
+                      {matchType === "official"
+                        ? "登録済み大会から選択"
+                        : "登録済み交流戦・リーグから選択"}
+                    </span>
                   </span>
-                  {tournamentName && (
+                  {(selectedTournamentId || tournamentName) && (
                     <button
                       type="button"
-                      onClick={() => setTournamentName("")}
+                      onClick={() => {
+                        setSelectedTournamentId("");
+                        setTournamentName("");
+                        setIsTournamentNameManuallyEdited(false);
+                      }}
                       className="text-[10px] font-bold text-muted-foreground hover:text-foreground cursor-pointer"
                     >
                       クリア
                     </button>
                   )}
                 </label>
-                <Input
-                  value={tournamentName}
-                  onChange={(e) => {
-                    setTournamentName(e.target.value);
-                    setShowTournamentSuggestions(true);
+
+                <LiffSelect
+                  value={selectedTournamentId}
+                  onChange={(val) => {
+                    setSelectedTournamentId(val);
+                    if (!val) {
+                      setTournamentName("");
+                      setIsTournamentNameManuallyEdited(false);
+                      return;
+                    }
+                    if (val === "__custom__") {
+                      if (selectedTournamentObj && tournamentName === selectedTournamentObj.name) {
+                        setTournamentName("");
+                      }
+                      setIsTournamentNameManuallyEdited(true);
+                      return;
+                    }
+                    const picked = tournaments.find((t) => t.id === val);
+                    if (picked) {
+                      setTournamentName(picked.name);
+                      setIsTournamentNameManuallyEdited(false);
+                    }
                   }}
-                  onFocus={() => setShowTournamentSuggestions(true)}
-                  onBlur={() => {
-                    setTimeout(() => setShowTournamentSuggestions(false), 180);
-                  }}
-                  placeholder="例: 川崎市秋季大会 2回戦（直接入力または候補から選択）"
-                  className="h-11 rounded-xl text-sm font-bold bg-card border-border"
+                  options={tournamentSelectOptions}
+                  title="登録済み大会から選択"
+                  subtitle="大会マスタで設定した時間制限・コールド・タイブレーク・球数制限が自動連携されます"
+                  accent="amber"
+                  searchable={tournaments.length >= 6}
+                  searchPlaceholder="大会名・年度で検索..."
+                  className="w-full h-11 rounded-xl bg-card"
                 />
-                {showTournamentSuggestions && filteredTournaments.length > 0 && (
-                  <div className="rounded-xl border border-border bg-card shadow-md divide-y divide-border max-h-48 overflow-y-auto">
-                    <div className="px-3 py-1.5 bg-muted text-[10px] font-black text-muted-foreground">
-                      登録済みの大会から選択 ({filteredTournaments.length}件)
+
+                {(selectedTournamentId === "__custom__" ||
+                  Boolean(selectedTournamentId)) && (
+                  <div className="space-y-1">
+                    <span className="block text-[10px] font-bold text-muted-foreground">
+                      {selectedTournamentId === "__custom__"
+                        ? "自由入力・新規大会名"
+                        : "表示大会名（回戦の追記・微調整も可能）"}
+                    </span>
+                    <Input
+                      value={tournamentName}
+                      onChange={(e) => {
+                        const nextVal = e.target.value;
+                        setTournamentName(nextVal);
+                        if (
+                          selectedTournamentId &&
+                          selectedTournamentId !== "__custom__"
+                        ) {
+                          setIsTournamentNameManuallyEdited(
+                            nextVal.trim() !==
+                              (selectedTournamentObj?.name || "").trim()
+                          );
+                        }
+                      }}
+                      placeholder={
+                        selectedTournamentId === "__custom__"
+                          ? "例: 川崎市秋季大会 2回戦"
+                          : "例: 春季市民大会 準々決勝"
+                      }
+                      className="h-11 rounded-xl text-sm font-bold bg-card border-border"
+                    />
+                  </div>
+                )}
+
+                {selectedTournamentRulesPreview && (
+                  <div className="rounded-xl border border-border bg-card overflow-hidden">
+                    <div className="px-3 py-1.5 bg-[#0f172a] text-slate-50 border-b-[2px] border-amber-500 flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 text-[10.5px] font-black text-white">
+                        <span aria-hidden="true">🏆</span>
+                        <span>選択中の大会規定</span>
+                      </span>
+                      {selectedTournamentRulesPreview.bracketUrl && (
+                        <a
+                          href={selectedTournamentRulesPreview.bracketUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-black text-amber-300 hover:underline shrink-0"
+                        >
+                          <span>トーナメント表</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
                     </div>
-                    {filteredTournaments.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setTournamentName(t.name);
-                          setShowTournamentSuggestions(false);
-                        }}
-                        className="w-full px-3 py-2.5 text-left text-xs font-bold text-foreground hover:bg-muted flex items-center justify-between gap-2 cursor-pointer"
-                      >
-                        <span className="truncate">{t.name}</span>
-                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                          {t.season}
+                    <div className="p-2.5 flex flex-wrap gap-1.5 bg-card">
+                      {selectedTournamentRulesPreview.timeLimit && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                          <Clock className="w-3 h-3 text-primary shrink-0" />
+                          <span>時間制限: {selectedTournamentRulesPreview.timeLimit}</span>
                         </span>
-                      </button>
-                    ))}
+                      )}
+                      {selectedTournamentRulesPreview.coldGameRule && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                          <Snowflake className="w-3 h-3 text-sky-600 shrink-0" />
+                          <span>コールド: {selectedTournamentRulesPreview.coldGameRule}</span>
+                        </span>
+                      )}
+                      {selectedTournamentRulesPreview.tiebreakerRule && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                          <Flame className="w-3 h-3 text-amber-600 shrink-0" />
+                          <span>タイブレーク: {selectedTournamentRulesPreview.tiebreakerRule}</span>
+                        </span>
+                      )}
+                      {selectedTournamentRulesPreview.pitchLimitRule && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-black text-amber-900 dark:text-amber-200">
+                          <span aria-hidden="true">⚾</span>
+                          <span>球数制限: {selectedTournamentRulesPreview.pitchLimitRule}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

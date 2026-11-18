@@ -53,11 +53,15 @@ import {
   BookOpen,
   FileSpreadsheet,
   Calendar,
+  Clock,
   ClipboardList,
   AlertTriangle,
   Megaphone,
   Camera,
   Lock,
+  ExternalLink,
+  Flame,
+  Snowflake,
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -3195,6 +3199,70 @@ function MatchesContent() {
                   </div>
                 )}
               </div>
+
+              {(() => {
+                const timeRule = (match.tournamentTimeLimit || "").trim();
+                const coldRule = (match.tournamentColdGameRule || "").trim();
+                const tieRule = (match.tournamentTiebreakerRule || "").trim();
+                const pitchRule = (match.tournamentPitchLimitRule || "").trim();
+                const rawBracketUrl = (match.tournamentBracketUrl || "").trim();
+                const validBracketUrl = /^https?:\/\//i.test(rawBracketUrl)
+                  ? rawBracketUrl
+                  : "";
+                const hasAnyTournamentRule = Boolean(
+                  timeRule || coldRule || tieRule || pitchRule || validBracketUrl
+                );
+                if (!hasAnyTournamentRule) return null;
+                return (
+                  <div className="px-4 py-2.5 bg-card border-t border-border space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-black text-foreground">
+                        <span aria-hidden="true">🏆</span>
+                        <span>大会規定</span>
+                      </span>
+                      {validBracketUrl && (
+                        <a
+                          href={validBracketUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0f172a] text-white text-[11px] font-black hover:bg-slate-800 shrink-0 transition-colors"
+                        >
+                          <span>トーナメント表</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                    {(timeRule || coldRule || tieRule || pitchRule) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {timeRule && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                            <Clock className="w-3 h-3 text-primary shrink-0" />
+                            <span>時間制限: {timeRule}</span>
+                          </span>
+                        )}
+                        {coldRule && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                            <Snowflake className="w-3 h-3 text-sky-600 shrink-0" />
+                            <span>コールド: {coldRule}</span>
+                          </span>
+                        )}
+                        {tieRule && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[11px] font-bold text-foreground">
+                            <Flame className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>タイブレーク: {tieRule}</span>
+                          </span>
+                        )}
+                        {pitchRule && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[11px] font-black text-amber-900 dark:text-amber-200">
+                            <span aria-hidden="true">⚾</span>
+                            <span>球数制限: {pitchRule}</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {!isRainout && (
                 <div className="px-4 py-2 bg-muted/50 border-t border-border flex flex-wrap items-center justify-between gap-2">

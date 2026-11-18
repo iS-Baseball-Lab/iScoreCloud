@@ -130,9 +130,12 @@ interface MyFamilyApiResponse {
   success?: boolean;
   memberId?: string | null;
   memberName?: string | null;
+  memberRole?: string | null;
+  memberType?: string | null;
   children?: FamilyChildItem[];
   attendances?: Record<string, Record<string, "present" | "absent" | "pending" | "late">>;
   parentAttendances?: Record<string, "present" | "absent" | "pending" | "late">;
+  parentCarMap?: Record<string, boolean>;
 }
 
 interface HubHeroSectionProps {
@@ -176,9 +179,10 @@ export function HubHeroSection({
 
   // ユーザーの立場とお子様リスト
   const [userRole, setUserRole] = useState<"parent" | "coach" | "player" | "staff">("parent");
+  const [familyMemberRole, setFamilyMemberRole] = useState<"parent" | "staff">("parent");
   const [children, setChildren] = useState<FamilyChildItem[]>([]);
   const [memberId, setMemberId] = useState<string | null>(null);
-  const [memberName, setMemberName] = useState<string | null>(null);
+  const [, setMemberName] = useState<string | null>(null);
 
   // 出欠ステート（保護者本人 & お子様）
   const [attendanceMap, setAttendanceMap] = useState<Record<string, "present" | "absent" | "pending" | "late">>({});
@@ -218,6 +222,14 @@ export function HubHeroSection({
           if (json.memberId) setMemberId(json.memberId);
           if (json.memberName) setMemberName(json.memberName);
 
+          const resolvedRole: "parent" | "staff" =
+            json.memberType === "staff" ||
+            json.memberRole === "admin" ||
+            json.memberRole === "coach"
+              ? "staff"
+              : "parent";
+          setFamilyMemberRole(resolvedRole);
+
           const isDemoTeam = isDemo || tid === "demo-team";
           const demoOverrides = isDemoTeam ? loadDemoPlayerConditionOverrides() : {};
 
@@ -241,6 +253,7 @@ export function HubHeroSection({
               }
             }
             setChildren(uniqueChildren);
+            setUserRole("parent");
           } else if (isDemoTeam) {
             const demoOverride = demoOverrides["demo-player-1"];
             setChildren([
@@ -252,17 +265,37 @@ export function HubHeroSection({
                 conditionPeriods: demoOverride ? demoOverride.conditionPeriods : [],
               },
             ]);
+            setUserRole("parent");
           } else {
             setChildren([]);
+            setUserRole(resolvedRole === "staff" ? "staff" : "parent");
           }
 
           if (json.attendances) {
             setChildAttendanceMap(prev => ({ ...json.attendances, ...prev }));
           }
 
-          // 自分の出欠（親の出欠）をDBから復元
+          // 自分の出欠（親・スタッフの出欠）をDBから復元
           if (json.parentAttendances && Object.keys(json.parentAttendances).length > 0) {
             setAttendanceMap(prev => ({ ...json.parentAttendances, ...prev }));
+          }
+
+          // 配車（車出し可否）をDBから復元
+          if (json.parentCarMap && Object.keys(json.parentCarMap).length > 0) {
+            const hydratedCarMap: Record<string, "can_drive" | "need_ride" | "not_needed"> = {};
+            for (const [evId, hasCar] of Object.entries(json.parentCarMap)) {
+              if (hasCar) {
+                hydratedCarMap[evId] = "can_drive";
+              } else {
+                const localSaved =
+                  typeof window !== "undefined"
+                    ? localStorage.getItem(`iscore_car_status_${evId}`)
+                    : null;
+                hydratedCarMap[evId] =
+                  localSaved === "need_ride" ? "need_ride" : "not_needed";
+              }
+            }
+            setCarStatusMap(prev => ({ ...hydratedCarMap, ...prev }));
           }
         }
       }
@@ -320,19 +353,45 @@ export function HubHeroSection({
     return childAttendanceMap[eventId]?.[childId] || "pending";
   };
 
-  const getEventCarStatus = (id: string) => carStatusMap[id] || "need_ride";
+  const getEventCarStatus = (id: string): "can_drive" | "need_ride" | "not_needed" | null => {
+    if (carStatusMap[id]) return carStatusMap[id];
+    if (typeof window !== "undefined") {
+      const cached = localStorage.getItem(`iscore_car_status_${id}`);
+      if (cached === "can_drive" || cached === "need_ride" || cached === "not_needed") {
+        return cached;
+      }
+    }
+    return null;
+  };
 
-  // 保護者本人の出欠変更（DB保存 & 即時反映）
-  const setEventAttendance = async (id: string, status: "present" | "absent" | "pending" | "late") => {
+  // 保護者・スタッフ本人の出欠変更（DB保存 & 即時反映）
+  const setEventAttendance = async (
+    id: string,
+    status: "present" | "absent" | "pending" | "late",
+    overrideCarStatus?: boolean
+  ) => {
     if (!effectiveCanRespond) return;
     setAttendanceMap(prev => ({ ...prev, [id]: status }));
     if (typeof window !== "undefined") {
       localStorage.setItem(`iscore_my_att_${id}`, status);
     }
+    const currentCarStatus = getEventCarStatus(id);
+    const resolvedHasCar =
+      status === "absent" || status === "pending"
+        ? false
+        : overrideCarStatus !== undefined
+        ? overrideCarStatus
+        : currentCarStatus === "can_drive";
+    const resolvedUserRole =
+      familyMemberRole === "staff" || userRole === "staff" || userRole === "coach"
+        ? "staff"
+        : "parent";
     try {
-      const uid = typeof window !== "undefined" 
-        ? (localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || "") 
-        : "";
+      const uid =
+        userId ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("iscore_user_id") || localStorage.getItem("iscore_userId") || ""
+          : "");
       const res = await fetch("/api/liff/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -340,8 +399,9 @@ export function HubHeroSection({
           eventId: id,
           userId: uid,
           memberId: memberId || undefined,
+          userRole: resolvedUserRole,
           status,
-          hasCar: carStatusMap[id] === "can_drive",
+          hasCar: resolvedHasCar,
         }),
       });
       if (res.ok) {
@@ -387,10 +447,19 @@ export function HubHeroSection({
 
   const setEventCarStatus = (id: string, carStatus: "can_drive" | "need_ride" | "not_needed") => {
     if (!effectiveCanRespond) return;
+    const nextCar = carStatus === "can_drive";
     setCarStatusMap(prev => ({ ...prev, [id]: carStatus }));
-    const currentAtt = attendanceMap[id];
-    if (currentAtt) {
-      setEventAttendance(id, currentAtt);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`iscore_car_status_${id}`, carStatus);
+    }
+    const currentAtt = getEventAttendance(id);
+    if (nextCar && (!currentAtt || currentAtt === "pending")) {
+      setManualParentOverrideEvents(prev => ({ ...prev, [id]: true }));
+      void setEventAttendance(id, "present", true);
+      return;
+    }
+    if (currentAtt && currentAtt !== "pending") {
+      void setEventAttendance(id, currentAtt, nextCar);
     }
   };
 
@@ -759,7 +828,7 @@ export function HubHeroSection({
               {[1, 2].map((i) => (
                 <div
                   key={i}
-                  className="w-[88vw] max-w-[360px] shrink-0 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 animate-pulse flex flex-col justify-between"
+                  className="w-[88vw] max-w-[360px] shrink-0 rounded-2xl border border-border/60 bg-card shadow-xs p-4 space-y-3.5 flex flex-col justify-between"
                 >
                   <div className="space-y-3">
                     {/* 上部ヘッダー（日付、バッジ、リンク） */}
@@ -1635,8 +1704,16 @@ export function HubHeroSection({
                                     </div>
                                   )}
 
-                            {/* 参加時の配車アンケート (※試合・遠征時のみ表示) */}
-                            {(ev.eventType === "match" || (ev.title && (ev.title.includes("試合") || ev.title.includes("遠征") || ev.title.includes("大会") || ev.title.includes("vs")))) && (pStatus === "present" || pStatus === "late") && (
+                            {/* 参加・未定時の配車アンケート (※試合・遠征時のみ表示 / 未定から車出し可をタップで自動的に参加＋車出し登録) */}
+                            {!showParentLeaveCard &&
+                              (isMatch ||
+                                isCamp ||
+                                (ev.title &&
+                                  (ev.title.includes("試合") ||
+                                    ev.title.includes("遠征") ||
+                                    ev.title.includes("大会") ||
+                                    ev.title.includes("vs")))) &&
+                              pStatus !== "absent" && (
                               <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2 animate-in fade-in duration-200">
                                 <div className="flex items-center justify-between text-[11px] font-bold text-foreground">
                                   <span className="flex items-center gap-1.5 font-black text-foreground">
@@ -1648,7 +1725,12 @@ export function HubHeroSection({
                                 <div className="grid grid-cols-3 gap-1.5">
                                   <button
                                     type="button"
-                                    onClick={() => setEventCarStatus(ev.id, "can_drive")}
+                                    onClick={() =>
+                                      setEventCarStatus(
+                                        ev.id,
+                                        cStatus === "can_drive" ? "not_needed" : "can_drive"
+                                      )
+                                    }
                                     className={`py-1.5 px-1 rounded-xl text-[10.5px] transition-all cursor-pointer ${
                                       cStatus === "can_drive"
                                         ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"

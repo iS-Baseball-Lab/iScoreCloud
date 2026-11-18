@@ -42,6 +42,8 @@ import {
   ArrowLeftRight,
   Lock,
   X,
+  AlertTriangle,
+  Trophy,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -63,6 +65,7 @@ import {
   isDemoMatchId,
   isDemoTeamId,
   parseSafeMatchDate,
+  toMatchCalendarKey,
   loadDemoMatchLineups,
   saveDemoMatchLineups,
   formatLineupShareText,
@@ -79,6 +82,10 @@ import {
   type MatchLineupsPayload,
   type LineupTemplateItem,
 } from "@/lib/liff/demo-lineup";
+import {
+  evaluatePreMatchWorkloadWarning,
+  resolvePitchLimitSpec,
+} from "@/lib/liff/pitch-workload";
 
 // ━━━ APIレスポンス型定義 (any排除) ━━━
 interface LiffMatchesApiResponse {
@@ -136,6 +143,23 @@ interface SaveTemplateApiResponse {
   error?: string;
 }
 
+interface LineupTournamentOption {
+  id: string;
+  name: string;
+  season?: string;
+  category?: string;
+  timeLimit?: string | null;
+  coldGameRule?: string | null;
+  tiebreakerRule?: string | null;
+  pitchLimitRule?: string | null;
+  bracketUrl?: string | null;
+}
+
+interface LineupTournamentsApiResponse {
+  success?: boolean;
+  tournaments?: LineupTournamentOption[];
+}
+
 function createEmptyMyLineup(count = 9): MyLineupSlot[] {
   return Array.from({ length: count }, (_, i) => ({
     order: i + 1,
@@ -144,6 +168,54 @@ function createEmptyMyLineup(count = 9): MyLineupSlot[] {
     name: "",
     uniformNumber: "",
   }));
+}
+
+function splitLoadedMyLineup(raw: MyLineupSlot[] | undefined | null): {
+  battingSlots: MyLineupSlot[];
+  dhPitcher: MyLineupSlot | null;
+} {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { battingSlots: createEmptyMyLineup(9), dhPitcher: null };
+  }
+  const dhPitcherRaw = raw.find(
+    (s) =>
+      s.order === 0 &&
+      (s.position === "1" || Boolean(s.playerId || (s.name && s.name.trim())))
+  );
+  const dhPitcher: MyLineupSlot | null = dhPitcherRaw
+    ? {
+        order: 0,
+        position: "1",
+        playerId: dhPitcherRaw.playerId || "",
+        name: dhPitcherRaw.name || "",
+        uniformNumber: dhPitcherRaw.uniformNumber || "",
+      }
+    : null;
+
+  const orderSlots = raw.filter((s) => s.order > 0);
+  if (orderSlots.length === 0) {
+    return { battingSlots: createEmptyMyLineup(9), dhPitcher };
+  }
+  const maxOrder = Math.max(9, ...orderSlots.map((s) => s.order));
+  const battingSlots: MyLineupSlot[] = Array.from({ length: maxOrder }, (_, idx) => {
+    const found = orderSlots.find((s) => s.order === idx + 1);
+    return found
+      ? {
+          order: idx + 1,
+          position: found.position || "",
+          playerId: found.playerId || "",
+          name: found.name || "",
+          uniformNumber: found.uniformNumber || "",
+        }
+      : {
+          order: idx + 1,
+          position: "",
+          playerId: "",
+          name: "",
+          uniformNumber: "",
+        };
+  });
+  return { battingSlots, dhPitcher };
 }
 
 function createEmptyOpponentLineup(count = 9): OpponentLineupSlot[] {
@@ -263,7 +335,9 @@ function LiffLineupContent() {
   const [newDate, setNewDate] = useState(getTodayIsoDate);
   const [newTime, setNewTime] = useState("09:00");
   const [newMatchType, setNewMatchType] = useState<"practice" | "official" | "exchange">("practice");
+  const [newTournamentId, setNewTournamentId] = useState<string>("");
   const [newTournamentName, setNewTournamentName] = useState("");
+  const [availableTournaments, setAvailableTournaments] = useState<LineupTournamentOption[]>([]);
   const [newBattingOrder, setNewBattingOrder] = useState<"first" | "second">("first");
   const [newInnings, setNewInnings] = useState<5 | 6 | 7 | 9>(() => {
     const d = loadLiffScoreSettings().defaultInnings;
@@ -293,6 +367,7 @@ function LiffLineupContent() {
   const [modalStep, setModalStep] = useState<"player" | "position">("player");
 
   const [myLineup, setMyLineup] = useState<MyLineupSlot[]>(() => createEmptyMyLineup(9));
+  const [dhStarterPitcher, setDhStarterPitcher] = useState<MyLineupSlot | null>(null);
   const [opponentLineup, setOpponentLineup] = useState<OpponentLineupSlot[]>(() => createEmptyOpponentLineup(9));
   const [opponentBench, setOpponentBench] = useState<OpponentBenchPlayer[]>([]);
 
@@ -504,9 +579,9 @@ function LiffLineupContent() {
         setTeamPlayers(demoCandidates);
 
         const demoLineups = loadDemoMatchLineups(selectedMatchId);
-        setMyLineup(
-          demoLineups.myLineup.length > 0 ? demoLineups.myLineup : createEmptyMyLineup(9)
-        );
+        const splitDemo = splitLoadedMyLineup(demoLineups.myLineup);
+        setMyLineup(splitDemo.battingSlots);
+        setDhStarterPitcher(splitDemo.dhPitcher);
         setOpponentLineup(
           demoLineups.opponentLineup.length > 0 ? demoLineups.opponentLineup : createEmptyOpponentLineup(9)
         );
@@ -573,8 +648,20 @@ function LiffLineupContent() {
       let templatesRes: Response | null = null;
 
       if (matchTeamId && !isDemoTeamId(matchTeamId)) {
+        const playersQuery = new URLSearchParams(authQuery);
+        const matchDateKey = toMatchCalendarKey(matchDate);
+        if (matchDateKey) {
+          playersQuery.set("referenceDate", matchDateKey);
+        }
+        if (selectedMatchId) {
+          playersQuery.set("excludeMatchId", selectedMatchId);
+        }
+        const playersQuerySuffix = playersQuery.toString()
+          ? `?${playersQuery.toString()}`
+          : "";
+
         const [playersRes, tplRes, attRes] = await Promise.all([
-          fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/players${authSuffix}`, {
+          fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/players${playersQuerySuffix}`, {
             cache: "no-store",
           }),
           fetch(`/api/teams/${encodeURIComponent(matchTeamId)}/lineup-templates`, {
@@ -619,11 +706,9 @@ function LiffLineupContent() {
       if (lineupsRes.ok) {
         const lineupsData = (await lineupsRes.json()) as MatchLineupsApiResponse;
         if (lineupsData.success && lineupsData.lineups) {
-          if (lineupsData.lineups.myLineup && lineupsData.lineups.myLineup.length > 0) {
-            setMyLineup(lineupsData.lineups.myLineup);
-          } else {
-            setMyLineup(createEmptyMyLineup(9));
-          }
+          const splitLoaded = splitLoadedMyLineup(lineupsData.lineups.myLineup);
+          setMyLineup(splitLoaded.battingSlots);
+          setDhStarterPitcher(splitLoaded.dhPitcher);
 
           if (lineupsData.lineups.opponentLineup && lineupsData.lineups.opponentLineup.length > 0) {
             setOpponentLineup(lineupsData.lineups.opponentLineup);
@@ -644,6 +729,7 @@ function LiffLineupContent() {
           savedAttendance = lineupsData.lineups.myAttendance || {};
         } else {
           setMyLineup(createEmptyMyLineup(9));
+          setDhStarterPitcher(null);
           setOpponentLineup(createEmptyOpponentLineup(9));
           setOpponentBench([]);
         }
@@ -681,6 +767,74 @@ function LiffLineupContent() {
   useEffect(() => {
     loadSquadAndLineup();
   }, [loadSquadAndLineup]);
+
+  // 新規試合作成モーダル展開時に登録済み大会候補をロード
+  useEffect(() => {
+    if (!isCreateMatchModalOpen) return;
+    const targetTid = resolvedTeamId || currentTeam?.id || "demo-team";
+    if (isDemoTeamId(targetTid)) {
+      const demoMap = new Map<string, LineupTournamentOption>();
+      for (const card of getHydratedDemoMatchCards()) {
+        const cName = (card.tournamentName || "").trim();
+        if (!cName || (card.matchType !== "official" && card.matchType !== "exchange")) {
+          continue;
+        }
+        const cId = card.tournamentId || `demo-t-${cName}`;
+        if (!demoMap.has(cId)) {
+          const ym = (card.date || "").match(/^(\d{4})/);
+          demoMap.set(cId, {
+            id: cId,
+            name: cName,
+            season: ym ? ym[1] : undefined,
+            timeLimit: card.tournamentTimeLimit || null,
+            coldGameRule: card.tournamentColdGameRule || null,
+            tiebreakerRule: card.tournamentTiebreakerRule || null,
+            pitchLimitRule: card.tournamentPitchLimitRule || null,
+            bracketUrl: card.tournamentBracketUrl || null,
+          });
+        }
+      }
+      setAvailableTournaments(Array.from(demoMap.values()));
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/liff/tournaments?teamId=${encodeURIComponent(targetTid)}`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = (await res.json()) as LineupTournamentsApiResponse;
+        if (!cancelled && Array.isArray(json.tournaments)) {
+          setAvailableTournaments(json.tournaments);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isCreateMatchModalOpen, resolvedTeamId, currentTeam?.id]);
+
+  // DH使用時の打席なし先発投手 (order === 0 & position === "1") の有効状態
+  const activeDhStarterPitcher = useMemo<MyLineupSlot | null>(() => {
+    if (!dhStarterPitcher) return null;
+    const hasIdentity = Boolean(
+      dhStarterPitcher.playerId || dhStarterPitcher.name.trim()
+    );
+    if (!hasIdentity) return null;
+    const hasDhInOrder = myLineup.some((s) => s.position === "DH");
+    const hasPitcherInOrder = myLineup.some((s) => s.position === "1");
+    const isSamePlayerInOrder = Boolean(
+      dhStarterPitcher.playerId &&
+        myLineup.some((s) => s.playerId === dhStarterPitcher.playerId)
+    );
+    if (!hasDhInOrder || hasPitcherInOrder || isSamePlayerInOrder) {
+      return null;
+    }
+    return {
+      ...dhStarterPitcher,
+      order: 0,
+      position: "1",
+    };
+  }, [dhStarterPitcher, myLineup]);
 
   // 🌟 EDH（全員打撃）に対応するためのスタメン動的追加・削除ハンドラー
   const handleAddBatter = (type: "myTeam" | "opponent") => {
@@ -726,11 +880,16 @@ function LiffLineupContent() {
       .map((p) => p.position)
       .filter((pos) => Boolean(pos) && pos !== "DH"); // DHはEDH（全員打撃）のため重複許可
 
-  const getDisabledPlayers = (lineup: MyLineupSlot[], currentIndex: number): string[] =>
-    lineup
+  const getDisabledPlayers = (lineup: MyLineupSlot[], currentIndex: number): string[] => {
+    const ids = lineup
       .filter((_, i) => i !== currentIndex)
       .map((p) => p.playerId)
       .filter(Boolean);
+    if (activeDhStarterPitcher?.playerId && !ids.includes(activeDhStarterPitcher.playerId)) {
+      ids.push(activeDhStarterPitcher.playerId);
+    }
+    return ids;
+  };
 
   // テンプレート保存
   const handleSaveTemplate = async () => {
@@ -741,13 +900,16 @@ function LiffLineupContent() {
     }
 
     const targetTeamId = currentMatch?.teamId || resolvedTeamId || "demo-team";
+    const serializedTemplateLineup: MyLineupSlot[] = activeDhStarterPitcher
+      ? [...myLineup, activeDhStarterPitcher]
+      : myLineup;
 
     try {
       if (isDemoMatchId(selectedMatchId) || isDemoTeamId(targetTeamId)) {
         const newTpl: LineupTemplateItem = {
           id: `demo-tpl-${Date.now()}`,
           name: trimmed,
-          lineupData: myLineup,
+          lineupData: serializedTemplateLineup,
         };
         const nextTemplates = [newTpl, ...templates];
         setTemplates(nextTemplates);
@@ -765,7 +927,7 @@ function LiffLineupContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
-          lineupData: myLineup,
+          lineupData: serializedTemplateLineup,
         }),
       });
 
@@ -834,33 +996,9 @@ function LiffLineupContent() {
           };
         });
 
-        const maxOrder = Math.max(9, ...restored.map((r) => r.order));
-        const fullLineup: MyLineupSlot[] = Array.from({ length: maxOrder }, (_, i) => {
-          const found = restored.find((r) => r.order === i + 1);
-          return (
-            found || {
-              order: i + 1,
-              position: "",
-              playerId: "",
-              name: "",
-              uniformNumber: "",
-            }
-          );
-        });
-
-        // 旧データ互換: order: 0 (打席なし投手) があれば末尾に追加
-        const dhPitcher = restored.find((r) => r.order === 0);
-        if (dhPitcher) {
-          fullLineup.push({
-            order: fullLineup.length + 1,
-            position: dhPitcher.position || "1",
-            playerId: dhPitcher.playerId || "",
-            name: dhPitcher.name || "",
-            uniformNumber: dhPitcher.uniformNumber || "",
-          });
-        }
-
-        setMyLineup(fullLineup);
+        const splitTpl = splitLoadedMyLineup(restored);
+        setMyLineup(splitTpl.battingSlots);
+        setDhStarterPitcher(splitTpl.dhPitcher);
         if (skippedUnavailableCount > 0) {
           toast.info(
             `テンプレート「${template.name}」を適用しました（休部・リハビリ中の${skippedUnavailableCount}名は空欄にしました）`
@@ -900,6 +1038,17 @@ function LiffLineupContent() {
     try {
       const datePayload = newTime ? `${newDate} ${newTime}` : newDate;
       const targetTeamId = resolvedTeamId || currentTeam?.id || "demo-team";
+      const selectedNewTourney =
+        newMatchType !== "practice" &&
+        newTournamentId &&
+        newTournamentId !== "__custom__"
+          ? availableTournaments.find((t) => t.id === newTournamentId) || null
+          : null;
+      const effectiveNewTournamentId = selectedNewTourney ? selectedNewTourney.id : null;
+      const effectiveNewTournamentName =
+        newMatchType !== "practice"
+          ? newTournamentName.trim() || selectedNewTourney?.name || ""
+          : "";
 
       if (isDemoTeamId(targetTeamId)) {
         const demoId = `demo-custom-${Date.now()}`;
@@ -909,7 +1058,13 @@ function LiffLineupContent() {
           date: datePayload,
           status: "scheduled",
           matchType: newMatchType,
-          tournamentName: newMatchType !== "practice" ? newTournamentName.trim() : undefined,
+          tournamentId: effectiveNewTournamentId,
+          tournamentName: effectiveNewTournamentName || undefined,
+          tournamentTimeLimit: selectedNewTourney?.timeLimit || null,
+          tournamentColdGameRule: selectedNewTourney?.coldGameRule || null,
+          tournamentTiebreakerRule: selectedNewTourney?.tiebreakerRule || null,
+          tournamentPitchLimitRule: selectedNewTourney?.pitchLimitRule || null,
+          tournamentBracketUrl: selectedNewTourney?.bracketUrl || null,
           battingOrder: newBattingOrder,
           surfaceDetails: newVenue.trim() || "グラウンド",
           venueName: newVenue.trim() || "グラウンド",
@@ -929,7 +1084,13 @@ function LiffLineupContent() {
             myScore: 0,
             opponentScore: 0,
             matchType: newMatchType,
-            tournamentName: newMatchType !== "practice" ? newTournamentName.trim() : null,
+            tournamentId: effectiveNewTournamentId,
+            tournamentName: effectiveNewTournamentName || null,
+            tournamentTimeLimit: selectedNewTourney?.timeLimit || null,
+            tournamentColdGameRule: selectedNewTourney?.coldGameRule || null,
+            tournamentTiebreakerRule: selectedNewTourney?.tiebreakerRule || null,
+            tournamentPitchLimitRule: selectedNewTourney?.pitchLimitRule || null,
+            tournamentBracketUrl: selectedNewTourney?.bracketUrl || null,
             venueName: newVenue.trim() || "グラウンド",
             battingOrder: newBattingOrder,
           },
@@ -939,6 +1100,8 @@ function LiffLineupContent() {
         router.replace(`/liff/matches/lineup?id=${demoId}`);
         setIsCreateMatchModalOpen(false);
         setNewOpponent("");
+        setNewTournamentId("");
+        setNewTournamentName("");
         toast.success("新しい試合を作成しました（デモ）");
         return;
       }
@@ -951,7 +1114,8 @@ function LiffLineupContent() {
           opponent: opponentTrimmed,
           date: datePayload,
           matchType: newMatchType,
-          tournamentName: newMatchType !== "practice" ? newTournamentName.trim() : undefined,
+          tournamentId: effectiveNewTournamentId,
+          tournamentName: effectiveNewTournamentName || undefined,
           battingOrder: newBattingOrder,
           surfaceDetails: newVenue.trim() || undefined,
           innings: newInnings,
@@ -967,6 +1131,7 @@ function LiffLineupContent() {
       toast.success(`「vs ${opponentTrimmed}」を作成しました！続けてスタメンを登録できます`);
       setIsCreateMatchModalOpen(false);
       setNewOpponent("");
+      setNewTournamentId("");
       setNewTournamentName("");
       setNewVenue("");
       setSelectedMatchId(result.matchId);
@@ -1054,8 +1219,12 @@ function LiffLineupContent() {
           name: b.name || `相手控え #${b.uniformNumber}`,
         }));
 
+      const serializedMyLineup: MyLineupSlot[] = activeDhStarterPitcher
+        ? [...myLineup, activeDhStarterPitcher]
+        : myLineup;
+
       const payload: MatchLineupsPayload = {
-        myLineup,
+        myLineup: serializedMyLineup,
         opponentLineup: filledOpponentLineup,
         opponentBench: cleanedOpponentBench,
         myAttendance: attendance,
@@ -1102,10 +1271,113 @@ function LiffLineupContent() {
     [currentMatch?.date, currentMatch?.status, currentMatch?.createdAt]
   );
 
-  const startingPlayerIds = useMemo(
-    () => myLineup.map((p) => p.playerId).filter(Boolean),
-    [myLineup]
+  const pitchLimitSpec = useMemo(
+    () =>
+      resolvePitchLimitSpec({
+        tournamentPitchLimitRule: currentMatch?.tournamentPitchLimitRule ?? null,
+      }),
+    [currentMatch?.tournamentPitchLimitRule]
   );
+
+  const renderPlayerWorkloadBadges = useCallback(
+    (p: LineupPlayer | null | undefined) => {
+      if (!p) return null;
+      const yPitches = p.yesterdayPitches ?? 0;
+      const wPitches = p.last7DaysPitches ?? 0;
+      if (yPitches <= 0 && wPitches <= 0) return null;
+
+      const evalWarn = evaluatePreMatchWorkloadWarning({
+        yesterdayPitches: yPitches,
+        last7DaysPitches: wPitches,
+        dailyLimit: pitchLimitSpec.limit,
+      });
+
+      return (
+        <>
+          {yPitches > 0 && (
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none tabular-nums shrink-0",
+                evalWarn.severity === "high"
+                  ? "bg-red-600 text-white"
+                  : "bg-amber-100 text-amber-950 border border-amber-400 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-700"
+              )}
+            >
+              ⚾ 前日{yPitches}球
+            </span>
+          )}
+          {wPitches > 0 && (
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[9.5px] font-black leading-none tabular-nums shrink-0 border",
+                wPitches >= 140
+                  ? "bg-red-50 text-red-900 border-red-300 dark:bg-red-950 dark:text-red-200 dark:border-red-800"
+                  : wPitches >= 100
+                    ? "bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
+                    : "bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700"
+              )}
+            >
+              7日計{wPitches}球
+            </span>
+          )}
+        </>
+      );
+    },
+    [pitchLimitSpec.limit]
+  );
+
+  const assignedPitcherWarnings = useMemo(() => {
+    const entries: Array<{
+      key: string;
+      orderLabel: string;
+      playerName: string;
+      uniformNumber: string | null;
+      warning: ReturnType<typeof evaluatePreMatchWorkloadWarning>;
+    }> = [];
+
+    const checkSlot = (slot: MyLineupSlot, label: string) => {
+      if (!slot.playerId) return;
+      const tp = teamPlayers.find((p) => p.id === slot.playerId);
+      if (!tp) return;
+      const warning = evaluatePreMatchWorkloadWarning({
+        yesterdayPitches: tp.yesterdayPitches,
+        last7DaysPitches: tp.last7DaysPitches,
+        dailyLimit: pitchLimitSpec.limit,
+      });
+      if (warning.severity !== "none") {
+        entries.push({
+          key: `${label}-${tp.id}`,
+          orderLabel: label,
+          playerName: tp.name,
+          uniformNumber: tp.uniformNumber ?? null,
+          warning,
+        });
+      }
+    };
+
+    myLineup.forEach((slot, idx) => {
+      if (slot.position === "1") {
+        checkSlot(slot, `${idx + 1}番・投`);
+      }
+    });
+
+    if (activeDhStarterPitcher) {
+      checkSlot(activeDhStarterPitcher, "先発投手(DH)");
+    }
+
+    return entries;
+  }, [myLineup, activeDhStarterPitcher, teamPlayers, pitchLimitSpec.limit]);
+
+  const startingPlayerIds = useMemo(() => {
+    const ids = myLineup.map((p) => p.playerId).filter(Boolean);
+    if (
+      activeDhStarterPitcher?.playerId &&
+      !ids.includes(activeDhStarterPitcher.playerId)
+    ) {
+      ids.push(activeDhStarterPitcher.playerId);
+    }
+    return ids;
+  }, [myLineup, activeDhStarterPitcher]);
   const remainingPlayers = useMemo(() => {
     const filtered = teamPlayers.filter((p) => !startingPlayerIds.includes(p.id));
     return [...filtered].sort((a, b) => {
@@ -1501,6 +1773,75 @@ function LiffLineupContent() {
             )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                🛡️ 肩肘保護・連投／投球負荷アラートバナー（先発投手に前日・直近7日負荷がある場合のみ表示）
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+            {activeTab === "myTeam" && assignedPitcherWarnings.length > 0 && (
+              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                <div
+                  className={cn(
+                    "bg-[#0f172a] text-slate-50 border-b-[3px] px-4 py-2.5 flex items-center justify-between gap-2 flex-wrap",
+                    assignedPitcherWarnings.some((w) => w.warning.severity === "high")
+                      ? "border-red-500"
+                      : "border-amber-500"
+                  )}
+                >
+                  <h3 className="text-xs font-black text-white flex items-center gap-1.5">
+                    <AlertTriangle
+                      className={cn(
+                        "w-4 h-4 shrink-0",
+                        assignedPitcherWarnings.some((w) => w.warning.severity === "high")
+                          ? "text-red-400"
+                          : "text-amber-400"
+                      )}
+                    />
+                    <span>肩肘保護・投球負荷アラート（先発投手）</span>
+                  </h3>
+                  <span className="text-[10.5px] font-black bg-slate-800 text-slate-100 border border-slate-700 px-2 py-0.5 rounded-full tabular-nums">
+                    基準: {pitchLimitSpec.ruleLabel}
+                  </span>
+                </div>
+                <div className="p-3 space-y-2 bg-card">
+                  {assignedPitcherWarnings.map((item) => {
+                    const isHigh = item.warning.severity === "high";
+                    return (
+                      <div
+                        key={item.key}
+                        className={cn(
+                          "p-2.5 rounded-xl border border-l-4 space-y-1",
+                          isHigh
+                            ? "bg-red-50 border-red-300 border-l-red-600 text-red-950 dark:bg-red-950 dark:border-red-800 dark:border-l-red-500 dark:text-red-100"
+                            : "bg-amber-50 border-amber-300 border-l-amber-500 text-amber-950 dark:bg-amber-950 dark:border-amber-800 dark:border-l-amber-500 dark:text-amber-100"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-xs font-black">
+                            {item.orderLabel}：{item.uniformNumber ? `#${item.uniformNumber} ` : ""}
+                            {item.playerName}
+                          </span>
+                          {item.warning.shortBadge && (
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-black tabular-nums",
+                                isHigh
+                                  ? "bg-red-600 text-white"
+                                  : "bg-amber-200 text-amber-950 dark:bg-amber-900 dark:text-amber-100"
+                              )}
+                            >
+                              {item.warning.shortBadge}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-bold leading-snug">
+                          {item.warning.message}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 ⚾ 【セクション1】スターティングメンバー
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -1642,6 +1983,7 @@ function LiffLineupContent() {
                                         {starterCondMeta.compactBadgeText}
                                       </span>
                                     )}
+                                  {renderPlayerWorkloadBadges(matchedMyStarterPlayer)}
                                 </div>
                                 {(starterCondStatus === "restricted" ||
                                   starterCondStatus === "rehab") &&
@@ -1773,6 +2115,103 @@ function LiffLineupContent() {
                   })}
                 </div>
 
+                {/* DH制・先発投手（打順外・守備専任）の保持・選択表示 */}
+                {activeTab === "myTeam" &&
+                  (Boolean(activeDhStarterPitcher) ||
+                    (effectiveCanEditLineup &&
+                      myLineup.some((s) => s.position === "DH") &&
+                      !myLineup.some((s) => s.position === "1"))) && (
+                    <div className="p-2.5 rounded-2xl border border-border bg-muted/45 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <span className="px-2 py-1 rounded-lg bg-red-500 text-white font-black text-[10px] shrink-0">
+                            先発投手(DH)
+                          </span>
+                          {activeDhStarterPitcher ? (
+                            <>
+                              <span className="text-xs sm:text-sm font-black text-foreground truncate">
+                                {activeDhStarterPitcher.uniformNumber
+                                  ? `#${activeDhStarterPitcher.uniformNumber} `
+                                  : ""}
+                                {activeDhStarterPitcher.name}
+                              </span>
+                              {renderPlayerWorkloadBadges(
+                                teamPlayers.find(
+                                  (tp) => tp.id === activeDhStarterPitcher.playerId
+                                ) || null
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs font-bold text-muted-foreground">
+                              DH制の先発投手（打席なし）を選択
+                            </span>
+                          )}
+                        </div>
+                        {effectiveCanEditLineup && activeDhStarterPitcher && (
+                          <button
+                            type="button"
+                            onClick={() => setDhStarterPitcher(null)}
+                            className="px-2 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                          >
+                            解除
+                          </button>
+                        )}
+                      </div>
+
+                      {effectiveCanEditLineup && (
+                        <LiffSelect
+                          value={activeDhStarterPitcher?.playerId || ""}
+                          onChange={(val: string) => {
+                            if (!val) {
+                              setDhStarterPitcher(null);
+                              return;
+                            }
+                            const p = teamPlayers.find((tp) => tp.id === val);
+                            if (!p) return;
+                            setDhStarterPitcher({
+                              order: 10,
+                              playerId: p.id,
+                              name: p.name,
+                              uniformNumber: p.uniformNumber || "",
+                              position: "1",
+                            });
+                          }}
+                          title="DH制・先発投手を選択"
+                          placeholder="先発投手（打席なし）を選択..."
+                          options={[
+                            { value: "", label: "未設定（打順内で投手を指定）" },
+                            ...teamPlayers
+                              .filter(
+                                (tp) =>
+                                  !myLineup.some((slot) => slot.playerId === tp.id) &&
+                                  attendance[tp.id] !== "absent" &&
+                                  attendance[tp.id] !== "excluded" &&
+                                  normalizePlayerConditionStatus(tp.conditionStatus) !== "rehab"
+                              )
+                              .map((tp) => {
+                                const pw = evaluatePreMatchWorkloadWarning({
+                                  yesterdayPitches: tp.yesterdayPitches,
+                                  last7DaysPitches: tp.last7DaysPitches,
+                                  dailyLimit: pitchLimitSpec.limit,
+                                });
+                                return {
+                                  value: tp.id,
+                                  label: `${tp.uniformNumber ? `#${tp.uniformNumber} ` : ""}${tp.name}`,
+                                  badge: pw.shortBadge || undefined,
+                                  badgeTone:
+                                    pw.severity === "high"
+                                      ? ("rose" as const)
+                                      : pw.severity === "caution"
+                                        ? ("amber" as const)
+                                        : undefined,
+                                };
+                              }),
+                          ]}
+                        />
+                      )}
+                    </div>
+                  )}
+
                 {/* EDH（全員打撃）対応: 打順追加ボタン */}
                 {effectiveCanEditLineup && (
                   <Button
@@ -1896,6 +2335,7 @@ function LiffLineupContent() {
                                       {condMeta.compactBadgeText}
                                     </span>
                                   )}
+                                  {renderPlayerWorkloadBadges(player)}
                                 </div>
                                 {player.conditionNote && (
                                   <span className="text-[9.5px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5">
@@ -2425,13 +2865,14 @@ function LiffLineupContent() {
                               )}
                             >
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                   <span className="text-xs font-black min-w-[26px] text-primary shrink-0">
                                     {p.uniformNumber ? `#${p.uniformNumber}` : "-"}
                                   </span>
                                   <span className="text-sm font-black text-foreground truncate">
                                     {p.name}
                                   </span>
+                                  {renderPlayerWorkloadBadges(p)}
                                 </div>
                                 {p.conditionNote && (
                                   <p className="text-[10px] font-bold text-muted-foreground flex items-center gap-1 truncate mt-0.5 pl-[36px]">
@@ -2501,6 +2942,48 @@ function LiffLineupContent() {
                     >
                       ← 選手選択に戻る
                     </button>
+
+                    {tempSelectedPlayer &&
+                      (() => {
+                        const preWarn = evaluatePreMatchWorkloadWarning({
+                          yesterdayPitches: tempSelectedPlayer.yesterdayPitches,
+                          last7DaysPitches: tempSelectedPlayer.last7DaysPitches,
+                          dailyLimit: pitchLimitSpec.limit,
+                        });
+                        if (preWarn.severity === "none") return null;
+                        return (
+                          <div
+                            className={cn(
+                              "mb-3 p-2.5 rounded-xl border border-l-4 space-y-1",
+                              preWarn.severity === "high"
+                                ? "bg-red-50 border-red-300 border-l-red-600 text-red-950 dark:bg-red-950 dark:border-red-800 dark:border-l-red-500 dark:text-red-100"
+                                : "bg-amber-50 border-amber-300 border-l-amber-500 text-amber-950 dark:bg-amber-950 dark:border-amber-800 dark:border-l-amber-500 dark:text-amber-100"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-1.5 flex-wrap text-[11px] font-black">
+                              <span className="inline-flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                <span>肩肘保護アラート（投 (1) 起用注意）</span>
+                              </span>
+                              {preWarn.shortBadge && (
+                                <span
+                                  className={cn(
+                                    "px-1.5 py-0.5 rounded text-[10px] font-black tabular-nums",
+                                    preWarn.severity === "high"
+                                      ? "bg-red-600 text-white"
+                                      : "bg-amber-200 text-amber-950 dark:bg-amber-900 dark:text-amber-100"
+                                  )}
+                                >
+                                  {preWarn.shortBadge}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10.5px] font-bold leading-snug">
+                              {preWarn.message}
+                            </p>
+                          </div>
+                        );
+                      })()}
 
                     {tempSelectedPlayer &&
                       normalizePlayerConditionStatus(tempSelectedPlayer.conditionStatus) ===
@@ -2681,14 +3164,57 @@ function LiffLineupContent() {
                 </div>
 
                 {newMatchType !== "practice" && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-black text-foreground">大会名</label>
-                    <Input
-                      placeholder="例：秋季大会 2回戦"
-                      value={newTournamentName}
-                      onChange={(e) => setNewTournamentName(e.target.value)}
-                      className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
-                    />
+                  <div className="space-y-2">
+                    <label className="text-xs font-black text-foreground flex items-center gap-1">
+                      <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                      <span>大会名</span>
+                    </label>
+                    {availableTournaments.length > 0 && (
+                      <LiffSelect
+                        value={newTournamentId}
+                        onChange={(val: string) => {
+                          setNewTournamentId(val);
+                          if (val && val !== "__custom__") {
+                            const matched = availableTournaments.find((t) => t.id === val);
+                            if (matched) {
+                              setNewTournamentName(matched.name);
+                            }
+                          } else if (!val) {
+                            setNewTournamentName("");
+                          }
+                        }}
+                        title="登録済み大会から選択"
+                        placeholder="登録済み大会から選択..."
+                        options={[
+                          { value: "", label: "未選択" },
+                          ...availableTournaments.map((t) => ({
+                            value: t.id,
+                            label: t.season ? `${t.name} (${t.season}年)` : t.name,
+                            sublabel: t.pitchLimitRule
+                              ? `⚾ ${t.pitchLimitRule}`
+                              : undefined,
+                          })),
+                          {
+                            value: "__custom__",
+                            label: "＋ 自由入力・新規大会名を入力",
+                          },
+                        ]}
+                      />
+                    )}
+                    {(availableTournaments.length === 0 ||
+                      newTournamentId === "__custom__" ||
+                      Boolean(newTournamentId)) && (
+                      <Input
+                        placeholder={
+                          newTournamentId && newTournamentId !== "__custom__"
+                            ? "必要なら回戦などを追記（例：秋季大会 2回戦）"
+                            : "例：秋季大会 2回戦"
+                        }
+                        value={newTournamentName}
+                        onChange={(e) => setNewTournamentName(e.target.value)}
+                        className="h-11 rounded-xl bg-muted/50 border-border font-bold text-sm"
+                      />
+                    )}
                   </div>
                 )}
 

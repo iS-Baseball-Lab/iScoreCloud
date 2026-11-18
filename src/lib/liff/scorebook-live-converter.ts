@@ -13,9 +13,11 @@ import {
   isMyTeamBattingHalf,
   normalizeReportPositionCode,
   normalizeRunnersList,
+  toLivePitcherKey,
 } from "@/lib/liff/live-report-v2";
 import type {
   LiveReportBaseNum,
+  LiveReportPitchType,
   LiveReportPlayEntry,
   LiveReportV2Document,
 } from "@/types/live-report-v2";
@@ -1412,6 +1414,104 @@ export function convertLiveReportToScorebookDraft(params: {
         });
 
         const finalEndingOuts = Math.min(3, curOuts + synth.totalOutsDelta);
+        const resolvedPitchState = (() => {
+          const basePitches = classified.pitches;
+          const terminalPitch: CanonicalPitchResult =
+            basePitches.length > 0
+              ? basePitches[basePitches.length - 1]
+              : classified.isHit
+                ? "hit"
+                : "in_play";
+          const recordedSeq = Array.isArray(entry.pitches) ? entry.pitches : [];
+          const explicitCount =
+            typeof entry.pitchCount === "number" &&
+            Number.isFinite(entry.pitchCount) &&
+            entry.pitchCount > 0
+              ? Math.floor(entry.pitchCount)
+              : null;
+
+          if (recordedSeq.length === 0 && explicitCount === null) {
+            return {
+              pitches: basePitches,
+              balls: classified.balls,
+              strikes: classified.strikes,
+            };
+          }
+
+          let mapped: CanonicalPitchResult[] = [];
+          if (recordedSeq.length > 0) {
+            mapped = recordedSeq.map((pt: LiveReportPitchType, idx: number) => {
+              const isLast = idx === recordedSeq.length - 1;
+              if (isLast && basePitches.length > 0) {
+                return terminalPitch;
+              }
+              if (pt === "ball") return "ball";
+              if (pt === "strike") return "strike";
+              return "foul";
+            });
+            if (explicitCount !== null && explicitCount > mapped.length) {
+              const padCount = explicitCount - mapped.length;
+              const prefix = mapped.slice(0, Math.max(0, mapped.length - 1));
+              const tail =
+                mapped.length > 0 ? [mapped[mapped.length - 1]] : [terminalPitch];
+              mapped = [
+                ...prefix,
+                ...Array.from({ length: padCount }, (): CanonicalPitchResult => "foul"),
+                ...tail,
+              ];
+            }
+          } else if (explicitCount !== null) {
+            if (basePitches.length === 0) {
+              mapped = [
+                ...Array.from(
+                  { length: Math.max(0, explicitCount - 1) },
+                  (): CanonicalPitchResult => "foul"
+                ),
+                terminalPitch,
+              ];
+            } else if (explicitCount === basePitches.length) {
+              mapped = [...basePitches];
+            } else if (explicitCount > basePitches.length) {
+              const padCount = explicitCount - basePitches.length;
+              mapped = [
+                ...basePitches.slice(0, basePitches.length - 1),
+                ...Array.from({ length: padCount }, (): CanonicalPitchResult => "foul"),
+                basePitches[basePitches.length - 1],
+              ];
+            } else {
+              mapped = basePitches.slice(basePitches.length - explicitCount);
+            }
+          }
+
+          let balls = 0;
+          let strikes = 0;
+          const countLimit = Math.max(0, mapped.length - 1);
+          for (let i = 0; i < countLimit; i += 1) {
+            const code = mapped[i];
+            if (code === "ball") {
+              balls = Math.min(3, balls + 1);
+            } else if (code === "strike" || code === "swinging_strike") {
+              strikes = Math.min(2, strikes + 1);
+            } else if (code === "foul" || code === "bunt_foul") {
+              if (strikes < 2) strikes += 1;
+            }
+          }
+          if (
+            classified.resultCode === "walk" ||
+            classified.resultCode === "intentional_walk"
+          ) {
+            balls = Math.max(balls, Math.min(4, classified.balls));
+          } else if (
+            classified.resultCode === "strikeout" ||
+            classified.resultCode === "dropped_third_strike" ||
+            classified.resultCode === "dropped_third_strike_out"
+          ) {
+            strikes = Math.max(strikes, Math.min(3, classified.strikes));
+          }
+
+          return { pitches: mapped, balls, strikes };
+        })();
+
         let rawAb: ScorebookV2AtBat = {
           id: abId,
           inning: inn,
@@ -1420,8 +1520,14 @@ export function convertLiveReportToScorebookDraft(params: {
           battingOrder: order,
           batterName: resolvedBatterName,
           batterPlayerId: resolvedBatterId,
-          pitcherName: activePitcher?.name || (isMyBatting ? "相手投手" : ""),
-          pitcherPlayerId: activePitcher?.playerId || null,
+          pitcherName:
+            (!isMyBatting && entry.pitcherName?.trim()) ||
+            activePitcher?.name ||
+            (isMyBatting ? "相手投手" : ""),
+          pitcherPlayerId:
+            !isMyBatting && entry.pitcherPlayerId !== undefined
+              ? entry.pitcherPlayerId
+              : activePitcher?.playerId || null,
           resultCode: classified.resultCode,
           resultLabel: classified.resultLabel,
           battedDirection: classified.battedDirection,
@@ -1429,9 +1535,9 @@ export function convertLiveReportToScorebookDraft(params: {
           outsInPlay: synth.totalOutsDelta,
           endingOuts: finalEndingOuts,
           runsInPlay: synth.totalRunsInPlay,
-          balls: classified.balls,
-          strikes: classified.strikes,
-          pitches: classified.pitches,
+          balls: resolvedPitchState.balls,
+          strikes: resolvedPitchState.strikes,
+          pitches: resolvedPitchState.pitches,
           advances: [...extraPreAdvances, ...synth.advances],
           pinchRunners:
             pendingPinchRunners.length > 0 ? pendingPinchRunners : undefined,
@@ -1471,6 +1577,75 @@ export function convertLiveReportToScorebookDraft(params: {
         runs: innRuns,
         hits: innHits,
       });
+    }
+
+    // 速報での手動球数微調整（+1/-1）を該当投手の打席球数配列へ反映
+    const pitchAdjustments = doc.pitcherPitchAdjustments || {};
+    if (!isMyBatting && atBats.length > 0) {
+      for (const [adjKey, rawDelta] of Object.entries(pitchAdjustments)) {
+        if (!Number.isFinite(rawDelta) || rawDelta === 0 || adjKey === "__opponent__") {
+          continue;
+        }
+        const delta = Math.trunc(rawDelta);
+        const matchingIndices: number[] = [];
+        for (let idx = 0; idx < atBats.length; idx += 1) {
+          const ab = atBats[idx];
+          const key = toLivePitcherKey(ab.pitcherPlayerId, ab.pitcherName);
+          if (key === adjKey) {
+            matchingIndices.push(idx);
+          }
+        }
+        if (matchingIndices.length === 0) continue;
+        if (delta > 0) {
+          const lastIdx = matchingIndices[matchingIndices.length - 1];
+          const targetAb = atBats[lastIdx];
+          const curPitches = targetAb.pitches || [];
+          const nextPitches: CanonicalPitchResult[] =
+            curPitches.length > 0
+              ? [
+                  ...curPitches.slice(0, curPitches.length - 1),
+                  ...Array.from({ length: delta }, (): CanonicalPitchResult => "foul"),
+                  curPitches[curPitches.length - 1],
+                ]
+              : Array.from({ length: delta }, (): CanonicalPitchResult => "foul");
+          atBats[lastIdx] = { ...targetAb, pitches: nextPitches };
+        } else {
+          let remainingToTrim = Math.abs(delta);
+          for (
+            let m = matchingIndices.length - 1;
+            m >= 0 && remainingToTrim > 0;
+            m -= 1
+          ) {
+            const abIdx = matchingIndices[m];
+            const targetAb = atBats[abIdx];
+            const curPitches = targetAb.pitches || [];
+            if (curPitches.length <= 1) continue;
+            const trimCount = Math.min(remainingToTrim, curPitches.length - 1);
+            const nextPitches = [
+              ...curPitches.slice(0, curPitches.length - 1 - trimCount),
+              curPitches[curPitches.length - 1],
+            ];
+            atBats[abIdx] = { ...targetAb, pitches: nextPitches };
+            remainingToTrim -= trimCount;
+          }
+        }
+      }
+    } else if (isMyBatting && atBats.length > 0) {
+      const oppDelta = Math.trunc(pitchAdjustments["__opponent__"] || 0);
+      if (oppDelta > 0) {
+        const lastIdx = atBats.length - 1;
+        const targetAb = atBats[lastIdx];
+        const curPitches = targetAb.pitches || [];
+        const nextPitches: CanonicalPitchResult[] =
+          curPitches.length > 0
+            ? [
+                ...curPitches.slice(0, curPitches.length - 1),
+                ...Array.from({ length: oppDelta }, (): CanonicalPitchResult => "foul"),
+                curPitches[curPitches.length - 1],
+              ]
+            : Array.from({ length: oppDelta }, (): CanonicalPitchResult => "foul");
+        atBats[lastIdx] = { ...targetAb, pitches: nextPitches };
+      }
     }
 
     const structure: ScorebookSheetStructure = {

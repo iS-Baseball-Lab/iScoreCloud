@@ -11,7 +11,7 @@ import {
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import { invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
   FileText,
   Search,
@@ -71,29 +71,24 @@ const DOCUMENT_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
   { value: "other", label: "その他" },
 ];
 
+function isValidHttpUrl(url: string | null | undefined): boolean {
+  return Boolean(url && /^https?:\/\//i.test(url.trim()));
+}
+
 // 📄 PDFをスマートフォンやLINE WebViewで確実に表示するためのURL変換ヘルパー
 function getAbsoluteUrl(url: string | null | undefined): string {
   if (!url) return "";
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (isValidHttpUrl(url)) return url.trim();
+  if (!url.startsWith("/") && url.includes(":")) return "";
   if (typeof window !== "undefined") {
     return `${window.location.origin}${url.startsWith("/") ? "" : "/"}${url}`;
   }
   return `https://iscorecloud.com${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
-function getPdfViewerUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (url.startsWith("data:")) return url;
-  const abs = getAbsoluteUrl(url);
-  if (abs.includes("localhost") || abs.includes("127.0.0.1")) {
-    return url;
-  }
-  return `https://docs.google.com/viewer?url=${encodeURIComponent(abs)}&embedded=true`;
-}
-
 function getExternalBrowserUrl(url: string | null | undefined): string {
   const abs = getAbsoluteUrl(url);
-  if (!abs) return "";
+  if (!isValidHttpUrl(abs)) return "";
   const sep = abs.includes("?") ? "&" : "?";
   return `${abs}${sep}openExternalBrowser=1`;
 }
@@ -341,8 +336,8 @@ export default function LiffDocumentsPage() {
           }
         }
       } else {
-        if (!finalFileUrl) {
-          throw new Error("資料URLを入力してください");
+        if (!finalFileUrl || !isValidHttpUrl(finalFileUrl)) {
+          throw new Error("http:// または https:// で始まる有効な資料URLを入力してください");
         }
       }
 
@@ -372,6 +367,7 @@ export default function LiffDocumentsPage() {
         throw new Error(data.error || "登録に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/documents");
       setIsCreateModalOpen(false);
       setSelectedFile(null);
       setNewTitle("");
@@ -399,6 +395,10 @@ export default function LiffDocumentsPage() {
       let finalFileUrl = editFileUrl.trim();
       let finalFileType = editFileType;
       let finalFileSize = editFileSize;
+
+      if (editUploadMode === "url" && (!finalFileUrl || !isValidHttpUrl(finalFileUrl))) {
+        throw new Error("http:// または https:// で始まる有効な資料URLを入力してください");
+      }
 
       if (editUploadMode === "file" && editSelectedFile) {
         const sizeBytes = editSelectedFile.size || 0;
@@ -440,7 +440,7 @@ export default function LiffDocumentsPage() {
         if (!uploadSuccess) {
           try {
             finalFileUrl = await fileToBase64(editSelectedFile);
-          } catch (base64Err) {
+          } catch {
             throw new Error("ファイルの読み込みに失敗しました");
           }
         }
@@ -466,6 +466,7 @@ export default function LiffDocumentsPage() {
         throw new Error(data.error || "資料の更新に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/documents");
       setEditingDoc(null);
       loadDocuments();
     } catch (err: unknown) {
@@ -498,6 +499,7 @@ export default function LiffDocumentsPage() {
         throw new Error(data.error || "資料の削除に失敗しました");
       }
 
+      invalidateLiffApiCache("/api/liff/documents");
       setEditingDoc(null);
       loadDocuments();
     } catch (err: unknown) {
@@ -920,17 +922,25 @@ export default function LiffDocumentsPage() {
           </div>
         </section>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ➕ 資料 新規追加モーダル
+          ➕ 資料 新規追加モーダル (ボトムシート・Safe Area対応)
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isCreateModalOpen &&
         mounted &&
+        typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+          <div
+            onClick={() => setIsCreateModalOpen(false)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <form
+              onSubmit={handleCreateDocument}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col"
+            >
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center">
@@ -944,13 +954,13 @@ export default function LiffDocumentsPage() {
                 <button
                   type="button"
                   onClick={() => setIsCreateModalOpen(false)}
-                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              <div className="flex-1 min-h-0 p-5 sm:p-6 space-y-4 overflow-y-auto">
                 {submitError && (
                   <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -958,264 +968,281 @@ export default function LiffDocumentsPage() {
                   </div>
                 )}
 
-                <form onSubmit={handleCreateDocument} className="space-y-4">
-                  {/* 登録スコープ選択 */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">
-                      登録範囲 (公開対象) <span className="text-destructive">*</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setNewScope("organization")}
-                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                          newScope === "organization"
-                            ? "bg-primary/10 border-primary text-primary shadow-xs"
-                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 font-black text-xs">
-                          <Building2 className="w-4 h-4 shrink-0" />
-                          <span>チーム全体</span>
-                        </div>
-                        <p className="text-[10px] font-medium leading-tight opacity-80">
-                          {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setNewScope("team")}
-                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                          newScope === "team"
-                            ? "bg-primary/10 border-primary text-primary shadow-xs"
-                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 font-black text-xs">
-                          <Users2 className="w-4 h-4 shrink-0" />
-                          <span>{currentTeam?.teamName || "この編成"}</span>
-                        </div>
-                        <p className="text-[10px] font-medium leading-tight opacity-80">
-                          {currentTeam?.teamName || "選択中の編成"} メンバーに公開
-                        </p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* アップロード方式 */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">アップロード方法</label>
-                    <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
-                      <button
-                        type="button"
-                        onClick={() => setUploadMode("file")}
-                        className={`py-1.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                          uploadMode === "file"
-                            ? "bg-card text-foreground shadow-sm border border-border font-black"
-                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                        }`}
-                      >
-                        <UploadCloud className={`w-3.5 h-3.5 ${uploadMode === "file" ? "text-primary" : ""}`} />
-                        <span>ファイル選択 (R2)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setUploadMode("url")}
-                        className={`py-1.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                          uploadMode === "url"
-                            ? "bg-card text-foreground shadow-sm border border-border font-black"
-                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                        }`}
-                      >
-                        <Link2 className={`w-3.5 h-3.5 ${uploadMode === "url" ? "text-primary" : ""}`} />
-                        <span>外部URL指定</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {uploadMode === "file" ? (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-foreground">
-                        ファイルを選択 <span className="text-destructive">*</span>
-                      </label>
-                      <input
-                        type="file"
-                        id="create-doc-file-input"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".xlsx,.xls,.xlsm,.csv,.pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel.sheet.binary.macroEnabled.12,text/csv,application/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
-                        className="sr-only"
-                      />
-
-                      {selectedFile ? (
-                        <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Paperclip className="w-4 h-4 text-primary shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-black text-foreground truncate">
-                                {selectedFile.name}
-                              </p>
-                              <span className="text-[10px] text-muted-foreground font-bold">
-                                {(selectedFile.size / 1024).toFixed(0)} KB
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedFile(null);
-                              if (fileInputRef.current) fileInputRef.current.value = "";
-                            }}
-                            className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <label
-                          htmlFor="create-doc-file-input"
-                          className="w-full py-6 rounded-2xl border border-dashed border-border bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer group active:scale-[0.99]"
-                        >
-                          <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <UploadCloud className="w-5 h-5" />
-                          </div>
-                          <span className="text-xs font-bold text-foreground">
-                            ここをタップしてExcel・PDF・写真を選択
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            Excel (.xlsx, .xls), PDF, Word, 画像に対応
-                          </span>
-                        </label>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-black text-foreground">
-                        資料URL / 共有リンク <span className="text-destructive">*</span>
-                      </label>
-                      <div className="relative">
-                        <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input
-                          type="url"
-                          placeholder="Google Drive, Dropbox, PDF等の共有URL"
-                          value={newFileUrl}
-                          onChange={(e) => setNewFileUrl(e.target.value)}
-                          className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                          required
-                        />
+                {/* 登録スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    登録範囲 (公開対象) <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("organization")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 cursor-pointer ${
+                        newScope === "organization"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span>チーム全体</span>
                       </div>
-                    </div>
-                  )}
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                      </p>
+                    </button>
 
-                  {/* ファイル形式 / 種別選択 */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">
-                      ファイル形式 / 種類 <span className="text-destructive">*</span>
-                    </label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
-                        { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
-                        { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
-                        { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
-                      ].map((fmt) => {
-                        const isSelected = newFileType === fmt.id;
-                        const Icon = fmt.icon;
-                        return (
-                          <button
-                            key={fmt.id}
-                            type="button"
-                            onClick={() => setNewFileType(fmt.id)}
-                            className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
-                              isSelected
-                                ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
-                                : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
-                            }`}
-                          >
-                            <Icon className="w-4 h-4 mb-0.5" />
-                            <span className="text-xs leading-none">{fmt.label}</span>
-                            <span className="text-[9px] opacity-70 leading-none">{fmt.sub}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNewScope("team")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 cursor-pointer ${
+                        newScope === "team"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Users2 className="w-4 h-4 shrink-0" />
+                        <span>{currentTeam?.teamName || "この編成"}</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                      </p>
+                    </button>
                   </div>
+                </div>
 
-                  {/* 資料タイトル */}
+                {/* アップロード方式 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">アップロード方法</label>
+                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("file")}
+                      className={`py-1.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        uploadMode === "file"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      <UploadCloud
+                        className={`w-3.5 h-3.5 ${uploadMode === "file" ? "text-primary" : ""}`}
+                      />
+                      <span>ファイル選択 (R2)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("url")}
+                      className={`py-1.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        uploadMode === "url"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      <Link2 className={`w-3.5 h-3.5 ${uploadMode === "url" ? "text-primary" : ""}`} />
+                      <span>外部URL指定</span>
+                    </button>
+                  </div>
+                </div>
+
+                {uploadMode === "file" ? (
                   <div className="space-y-1.5">
                     <label className="text-xs font-black text-foreground">
-                      資料名 / タイトル <span className="text-destructive">*</span>
+                      ファイルを選択 <span className="text-destructive">*</span>
                     </label>
                     <input
-                      type="text"
-                      placeholder="例: 2026年度 遠征合宿のしおり"
-                      value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                      required
+                      type="file"
+                      id="create-doc-file-input"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept=".xlsx,.xls,.xlsm,.csv,.pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel.sheet.binary.macroEnabled.12,text/csv,application/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
+                      className="sr-only"
                     />
-                  </div>
 
-                  {/* カテゴリ */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <LiffSelect
-                      value={newCategory}
-                      onChange={setNewCategory}
-                      options={DOCUMENT_CATEGORY_OPTIONS}
-                      title="資料カテゴリを選択"
-                      accent="amber"
-                      searchable={false}
-                      className="w-full bg-background"
-                    />
-                  </div>
-
-                  {/* 説明・メモ */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
-                    <textarea
-                      rows={2}
-                      placeholder="資料の概要や保護者への連絡事項を記入"
-                      value={newDescription}
-                      onChange={(e) => setNewDescription(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting || (uploadMode === "file" && !selectedFile)}
-                    className="w-full py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>クラウドへ保存中...</span>
-                      </>
+                    {selectedFile ? (
+                      <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground truncate">
+                              {selectedFile.name}
+                            </p>
+                            <span className="text-[10px] text-muted-foreground font-bold">
+                              {(selectedFile.size / 1024).toFixed(0)} KB
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }}
+                          className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     ) : (
-                      <>
-                        <Plus className="w-4 h-4" />
-                        <span>資料を保存する</span>
-                      </>
+                      <label
+                        htmlFor="create-doc-file-input"
+                        className="w-full py-6 rounded-2xl border border-dashed border-border bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 transition-all flex flex-col items-center justify-center gap-1.5 text-muted-foreground cursor-pointer group active:scale-[0.99]"
+                      >
+                        <div className="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <UploadCloud className="w-5 h-5" />
+                        </div>
+                        <span className="text-xs font-bold text-foreground">
+                          ここをタップしてExcel・PDF・写真を選択
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          Excel (.xlsx, .xls), PDF, Word, 画像に対応
+                        </span>
+                      </label>
                     )}
-                  </button>
-                </form>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-black text-foreground">
+                      資料URL / 共有リンク <span className="text-destructive">*</span>
+                    </label>
+                    <div className="relative">
+                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="url"
+                        placeholder="https://... (Google Drive, Dropbox, PDF等の共有URL)"
+                        value={newFileUrl}
+                        onChange={(e) => setNewFileUrl(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* ファイル形式 / 種別選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    ファイル形式 / 種類 <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
+                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
+                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
+                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
+                    ].map((fmt) => {
+                      const isSelected = newFileType === fmt.id;
+                      const Icon = fmt.icon;
+                      return (
+                        <button
+                          key={fmt.id}
+                          type="button"
+                          onClick={() => setNewFileType(fmt.id)}
+                          className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
+                              : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 mb-0.5" />
+                          <span className="text-xs leading-none">{fmt.label}</span>
+                          <span className="text-[9px] opacity-70 leading-none">{fmt.sub}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 資料タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    資料名 / タイトル <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="例: 2026年度 遠征合宿のしおり"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                </div>
+
+                {/* カテゴリ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">カテゴリ</label>
+                  <LiffSelect
+                    value={newCategory}
+                    onChange={setNewCategory}
+                    options={DOCUMENT_CATEGORY_OPTIONS}
+                    title="資料カテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full bg-background"
+                  />
+                </div>
+
+                {/* 説明・メモ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="資料の概要や保護者への連絡事項を記入"
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="shrink-0 px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="py-2.5 px-4 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer shrink-0"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || (uploadMode === "file" && !selectedFile)}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>クラウドへ保存中...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>資料を保存する</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>,
           document.body
         )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ✏️ 資料 編集・削除モーダル
+          ✏️ 資料 編集・削除モーダル (ボトムシート・Safe Area対応)
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {editingDoc &&
         mounted &&
+        typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+          <div
+            onClick={() => setEditingDoc(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <form
+              onSubmit={handleUpdateDocument}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden max-h-[90dvh] flex flex-col"
+            >
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
@@ -1229,13 +1256,13 @@ export default function LiffDocumentsPage() {
                 <button
                   type="button"
                   onClick={() => setEditingDoc(null)}
-                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-5 sm:p-6 space-y-4 overflow-y-auto">
+              <div className="flex-1 min-h-0 p-5 sm:p-6 space-y-4 overflow-y-auto">
                 {submitError && (
                   <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-bold flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
@@ -1243,287 +1270,295 @@ export default function LiffDocumentsPage() {
                   </div>
                 )}
 
-                <form onSubmit={handleUpdateDocument} className="space-y-4">
-                  {/* 登録スコープ選択 */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">
-                      登録範囲 (公開対象) <span className="text-destructive">*</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditScope("organization")}
-                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                          editScope === "organization"
-                            ? "bg-primary/10 border-primary text-primary shadow-xs"
-                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 font-black text-xs">
-                          <Building2 className="w-4 h-4 shrink-0" />
-                          <span>チーム全体</span>
-                        </div>
-                        <p className="text-[10px] font-medium leading-tight opacity-80">
-                          {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
-                        </p>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setEditScope("team")}
-                        className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 ${
-                          editScope === "team"
-                            ? "bg-primary/10 border-primary text-primary shadow-xs"
-                            : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 font-black text-xs">
-                          <Users2 className="w-4 h-4 shrink-0" />
-                          <span>{currentTeam?.teamName || "この編成"}</span>
-                        </div>
-                        <p className="text-[10px] font-medium leading-tight opacity-80">
-                          {currentTeam?.teamName || "選択中の編成"} メンバーに公開
-                        </p>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ファイル形式 / 種別選択 (編集) */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">
-                      ファイル形式 / 種類 <span className="text-destructive">*</span>
-                    </label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
-                        { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
-                        { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
-                        { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
-                      ].map((fmt) => {
-                        const isSelected = editFileType === fmt.id;
-                        const Icon = fmt.icon;
-                        return (
-                          <button
-                            key={fmt.id}
-                            type="button"
-                            onClick={() => setEditFileType(fmt.id)}
-                            className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
-                              isSelected
-                                ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
-                                : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
-                            }`}
-                          >
-                            <Icon className="w-4 h-4 mb-0.5" />
-                            <span className="text-xs leading-none">{fmt.label}</span>
-                            <span className="text-[9px] opacity-70 leading-none">{fmt.sub}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 資料タイトル */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">
-                      資料名 / タイトル <span className="text-destructive">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                      required
-                    />
-                  </div>
-
-                  {/* カテゴリ */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">カテゴリ</label>
-                    <LiffSelect
-                      value={editCategory}
-                      onChange={setEditCategory}
-                      options={DOCUMENT_CATEGORY_OPTIONS}
-                      title="資料カテゴリを選択"
-                      accent="amber"
-                      searchable={false}
-                      className="w-full bg-background"
-                    />
-                  </div>
-
-                  {/* ファイルの変更オプション */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">ファイルの差し替え</label>
-                    <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
-                      <button
-                        type="button"
-                        onClick={() => setEditUploadMode("current")}
-                        className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
-                          editUploadMode === "current"
-                            ? "bg-card text-foreground shadow-sm border border-border font-black"
-                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                        }`}
-                      >
-                        変更しない
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditUploadMode("file")}
-                        className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
-                          editUploadMode === "file"
-                            ? "bg-card text-foreground shadow-sm border border-border font-black"
-                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                        }`}
-                      >
-                        ファイル選択
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEditUploadMode("url")}
-                        className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
-                          editUploadMode === "url"
-                            ? "bg-card text-foreground shadow-sm border border-border font-black"
-                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                        }`}
-                      >
-                        URL変更
-                      </button>
-                    </div>
-
-                    {editUploadMode === "file" && (
-                      <div className="pt-1.5">
-                        <input
-                          type="file"
-                          id="edit-doc-file-input"
-                          ref={editFileInputRef}
-                          onChange={handleEditFileChange}
-                          accept=".xlsx,.xls,.xlsm,.csv,.pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel.sheet.binary.macroEnabled.12,text/csv,application/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
-                          className="sr-only"
-                        />
-                        {editSelectedFile ? (
-                          <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Paperclip className="w-4 h-4 text-primary shrink-0" />
-                              <p className="text-xs font-black text-foreground truncate">
-                                {editSelectedFile.name}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditSelectedFile(null);
-                                if (editFileInputRef.current) editFileInputRef.current.value = "";
-                              }}
-                              className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label
-                            htmlFor="edit-doc-file-input"
-                            className="w-full py-4 rounded-2xl border border-dashed border-border bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer group active:scale-[0.99]"
-                          >
-                            <UploadCloud className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
-                            <span className="text-xs font-bold text-foreground">
-                              新しいExcel・PDF・写真を選択
-                            </span>
-                          </label>
-                        )}
-                      </div>
-                    )}
-
-                    {editUploadMode === "url" && (
-                      <div className="pt-1.5 relative">
-                        <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                        <input
-                          type="url"
-                          placeholder="Google Drive, Dropbox等のURL"
-                          value={editFileUrl}
-                          onChange={(e) => setEditFileUrl(e.target.value)}
-                          className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
-                          required
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 説明・持ち物メモ */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
-                    <textarea
-                      rows={2}
-                      value={editDescription}
-                      onChange={(e) => setEditDescription(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2">
+                {/* 登録スコープ選択 */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    登録範囲 (公開対象) <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={handleDeleteDocument}
-                      disabled={isDeleting || isSubmitting}
-                      className="py-3 px-4 rounded-2xl border border-rose-500 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 disabled:opacity-50"
+                      onClick={() => setEditScope("organization")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 cursor-pointer ${
+                        editScope === "organization"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
                     >
-                      {isDeleting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                      <span>削除</span>
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Building2 className="w-4 h-4 shrink-0" />
+                        <span>チーム全体</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.orgName || "クラブ"}の全編成・全学年で共通
+                      </p>
                     </button>
 
                     <button
-                      type="submit"
-                      disabled={isSubmitting || isDeleting}
-                      className="flex-1 py-3 rounded-2xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50"
+                      type="button"
+                      onClick={() => setEditScope("team")}
+                      className={`p-3 rounded-2xl text-left border transition-all flex flex-col gap-1 cursor-pointer ${
+                        editScope === "team"
+                          ? "bg-primary/10 border-primary text-primary shadow-xs"
+                          : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
                     >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>保存中...</span>
-                        </>
-                      ) : (
-                        <span>変更を保存</span>
-                      )}
+                      <div className="flex items-center gap-1.5 font-black text-xs">
+                        <Users2 className="w-4 h-4 shrink-0" />
+                        <span>{currentTeam?.teamName || "この編成"}</span>
+                      </div>
+                      <p className="text-[10px] font-medium leading-tight opacity-80">
+                        {currentTeam?.teamName || "選択中の編成"} メンバーに公開
+                      </p>
                     </button>
                   </div>
-                </form>
+                </div>
+
+                {/* ファイル形式 / 種別選択 (編集) */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    ファイル形式 / 種類 <span className="text-destructive">*</span>
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { id: "XLSX", label: "Excel", sub: "表計算", icon: FileSpreadsheet },
+                      { id: "PDF", label: "PDF", sub: "文書", icon: FileText },
+                      { id: "DOCX", label: "Word", sub: "書類", icon: FileText },
+                      { id: "IMG", label: "画像", sub: "写真", icon: ImageIcon },
+                    ].map((fmt) => {
+                      const isSelected = editFileType === fmt.id;
+                      const Icon = fmt.icon;
+                      return (
+                        <button
+                          key={fmt.id}
+                          type="button"
+                          onClick={() => setEditFileType(fmt.id)}
+                          className={`p-2 rounded-2xl border text-center transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
+                            isSelected
+                              ? "border-primary bg-primary/10 text-primary shadow-xs font-black"
+                              : "bg-background border-border text-muted-foreground hover:bg-muted hover:text-foreground font-bold"
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 mb-0.5" />
+                          <span className="text-xs leading-none">{fmt.label}</span>
+                          <span className="text-[9px] opacity-70 leading-none">{fmt.sub}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 資料タイトル */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">
+                    資料名 / タイトル <span className="text-destructive">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                </div>
+
+                {/* カテゴリ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">カテゴリ</label>
+                  <LiffSelect
+                    value={editCategory}
+                    onChange={setEditCategory}
+                    options={DOCUMENT_CATEGORY_OPTIONS}
+                    title="資料カテゴリを選択"
+                    accent="amber"
+                    searchable={false}
+                    className="w-full bg-background"
+                  />
+                </div>
+
+                {/* ファイルの変更オプション */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">ファイルの差し替え</label>
+                  <div className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("current")}
+                      className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
+                        editUploadMode === "current"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      変更しない
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("file")}
+                      className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
+                        editUploadMode === "file"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      ファイル選択
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditUploadMode("url")}
+                      className={`py-1.5 rounded-xl text-[11px] transition-all cursor-pointer ${
+                        editUploadMode === "url"
+                          ? "bg-card text-foreground shadow-sm border border-border font-black"
+                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                      }`}
+                    >
+                      URL変更
+                    </button>
+                  </div>
+
+                  {editUploadMode === "file" && (
+                    <div className="pt-1.5">
+                      <input
+                        type="file"
+                        id="edit-doc-file-input"
+                        ref={editFileInputRef}
+                        onChange={handleEditFileChange}
+                        accept=".xlsx,.xls,.xlsm,.csv,.pdf,.doc,.docx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.ms-excel.sheet.binary.macroEnabled.12,text/csv,application/csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,image/*"
+                        className="sr-only"
+                      />
+                      {editSelectedFile ? (
+                        <div className="p-3 rounded-2xl bg-primary/10 border border-dashed border-primary/40 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                            <p className="text-xs font-black text-foreground truncate">
+                              {editSelectedFile.name}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditSelectedFile(null);
+                              if (editFileInputRef.current) editFileInputRef.current.value = "";
+                            }}
+                            className="p-1 text-muted-foreground hover:text-foreground cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <label
+                          htmlFor="edit-doc-file-input"
+                          className="w-full py-4 rounded-2xl border border-dashed border-border bg-card shadow-xs hover:border-primary/40 hover:bg-muted/35 flex flex-col items-center justify-center gap-1 text-muted-foreground cursor-pointer group active:scale-[0.99]"
+                        >
+                          <UploadCloud className="w-5 h-5 text-primary group-hover:scale-110 transition-transform" />
+                          <span className="text-xs font-bold text-foreground">
+                            新しいExcel・PDF・写真を選択
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  )}
+
+                  {editUploadMode === "url" && (
+                    <div className="pt-1.5 relative">
+                      <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        type="url"
+                        placeholder="https://... (Google Drive, Dropbox等のURL)"
+                        value={editFileUrl}
+                        onChange={(e) => setEditFileUrl(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/20"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* 説明・持ち物メモ */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-foreground">説明・持ち物メモ (任意)</label>
+                  <textarea
+                    rows={2}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-border bg-background text-xs font-bold placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/20 resize-none"
+                  />
+                </div>
               </div>
-            </div>
+
+              <div className="shrink-0 px-5 py-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteDocument}
+                  disabled={isDeleting || isSubmitting}
+                  className="py-2.5 px-3.5 rounded-xl border border-rose-500 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isDeleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>削除</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEditingDoc(null)}
+                  className="py-2.5 px-3.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer shrink-0"
+                >
+                  キャンセル
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isDeleting}
+                  className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs hover:bg-primary/90 active:scale-[0.99] transition-all flex items-center justify-center gap-2 shadow-xs disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>保存中...</span>
+                    </>
+                  ) : (
+                    <span>変更を保存</span>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>,
           document.body
         )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          👁️ 資料 プレビュー・閲覧モーダル (画像/PDF/URL)
+          👁️ 資料 プレビュー・閲覧モーダル (画像/PDF/URL・ボトムシート対応)
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {previewDoc &&
         mounted &&
+        typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
-            <div 
-              className="absolute inset-0"
-              onClick={() => setPreviewDoc(null)}
-            />
-
-            <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col max-h-[92vh] relative z-10 animate-in zoom-in-95 duration-200">
+          <div
+            onClick={() => setPreviewDoc(null)}
+            className="fixed inset-0 z-[9999] bg-slate-950/70 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-150"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-lg rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[90dvh] relative z-10"
+            >
               {/* モーダルヘッダー (A-3 Dark Solid Header Cap) */}
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-amber-500/20 text-amber-300 border border-amber-400/30">
-                    {previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
+                    {previewDoc.fileType === "XLSX" ||
+                    previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
                       <FileSpreadsheet className="w-4 h-4" />
-                    ) : previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") ? (
+                    ) : previewDoc.fileType === "IMG" ||
+                      previewDoc.fileUrl.startsWith("data:image/") ? (
                       <ImageIcon className="w-4 h-4" />
                     ) : (
                       <FileText className="w-4 h-4" />
                     )}
                   </span>
                   <div className="min-w-0">
-                    <h3 className="text-sm font-black text-white truncate">
-                      {previewDoc.title}
-                    </h3>
+                    <h3 className="text-sm font-black text-white truncate">{previewDoc.title}</h3>
                     <p className="text-[10px] font-bold text-slate-300 truncate">
                       {previewDoc.categoryLabel} • {previewDoc.fileSize}
                     </p>
@@ -1532,7 +1567,7 @@ export default function LiffDocumentsPage() {
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {/* ダウンロード / 共有リンク */}
-                  {previewDoc.fileUrl.startsWith("http") && (
+                  {isValidHttpUrl(previewDoc.fileUrl) && (
                     <a
                       href={previewDoc.fileUrl}
                       target="_blank"
@@ -1555,21 +1590,25 @@ export default function LiffDocumentsPage() {
               </div>
 
               {/* プレビューコンテンツ本体 */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center justify-center bg-muted/35 min-h-[260px] max-h-[70vh]">
-                {previewDoc.fileType === "IMG" || previewDoc.fileUrl.startsWith("data:image/") || previewDoc.fileUrl.match(/\.(png|jpg|jpeg|webp|gif)$/i) ? (
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 flex flex-col items-center justify-center bg-muted/35 min-h-[260px]">
+                {previewDoc.fileType === "IMG" ||
+                previewDoc.fileUrl.startsWith("data:image/") ||
+                previewDoc.fileUrl.match(/\.(png|jpg|jpeg|webp|gif)$/i) ? (
                   <div className="flex flex-col items-center justify-center w-full space-y-3">
                     <div className="relative max-w-full rounded-2xl overflow-hidden shadow-xs border border-border bg-black/5 flex items-center justify-center">
                       <img
                         src={previewDoc.fileUrl}
                         alt={previewDoc.title}
-                        className="max-h-[60vh] max-w-full object-contain rounded-2xl select-none"
+                        className="max-h-[60dvh] max-w-full object-contain rounded-2xl select-none"
                       />
                     </div>
                     <p className="text-[11px] font-bold text-muted-foreground text-center">
                       💡 画像を長押しするとスマートフォンに保存できます
                     </p>
                   </div>
-                ) : previewDoc.fileType === "PDF" || previewDoc.fileUrl.startsWith("data:application/pdf") || previewDoc.fileUrl.endsWith(".pdf") ? (
+                ) : previewDoc.fileType === "PDF" ||
+                  previewDoc.fileUrl.startsWith("data:application/pdf") ||
+                  previewDoc.fileUrl.endsWith(".pdf") ? (
                   <div className="w-full flex flex-col items-center justify-center space-y-2">
                     <PdfCanvasViewer
                       url={previewDoc.fileUrl}
@@ -1578,18 +1617,21 @@ export default function LiffDocumentsPage() {
                     />
                     <div className="flex items-center justify-between w-full px-1 text-[10px] text-muted-foreground font-medium">
                       <span>💡 端末によって表示されない場合は右のボタンをお試しください</span>
-                      <a
-                        href={getExternalBrowserUrl(previewDoc.fileUrl)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary font-black hover:underline flex items-center gap-0.5 shrink-0"
-                      >
-                        <span>ブラウザで開く</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
+                      {isValidHttpUrl(getExternalBrowserUrl(previewDoc.fileUrl)) && (
+                        <a
+                          href={getExternalBrowserUrl(previewDoc.fileUrl)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary font-black hover:underline flex items-center gap-0.5 shrink-0"
+                        >
+                          <span>ブラウザで開く</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
-                ) : previewDoc.fileType === "XLSX" || previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
+                ) : previewDoc.fileType === "XLSX" ||
+                  previewDoc.fileUrl.match(/\.(xlsx?|csv|xlsm)($|\?)/i) ? (
                   <div className="flex flex-col items-center justify-center py-8 px-4 text-center space-y-4 max-w-sm w-full">
                     <div className="w-16 h-16 rounded-2xl bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/25">
                       <FileSpreadsheet className="w-8 h-8" />
@@ -1614,7 +1656,9 @@ export default function LiffDocumentsPage() {
                       </p>
                     </div>
 
-                    {previewDoc.fileUrl.startsWith("http") && !previewDoc.fileUrl.includes("/api/liff/documents/files") && !previewDoc.fileUrl.includes("/api/documents/files") ? (
+                    {isValidHttpUrl(previewDoc.fileUrl) &&
+                    !previewDoc.fileUrl.includes("/api/liff/documents/files") &&
+                    !previewDoc.fileUrl.includes("/api/documents/files") ? (
                       <a
                         href={previewDoc.fileUrl}
                         target="_blank"
@@ -1624,9 +1668,14 @@ export default function LiffDocumentsPage() {
                         <ExternalLink className="w-4 h-4" />
                         <span>外部スプレッドシートで開く</span>
                       </a>
-                    ) : (
+                    ) : (isValidHttpUrl(getAbsoluteUrl(previewDoc.fileUrl)) ||
+                        previewDoc.fileUrl.startsWith("data:")) ? (
                       <a
-                        href={previewDoc.fileUrl}
+                        href={
+                          previewDoc.fileUrl.startsWith("data:")
+                            ? previewDoc.fileUrl
+                            : getAbsoluteUrl(previewDoc.fileUrl)
+                        }
                         download={
                           previewDoc.title.match(/\.(xlsx?|csv|xlsm)$/i)
                             ? previewDoc.title
@@ -1637,13 +1686,14 @@ export default function LiffDocumentsPage() {
                         <Download className="w-4 h-4" />
                         <span>Excelファイルをダウンロード</span>
                       </a>
-                    )}
+                    ) : null}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-10 text-center space-y-3">
                     <div
                       className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-                        previewDoc.fileType === "DOCX" || previewDoc.fileUrl.match(/\.docx?($|\?)/i)
+                        previewDoc.fileType === "DOCX" ||
+                        previewDoc.fileUrl.match(/\.docx?($|\?)/i)
                           ? "bg-sky-500/12 text-sky-700 dark:text-sky-400 border border-sky-500/25"
                           : "bg-amber-500/12 text-amber-600 dark:text-amber-400"
                       }`}
@@ -1656,7 +1706,7 @@ export default function LiffDocumentsPage() {
                         {previewDoc.description || "外部共有リンク資料"}
                       </p>
                     </div>
-                    {previewDoc.fileUrl.startsWith("http") ? (
+                    {isValidHttpUrl(previewDoc.fileUrl) ? (
                       <a
                         href={previewDoc.fileUrl}
                         target="_blank"
@@ -1666,26 +1716,38 @@ export default function LiffDocumentsPage() {
                         <ExternalLink className="w-4 h-4" />
                         <span>外部サイトで閲覧する</span>
                       </a>
-                    ) : (
+                    ) : (isValidHttpUrl(getAbsoluteUrl(previewDoc.fileUrl)) ||
+                        previewDoc.fileUrl.startsWith("data:")) ? (
                       <a
-                        href={previewDoc.fileUrl}
+                        href={
+                          previewDoc.fileUrl.startsWith("data:")
+                            ? previewDoc.fileUrl
+                            : getAbsoluteUrl(previewDoc.fileUrl)
+                        }
                         download={previewDoc.title}
                         className="px-5 py-2.5 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black transition-all flex items-center gap-2 shadow-xs active:scale-95"
                       >
                         <Download className="w-4 h-4" />
                         <span>ファイルを保存する</span>
                       </a>
-                    )}
+                    ) : null}
                   </div>
                 )}
               </div>
 
-              {/* モーダルフッター */}
-              {previewDoc.description && (
-                <div className="p-3.5 border-t border-border bg-card text-xs text-muted-foreground font-medium">
-                  <p className="line-clamp-2">{previewDoc.description}</p>
-                </div>
-              )}
+              {/* モーダルフッター (Safe Area対応) */}
+              <div className="shrink-0 px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3 border-t border-border bg-card flex items-center justify-between gap-3">
+                <p className="text-xs text-muted-foreground font-medium line-clamp-2 flex-1 min-w-0">
+                  {previewDoc.description || `${previewDoc.categoryLabel} • ${previewDoc.fileSize}`}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(null)}
+                  className="px-4 py-2 rounded-xl bg-card border border-border text-foreground hover:bg-muted font-black text-xs transition-all cursor-pointer shrink-0"
+                >
+                  閉じる
+                </button>
+              </div>
             </div>
           </div>,
           document.body

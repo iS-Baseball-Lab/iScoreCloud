@@ -608,11 +608,11 @@ export function MatchCarpoolSummarySection({
 
         {canEdit && !isNoCarpool && (
           <Link
-            href="/liff/tools/carpool-generator"
+            href={carpoolPageHref}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-bold transition-all active:scale-95 shrink-0 shadow-2xs"
           >
             <Sparkles className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-            <span>自動配車ツール</span>
+            <span>配車表・積載管理</span>
           </Link>
         )}
       </div>

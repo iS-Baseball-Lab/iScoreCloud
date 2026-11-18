@@ -29,6 +29,7 @@ import {
   teamLinks,
   parentChildRelations,
   tournaments,
+  teamEquipments,
   eventEquipments,
   teamGroups,
   teamGroupMembers,
@@ -2032,6 +2033,13 @@ app.get("/matches", async (c) => {
         matchType: matches.matchType,
         tournamentName: tournaments.name,
         tournamentId: matches.tournamentId,
+        tournamentCategory: tournaments.category,
+        tournamentOrganizer: tournaments.organizer,
+        tournamentBracketUrl: tournaments.bracketUrl,
+        tournamentTimeLimit: tournaments.timeLimit,
+        tournamentColdGameRule: tournaments.coldGameRule,
+        tournamentTiebreakerRule: tournaments.tiebreakerRule,
+        tournamentPitchLimitRule: tournaments.pitchLimitRule,
         venueName: venues.name,
         venueShortName: venues.shortName,
         venueParkingInfo: venues.parkingInfo,
@@ -3963,6 +3971,7 @@ app.get("/my-family", async (c) => {
     // 6. 保護者本人の既存出欠一覧を取得
     const parentAttMap: Record<string, "present" | "absent" | "pending" | "late"> = {};
     const parentGroupMap: Record<string, string> = {};
+    const parentCarMap: Record<string, boolean> = {};
     if (matchedFamilyMemberIds.size > 0 || familyCandidateIds.length > 0) {
       const parentConditions = [];
       for (const mid of matchedFamilyMemberIds) {
@@ -3978,6 +3987,7 @@ app.get("/my-family", async (c) => {
             eventId: attendances.eventId,
             status: attendances.status,
             selectedGroupId: attendances.selectedGroupId,
+            hasCar: attendances.hasCar,
           })
           .from(attendances)
           .where(or(...parentConditions))
@@ -3985,9 +3995,13 @@ app.get("/my-family", async (c) => {
 
         for (const att of parentAttList) {
           if (att.eventId && att.status) {
-            parentAttMap[att.eventId] = (att.status as any) || "pending";
+            parentAttMap[att.eventId] =
+              (att.status as "present" | "absent" | "pending" | "late") || "pending";
             if (att.selectedGroupId) {
               parentGroupMap[att.eventId] = att.selectedGroupId;
+            }
+            if (att.hasCar !== null && att.hasCar !== undefined) {
+              parentCarMap[att.eventId] = Boolean(att.hasCar);
             }
           }
         }
@@ -3999,11 +4013,14 @@ app.get("/my-family", async (c) => {
       isParent: true,
       memberId: member?.id || null,
       memberName: member?.name || null,
+      memberRole: member?.role || null,
+      memberType: member?.memberType || null,
       children: childrenList,
       attendances: childAttMap,
       childGroupMap,
       parentAttendances: parentAttMap,
       parentGroupMap,
+      parentCarMap,
     });
   } catch (error: unknown) {
     console.error("Failed to load my-family:", error);
@@ -4015,6 +4032,7 @@ app.get("/my-family", async (c) => {
         children: [],
         attendances: {},
         parentAttendances: {},
+        parentCarMap: {},
       },
       500
     );
@@ -4028,7 +4046,17 @@ app.post("/attendance", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { eventId, userId, memberId, playerId, status, selectedGroupId, hasCar, comment } = body;
+    const {
+      eventId,
+      userId,
+      memberId,
+      playerId,
+      status,
+      selectedGroupId,
+      hasCar,
+      comment,
+      userRole,
+    } = body;
 
     if (!eventId || !status) {
       return c.json({ success: false, error: "eventId and status are required" }, 400);
@@ -4109,17 +4137,25 @@ app.post("/attendance", async (c) => {
 
     // 👨 保護者・メンバー本人の出欠の場合（イベントの所属チーム内で正確に特定）
     let effectiveMemberId: string | null = memberId || null;
+    let resolvedMemberType: string | null = null;
     if (effectiveMemberId && evRow?.teamId) {
       const verifiedMember = await db
-        .select({ id: teamMembers.id, userId: teamMembers.userId })
+        .select({
+          id: teamMembers.id,
+          userId: teamMembers.userId,
+          memberType: teamMembers.memberType,
+        })
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, evRow.teamId), eq(teamMembers.id, effectiveMemberId)))
         .get();
       if (!verifiedMember) {
         effectiveMemberId = null;
-      } else if (!validUserId && verifiedMember.userId) {
-        const u = await db.select({ id: user.id }).from(user).where(eq(user.id, verifiedMember.userId)).get();
-        if (u) validUserId = u.id;
+      } else {
+        resolvedMemberType = verifiedMember.memberType || null;
+        if (!validUserId && verifiedMember.userId) {
+          const u = await db.select({ id: user.id }).from(user).where(eq(user.id, verifiedMember.userId)).get();
+          if (u) validUserId = u.id;
+        }
       }
     }
 
@@ -4129,19 +4165,32 @@ app.post("/attendance", async (c) => {
         tmConditions.push(eq(teamMembers.teamId, evRow.teamId));
       }
       const tmRows = await db
-        .select({ id: teamMembers.id, userId: teamMembers.userId })
+        .select({
+          id: teamMembers.id,
+          userId: teamMembers.userId,
+          memberType: teamMembers.memberType,
+        })
         .from(teamMembers)
         .where(and(...tmConditions))
         .all();
       const canonicalTm = tmRows.find((r) => !r.id.startsWith("tm_")) || tmRows[0];
       if (canonicalTm) {
         effectiveMemberId = canonicalTm.id;
+        resolvedMemberType = canonicalTm.memberType || null;
         if (!validUserId && canonicalTm.userId) {
           const u = await db.select({ id: user.id }).from(user).where(eq(user.id, canonicalTm.userId)).get();
           if (u) validUserId = u.id;
         }
       }
     }
+
+    const resolvedRoleInEvent =
+      resolvedMemberType === "staff" ||
+      userRole === "staff" ||
+      userRole === "coach" ||
+      userRole === "admin"
+        ? "staff"
+        : "parent";
 
     const conditions = [];
     if (effectiveMemberId) conditions.push(eq(attendances.memberId, effectiveMemberId));
@@ -4166,6 +4215,7 @@ app.post("/attendance", async (c) => {
           userId: validUserId || existing.userId || null,
           memberId: effectiveMemberId || existing.memberId,
           hasCar: hasCar !== undefined ? hasCar : existing.hasCar,
+          roleInEvent: existing.roleInEvent || resolvedRoleInEvent,
           comment: comment || existing.comment,
           updatedAt: new Date(),
         })
@@ -4179,7 +4229,7 @@ app.post("/attendance", async (c) => {
         status: status,
         selectedGroupId: isAttending ? (selectedGroupId || null) : null,
         hasCar: !!hasCar,
-        roleInEvent: "parent",
+        roleInEvent: resolvedRoleInEvent,
         comment: comment || null,
         updatedAt: new Date(),
       });
@@ -4232,6 +4282,14 @@ app.get("/carpool", async (c) => {
           { name: "田中 健太 (選手)", type: "player" },
           { name: "佐藤 ママ (保護者)", type: "adult" },
         ],
+        hasReturnDiff: true,
+        returnPassengers: [
+          { name: "鈴木 翔太 (選手)", type: "player" },
+          { name: "佐藤 蓮 (選手)", type: "player" },
+          { name: "高橋 陸 (選手)", type: "player" },
+          { name: "佐藤 ママ (保護者)", type: "adult" },
+        ],
+        equipments: [],
       },
       {
         carpoolId: "demo-cp-2",
@@ -4246,6 +4304,15 @@ app.get("/carpool", async (c) => {
           { name: "渡辺 陽向 (選手)", type: "player" },
           { name: "渡辺 パパ (コーチ)", type: "adult" },
         ],
+        hasReturnDiff: true,
+        returnPassengers: [
+          { name: "田中 颯太 (選手)", type: "player" },
+          { name: "田中 健太 (選手)", type: "player" },
+          { name: "伊藤 悠斗 (選手)", type: "player" },
+          { name: "渡辺 陽向 (選手)", type: "player" },
+          { name: "渡辺 パパ (コーチ)", type: "adult" },
+        ],
+        equipments: [],
       },
       {
         carpoolId: "demo-cp-3",
@@ -4259,6 +4326,37 @@ app.get("/carpool", async (c) => {
           { name: "中村 湊 (選手)", type: "player" },
           { name: "小林 樹 (選手)", type: "player" },
         ],
+        hasReturnDiff: false,
+        returnPassengers: [
+          { name: "中村 湊 (選手)", type: "player" },
+          { name: "小林 樹 (選手)", type: "player" },
+        ],
+        equipments: [
+          {
+            eventEquipmentId: "demo-eq-ev-1",
+            equipmentId: "demo-eq-1",
+            name: "ワンタッチテント (大)",
+            quantity: 2,
+            isHeavy: true,
+            status: "loaded" as const,
+          },
+          {
+            eventEquipmentId: "demo-eq-ev-2",
+            equipmentId: "demo-eq-2",
+            name: "試合球・キャッチャー防具一式",
+            quantity: 1,
+            isHeavy: true,
+            status: "loaded" as const,
+          },
+          {
+            eventEquipmentId: "demo-eq-ev-3",
+            equipmentId: "demo-eq-3",
+            name: "救急バッグ・アイシング氷嚢",
+            quantity: 1,
+            isHeavy: false,
+            status: "pending" as const,
+          },
+        ],
       },
     ],
   };
@@ -4271,6 +4369,8 @@ app.get("/carpool", async (c) => {
         carpool: DEMO_CARPOOL,
       });
     }
+
+    await ensureAllSchemasOnce(c.env.DB);
 
     // チーム内のイベント一覧と各イベントの配車台数を並列取得し、当日〜直近予定の配車イベントを最優先で選択
     const teamEvents = await db
@@ -4367,6 +4467,7 @@ app.get("/carpool", async (c) => {
           driverName: teamMembers.name,
           capacity: eventCarpools.capacity,
           carType: eventCarpools.carType,
+          returnRidersJson: eventCarpools.returnRidersJson,
           carName: memberCars.name,
           carColor: memberCars.color,
           numberPlate: memberCars.numberPlate,
@@ -4405,23 +4506,128 @@ app.get("/carpool", async (c) => {
       });
     }
 
-    // ⚡ 全車両の乗車メンバー（riders）を1回の inArray クエリで一括取得（N+1クエリを排除）
+    // ⚡ 全車両の乗車メンバー・帰り便名簿・積載道具を並列取得（N+1クエリを排除）
     const carpoolIds = carpoolsList.map((car) => car.id);
-    const allRiders =
-      carpoolIds.length > 0
-        ? await db
-            .select({
-              carpoolId: eventCarpoolRiders.carpoolId,
-              riderPlayerName: players.name,
-              riderMemberName: teamMembers.name,
-              riderMemberType: teamMembers.memberType,
-            })
-            .from(eventCarpoolRiders)
-            .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
-            .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
-            .where(inArray(eventCarpoolRiders.carpoolId, carpoolIds))
-            .all()
-        : [];
+    const hasAnyReturnOverride = carpoolsList.some((car) =>
+      Boolean(car.returnRidersJson && car.returnRidersJson.trim())
+    );
+    const [allRiders, teamEqRows, eventEqRows, playerNameRows, memberNameRows] =
+      await Promise.all([
+        carpoolIds.length > 0
+          ? db
+              .select({
+                carpoolId: eventCarpoolRiders.carpoolId,
+                riderPlayerName: players.name,
+                riderMemberName: teamMembers.name,
+                riderMemberType: teamMembers.memberType,
+              })
+              .from(eventCarpoolRiders)
+              .leftJoin(players, eq(eventCarpoolRiders.playerId, players.id))
+              .leftJoin(teamMembers, eq(eventCarpoolRiders.memberId, teamMembers.id))
+              .where(inArray(eventCarpoolRiders.carpoolId, carpoolIds))
+              .all()
+          : Promise.resolve([]),
+        db
+          .select({
+            id: teamEquipments.id,
+            name: teamEquipments.name,
+            quantity: teamEquipments.quantity,
+            isHeavy: teamEquipments.isHeavy,
+          })
+          .from(teamEquipments)
+          .where(eq(teamEquipments.teamId, teamId))
+          .all()
+          .catch(() => []),
+        db
+          .select({
+            id: eventEquipments.id,
+            equipmentId: eventEquipments.equipmentId,
+            carpoolId: eventEquipments.carpoolId,
+            status: eventEquipments.status,
+          })
+          .from(eventEquipments)
+          .where(eq(eventEquipments.eventId, targetEvent.id))
+          .all()
+          .catch(() => []),
+        hasAnyReturnOverride
+          ? db
+              .select({ id: players.id, name: players.name })
+              .from(players)
+              .where(eq(players.teamId, teamId))
+              .all()
+              .catch(() => [])
+          : Promise.resolve([]),
+        hasAnyReturnOverride
+          ? db
+              .select({
+                id: teamMembers.id,
+                name: teamMembers.name,
+                memberType: teamMembers.memberType,
+              })
+              .from(teamMembers)
+              .where(eq(teamMembers.teamId, teamId))
+              .all()
+              .catch(() => [])
+          : Promise.resolve([]),
+      ]);
+
+    const playerNameById = new Map<string, string>();
+    for (const pr of playerNameRows) {
+      playerNameById.set(pr.id, pr.name || "選手");
+    }
+    const memberById = new Map<string, { name: string; memberType: string | null }>();
+    for (const mr of memberNameRows) {
+      memberById.set(mr.id, {
+        name: mr.name || "メンバー",
+        memberType: mr.memberType || null,
+      });
+    }
+
+    const teamEqById = new Map<
+      string,
+      { name: string; quantity: number; isHeavy: boolean }
+    >();
+    for (const eqRow of teamEqRows) {
+      teamEqById.set(eqRow.id, {
+        name: eqRow.name,
+        quantity: eqRow.quantity ?? 1,
+        isHeavy: Boolean(eqRow.isHeavy),
+      });
+    }
+
+    const equipmentsByCarpoolId = new Map<
+      string,
+      Array<{
+        eventEquipmentId: string;
+        equipmentId: string;
+        name: string;
+        quantity: number;
+        isHeavy: boolean;
+        status: "pending" | "loaded" | "returned";
+      }>
+    >();
+    for (const evEq of eventEqRows) {
+      if (!evEq.carpoolId || !evEq.equipmentId) continue;
+      const master = teamEqById.get(evEq.equipmentId);
+      if (!master) continue;
+      const normStatus: "pending" | "loaded" | "returned" =
+        evEq.status === "loaded" || evEq.status === "returned"
+          ? evEq.status
+          : "pending";
+      let list = equipmentsByCarpoolId.get(evEq.carpoolId);
+      if (!list) {
+        list = [];
+        equipmentsByCarpoolId.set(evEq.carpoolId, list);
+      }
+      list.push({
+        eventEquipmentId: evEq.id,
+        equipmentId: evEq.equipmentId,
+        name: master.name,
+        quantity: master.quantity,
+        isHeavy: master.isHeavy,
+        status: normStatus,
+      });
+    }
 
     const ridersByCarpoolId = new Map<string, typeof allRiders>();
     for (const r of allRiders) {
@@ -4446,6 +4652,51 @@ app.get("/carpool", async (c) => {
         };
       });
 
+      let hasReturnDiff = false;
+      let returnPassengers = passengers;
+      if (car.returnRidersJson && car.returnRidersJson.trim()) {
+        try {
+          const parsedRaw = JSON.parse(car.returnRidersJson) as unknown;
+          if (Array.isArray(parsedRaw)) {
+            hasReturnDiff = true;
+            returnPassengers = parsedRaw
+              .filter(
+                (item): item is { type?: unknown; id?: unknown; name?: unknown } =>
+                  Boolean(item && typeof item === "object")
+              )
+              .map((item) => {
+                const rid = typeof item.id === "string" ? item.id.trim() : "";
+                const rType = item.type === "adult" ? "adult" : "player";
+                if (rType === "player") {
+                  const pName =
+                    playerNameById.get(rid) ||
+                    (typeof item.name === "string" && item.name.trim()
+                      ? item.name.trim()
+                      : "選手");
+                  return {
+                    name: pName.includes("(") ? pName : `${pName} (選手)`,
+                    type: "player" as const,
+                  };
+                }
+                const mInfo = memberById.get(rid);
+                const mName =
+                  mInfo?.name ||
+                  (typeof item.name === "string" && item.name.trim()
+                    ? item.name.trim()
+                    : "メンバー");
+                const roleSuffix = mInfo?.memberType === "staff" ? "指導者" : "保護者";
+                return {
+                  name: mName.includes("(") ? mName : `${mName} (${roleSuffix})`,
+                  type: "adult" as const,
+                };
+              });
+          }
+        } catch {
+          hasReturnDiff = false;
+          returnPassengers = passengers;
+        }
+      }
+
       return {
         carpoolId: car.id,
         carNumber: index + 1,
@@ -4456,6 +4707,9 @@ app.get("/carpool", async (c) => {
         isCargo: car.carType === "cargo",
         isBus: car.carType === "bus",
         passengers,
+        hasReturnDiff,
+        returnPassengers,
+        equipments: equipmentsByCarpoolId.get(car.id) || [],
       };
     });
 
@@ -13245,9 +13499,42 @@ app.get("/tournaments", async (c) => {
         success: true,
         isDemo: true,
         tournaments: [
-          { id: "demo-trn-1", name: "川崎市秋季大会", season: "2026", category: "other" },
-          { id: "demo-trn-2", name: "高津区少年野球大会", season: "2026", category: "other" },
-          { id: "demo-trn-3", name: "多摩川親善交流リーグ", season: "2026", category: "other" },
+          {
+            id: "demo-trn-1",
+            name: "川崎市秋季大会",
+            season: "2026",
+            category: "city",
+            organizer: "川崎市少年野球連盟",
+            timeLimit: "85分（新しいイニングに入らない）",
+            coldGameRule: "4回10点差・5回7点差",
+            tiebreakerRule: "7回以降 無死一・二塁（継続打順）",
+            pitchLimitRule: "1日70球以内（学童規定）",
+            bracketUrl: null,
+          },
+          {
+            id: "demo-trn-2",
+            name: "高津区少年野球大会",
+            season: "2026",
+            category: "ward",
+            organizer: "高津区少年野球連盟",
+            timeLimit: "80分",
+            coldGameRule: "4回10点差・5回7点差",
+            tiebreakerRule: "無死満塁",
+            pitchLimitRule: "1日70球以内（学童規定）",
+            bracketUrl: null,
+          },
+          {
+            id: "demo-trn-3",
+            name: "多摩川親善交流リーグ",
+            season: "2026",
+            category: "other",
+            organizer: "多摩川交流リーグ実行委員会",
+            timeLimit: "90分",
+            coldGameRule: "5回7点差",
+            tiebreakerRule: "なし",
+            pitchLimitRule: "1日70球以内（学童規定）",
+            bracketUrl: null,
+          },
         ],
       });
     }
@@ -13272,6 +13559,14 @@ app.get("/tournaments", async (c) => {
         name: tournaments.name,
         season: tournaments.season,
         category: tournaments.category,
+        organizer: tournaments.organizer,
+        bracketUrl: tournaments.bracketUrl,
+        timeLimit: tournaments.timeLimit,
+        coldGameRule: tournaments.coldGameRule,
+        tiebreakerRule: tournaments.tiebreakerRule,
+        pitchLimitRule: tournaments.pitchLimitRule,
+        startDate: tournaments.startDate,
+        endDate: tournaments.endDate,
       })
       .from(tournaments)
       .where(

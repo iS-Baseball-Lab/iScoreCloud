@@ -50,9 +50,287 @@ async function resolveCanViewPlayerConditionNotes(
   return access.canManagePlayersForTeam(teamId);
 }
 
+async function computeRecentPitchWorkloadByPlayerId(
+  d1: D1Database,
+  teamId: string,
+  referenceDateKey: string,
+  excludeMatchId: string
+): Promise<
+  Map<
+    string,
+    {
+      yesterdayPitches: number;
+      last7DaysPitches: number;
+      lastPitchedDate: string | null;
+      lastPitchedPitches: number;
+    }
+  >
+> {
+  const result = new Map<
+    string,
+    {
+      yesterdayPitches: number;
+      last7DaysPitches: number;
+      lastPitchedDate: string | null;
+      lastPitchedPitches: number;
+    }
+  >();
+  if (!teamId || teamId === "demo-team") return result;
+
+  try {
+    const parseIsoDayMs = (dateKey: string): number | null => {
+      const m = dateKey.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+      if (!m) return null;
+      return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    };
+    const normalizeDateKey = (raw: string | null | undefined): string => {
+      const m = (raw || "").trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+      if (!m) return "";
+      return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+    };
+
+    const refMs = parseIsoDayMs(referenceDateKey);
+    if (refMs === null) return result;
+    const yesterdayMs = refMs - 86_400_000;
+    const window7StartMs = refMs - 7 * 86_400_000;
+
+    const matchRowsRes = await d1
+      .prepare(
+        `SELECT id, date, batting_order AS battingOrder, status
+         FROM matches
+         WHERE team_id = ? AND status != 'rainout'`
+      )
+      .bind(teamId)
+      .all<{
+        id: string;
+        date: string | null;
+        battingOrder: string | null;
+        status: string | null;
+      }>();
+
+    const candidateMatches = (matchRowsRes.results || [])
+      .map((m) => {
+        const dk = normalizeDateKey(m.date);
+        const dayMs = dk ? parseIsoDayMs(dk) : null;
+        return { ...m, dateKey: dk, dayMs };
+      })
+      .filter(
+        (m): m is typeof m & { dayMs: number } =>
+          m.id !== excludeMatchId &&
+          m.dayMs !== null &&
+          m.dayMs >= window7StartMs &&
+          m.dayMs <= refMs
+      );
+
+    if (candidateMatches.length === 0) return result;
+
+    const matchIds = candidateMatches.map((m) => m.id);
+    const placeholders = matchIds.map(() => "?").join(",");
+
+    const [abRes, snapRes, liveRes] = await Promise.all([
+      d1
+        .prepare(
+          `SELECT
+             ab.id AS atBatId,
+             ab.match_id AS matchId,
+             ab.pitcher_id AS pitcherId,
+             COUNT(CASE
+               WHEN p.id IS NOT NULL
+                AND p.result NOT LIKE 'pickoff%'
+                AND p.result != 'balk'
+               THEN 1
+             END) AS pitchCount
+           FROM at_bats ab
+           LEFT JOIN pitches p ON p.at_bat_id = ab.id
+           WHERE ab.match_id IN (${placeholders})
+             AND ab.pitcher_id IS NOT NULL
+           GROUP BY ab.id, ab.match_id, ab.pitcher_id`
+        )
+        .bind(...matchIds)
+        .all<{
+          atBatId: string;
+          matchId: string;
+          pitcherId: string;
+          pitchCount: number;
+        }>(),
+      d1
+        .prepare(
+          `SELECT match_id AS matchId, top_at_bats_json AS topJson, bottom_at_bats_json AS bottomJson
+           FROM match_scorebook_snapshots
+           WHERE match_id IN (${placeholders})`
+        )
+        .bind(...matchIds)
+        .all<{
+          matchId: string;
+          topJson: string | null;
+          bottomJson: string | null;
+        }>(),
+      d1
+        .prepare(
+          `SELECT match_id AS matchId, report_json AS reportJson
+           FROM match_live_reports
+           WHERE match_id IN (${placeholders})`
+        )
+        .bind(...matchIds)
+        .all<{ matchId: string; reportJson: string | null }>(),
+    ]);
+
+    // matchId -> Map<playerId, pitches>
+    const perMatchPitchMap = new Map<string, Map<string, number>>();
+    const addMatchPitches = (mid: string, pid: string, count: number) => {
+      if (!pid || count <= 0) return;
+      let mMap = perMatchPitchMap.get(mid);
+      if (!mMap) {
+        mMap = new Map<string, number>();
+        perMatchPitchMap.set(mid, mMap);
+      }
+      mMap.set(pid, (mMap.get(pid) || 0) + count);
+    };
+
+    const matchesWithDbAtBats = new Set<string>();
+    for (const row of abRes.results || []) {
+      matchesWithDbAtBats.add(row.matchId);
+      addMatchPitches(row.matchId, row.pitcherId, Number(row.pitchCount) || 0);
+    }
+
+    // DBの pitches 行が未保存（0件）の試合について snapshot 配列やライブ速報JSONから補完
+    const snapByMatchId = new Map(
+      (snapRes.results || []).map((s) => [s.matchId, s])
+    );
+    const liveByMatchId = new Map(
+      (liveRes.results || []).map((l) => [l.matchId, l.reportJson])
+    );
+
+    for (const m of candidateMatches) {
+      const existingTotal = Array.from(
+        perMatchPitchMap.get(m.id)?.values() || []
+      ).reduce((a, b) => a + b, 0);
+      if (existingTotal > 0) continue;
+
+      const snap = snapByMatchId.get(m.id);
+      if (snap) {
+        const oppIsTop = m.battingOrder === "second";
+        const rawJson = oppIsTop ? snap.topJson : snap.bottomJson;
+        if (rawJson) {
+          try {
+            const parsed = JSON.parse(rawJson) as Array<{
+              pitcherId?: string | null;
+              balls?: number;
+              strikes?: number;
+              pitches?: Array<{ result?: string } | string>;
+            }>;
+            if (Array.isArray(parsed)) {
+              for (const ab of parsed) {
+                if (!ab?.pitcherId) continue;
+                const arrCount = Array.isArray(ab.pitches)
+                  ? ab.pitches.filter((p) => {
+                      const r = typeof p === "string" ? p : p?.result || "";
+                      return !r.startsWith("pickoff") && r !== "balk";
+                    }).length
+                  : 0;
+                const fallbackCnt =
+                  arrCount > 0
+                    ? arrCount
+                    : Math.max(0, Number(ab.balls || 0) + Number(ab.strikes || 0));
+                addMatchPitches(m.id, ab.pitcherId, fallbackCnt);
+              }
+            }
+          } catch {}
+        }
+      }
+
+      const afterSnapTotal = Array.from(
+        perMatchPitchMap.get(m.id)?.values() || []
+      ).reduce((a, b) => a + b, 0);
+      if (afterSnapTotal > 0 || matchesWithDbAtBats.has(m.id)) continue;
+
+      const liveRaw = liveByMatchId.get(m.id);
+      if (liveRaw) {
+        try {
+          const doc = JSON.parse(liveRaw) as {
+            halfInnings?: Array<{
+              entries?: Array<{
+                pitcherPlayerId?: string | null;
+                pitchCount?: number;
+                pitches?: string[];
+              }>;
+            }>;
+            pitcherPitchAdjustments?: Record<string, number>;
+          };
+          for (const hi of doc.halfInnings || []) {
+            for (const ent of hi.entries || []) {
+              if (!ent?.pitcherPlayerId) continue;
+              const cnt =
+                typeof ent.pitchCount === "number" && ent.pitchCount > 0
+                  ? ent.pitchCount
+                  : Array.isArray(ent.pitches)
+                  ? ent.pitches.length
+                  : 0;
+              addMatchPitches(m.id, ent.pitcherPlayerId, cnt);
+            }
+          }
+          if (
+            doc.pitcherPitchAdjustments &&
+            typeof doc.pitcherPitchAdjustments === "object"
+          ) {
+            for (const [key, adj] of Object.entries(doc.pitcherPitchAdjustments)) {
+              if (key.startsWith("id:") && typeof adj === "number" && adj !== 0) {
+                const pid = key.slice(3);
+                const mMap = perMatchPitchMap.get(m.id) || new Map<string, number>();
+                const nextVal = Math.max(0, (mMap.get(pid) || 0) + Math.trunc(adj));
+                mMap.set(pid, nextVal);
+                perMatchPitchMap.set(m.id, mMap);
+              }
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 日付順に集計
+    const sortedMatchesAsc = [...candidateMatches].sort(
+      (a, b) => a.dayMs - b.dayMs
+    );
+    for (const m of sortedMatchesAsc) {
+      const mMap = perMatchPitchMap.get(m.id);
+      if (!mMap) continue;
+      for (const [pid, count] of mMap.entries()) {
+        if (count <= 0) continue;
+        const cur = result.get(pid) || {
+          yesterdayPitches: 0,
+          last7DaysPitches: 0,
+          lastPitchedDate: null,
+          lastPitchedPitches: 0,
+        };
+        if (m.dayMs === yesterdayMs) {
+          cur.yesterdayPitches += count;
+        }
+        if (m.dayMs >= window7StartMs && m.dayMs < refMs) {
+          cur.last7DaysPitches += count;
+        }
+        if (m.dayMs < refMs) {
+          if (!cur.lastPitchedDate || m.dateKey > cur.lastPitchedDate) {
+            cur.lastPitchedDate = m.dateKey;
+            cur.lastPitchedPitches = count;
+          } else if (m.dateKey === cur.lastPitchedDate) {
+            cur.lastPitchedPitches += count;
+          }
+        }
+        result.set(pid, cur);
+      }
+    }
+  } catch (err) {
+    console.warn("Pitch workload aggregation skipped:", err);
+  }
+
+  return result;
+}
+
 // 選手一覧取得（主要フィールド全て含む・conditionNote/privateNoteは指導者/管理者のみ返却）
 app.get("/:teamId/players", async (c) => {
   const teamId = c.req.param("teamId");
+  const referenceDateParam = (c.req.query("referenceDate") || "").trim();
+  const excludeMatchIdParam = (c.req.query("excludeMatchId") || "").trim();
   if (teamId && teamId !== "demo-team") {
     const access = await resolveCallerTeamAccess(c);
     if (!access.canAccessTeam(teamId)) {
@@ -61,36 +339,48 @@ app.get("/:teamId/players", async (c) => {
   }
   try {
     await ensurePlayerProfileColumns(c.env.DB);
-    const [queryRes, canViewNotes, periodsByPlayerId] = await Promise.all([
-      c.env.DB.prepare(
-        `SELECT
-          id,
-          team_id           AS teamId,
-          name,
-          name_kana         AS nameKana,
-          uniform_number    AS uniformNumber,
-          primary_position  AS primaryPosition,
-          throws,
-          bats,
-          is_active         AS isActive,
-          notes,
-          condition_status  AS conditionStatus,
-          condition_note    AS conditionNote,
-          profile_image_url AS profileImageUrl,
-          user_id           AS userId,
-          joined_at         AS joinedAt,
-          created_at        AS createdAt
-         FROM players
-         WHERE team_id = ?
-         ORDER BY CAST(uniform_number AS INTEGER) ASC`
-      )
-        .bind(teamId)
-        .all<RawPlayerDbRow>(),
-      resolveCanViewPlayerConditionNotes(c, teamId),
-      loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
-    ]);
-
     const todayKey = getTodayJstDateKey();
+    const effectiveRefDate =
+      /^\d{4}-\d{2}-\d{2}$/.test(referenceDateParam)
+        ? referenceDateParam
+        : todayKey;
+
+    const [queryRes, canViewNotes, periodsByPlayerId, workloadMap] =
+      await Promise.all([
+        c.env.DB.prepare(
+          `SELECT
+            id,
+            team_id           AS teamId,
+            name,
+            name_kana         AS nameKana,
+            uniform_number    AS uniformNumber,
+            primary_position  AS primaryPosition,
+            throws,
+            bats,
+            is_active         AS isActive,
+            notes,
+            condition_status  AS conditionStatus,
+            condition_note    AS conditionNote,
+            profile_image_url AS profileImageUrl,
+            user_id           AS userId,
+            joined_at         AS joinedAt,
+            created_at        AS createdAt
+           FROM players
+           WHERE team_id = ?
+           ORDER BY CAST(uniform_number AS INTEGER) ASC`
+        )
+          .bind(teamId)
+          .all<RawPlayerDbRow>(),
+        resolveCanViewPlayerConditionNotes(c, teamId),
+        loadTeamPlayerConditionPeriodsMap(c.env.DB, teamId),
+        computeRecentPitchWorkloadByPlayerId(
+          c.env.DB,
+          teamId,
+          effectiveRefDate,
+          excludeMatchIdParam
+        ),
+      ]);
+
     const maskedResults = (queryRes.results || [])
       .map((row) => {
         const rawPeriods = periodsByPlayerId.get(row.id) || [];
@@ -98,18 +388,23 @@ app.get("/:teamId/players", async (c) => {
           conditionPeriods: rawPeriods,
           fallbackStatus: row.conditionStatus,
           fallbackNote: row.conditionNote,
-          dateKey: todayKey,
+          dateKey: effectiveRefDate,
           todayKey,
         });
         const resolvedNote =
           effectiveToday.status !== "active"
             ? effectiveToday.note ?? row.conditionNote
             : row.conditionNote;
+        const workload = workloadMap.get(row.id);
         return {
           ...row,
           conditionStatus: effectiveToday.status as PlayerConditionStatus,
           conditionNote: canViewNotes ? resolvedNote || null : null,
           conditionPeriods: maskConditionPeriodsForViewer(rawPeriods, canViewNotes),
+          yesterdayPitches: workload?.yesterdayPitches || 0,
+          last7DaysPitches: workload?.last7DaysPitches || 0,
+          lastPitchedDate: workload?.lastPitchedDate || null,
+          lastPitchedPitches: workload?.lastPitchedPitches || 0,
         };
       })
       .sort(comparePlayersByConditionAndUniform);

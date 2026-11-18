@@ -61,35 +61,46 @@ app.post('/create', async (c) => {
 
     const finalTeamId = existingTeam.id;
 
-    // 🌟 2. 大会名（tournamentName）が送られてきた場合、自クラブ・チームのスコープで解決・新規生成する
+    // 🌟 2. 大会IDまたは大会名が送られてきた場合、自クラブ・チームのスコープで解決・新規生成する
     let tournamentId: string | null = null;
+    const rawTournamentId = (body.tournamentId || '').trim();
     const rawTournamentName = (body.tournamentName || '').trim();
-    if ((body.matchType === 'official' || body.matchType === 'exchange') && rawTournamentName) {
+    if (body.matchType === 'official' || body.matchType === 'exchange') {
       const tenantWhere = buildTeamTenantWhere(
         { organizationId: tournaments.organizationId, teamId: tournaments.teamId },
         { teamId: finalTeamId, organizationId: existingTeam.organizationId || null }
       );
-      const existingTournament = await db
-        .select()
-        .from(tournaments)
-        .where(and(eq(tournaments.name, rawTournamentName), tenantWhere))
-        .get();
-
-      if (existingTournament) {
-        tournamentId = existingTournament.id;
-      } else {
-        tournamentId = crypto.randomUUID();
-        await db.insert(tournaments).values({
-          id: tournamentId,
-          organizationId: existingTeam.organizationId || null,
-          teamId: finalTeamId,
-          name: rawTournamentName,
-          season: new Date().getFullYear().toString(),
-          category: 'other',
-        });
+      if (rawTournamentId) {
+        const byId = await db
+          .select({ id: tournaments.id })
+          .from(tournaments)
+          .where(and(eq(tournaments.id, rawTournamentId), tenantWhere))
+          .get();
+        if (byId) {
+          tournamentId = byId.id;
+        }
       }
-    } else {
-      tournamentId = n(body.tournamentId);
+      if (!tournamentId && rawTournamentName) {
+        const existingTournament = await db
+          .select({ id: tournaments.id })
+          .from(tournaments)
+          .where(and(eq(tournaments.name, rawTournamentName), tenantWhere))
+          .get();
+
+        if (existingTournament) {
+          tournamentId = existingTournament.id;
+        } else {
+          tournamentId = crypto.randomUUID();
+          await db.insert(tournaments).values({
+            id: tournamentId,
+            organizationId: existingTeam.organizationId || null,
+            teamId: finalTeamId,
+            name: rawTournamentName,
+            season: new Date().getFullYear().toString(),
+            category: 'other',
+          });
+        }
+      }
     }
 
     // 💡 INSERT実行

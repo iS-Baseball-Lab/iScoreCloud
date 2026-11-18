@@ -828,6 +828,9 @@ export function compileScorebookSheetModel(
     let activeCleanName = starterName.replace(/\s+/g, "");
 
     for (const sub of slot.substitutions) {
+      if (sub.subType === "TR") {
+        continue;
+      }
       const cleanSubName = sub.name.replace(/\s+/g, "");
       const cleanSubPos = sub.position.trim();
       const cleanSubNum = sub.uniformNumber.trim();
@@ -861,6 +864,37 @@ export function compileScorebookSheetModel(
         if (cleanSubNum && !subRows[activeRowIdx].uniformNumber) {
           subRows[activeRowIdx].uniformNumber = cleanSubNum;
         }
+        continue;
+      }
+
+      // 学童・特別ルールのリエントリー（A → B → A）時は既存 subRowIndex を再利用して空の重複行を防ぐ
+      const reenteredParticipant = participants.find(
+        (pt) =>
+          (Boolean(sub.playerId) &&
+            Boolean(pt.playerId) &&
+            sub.playerId === pt.playerId) ||
+          ((!sub.playerId || !pt.playerId) &&
+            cleanSubName !== "" &&
+            pt.cleanName !== "" &&
+            cleanSubName === pt.cleanName)
+      );
+
+      if (reenteredParticipant) {
+        activeRowIdx = reenteredParticipant.subRowIndex;
+        activePlayerId = sub.playerId || reenteredParticipant.playerId;
+        activeCleanName = cleanSubName || reenteredParticipant.cleanName;
+        if (cleanSubNum && !subRows[activeRowIdx].uniformNumber) {
+          subRows[activeRowIdx].uniformNumber = cleanSubNum;
+        }
+        participants.push({
+          subRowIndex: activeRowIdx,
+          playerId: activePlayerId,
+          cleanName: activeCleanName,
+          inningEntered: sub.inningEntered || 1,
+          enteredFromBatterOrder: sub.enteredFromBatterOrder ?? null,
+          subType: sub.subType,
+          position: normalizeFieldingPosCode(cleanSubPos),
+        });
         continue;
       }
 

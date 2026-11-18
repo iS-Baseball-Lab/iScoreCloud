@@ -16,6 +16,7 @@ export const LIFF_SCORE_SETTINGS_CHANGE_EVENT = "iscore-score-settings-change";
 const TEAM_SCORE_NAME_MODE_STORAGE_PREFIX = "iscore_score_team_name_mode_v1:";
 const TEAM_PRACTICE_MATCH_LABEL_STORAGE_PREFIX =
   "iscore_team_practice_label_v1:";
+const TEAM_SCORE_SETTINGS_STORAGE_PREFIX = "iscore_team_score_settings_v1:";
 
 export interface LiffScoreSettings {
   defaultImportScope: ImportScopeMode;
@@ -25,6 +26,8 @@ export interface LiffScoreSettings {
   mercyRule: ScoreMercyRule;
   positionNotation: ScorePositionNotation;
   dhDefault: boolean;
+  /** 1日の投球数上限（学童: 70 / 中学軟式: 100 / 85 / null=未設定・カテゴリ自動） */
+  pitchCountLimit: number | null;
 }
 
 const KEY_DEFAULT_SCOPE = "iscore_score_setting_default_scope";
@@ -34,6 +37,7 @@ const KEY_DEFAULT_MATCH_TYPE = "iscore_score_setting_default_match_type";
 const KEY_MERCY_RULE = "iscore_setting_mercy_rule";
 const KEY_POSITION_NOTATION = "iscore_setting_position_notation";
 const KEY_DH_DEFAULT = "iscore_setting_dh_default";
+const KEY_PITCH_COUNT_LIMIT = "iscore_setting_pitch_count_limit";
 
 export const DEFAULT_LIFF_SCORE_SETTINGS: LiffScoreSettings = {
   defaultImportScope: "both",
@@ -43,14 +47,159 @@ export const DEFAULT_LIFF_SCORE_SETTINGS: LiffScoreSettings = {
   mercyRule: "standard",
   positionNotation: "kanji",
   dhDefault: false,
+  pitchCountLimit: null,
 };
 
-export function loadLiffScoreSettings(): LiffScoreSettings {
+function sanitizePitchCountLimit(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === "" || raw === "none") {
+    return null;
+  }
+  const n = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 20 || rounded > 250) return null;
+  return rounded;
+}
+
+export function sanitizeLiffScoreSettingsObject(
+  raw: Record<string, unknown> | null | undefined,
+  fallback: LiffScoreSettings = DEFAULT_LIFF_SCORE_SETTINGS
+): LiffScoreSettings {
+  if (!raw) return { ...fallback };
+
+  const defaultImportScope: ImportScopeMode =
+    raw.defaultImportScope === "top_only" ||
+    raw.defaultImportScope === "bottom_only" ||
+    raw.defaultImportScope === "both"
+      ? raw.defaultImportScope
+      : fallback.defaultImportScope;
+
+  const defaultEnhancePencil =
+    typeof raw.defaultEnhancePencil === "boolean"
+      ? raw.defaultEnhancePencil
+      : raw.defaultEnhancePencil === "true"
+      ? true
+      : raw.defaultEnhancePencil === "false"
+      ? false
+      : fallback.defaultEnhancePencil;
+
+  const rawInnings = Number(raw.defaultInnings);
+  const defaultInnings =
+    rawInnings === 5 || rawInnings === 6 || rawInnings === 7 || rawInnings === 9
+      ? rawInnings
+      : fallback.defaultInnings;
+
+  const defaultMatchType: ScoreDefaultMatchType =
+    raw.defaultMatchType === "official" ||
+    raw.defaultMatchType === "practice" ||
+    raw.defaultMatchType === "exchange"
+      ? raw.defaultMatchType
+      : fallback.defaultMatchType;
+
+  const mercyRule: ScoreMercyRule =
+    raw.mercyRule === "standard" ||
+    raw.mercyRule === "loose" ||
+    raw.mercyRule === "none"
+      ? raw.mercyRule
+      : fallback.mercyRule;
+
+  const positionNotation: ScorePositionNotation =
+    raw.positionNotation === "kanji" ||
+    raw.positionNotation === "number" ||
+    raw.positionNotation === "english"
+      ? raw.positionNotation
+      : fallback.positionNotation;
+
+  const dhDefault =
+    typeof raw.dhDefault === "boolean"
+      ? raw.dhDefault
+      : raw.dhDefault === "true"
+      ? true
+      : raw.dhDefault === "false"
+      ? false
+      : fallback.dhDefault;
+
+  const hasExplicitPitchLimit = Object.prototype.hasOwnProperty.call(
+    raw,
+    "pitchCountLimit"
+  );
+  const pitchCountLimit = hasExplicitPitchLimit
+    ? sanitizePitchCountLimit(raw.pitchCountLimit)
+    : fallback.pitchCountLimit;
+
+  return {
+    defaultImportScope,
+    defaultEnhancePencil,
+    defaultInnings,
+    defaultMatchType,
+    mercyRule,
+    positionNotation,
+    dhDefault,
+    pitchCountLimit,
+  };
+}
+
+export function parseLiffScoreSettingsJson(
+  raw: unknown,
+  fallback: LiffScoreSettings = DEFAULT_LIFF_SCORE_SETTINGS
+): LiffScoreSettings {
+  if (!raw) return { ...fallback };
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return { ...fallback };
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return sanitizeLiffScoreSettingsObject(
+          parsed as Record<string, unknown>,
+          fallback
+        );
+      }
+    } catch {
+      return { ...fallback };
+    }
+    return { ...fallback };
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    return sanitizeLiffScoreSettingsObject(
+      raw as Record<string, unknown>,
+      fallback
+    );
+  }
+  return { ...fallback };
+}
+
+function resolveEffectiveStorageTeamId(teamId?: string | null): string | null {
+  const clean = (teamId || "").trim();
+  if (clean) return clean;
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = (localStorage.getItem("iscore_selectedTeamId") || "").trim();
+    return stored || null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadLiffScoreSettings(teamId?: string | null): LiffScoreSettings {
   if (typeof window === "undefined") {
     return { ...DEFAULT_LIFF_SCORE_SETTINGS };
   }
 
   try {
+    const resolvedTeamId = resolveEffectiveStorageTeamId(teamId);
+    if (resolvedTeamId) {
+      const teamScopedRaw = localStorage.getItem(
+        `${TEAM_SCORE_SETTINGS_STORAGE_PREFIX}${resolvedTeamId}`
+      );
+      if (teamScopedRaw) {
+        return parseLiffScoreSettingsJson(teamScopedRaw);
+      }
+      if (resolvedTeamId === "demo-team") {
+        return { ...DEFAULT_LIFF_SCORE_SETTINGS };
+      }
+    }
+
     const rawScope = localStorage.getItem(KEY_DEFAULT_SCOPE);
     const defaultImportScope: ImportScopeMode =
       rawScope === "top_only" ||
@@ -99,6 +248,10 @@ export function loadLiffScoreSettings(): LiffScoreSettings {
         ? rawDh === "true"
         : DEFAULT_LIFF_SCORE_SETTINGS.dhDefault;
 
+    const pitchCountLimit = sanitizePitchCountLimit(
+      localStorage.getItem(KEY_PITCH_COUNT_LIMIT)
+    );
+
     return {
       defaultImportScope,
       defaultEnhancePencil,
@@ -107,22 +260,57 @@ export function loadLiffScoreSettings(): LiffScoreSettings {
       mercyRule,
       positionNotation,
       dhDefault,
+      pitchCountLimit,
     };
   } catch {
     return { ...DEFAULT_LIFF_SCORE_SETTINGS };
   }
 }
 
-export function saveLiffScoreSettings(
-  next: Partial<LiffScoreSettings>
+export function hydrateLiffScoreSettingsFromServer(
+  teamId: string,
+  rawServerSettings: unknown
 ): LiffScoreSettings {
-  const merged: LiffScoreSettings = {
-    ...loadLiffScoreSettings(),
-    ...next,
-  };
+  const cleanTeamId = teamId.trim();
+  const parsed = parseLiffScoreSettingsJson(
+    rawServerSettings,
+    DEFAULT_LIFF_SCORE_SETTINGS
+  );
+  if (typeof window !== "undefined" && cleanTeamId) {
+    try {
+      localStorage.setItem(
+        `${TEAM_SCORE_SETTINGS_STORAGE_PREFIX}${cleanTeamId}`,
+        JSON.stringify(parsed)
+      );
+      window.dispatchEvent(new CustomEvent(LIFF_SCORE_SETTINGS_CHANGE_EVENT));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+  return parsed;
+}
+
+export function saveLiffScoreSettings(
+  next: Partial<LiffScoreSettings>,
+  teamId?: string | null
+): LiffScoreSettings {
+  const merged = sanitizeLiffScoreSettingsObject(
+    {
+      ...loadLiffScoreSettings(teamId),
+      ...next,
+    },
+    DEFAULT_LIFF_SCORE_SETTINGS
+  );
 
   if (typeof window !== "undefined") {
     try {
+      const resolvedTeamId = resolveEffectiveStorageTeamId(teamId);
+      if (resolvedTeamId) {
+        localStorage.setItem(
+          `${TEAM_SCORE_SETTINGS_STORAGE_PREFIX}${resolvedTeamId}`,
+          JSON.stringify(merged)
+        );
+      }
       localStorage.setItem(KEY_DEFAULT_SCOPE, merged.defaultImportScope);
       localStorage.setItem(
         KEY_DEFAULT_ENHANCE,
@@ -133,6 +321,15 @@ export function saveLiffScoreSettings(
       localStorage.setItem(KEY_MERCY_RULE, merged.mercyRule);
       localStorage.setItem(KEY_POSITION_NOTATION, merged.positionNotation);
       localStorage.setItem(KEY_DH_DEFAULT, String(merged.dhDefault));
+      if (merged.pitchCountLimit === null) {
+        localStorage.removeItem(KEY_PITCH_COUNT_LIMIT);
+      } else {
+        localStorage.setItem(
+          KEY_PITCH_COUNT_LIMIT,
+          String(merged.pitchCountLimit)
+        );
+      }
+      window.dispatchEvent(new CustomEvent(LIFF_SCORE_SETTINGS_CHANGE_EVENT));
     } catch {
       // ignore storage quota errors
     }

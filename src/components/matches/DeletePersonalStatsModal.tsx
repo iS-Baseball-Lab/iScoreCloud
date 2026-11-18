@@ -54,7 +54,7 @@ export function DeletePersonalStatsModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-personal-stats-title"
@@ -63,11 +63,11 @@ export function DeletePersonalStatsModal({
       }}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden text-foreground animate-in zoom-in-95 duration-150"
+        className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xs overflow-hidden text-foreground flex flex-col max-h-[88dvh] animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ヘッダー (A-3 Dark Solid Header Cap) */}
-        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-start justify-between gap-3">
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3 flex items-start justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5 text-rose-400" />
@@ -98,7 +98,7 @@ export function DeletePersonalStatsModal({
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-5 space-y-4 overflow-y-auto">
         {/* 削除されるデータ・保持されるデータの明確な案内 */}
         <div className="space-y-2 text-xs">
           <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/80 space-y-1">

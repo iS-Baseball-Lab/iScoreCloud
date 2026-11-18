@@ -20,6 +20,7 @@ import {
   extractPracticeMatchLabelFromJson,
   extractScoreTeamNameModeFromJson,
 } from "@/lib/liff/scorebook-symbol-rules";
+import { parseLiffScoreSettingsJson } from "@/lib/liff/score-settings";
 import {
   computeScoreboardSummary,
   sanitizeLiveReportDocument,
@@ -256,6 +257,16 @@ function isCallerAssignedToLineLive(
 export interface ServerMatchBundlePayload {
   matchId: string;
   opponentBatterCount?: number;
+  tournamentRules?: {
+    tournamentId: string | null;
+    tournamentName: string | null;
+    category: string | null;
+    timeLimit: string | null;
+    coldGameRule: string | null;
+    tiebreakerRule: string | null;
+    pitchLimitRule: string | null;
+    bracketUrl: string | null;
+  } | null;
   lineup: Array<{
     order: number;
     position: string;
@@ -287,10 +298,19 @@ async function loadMatchBundleFromDb(
     .select({
       id: matches.id,
       teamId: matches.teamId,
+      tournamentId: matches.tournamentId,
       myLineup: matches.myLineup,
       opponentLineup: matches.opponentLineup,
+      tournamentName: tournaments.name,
+      tournamentCategory: tournaments.category,
+      tournamentTimeLimit: tournaments.timeLimit,
+      tournamentColdGameRule: tournaments.coldGameRule,
+      tournamentTiebreakerRule: tournaments.tiebreakerRule,
+      tournamentPitchLimitRule: tournaments.pitchLimitRule,
+      tournamentBracketUrl: tournaments.bracketUrl,
     })
     .from(matches)
+    .leftJoin(tournaments, eq(matches.tournamentId, tournaments.id))
     .where(and(eq(matches.id, matchId), eq(matches.teamId, teamId)))
     .get();
 
@@ -425,9 +445,24 @@ async function loadMatchBundleFromDb(
     }
   }
 
+  const tournamentRules =
+    matchRow.tournamentId || matchRow.tournamentName
+      ? {
+          tournamentId: matchRow.tournamentId || null,
+          tournamentName: matchRow.tournamentName || null,
+          category: matchRow.tournamentCategory || null,
+          timeLimit: matchRow.tournamentTimeLimit || null,
+          coldGameRule: matchRow.tournamentColdGameRule || null,
+          tiebreakerRule: matchRow.tournamentTiebreakerRule || null,
+          pitchLimitRule: matchRow.tournamentPitchLimitRule || null,
+          bracketUrl: matchRow.tournamentBracketUrl || null,
+        }
+      : null;
+
   return {
     matchId,
     opponentBatterCount,
+    tournamentRules,
     lineup: resolvedLineup,
     scorebookSnapshot,
     playLogs: logRows,
@@ -450,6 +485,8 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           id: "demo-team",
           orgName: "iScore ドリームス",
           teamName: "体験デモチーム",
+          orgCategory: "gakudou",
+          teamPitchCountLimit: 70,
           scoreTeamNameMode: "organization",
           practiceMatchLabel: DEFAULT_PRACTICE_MATCH_LABEL,
         },
@@ -483,7 +520,9 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           id: teams.id,
           teamName: teams.name,
           orgName: organizations.name,
+          orgCategory: organizations.category,
           scorebookSymbolRules: teams.scorebookSymbolRules,
+          scoreSettings: teams.scoreSettings,
         })
         .from(teams)
         .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -505,7 +544,14 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
           myLineup: matches.myLineup,
           opponentLineup: matches.opponentLineup,
           matchDayOps: matches.matchDayOps,
+          tournamentId: matches.tournamentId,
           tournamentName: tournaments.name,
+          tournamentCategory: tournaments.category,
+          tournamentTimeLimit: tournaments.timeLimit,
+          tournamentColdGameRule: tournaments.coldGameRule,
+          tournamentTiebreakerRule: tournaments.tiebreakerRule,
+          tournamentPitchLimitRule: tournaments.pitchLimitRule,
+          tournamentBracketUrl: tournaments.bracketUrl,
           venueName: venues.name,
           venueShortName: venues.shortName,
           surfaceDetails: matches.surfaceDetails,
@@ -661,7 +707,14 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         opponentScore: m.opponentScore || 0,
         myInningScores: safeParseIntArray(m.myInningScores),
         opponentInningScores: safeParseIntArray(m.opponentInningScores),
+        tournamentId: m.tournamentId || null,
         tournamentName: m.tournamentName || null,
+        tournamentCategory: m.tournamentCategory || null,
+        tournamentTimeLimit: m.tournamentTimeLimit || null,
+        tournamentColdGameRule: m.tournamentColdGameRule || null,
+        tournamentTiebreakerRule: m.tournamentTiebreakerRule || null,
+        tournamentPitchLimitRule: m.tournamentPitchLimitRule || null,
+        tournamentBracketUrl: m.tournamentBracketUrl || null,
         venueName: fullVenue,
         venueShortName: m.venueShortName || m.venueName || null,
         hasScorebook: snapMatchIdSet.has(m.id),
@@ -733,6 +786,9 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
     const practiceMatchLabel = extractPracticeMatchLabelFromJson(
       teamRow?.scorebookSymbolRules
     );
+    const parsedScoreSettings = parseLiffScoreSettingsJson(
+      teamRow?.scoreSettings
+    );
 
     return c.json({
       success: true,
@@ -741,6 +797,8 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         id: teamId,
         orgName: teamRow?.orgName || "",
         teamName: teamRow?.teamName || "",
+        orgCategory: teamRow?.orgCategory || "other",
+        teamPitchCountLimit: parsedScoreSettings.pitchCountLimit,
         scoreTeamNameMode,
         practiceMatchLabel,
       },

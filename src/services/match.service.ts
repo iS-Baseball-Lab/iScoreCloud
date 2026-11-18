@@ -42,6 +42,13 @@ export const MatchService = {
       surfaceDetails: matches.surfaceDetails,
       tournamentName: tournaments.name,
       tournamentId: matches.tournamentId,
+      tournamentCategory: tournaments.category,
+      tournamentOrganizer: tournaments.organizer,
+      tournamentBracketUrl: tournaments.bracketUrl,
+      tournamentTimeLimit: tournaments.timeLimit,
+      tournamentColdGameRule: tournaments.coldGameRule,
+      tournamentTiebreakerRule: tournaments.tiebreakerRule,
+      tournamentPitchLimitRule: tournaments.pitchLimitRule,
       venueName: venues.name,
       venueShortName: venues.shortName,
       innings: matches.innings,
@@ -128,6 +135,13 @@ export const MatchService = {
         innings: matches.innings,
         tournamentName: tournaments.name,
         tournamentId: matches.tournamentId,
+        tournamentCategory: tournaments.category,
+        tournamentOrganizer: tournaments.organizer,
+        tournamentBracketUrl: tournaments.bracketUrl,
+        tournamentTimeLimit: tournaments.timeLimit,
+        tournamentColdGameRule: tournaments.coldGameRule,
+        tournamentTiebreakerRule: tournaments.tiebreakerRule,
+        tournamentPitchLimitRule: tournaments.pitchLimitRule,
         venueName: venues.name,
         venueShortName: venues.shortName,
         myScore: matches.myScore,
@@ -322,12 +336,10 @@ export const MatchService = {
     db: DrizzleDB,
     matchType: string,
     tournamentName?: string,
-    teamId?: string
+    teamId?: string,
+    explicitTournamentId?: string | null
   ): Promise<string | null> {
-    if ((matchType !== "official" && matchType !== "exchange") || !tournamentName) return null;
-
-    const tName = tournamentName.trim();
-    if (!tName) return null;
+    if (matchType !== "official" && matchType !== "exchange") return null;
 
     const tenant = teamId ? await resolveTeamTenantIds(db, teamId) : null;
     const tenantWhere = tenant
@@ -336,6 +348,24 @@ export const MatchService = {
           tenant
         )
       : undefined;
+
+    const cleanExplicitId = (explicitTournamentId || "").trim();
+    if (cleanExplicitId) {
+      const byExplicit = await db
+        .select({ id: tournaments.id })
+        .from(tournaments)
+        .where(
+          tenantWhere
+            ? and(eq(tournaments.id, cleanExplicitId), tenantWhere)
+            : eq(tournaments.id, cleanExplicitId)
+        )
+        .get();
+      if (byExplicit) return byExplicit.id;
+    }
+
+    if (!tournamentName) return null;
+    const tName = tournamentName.trim();
+    if (!tName) return null;
 
     // 1. IDで既存大会テーブルに存在するかチェック（自クラブ所属のみ）
     const byId = await db
@@ -372,7 +402,8 @@ export const MatchService = {
       db,
       body.matchType,
       body.tournamentName,
-      body.teamId
+      body.teamId,
+      body.tournamentId
     );
     const matchId = crypto.randomUUID();
 
@@ -397,7 +428,9 @@ export const MatchService = {
   // 6. 試合情報の更新
   async updateMatch(db: DrizzleDB, matchId: string, body: UpdateMatchBody): Promise<void> {
     const shouldResolveTournament =
-      body.matchType !== undefined || body.tournamentName !== undefined;
+      body.matchType !== undefined ||
+      body.tournamentName !== undefined ||
+      body.tournamentId !== undefined;
     let tournamentId: string | null | undefined = undefined;
     if (shouldResolveTournament) {
       const existingMatch = await db
@@ -409,7 +442,8 @@ export const MatchService = {
         db,
         body.matchType || existingMatch?.matchType || "official",
         body.tournamentName,
-        existingMatch?.teamId
+        existingMatch?.teamId,
+        body.tournamentId
       );
     }
 

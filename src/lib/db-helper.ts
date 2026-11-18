@@ -71,6 +71,9 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "scorebook_legend_url", ddl: "ALTER TABLE teams ADD COLUMN scorebook_legend_url text" },
     { name: "scorebook_symbol_rules", ddl: "ALTER TABLE teams ADD COLUMN scorebook_symbol_rules text" },
     { name: "schedule_default_times", ddl: "ALTER TABLE teams ADD COLUMN schedule_default_times text" },
+    { name: "schedule_settings", ddl: "ALTER TABLE teams ADD COLUMN schedule_settings text" },
+    { name: "score_settings", ddl: "ALTER TABLE teams ADD COLUMN score_settings text" },
+    { name: "cheer_songs_json", ddl: "ALTER TABLE teams ADD COLUMN cheer_songs_json text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },
@@ -106,6 +109,10 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   tournaments: [
     { name: "organization_id", ddl: "ALTER TABLE tournaments ADD COLUMN organization_id TEXT" },
     { name: "team_id", ddl: "ALTER TABLE tournaments ADD COLUMN team_id TEXT" },
+    { name: "pitch_limit_rule", ddl: "ALTER TABLE tournaments ADD COLUMN pitch_limit_rule TEXT" },
+  ],
+  event_carpools: [
+    { name: "return_riders_json", ddl: "ALTER TABLE event_carpools ADD COLUMN return_riders_json text" },
   ],
   team_rules: [
     { name: "is_important", ddl: "ALTER TABLE team_rules ADD COLUMN is_important integer DEFAULT 0" },
@@ -255,6 +262,18 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "event_equipments",
+    ddl: `CREATE TABLE IF NOT EXISTS event_equipments (
+      id text PRIMARY KEY NOT NULL,
+      event_id text NOT NULL,
+      equipment_id text NOT NULL,
+      carpool_id text,
+      responsible_member_id text,
+      status text DEFAULT 'pending',
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -271,6 +290,9 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_player_cond_periods_player_id", ddl: "CREATE INDEX IF NOT EXISTS idx_player_cond_periods_player_id ON player_condition_periods (player_id)" },
   { name: "team_role_idx", ddl: "CREATE UNIQUE INDEX IF NOT EXISTS team_role_idx ON team_role_settings (team_id, role)" },
   { name: "idx_team_equipments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_equipments_team_id ON team_equipments (team_id)" },
+  { name: "idx_event_equipments_event_id", ddl: "CREATE INDEX IF NOT EXISTS idx_event_equipments_event_id ON event_equipments (event_id)" },
+  { name: "idx_event_equipments_eq_id", ddl: "CREATE INDEX IF NOT EXISTS idx_event_equipments_eq_id ON event_equipments (equipment_id)" },
+  { name: "idx_event_equipments_cp_id", ddl: "CREATE INDEX IF NOT EXISTS idx_event_equipments_cp_id ON event_equipments (carpool_id)" },
   { name: "idx_venues_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_venues_org_id ON venues (organization_id)" },
   { name: "idx_venues_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_venues_team_id ON venues (team_id)" },
   { name: "idx_tournaments_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_org_id ON tournaments (organization_id)" },

@@ -281,6 +281,9 @@ export interface PlayerProfileDetails {
   gloveGear: string | null;
   batGear: string | null;
   walkUpSong: string | null;
+  cheerCall?: string | null;
+  cheerLyrics?: string | null;
+  cheerYoutubeUrl?: string | null;
   maxVelocityKmh: number | null;
   dash50mSec: string | null;
   longTossM: number | null;
@@ -298,12 +301,30 @@ export const EMPTY_PLAYER_PROFILE_DETAILS: PlayerProfileDetails = {
   gloveGear: null,
   batGear: null,
   walkUpSong: null,
+  cheerCall: null,
+  cheerLyrics: null,
+  cheerYoutubeUrl: null,
   maxVelocityKmh: null,
   dash50mSec: null,
   longTossM: null,
   hideWeight: false,
   actionImageUrl: null,
 };
+
+function sanitizeOptionalHttpUrl(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 300) return null;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === "http:" || u.protocol === "https:") {
+      return u.toString();
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function sanitizeOptionalImageUrl(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -393,6 +414,9 @@ export function parsePlayerProfileDetails(raw: unknown): PlayerProfileDetails {
     gloveGear: sanitizeTrimmedText(obj.gloveGear, 50),
     batGear: sanitizeTrimmedText(obj.batGear, 50),
     walkUpSong: sanitizeTrimmedText(obj.walkUpSong, 60),
+    cheerCall: sanitizeTrimmedText(obj.cheerCall, 60),
+    cheerLyrics: sanitizeTrimmedText(obj.cheerLyrics, 300),
+    cheerYoutubeUrl: sanitizeOptionalHttpUrl(obj.cheerYoutubeUrl),
     maxVelocityKmh: sanitizeOptionalInt(obj.maxVelocityKmh, 40, 175),
     dash50mSec: sanitizeDash50m(obj.dash50mSec),
     longTossM: sanitizeOptionalInt(obj.longTossM, 10, 150),

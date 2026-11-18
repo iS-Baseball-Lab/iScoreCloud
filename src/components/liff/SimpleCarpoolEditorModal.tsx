@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { toast } from "sonner";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -12,6 +13,7 @@ import {
 import type {
   SimpleCarpoolContextResponse,
   SimpleCarpoolDriverCandidate,
+  SimpleCarpoolEquipmentOption,
   SimpleCarpoolPlayerCandidate,
   SimpleCarpoolSavePayload,
   SimpleCarpoolSharedCarItem,
@@ -23,11 +25,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   Loader2,
   MapPin,
   Minus,
   Package,
   Plus,
+  RefreshCw,
   Sparkles,
   Trash2,
   UserPlus,
@@ -53,6 +57,9 @@ interface DraftCarSlot {
   isCargo: boolean;
   isBus: boolean;
   riders: DraftRiderItem[];
+  equipmentIds: string[];
+  hasReturnDiff: boolean;
+  returnRiders: DraftRiderItem[];
 }
 
 interface SimpleCarpoolEditorModalProps {
@@ -97,13 +104,22 @@ export function SimpleCarpoolEditorModal({
   // 号車リスト
   const [draftCars, setDraftCars] = useState<DraftCarSlot[]>([]);
 
-  // 乗客ピッカーを開いている号車の localKey とタブ
+  // 行き便乗客ピッカー・通常車の道具ピッカー・帰り便乗客ピッカーの開閉状態
   const [openPickerCarKey, setOpenPickerCarKey] = useState<string | null>(null);
   const [pickerTab, setPickerTab] = useState<"player" | "adult">("player");
+  const [openEquipCarKey, setOpenEquipCarKey] = useState<string | null>(null);
+  const [openReturnPickerCarKey, setOpenReturnPickerCarKey] = useState<
+    string | null
+  >(null);
+  const [returnPickerTab, setReturnPickerTab] = useState<"player" | "adult">(
+    "player"
+  );
 
   const applyContextToForm = useCallback(
     (data: SimpleCarpoolContextResponse) => {
       setCtx(data);
+      setOpenEquipCarKey(null);
+      setOpenReturnPickerCarKey(null);
 
       if (!data.selectedEventId || data.events.length === 0) {
         setSelectedEventId("__new__");
@@ -123,6 +139,9 @@ export function SimpleCarpoolEditorModal({
             isCargo: Boolean(data.drivers[0]?.cars[0]?.isCargo),
             isBus: Boolean(data.drivers[0]?.cars[0]?.isBus),
             riders: [],
+            equipmentIds: [],
+            hasReturnDiff: false,
+            returnRiders: [],
           },
         ]);
         return;
@@ -147,6 +166,13 @@ export function SimpleCarpoolEditorModal({
             isCargo: ec.isCargo,
             isBus: Boolean(ec.isBus),
             riders: ec.riders.map((r) => ({ ...r })),
+            equipmentIds: Array.isArray(ec.equipmentIds)
+              ? [...ec.equipmentIds]
+              : [],
+            hasReturnDiff: Boolean(ec.hasReturnDiff),
+            returnRiders: Array.isArray(ec.returnRiders)
+              ? ec.returnRiders.map((r) => ({ ...r }))
+              : [],
           }))
         );
       } else {
@@ -172,6 +198,9 @@ export function SimpleCarpoolEditorModal({
                 isCargo: Boolean(preferredCar?.isCargo),
                 isBus: Boolean(preferredCar?.isBus),
                 riders: [],
+                equipmentIds: [],
+                hasReturnDiff: false,
+                returnRiders: [],
               };
             })
           );
@@ -190,6 +219,9 @@ export function SimpleCarpoolEditorModal({
               isCargo: Boolean(firstCar?.isCargo),
               isBus: Boolean(firstCar?.isBus),
               riders: [],
+              equipmentIds: [],
+              hasReturnDiff: false,
+              returnRiders: [],
             },
           ]);
         }
@@ -230,12 +262,16 @@ export function SimpleCarpoolEditorModal({
   useEffect(() => {
     if (!isOpen) return;
     setOpenPickerCarKey(null);
+    setOpenEquipCarKey(null);
+    setOpenReturnPickerCarKey(null);
     void loadContext(initialEventId);
   }, [isOpen, initialEventId, loadContext]);
 
   const handleSwitchEvent = useCallback(
     (nextEventId: string) => {
       setOpenPickerCarKey(null);
+      setOpenEquipCarKey(null);
+      setOpenReturnPickerCarKey(null);
       if (nextEventId === "__new__") {
         setSelectedEventId("__new__");
         setNewEventTitle("");
@@ -257,6 +293,9 @@ export function SimpleCarpoolEditorModal({
             isCargo: Boolean(firstCar?.isCargo),
             isBus: Boolean(firstCar?.isBus),
             riders: [],
+            equipmentIds: [],
+            hasReturnDiff: false,
+            returnRiders: [],
           },
         ]);
         return;
@@ -267,12 +306,15 @@ export function SimpleCarpoolEditorModal({
   );
 
   // ==========================================
-  // 排他制御マップ（どの選手・大人・共有車両が何号車に割当済みか）
+  // 排他制御マップ（行き便・帰り便・道具積載・共有車両）
   // ==========================================
   const assignmentLookup = useMemo(() => {
     const driverCarNumByMemberId = new Map<string, number>();
     const playerCarNumById = new Map<string, number>();
     const adultRiderCarNumById = new Map<string, number>();
+    const returnPlayerCarNumById = new Map<string, number>();
+    const returnAdultRiderCarNumById = new Map<string, number>();
+    const equipmentCarNumById = new Map<string, number>();
     const carNumBySelectedCarId = new Map<string, number>();
 
     draftCars.forEach((slot, idx) => {
@@ -290,15 +332,52 @@ export function SimpleCarpoolEditorModal({
           adultRiderCarNumById.set(r.id, carNum);
         }
       });
+      const effectiveReturnRiders = slot.hasReturnDiff
+        ? slot.returnRiders
+        : slot.riders;
+      effectiveReturnRiders.forEach((rr) => {
+        if (rr.type === "player") {
+          returnPlayerCarNumById.set(rr.id, carNum);
+        } else {
+          returnAdultRiderCarNumById.set(rr.id, carNum);
+        }
+      });
+      slot.equipmentIds.forEach((eqId) => {
+        equipmentCarNumById.set(eqId, carNum);
+      });
     });
 
     return {
       driverCarNumByMemberId,
       playerCarNumById,
       adultRiderCarNumById,
+      returnPlayerCarNumById,
+      returnAdultRiderCarNumById,
+      equipmentCarNumById,
       carNumBySelectedCarId,
     };
   }, [draftCars]);
+
+  const teamEquipmentList = useMemo<SimpleCarpoolEquipmentOption[]>(
+    () => ctx?.teamEquipments || [],
+    [ctx?.teamEquipments]
+  );
+
+  const equipmentById = useMemo(() => {
+    const map = new Map<string, SimpleCarpoolEquipmentOption>();
+    for (const eq of teamEquipmentList) {
+      map.set(eq.id, eq);
+    }
+    return map;
+  }, [teamEquipmentList]);
+
+  const unassignedHeavyEquipments = useMemo(
+    () =>
+      teamEquipmentList.filter(
+        (eq) => eq.isHeavy && !assignmentLookup.equipmentCarNumById.has(eq.id)
+      ),
+    [teamEquipmentList, assignmentLookup.equipmentCarNumById]
+  );
 
   const unassignedSharedCars = useMemo<SimpleCarpoolSharedCarItem[]>(() => {
     return (ctx?.sharedCars || []).filter(
@@ -329,7 +408,7 @@ export function SimpleCarpoolEditorModal({
   );
 
   // ==========================================
-  // 号車・運転手・乗客の操作ハンドラ
+  // 号車・運転手・乗客・道具・帰り便の操作ハンドラ
   // ==========================================
   const handleAddCarSlot = useCallback(() => {
     const drivers = ctx?.drivers || [];
@@ -360,6 +439,9 @@ export function SimpleCarpoolEditorModal({
         isCargo: Boolean(preferredCar?.isCargo),
         isBus: Boolean(preferredCar?.isBus),
         riders: [],
+        equipmentIds: [],
+        hasReturnDiff: false,
+        returnRiders: [],
       },
     ]);
   }, [ctx?.drivers, assignmentLookup]);
@@ -397,6 +479,9 @@ export function SimpleCarpoolEditorModal({
           isCargo: Boolean(sharedCar.isCargo),
           isBus: Boolean(sharedCar.isBus),
           riders: [],
+          equipmentIds: [],
+          hasReturnDiff: false,
+          returnRiders: [],
         },
       ]);
       toast.success(
@@ -409,6 +494,8 @@ export function SimpleCarpoolEditorModal({
   const handleRemoveCarSlot = useCallback((localKey: string) => {
     setDraftCars((prev) => prev.filter((c) => c.localKey !== localKey));
     setOpenPickerCarKey((prev) => (prev === localKey ? null : prev));
+    setOpenEquipCarKey((prev) => (prev === localKey ? null : prev));
+    setOpenReturnPickerCarKey((prev) => (prev === localKey ? null : prev));
   }, []);
 
   const handleDriverChange = useCallback(
@@ -425,8 +512,11 @@ export function SimpleCarpoolEditorModal({
       setDraftCars((prev) =>
         prev.map((slot) => {
           if (slot.localKey !== localKey) return slot;
-          // 自分がこの車の同乗者に入っていたら除外
+          // 自分がこの車の同乗者（行き・帰り）に入っていたら除外
           const filteredRiders = slot.riders.filter(
+            (r) => !(r.type === "adult" && r.id === nextDriverMemberId)
+          );
+          const filteredReturnRiders = slot.returnRiders.filter(
             (r) => !(r.type === "adult" && r.id === nextDriverMemberId)
           );
           // 既にチーム共有車両（バス・共有道具車等）を選択中の場合はその車両を維持
@@ -440,6 +530,7 @@ export function SimpleCarpoolEditorModal({
               driverMemberId: "__custom__",
               carId: isKeepingSharedVehicle || slot.isBus ? slot.carId : null,
               riders: filteredRiders,
+              returnRiders: filteredReturnRiders,
             };
           }
           if (isKeepingSharedVehicle) {
@@ -448,6 +539,7 @@ export function SimpleCarpoolEditorModal({
               driverMemberId: nextDriverMemberId,
               customDriverName: "",
               riders: filteredRiders,
+              returnRiders: filteredReturnRiders,
             };
           }
           return {
@@ -461,6 +553,7 @@ export function SimpleCarpoolEditorModal({
             isCargo: preferredCar ? preferredCar.isCargo : slot.isCargo,
             isBus: preferredCar ? Boolean(preferredCar.isBus) : slot.isBus,
             riders: filteredRiders,
+            returnRiders: filteredReturnRiders,
           };
         })
       );
@@ -487,6 +580,143 @@ export function SimpleCarpoolEditorModal({
           return {
             ...slot,
             riders: [...slot.riders, item],
+          };
+        })
+      );
+    },
+    []
+  );
+
+  // 📦 道具・備品の割当トグル（他号車に割当済みの場合は重複させずこの号車へ移動）
+  const handleToggleEquipmentInSlot = useCallback(
+    (
+      localKey: string,
+      targetCarNum: number,
+      eqItem: SimpleCarpoolEquipmentOption
+    ) => {
+      const prevOwnerCarNum = assignmentLookup.equipmentCarNumById.get(
+        eqItem.id
+      );
+      setDraftCars((prev) =>
+        prev.map((slot) => {
+          if (slot.localKey === localKey) {
+            const exists = slot.equipmentIds.includes(eqItem.id);
+            return {
+              ...slot,
+              equipmentIds: exists
+                ? slot.equipmentIds.filter((id) => id !== eqItem.id)
+                : [...slot.equipmentIds, eqItem.id],
+            };
+          }
+          if (slot.equipmentIds.includes(eqItem.id)) {
+            return {
+              ...slot,
+              equipmentIds: slot.equipmentIds.filter((id) => id !== eqItem.id),
+            };
+          }
+          return slot;
+        })
+      );
+      if (prevOwnerCarNum && prevOwnerCarNum !== targetCarNum) {
+        toast.info(
+          `「${eqItem.name}」を${prevOwnerCarNum}号車から${targetCarNum}号車へ移しました`
+        );
+      }
+    },
+    [assignmentLookup.equipmentCarNumById]
+  );
+
+  // 📦 道具車へ未割当の推奨重量物を1タップ一括セット
+  const handleBulkAssignHeavyEquipments = useCallback(
+    (localKey: string, targetCarNum: number) => {
+      if (unassignedHeavyEquipments.length === 0) {
+        toast.info("未割当の重量物はありません");
+        return;
+      }
+      const addIds = unassignedHeavyEquipments.map((eq) => eq.id);
+      setDraftCars((prev) =>
+        prev.map((slot) => {
+          if (slot.localKey !== localKey) return slot;
+          const merged = [...slot.equipmentIds];
+          for (const id of addIds) {
+            if (!merged.includes(id)) {
+              merged.push(id);
+            }
+          }
+          return {
+            ...slot,
+            equipmentIds: merged,
+          };
+        })
+      );
+      toast.success(
+        `${targetCarNum}号車に推奨重量物（${addIds.length}点）を一括セットしました！`
+      );
+    },
+    [unassignedHeavyEquipments]
+  );
+
+  // 🔄 帰り便の個別変更トグル（ON時に空なら現在の行き便メンバーから初期コピー・他号車帰り便との重複は除外）
+  const handleToggleReturnDiff = useCallback((localKey: string) => {
+    setDraftCars((prev) => {
+      const target = prev.find((c) => c.localKey === localKey);
+      if (!target) return prev;
+      const nextHasDiff = !target.hasReturnDiff;
+      if (!nextHasDiff) {
+        setOpenReturnPickerCarKey((curr) => (curr === localKey ? null : curr));
+        return prev.map((c) =>
+          c.localKey === localKey ? { ...c, hasReturnDiff: false } : c
+        );
+      }
+
+      const occupiedOtherReturnKeys = new Set<string>();
+      prev.forEach((c) => {
+        if (c.localKey === localKey) return;
+        const eff = c.hasReturnDiff ? c.returnRiders : c.riders;
+        eff.forEach((r) => occupiedOtherReturnKeys.add(`${r.type}:${r.id}`));
+      });
+
+      const baseReturn =
+        target.returnRiders.length > 0
+          ? target.returnRiders.filter(
+              (r) => !occupiedOtherReturnKeys.has(`${r.type}:${r.id}`)
+            )
+          : target.riders
+              .filter((r) => !occupiedOtherReturnKeys.has(`${r.type}:${r.id}`))
+              .map((r) => ({ ...r }));
+
+      setOpenReturnPickerCarKey(localKey);
+      return prev.map((c) =>
+        c.localKey === localKey
+          ? {
+              ...c,
+              hasReturnDiff: true,
+              returnRiders: baseReturn,
+            }
+          : c
+      );
+    });
+  }, []);
+
+  const handleToggleReturnRiderInSlot = useCallback(
+    (localKey: string, item: DraftRiderItem) => {
+      setDraftCars((prev) =>
+        prev.map((slot) => {
+          if (slot.localKey !== localKey) return slot;
+          const exists = slot.returnRiders.some(
+            (r) => r.type === item.type && r.id === item.id
+          );
+          if (exists) {
+            return {
+              ...slot,
+              returnRiders: slot.returnRiders.filter(
+                (r) => !(r.type === item.type && r.id === item.id)
+              ),
+            };
+          }
+          return {
+            ...slot,
+            returnRiders: [...slot.returnRiders, item],
           };
         })
       );
@@ -593,6 +823,11 @@ export function SimpleCarpoolEditorModal({
           isCargo: slot.isCargo,
           isBus: slot.isBus,
           riders: slot.riders.map((r) => ({ type: r.type, id: r.id })),
+          hasReturnDiff: slot.hasReturnDiff,
+          returnRiders: slot.hasReturnDiff
+            ? slot.returnRiders.map(({ type, id }) => ({ type, id }))
+            : undefined,
+          equipmentIds: slot.equipmentIds,
         })),
       };
 
@@ -613,6 +848,7 @@ export function SimpleCarpoolEditorModal({
         return;
       }
 
+      invalidateLiffApiCache("/api/liff/carpool", { clearLastKnownGood: true });
       invalidateLiffApiCache();
       toast.success(
         `配車表（${json.savedCount ?? draftCars.length}台）を保存しました！`
@@ -1354,11 +1590,13 @@ export function SimpleCarpoolEditorModal({
                           </div>
                         )}
 
-                        {/* 同乗者チップ一覧 ＆ ピッカー開閉ボタン */}
+                        {/* 同乗者チップ一覧 ＆ ピッカー開閉ボタン（行き便 / 基本） */}
                         <div className="pt-2 border-t border-border space-y-2">
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-2">
                             <span className="text-[11px] font-black text-muted-foreground">
-                              同乗メンバー（{slot.riders.length}名）
+                              {slot.hasReturnDiff
+                                ? `行き便の同乗メンバー（${slot.riders.length}名）`
+                                : `同乗メンバー（${slot.riders.length}名）`}
                             </span>
                             <button
                               type="button"
@@ -1367,7 +1605,7 @@ export function SimpleCarpoolEditorModal({
                                   prev === slot.localKey ? null : slot.localKey
                                 )
                               }
-                              className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-black flex items-center gap-1 cursor-pointer shrink-0"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                               <span>
@@ -1540,6 +1778,455 @@ export function SimpleCarpoolEditorModal({
                                       </button>
                                     );
                                   })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ==================== 📦 積載する道具・備品ピッカー ==================== */}
+                        <div
+                          className={
+                            slot.isCargo
+                              ? "p-2.5 rounded-xl border-2 border-amber-500/50 bg-amber-500/10 space-y-2"
+                              : "pt-2 border-t border-border space-y-2"
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <Package
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  slot.isCargo
+                                    ? "text-amber-700 dark:text-amber-300"
+                                    : "text-muted-foreground"
+                                }`}
+                              />
+                              <span
+                                className={`text-[11px] font-black ${
+                                  slot.isCargo
+                                    ? "text-amber-900 dark:text-amber-200"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                📦 積載する道具・備品（{slot.equipmentIds.length}点）
+                              </span>
+                            </div>
+
+                            {slot.isCargo ? (
+                              teamEquipmentList.length > 0 && (
+                                <button
+                                  type="button"
+                                  disabled={unassignedHeavyEquipments.length === 0}
+                                  onClick={() =>
+                                    handleBulkAssignHeavyEquipments(
+                                      slot.localKey,
+                                      carNumber
+                                    )
+                                  }
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black inline-flex items-center gap-1 transition-colors ${
+                                    unassignedHeavyEquipments.length > 0
+                                      ? "bg-amber-500 hover:bg-amber-600 text-slate-950 cursor-pointer shadow-2xs"
+                                      : "bg-muted text-muted-foreground border border-border opacity-70 cursor-not-allowed"
+                                  }`}
+                                >
+                                  <Sparkles className="w-3 h-3 shrink-0" />
+                                  <span>
+                                    {unassignedHeavyEquipments.length > 0
+                                      ? `推奨重量物を一括セット（${unassignedHeavyEquipments.length}点）`
+                                      : "推奨重量物は割当済"}
+                                  </span>
+                                </button>
+                              )
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenEquipCarKey((prev) =>
+                                    prev === slot.localKey ? null : slot.localKey
+                                  )
+                                }
+                                className="px-2.5 py-1 rounded-lg border border-border bg-muted hover:bg-muted/80 text-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <span>
+                                  {openEquipCarKey === slot.localKey
+                                    ? "道具リストを閉じる"
+                                    : "道具を分担・選択"}
+                                </span>
+                                {openEquipCarKey === slot.localKey ? (
+                                  <ChevronUp className="w-3 h-3" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* 通常車でパネル閉じている場合でも選択済み道具チップを表示 */}
+                          {!slot.isCargo &&
+                            openEquipCarKey !== slot.localKey &&
+                            slot.equipmentIds.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {slot.equipmentIds.map((eqId) => {
+                                  const eqObj = equipmentById.get(eqId);
+                                  if (!eqObj) return null;
+                                  return (
+                                    <button
+                                      key={eqId}
+                                      type="button"
+                                      onClick={() =>
+                                        handleToggleEquipmentInSlot(
+                                          slot.localKey,
+                                          carNumber,
+                                          eqObj
+                                        )
+                                      }
+                                      className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-900 dark:text-amber-200 border border-amber-500/35 text-xs font-black inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <span>
+                                        {eqObj.name}
+                                        {eqObj.quantity > 1
+                                          ? ` ×${eqObj.quantity}`
+                                          : ""}
+                                      </span>
+                                      <X className="w-3 h-3 opacity-70" />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                          {/* 道具選択パネル（道具車は常時展開、通常車は開閉式） */}
+                          {(slot.isCargo || openEquipCarKey === slot.localKey) && (
+                            <div className="space-y-1.5">
+                              {teamEquipmentList.length === 0 ? (
+                                <div className="p-2.5 rounded-xl bg-card border border-border flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-muted-foreground">
+                                    道具マスタ未登録（共有道具を登録すると1タップで積載割当できます）
+                                  </span>
+                                  <Link
+                                    href="/liff/admin/equipments"
+                                    onClick={onClose}
+                                    className="px-2.5 py-1.5 rounded-lg bg-[#0f172a] text-white text-[11px] font-black inline-flex items-center gap-1 shrink-0"
+                                  >
+                                    <span>道具マスタ登録</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </Link>
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+                                  {teamEquipmentList.map((eq) => {
+                                    const assignedEqCarNum =
+                                      assignmentLookup.equipmentCarNumById.get(
+                                        eq.id
+                                      );
+                                    const inThisCar =
+                                      assignedEqCarNum === carNumber;
+                                    const inOtherCar = Boolean(
+                                      assignedEqCarNum &&
+                                        assignedEqCarNum !== carNumber
+                                    );
+                                    return (
+                                      <button
+                                        key={eq.id}
+                                        type="button"
+                                        onClick={() =>
+                                          handleToggleEquipmentInSlot(
+                                            slot.localKey,
+                                            carNumber,
+                                            eq
+                                          )
+                                        }
+                                        className={`px-2.5 py-2 rounded-xl border text-left text-xs flex items-center justify-between gap-1.5 cursor-pointer transition-colors ${
+                                          inThisCar
+                                            ? "bg-amber-500 text-slate-950 border-amber-500 font-black"
+                                            : inOtherCar
+                                            ? "bg-card/70 text-muted-foreground border-border hover:bg-muted/70 font-bold"
+                                            : "bg-card text-foreground border-border hover:bg-muted/60 font-bold"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className="truncate">
+                                            {eq.name}
+                                            {eq.quantity > 1
+                                              ? ` ×${eq.quantity}`
+                                              : ""}
+                                          </span>
+                                          {eq.isHeavy && (
+                                            <span
+                                              className={`px-1.5 py-0.5 rounded text-[10px] font-black shrink-0 ${
+                                                inThisCar
+                                                  ? "bg-slate-950 text-amber-300"
+                                                  : "bg-amber-500/20 text-amber-800 dark:text-amber-300"
+                                              }`}
+                                            >
+                                              重量
+                                            </span>
+                                          )}
+                                        </div>
+                                        {inThisCar ? (
+                                          <Check className="w-3.5 h-3.5 shrink-0" />
+                                        ) : inOtherCar ? (
+                                          <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-black shrink-0">
+                                            {assignedEqCarNum}号車に積載
+                                          </span>
+                                        ) : null}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* ==================== 🔄 帰り便の乗車メンバー個別変更 ==================== */}
+                        <div className="pt-2 border-t border-border space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleReturnDiff(slot.localKey)}
+                            className={`w-full px-3 py-2 rounded-xl border text-left text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              slot.hasReturnDiff
+                                ? "bg-teal-600/12 border-teal-600/40 text-teal-900 dark:text-teal-200 font-black"
+                                : "bg-muted/60 border-border text-muted-foreground hover:bg-muted font-bold"
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-1.5 min-w-0">
+                              <RefreshCw
+                                className={`w-3.5 h-3.5 shrink-0 ${
+                                  slot.hasReturnDiff
+                                    ? "text-teal-600 dark:text-teal-400"
+                                    : "text-muted-foreground"
+                                }`}
+                              />
+                              <span className="truncate">
+                                🔄 帰り便の乗車メンバーを個別変更する
+                              </span>
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-black shrink-0 ${
+                                slot.hasReturnDiff
+                                  ? "bg-teal-600 text-white"
+                                  : "bg-card text-muted-foreground border border-border"
+                              }`}
+                            >
+                              {slot.hasReturnDiff ? "個別設定ON" : "行き便と同じ"}
+                            </span>
+                          </button>
+
+                          {slot.hasReturnDiff && (
+                            <div className="p-2.5 rounded-xl border border-teal-600/30 bg-teal-500/5 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-black text-teal-800 dark:text-teal-200">
+                                  帰り便メンバー（{slot.returnRiders.length}/
+                                  {slot.capacity}席）
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenReturnPickerCarKey((prev) =>
+                                      prev === slot.localKey
+                                        ? null
+                                        : slot.localKey
+                                    )
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-teal-600 text-white text-[11px] font-black inline-flex items-center gap-1 cursor-pointer shrink-0"
+                                >
+                                  <UserPlus className="w-3 h-3" />
+                                  <span>
+                                    {openReturnPickerCarKey === slot.localKey
+                                      ? "パネルを閉じる"
+                                      : `帰り便を選ぶ（残${Math.max(
+                                          0,
+                                          slot.capacity -
+                                            slot.returnRiders.length
+                                        )}席）`}
+                                  </span>
+                                  {openReturnPickerCarKey === slot.localKey ? (
+                                    <ChevronUp className="w-3 h-3" />
+                                  ) : (
+                                    <ChevronDown className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
+
+                              {slot.returnRiders.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {slot.returnRiders.map((rr) => (
+                                    <button
+                                      key={`ret-${rr.type}-${rr.id}`}
+                                      type="button"
+                                      onClick={() =>
+                                        handleToggleReturnRiderInSlot(
+                                          slot.localKey,
+                                          rr
+                                        )
+                                      }
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-black inline-flex items-center gap-1 cursor-pointer ${
+                                        rr.type === "player"
+                                          ? "bg-teal-600 text-white border border-teal-600"
+                                          : "bg-card text-foreground border border-border"
+                                      }`}
+                                    >
+                                      <span>{rr.name}</span>
+                                      <X className="w-3 h-3 opacity-80" />
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] font-bold text-muted-foreground">
+                                  帰り便の同乗メンバーは0名（空車・直帰）です
+                                </p>
+                              )}
+
+                              {openReturnPickerCarKey === slot.localKey && (
+                                <div className="p-2 rounded-xl bg-card border border-border space-y-2">
+                                  <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-muted border border-border">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setReturnPickerTab("player")
+                                      }
+                                      className={`py-1.5 rounded-md text-xs cursor-pointer ${
+                                        returnPickerTab === "player"
+                                          ? "bg-[#0f172a] text-white font-black"
+                                          : "text-muted-foreground font-bold"
+                                      }`}
+                                    >
+                                      選手 ({ctx?.players.length || 0})
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setReturnPickerTab("adult")
+                                      }
+                                      className={`py-1.5 rounded-md text-xs cursor-pointer ${
+                                        returnPickerTab === "adult"
+                                          ? "bg-[#0f172a] text-white font-black"
+                                          : "text-muted-foreground font-bold"
+                                      }`}
+                                    >
+                                      保護者・指導者 ({ctx?.drivers.length || 0})
+                                    </button>
+                                  </div>
+
+                                  {returnPickerTab === "player" ? (
+                                    <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+                                      {(ctx?.players || []).map((p) => {
+                                        const assignedRetNum =
+                                          assignmentLookup.returnPlayerCarNumById.get(
+                                            p.playerId
+                                          );
+                                        const inThisRetCar =
+                                          assignedRetNum === carNumber;
+                                        const inOtherRetCar = Boolean(
+                                          assignedRetNum &&
+                                            assignedRetNum !== carNumber
+                                        );
+                                        return (
+                                          <button
+                                            key={`ret-p-${p.playerId}`}
+                                            type="button"
+                                            disabled={inOtherRetCar}
+                                            onClick={() =>
+                                              handleToggleReturnRiderInSlot(
+                                                slot.localKey,
+                                                {
+                                                  type: "player",
+                                                  id: p.playerId,
+                                                  name: p.name,
+                                                }
+                                              )
+                                            }
+                                            className={`px-2.5 py-2 rounded-xl border text-left text-xs flex items-center justify-between gap-1 transition-colors ${
+                                              inThisRetCar
+                                                ? "bg-teal-600 text-white border-teal-600 font-black cursor-pointer"
+                                                : inOtherRetCar
+                                                ? "bg-muted/50 text-muted-foreground border-border opacity-55 cursor-not-allowed font-bold"
+                                                : "bg-background text-foreground border-border hover:bg-muted/60 font-bold cursor-pointer"
+                                            }`}
+                                          >
+                                            <span className="truncate">
+                                              {p.uniformNumber
+                                                ? `#${p.uniformNumber} `
+                                                : ""}
+                                              {p.name}
+                                              {p.isAttending ? " ◯" : ""}
+                                            </span>
+                                            {inThisRetCar ? (
+                                              <Check className="w-3.5 h-3.5 shrink-0" />
+                                            ) : inOtherRetCar ? (
+                                              <span className="text-[10px] font-black shrink-0">
+                                                {assignedRetNum}号車(帰)
+                                              </span>
+                                            ) : null}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-0.5">
+                                      {(ctx?.drivers || []).map((m) => {
+                                        const driverCarNum =
+                                          assignmentLookup.driverCarNumByMemberId.get(
+                                            m.memberId
+                                          );
+                                        const retRiderCarNum =
+                                          assignmentLookup.returnAdultRiderCarNumById.get(
+                                            m.memberId
+                                          );
+                                        const inThisRetCar =
+                                          retRiderCarNum === carNumber;
+                                        const lockedAsDriver =
+                                          Boolean(driverCarNum);
+                                        const lockedInOtherRetCar = Boolean(
+                                          retRiderCarNum &&
+                                            retRiderCarNum !== carNumber
+                                        );
+                                        const isLocked =
+                                          lockedAsDriver || lockedInOtherRetCar;
+
+                                        return (
+                                          <button
+                                            key={`ret-m-${m.memberId}`}
+                                            type="button"
+                                            disabled={isLocked}
+                                            onClick={() =>
+                                              handleToggleReturnRiderInSlot(
+                                                slot.localKey,
+                                                {
+                                                  type: "adult",
+                                                  id: m.memberId,
+                                                  name: m.name,
+                                                }
+                                              )
+                                            }
+                                            className={`px-2.5 py-2 rounded-xl border text-left text-xs flex items-center justify-between gap-1 transition-colors ${
+                                              inThisRetCar
+                                                ? "bg-teal-600 text-white border-teal-600 font-black cursor-pointer"
+                                                : isLocked
+                                                ? "bg-muted/50 text-muted-foreground border-border opacity-55 cursor-not-allowed font-bold"
+                                                : "bg-background text-foreground border-border hover:bg-muted/60 font-bold cursor-pointer"
+                                            }`}
+                                          >
+                                            <span className="truncate">
+                                              {m.name}
+                                            </span>
+                                            {inThisRetCar ? (
+                                              <Check className="w-3.5 h-3.5 shrink-0" />
+                                            ) : lockedAsDriver ? (
+                                              <span className="text-[10px] font-black shrink-0">
+                                                {driverCarNum}号車運転
+                                              </span>
+                                            ) : lockedInOtherRetCar ? (
+                                              <span className="text-[10px] font-black shrink-0">
+                                                {retRiderCarNum}号車(帰)
+                                              </span>
+                                            ) : null}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>

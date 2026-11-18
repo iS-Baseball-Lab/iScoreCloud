@@ -19,7 +19,11 @@ import {
 } from "lucide-react";
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  fetchLiffJsonSWR,
+  invalidateLiffApiCache,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
 import {
   extractRawTimeHHMM,
   formatMonthSetLabel,
@@ -86,6 +90,23 @@ interface ScheduleDefaultTimesApiResponse {
   scheduleDefaultTimes?: unknown;
 }
 
+interface TeamScheduleSettingsApiResponse {
+  success: boolean;
+  settings?: {
+    targetGroups?: string[];
+    dutyGroups?: string[];
+    useDutyGroups?: boolean;
+  };
+}
+
+const DEFAULT_PLANNER_TARGET_GROUPS = [
+  "全体",
+  "Aチーム",
+  "Bチーム",
+  "低学年",
+  "体験・見学",
+];
+
 const EVENT_TYPE_SELECT_OPTIONS: LiffSelectOption[] = [
   { value: "practice", label: "🏃 通常練習" },
   { value: "match", label: "⚾ 公式戦・試合" },
@@ -107,6 +128,11 @@ interface MonthlySchedulePlannerProps {
   teamId?: string;
   teamName?: string;
   isLiff?: boolean;
+  currentDate?: Date;
+  onDateChange?: (nextDate: Date) => void;
+  targetGroups?: string[];
+  dutyGroups?: string[];
+  useDutyGroups?: boolean;
   onSaved?: () => void;
 }
 
@@ -114,14 +140,100 @@ export function MonthlySchedulePlanner({
   teamId = "team_1",
   teamName: _teamName = "チーム",
   isLiff: _isLiff = false,
+  currentDate: controlledDate,
+  onDateChange,
+  targetGroups: propTargetGroups,
+  dutyGroups: propDutyGroups,
+  useDutyGroups: propUseDutyGroups,
   onSaved
 }: MonthlySchedulePlannerProps) {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [internalDate, setInternalDate] = useState<Date>(() => controlledDate ?? new Date());
+  const currentDate = controlledDate ?? internalDate;
+  const setCurrentDate = (next: Date) => {
+    setInternalDate(next);
+    onDateChange?.(next);
+  };
+
   const [selectedDayItems, setSelectedDayItems] = useState<ScheduleDayItem[]>([]);
   const [deletedEventIds, setDeletedEventIds] = useState<string[]>([]);
   const [, setIsLoadingEvents] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const initialScheduleSettings = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const activeTeamId = teamId || "team_1";
+    const hit = peekLiffApiCache<TeamScheduleSettingsApiResponse>(
+      `/api/liff/team-schedule-settings?teamId=${encodeURIComponent(activeTeamId)}`
+    );
+    return hit?.settings ?? null;
+  }, [teamId]);
+
+  const [fetchedTargetGroups, setFetchedTargetGroups] = useState<string[]>(
+    () => initialScheduleSettings?.targetGroups ?? DEFAULT_PLANNER_TARGET_GROUPS
+  );
+  const [fetchedDutyGroups, setFetchedDutyGroups] = useState<string[]>(
+    () => initialScheduleSettings?.dutyGroups ?? []
+  );
+  const [fetchedUseDutyGroups, setFetchedUseDutyGroups] = useState<boolean>(
+    () => Boolean(initialScheduleSettings?.useDutyGroups)
+  );
+
+  useEffect(() => {
+    if (
+      propTargetGroups !== undefined &&
+      propDutyGroups !== undefined &&
+      propUseDutyGroups !== undefined
+    ) {
+      return;
+    }
+    const activeTeamId = teamId || "team_1";
+    let cancelled = false;
+    const applySettings = (payload?: TeamScheduleSettingsApiResponse | null) => {
+      if (cancelled || !payload?.settings) return;
+      if (Array.isArray(payload.settings.targetGroups) && payload.settings.targetGroups.length > 0) {
+        setFetchedTargetGroups(payload.settings.targetGroups);
+      }
+      if (Array.isArray(payload.settings.dutyGroups)) {
+        setFetchedDutyGroups(payload.settings.dutyGroups);
+      }
+      if (typeof payload.settings.useDutyGroups === "boolean") {
+        setFetchedUseDutyGroups(payload.settings.useDutyGroups);
+      }
+    };
+    void fetchLiffJsonSWR<TeamScheduleSettingsApiResponse>(
+      `/api/liff/team-schedule-settings?teamId=${encodeURIComponent(activeTeamId)}`,
+      { onRevalidate: (fresh) => applySettings(fresh) }
+    )
+      .then((data) => applySettings(data))
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId, propTargetGroups, propDutyGroups, propUseDutyGroups]);
+
+  const effectiveTargetGroups = useMemo(() => {
+    const base =
+      propTargetGroups && propTargetGroups.length > 0
+        ? propTargetGroups
+        : fetchedTargetGroups.length > 0
+        ? fetchedTargetGroups
+        : DEFAULT_PLANNER_TARGET_GROUPS;
+    return base.includes("全体") ? base : ["全体", ...base];
+  }, [propTargetGroups, fetchedTargetGroups]);
+
+  const effectiveDutyGroups = useMemo(() => {
+    return propDutyGroups !== undefined ? propDutyGroups : fetchedDutyGroups;
+  }, [propDutyGroups, fetchedDutyGroups]);
+
+  const effectiveUseDutyGroups =
+    propUseDutyGroups !== undefined ? propUseDutyGroups : fetchedUseDutyGroups;
+
+  const targetGroupSelectOptions = useMemo<LiffSelectOption[]>(
+    () => effectiveTargetGroups.map((g) => ({ value: g, label: `🎯 ${g}` })),
+    [effectiveTargetGroups]
+  );
 
   const [scheduleDefaults, setScheduleDefaults] = useState<TeamScheduleDefaultTimes>(() =>
     loadCachedTeamScheduleDefaultTimes(teamId)
@@ -250,7 +362,7 @@ export function MonthlySchedulePlanner({
               pmType: resolvedPmType,
               pmTime: `${pmStart}〜${pmEnd}`,
               pmLocation: ev.pmLocation || ev.location || "確認中",
-              dutyGroup: ev.dutyGroup || "1班",
+              dutyGroup: ev.dutyGroup && ev.dutyGroup !== "なし" ? ev.dutyGroup : "",
               needsLunch:
                 ev.needsLunch === true ||
                 ev.needsLunch === 1 ||
@@ -393,7 +505,7 @@ export function MonthlySchedulePlanner({
         pmType: "practice",
         pmTime: resolvedTimes.pmTimeLabel,
         pmLocation: "確認中",
-        dutyGroup: "1班",
+        dutyGroup: "",
         needsLunch: true,
         needsSnack: false,
         memo: "",
@@ -429,7 +541,7 @@ export function MonthlySchedulePlanner({
           pmType: "practice",
           pmTime: resolvedTimes.pmTimeLabel,
           pmLocation: "確認中",
-          dutyGroup: "1班",
+          dutyGroup: "",
           needsLunch: true,
           needsSnack: false,
           memo: "",
@@ -464,12 +576,20 @@ export function MonthlySchedulePlanner({
 
   // 📋 お当番変更ハンドラー
   const handleUpdateDuty = (dateStr: string, duty: string) => {
+    const normalizedDuty = duty === "なし" ? "" : duty;
     setSelectedDayItems(prev => prev.map(item => {
       if (item.dateStr === dateStr) {
-        return { ...item, dutyGroup: duty };
+        return { ...item, dutyGroup: normalizedDuty };
       }
       return item;
     }));
+  };
+
+  // 🎯 対象グループ変更ハンドラー
+  const handleUpdateTargetGroup = (dateStr: string, group: string) => {
+    setSelectedDayItems((prev) =>
+      prev.map((item) => (item.dateStr === dateStr ? { ...item, targetGroup: group } : item))
+    );
   };
 
   // 🍱 お弁当変更ハンドラー
@@ -508,10 +628,11 @@ export function MonthlySchedulePlanner({
     }));
   };
 
-  // 🔄 当番自動ローテーション（1班〜4班を日付順に順番に割り当て）
+  // 🔄 当番自動ローテーション（チーム設定の当番班リストを日付順に順番に割り当て）
   const handleAutoRotateDuties = () => {
+    const dutyRotation =
+      effectiveDutyGroups.length > 0 ? effectiveDutyGroups : ["1班", "2班", "3班", "4班"];
     const monthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-    const dutyRotation = ["1班", "2班", "3班", "4班"];
     let rotationIndex = 0;
 
     setSelectedDayItems(prev => prev.map(item => {
@@ -522,7 +643,7 @@ export function MonthlySchedulePlanner({
       }
       return item;
     }));
-    showToast(`🔄 ${currentMonth + 1}月の当番を1班〜4班のローテーションで自動割り当てしました`);
+    showToast(`🔄 ${currentMonth + 1}月の当番を順繰りに自動割り当てしました`);
   };
 
   // トースト表示
@@ -603,7 +724,8 @@ export function MonthlySchedulePlanner({
             amType: hasAm ? item.amType || "practice" : "off",
             pmType: hasPm ? item.pmType || "practice" : "off",
             location: hasAm ? amLoc : pmLoc,
-            dutyGroup: item.dutyGroup || "1班",
+            dutyGroup:
+              item.dutyGroup && item.dutyGroup !== "なし" ? item.dutyGroup : null,
             pmStartAt: hasPm ? `${item.dateStr}T${pm.start}:00` : null,
             pmEndAt: hasPm ? `${item.dateStr}T${pm.end}:00` : null,
             pmLocation: hasPm ? pmLoc : null,
@@ -649,38 +771,21 @@ export function MonthlySchedulePlanner({
         </div>
       )}
 
-      {/* 🌟 1. ヘッダー：月操作 ＆ アクションボタン */}
+      {/* 🌟 1. ヘッダー：クイック操作 ＆ 一括保存 */}
       <div className="p-4 rounded-2xl border border-border bg-card shadow-xs overflow-hidden space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          {/* 月移動 */}
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground border border-border transition-all active:scale-95 cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <span className="text-lg font-black text-foreground min-w-[120px] text-center tracking-tight">
-              {currentYear}年 {currentMonth + 1}月
+            <span className="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
             </span>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="p-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground border border-border transition-all active:scale-95 cursor-pointer"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleToday}
-              className="px-3 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-xs font-black text-foreground transition-all active:scale-95 cursor-pointer"
-            >
-              今月
-            </button>
+            <div>
+              <h3 className="text-xs sm:text-sm font-black text-foreground leading-tight">
+                月間活動日クイック登録
+              </h3>
+              <p className="text-[10.5px] font-bold text-muted-foreground">
+                日付タップで活動日をON/OFF・対象グループや場所を一括設定
+              </p>
+            </div>
           </div>
 
           {/* クイック選択 ＆ 一括保存ボタン */}
@@ -715,48 +820,42 @@ export function MonthlySchedulePlanner({
           </div>
         </div>
 
-        {/* 案内テキスト ＆ 現在の初期時間設定バー */}
-        <div className="space-y-2">
-          <p className="text-[11.5px] font-bold text-muted-foreground">
-            💡 カレンダーの日付をタップして<strong className="text-foreground">活動日を選択（ON/OFF）</strong>するだけで登録できます。場所の選択や当番割当もその場で行えます。
-          </p>
-
-          {(() => {
-            const curMonthTimes = resolveDefaultScheduleTimesForDate(
-              scheduleDefaults,
-              `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`
-            );
-            const winterMonths = getWinterMonths(scheduleDefaults.summerMonths);
-            return (
-              <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex flex-wrap items-center justify-between gap-2 text-[10.5px]">
-                <div className="flex flex-wrap items-center gap-1.5 font-black text-foreground">
-                  <Clock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                  <span>{currentMonth + 1}月の初期時間:</span>
-                  <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
-                    ☀️ {curMonthTimes.amTimeLabel}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
-                    🌙 {curMonthTimes.pmTimeLabel}
-                  </span>
-                  <span className="text-[10px] font-bold text-muted-foreground">
-                    （夏 {formatMonthSetLabel(scheduleDefaults.summerMonths)} / 冬 {formatMonthSetLabel(winterMonths)}）
-                  </span>
-                </div>
-
-                <Link
-                  href="/liff/settings/team"
-                  className="inline-flex items-center gap-1 text-[10.5px] font-black text-teal-700 dark:text-teal-300 hover:underline shrink-0"
-                >
-                  <Settings className="w-3 h-3" />
-                  <span>時間設定を変更</span>
-                </Link>
+        {/* 現在の初期時間設定バー */}
+        {(() => {
+          const curMonthTimes = resolveDefaultScheduleTimesForDate(
+            scheduleDefaults,
+            `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`
+          );
+          const winterMonths = getWinterMonths(scheduleDefaults.summerMonths);
+          return (
+            <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex flex-wrap items-center justify-between gap-2 text-[10.5px]">
+              <div className="flex flex-wrap items-center gap-1.5 font-black text-foreground">
+                <Clock className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                <span>{currentMonth + 1}月の初期時間:</span>
+                <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
+                  ☀️ {curMonthTimes.amTimeLabel}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-card border border-border tabular-nums">
+                  🌙 {curMonthTimes.pmTimeLabel}
+                </span>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  （夏 {formatMonthSetLabel(scheduleDefaults.summerMonths)} / 冬 {formatMonthSetLabel(winterMonths)}）
+                </span>
               </div>
-            );
-          })()}
-        </div>
+
+              <Link
+                href="/liff/settings/team"
+                className="inline-flex items-center gap-1 text-[10.5px] font-black text-teal-700 dark:text-teal-300 hover:underline shrink-0"
+              >
+                <Settings className="w-3 h-3" />
+                <span>チーム設定を変更</span>
+              </Link>
+            </div>
+          );
+        })()}
       </div>
 
-      {/* 🌟 2. 月間カレンダーグリッド */}
+      {/* 🌟 2. 月間カレンダーグリッド（単一の月移動バー） */}
       <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
         {/* A-3 上帯ダークキャップ（月ナビゲーション） */}
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
@@ -873,10 +972,15 @@ export function MonthlySchedulePlanner({
         </div>
       </div>
 
-      {/* 🌟 3. 現在表示中の月の活動日 ＆ 当番一覧リスト */}
+      {/* 🌟 3. 現在表示中の月の活動日一覧リスト */}
       {(() => {
         const currentMonthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
         const currentMonthItems = selectedDayItems.filter(it => it.dateStr.startsWith(currentMonthPrefix));
+        const configuredDutyButtons =
+          effectiveDutyGroups.length > 0 ? effectiveDutyGroups : ["1班", "2班", "3班", "4班"];
+        const extraDutyOptions = EXTRA_DUTY_SELECT_OPTIONS.filter(
+          (opt) => !configuredDutyButtons.includes(opt.value)
+        );
 
         return (
           <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
@@ -887,7 +991,11 @@ export function MonthlySchedulePlanner({
                   <span className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center">
                     <Layers className="w-3.5 h-3.5" />
                   </span>
-                  <span>{currentMonth + 1}月の活動日 & 当番一覧</span>
+                  <span>
+                    {effectiveUseDutyGroups
+                      ? `${currentMonth + 1}月の活動日 & 当番一覧`
+                      : `${currentMonth + 1}月の活動日一覧`}
+                  </span>
                 </h3>
                 <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-xs font-black tabular-nums">
                   {currentMonthItems.length}日
@@ -895,15 +1003,15 @@ export function MonthlySchedulePlanner({
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
-                {currentMonthItems.length > 0 && (
+                {effectiveUseDutyGroups && currentMonthItems.length > 0 && (
                   <button
                     type="button"
                     onClick={handleAutoRotateDuties}
                     className="py-1 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs font-black border border-slate-700 flex items-center gap-1 transition-all active:scale-95 cursor-pointer"
-                    title="1班〜4班を日付順に均等に割り当てます"
+                    title="設定された当番班を日付順に均等に割り当てます"
                   >
                     <RotateCw className="w-3 h-3 text-amber-400" />
-                    <span>当番を1〜4班で順繰り割当</span>
+                    <span>当番を順繰り割当</span>
                   </button>
                 )}
 
@@ -939,6 +1047,15 @@ export function MonthlySchedulePlanner({
                     const dObj = new Date(y, m - 1, d);
                     const isSun = dObj.getDay() === 0;
                     const isSat = dObj.getDay() === 6;
+                    const resolvedGroup = it.targetGroup || "全体";
+                    const rowGroupOptions = effectiveTargetGroups.includes(resolvedGroup)
+                      ? targetGroupSelectOptions
+                      : [
+                          ...targetGroupSelectOptions,
+                          { value: resolvedGroup, label: `🎯 ${resolvedGroup}` },
+                        ];
+                    const hasLegacyDutyWhenDisabled =
+                      !effectiveUseDutyGroups && Boolean(it.dutyGroup);
 
                     return (
                       <div
@@ -996,6 +1113,17 @@ export function MonthlySchedulePlanner({
                                 searchable={false}
                               />
 
+                              {/* 対象グループ切替（チーム設定連動） */}
+                              <LiffSelect
+                                value={resolvedGroup}
+                                onChange={(val) => handleUpdateTargetGroup(it.dateStr, val)}
+                                options={rowGroupOptions}
+                                title={`${it.dayLabel} の対象グループを選択`}
+                                accent="teal"
+                                size="xs"
+                                searchable={false}
+                              />
+
                               <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground tabular-nums">
                                 {it.amType !== "off" ? `☀️ ${it.amTime}` : "☀️ なし"}
                                 {it.pmType !== "off" ? ` / 🌙 ${it.pmTime}` : ""}
@@ -1043,71 +1171,102 @@ export function MonthlySchedulePlanner({
                           </button>
                         </div>
 
-                        {/* 下段 / 右側: 当番選択ボタン群 */}
-                        <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border">
-                          <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border overflow-x-auto scrollbar-none">
-                            <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
-                              <span>📋</span>
-                              <span>当番班:</span>
-                            </span>
+                        {/* 下段 / 右側: 当番選択ボタン群 ＆ PC削除ボタン */}
+                        {(effectiveUseDutyGroups || hasLegacyDutyWhenDisabled) ? (
+                          <div className="flex items-center justify-between md:justify-end gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border">
+                            {effectiveUseDutyGroups ? (
+                              <div className="flex items-center gap-1 bg-muted p-1 rounded-xl border border-border overflow-x-auto scrollbar-none">
+                                <span className="text-[10px] font-black text-amber-700 dark:text-amber-300 pl-1.5 pr-0.5 shrink-0 flex items-center gap-0.5">
+                                  <span>📋</span>
+                                  <span>当番班:</span>
+                                </span>
 
-                            {["1班", "2班", "3班", "4班", "なし"].map((dg) => {
-                              const isCurDuty = (it.dutyGroup === dg) || (!it.dutyGroup && dg === "なし");
-                              return (
-                                <button
-                                  key={dg}
-                                  type="button"
-                                  onClick={() => handleUpdateDuty(it.dateStr, dg)}
-                                  className={cn(
-                                    "px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95 shrink-0 cursor-pointer",
-                                    isCurDuty
-                                      ? dg === "なし"
-                                        ? "bg-card text-foreground shadow-sm border border-border font-black"
-                                        : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs font-black"
-                                      : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                {[...configuredDutyButtons, "なし"].map((dg) => {
+                                  const isCurDuty =
+                                    it.dutyGroup === dg || (!it.dutyGroup && dg === "なし");
+                                  return (
+                                    <button
+                                      key={dg}
+                                      type="button"
+                                      onClick={() => handleUpdateDuty(it.dateStr, dg)}
+                                      className={cn(
+                                        "px-2.5 py-1 rounded-lg text-xs transition-all active:scale-95 shrink-0 cursor-pointer",
+                                        isCurDuty
+                                          ? dg === "なし"
+                                            ? "bg-card text-foreground shadow-sm border border-border font-black"
+                                            : "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs font-black"
+                                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                                      )}
+                                    >
+                                      {dg}
+                                    </button>
+                                  );
+                                })}
+
+                                {/* プリセット外の当番班が入っている場合の選択表示 */}
+                                {it.dutyGroup &&
+                                  !configuredDutyButtons.includes(it.dutyGroup) &&
+                                  it.dutyGroup !== "なし" && (
+                                    <span className="px-2 py-1 rounded-lg text-xs font-black bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs shrink-0">
+                                      {it.dutyGroup}
+                                    </span>
                                   )}
-                                >
-                                  {dg}
-                                </button>
-                              );
-                            })}
 
-                            {/* その他（5班・A班など）の場合の選択表示 */}
-                            {it.dutyGroup && !["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup) && (
-                              <span className="px-2 py-1 rounded-lg text-xs font-black bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/35 shadow-2xs shrink-0">
-                                {it.dutyGroup}
-                              </span>
+                                {extraDutyOptions.length > 0 && (
+                                  <LiffSelect
+                                    value={
+                                      configuredDutyButtons.includes(it.dutyGroup) || !it.dutyGroup
+                                        ? ""
+                                        : it.dutyGroup
+                                    }
+                                    onChange={(val) => {
+                                      if (val) handleUpdateDuty(it.dateStr, val);
+                                    }}
+                                    options={extraDutyOptions}
+                                    title={`${it.dayLabel} のその他の当番を選択`}
+                                    accent="amber"
+                                    size="xs"
+                                    searchable={false}
+                                    displayValueOverride="他"
+                                    className="shrink-0"
+                                  />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 bg-muted px-2.5 py-1 rounded-xl border border-border text-xs">
+                                <span className="font-black text-amber-700 dark:text-amber-300">
+                                  📋 当番: {it.dutyGroup}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateDuty(it.dateStr, "")}
+                                  className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-muted-foreground hover:text-rose-600 cursor-pointer"
+                                >
+                                  解除
+                                </button>
+                              </div>
                             )}
 
-                            <LiffSelect
-                              value={
-                                ["1班", "2班", "3班", "4班", "なし"].includes(it.dutyGroup)
-                                  ? ""
-                                  : it.dutyGroup
-                              }
-                              onChange={(val) => {
-                                if (val) handleUpdateDuty(it.dateStr, val);
-                              }}
-                              options={EXTRA_DUTY_SELECT_OPTIONS}
-                              title={`${it.dayLabel} のその他の当番を選択`}
-                              accent="amber"
-                              size="xs"
-                              searchable={false}
-                              displayValueOverride="他"
-                              className="shrink-0"
-                            />
+                            {/* PC時の削除ボタン */}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDate(dObj)}
+                              className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer"
+                              title="活動日を解除"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-
-                          {/* PC時の削除ボタン */}
+                        ) : (
                           <button
                             type="button"
                             onClick={() => handleToggleDate(dObj)}
-                            className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer"
+                            className="hidden md:flex p-2 rounded-xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all cursor-pointer shrink-0"
                             title="活動日を解除"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1124,7 +1283,13 @@ export function MonthlySchedulePlanner({
                     className="py-2.5 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-black shadow-xs active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     <Save className="w-4 h-4" />
-                    <span>{isSaving ? "保存中..." : `${currentMonth + 1}月の活動日 & 当番（${currentMonthItems.length}日）を一括保存`}</span>
+                    <span>
+                      {isSaving
+                        ? "保存中..."
+                        : effectiveUseDutyGroups
+                        ? `${currentMonth + 1}月の活動日 & 当番（${currentMonthItems.length}日）を一括保存`
+                        : `${currentMonth + 1}月の活動日（${currentMonthItems.length}日）を一括保存`}
+                    </span>
                   </button>
                 </div>
               )}

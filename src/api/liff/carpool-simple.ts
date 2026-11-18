@@ -11,6 +11,7 @@ import {
 } from "@/lib/liff/player-condition";
 import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
 import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
+import { resolveCallerTeamAccess } from "@/lib/team-access";
 import { buildTeamSubqueryTenantWhere } from "@/lib/tenant-scope";
 import type { WorkerEnv } from "@/types/api";
 
@@ -28,6 +29,8 @@ const {
   eventCarpools,
   eventCarpoolRiders,
   eventCarpoolSettings,
+  teamEquipments,
+  eventEquipments,
 } = schema;
 
 export interface SimpleCarpoolEventOption {
@@ -77,6 +80,14 @@ export interface SimpleCarpoolPlayerCandidate {
   isAttending: boolean;
 }
 
+export interface SimpleCarpoolEquipmentOption {
+  id: string;
+  name: string;
+  description: string | null;
+  isHeavy: boolean;
+  quantity: number;
+}
+
 export interface SimpleCarpoolExistingCar {
   id: string;
   driverMemberId: string;
@@ -92,6 +103,13 @@ export interface SimpleCarpoolExistingCar {
     id: string;
     name: string;
   }>;
+  hasReturnDiff?: boolean;
+  returnRiders?: Array<{
+    type: "player" | "adult";
+    id: string;
+    name: string;
+  }>;
+  equipmentIds?: string[];
 }
 
 export interface SimpleCarpoolVenueOption {
@@ -107,6 +125,7 @@ export interface SimpleCarpoolContextResponse {
   drivers: SimpleCarpoolDriverCandidate[];
   sharedCars?: SimpleCarpoolSharedCarItem[];
   players: SimpleCarpoolPlayerCandidate[];
+  teamEquipments?: SimpleCarpoolEquipmentOption[];
   venues: SimpleCarpoolVenueOption[];
   homeGround: string;
   existingCars: SimpleCarpoolExistingCar[];
@@ -140,6 +159,12 @@ export interface SimpleCarpoolSavePayload {
       type: "player" | "adult";
       id: string;
     }>;
+    hasReturnDiff?: boolean;
+    returnRiders?: Array<{
+      type: "player" | "adult";
+      id: string;
+    }> | null;
+    equipmentIds?: string[];
   }>;
 }
 
@@ -180,6 +205,49 @@ function parseJstDateTimeToDate(dateStr: string, timeStr: string): Date {
 function normalizeNameKey(raw: string | null | undefined): string {
   if (!raw) return "";
   return raw.replace(/[\s\u3000]+/g, "").trim().toLowerCase();
+}
+
+function parseStoredReturnRiders(
+  rawJson: string | null | undefined,
+  playerMap: ReadonlyMap<string, string>,
+  memberMap: ReadonlyMap<string, string>
+): {
+  hasReturnDiff: boolean;
+  returnRiders: Array<{ type: "player" | "adult"; id: string; name: string }>;
+} {
+  if (!rawJson || !rawJson.trim()) {
+    return { hasReturnDiff: false, returnRiders: [] };
+  }
+  try {
+    const parsed: unknown = JSON.parse(rawJson);
+    if (!Array.isArray(parsed)) {
+      return { hasReturnDiff: false, returnRiders: [] };
+    }
+    const list: Array<{ type: "player" | "adult"; id: string; name: string }> =
+      [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item as Record<string, unknown>;
+      const id = typeof obj.id === "string" ? obj.id.trim() : "";
+      if (!id) continue;
+      if (obj.type === "player" && playerMap.has(id)) {
+        list.push({
+          type: "player",
+          id,
+          name: playerMap.get(id) || "選手",
+        });
+      } else if (obj.type === "adult" && memberMap.has(id)) {
+        list.push({
+          type: "adult",
+          id,
+          name: memberMap.get(id) || "保護者",
+        });
+      }
+    }
+    return { hasReturnDiff: true, returnRiders: list };
+  } catch {
+    return { hasReturnDiff: false, returnRiders: [] };
+  }
 }
 
 const ATTENDING_STATUS_SET = new Set([
@@ -302,6 +370,36 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
       { playerId: "demo-p-4", name: "田中 颯太", uniformNumber: "10", attendanceStatus: "present", isAttending: true },
       { playerId: "demo-p-5", name: "伊藤 悠斗", uniformNumber: "8", attendanceStatus: "present", isAttending: true },
     ],
+    teamEquipments: [
+      {
+        id: "demo-eq-1",
+        name: "キャッチャー防具一式",
+        description: "ヘルメット・レガース含む",
+        isHeavy: true,
+        quantity: 2,
+      },
+      {
+        id: "demo-eq-2",
+        name: "ボールケース・バットケース",
+        description: "試合球・練習球",
+        isHeavy: true,
+        quantity: 1,
+      },
+      {
+        id: "demo-eq-3",
+        name: "ベンチ用タープテント",
+        description: "熱中症対策用",
+        isHeavy: true,
+        quantity: 1,
+      },
+      {
+        id: "demo-eq-4",
+        name: "救急バッグ・アイシング",
+        description: "コールドスプレー確認",
+        isHeavy: false,
+        quantity: 1,
+      },
+    ],
     venues: [
       { id: "demo-v-1", name: "〇〇市民球場 第1駐車場" },
     ],
@@ -320,6 +418,25 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
           { type: "player", id: "demo-p-2", name: "佐藤 蓮" },
           { type: "adult", id: "demo-m-4", name: "佐藤 ママ" },
         ],
+        hasReturnDiff: false,
+        returnRiders: [],
+        equipmentIds: ["demo-eq-4"],
+      },
+      {
+        id: "demo-cp-3",
+        driverMemberId: "demo-m-3",
+        driverName: "山下 監督",
+        carId: "demo-car-3",
+        carName: "ハイエース",
+        plate: "・56-78",
+        capacity: 3,
+        isCargo: true,
+        riders: [
+          { type: "player", id: "demo-p-4", name: "田中 颯太" },
+        ],
+        hasReturnDiff: false,
+        returnRiders: [],
+        equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-3"],
       },
     ],
   };
@@ -327,7 +444,7 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
 
 /**
  * GET /api/liff/carpool-simple/context
- * 簡易配車エディタ用の予定・車出し候補・参加選手・既存配車データ一括取得
+ * 簡易配車エディタ用の予定・車出し候補・参加選手・道具マスタ・既存配車データ一括取得
  */
 liffCarpoolSimpleRouter.get("/context", async (c) => {
   const teamId = (c.req.query("teamId") || "").trim();
@@ -347,6 +464,7 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       allMembers,
       allPlayers,
       allCars,
+      allEquipments,
       allVenues,
       allRelations,
       periodsByPlayerId,
@@ -374,6 +492,12 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         .from(memberCars)
         .where(eq(memberCars.teamId, teamId))
         .all(),
+      db
+        .select()
+        .from(teamEquipments)
+        .where(eq(teamEquipments.teamId, teamId))
+        .all()
+        .catch(() => []),
       db
         .select({ id: venues.id, name: venues.name })
         .from(venues)
@@ -472,31 +596,39 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
         null;
     }
 
-    const [eventAttendanceRows, existingCarpoolRows] = selectedEvent
-      ? await Promise.all([
-          db
-            .select()
-            .from(attendances)
-            .where(eq(attendances.eventId, selectedEvent.id))
-            .all(),
-          db
-            .select({
-              id: eventCarpools.id,
-              driverId: eventCarpools.driverId,
-              driverName: teamMembers.name,
-              carId: eventCarpools.carId,
-              carName: memberCars.name,
-              numberPlate: memberCars.numberPlate,
-              capacity: eventCarpools.capacity,
-              carType: eventCarpools.carType,
-            })
-            .from(eventCarpools)
-            .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
-            .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
-            .where(eq(eventCarpools.eventId, selectedEvent.id))
-            .all(),
-        ])
-      : [[], []];
+    const [eventAttendanceRows, existingCarpoolRows, eventEquipmentRows] =
+      selectedEvent
+        ? await Promise.all([
+            db
+              .select()
+              .from(attendances)
+              .where(eq(attendances.eventId, selectedEvent.id))
+              .all(),
+            db
+              .select({
+                id: eventCarpools.id,
+                driverId: eventCarpools.driverId,
+                driverName: teamMembers.name,
+                carId: eventCarpools.carId,
+                carName: memberCars.name,
+                numberPlate: memberCars.numberPlate,
+                capacity: eventCarpools.capacity,
+                carType: eventCarpools.carType,
+                returnRidersJson: eventCarpools.returnRidersJson,
+              })
+              .from(eventCarpools)
+              .leftJoin(teamMembers, eq(eventCarpools.driverId, teamMembers.id))
+              .leftJoin(memberCars, eq(eventCarpools.carId, memberCars.id))
+              .where(eq(eventCarpools.eventId, selectedEvent.id))
+              .all(),
+            db
+              .select()
+              .from(eventEquipments)
+              .where(eq(eventEquipments.eventId, selectedEvent.id))
+              .all()
+              .catch(() => []),
+          ])
+        : [[], [], []];
 
     const cpIds = existingCarpoolRows.map((cp) => cp.id);
     const existingRiderRows =
@@ -605,7 +737,9 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       relations: allRelations,
     });
     const existingDriverIds = new Set(
-      existingCarpoolRows.map((cp) => cp.driverId).filter((id): id is string => Boolean(id))
+      existingCarpoolRows
+        .map((cp) => cp.driverId)
+        .filter((id): id is string => Boolean(id))
     );
 
     const adultMembers = allMembers.filter((m) => {
@@ -691,6 +825,11 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       }
     );
 
+    const playerNameById = new Map(allPlayers.map((p) => [p.id, p.name]));
+    const memberNameById = new Map(
+      allMembers.map((m) => [m.id, (m.name || "保護者").trim()])
+    );
+
     const ridersMap = new Map<string, SimpleCarpoolExistingCar["riders"]>();
     for (const r of existingRiderRows) {
       const list = ridersMap.get(r.carpoolId) || [];
@@ -702,22 +841,56 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       ridersMap.set(r.carpoolId, list);
     }
 
+    const eqIdsByCarpoolId = new Map<string, string[]>();
+    for (const eqRow of eventEquipmentRows) {
+      if (!eqRow.carpoolId || !eqRow.equipmentId) continue;
+      const list = eqIdsByCarpoolId.get(eqRow.carpoolId) || [];
+      if (!list.includes(eqRow.equipmentId)) {
+        list.push(eqRow.equipmentId);
+      }
+      eqIdsByCarpoolId.set(eqRow.carpoolId, list);
+    }
+
+    const formattedTeamEquipments: SimpleCarpoolEquipmentOption[] =
+      allEquipments
+        .map((eqItem) => ({
+          id: eqItem.id,
+          name: eqItem.name,
+          description: eqItem.description || null,
+          isHeavy: Boolean(eqItem.isHeavy),
+          quantity: Math.max(1, Number(eqItem.quantity) || 1),
+        }))
+        .sort((a, b) => {
+          if (a.isHeavy !== b.isHeavy) return a.isHeavy ? -1 : 1;
+          return a.name.localeCompare(b.name, "ja");
+        });
+
     const existingCars: SimpleCarpoolExistingCar[] = existingCarpoolRows.map(
-      (cp) => ({
-        id: cp.id,
-        driverMemberId: cp.driverId,
-        driverName: cp.driverName || "ドライバー",
-        carId: cp.carId || null,
-        carName: cp.carName || "",
-        plate: cp.numberPlate || "",
-        capacity:
-          cp.capacity !== null && cp.capacity !== undefined
-            ? Math.max(0, Number(cp.capacity))
-            : 4,
-        isCargo: cp.carType === "cargo",
-        isBus: cp.carType === "bus",
-        riders: ridersMap.get(cp.id) || [],
-      })
+      (cp) => {
+        const parsedReturn = parseStoredReturnRiders(
+          cp.returnRidersJson,
+          playerNameById,
+          memberNameById
+        );
+        return {
+          id: cp.id,
+          driverMemberId: cp.driverId,
+          driverName: cp.driverName || "ドライバー",
+          carId: cp.carId || null,
+          carName: cp.carName || "",
+          plate: cp.numberPlate || "",
+          capacity:
+            cp.capacity !== null && cp.capacity !== undefined
+              ? Math.max(0, Number(cp.capacity))
+              : 4,
+          isCargo: cp.carType === "cargo",
+          isBus: cp.carType === "bus",
+          riders: ridersMap.get(cp.id) || [],
+          hasReturnDiff: parsedReturn.hasReturnDiff,
+          returnRiders: parsedReturn.returnRiders,
+          equipmentIds: eqIdsByCarpoolId.get(cp.id) || [],
+        };
+      }
     );
 
     const resPayload: SimpleCarpoolContextResponse = {
@@ -728,6 +901,7 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       drivers,
       sharedCars,
       players: playerCandidates,
+      teamEquipments: formattedTeamEquipments,
       venues: allVenues,
       homeGround: teamRow.homeGround || "",
       existingCars,
@@ -745,7 +919,7 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
 
 /**
  * POST /api/liff/carpool-simple/save
- * 簡易配車の保存（新規予定の即時作成・手入力運転手/マイカーの自動補完・既存号車ID維持によるライブ位置保護）
+ * 簡易配車の保存（新規予定作成・道具積載割当・帰り便乗車差分・既存号車ID維持によるライブ位置保護）
  */
 liffCarpoolSimpleRouter.post("/save", async (c) => {
   try {
@@ -768,6 +942,14 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
     }
 
     await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+      return c.json(
+        { success: false, error: "配車データを編集する権限がありません" },
+        403
+      );
+    }
+
     const db = drizzle(c.env.DB);
 
     const teamRow = await db
@@ -816,8 +998,12 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       }
 
       if (body.eventPatch) {
-        const updateFields: { location?: string; description?: string | null } = {};
-        if (typeof body.eventPatch.destination === "string" && body.eventPatch.destination.trim()) {
+        const updateFields: { location?: string; description?: string | null } =
+          {};
+        if (
+          typeof body.eventPatch.destination === "string" &&
+          body.eventPatch.destination.trim()
+        ) {
           updateFields.location = body.eventPatch.destination.trim();
         }
         if (typeof body.eventPatch.notes === "string") {
@@ -833,22 +1019,45 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
     }
 
     // 2. マスタ情報の並列取得
-    const [existingMembers, existingCarsMaster, existingPlayers, currentCarpools, existingSettings] =
-      await Promise.all([
-        db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
-        db.select().from(memberCars).where(eq(memberCars.teamId, teamId)).all(),
-        db.select({ id: players.id }).from(players).where(eq(players.teamId, teamId)).all(),
-        db
-          .select({ id: eventCarpools.id })
-          .from(eventCarpools)
-          .where(eq(eventCarpools.eventId, targetEventId))
-          .all(),
-        db
-          .select({ id: eventCarpoolSettings.id })
-          .from(eventCarpoolSettings)
-          .where(eq(eventCarpoolSettings.eventId, targetEventId))
-          .get(),
-      ]);
+    const [
+      existingMembers,
+      existingCarsMaster,
+      existingPlayers,
+      existingTeamEqRows,
+      existingEventEqRows,
+      currentCarpools,
+      existingSettings,
+    ] = await Promise.all([
+      db.select().from(teamMembers).where(eq(teamMembers.teamId, teamId)).all(),
+      db.select().from(memberCars).where(eq(memberCars.teamId, teamId)).all(),
+      db
+        .select({ id: players.id })
+        .from(players)
+        .where(eq(players.teamId, teamId))
+        .all(),
+      db
+        .select({ id: teamEquipments.id })
+        .from(teamEquipments)
+        .where(eq(teamEquipments.teamId, teamId))
+        .all()
+        .catch(() => []),
+      db
+        .select()
+        .from(eventEquipments)
+        .where(eq(eventEquipments.eventId, targetEventId))
+        .all()
+        .catch(() => []),
+      db
+        .select({ id: eventCarpools.id })
+        .from(eventCarpools)
+        .where(eq(eventCarpools.eventId, targetEventId))
+        .all(),
+      db
+        .select({ id: eventCarpoolSettings.id })
+        .from(eventCarpoolSettings)
+        .where(eq(eventCarpoolSettings.eventId, targetEventId))
+        .get(),
+    ]);
 
     if (!existingSettings) {
       await db.insert(eventCarpoolSettings).values({
@@ -867,12 +1076,16 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
     );
     const validCarById = new Map(existingCarsMaster.map((mc) => [mc.id, mc]));
     const validPlayerIdSet = new Set(existingPlayers.map((p) => p.id));
+    const validEquipmentIdSet = new Set(existingTeamEqRows.map((eqItem) => eqItem.id));
     const currentCarpoolIdSet = new Set(currentCarpools.map((cp) => cp.id));
 
     // 3. 排他制御（同一運転手の重複登録防止・同一乗客の複数号車重複防止）
     const usedDriverIds = new Set<string>();
     const usedPlayerRiderIds = new Set<string>();
     const usedAdultRiderIds = new Set<string>();
+    const usedReturnPlayerIds = new Set<string>();
+    const usedReturnAdultIds = new Set<string>();
+    const usedEquipmentIds = new Set<string>();
 
     const resolvedCarsToSave: Array<{
       carpoolId: string;
@@ -882,12 +1095,17 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       capacity: number;
       carType: "normal" | "cargo" | "bus";
       riders: Array<{ playerId: string | null; memberId: string | null }>;
+      returnRidersJson: string | null;
+      equipmentIds: string[];
     }> = [];
 
     for (const rawCar of rawCars) {
       let resolvedDriverId = (rawCar.driverMemberId || "").trim();
 
-      if (resolvedDriverId === "__custom__" || !validMemberById.has(resolvedDriverId)) {
+      if (
+        resolvedDriverId === "__custom__" ||
+        !validMemberById.has(resolvedDriverId)
+      ) {
         const customName = (rawCar.customDriverName || "").trim();
         if (!customName) continue;
         const norm = normalizeNameKey(customName);
@@ -904,7 +1122,7 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
             memberType: "parent",
             status: "active",
           });
-          const createdObj: typeof existingMembers[number] = {
+          const createdObj: (typeof existingMembers)[number] = {
             id: newMemberId,
             teamId,
             userId: null,
@@ -1020,6 +1238,46 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
         }
       }
 
+      let returnRidersJson: string | null = null;
+      if (rawCar.hasReturnDiff && Array.isArray(rawCar.returnRiders)) {
+        const sanitizedReturn: Array<{
+          type: "player" | "adult";
+          id: string;
+        }> = [];
+        for (const rr of rawCar.returnRiders) {
+          if (rr.type === "player" && validPlayerIdSet.has(rr.id)) {
+            if (usedReturnPlayerIds.has(rr.id)) continue;
+            usedReturnPlayerIds.add(rr.id);
+            sanitizedReturn.push({ type: "player", id: rr.id });
+          } else if (
+            rr.type === "adult" &&
+            validMemberById.has(rr.id) &&
+            rr.id !== resolvedDriverId
+          ) {
+            if (usedReturnAdultIds.has(rr.id)) continue;
+            usedReturnAdultIds.add(rr.id);
+            sanitizedReturn.push({ type: "adult", id: rr.id });
+          }
+        }
+        returnRidersJson = JSON.stringify(sanitizedReturn);
+      }
+
+      const carEquipmentIds: string[] = [];
+      if (Array.isArray(rawCar.equipmentIds)) {
+        for (const rawEqId of rawCar.equipmentIds) {
+          const cleanEqId = typeof rawEqId === "string" ? rawEqId.trim() : "";
+          if (
+            !cleanEqId ||
+            !validEquipmentIdSet.has(cleanEqId) ||
+            usedEquipmentIds.has(cleanEqId)
+          ) {
+            continue;
+          }
+          usedEquipmentIds.add(cleanEqId);
+          carEquipmentIds.push(cleanEqId);
+        }
+      }
+
       resolvedCarsToSave.push({
         carpoolId,
         isUpdate: isExistingForEvent,
@@ -1028,14 +1286,30 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
         capacity,
         carType,
         riders: sanitizedRiders,
+        returnRidersJson,
+        equipmentIds: carEquipmentIds,
       });
     }
 
-    // 自分が他号車の運転手になった場合は同乗者リストからも除外
+    // 自分が他号車の運転手になった場合は同乗者リスト（行き・帰り両方）からも除外
     for (const car of resolvedCarsToSave) {
       car.riders = car.riders.filter(
         (r) => !(r.memberId && usedDriverIds.has(r.memberId))
       );
+      if (car.returnRidersJson) {
+        try {
+          const parsedRet = JSON.parse(car.returnRidersJson) as Array<{
+            type: "player" | "adult";
+            id: string;
+          }>;
+          const filteredRet = parsedRet.filter(
+            (r) => !(r.type === "adult" && usedDriverIds.has(r.id))
+          );
+          car.returnRidersJson = JSON.stringify(filteredRet);
+        } catch {
+          car.returnRidersJson = null;
+        }
+      }
     }
 
     // 4. 削除された号車のみを DELETE（維持された号車IDは UPDATE して carpool_live_locations の位置共有を保護！）
@@ -1072,6 +1346,7 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
             carId: car.carId,
             capacity: car.capacity,
             carType: car.carType,
+            returnRidersJson: car.returnRidersJson,
           })
           .where(eq(eventCarpools.id, car.carpoolId));
       } else {
@@ -1084,6 +1359,7 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
           carType: car.carType,
           highwayFee: 0,
           parkingFee: 0,
+          returnRidersJson: car.returnRidersJson,
         });
       }
     }
@@ -1103,6 +1379,42 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
       await db.insert(eventCarpoolRiders).values(chunk);
     }
 
+    // 5. 道具・備品積載割当（event_equipments）の同期（既存の積載済/返却完了ステータスは維持）
+    const existingStatusByEqId = new Map<
+      string,
+      "pending" | "loaded" | "returned"
+    >();
+    for (const eqRow of existingEventEqRows) {
+      if (
+        eqRow.equipmentId &&
+        (eqRow.status === "pending" ||
+          eqRow.status === "loaded" ||
+          eqRow.status === "returned")
+      ) {
+        existingStatusByEqId.set(eqRow.equipmentId, eqRow.status);
+      }
+    }
+
+    await db
+      .delete(eventEquipments)
+      .where(eq(eventEquipments.eventId, targetEventId));
+
+    const eqInsertValues = resolvedCarsToSave.flatMap((car) =>
+      car.equipmentIds.map((eqId) => ({
+        id: `eeq_${crypto.randomUUID().replace(/-/g, "")}`,
+        eventId: targetEventId,
+        equipmentId: eqId,
+        carpoolId: car.carpoolId,
+        responsibleMemberId: car.driverId,
+        status: existingStatusByEqId.get(eqId) || ("pending" as const),
+      }))
+    );
+
+    for (let i = 0; i < eqInsertValues.length; i += 15) {
+      const chunk = eqInsertValues.slice(i, i + 15);
+      await db.insert(eventEquipments).values(chunk);
+    }
+
     return c.json({
       success: true,
       isDemo: false,
@@ -1113,6 +1425,94 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
     console.error("[POST /api/liff/carpool-simple/save] Error:", error);
     return c.json(
       { success: false, error: "簡易配車の保存に失敗しました" },
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/liff/carpool-simple/equipment-status
+ * 配車ページ上での道具積載・返却完了ステータスのワンタップ更新
+ */
+liffCarpoolSimpleRouter.post("/equipment-status", async (c) => {
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      eventId?: string;
+      equipmentId?: string;
+      carpoolId?: string | null;
+      status?: string;
+    };
+    const teamId = (body.teamId || "").trim();
+    const eventId = (body.eventId || "").trim();
+    const equipmentId = (body.equipmentId || "").trim();
+    const nextStatus =
+      body.status === "loaded" || body.status === "returned"
+        ? body.status
+        : "pending";
+
+    if (!teamId || !eventId || !equipmentId) {
+      return c.json(
+        { success: false, error: "必須パラメータが不足しています" },
+        400
+      );
+    }
+
+    if (teamId === "demo-team") {
+      return c.json({ success: true, isDemo: true, status: nextStatus });
+    }
+
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canAccessTeam(teamId)) {
+      return c.json({ success: false, error: "アクセス権限がありません" }, 403);
+    }
+
+    const db = drizzle(c.env.DB);
+    const evRow = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(and(eq(events.id, eventId), eq(events.teamId, teamId)))
+      .get();
+
+    if (!evRow) {
+      return c.json({ success: false, error: "予定が見つかりません" }, 404);
+    }
+
+    const existingRow = await db
+      .select({ id: eventEquipments.id })
+      .from(eventEquipments)
+      .where(
+        and(
+          eq(eventEquipments.eventId, eventId),
+          eq(eventEquipments.equipmentId, equipmentId)
+        )
+      )
+      .get();
+
+    if (existingRow) {
+      await db
+        .update(eventEquipments)
+        .set({
+          status: nextStatus,
+          updatedAt: new Date(),
+        })
+        .where(eq(eventEquipments.id, existingRow.id));
+    } else {
+      await db.insert(eventEquipments).values({
+        id: `eeq_${crypto.randomUUID().replace(/-/g, "")}`,
+        eventId,
+        equipmentId,
+        carpoolId: body.carpoolId || null,
+        status: nextStatus,
+      });
+    }
+
+    return c.json({ success: true, isDemo: false, status: nextStatus });
+  } catch (err) {
+    console.error("[POST /api/liff/carpool-simple/equipment-status] Error:", err);
+    return c.json(
+      { success: false, error: "道具ステータスの更新に失敗しました" },
       500
     );
   }

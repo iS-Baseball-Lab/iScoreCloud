@@ -13,8 +13,32 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export interface HubCalendarEventInput {
+  id: string;
+  title?: string;
+  dateStr?: string;
+  startAt?: string;
+  pmStartAt?: string | null;
+  hasPm?: boolean;
+  eventType?: string;
+  amType?: string;
+  amTime?: string;
+  amLocation?: string;
+  pmType?: string;
+  pmTime?: string;
+  pmLocation?: string | null;
+  location?: string;
+  targetGroup?: string;
+  dutyGroup?: string | null;
+  needsLunch?: boolean | number | string;
+  needsSnack?: boolean | number | string;
+  description?: string;
+  memo?: string;
+  carInfo?: string;
+}
+
 interface HubCalendarSectionProps {
-  eventsList?: any[];
+  eventsList?: HubCalendarEventInput[];
   isDemo?: boolean;
 }
 
@@ -91,7 +115,7 @@ export function HubCalendarSection({
   const allParsedEvents = useMemo(() => {
     if (eventsList && eventsList.length > 0) {
       return eventsList.map(ev => {
-        const d = new Date(ev.startAt || ev.dateStr);
+        const d = new Date(ev.startAt || ev.dateStr || "");
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, "0");
         const day = String(d.getDate()).padStart(2, "0");
@@ -115,7 +139,7 @@ export function HubCalendarSection({
           pmTime: hasPm ? (ev.pmTime || "13:00〜17:00") : "",
           pmLocation: hasPm ? (ev.pmLocation || ev.amLocation || ev.location || "") : "",
           hasPm,
-          duty: ev.dutyGroup || "1班",
+          duty: ev.dutyGroup && ev.dutyGroup !== "なし" ? ev.dutyGroup : "",
           needsLunch: ev.needsLunch === true || ev.needsLunch === 1 || ev.needsLunch === "1" || ev.needsLunch === "true",
           needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
           memo: ev.description || ev.memo || "",

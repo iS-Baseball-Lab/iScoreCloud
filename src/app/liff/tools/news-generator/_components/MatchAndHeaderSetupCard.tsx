@@ -15,6 +15,10 @@ import {
   Trash2,
   X,
   RotateCcw,
+  ExternalLink,
+  Flame,
+  Snowflake,
+  Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffSelect } from "@/components/liff/LiffSelect";
@@ -31,6 +35,16 @@ import type {
   LiveReportV2Document,
 } from "@/types/live-report-v2";
 
+export interface MatchSetupTournamentRules {
+  tournamentName?: string | null;
+  category?: string | null;
+  timeLimit?: string | null;
+  coldGameRule?: string | null;
+  tiebreakerRule?: string | null;
+  pitchLimitRule?: string | null;
+  bracketUrl?: string | null;
+}
+
 interface MatchAndHeaderSetupCardProps {
   doc: LiveReportV2Document;
   onChangeDoc: (updater: (prev: LiveReportV2Document) => LiveReportV2Document) => void;
@@ -42,7 +56,17 @@ interface MatchAndHeaderSetupCardProps {
   defaultExpanded?: boolean;
   openLineupSignal?: number;
   readOnly?: boolean;
+  tournamentRules?: MatchSetupTournamentRules | null;
+  resolvedPitchRuleLabel?: string;
 }
+
+const PITCH_LIMIT_OVERRIDE_OPTIONS = [
+  { value: "auto", label: "大会/チーム規定自動" },
+  { value: "70", label: "学童70球（50注意・60準備）" },
+  { value: "85", label: "85球（65注意・75準備）" },
+  { value: "100", label: "中学100球（75注意・85準備）" },
+  { value: "none", label: "制限なし" },
+] as const;
 
 export function MatchAndHeaderSetupCard({
   doc,
@@ -55,6 +79,8 @@ export function MatchAndHeaderSetupCard({
   defaultExpanded = false,
   openLineupSignal = 0,
   readOnly = false,
+  tournamentRules = null,
+  resolvedPitchRuleLabel,
 }: MatchAndHeaderSetupCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLineupModalOpen, setIsLineupModalOpen] = useState(false);
@@ -81,6 +107,28 @@ export function MatchAndHeaderSetupCard({
   const filledLineupCount = doc.lineup.filter(
     (s) => s.playerName.trim().length > 0
   ).length;
+
+  const timeRule = (tournamentRules?.timeLimit || "").trim();
+  const coldRule = (tournamentRules?.coldGameRule || "").trim();
+  const tieRule = (tournamentRules?.tiebreakerRule || "").trim();
+  const pitchRule = (tournamentRules?.pitchLimitRule || "").trim();
+  const rawBracketUrl = (tournamentRules?.bracketUrl || "").trim();
+  const validBracketUrl = /^https?:\/\//i.test(rawBracketUrl)
+    ? rawBracketUrl
+    : "";
+  const hasAnyTournamentRule = Boolean(
+    timeRule || coldRule || tieRule || pitchRule || validBracketUrl
+  );
+
+  const pitchOverrideSelectValue =
+    doc.pitchLimitOverride === "none"
+      ? "none"
+      : typeof doc.pitchLimitOverride === "number" &&
+          (doc.pitchLimitOverride === 70 ||
+            doc.pitchLimitOverride === 85 ||
+            doc.pitchLimitOverride === 100)
+        ? String(doc.pitchLimitOverride)
+        : "auto";
 
   const handleSwapBattingOrder = () => {
     if (readOnly) return;
@@ -205,6 +253,105 @@ export function MatchAndHeaderSetupCard({
                 <ArrowLeftRight className="w-3.5 h-3.5 text-primary" />
                 <span>先攻⇄後攻</span>
               </button>
+            )}
+          </div>
+
+          {/* 大会規定ソリッドストリップ（時間制限・コールド・タイブレーク・球数制限・トーナメント表） */}
+          {hasAnyTournamentRule && (
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <div className="px-3 py-1.5 bg-[#0f172a] text-slate-50 border-b-[2px] border-amber-500 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1 text-[10.5px] font-black text-white">
+                  <Trophy className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span>大会規定</span>
+                </span>
+                {validBracketUrl && (
+                  <a
+                    href={validBracketUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10.5px] font-black text-amber-300 hover:underline shrink-0"
+                  >
+                    <span>トーナメント表</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+              {(timeRule || coldRule || tieRule || pitchRule) && (
+                <div className="p-2 flex flex-wrap gap-1.5 bg-card">
+                  {timeRule && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[10.5px] font-bold text-foreground">
+                      <Clock className="w-3 h-3 text-primary shrink-0" />
+                      <span>時間制限: {timeRule}</span>
+                    </span>
+                  )}
+                  {coldRule && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[10.5px] font-bold text-foreground">
+                      <Snowflake className="w-3 h-3 text-sky-600 shrink-0" />
+                      <span>コールド: {coldRule}</span>
+                    </span>
+                  )}
+                  {tieRule && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted border border-border text-[10.5px] font-bold text-foreground">
+                      <Flame className="w-3 h-3 text-amber-600 shrink-0" />
+                      <span>タイブレーク: {tieRule}</span>
+                    </span>
+                  )}
+                  {pitchRule && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-[10.5px] font-black text-amber-900 dark:text-amber-200">
+                      <span aria-hidden="true">⚾</span>
+                      <span>球数制限: {pitchRule}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⚾ 球数アラート基準セレクター */}
+          <div className="rounded-xl border border-border bg-muted/40 px-2.5 py-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span aria-hidden="true" className="text-xs">
+                ⚾
+              </span>
+              <span className="text-[11px] font-black text-foreground shrink-0">
+                球数アラート基準
+              </span>
+              {resolvedPitchRuleLabel && (
+                <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-muted-foreground truncate">
+                  現在: {resolvedPitchRuleLabel}
+                </span>
+              )}
+            </div>
+            {readOnly ? (
+              <span className="text-[11px] font-black text-foreground">
+                {
+                  PITCH_LIMIT_OVERRIDE_OPTIONS.find(
+                    (o) => o.value === pitchOverrideSelectValue
+                  )?.label
+                }
+              </span>
+            ) : (
+              <LiffSelect
+                value={pitchOverrideSelectValue}
+                onChange={(val) => {
+                  onChangeDoc((prev) => ({
+                    ...prev,
+                    pitchLimitOverride:
+                      val === "none"
+                        ? "none"
+                        : val === "70" || val === "85" || val === "100"
+                          ? Number(val)
+                          : null,
+                  }));
+                }}
+                options={PITCH_LIMIT_OVERRIDE_OPTIONS}
+                title="⚾ 球数アラート基準を選択"
+                subtitle="投手の肩肘保護アラート（注意・交代準備・上限到達）の基準を切り替えます"
+                accent="amber"
+                size="xs"
+                searchable={false}
+                className="h-8 w-52 max-w-full bg-card shrink-0"
+              />
             )}
           </div>
 

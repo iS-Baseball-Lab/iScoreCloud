@@ -14,6 +14,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   ChevronLeft,
   Copy,
   Check,
@@ -68,6 +69,7 @@ import { loadDemoPlayerConditionOverrides } from "@/lib/liff/player-condition";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
+  computeLiveReportPitchCounts,
   computeScoreboardSummary,
   createDefaultEmptyLineup,
   createInitialLiveReportDocument,
@@ -75,14 +77,21 @@ import {
   formatLiveReportText,
   hydrateLiveReportFromLegacyLogsAndScores,
   hydrateLiveReportFromScorebookSnapshot,
+  isMyTeamBattingHalf,
   normalizeReportPositionCode,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
+import {
+  evaluatePitchAlert,
+  resolvePitchLimitSpec,
+  type PitchAlertEvaluation,
+} from "@/lib/liff/pitch-workload";
 import type {
   LiveReportLineupSlot,
   LiveReportMatchOption,
   LiveReportOutputMode,
+  LiveReportPitchType,
   LiveReportRosterPlayer,
   LiveReportV2Document,
 } from "@/types/live-report-v2";
@@ -90,7 +99,10 @@ import type {
   ScorebookSheetStructure,
   ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
-import { MatchAndHeaderSetupCard } from "./_components/MatchAndHeaderSetupCard";
+import {
+  MatchAndHeaderSetupCard,
+  type MatchSetupTournamentRules,
+} from "./_components/MatchAndHeaderSetupCard";
 import { LiveAtBatPadCard } from "./_components/LiveAtBatPadCard";
 import { InningLogTimelineCard } from "./_components/InningLogTimelineCard";
 
@@ -119,6 +131,16 @@ interface MatchOptionWithDraft extends LiveReportMatchOption {
 interface MatchBundlePayload {
   matchId: string;
   opponentBatterCount?: number;
+  tournamentRules?: {
+    tournamentId?: string | null;
+    tournamentName?: string | null;
+    category?: string | null;
+    timeLimit?: string | null;
+    coldGameRule?: string | null;
+    tiebreakerRule?: string | null;
+    pitchLimitRule?: string | null;
+    bracketUrl?: string | null;
+  } | null;
   lineup: Array<{
     order: number;
     position: string;
@@ -153,6 +175,15 @@ interface ContextApiResponse {
   success: boolean;
   isDemo?: boolean;
   error?: string;
+  team?: {
+    id?: string;
+    orgName?: string | null;
+    teamName?: string | null;
+    orgCategory?: string | null;
+    teamPitchCountLimit?: number | null;
+    scoreTeamNameMode?: string;
+    practiceMatchLabel?: string;
+  };
   callerReporter?: CallerReporterInfo;
   matches?: MatchOptionWithDraft[];
   players?: LiveReportRosterPlayer[];
@@ -519,6 +550,15 @@ function LiffNewsGeneratorContent() {
   const [doc, setDoc] = useState<LiveReportV2Document>(() =>
     createInitialLiveReportDocument({ myTeamName: "自チーム" })
   );
+  const [pendingPitches, setPendingPitches] = useState<LiveReportPitchType[]>(
+    []
+  );
+  const [contextOrgCategory, setContextOrgCategory] = useState<string | null>(
+    null
+  );
+  const [contextTeamPitchLimit, setContextTeamPitchLimit] = useState<
+    number | null
+  >(null);
 
   const [outputMode, setOutputMode] = useState<LiveReportOutputMode>("full");
   const [manualEditedText, setManualEditedText] = useState<string | null>(null);
@@ -899,8 +939,30 @@ function LiffNewsGeneratorContent() {
         };
       }
 
+      const tournamentRules =
+        matchOpt &&
+        (matchOpt.tournamentId ||
+          matchOpt.tournamentName ||
+          matchOpt.tournamentTimeLimit ||
+          matchOpt.tournamentColdGameRule ||
+          matchOpt.tournamentTiebreakerRule ||
+          matchOpt.tournamentPitchLimitRule ||
+          matchOpt.tournamentBracketUrl)
+          ? {
+              tournamentId: matchOpt.tournamentId ?? null,
+              tournamentName: matchOpt.tournamentName ?? null,
+              category: matchOpt.tournamentCategory ?? "gakudou",
+              timeLimit: matchOpt.tournamentTimeLimit ?? null,
+              coldGameRule: matchOpt.tournamentColdGameRule ?? null,
+              tiebreakerRule: matchOpt.tournamentTiebreakerRule ?? null,
+              pitchLimitRule: matchOpt.tournamentPitchLimitRule ?? null,
+              bracketUrl: matchOpt.tournamentBracketUrl ?? null,
+            }
+          : null;
+
       return {
         matchId,
+        tournamentRules,
         lineup,
         scorebookSnapshot,
         playLogs: [],
@@ -967,7 +1029,15 @@ function LiffNewsGeneratorContent() {
             opponentScore: m.opponentScore,
             myInningScores: m.myInningScores || [],
             opponentInningScores: m.opponentInningScores || [],
+            tournamentId: m.tournamentId || null,
             tournamentName: m.tournamentName || null,
+            tournamentCategory:
+              m.matchType === "official" || m.tournamentId ? "gakudou" : null,
+            tournamentTimeLimit: m.tournamentTimeLimit || null,
+            tournamentColdGameRule: m.tournamentColdGameRule || null,
+            tournamentTiebreakerRule: m.tournamentTiebreakerRule || null,
+            tournamentPitchLimitRule: m.tournamentPitchLimitRule || null,
+            tournamentBracketUrl: m.tournamentBracketUrl || null,
             venueName: m.venueName || null,
             venueShortName: m.venueShortName || null,
             hasScorebook: Boolean(m.hasScorebook || m.status === "finished"),
@@ -1074,6 +1144,8 @@ function LiffNewsGeneratorContent() {
           };
           callerReporterRef.current = demoCaller;
           setCallerReporter(demoCaller);
+          setContextOrgCategory("gakudou");
+          setContextTeamPitchLimit(70);
           matchAccessModeRef.current = "edit";
           setMatchAccessMode("edit");
 
@@ -1153,6 +1225,12 @@ function LiffNewsGeneratorContent() {
         };
         callerReporterRef.current = fetchedCaller;
         setCallerReporter(fetchedCaller);
+        setContextOrgCategory(json.team?.orgCategory ?? null);
+        setContextTeamPitchLimit(
+          typeof json.team?.teamPitchCountLimit === "number"
+            ? json.team.teamPitchCountLimit
+            : null
+        );
 
         const fetchedMatches = json.matches || [];
         const fetchedPlayers = json.players || [];
@@ -2814,6 +2892,7 @@ function LiffNewsGeneratorContent() {
 
     docRef.current = freshDoc;
     setDoc(freshDoc);
+    setPendingPitches([]);
     setManualEditedText(null);
     setLastSyncedAt(null);
     setLastSyncedBy(null);
@@ -2981,7 +3060,125 @@ function LiffNewsGeneratorContent() {
     setViewerHalfOverride(null);
   }, [activeContextKey, reportMode]);
 
+  // イニング切替・試合切替・閲覧モード切替時は現在打席の未確定球数をリセット
+  useEffect(() => {
+    setPendingPitches([]);
+  }, [
+    activeContextKey,
+    reportMode,
+    doc.activeInning,
+    doc.activeIsBottom,
+    isReadOnlyViewer,
+  ]);
+
   const scoreboardSummary = useMemo(() => computeScoreboardSummary(doc), [doc]);
+
+  const pitchSummary = useMemo(
+    () => computeLiveReportPitchCounts(doc),
+    [doc]
+  );
+
+  const activeTournamentRules = useMemo<MatchSetupTournamentRules | null>(() => {
+    if (reportMode !== "match") return null;
+    const bRules = activeBundle?.tournamentRules;
+    if (
+      bRules &&
+      (bRules.timeLimit ||
+        bRules.coldGameRule ||
+        bRules.tiebreakerRule ||
+        bRules.pitchLimitRule ||
+        bRules.bracketUrl)
+    ) {
+      return {
+        tournamentName:
+          bRules.tournamentName ?? selectedMatch?.tournamentName ?? null,
+        timeLimit: bRules.timeLimit ?? null,
+        coldGameRule: bRules.coldGameRule ?? null,
+        tiebreakerRule: bRules.tiebreakerRule ?? null,
+        pitchLimitRule: bRules.pitchLimitRule ?? null,
+        bracketUrl: bRules.bracketUrl ?? null,
+      };
+    }
+    if (
+      selectedMatch &&
+      (selectedMatch.tournamentTimeLimit ||
+        selectedMatch.tournamentColdGameRule ||
+        selectedMatch.tournamentTiebreakerRule ||
+        selectedMatch.tournamentPitchLimitRule ||
+        selectedMatch.tournamentBracketUrl)
+    ) {
+      return {
+        tournamentName: selectedMatch.tournamentName ?? null,
+        timeLimit: selectedMatch.tournamentTimeLimit ?? null,
+        coldGameRule: selectedMatch.tournamentColdGameRule ?? null,
+        tiebreakerRule: selectedMatch.tournamentTiebreakerRule ?? null,
+        pitchLimitRule: selectedMatch.tournamentPitchLimitRule ?? null,
+        bracketUrl: selectedMatch.tournamentBracketUrl ?? null,
+      };
+    }
+    return null;
+  }, [reportMode, activeBundle?.tournamentRules, selectedMatch]);
+
+  const pitchSpec = useMemo(
+    () =>
+      resolvePitchLimitSpec({
+        manualOverride: doc.pitchLimitOverride,
+        tournamentPitchLimitRule:
+          reportMode === "match"
+            ? activeBundle?.tournamentRules?.pitchLimitRule ??
+              selectedMatch?.tournamentPitchLimitRule ??
+              null
+            : null,
+        tournamentCategory:
+          reportMode === "match"
+            ? activeBundle?.tournamentRules?.category ??
+              selectedMatch?.tournamentCategory ??
+              null
+            : null,
+        teamPitchCountLimit: contextTeamPitchLimit,
+        orgCategory: contextOrgCategory,
+      }),
+    [
+      doc.pitchLimitOverride,
+      reportMode,
+      activeBundle?.tournamentRules?.pitchLimitRule,
+      activeBundle?.tournamentRules?.category,
+      selectedMatch?.tournamentPitchLimitRule,
+      selectedMatch?.tournamentCategory,
+      contextTeamPitchLimit,
+      contextOrgCategory,
+    ]
+  );
+
+  const isMyTeamBatting = useMemo(
+    () => isMyTeamBattingHalf(doc.battingOrder, doc.activeIsBottom),
+    [doc.battingOrder, doc.activeIsBottom]
+  );
+
+  const liveMyPitcherTotal =
+    pitchSummary.activeMyPitcherPitches +
+    (!isMyTeamBatting ? pendingPitches.length : 0);
+
+  const pitchAlert = useMemo(
+    () =>
+      evaluatePitchAlert(
+        liveMyPitcherTotal,
+        pitchSpec,
+        pitchSummary.activeMyPitcherName
+      ),
+    [liveMyPitcherTotal, pitchSpec, pitchSummary.activeMyPitcherName]
+  );
+
+  const viewerPitchAlerts = useMemo<PitchAlertEvaluation[]>(() => {
+    const alerts: PitchAlertEvaluation[] = [];
+    for (const mp of pitchSummary.myPitchers) {
+      const ev = evaluatePitchAlert(mp.pitches, pitchSpec, mp.playerName);
+      if (ev.level !== "none") {
+        alerts.push(ev);
+      }
+    }
+    return alerts;
+  }, [pitchSummary.myPitchers, pitchSpec]);
 
   const handleSelectHalfInning = useCallback(
     (inning: number, isBottom: boolean) => {
@@ -3623,6 +3820,36 @@ function LiffNewsGeneratorContent() {
           )}
         </section>
 
+        {isReadOnlyViewer &&
+          activeTab !== "pad" &&
+          viewerPitchAlerts.length > 0 && (
+            <div className="shrink-0 px-2.5 pt-2 space-y-1 bg-background">
+              {viewerPitchAlerts.map((alertItem, idx) => (
+                <div
+                  key={`page-viewer-pitch-alert-${idx}`}
+                  className={cn(
+                    "px-2.5 py-1.5 rounded-lg border flex items-start gap-1.5",
+                    alertItem.level === "limit"
+                      ? "bg-red-600 border-red-700 text-white"
+                      : alertItem.level === "prepare"
+                      ? "bg-orange-50 border-orange-400 text-orange-950"
+                      : "bg-amber-50 border-amber-300 text-amber-900"
+                  )}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1 leading-tight">
+                    <p className="text-[11px] font-black">
+                      {alertItem.bannerTitle}
+                    </p>
+                    <p className="text-[10px] font-bold opacity-95 mt-0.5">
+                      {alertItem.bannerDetail}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
         {/* ════════════════════════════════════════════════════════════════
             TAB 1 (デフォルト): ゼロスクロール・中央ライブモニター ＋ 下部固定入力パッド / 閲覧ビュー
            ════════════════════════════════════════════════════════════════ */}
@@ -3632,6 +3859,12 @@ function LiffNewsGeneratorContent() {
             onChangeDoc={handleUpdateDoc}
             rosterPlayers={rosterPlayers}
             activeContextKey={activeContextKey}
+            pendingPitches={pendingPitches}
+            onChangePendingPitches={setPendingPitches}
+            pitchSummary={pitchSummary}
+            pitchSpec={pitchSpec}
+            pitchAlert={pitchAlert}
+            viewerPitchAlerts={viewerPitchAlerts}
             outputMode={outputMode}
             onChangeOutputMode={(m) => {
               setOutputMode(m);
@@ -3886,6 +4119,8 @@ function LiffNewsGeneratorContent() {
                 defaultExpanded={true}
                 openLineupSignal={openLineupSignal}
                 readOnly={isReadOnlyViewer}
+                tournamentRules={activeTournamentRules}
+                resolvedPitchRuleLabel={pitchSpec.ruleLabel}
               />
             </div>
 

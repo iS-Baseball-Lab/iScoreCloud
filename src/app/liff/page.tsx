@@ -527,7 +527,7 @@ export default function LiffHubPage() {
 
           {/* 🌟 ヒーローセクション または 初期読込エラーカード */}
           <section>
-            {!isLoading && !hasLoaded && loadError ? (
+            {!hasLoaded && loadError ? (
               <LiffDataLoadErrorCard
                 title="ホームデータを読み込めませんでした"
                 onRetry={() => void loadHubData(currentTeam?.id, true)}

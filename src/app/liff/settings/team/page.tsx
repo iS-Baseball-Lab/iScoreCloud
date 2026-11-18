@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Clock,
   CalendarDays,
+  ClipboardList,
 } from "lucide-react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
@@ -32,7 +33,11 @@ import {
   useLiffPermissions,
   usePracticeMatchLabel,
 } from "@/components/liff/LiffProvider";
-import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  fetchLiffJsonSWR,
+  invalidateLiffApiCache,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
 import { saveTeamPracticeMatchLabel } from "@/lib/liff/score-settings";
 import {
   DEFAULT_TEAM_SCHEDULE_TIMES,
@@ -161,13 +166,61 @@ const MONTH_SELECT_OPTIONS: LiffSelectOption[] = Array.from({ length: 12 }, (_, 
   };
 });
 
+interface TeamScheduleSettingsPayload {
+  targetGroups: string[];
+  dutyGroups: string[];
+  useDutyGroups: boolean;
+}
+
+interface TeamScheduleSettingsApiResponse {
+  success: boolean;
+  isDemo?: boolean;
+  canEdit?: boolean;
+  settings?: TeamScheduleSettingsPayload;
+  error?: string;
+}
+
 const DEFAULT_TARGET_GROUPS = [
   "全体",
   "Aチーム",
   "Bチーム",
-  "高学年",
   "低学年",
+  "体験・見学",
 ];
+
+const PRESET_DUTY_GROUPS = ["1班", "2班", "3班", "4班"];
+
+function syncTargetGroupsLocalStorage(tid: string, groups: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const serialized = JSON.stringify(groups);
+    localStorage.setItem(`i-score-target-groups:${tid}`, serialized);
+    localStorage.setItem(`iscore_team_target_groups_${tid}`, serialized);
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+function readCachedTargetGroupsLocalStorage(tid: string): string[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw =
+      localStorage.getItem(`i-score-target-groups:${tid}`) ||
+      localStorage.getItem(`iscore_team_target_groups_${tid}`);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      Array.isArray(parsed) &&
+      parsed.length > 0 &&
+      parsed.every((item): item is string => typeof item === "string")
+    ) {
+      return parsed;
+    }
+  } catch {
+    // ignore invalid json
+  }
+  return null;
+}
 
 export default function LiffTeamSettingsPage() {
   const {
@@ -202,11 +255,16 @@ export default function LiffTeamSettingsPage() {
     useState<string>(activePracticeLabel);
   const [isSavingPracticeLabel, setIsSavingPracticeLabel] = useState(false);
 
-  // 活動区分・班設定
+  // 活動区分・当番班設定（D1永続化 + localStorage同期）
   const [targetGroups, setTargetGroups] = useState<string[]>(
     DEFAULT_TARGET_GROUPS
   );
   const [newGroupInput, setNewGroupInput] = useState("");
+  const [useDutyGroups, setUseDutyGroups] = useState<boolean>(false);
+  const [dutyGroups, setDutyGroups] = useState<string[]>([]);
+  const [newDutyGroupInput, setNewDutyGroupInput] = useState("");
+  const [isSavingScheduleSettings, setIsSavingScheduleSettings] =
+    useState(false);
 
   // ⏰ 予定スケジューラーの初期時間設定（午前・午後／季節別）
   const [scheduleTimes, setScheduleTimes] = useState<TeamScheduleDefaultTimes>(() =>
@@ -251,26 +309,54 @@ export default function LiffTeamSettingsPage() {
       })();
     }
 
-    try {
-      const savedGroups = localStorage.getItem(`iscore_team_target_groups_${tid}`);
-      if (savedGroups) {
-        const parsed = JSON.parse(savedGroups) as unknown;
-        if (
-          Array.isArray(parsed) &&
-          parsed.length > 0 &&
-          parsed.every((item): item is string => typeof item === "string")
-        ) {
-          setTargetGroups(parsed);
-        } else {
-          setTargetGroups(DEFAULT_TARGET_GROUPS);
-        }
-      } else {
-        setTargetGroups(DEFAULT_TARGET_GROUPS);
-      }
-    } catch (e) {
-      console.error("Failed to load team settings", e);
-      setTargetGroups(DEFAULT_TARGET_GROUPS);
+    const settingsUrl = `/api/liff/team-schedule-settings?teamId=${encodeURIComponent(tid)}`;
+    const applyServerScheduleSettings = (
+      payload?: TeamScheduleSettingsPayload
+    ) => {
+      if (!payload) return;
+      const nextTarget =
+        Array.isArray(payload.targetGroups) && payload.targetGroups.length > 0
+          ? payload.targetGroups
+          : DEFAULT_TARGET_GROUPS;
+      const nextDuty = Array.isArray(payload.dutyGroups)
+        ? payload.dutyGroups
+        : [];
+      const nextUseDuty =
+        typeof payload.useDutyGroups === "boolean"
+          ? payload.useDutyGroups
+          : nextDuty.length > 0;
+      setTargetGroups(nextTarget);
+      setDutyGroups(nextDuty);
+      setUseDutyGroups(nextUseDuty);
+      syncTargetGroupsLocalStorage(tid, nextTarget);
+    };
+
+    const cachedScheduleSettings =
+      peekLiffApiCache<TeamScheduleSettingsApiResponse>(settingsUrl);
+    if (cachedScheduleSettings?.success && cachedScheduleSettings.settings) {
+      applyServerScheduleSettings(cachedScheduleSettings.settings);
+    } else {
+      const localGroups = readCachedTargetGroupsLocalStorage(tid);
+      setTargetGroups(localGroups || DEFAULT_TARGET_GROUPS);
+      setDutyGroups(tid === "demo-team" ? ["1班", "2班", "3班"] : []);
+      setUseDutyGroups(tid === "demo-team");
     }
+
+    void fetchLiffJsonSWR<TeamScheduleSettingsApiResponse>(settingsUrl, {
+      onRevalidate: (fresh) => {
+        if (!cancelled && fresh?.success && fresh.settings) {
+          applyServerScheduleSettings(fresh.settings);
+        }
+      },
+    })
+      .then((res) => {
+        if (!cancelled && res?.success && res.settings) {
+          applyServerScheduleSettings(res.settings);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch team schedule settings:", err);
+      });
 
     return () => {
       cancelled = true;
@@ -505,24 +591,70 @@ export default function LiffTeamSettingsPage() {
     void persistScheduleDefaultTimes(resetValue, false);
   };
 
-  const handleSaveAll = () => {
+  const persistTeamScheduleSettings = async (
+    nextTargetGroups: string[],
+    nextDutyGroups: string[],
+    nextUseDutyGroups: boolean,
+    silentToast = false
+  ) => {
+    if (!effectiveCanMutate) return;
     const tid = currentTeam?.id || "demo-team";
-    saveSetting(`iscore_team_target_groups_${tid}`, JSON.stringify(targetGroups));
-    if (effectiveCanMutate) {
-      const trimmedPractice = customPracticeLabelInput.trim();
-      if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
-        void persistPracticeMatchLabel(trimmedPractice, true);
+    syncTargetGroupsLocalStorage(tid, nextTargetGroups);
+    setIsSavingScheduleSettings(true);
+    try {
+      const res = await fetch("/api/liff/team-schedule-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: tid,
+          targetGroups: nextTargetGroups,
+          dutyGroups: nextDutyGroups,
+          useDutyGroups: nextUseDutyGroups,
+        }),
+      });
+      const data = (await res.json()) as TeamScheduleSettingsApiResponse;
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "活動グループ・当番班設定の保存に失敗しました");
       }
-      void persistScheduleDefaultTimes(scheduleTimes, true);
+      if (data.settings) {
+        setTargetGroups(data.settings.targetGroups);
+        setDutyGroups(data.settings.dutyGroups);
+        setUseDutyGroups(data.settings.useDutyGroups);
+        syncTargetGroupsLocalStorage(tid, data.settings.targetGroups);
+      }
+      invalidateLiffApiCache("/api/liff/team-schedule-settings");
+      if (!silentToast) {
+        toast.success("活動グループ・当番班設定を保存しました");
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "活動グループ・当番班設定の保存に失敗しました";
+      toast.error(msg);
+    } finally {
+      setIsSavingScheduleSettings(false);
     }
-    toast.success(
-      effectiveCanMutate
-        ? "チーム表示・予定設定を保存しました"
-        : "この端末の活動グループ設定を保存しました"
+  };
+
+  const handleSaveAll = () => {
+    if (!effectiveCanMutate) return;
+    const trimmedPractice = customPracticeLabelInput.trim();
+    if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
+      void persistPracticeMatchLabel(trimmedPractice, true);
+    }
+    void persistTeamScheduleSettings(
+      targetGroups,
+      dutyGroups,
+      useDutyGroups,
+      true
     );
+    void persistScheduleDefaultTimes(scheduleTimes, true);
+    toast.success("チーム表示・予定設定を保存しました");
   };
 
   const handleAddGroup = () => {
+    if (!effectiveCanMutate) return;
     const trimmed = newGroupInput.trim();
     if (!trimmed) return;
     if (targetGroups.includes(trimmed)) {
@@ -532,19 +664,81 @@ export default function LiffTeamSettingsPage() {
     const updated = [...targetGroups, trimmed];
     setTargetGroups(updated);
     setNewGroupInput("");
-    saveSetting(`iscore_team_target_groups_${currentTeam?.id || "default"}`, JSON.stringify(updated));
+    void persistTeamScheduleSettings(updated, dutyGroups, useDutyGroups, true);
     toast.success(`「${trimmed}」を追加しました`);
   };
 
   const handleRemoveGroup = (name: string) => {
+    if (!effectiveCanMutate) return;
     if (name === "全体") {
       toast.error("「全体」は削除できません");
       return;
     }
     const updated = targetGroups.filter((g) => g !== name);
     setTargetGroups(updated);
-    saveSetting(`iscore_team_target_groups_${currentTeam?.id || "default"}`, JSON.stringify(updated));
+    void persistTeamScheduleSettings(updated, dutyGroups, useDutyGroups, true);
     toast.success(`「${name}」を削除しました`);
+  };
+
+  const handleToggleUseDutyGroups = () => {
+    if (!effectiveCanMutate) return;
+    const nextUse = !useDutyGroups;
+    const nextDuty =
+      nextUse && dutyGroups.length === 0 ? [...PRESET_DUTY_GROUPS] : dutyGroups;
+    setUseDutyGroups(nextUse);
+    setDutyGroups(nextDuty);
+    void persistTeamScheduleSettings(targetGroups, nextDuty, nextUse, true);
+    toast.success(
+      nextUse
+        ? "お茶当番・当番班の設定を有効にしました"
+        : "当番班の使用をOFFにしました"
+    );
+  };
+
+  const handleAddDutyGroup = () => {
+    if (!effectiveCanMutate) return;
+    const trimmed = newDutyGroupInput.trim();
+    if (!trimmed) return;
+    if (trimmed === "なし") {
+      toast.error("「なし」は自動で選択肢に含まれるため追加不要です");
+      return;
+    }
+    if (dutyGroups.includes(trimmed)) {
+      toast.error("既に同じ名前の当番班があります");
+      return;
+    }
+    const nextDuty = [...dutyGroups, trimmed];
+    setDutyGroups(nextDuty);
+    setUseDutyGroups(true);
+    setNewDutyGroupInput("");
+    void persistTeamScheduleSettings(targetGroups, nextDuty, true, true);
+    toast.success(`当番班「${trimmed}」を追加しました`);
+  };
+
+  const handleRemoveDutyGroup = (name: string) => {
+    if (!effectiveCanMutate) return;
+    const nextDuty = dutyGroups.filter((g) => g !== name);
+    setDutyGroups(nextDuty);
+    void persistTeamScheduleSettings(
+      targetGroups,
+      nextDuty,
+      useDutyGroups,
+      true
+    );
+    toast.success(`当番班「${name}」を削除しました`);
+  };
+
+  const handleApplyDutyGroupPresets = () => {
+    if (!effectiveCanMutate) return;
+    setDutyGroups([...PRESET_DUTY_GROUPS]);
+    setUseDutyGroups(true);
+    void persistTeamScheduleSettings(
+      targetGroups,
+      [...PRESET_DUTY_GROUPS],
+      true,
+      true
+    );
+    toast.success("1班〜4班をプリセット追加しました");
   };
 
   return (
@@ -936,54 +1130,221 @@ export default function LiffTeamSettingsPage() {
           </div>
         </section>
 
-        {/* ━━━ セクション 2: 👥 活動グループ（班分け） ━━━ */}
+        {/* ━━━ セクション 2: 👥 活動グループ・当番班設定 ━━━ */}
         <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-slate-500 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-7 h-7 rounded-xl bg-slate-800 text-slate-200 border border-slate-700 flex items-center justify-center shrink-0">
+              <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
                 <Layers className="w-4 h-4" />
               </span>
-              <h2 className="text-sm font-black text-white truncate">活動グループ（チーム区分）</h2>
+              <div className="min-w-0">
+                <h2 className="text-sm font-black text-white truncate">
+                  活動グループ・当番班設定
+                </h2>
+                <p className="text-[10px] font-bold text-slate-300 truncate">
+                  予定作成時のチーム区分とお茶当番・当番班プリセット
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] font-bold text-slate-300 shrink-0">予定作成時に選択可能</span>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
+              {isSavingScheduleSettings
+                ? "保存中..."
+                : effectiveCanMutate
+                ? "チーム共通"
+                : "閲覧専用"}
+            </span>
           </div>
 
-          <div className="p-4 space-y-3.5">
-            <div className="flex flex-wrap gap-1.5">
-              {targetGroups.map((group) => (
-                <span
-                  key={group}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/50 border border-border text-xs font-black text-foreground"
-                >
-                  <span>{group}</span>
-                  {group !== "全体" && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveGroup(group)}
-                      className="text-muted-foreground hover:text-destructive font-bold ml-0.5 cursor-pointer"
-                    >
-                      ×
-                    </button>
-                  )}
+          <div className="p-4 space-y-4">
+            {/* 1. 活動グループ（targetGroups） */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-black text-foreground flex items-center gap-1.5">
+                  <span>🏷️ 活動グループ（チーム区分）</span>
+                </label>
+                <span className="text-[10px] font-bold text-muted-foreground">
+                  予定ごとに複数グループ編成も可能
                 </span>
-              ))}
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {targetGroups.map((group) => (
+                  <span
+                    key={group}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/50 border border-border text-xs font-black text-foreground"
+                  >
+                    <span>{group}</span>
+                    {effectiveCanMutate && group !== "全体" && (
+                      <button
+                        type="button"
+                        disabled={isSavingScheduleSettings}
+                        onClick={() => handleRemoveGroup(group)}
+                        className="text-muted-foreground hover:text-destructive font-bold ml-0.5 cursor-pointer disabled:opacity-50"
+                        aria-label={`${group}を削除`}
+                      >
+                        ×
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+
+              {effectiveCanMutate && (
+                <div className="flex items-center gap-2 pt-0.5">
+                  <input
+                    type="text"
+                    maxLength={24}
+                    value={newGroupInput}
+                    onChange={(e) => setNewGroupInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddGroup();
+                      }
+                    }}
+                    placeholder="新しい区分 (例: 高学年, ジュニア組, Cチーム)"
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+                  />
+                  <button
+                    type="button"
+                    disabled={isSavingScheduleSettings || !newGroupInput.trim()}
+                    onClick={handleAddGroup}
+                    className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    追加
+                  </button>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="text"
-                value={newGroupInput}
-                onChange={(e) => setNewGroupInput(e.target.value)}
-                placeholder="新しい区分 (例: ジュニア組, Cチーム)"
-                className="flex-1 px-3 py-1.5 rounded-xl bg-muted/35 border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
-              />
-              <button
-                type="button"
-                onClick={handleAddGroup}
-                className="py-1.5 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black active:scale-95 transition-all cursor-pointer"
-              >
-                追加
-              </button>
+            {/* 2. お茶当番・当番班プリセット（useDutyGroups + dutyGroups） */}
+            <div className="pt-3.5 border-t border-border space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5 min-w-0">
+                  <div className="text-xs font-black text-foreground flex items-center gap-1.5">
+                    <ClipboardList className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>お茶当番・当番班を使う</span>
+                  </div>
+                  <p className="text-[10.5px] font-bold text-muted-foreground leading-snug">
+                    OFFにすると予定作成時に「1班」等を自動付与せず当番なし運用になります
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useDutyGroups}
+                  disabled={!effectiveCanMutate || isSavingScheduleSettings}
+                  onClick={handleToggleUseDutyGroups}
+                  className={cn(
+                    "w-12 h-6 rounded-full transition-colors relative p-0.5 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed",
+                    effectiveCanMutate && "cursor-pointer",
+                    useDutyGroups
+                      ? "bg-teal-600"
+                      : "bg-muted border border-border"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "w-5 h-5 rounded-full bg-white transition-transform",
+                      useDutyGroups ? "translate-x-6 shadow-xs" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {useDutyGroups ? (
+                <div className="p-3 rounded-xl bg-muted/35 border border-border space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-[11px] font-black text-foreground">
+                      当番班リスト（予定編集・自動ローテーション候補）
+                    </span>
+                    {effectiveCanMutate && dutyGroups.length === 0 && (
+                      <button
+                        type="button"
+                        disabled={isSavingScheduleSettings}
+                        onClick={handleApplyDutyGroupPresets}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10.5px] font-black transition-all active:scale-95 cursor-pointer"
+                      >
+                        ＋ 1班〜4班を一括追加
+                      </button>
+                    )}
+                  </div>
+
+                  {dutyGroups.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {dutyGroups.map((dg) => (
+                        <span
+                          key={dg}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-card border border-amber-500/35 text-xs font-black text-foreground"
+                        >
+                          <span className="text-amber-600 dark:text-amber-400">
+                            📋
+                          </span>
+                          <span>{dg}</span>
+                          {effectiveCanMutate && (
+                            <button
+                              type="button"
+                              disabled={isSavingScheduleSettings}
+                              onClick={() => handleRemoveDutyGroup(dg)}
+                              className="text-muted-foreground hover:text-destructive font-bold ml-0.5 cursor-pointer disabled:opacity-50"
+                              aria-label={`${dg}を削除`}
+                            >
+                              ×
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-xl bg-card/70 border border-dashed border-border text-[11px] font-bold text-muted-foreground">
+                        なし（常時選択可）
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] font-bold text-muted-foreground">
+                      当番班が未登録です。下の入力欄から班名（例: 1班、A班）を追加してください。
+                    </p>
+                  )}
+
+                  {effectiveCanMutate && (
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <input
+                        type="text"
+                        maxLength={20}
+                        value={newDutyGroupInput}
+                        onChange={(e) => setNewDutyGroupInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleAddDutyGroup();
+                          }
+                        }}
+                        placeholder="班名を追加 (例: 1班, 5班, グラウンド当番)"
+                        className="flex-1 px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary"
+                      />
+                      <button
+                        type="button"
+                        disabled={
+                          isSavingScheduleSettings || !newDutyGroupInput.trim()
+                        }
+                        onClick={handleAddDutyGroup}
+                        className="py-1.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                      >
+                        追加
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="px-3 py-2 rounded-xl bg-muted/35 border border-border text-[11px] font-bold text-muted-foreground">
+                  現在「当番班を使わない」設定です（予定作成時の当番欄は空欄／なしになります）
+                </div>
+              )}
+
+              {!effectiveCanMutate && (
+                <p className="text-[10.5px] font-bold text-muted-foreground">
+                  ※ 閲覧専用メンバーのため、活動グループ・当番班設定の変更は行えません
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -1388,22 +1749,25 @@ export default function LiffTeamSettingsPage() {
         </section>
 
         {/* 💾 一括保存ボタン */}
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={handleSaveAll}
-            className="w-full py-3.5 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Save className="w-4 h-4" />
-            <span>
-              {effectiveCanMutate
-                ? "表示・予定設定を保存する"
-                : "活動グループ設定を保存する"}
-            </span>
-          </button>
-        </div>
+        {effectiveCanMutate && (
+          <div className="pt-2">
+            <button
+              type="button"
+              disabled={
+                isSavingPracticeLabel ||
+                isSavingScheduleSettings ||
+                isSavingScheduleTimes
+              }
+              onClick={handleSaveAll}
+              className="w-full py-3.5 px-4 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs shadow-xs active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+            >
+              <Save className="w-4 h-4" />
+              <span>表示・予定設定を保存する</span>
+            </button>
+          </div>
+        )}
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
 
       {isCoverModalOpen && effectiveCanManageLogoCover && (
