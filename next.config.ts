@@ -22,11 +22,9 @@ const nextConfig: NextConfig = {
       "react-icons",
     ],
   },
-  // TypeScript 型チェックはビルドプロセスと分離して高速化
-  // (next build 時の高速化 — 型チェックは別途 `npm run check` 等で確認)
-  // ※ Next.js 16 では build 時に ESLint は自動スキップされます
+  // 🛡️ TypeScript 厳格型検査ゲートを有効化（型エラーがある状態でのビルド通過を防止）
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   // 💡 開発環境のみ、APIリクエストを Workers (wrangler dev - localhost:8787) へプロキシする

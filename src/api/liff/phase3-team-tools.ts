@@ -17,6 +17,17 @@ import {
   type LiffScoreSettings,
 } from "@/lib/liff/score-settings";
 import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
+import { sendLinePushMessage } from "@/lib/line/push";
+import {
+  DEFAULT_WEEKEND_REMINDER_SETTINGS,
+  buildWeekendReminderMessage,
+  isValidLineGroupTargetId,
+  loadTeamWeekendReminderDigest,
+  parseWeekendReminderSettingsJson,
+  resolveUpcomingWeekendWindowJst,
+  type WeekendReminderDigest,
+  type WeekendReminderSettings,
+} from "@/lib/line/weekend-reminder";
 import { resolveCallerTeamAccess } from "@/lib/team-access";
 import type { WorkerEnv } from "@/types/api";
 
@@ -1124,6 +1135,516 @@ liffPhase3TeamToolsRouter.post("/cheer-songs/player", async (c) => {
     console.error("[POST /api/liff/cheer-songs/player] Error:", err);
     return c.json(
       { success: false, error: "選手応援歌の保存に失敗しました" },
+      500
+    );
+  }
+});
+
+// =========================================================================
+// 💬 4. LINEグループ連携 ＆ 週末自動リマインド設定・プレビュー・テスト送信
+// =========================================================================
+
+function buildDemoWeekendReminderDigest(now: Date, appBaseUrl: string): WeekendReminderDigest {
+  const window = resolveUpcomingWeekendWindowJst(now);
+  const cleanOrigin = (appBaseUrl || "https://iscorecloud.com")
+    .trim()
+    .replace(/\/+$/, "");
+  return {
+    teamName: "iScore ドリームス（体験デモ）",
+    weekendKey: window.weekendKey,
+    weekendRangeLabel: window.weekendRangeLabel,
+    events: [
+      {
+        id: "demo-ev-sat",
+        dateLabel: window.weekendRangeLabel.split("〜")[0] || "土曜",
+        timeLabel: "08:30〜12:30",
+        title: "通常練習（A・B合同）",
+        location: "第一市民グラウンド",
+        targetGroup: "全体",
+        dutyGroup: "1班",
+        needsLunch: false,
+        presentPlayerCount: 14,
+        absentPlayerCount: 1,
+        unansweredPlayerNames: ["高橋 翔太", "伊藤 大輝"],
+        carCount: 0,
+        carOfferCount: 4,
+      },
+      {
+        id: "demo-ev-sun",
+        dateLabel: window.weekendRangeLabel.split("〜")[1] || "日曜",
+        timeLabel: "09:00〜16:00",
+        title: "練習試合 vs 青葉スターズ",
+        location: "緑ヶ丘運動公園野球場",
+        targetGroup: "Aチーム",
+        dutyGroup: "2班",
+        needsLunch: true,
+        presentPlayerCount: 12,
+        absentPlayerCount: 0,
+        unansweredPlayerNames: ["渡辺 蓮"],
+        carCount: 4,
+        carOfferCount: 5,
+      },
+    ],
+    scheduleUrl: `${cleanOrigin}/liff/schedule`,
+  };
+}
+
+function mergeIncomingReminderSettings(
+  rawIncoming: unknown,
+  existing: WeekendReminderSettings
+): WeekendReminderSettings {
+  const parsed = parseWeekendReminderSettingsJson(rawIncoming);
+  const obj =
+    rawIncoming && typeof rawIncoming === "object" && !Array.isArray(rawIncoming)
+      ? (rawIncoming as Record<string, unknown>)
+      : {};
+  return {
+    enabled:
+      typeof obj.enabled === "boolean" ? obj.enabled : existing.enabled,
+    sendDayOfWeek:
+      obj.sendDayOfWeek !== undefined
+        ? parsed.sendDayOfWeek
+        : existing.sendDayOfWeek,
+    sendHourJst:
+      obj.sendHourJst !== undefined ? parsed.sendHourJst : existing.sendHourJst,
+    includeSchedule:
+      typeof obj.includeSchedule === "boolean"
+        ? obj.includeSchedule
+        : existing.includeSchedule,
+    includeUnanswered:
+      typeof obj.includeUnanswered === "boolean"
+        ? obj.includeUnanswered
+        : existing.includeUnanswered,
+    includeOpsSummary:
+      typeof obj.includeOpsSummary === "boolean"
+        ? obj.includeOpsSummary
+        : existing.includeOpsSummary,
+    includeScheduleUrl:
+      typeof obj.includeScheduleUrl === "boolean"
+        ? obj.includeScheduleUrl
+        : existing.includeScheduleUrl,
+    skipWhenNoEvents:
+      typeof obj.skipWhenNoEvents === "boolean"
+        ? obj.skipWhenNoEvents
+        : existing.skipWhenNoEvents,
+    lastSentWeekKey: existing.lastSentWeekKey,
+    lastSentAt: existing.lastSentAt,
+  };
+}
+
+liffPhase3TeamToolsRouter.get("/line-reminder-settings", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const requestedTeamId = (c.req.query("teamId") || "").trim();
+    const hasBotToken = Boolean((c.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim());
+
+    if (!requestedTeamId || requestedTeamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        canManage: true,
+        hasBotToken,
+        hasLineGroupLinked: false,
+        lineGroupId: "",
+        isAutoReportEnabled: false,
+        reportPlayballEnabled: true,
+        reportInningEnabled: true,
+        reportGameSetEnabled: true,
+        reminderSettings: { ...DEFAULT_WEEKEND_REMINDER_SETTINGS },
+      });
+    }
+
+    if (!access.canAccessTeam(requestedTeamId)) {
+      return c.json(
+        { success: false, error: "このチームの設定を閲覧する権限がありません" },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB, { schema });
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        lineGroupId: teams.lineGroupId,
+        isAutoReportEnabled: teams.isAutoReportEnabled,
+        reportPlayballEnabled: teams.reportPlayballEnabled,
+        reportInningEnabled: teams.reportInningEnabled,
+        reportGameSetEnabled: teams.reportGameSetEnabled,
+        weekendReminderSettings: teams.weekendReminderSettings,
+      })
+      .from(teams)
+      .where(eq(teams.id, requestedTeamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    const canManage = access.canManageTeamId(requestedTeamId);
+    const cleanGroupId = (teamRow.lineGroupId || "").trim();
+    const reminderSettings = parseWeekendReminderSettingsJson(
+      teamRow.weekendReminderSettings
+    );
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      canManage,
+      hasBotToken,
+      hasLineGroupLinked: Boolean(cleanGroupId),
+      lineGroupId: canManage ? cleanGroupId : "",
+      isAutoReportEnabled: Boolean(teamRow.isAutoReportEnabled),
+      reportPlayballEnabled: teamRow.reportPlayballEnabled !== false,
+      reportInningEnabled: teamRow.reportInningEnabled !== false,
+      reportGameSetEnabled: teamRow.reportGameSetEnabled !== false,
+      reminderSettings,
+    });
+  } catch (err) {
+    console.error("[GET /api/liff/line-reminder-settings] Error:", err);
+    return c.json(
+      { success: false, error: "LINE連携・リマインド設定の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+interface SaveLineReminderSettingsBody {
+  teamId?: string;
+  lineGroupId?: string | null;
+  isAutoReportEnabled?: boolean;
+  reportPlayballEnabled?: boolean;
+  reportInningEnabled?: boolean;
+  reportGameSetEnabled?: boolean;
+  reminderSettings?: Partial<WeekendReminderSettings>;
+}
+
+liffPhase3TeamToolsRouter.post("/line-reminder-settings", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const body = (await c.req.json()) as SaveLineReminderSettingsBody;
+    const teamId = (body.teamId || "").trim();
+
+    if (!teamId || teamId === "demo-team") {
+      const mergedDemo = mergeIncomingReminderSettings(
+        body.reminderSettings,
+        DEFAULT_WEEKEND_REMINDER_SETTINGS
+      );
+      return c.json({
+        success: true,
+        isDemo: true,
+        lineGroupId: (body.lineGroupId || "").trim(),
+        hasLineGroupLinked: Boolean((body.lineGroupId || "").trim()),
+        isAutoReportEnabled: Boolean(body.isAutoReportEnabled),
+        reportPlayballEnabled: body.reportPlayballEnabled !== false,
+        reportInningEnabled: body.reportInningEnabled !== false,
+        reportGameSetEnabled: body.reportGameSetEnabled !== false,
+        reminderSettings: mergedDemo,
+      });
+    }
+
+    if (!access.canManageTeamId(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "LINEグループ連携・自動リマインド設定の変更には管理者権限が必要です",
+        },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB, { schema });
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        lineGroupId: teams.lineGroupId,
+        isAutoReportEnabled: teams.isAutoReportEnabled,
+        reportPlayballEnabled: teams.reportPlayballEnabled,
+        reportInningEnabled: teams.reportInningEnabled,
+        reportGameSetEnabled: teams.reportGameSetEnabled,
+        weekendReminderSettings: teams.weekendReminderSettings,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    let nextLineGroupId = teamRow.lineGroupId;
+    if (body.lineGroupId !== undefined) {
+      const trimmed = (body.lineGroupId || "").trim();
+      if (!trimmed) {
+        nextLineGroupId = null;
+      } else if (!isValidLineGroupTargetId(trimmed)) {
+        return c.json(
+          {
+            success: false,
+            error:
+              "LINEグループIDの形式が正しくありません（C または R から始まるIDを入力してください）",
+          },
+          400
+        );
+      } else {
+        nextLineGroupId = trimmed;
+      }
+    }
+
+    const currentReminder = parseWeekendReminderSettingsJson(
+      teamRow.weekendReminderSettings
+    );
+    const nextReminder = mergeIncomingReminderSettings(
+      body.reminderSettings,
+      currentReminder
+    );
+
+    if (nextReminder.enabled && !isValidLineGroupTargetId(nextLineGroupId)) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "週末自動リマインドをONにするには、先にLINEグループIDを登録してください",
+        },
+        400
+      );
+    }
+
+    const nextIsAutoReport =
+      typeof body.isAutoReportEnabled === "boolean"
+        ? body.isAutoReportEnabled
+        : Boolean(teamRow.isAutoReportEnabled);
+    const nextPlayball =
+      typeof body.reportPlayballEnabled === "boolean"
+        ? body.reportPlayballEnabled
+        : teamRow.reportPlayballEnabled !== false;
+    const nextInning =
+      typeof body.reportInningEnabled === "boolean"
+        ? body.reportInningEnabled
+        : teamRow.reportInningEnabled !== false;
+    const nextGameSet =
+      typeof body.reportGameSetEnabled === "boolean"
+        ? body.reportGameSetEnabled
+        : teamRow.reportGameSetEnabled !== false;
+
+    await db
+      .update(teams)
+      .set({
+        lineGroupId: nextLineGroupId,
+        isAutoReportEnabled: nextIsAutoReport,
+        reportPlayballEnabled: nextPlayball,
+        reportInningEnabled: nextInning,
+        reportGameSetEnabled: nextGameSet,
+        weekendReminderSettings: JSON.stringify(nextReminder),
+      })
+      .where(eq(teams.id, teamId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      lineGroupId: nextLineGroupId || "",
+      hasLineGroupLinked: Boolean(nextLineGroupId),
+      isAutoReportEnabled: nextIsAutoReport,
+      reportPlayballEnabled: nextPlayball,
+      reportInningEnabled: nextInning,
+      reportGameSetEnabled: nextGameSet,
+      reminderSettings: nextReminder,
+    });
+  } catch (err) {
+    console.error("[POST /api/liff/line-reminder-settings] Error:", err);
+    return c.json(
+      { success: false, error: "LINE連携・リマインド設定の保存に失敗しました" },
+      500
+    );
+  }
+});
+
+interface PreviewLineReminderBody {
+  teamId?: string;
+  reminderSettings?: Partial<WeekendReminderSettings>;
+}
+
+liffPhase3TeamToolsRouter.post("/line-reminder-preview", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const body = (await c.req.json()) as PreviewLineReminderBody;
+    const teamId = (body.teamId || "").trim();
+    const now = new Date();
+    const reqOrigin = new URL(c.req.url).origin;
+    const appBaseUrl =
+      c.env.NEXT_PUBLIC_API_URL || c.env.BETTER_AUTH_URL || reqOrigin;
+
+    const previewSettings = mergeIncomingReminderSettings(
+      body.reminderSettings,
+      DEFAULT_WEEKEND_REMINDER_SETTINGS
+    );
+
+    if (!teamId || teamId === "demo-team") {
+      const demoDigest = buildDemoWeekendReminderDigest(now, appBaseUrl);
+      const message = buildWeekendReminderMessage(demoDigest, previewSettings);
+      return c.json({
+        success: true,
+        isDemo: true,
+        weekendRangeLabel: demoDigest.weekendRangeLabel,
+        eventCount: demoDigest.events.length,
+        message,
+      });
+    }
+
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        { success: false, error: "このチームのプレビューを表示する権限がありません" },
+        403
+      );
+    }
+
+    const digest = await loadTeamWeekendReminderDigest(
+      c.env.DB,
+      teamId,
+      now,
+      appBaseUrl
+    );
+    if (!digest) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    const message = buildWeekendReminderMessage(digest, previewSettings);
+    return c.json({
+      success: true,
+      isDemo: false,
+      weekendRangeLabel: digest.weekendRangeLabel,
+      eventCount: digest.events.length,
+      message,
+    });
+  } catch (err) {
+    console.error("[POST /api/liff/line-reminder-preview] Error:", err);
+    return c.json(
+      { success: false, error: "リマインド文面プレビューの生成に失敗しました" },
+      500
+    );
+  }
+});
+
+interface TestPushLineReminderBody {
+  teamId?: string;
+  lineGroupId?: string | null;
+  reminderSettings?: Partial<WeekendReminderSettings>;
+}
+
+liffPhase3TeamToolsRouter.post("/line-reminder-test-push", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const body = (await c.req.json()) as TestPushLineReminderBody;
+    const teamId = (body.teamId || "").trim();
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json(
+        {
+          success: false,
+          error: "体験デモモードでは実際のLINEグループへのテスト送信は行えません",
+        },
+        400
+      );
+    }
+
+    if (!access.canManageTeamId(teamId)) {
+      return c.json(
+        { success: false, error: "LINEテスト送信には管理者権限が必要です" },
+        403
+      );
+    }
+
+    const accessToken = (c.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim();
+    if (!accessToken) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "サーバーに LINE_CHANNEL_ACCESS_TOKEN が設定されていません。Cloudflare Workers のシークレット設定をご確認ください。",
+        },
+        503
+      );
+    }
+
+    const db = drizzle(c.env.DB, { schema });
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        lineGroupId: teams.lineGroupId,
+        weekendReminderSettings: teams.weekendReminderSettings,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    const targetGroupId = (
+      body.lineGroupId !== undefined ? body.lineGroupId || "" : teamRow.lineGroupId || ""
+    ).trim();
+
+    if (!isValidLineGroupTargetId(targetGroupId)) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "送信先のLINEグループID（C... または R...）を正しく入力してください",
+        },
+        400
+      );
+    }
+
+    const savedSettings = parseWeekendReminderSettingsJson(
+      teamRow.weekendReminderSettings
+    );
+    const effectiveSettings = mergeIncomingReminderSettings(
+      body.reminderSettings,
+      savedSettings
+    );
+
+    const now = new Date();
+    const reqOrigin = new URL(c.req.url).origin;
+    const appBaseUrl =
+      c.env.NEXT_PUBLIC_API_URL || c.env.BETTER_AUTH_URL || reqOrigin;
+    const digest = await loadTeamWeekendReminderDigest(
+      c.env.DB,
+      teamId,
+      now,
+      appBaseUrl
+    );
+    if (!digest) {
+      return c.json({ success: false, error: "チームデータの取得に失敗しました" }, 404);
+    }
+
+    const message = buildWeekendReminderMessage(digest, effectiveSettings, {
+      isTest: true,
+    });
+    const pushRes = await sendLinePushMessage(targetGroupId, message, accessToken);
+    if (!pushRes.success) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "LINEへの送信に失敗しました。公式アカウントが該当グループに参加しているか、グループIDが正しいかご確認ください。",
+        },
+        502
+      );
+    }
+
+    return c.json({
+      success: true,
+      message: "LINEグループへテスト配信を送信しました！",
+      previewMessage: message,
+    });
+  } catch (err) {
+    console.error("[POST /api/liff/line-reminder-test-push] Error:", err);
+    return c.json(
+      { success: false, error: "LINEテスト送信中にエラーが発生しました" },
       500
     );
   }

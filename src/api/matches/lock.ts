@@ -3,21 +3,22 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { eq } from 'drizzle-orm';
 import { matches } from '@/db/schema/match';
+import { resolveCallerTeamAccess } from '@/lib/team-access';
 import type { WorkerEnv } from '@/types/api';
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
 interface LockRequest {
-  userId: string;
-  userName: string;
+  userId?: string;
+  userName?: string;
 }
 
 interface HeartbeatRequest {
-  userId: string;
+  userId?: string;
 }
 
 interface ReleaseLockRequest {
-  userId: string;
+  userId?: string;
 }
 
 // ━━━ 1. ロックの取得 (POST /:id/lock) ━━━
@@ -27,9 +28,11 @@ app.post('/:id/lock', async (c) => {
 
   try {
     const body = (await c.req.json()) as LockRequest;
-    const { userId, userName } = body;
+    const access = await resolveCallerTeamAccess(c);
+    const effectiveUserId = (access.primaryUserId || body.userId || '').trim();
+    const effectiveUserName = (body.userName || access.primaryUserName || '').trim();
 
-    if (!userId || !userName) {
+    if (!effectiveUserId || !effectiveUserName) {
       return c.json({ success: false, error: "userId と userName は必須です" }, 400);
     }
 
@@ -37,6 +40,7 @@ app.post('/:id/lock', async (c) => {
     const [match] = await db
       .select({
         id: matches.id,
+        teamId: matches.teamId,
         lockedByUserId: matches.lockedByUserId,
         lockedByUserName: matches.lockedByUserName,
         lockExpiresAt: matches.lockExpiresAt,
@@ -48,12 +52,16 @@ app.post('/:id/lock', async (c) => {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
 
+    if (match.teamId !== 'demo-team' && !access.canEditScoreForTeam(match.teamId)) {
+      return c.json({ success: false, error: "この試合のスコア入力ロックを取得する権限がありません" }, 403);
+    }
+
     const now = new Date();
     const isLocked = match.lockedByUserId && match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
 
     if (isLocked) {
       // 既に自分がロックしている場合は延長処理
-      if (match.lockedByUserId === userId) {
+      if (match.lockedByUserId === effectiveUserId) {
         const newExpiresAt = new Date(Date.now() + 30000); // 30秒後
         await db
           .update(matches)
@@ -62,7 +70,7 @@ app.post('/:id/lock', async (c) => {
 
         return c.json({
           success: true,
-          lockedBy: { userId, userName },
+          lockedBy: { userId: effectiveUserId, userName: effectiveUserName },
           expiresAt: newExpiresAt.toISOString()
         });
       }
@@ -83,8 +91,8 @@ app.post('/:id/lock', async (c) => {
     await db
       .update(matches)
       .set({
-        lockedByUserId: userId,
-        lockedByUserName: userName,
+        lockedByUserId: effectiveUserId,
+        lockedByUserName: effectiveUserName,
         lockedAt: now,
         lockExpiresAt: expiresAt,
       })
@@ -92,7 +100,7 @@ app.post('/:id/lock', async (c) => {
 
     return c.json({
       success: true,
-      lockedBy: { userId, userName },
+      lockedBy: { userId: effectiveUserId, userName: effectiveUserName },
       expiresAt: expiresAt.toISOString()
     });
   } catch (error) {
@@ -109,15 +117,17 @@ app.post('/:id/lock/heartbeat', async (c) => {
 
   try {
     const body = (await c.req.json()) as HeartbeatRequest;
-    const { userId } = body;
+    const access = await resolveCallerTeamAccess(c);
+    const effectiveUserId = (access.primaryUserId || body.userId || '').trim();
 
-    if (!userId) {
+    if (!effectiveUserId) {
       return c.json({ success: false, error: "userId は必須です" }, 400);
     }
 
     const [match] = await db
       .select({
         id: matches.id,
+        teamId: matches.teamId,
         lockedByUserId: matches.lockedByUserId,
         lockedByUserName: matches.lockedByUserName,
         lockExpiresAt: matches.lockExpiresAt,
@@ -129,13 +139,17 @@ app.post('/:id/lock/heartbeat', async (c) => {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
 
+    if (match.teamId !== 'demo-team' && !access.canEditScoreForTeam(match.teamId)) {
+      return c.json({ success: false, error: "この試合のロックを更新する権限がありません" }, 403);
+    }
+
     const now = new Date();
     // 自分がロック中であり、かつ期限が切れていない（もしくはバッファを含めて直近）
-    const isOwner = match.lockedByUserId === userId;
+    const isOwner = match.lockedByUserId === effectiveUserId;
     const isAlive = match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
 
     // 💡 現場至上主義：他の誰かにロックを有効期限付きで奪われているか判定
-    const isStolen = match.lockedByUserId !== userId && match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
+    const isStolen = match.lockedByUserId !== effectiveUserId && match.lockExpiresAt && new Date(match.lockExpiresAt) > now;
 
     if (isOwner && isAlive) {
       // 1. 正常に生存信号が継続している場合：30秒延長
@@ -152,8 +166,8 @@ app.post('/:id/lock/heartbeat', async (c) => {
       await db
         .update(matches)
         .set({
-          lockedByUserId: userId,
-          lockedByUserName: match.lockedByUserName || "スコアラー",
+          lockedByUserId: effectiveUserId,
+          lockedByUserName: match.lockedByUserName || access.primaryUserName || "スコアラー",
           lockedAt: now,
           lockExpiresAt: expiresAt,
         })
@@ -177,15 +191,17 @@ app.delete('/:id/lock', async (c) => {
 
   try {
     const body = (await c.req.json()) as ReleaseLockRequest;
-    const { userId } = body;
+    const access = await resolveCallerTeamAccess(c);
+    const effectiveUserId = (access.primaryUserId || body.userId || '').trim();
 
-    if (!userId) {
+    if (!effectiveUserId) {
       return c.json({ success: false, error: "userId は必須です" }, 400);
     }
 
     const [match] = await db
       .select({
         id: matches.id,
+        teamId: matches.teamId,
         lockedByUserId: matches.lockedByUserId,
       })
       .from(matches)
@@ -195,8 +211,12 @@ app.delete('/:id/lock', async (c) => {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
 
+    if (match.teamId !== 'demo-team' && !access.canEditScoreForTeam(match.teamId)) {
+      return c.json({ success: false, error: "この試合のロックを解放する権限がありません" }, 403);
+    }
+
     // 自分がロックしている場合のみ解放
-    if (match.lockedByUserId === userId) {
+    if (match.lockedByUserId === effectiveUserId) {
       await db
         .update(matches)
         .set({
@@ -225,18 +245,36 @@ app.post('/:id/lock/force', async (c) => {
 
   try {
     const body = (await c.req.json()) as LockRequest;
-    const { userId, userName } = body;
+    const access = await resolveCallerTeamAccess(c);
+    const effectiveUserId = (access.primaryUserId || body.userId || '').trim();
+    const effectiveUserName = (body.userName || access.primaryUserName || '').trim();
 
-    if (!userId || !userName) {
+    if (!effectiveUserId || !effectiveUserName) {
       return c.json({ success: false, error: "userId と userName は必須です" }, 400);
+    }
+
+    const [match] = await db
+      .select({
+        id: matches.id,
+        teamId: matches.teamId,
+      })
+      .from(matches)
+      .where(eq(matches.id, matchId));
+
+    if (!match) {
+      return c.json({ success: false, error: "試合が見つかりません" }, 404);
+    }
+
+    if (match.teamId !== 'demo-team' && !access.canEditScoreForTeam(match.teamId)) {
+      return c.json({ success: false, error: "強制ロックを取得する権限がありません" }, 403);
     }
 
     const expiresAt = new Date(Date.now() + 30000); // 30秒後
     await db
       .update(matches)
       .set({
-        lockedByUserId: userId,
-        lockedByUserName: userName,
+        lockedByUserId: effectiveUserId,
+        lockedByUserName: effectiveUserName,
         lockedAt: new Date(),
         lockExpiresAt: expiresAt,
       })
@@ -244,7 +282,7 @@ app.post('/:id/lock/force', async (c) => {
 
     return c.json({
       success: true,
-      lockedBy: { userId, userName },
+      lockedBy: { userId: effectiveUserId, userName: effectiveUserName },
       expiresAt: expiresAt.toISOString()
     });
   } catch (error) {

@@ -7,6 +7,7 @@ import { drizzle } from 'drizzle-orm/d1';
 import { teams } from '@/db/schema/team';
 import { eq } from 'drizzle-orm';
 import { sendLinePushMessage } from '@/lib/line/push';
+import { resolveCallerTeamAccess } from '@/lib/team-access';
 import { formatMatchLineReport } from '@/lib/utils/format-sns';
 import type { WorkerEnv } from '@/types/api';
 
@@ -14,9 +15,23 @@ const testPush = new Hono<{ Bindings: WorkerEnv }>();
 
 testPush.post('/test-push', async (c) => {
   const db = drizzle(c.env.DB);
-  const { teamId } = await c.req.json();
 
   try {
+    const body = (await c.req.json()) as { teamId?: string };
+    const teamId = (body.teamId || '').trim();
+    if (!teamId || teamId === 'demo-team') {
+      return c.json({ success: false, error: 'デモチームではLINE Push送信はできません。' }, 403);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManageTeamId(teamId)) {
+      return c.json({ success: false, error: 'テスト送信を実行する管理者権限がありません。' }, 403);
+    }
+
+    if (!c.env.LINE_CHANNEL_ACCESS_TOKEN) {
+      return c.json({ success: false, error: 'サーバー側に LINE_CHANNEL_ACCESS_TOKEN が設定されていません。' }, 503);
+    }
+
     // 1. D1 から保存されたグループIDを取得
     const team = await db.select().from(teams).where(eq(teams.id, teamId)).get();
 
@@ -41,9 +56,9 @@ testPush.post('/test-push', async (c) => {
       c.env.LINE_CHANNEL_ACCESS_TOKEN
     );
 
-    return c.json(result);
+    return c.json(result, result.success ? 200 : 502);
 
-  } catch (err: unknown) {
+  } catch {
     return c.json({ success: false, error: "Push送信中にエラーが発生しました。" }, 500);
   }
 });

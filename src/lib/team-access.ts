@@ -909,7 +909,7 @@ async function computeCallerTeamAccess(
   if (candidateUserIds.length > 0) {
     const candidateSet = new Set(candidateUserIds);
 
-    const [dbUsers, memberRows, allTeamsRows, orgMemberRows, playerRows] =
+    const [dbUsers, memberRows, createdTeamsRows, orgMemberRows, playerRows] =
       await db.batch([
         db
           .select({ id: user.id, role: user.role })
@@ -931,7 +931,8 @@ async function computeCallerTeamAccess(
             organizationId: teams.organizationId,
             createdBy: teams.createdBy,
           })
-          .from(teams),
+          .from(teams)
+          .where(inArray(teams.createdBy, candidateUserIds)),
         db
           .select({
             organizationId: organizationMembers.organizationId,
@@ -950,9 +951,59 @@ async function computeCallerTeamAccess(
       isSystemAdmin = true;
     }
 
+    const directTeamIds = new Set<string>();
+    const directOrgIds = new Set<string>();
+    for (const m of memberRows) {
+      if (m.teamId) directTeamIds.add(m.teamId);
+    }
+    for (const p of playerRows) {
+      if (p.teamId) directTeamIds.add(p.teamId);
+    }
+    for (const ct of createdTeamsRows) {
+      if (ct.id) directTeamIds.add(ct.id);
+      if (ct.organizationId) directOrgIds.add(ct.organizationId);
+    }
+    for (const om of orgMemberRows) {
+      if (om.organizationId) directOrgIds.add(om.organizationId);
+    }
+
+    const scopedTeamConditions = [];
+    if (directTeamIds.size > 0) {
+      scopedTeamConditions.push(inArray(teams.id, Array.from(directTeamIds)));
+    }
+    if (directOrgIds.size > 0) {
+      scopedTeamConditions.push(
+        inArray(teams.organizationId, Array.from(directOrgIds))
+      );
+    }
+
+    const relevantTeamsRows =
+      scopedTeamConditions.length > 0
+        ? await db
+            .select({
+              id: teams.id,
+              organizationId: teams.organizationId,
+              createdBy: teams.createdBy,
+            })
+            .from(teams)
+            .where(
+              scopedTeamConditions.length === 1
+                ? scopedTeamConditions[0]
+                : or(...scopedTeamConditions)
+            )
+            .all()
+        : createdTeamsRows;
+
+    const mergedTeamsMap = new Map<
+      string,
+      { id: string; organizationId: string | null; createdBy: string }
+    >();
+    for (const t of createdTeamsRows) mergedTeamsMap.set(t.id, t);
+    for (const t of relevantTeamsRows) mergedTeamsMap.set(t.id, t);
+
     const teamOrgById = new Map<string, string | null>();
     const teamsByOrgId = new Map<string, string[]>();
-    for (const t of allTeamsRows) {
+    for (const t of mergedTeamsMap.values()) {
       teamOrgById.set(t.id, t.organizationId);
       if (t.organizationId) {
         const list = teamsByOrgId.get(t.organizationId) || [];

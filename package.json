@@ -53,6 +53,8 @@
     "shadcn": "^4.23.0",
     "tailwindcss": "^4.3.4",
     "typescript": "5.9.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
     "wrangler": "^4.158.0"
   },
   "private": true,
@@ -61,7 +63,8 @@
     "build": "next build --webpack && node scripts/fix-next-export-segments.mjs",
     "start": "next start",
     "lint": "next lint",
-    "check": "npm run build && node node_modules/.bin/tsc",
+    "test": "vitest run",
+    "check": "npm run test && npm run build && node node_modules/.bin/tsc",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
     "deploy": "npm run build && npm run db:mig:remote && npx wrangler deploy",
     "preview": "npm run build && npx wrangler dev",

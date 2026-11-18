@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { teams } from '@/db/schema/team';
 import { eq } from 'drizzle-orm';
+import { resolveCallerTeamAccess } from '@/lib/team-access';
 import type { WorkerEnv } from '@/types/api';
 
 const teamsUpdateSettings = new Hono<{ Bindings: WorkerEnv }>();
@@ -31,9 +32,27 @@ export interface TeamSettingsUpdateResponse {
 // 💡 既存の LINE 設定取得ハンドラを追加
 teamsUpdateSettings.get('/:teamId/line-settings', async (c) => {
   const db = drizzle(c.env.DB);
-  const teamId = c.req.param('teamId');
+  const teamId = (c.req.param('teamId') || '').trim();
 
   try {
+    if (!teamId || teamId === 'demo-team') {
+      return c.json({
+        success: true,
+        data: {
+          lineGroupId: '',
+          isAutoReportEnabled: false,
+          reportPlayballEnabled: true,
+          reportInningEnabled: true,
+          reportGameSetEnabled: true,
+        },
+      });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canAccessTeam(teamId)) {
+      return c.json({ success: false, error: 'このチームへのアクセス権限がありません' }, 403);
+    }
+
     const team = await db.select({
       id: teams.id,
       lineGroupId: teams.lineGroupId,
@@ -53,11 +72,11 @@ teamsUpdateSettings.get('/:teamId/line-settings', async (c) => {
     return c.json({
       success: true,
       data: {
-        lineGroupId: team.lineGroupId || "",
+        lineGroupId: access.canManageTeamId(teamId) ? (team.lineGroupId || "") : "",
         isAutoReportEnabled: !!team.isAutoReportEnabled,
-        reportPlayballEnabled: team.reportPlayballEnabled !== false, // デフォルトは true
-        reportInningEnabled: team.reportInningEnabled !== false,     // デフォルトは true
-        reportGameSetEnabled: team.reportGameSetEnabled !== false,   // デフォルトは true
+        reportPlayballEnabled: team.reportPlayballEnabled !== false,
+        reportInningEnabled: team.reportInningEnabled !== false,
+        reportGameSetEnabled: team.reportGameSetEnabled !== false,
       }
     });
   } catch (err: unknown) {
@@ -66,27 +85,36 @@ teamsUpdateSettings.get('/:teamId/line-settings', async (c) => {
   }
 });
 
-// 💡 既存の POST ハンドラ（新しいカラムに対応）
+// 💡 既存の POST ハンドラ（管理者・指導者権限チェック付き）
 teamsUpdateSettings.post('/update-line', async (c) => {
   const db = drizzle(c.env.DB);
 
   try {
     const body = (await c.req.json()) as TeamSettingsUpdatePayload;
     const { teamId, lineGroupId, isAutoReportEnabled, reportPlayballEnabled, reportInningEnabled, reportGameSetEnabled } = body;
+    const cleanTeamId = (teamId || '').trim();
+    if (!cleanTeamId || cleanTeamId === 'demo-team') {
+      return c.json({ success: false, error: 'デモチームの設定は保存できません' }, 403);
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.canManageTeamId(cleanTeamId)) {
+      return c.json({ success: false, error: 'チーム設定を更新する権限がありません' }, 403);
+    }
 
     await db.update(teams)
       .set({
-        lineGroupId: lineGroupId.trim() || null,
-        isAutoReportEnabled: isAutoReportEnabled,
-        reportPlayballEnabled: reportPlayballEnabled,
-        reportInningEnabled: reportInningEnabled,
-        reportGameSetEnabled: reportGameSetEnabled,
+        lineGroupId: (lineGroupId || '').trim() || null,
+        isAutoReportEnabled: Boolean(isAutoReportEnabled),
+        reportPlayballEnabled: Boolean(reportPlayballEnabled),
+        reportInningEnabled: Boolean(reportInningEnabled),
+        reportGameSetEnabled: Boolean(reportGameSetEnabled),
       })
-      .where(eq(teams.id, teamId));
+      .where(eq(teams.id, cleanTeamId));
 
     const res: TeamSettingsUpdateResponse = {
       success: true,
-      data: { updatedId: teamId }
+      data: { updatedId: cleanTeamId }
     };
     return c.json(res);
 

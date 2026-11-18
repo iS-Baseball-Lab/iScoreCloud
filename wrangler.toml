@@ -31,3 +31,7 @@ NEXT_PUBLIC_BETTER_AUTH_URL = "https://iscorecloud.com"
 LINE_CLIENT_ID = "2009221282"
 GOOGLE_CLIENT_ID = "792942722187-rs65cnd38a9nkncqvo0is3uk80r6118l.apps.googleusercontent.com"
 MICROSOFT_CLIENT_ID = "4469e633-6c82-4cf7-b620-338d12bf76d9"
+
+# 定期実行Cron（水・木・金の 18:00 / 19:00 / 20:00 / 21:00 JST — チーム設定でONにしたチームのみ送信）
+[triggers]
+crons = ["0 9,10,11,12 * * 3,4,5"]

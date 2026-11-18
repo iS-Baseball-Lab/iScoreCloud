@@ -75,6 +75,7 @@ import {
   loadTeamPlayerConditionPeriodsMap,
 } from "@/lib/player-roster-cleanup";
 import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensurePlayerConditionPeriodsTable, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
+import { deleteR2UrlsSafely } from "@/lib/r2-cleanup";
 import {
   buildParentToChildrenMap,
   classifyTeamAttendanceRosters,
@@ -8156,6 +8157,18 @@ app.put("/documents/:id", async (c) => {
       return c.json({ success: false, error: "指定された資料が見つかりません" }, 404);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentDoc.teamId ? access.canMutateTeamData(currentDoc.teamId) : false) ||
+      (currentDoc.organizationId
+        ? access.canAccessOrganization(currentDoc.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json({ success: false, error: "資料を更新する権限がありません" }, 403);
+    }
+
     // スコープの切り替え
     let organizationId = currentDoc.organizationId;
     let targetTeamId = currentDoc.teamId;
@@ -8164,9 +8177,14 @@ app.put("/documents/:id", async (c) => {
       const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
       organizationId = team?.orgId || null;
       targetTeamId = null;
-    } else if (scope === "team" && teamId) {
+    } else if (scope === "team" && teamId && access.canMutateTeamData(teamId)) {
       targetTeamId = teamId;
       organizationId = null;
+    }
+
+    const nextFileUrl = fileUrl ? String(fileUrl).trim() : currentDoc.fileUrl;
+    if (currentDoc.fileUrl && nextFileUrl !== currentDoc.fileUrl) {
+      await deleteR2UrlsSafely(c.env.BUCKET, [currentDoc.fileUrl]);
     }
 
     await db
@@ -8174,7 +8192,7 @@ app.put("/documents/:id", async (c) => {
       .set({
         title: title ? title.trim() : currentDoc.title,
         category: category || currentDoc.category,
-        fileUrl: fileUrl ? fileUrl.trim() : currentDoc.fileUrl,
+        fileUrl: nextFileUrl,
         fileType: fileType || currentDoc.fileType,
         fileSize: fileSize || currentDoc.fileSize,
         description: description !== undefined ? description.trim() : currentDoc.description,
@@ -8185,9 +8203,15 @@ app.put("/documents/:id", async (c) => {
       .where(eq(teamDocuments.id, id));
 
     return c.json({ success: true, message: "資料を更新しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update document:", error);
-    return c.json({ success: false, error: error?.message || "資料の更新に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "資料の更新に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -8752,6 +8776,18 @@ app.put("/rules/:id", async (c) => {
       return c.json({ success: false, error: "指定されたルール & 注意事項が見つかりません" }, 404);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    const allowed =
+      access.isSystemAdmin ||
+      (currentRule.teamId ? access.canMutateTeamData(currentRule.teamId) : false) ||
+      (currentRule.organizationId
+        ? access.canAccessOrganization(currentRule.organizationId) &&
+          access.mutableTeamIds.size > 0
+        : false);
+    if (!allowed) {
+      return c.json({ success: false, error: "ルール & 注意事項を更新する権限がありません" }, 403);
+    }
+
     let organizationId = currentRule.organizationId;
     let targetTeamId = currentRule.teamId;
 
@@ -8759,9 +8795,25 @@ app.put("/rules/:id", async (c) => {
       const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
       organizationId = team?.orgId || null;
       targetTeamId = null;
-    } else if (scope === "team" && teamId) {
+    } else if (scope === "team" && teamId && access.canMutateTeamData(teamId)) {
       targetTeamId = teamId;
       organizationId = null;
+    }
+
+    const nextImageUrl =
+      imageUrl !== undefined ? (imageUrl ? String(imageUrl).trim() : null) : currentRule.imageUrl;
+    const nextPdfUrl =
+      pdfUrl !== undefined ? (pdfUrl ? String(pdfUrl).trim() : null) : currentRule.pdfUrl;
+
+    const replacedUrls: string[] = [];
+    if (currentRule.imageUrl && nextImageUrl !== currentRule.imageUrl) {
+      replacedUrls.push(currentRule.imageUrl);
+    }
+    if (currentRule.pdfUrl && nextPdfUrl !== currentRule.pdfUrl) {
+      replacedUrls.push(currentRule.pdfUrl);
+    }
+    if (replacedUrls.length > 0) {
+      await deleteR2UrlsSafely(c.env.BUCKET, replacedUrls);
     }
 
     await db
@@ -8773,18 +8825,27 @@ app.put("/rules/:id", async (c) => {
         scope: scope || currentRule.scope,
         priority: priority !== undefined ? Number(priority) : currentRule.priority,
         isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentRule.isImportant,
-        imageUrl: imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : currentRule.imageUrl,
-        pdfUrl: pdfUrl !== undefined ? (pdfUrl ? pdfUrl.trim() : null) : currentRule.pdfUrl,
-        pdfName: pdfName !== undefined ? (pdfName ? pdfName.trim() : null) : currentRule.pdfName,
+        imageUrl: nextImageUrl,
+        pdfUrl: nextPdfUrl,
+        pdfName: pdfName !== undefined ? (pdfName ? String(pdfName).trim() : null) : currentRule.pdfName,
         organizationId: scope === "organization" ? organizationId : null,
         teamId: scope === "team" ? targetTeamId : null,
       })
       .where(eq(teamRules.id, id));
 
     return c.json({ success: true, message: "ルール & 注意事項を更新しました" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update rule:", error);
-    return c.json({ success: false, error: error?.message || "ルール & 注意事項の更新に失敗しました" }, 500);
+    return c.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "ルール & 注意事項の更新に失敗しました",
+      },
+      500
+    );
   }
 });
 
@@ -9292,6 +9353,12 @@ app.put("/links/:id", async (c) => {
       organizationId = null;
     }
 
+    const nextLinkImageUrl =
+      imageUrl !== undefined ? (imageUrl ? String(imageUrl).trim() : null) : currentLink.imageUrl;
+    if (currentLink.imageUrl && nextLinkImageUrl !== currentLink.imageUrl) {
+      await deleteR2UrlsSafely(c.env.BUCKET, [currentLink.imageUrl]);
+    }
+
     await db
       .update(teamLinks)
       .set({
@@ -9302,7 +9369,7 @@ app.put("/links/:id", async (c) => {
         scope: scope || currentLink.scope,
         priority: priority !== undefined ? Number(priority) : currentLink.priority,
         isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentLink.isImportant,
-        imageUrl: imageUrl !== undefined ? (imageUrl ? imageUrl.trim() : null) : currentLink.imageUrl,
+        imageUrl: nextLinkImageUrl,
         organizationId: scope === "organization" ? organizationId : null,
         teamId: scope === "team" ? targetTeamId : null,
       })

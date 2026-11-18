@@ -27,6 +27,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
+import { LineGroupReminderSettingsSection } from "@/components/liff/LineGroupReminderSettingsSection";
 import {
   DEMO_TEAM_DEFAULT_LOGO_URL,
   useLiff,
@@ -1668,7 +1669,14 @@ export default function LiffTeamSettingsPage() {
           );
         })()}
 
-        {/* ━━━ セクション 4: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
+        {/* ━━━ セクション 4: 💬 LINEグループ連携 ＆ 週末自動リマインド（初期値OFF） ━━━ */}
+        <LineGroupReminderSettingsSection
+          teamId={currentTeam?.id || "demo-team"}
+          isDemoTeam={isDemoTeam}
+          canManageTeam={effectiveCanManageTeam}
+        />
+
+        {/* ━━━ セクション 5: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
         <section className="space-y-2.5">
           <p className="text-[11px] font-black text-muted-foreground tracking-wide pl-1">
             関連する規定・管理メニュー

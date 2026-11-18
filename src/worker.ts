@@ -310,5 +310,23 @@ export default {
     }
 
     return assetRes
-  }
+  },
+
+  async scheduled(
+    controller: ScheduledController,
+    env: WorkerEnv,
+    ctx: ExecutionContext
+  ) {
+    const { runScheduledWeekendReminders } = await import(
+      './lib/line/weekend-reminder'
+    )
+    const scheduledDate = controller.scheduledTime
+      ? new Date(controller.scheduledTime)
+      : new Date()
+    ctx.waitUntil(
+      runScheduledWeekendReminders(env, scheduledDate).catch((err) => {
+        console.error('[Scheduled Weekend Reminder Error]:', err)
+      })
+    )
+  },
 }

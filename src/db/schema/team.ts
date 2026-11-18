@@ -48,6 +48,7 @@ export const teams = sqliteTable('teams', {
   scheduleSettings: text('schedule_settings'),
   scoreSettings: text('score_settings'),
   cheerSongsJson: text('cheer_songs_json'),
+  weekendReminderSettings: text('weekend_reminder_settings'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

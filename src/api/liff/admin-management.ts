@@ -5,21 +5,32 @@ import { drizzle } from "drizzle-orm/d1";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import {
+  carpoolLiveLocations,
+  galleryAlbums,
+  galleryPhotos,
   matches,
+  matchLiveReports,
   memberCars,
   organizationMembers,
   organizations,
   parentChildRelations,
+  playerConditionPeriods,
   players,
+  teamDocuments,
   teamEquipments,
+  teamFaqs,
+  teamLinks,
   teamMembers,
   teamRoleSettings,
+  teamRules,
   teams,
   tournaments,
   user,
 } from "@/db/schema";
 import { ensureAuthSchema } from "@/lib/auth";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
+import { parsePlayerProfileDetails } from "@/lib/liff/player-profile-schema";
+import { deleteR2UrlsSafely } from "@/lib/r2-cleanup";
 import { canManageSystem, canManageTeam, ROLES } from "@/lib/roles";
 import {
   extractHeaderUserId,
@@ -957,6 +968,102 @@ liffAdminMgmtRouter.delete("/teams/squad/:squadId", async (c) => {
       },
       400
     );
+  }
+
+  // R2 添付・画像アセットおよび FK なし子テーブルの孤立防止クリーンアップ
+  try {
+    const [squadPlayers, squadDocs, squadRules, squadLinks, squadPhotos] =
+      await Promise.all([
+        db
+          .select({
+            profileImageUrl: players.profileImageUrl,
+            profileDetails: players.profileDetails,
+          })
+          .from(players)
+          .where(eq(players.teamId, squadId))
+          .all(),
+        db
+          .select({ fileUrl: teamDocuments.fileUrl })
+          .from(teamDocuments)
+          .where(eq(teamDocuments.teamId, squadId))
+          .all()
+          .catch(() => []),
+        db
+          .select({ imageUrl: teamRules.imageUrl, pdfUrl: teamRules.pdfUrl })
+          .from(teamRules)
+          .where(eq(teamRules.teamId, squadId))
+          .all()
+          .catch(() => []),
+        db
+          .select({ imageUrl: teamLinks.imageUrl })
+          .from(teamLinks)
+          .where(eq(teamLinks.teamId, squadId))
+          .all()
+          .catch(() => []),
+        db
+          .select({
+            thumbKey: galleryPhotos.thumbKey,
+            webKey: galleryPhotos.webKey,
+            originalKey: galleryPhotos.originalKey,
+          })
+          .from(galleryPhotos)
+          .where(eq(galleryPhotos.teamId, squadId))
+          .all()
+          .catch(() => []),
+      ]);
+
+    const r2Urls: Array<string | null | undefined> = [
+      targetSquad.scorebookLegendUrl,
+    ];
+    for (const p of squadPlayers) {
+      r2Urls.push(p.profileImageUrl);
+      const details = parsePlayerProfileDetails(p.profileDetails);
+      if (details.actionImageUrl) {
+        r2Urls.push(details.actionImageUrl);
+      }
+    }
+    for (const d of squadDocs) r2Urls.push(d.fileUrl);
+    for (const r of squadRules) {
+      r2Urls.push(r.imageUrl, r.pdfUrl);
+    }
+    for (const l of squadLinks) r2Urls.push(l.imageUrl);
+
+    const bucket = c.env.BUCKET;
+    await deleteR2UrlsSafely(bucket, r2Urls);
+
+    if (bucket && squadPhotos.length > 0) {
+      const rawGalleryKeys = new Set<string>();
+      for (const ph of squadPhotos) {
+        for (const k of [ph.thumbKey, ph.webKey, ph.originalKey]) {
+          if (k && !k.includes("..")) rawGalleryKeys.add(k);
+        }
+      }
+      const keyList = Array.from(rawGalleryKeys);
+      for (let i = 0; i < keyList.length; i += 500) {
+        const chunk = keyList.slice(i, i + 500);
+        await bucket.delete(chunk).catch(async () => {
+          for (const singleKey of chunk) {
+            await bucket.delete(singleKey).catch(() => null);
+          }
+        });
+      }
+    }
+
+    await Promise.all([
+      db.delete(teamDocuments).where(eq(teamDocuments.teamId, squadId)).catch(() => null),
+      db.delete(teamRules).where(eq(teamRules.teamId, squadId)).catch(() => null),
+      db.delete(teamLinks).where(eq(teamLinks.teamId, squadId)).catch(() => null),
+      db.delete(teamFaqs).where(eq(teamFaqs.teamId, squadId)).catch(() => null),
+      db.delete(matchLiveReports).where(eq(matchLiveReports.teamId, squadId)).catch(() => null),
+      db.delete(playerConditionPeriods).where(eq(playerConditionPeriods.teamId, squadId)).catch(() => null),
+      db.delete(carpoolLiveLocations).where(eq(carpoolLiveLocations.teamId, squadId)).catch(() => null),
+      db.delete(teamRoleSettings).where(eq(teamRoleSettings.teamId, squadId)).catch(() => null),
+      db.delete(teamEquipments).where(eq(teamEquipments.teamId, squadId)).catch(() => null),
+      db.delete(galleryPhotos).where(eq(galleryPhotos.teamId, squadId)).catch(() => null),
+      db.delete(galleryAlbums).where(eq(galleryAlbums.teamId, squadId)).catch(() => null),
+    ]);
+  } catch (cleanupErr) {
+    console.warn("[DELETE /teams/squad/:squadId] cleanup warning:", cleanupErr);
   }
 
   await db.delete(teams).where(eq(teams.id, squadId));

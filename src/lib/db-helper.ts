@@ -74,6 +74,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "schedule_settings", ddl: "ALTER TABLE teams ADD COLUMN schedule_settings text" },
     { name: "score_settings", ddl: "ALTER TABLE teams ADD COLUMN score_settings text" },
     { name: "cheer_songs_json", ddl: "ALTER TABLE teams ADD COLUMN cheer_songs_json text" },
+    { name: "weekend_reminder_settings", ddl: "ALTER TABLE teams ADD COLUMN weekend_reminder_settings text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },
@@ -297,6 +298,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_venues_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_venues_team_id ON venues (team_id)" },
   { name: "idx_tournaments_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_org_id ON tournaments (organization_id)" },
   { name: "idx_tournaments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_team_id ON tournaments (team_id)" },
+  { name: "idx_teams_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_org_id ON teams (organization_id)" },
+  { name: "idx_teams_created_by", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams (created_by)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {

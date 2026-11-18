@@ -1,63 +1,78 @@
-# Next.js Framework Starter
+# iScoreCloud（アイ・スコアクラウド）⚾
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/next-starter-template)
+学童野球・中学野球・高校野球・草野球チームの現場運営と公式スコア記録をスマホ1台（**iScoreCloud LINEミニアプリ**）で完結させるクラウド統合プラットフォームです。
 
-<!-- dash-content-start -->
+---
 
-This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app). It's deployed on Cloudflare Workers as a [static website](https://developers.cloudflare.com/workers/static-assets/).
+## 主な機能
 
-This template uses [OpenNext](https://opennext.js.org/) via the [OpenNext Cloudflare adapter](https://opennext.js.org/cloudflare), which works by taking the Next.js build output and transforming it, so that it can run in Cloudflare Workers.
+- **早稲田式・4分割デジタルスコアブック ＆ 紙スコアAI読取**
+  - グラウンドでの1球・打席入力、紙スコアブック写真のAI解析取込（`gemini-4-hydrogen` マルチプール構成）、伝統的な清書スコアブック出力（PDF / PNG / A4早見表）に対応。
+  - **公認野球規則 第9章（`9.01`〜`9.22`）完全準拠エンジン**（[`baseball-official-rules.ts`](src/lib/liff/baseball-official-rules.ts)）により、自責点再構成・チーム自責点分離・勝敗/S/H・規定打席特例（`9.22(a)`）を一元算出。
+- **肩肘保護・リアルタイム球数制限アラート**
+  - 学童70球基準・中学100球基準・大会別規定に応じた3段階アラート（注意・交代準備・上限到達）および試合前の連投・7日間累計球数チェック。
+- **LINE試合速報コックピット（単一担当者排他入力 ＋ リアルタイム閲覧モード）**
+  - 片手フリック対応キーパッド、丸数字全角グリッドスコアボード自動生成、途中交代時の安全な担当引継。
+- **スケジュール・4グループ出欠・遠征配車・備品管理**
+  - `選手 / 母 / 父 / スタッフ` 別の出欠集計（休部期間の親子自動連動）、簡易配車エディタ、Google Maps 連動の**遠征・隊列ライブマップ**、車両別・担当者別の道具/備品持参チェック。
+- **LINEグループ連携 ＆ 週末自動リマインド（初期値OFF）**
+  - `/liff/settings/team` からチームごとにON/OFF切替可能（デフォルトは完全OFF）。ON時は Cloudflare Workers Cron Triggers により指定曜日・時刻（JST）に週末予定・未回答者・配車/当番サマリーを自動Push配信。
+- **チーム名鑑・個人成長レポート・軽量フォトギャラリー**
+  - 2階層権限保護の名鑑プロフィール、休養・復帰タイムライン付き成長グラフ、端末内自動軽量化＋無圧縮STORE方式ZIP一括保存対応アルバム。
 
-<!-- dash-content-end -->
+---
 
-Outside of this repo, you can start a new project with this template using [C3](https://developers.cloudflare.com/pages/get-started/c3/) (the `create-cloudflare` CLI):
+## 技術スタック
+
+| レイヤー | 採用技術 |
+| :--- | :--- |
+| フロントエンド | Next.js 16 (App Router, Static Export + React Compiler), React 19, Tailwind CSS v4, TypeScript |
+| LINE連携 | LINE Front-end Framework (`@line/liff`), LINE Messaging API |
+| エッジAPI / Cron | Cloudflare Workers, Hono (`src/worker.ts`, `src/api/**`) |
+| データベース / ストレージ | Cloudflare D1 (SQLite) + Drizzle ORM, Cloudflare R2 (`BUCKET`) |
+| テスト / CI | Vitest (`src/__tests__/**`), GitHub Actions (`.github/workflows/ci.yml`), Cloudflare Workers Builds |
+
+---
+
+## 開発コマンド
 
 ```bash
-npm create cloudflare@latest -- --template=cloudflare/templates/next-starter-template
-```
-
-A live public deployment of this template is available at [https://next-starter-template.templates.workers.dev](https://next-starter-template.templates.workers.dev)
-
-## Getting Started
-
-First, run:
-
-```bash
+# 依存パッケージのインストール
 npm install
-# or
-yarn install
-# or
-pnpm install
-# or
-bun install
+
+# フロントエンド開発サーバー起動 (http://localhost:3000)
+npm run dev
+
+# ユニットテストの実行 (Vitest)
+npm test
+
+# 品質ゲート一括検証（Vitest + Next.js 本番ビルド + TypeScript 型チェック）
+npm run check
+
+# Cloudflare Workers ローカルプレビュー
+npm run preview
 ```
 
-Then run the development server (using the package manager of your choice):
+---
+
+## データベースマイグレーション（Cloudflare D1）
+
+スキーマ定義は `src/db/schema/`、SQLマイグレーションは `drizzle/` 配下で管理しています。
 
 ```bash
-npm run dev
+# ローカル D1 へのマイグレーション適用
+npm run db:mig:local
+
+# 本番リモート D1 へのマイグレーション適用
+npm run db:mig:remote
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## デプロイフロー
 
-This project uses [`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to automatically optimize and load Inter, a custom Google Font.
+`main` ブランチへの Push により以下が自動実行されます：
+1. **GitHub Actions CI**（`.github/workflows/ci.yml`）：`npm ci` ➔ `npm run check`（自動テスト・厳格型検査・静的エクスポート検証）
+2. **Cloudflare Workers Builds**：`npm run build` ➔ `npx wrangler deploy` によるエッジ本番デプロイ
 
-## Deploying To Production
-
-| Command                           | Action                                       |
-| :-------------------------------- | :------------------------------------------- |
-| `npm run build`                   | Build your production site                   |
-| `npm run preview`                 | Preview your build locally, before deploying |
-| `npm run build && npm run deploy` | Deploy your production site to Cloudflare    |
-| `npm wrangler tail`               | View real-time logs for all Workers          |
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
+UI/UX 規約・マルチチーム分離認可規約・野球規則エンジンの詳細は [`.agent/skills/i-score-dev/SKILL.md`](.agent/skills/i-score-dev/SKILL.md) を参照してください。
