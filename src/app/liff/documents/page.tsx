@@ -89,8 +89,7 @@ function getAbsoluteUrl(url: string | null | undefined): string {
 function getExternalBrowserUrl(url: string | null | undefined): string {
   const abs = getAbsoluteUrl(url);
   if (!isValidHttpUrl(abs)) return "";
-  const sep = abs.includes("?") ? "&" : "?";
-  return `${abs}${sep}openExternalBrowser=1`;
+  return abs;
 }
 
 export default function LiffDocumentsPage() {
@@ -1567,9 +1566,9 @@ export default function LiffDocumentsPage() {
 
                 <div className="flex items-center gap-1.5 shrink-0">
                   {/* ダウンロード / 共有リンク */}
-                  {isValidHttpUrl(previewDoc.fileUrl) && (
+                  {isValidHttpUrl(getAbsoluteUrl(previewDoc.fileUrl)) && (
                     <a
-                      href={previewDoc.fileUrl}
+                      href={getAbsoluteUrl(previewDoc.fileUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition-all"

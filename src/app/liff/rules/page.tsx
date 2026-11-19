@@ -76,8 +76,7 @@ function getAbsoluteUrl(url: string | null | undefined): string {
 function getExternalBrowserUrl(url: string | null | undefined): string {
   const abs = getAbsoluteUrl(url);
   if (!isValidHttpUrl(abs)) return "";
-  const sep = abs.includes("?") ? "&" : "?";
-  return `${abs}${sep}openExternalBrowser=1`;
+  return abs;
 }
 
 interface RuleItem {

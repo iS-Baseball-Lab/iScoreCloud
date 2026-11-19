@@ -32,6 +32,7 @@ import {
   installLiffRuntimeRecovery,
   releaseOrphanedBodyLocks,
 } from "@/lib/liff/runtime-recovery";
+import { installGlobalExternalLinkInterceptor } from "@/lib/liff/external-link";
 import {
   LIFF_SCORE_SETTINGS_CHANGE_EVENT,
   loadTeamPracticeMatchLabel,
@@ -364,6 +365,7 @@ export function LiffProvider({
     installLiffFastFetchCache();
     installLiffHistoryTracker();
     installLiffRuntimeRecovery();
+    installGlobalExternalLinkInterceptor();
   }
   const router = useRouter();
   const pathname = usePathname();

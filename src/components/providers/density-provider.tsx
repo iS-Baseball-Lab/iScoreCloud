@@ -2,6 +2,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { installGlobalExternalLinkInterceptor } from "@/lib/liff/external-link";
 
 // 🔥 現場至上主義：極小画面端末や屋外での情報表示を限界まで凝縮する 'ultra' を追加
 export type Density = "standard" | "compact" | "comfortable" | "ultra";
@@ -20,6 +21,8 @@ export function DensityProvider({ children }: { children: React.ReactNode }) {
   const [density, setDensityState] = useState<Density>("standard");
 
   useEffect(() => {
+    installGlobalExternalLinkInterceptor();
+
     // 初回読み込み時に設定を復元
     const saved = localStorage.getItem("iscore_density") as Density;
     

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import { useLiffPermissions } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
+import { openExternalUrlInDefaultBrowser } from "@/lib/liff/external-link";
 import {
   Car,
   ChevronDown,
@@ -1368,7 +1369,7 @@ export function CarpoolConvoyLiveMap({
     const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
       target
     )}&travelmode=driving`;
-    window.open(navUrl, "_blank", "noopener,noreferrer");
+    openExternalUrlInDefaultBrowser(navUrl);
   }, [snapshot?.destination?.directionsTarget, activeTargetLabel]);
 
   const handleSaveApiKey = useCallback(async () => {
