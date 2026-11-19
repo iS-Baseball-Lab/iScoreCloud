@@ -100,6 +100,7 @@ export const BOTTOM_NAV_SHORT_LABELS: Readonly<Record<QuickMenuItemId, string>> 
   news_generator: "LINE速報",
   scorebook_import: "スコア取込",
   related_teams: "関連チーム",
+  baseball_board: "野球盤",
   team_info: "チーム情報",
   players: "選手名鑑",
   stats: "チーム成績",

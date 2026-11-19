@@ -54,6 +54,7 @@ import {
   Package,
   Lock,
   Handshake,
+  Gamepad2,
 } from "lucide-react";
 
 type MenuCategory = "schedule_match" | "player_docs" | "settings_admin";
@@ -204,7 +205,16 @@ const MENU_ITEMS: MenuItem[] = [
     hoverBorderClass: "hover:border-primary/40",
     category: "schedule_match" as const,
     subGroup: "match_record",
-    fullWidth: true,
+  },
+  {
+    title: "野球盤ゲーム",
+    subtitle: "投げて打つ懐かしの盤上対決",
+    href: "/liff/baseball-board",
+    icon: Gamepad2,
+    colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
+    category: "schedule_match" as const,
+    subGroup: "match_record",
   },
 
   // 📖 タブ2: 選手・資料（① 選手・成績・写真）

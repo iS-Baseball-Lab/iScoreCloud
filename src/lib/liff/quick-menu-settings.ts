@@ -9,6 +9,7 @@ import {
   Car,
   ClipboardCheck,
   FileText,
+  Gamepad2,
   Handshake,
   HelpCircle,
   IdCard,
@@ -37,6 +38,7 @@ export type QuickMenuItemId =
   | "news_generator"
   | "scorebook_import"
   | "related_teams"
+  | "baseball_board"
   | "team_info"
   | "players"
   | "stats"
@@ -309,6 +311,17 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
     category: "schedule_match",
     tone: "primary",
     icon: Handshake,
+  },
+  {
+    id: "baseball_board",
+    label: "野球盤ゲーム",
+    shortLabel: "野球盤",
+    description: "投げて打つ懐かしの盤上対決",
+    badge: "ゲーム",
+    href: "/liff/baseball-board",
+    category: "schedule_match",
+    tone: "primary",
+    icon: Gamepad2,
   },
 
   // 📖 選手・資料（選手・成績・写真 ➔ ルール・資料）

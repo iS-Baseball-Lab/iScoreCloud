@@ -1514,6 +1514,13 @@ export function warmupLiffEndpointForHref(
     triggerWarmupUrl(`/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`);
     return;
   }
+  if (cleanPath === "/liff/baseball-board") {
+    const pQs = new URLSearchParams({ teamId: tid });
+    if (uid) pQs.set("userId", uid);
+    if (rawName) pQs.set("userName", rawName);
+    triggerWarmupUrl(`/api/liff/players?${pQs.toString()}`);
+    return;
+  }
   if (cleanPath === "/liff/admin" || cleanPath === "/liff/admin/roles") {
     const aQs = new URLSearchParams({ teamId: tid });
     if (uid) aQs.set("userId", uid);
@@ -1708,6 +1715,11 @@ export function prefetchLiffCoreEndpoints(params: {
           urlSet.add(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
         } else if (slotId === "related_teams") {
           urlSet.add(`/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "baseball_board") {
+          const pQs = new URLSearchParams({ teamId: tid });
+          if (uid) pQs.set("userId", uid);
+          if (rawName) pQs.set("userName", rawName);
+          urlSet.add(`/api/liff/players?${pQs.toString()}`);
         }
       }
     }
