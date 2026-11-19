@@ -287,6 +287,8 @@ export interface TeamGroundSummaryItem {
   isPrimaryHome: boolean;
 }
 
+import type { TeamSubLinkItem } from "@/lib/liff/team-links-schema";
+
 export interface TeamLinkSummaryItem {
   id: string;
   title: string;
@@ -294,6 +296,7 @@ export interface TeamLinkSummaryItem {
   category: string;
   description: string | null;
   isImportant: boolean;
+  subLinks?: TeamSubLinkItem[];
 }
 
 export interface TeamPlayerSelectOption {

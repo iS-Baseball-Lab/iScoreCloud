@@ -272,6 +272,7 @@ export const teamLinks = sqliteTable('team_links', {
   priority: integer('priority').default(0), // 表示順
   isImportant: integer('is_important', { mode: 'boolean' }).default(false), // おすすめ・公式ピン留め
   imageUrl: text('image_url'), // ロゴまたはサムネイル
+  subLinks: text('sub_links'), // サブリンク一覧 JSON (TeamSubLinkItem[])
   createdById: text('created_by_id'),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({

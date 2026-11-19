@@ -78,6 +78,11 @@ import {
 import { ensureAllSchemasOnce, ensureEventColumns, ensureRulesTable, ensureLinksTable, ensureMemberOrderColumn, ensureStatusConfigColumn, ensureMemberSubLabelsColumn, ensureMatchLineupColumns, ensurePlayerProfileColumns, ensurePlayerConditionPeriodsTable, ensureVenuesColumns, ensureScheduleDefaultTimesColumn } from "@/lib/db-helper";
 import { deleteR2UrlsSafely } from "@/lib/r2-cleanup";
 import {
+  parseSubLinksJson,
+  serializeSubLinksJson,
+  validateAndNormalizeSubLinksInput,
+} from "@/lib/liff/team-links-schema";
+import {
   buildParentToChildrenMap,
   classifyTeamAttendanceRosters,
   computeEventGroupAttendance,
@@ -8944,6 +8949,20 @@ const DEMO_LINKS = [
     priority: 0,
     isImportant: true,
     imageUrl: null,
+    subLinks: [
+      {
+        id: "demo-sub-1-1",
+        title: "全国大会日程・組み合わせ速報",
+        url: "https://jsbb.or.jp/game/",
+        note: "高円宮賜杯・全日本学童などの大会情報",
+      },
+      {
+        id: "demo-sub-1-2",
+        title: "JSBB公認用具・バット規定案内",
+        url: "https://jsbb.or.jp/outline/rule/",
+        note: "複合バット・ヘルメット等の使用基準",
+      },
+    ],
   },
   {
     id: "demo-link-2",
@@ -8957,6 +8976,14 @@ const DEMO_LINKS = [
     priority: 1,
     isImportant: true,
     imageUrl: null,
+    subLinks: [
+      {
+        id: "demo-sub-2-1",
+        title: "全国の暑さ指数（WBGT）実況・予測",
+        url: "https://www.wbgt.env.go.jp/wbgt_data.php",
+        note: "グラウンド最寄り観測地点の確認用",
+      },
+    ],
   },
   {
     id: "demo-link-3",
@@ -8970,6 +8997,14 @@ const DEMO_LINKS = [
     priority: 2,
     isImportant: false,
     imageUrl: null,
+    subLinks: [
+      {
+        id: "demo-sub-3-1",
+        title: "落雷・雷レーダー予測",
+        url: "https://weather.yahoo.co.jp/weather/zoomradar/lightning/",
+        note: "雷鳴時の中断・避難判断に活用",
+      },
+    ],
   },
   {
     id: "demo-link-4",
@@ -8983,6 +9018,7 @@ const DEMO_LINKS = [
     priority: 3,
     isImportant: true,
     imageUrl: null,
+    subLinks: [],
   },
   {
     id: "demo-link-5",
@@ -8996,6 +9032,20 @@ const DEMO_LINKS = [
     priority: 4,
     isImportant: false,
     imageUrl: null,
+    subLinks: [
+      {
+        id: "demo-sub-5-1",
+        title: "空き状況照会（ログイン不要）",
+        url: "https://www.city.sports-reserve.jp/availability",
+        note: "今週末のグラウンド空き枠確認",
+      },
+      {
+        id: "demo-sub-5-2",
+        title: "雨天キャンセル・利用案内",
+        url: "https://www.city.sports-reserve.jp/guide",
+        note: "当日朝の還付・取消手続きルール",
+      },
+    ],
   },
   {
     id: "demo-link-6",
@@ -9009,6 +9059,7 @@ const DEMO_LINKS = [
     priority: 5,
     isImportant: false,
     imageUrl: null,
+    subLinks: [],
   },
 ];
 
@@ -9169,6 +9220,7 @@ app.get("/links", async (c) => {
         priority: teamLinks.priority,
         isImportant: teamLinks.isImportant,
         imageUrl: teamLinks.imageUrl,
+        subLinks: teamLinks.subLinks,
         createdAt: teamLinks.createdAt,
         organizationId: teamLinks.organizationId,
         teamId: teamLinks.teamId,
@@ -9202,6 +9254,7 @@ app.get("/links", async (c) => {
         priority: l.priority || 0,
         isImportant: toBoolean(l.isImportant, false),
         imageUrl: l.imageUrl || null,
+        subLinks: parseSubLinksJson(l.subLinks),
       };
     });
 
@@ -9231,10 +9284,27 @@ app.post("/links", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { teamId, title, url, description, category, scope, userId, priority, isImportant, imageUrl } = body;
+    const {
+      teamId,
+      title,
+      url,
+      description,
+      category,
+      scope,
+      userId,
+      priority,
+      isImportant,
+      imageUrl,
+      subLinks,
+    } = body;
 
     if (!teamId || !title || !url) {
       return c.json({ success: false, error: "teamId, title, url are required" }, 400);
+    }
+
+    const subLinksCheck = validateAndNormalizeSubLinksInput(subLinks);
+    if (!subLinksCheck.ok) {
+      return c.json({ success: false, error: subLinksCheck.error }, 400);
     }
 
     if (teamId === "demo-team") {
@@ -9284,6 +9354,7 @@ app.post("/links", async (c) => {
       priority: Number(priority) || 0,
       isImportant: toBoolean(isImportant, false),
       imageUrl: imageUrl ? imageUrl.trim() : null,
+      subLinks: serializeSubLinksJson(subLinksCheck.subLinks),
       createdById: userId || null,
       createdAt: new Date(),
     });
@@ -9311,7 +9382,27 @@ app.put("/links/:id", async (c) => {
   const id = c.req.param("id");
   try {
     const body = await c.req.json();
-    const { title, url, description, category, scope, teamId, priority, isImportant, imageUrl } = body;
+    const {
+      title,
+      url,
+      description,
+      category,
+      scope,
+      teamId,
+      priority,
+      isImportant,
+      imageUrl,
+      subLinks,
+    } = body;
+
+    let nextSubLinksJson: string | null | undefined = undefined;
+    if (subLinks !== undefined) {
+      const subLinksCheck = validateAndNormalizeSubLinksInput(subLinks);
+      if (!subLinksCheck.ok) {
+        return c.json({ success: false, error: subLinksCheck.error }, 400);
+      }
+      nextSubLinksJson = serializeSubLinksJson(subLinksCheck.subLinks);
+    }
 
     if (id.startsWith("demo-")) {
       return c.json({ success: true, message: "関連リンクを更新しました（デモ）" });
@@ -9352,14 +9443,17 @@ app.put("/links/:id", async (c) => {
       sanitizedUrl = urlCheck.url;
     }
 
+    const nextScope: "organization" | "team" =
+      scope === "organization" || scope === "team" ? scope : currentLink.scope;
+
     let organizationId = currentLink.organizationId;
     let targetTeamId = currentLink.teamId;
 
-    if (scope === "organization" && !organizationId && targetTeamId) {
+    if (nextScope === "organization" && !organizationId && targetTeamId) {
       const team = await db.select({ orgId: teams.organizationId }).from(teams).where(eq(teams.id, targetTeamId)).get();
       organizationId = team?.orgId || null;
       targetTeamId = null;
-    } else if (scope === "team" && teamId && access.canMutateTeamData(teamId)) {
+    } else if (nextScope === "team" && teamId && access.canMutateTeamData(teamId)) {
       targetTeamId = teamId;
       organizationId = null;
     }
@@ -9377,12 +9471,14 @@ app.put("/links/:id", async (c) => {
         url: sanitizedUrl,
         description: description !== undefined ? (description ? description.trim() : null) : currentLink.description,
         category: category || currentLink.category,
-        scope: scope || currentLink.scope,
+        scope: nextScope,
         priority: priority !== undefined ? Number(priority) : currentLink.priority,
         isImportant: isImportant !== undefined ? toBoolean(isImportant, false) : currentLink.isImportant,
         imageUrl: nextLinkImageUrl,
-        organizationId: scope === "organization" ? organizationId : null,
-        teamId: scope === "team" ? targetTeamId : null,
+        subLinks:
+          nextSubLinksJson !== undefined ? nextSubLinksJson : currentLink.subLinks,
+        organizationId: nextScope === "organization" ? organizationId : null,
+        teamId: nextScope === "team" ? targetTeamId : null,
       })
       .where(eq(teamLinks.id, id));
 

@@ -33,6 +33,7 @@ import {
   type TeamSquadSummaryItem,
   type TeamStaffSummaryItem,
 } from "@/lib/liff/team-profile-schema";
+import { parseSubLinksJson } from "@/lib/liff/team-links-schema";
 import {
   canManageSystem,
   canManageTeam,
@@ -283,6 +284,20 @@ function buildDemoTeamInfoResponse(): TeamInfoResponse {
         category: "league",
         description: "大会日程・トーナメント表・連盟規定",
         isImportant: true,
+        subLinks: [
+          {
+            id: "demo-l-1-sub-1",
+            title: "春季大会 トーナメント表",
+            url: "https://example.com/league/spring-bracket",
+            note: "Aクラス・ジュニアの部",
+          },
+          {
+            id: "demo-l-1-sub-2",
+            title: "連盟特別規則・グラウンド注意",
+            url: "https://example.com/league/rules",
+            note: null,
+          },
+        ],
       },
       {
         id: "demo-l-2",
@@ -291,6 +306,7 @@ function buildDemoTeamInfoResponse(): TeamInfoResponse {
         category: "sns",
         description: "週末の試合結果・体験練習会のお知らせ",
         isImportant: true,
+        subLinks: [],
       },
     ],
     playerOptions: [
@@ -481,6 +497,7 @@ liffTeamInfoRouter.get("/", async (c) => {
           description: teamLinks.description,
           isImportant: teamLinks.isImportant,
           priority: teamLinks.priority,
+          subLinks: teamLinks.subLinks,
         })
         .from(teamLinks)
         .where(
@@ -689,6 +706,7 @@ liffTeamInfoRouter.get("/", async (c) => {
         category: l.category || "other",
         description: l.description || null,
         isImportant: Boolean(l.isImportant),
+        subLinks: parseSubLinksJson(l.subLinks),
       }));
 
     let wins = 0;

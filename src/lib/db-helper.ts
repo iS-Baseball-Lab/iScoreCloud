@@ -125,6 +125,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   team_links: [
     { name: "is_important", ddl: "ALTER TABLE team_links ADD COLUMN is_important integer DEFAULT 0" },
     { name: "image_url", ddl: "ALTER TABLE team_links ADD COLUMN image_url text" },
+    { name: "sub_links", ddl: "ALTER TABLE team_links ADD COLUMN sub_links text" },
   ],
   member_cars: [
     { name: "owner_id2", ddl: "ALTER TABLE member_cars ADD COLUMN owner_id2 text" },
@@ -170,6 +171,7 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       priority integer DEFAULT 0,
       is_important integer DEFAULT 0,
       image_url text,
+      sub_links text,
       created_by_id text,
       created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,

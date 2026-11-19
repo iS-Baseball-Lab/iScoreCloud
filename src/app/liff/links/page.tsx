@@ -6,11 +6,27 @@ import { createPortal } from "react-dom";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
+  LiffDataLoadErrorCard,
+  useLiffAutoRetryOnResume,
+} from "@/components/liff/LiffDataLoadErrorCard";
+import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
+import { SubLinksEditorSection } from "@/components/liff/SubLinksEditorSection";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
-import { peekLiffApiCache } from "@/lib/liff/api-cache";
+import {
+  invalidateLiffApiCache,
+  peekLiffApiCache,
+} from "@/lib/liff/api-cache";
+import {
+  createEmptySubLinkDraft,
+  normalizeHttpUrlInput,
+  toSubLinkDrafts,
+  validateAndNormalizeSubLinksInput,
+  type TeamSubLinkDraft,
+  type TeamSubLinkItem,
+} from "@/lib/liff/team-links-schema";
 import { sanitizeSafeExternalHref, validateSafeHttpUrl } from "@/lib/utils";
 import {
   Link2,
@@ -37,6 +53,7 @@ import {
   Play,
   Upload,
   Image as ImageIcon,
+  CornerDownRight,
 } from "lucide-react";
 
 function InstagramIcon({ className }: { className?: string }) {
@@ -71,6 +88,7 @@ interface LinkItem {
   priority?: number;
   isImportant?: boolean;
   imageUrl?: string | null;
+  subLinks?: TeamSubLinkItem[];
 }
 
 const LINK_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
@@ -83,25 +101,45 @@ const LINK_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
   { value: "other", label: "🔗 その他・お役立ちリンク" },
 ];
 
+const CATEGORY_SHORT_LABELS: Record<string, string> = {
+  league: "連盟・協会",
+  tournament: "大会・速報",
+  sns: "公式SNS・HP",
+  grounds: "球場・施設予約",
+  weather: "天気・暑さ指数",
+  partner: "提携・ショップ",
+  other: "その他・お役立ち",
+};
+
 export default function LiffLinksPage() {
   const { currentTeam, profile } = useLiff();
   const { canMutate, isDemoMode } = useLiffPermissions();
   const effectiveCanEdit = canMutate || isDemoMode;
+
   const initialCachedLinks = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
-      currentTeam?.id || localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+      currentTeam?.id ||
+      localStorage.getItem("iscore_selectedTeamId") ||
+      "demo-team";
     return peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
       `/api/liff/links?teamId=${tid}`
     );
   }, [currentTeam?.id]);
 
-  const [links, setLinks] = useState<LinkItem[]>(() => initialCachedLinks?.links ?? []);
-  const [isLoading, setIsLoading] = useState<boolean>(() => !initialCachedLinks);
+  const [links, setLinks] = useState<LinkItem[]>(
+    () => initialCachedLinks?.links ?? []
+  );
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => !initialCachedLinks?.links
+  );
+  const [loadError, setLoadError] = useState<boolean>(false);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [selectedScope, setSelectedScope] = useState<"all" | "organization" | "team">("all");
+  const [selectedScope, setSelectedScope] = useState<
+    "all" | "organization" | "team"
+  >("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // 新規登録モーダル用ステート
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -110,9 +148,12 @@ export default function LiffLinksPage() {
   const [newUrl, setNewUrl] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newCategory, setNewCategory] = useState("league");
-  const [newScope, setNewScope] = useState<"organization" | "team">("organization");
+  const [newScope, setNewScope] = useState<"organization" | "team">(
+    "organization"
+  );
   const [newIsImportant, setNewIsImportant] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState<string>("");
+  const [newSubLinks, setNewSubLinks] = useState<TeamSubLinkDraft[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -124,57 +165,104 @@ export default function LiffLinksPage() {
   const [editUrl, setEditUrl] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("league");
-  const [editScope, setEditScope] = useState<"organization" | "team">("organization");
+  const [editScope, setEditScope] = useState<"organization" | "team">(
+    "organization"
+  );
   const [editIsImportant, setEditIsImportant] = useState(false);
   const [editImageUrl, setEditImageUrl] = useState<string>("");
+  const [editSubLinks, setEditSubLinks] = useState<TeamSubLinkDraft[]>([]);
   const [isEditUploadingImage, setIsEditUploadingImage] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // サブリンク専用クイック追加・編集モーダル用ステート
+  const [subLinkTarget, setSubLinkTarget] = useState<LinkItem | null>(null);
+  const [quickSubLinks, setQuickSubLinks] = useState<TeamSubLinkDraft[]>([]);
+  const [quickFocusSignal, setQuickFocusSignal] = useState<number>(0);
+
+  const linksCountRef = useRef(links.length);
+  linksCountRef.current = links.length;
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const loadLinks = useCallback(async () => {
+    const teamId = currentTeam?.id || "demo-team";
+    const cached = peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
+      `/api/liff/links?teamId=${teamId}`
+    );
+    if (cached?.links) {
+      setLinks(cached.links);
+      setIsLoading(false);
+      setLoadError(false);
+    } else if (linksCountRef.current === 0) {
+      setIsLoading(true);
+    }
+
     try {
-      const teamId = currentTeam?.id || "demo-team";
-      const cached = peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
-        `/api/liff/links?teamId=${teamId}`
-      );
-      if (cached?.links) {
-        setLinks(cached.links);
-        setIsLoading(false);
-      } else {
-        setIsLoading(true);
-      }
       const res = await fetch(`/api/liff/links?teamId=${teamId}`);
-      if (res.ok) {
-        const data = (await res.json()) as { success: boolean; links?: LinkItem[] };
-        if (data.links) {
-          setLinks(data.links);
-        }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as {
+        success: boolean;
+        links?: LinkItem[];
+      };
+      if (data.success && Array.isArray(data.links)) {
+        setLinks(data.links);
+        setLoadError(false);
+      } else if (linksCountRef.current === 0 && !cached?.links) {
+        setLoadError(true);
       }
     } catch (err) {
       console.error("Failed to fetch links:", err);
+      if (linksCountRef.current === 0 && !cached?.links) {
+        setLoadError(true);
+      }
     } finally {
       setIsLoading(false);
     }
   }, [currentTeam?.id]);
 
   useEffect(() => {
+    setLoadError(false);
+    const tid = currentTeam?.id || "demo-team";
+    const cached = peekLiffApiCache<{ success: boolean; links?: LinkItem[] }>(
+      `/api/liff/links?teamId=${tid}`
+    );
+    if (cached?.links) {
+      setLinks(cached.links);
+      setIsLoading(false);
+    } else {
+      setLinks([]);
+      setIsLoading(true);
+    }
     loadLinks();
-  }, [loadLinks]);
+  }, [currentTeam?.id, loadLinks]);
 
-  // URL コピー処理
-  const handleCopyUrl = (link: LinkItem, e: React.MouseEvent) => {
+  useLiffAutoRetryOnResume(loadError && links.length === 0, loadLinks);
+
+  // URL コピー処理（メインリンク・サブリンク共通）
+  const handleCopyTextUrl = (
+    copyKey: string,
+    targetUrl: string,
+    e: React.MouseEvent
+  ) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(link.url);
-    setCopiedId(link.id);
-    setTimeout(() => setCopiedId(null), 2000);
+    e.preventDefault();
+    navigator.clipboard.writeText(targetUrl);
+    setCopiedKey(copyKey);
+    setTimeout(() => {
+      setCopiedKey((prev) => (prev === copyKey ? null : prev));
+    }, 2000);
   };
 
   // 画像アップロードハンドラー
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+  const handleImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    isEdit: boolean
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -192,7 +280,11 @@ export default function LiffLinksPage() {
         body: formData,
       });
 
-      const data = (await res.json()) as { success: boolean; imageUrl?: string; error?: string };
+      const data = (await res.json()) as {
+        success: boolean;
+        imageUrl?: string;
+        error?: string;
+      };
       if (!data.success || !data.imageUrl) {
         throw new Error(data.error || "画像のアップロードに失敗しました");
       }
@@ -204,7 +296,9 @@ export default function LiffLinksPage() {
       }
     } catch (err: unknown) {
       console.error("Image upload failed:", err);
-      setSubmitError(err instanceof Error ? err.message : "画像のアップロードに失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "画像のアップロードに失敗しました"
+      );
     } finally {
       if (isEdit) setIsEditUploadingImage(false);
       else setIsUploadingImage(false);
@@ -214,7 +308,9 @@ export default function LiffLinksPage() {
   // 編集モーダルを開く
   const openEditModal = (link: LinkItem, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!effectiveCanEdit || (!isDemoMode && link.id.startsWith("demo-"))) return;
+    if (!effectiveCanEdit || (!isDemoMode && link.id.startsWith("demo-"))) {
+      return;
+    }
     setEditingLink(link);
     setEditTitle(link.title);
     setEditUrl(link.url);
@@ -223,8 +319,32 @@ export default function LiffLinksPage() {
     setEditScope(link.scope);
     setEditIsImportant(!!link.isImportant);
     setEditImageUrl(link.imageUrl || "");
+    setEditSubLinks(toSubLinkDrafts(link.subLinks));
     setSubmitError(null);
   };
+
+  // カードから直接サブリンク追加・編集モーダルを開く
+  const openSubLinkQuickModal = (link: LinkItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!effectiveCanEdit || (!isDemoMode && link.id.startsWith("demo-"))) {
+      return;
+    }
+    const existingDrafts = toSubLinkDrafts(link.subLinks);
+    const initialDrafts =
+      existingDrafts.length < 15
+        ? [...existingDrafts, createEmptySubLinkDraft()]
+        : existingDrafts;
+    setSubLinkTarget(link);
+    setQuickSubLinks(initialDrafts);
+    setSubmitError(null);
+    setQuickFocusSignal((prev) => prev + 1);
+  };
+
+  const refreshCachesAfterMutation = useCallback(async () => {
+    invalidateLiffApiCache("/api/liff/links");
+    invalidateLiffApiCache("/api/liff/team-info");
+    await loadLinks();
+  }, [loadLinks]);
 
   // 新規登録処理
   const handleCreateLink = async (e: React.FormEvent) => {
@@ -236,17 +356,22 @@ export default function LiffLinksPage() {
       setSubmitError(null);
       const teamId = currentTeam?.id || "demo-team";
 
-      let finalUrl = newUrl.trim();
-      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl)) {
-        finalUrl = `https://${finalUrl}`;
-      }
-      const createUrlCheck = validateSafeHttpUrl(finalUrl, { allowEmpty: false });
+      const candidateUrl = normalizeHttpUrlInput(newUrl);
+      const createUrlCheck = validateSafeHttpUrl(candidateUrl, {
+        allowEmpty: false,
+      });
       if (!createUrlCheck.ok || !createUrlCheck.url) {
         throw new Error(
           createUrlCheck.ok ? "URLを入力してください" : createUrlCheck.error
         );
       }
-      finalUrl = createUrlCheck.url;
+
+      const subLinksCheck = validateAndNormalizeSubLinksInput(newSubLinks);
+      if (!subLinksCheck.ok) {
+        throw new Error(subLinksCheck.error);
+      }
+
+      const finalUrl = createUrlCheck.url;
 
       const res = await fetch("/api/liff/links", {
         method: "POST",
@@ -260,6 +385,7 @@ export default function LiffLinksPage() {
           scope: newScope,
           isImportant: newIsImportant,
           imageUrl: newImageUrl.trim() || null,
+          subLinks: subLinksCheck.subLinks,
           userId: profile?.userId,
         }),
       });
@@ -269,13 +395,36 @@ export default function LiffLinksPage() {
         throw new Error(data.error || "リンクの登録に失敗しました");
       }
 
+      if (teamId === "demo-team") {
+        const demoNewItem: LinkItem = {
+          id: `demo-custom-${Date.now()}`,
+          title: newTitle.trim(),
+          url: finalUrl,
+          description: newDescription.trim(),
+          category: newCategory,
+          categoryLabel: CATEGORY_SHORT_LABELS[newCategory] || "その他",
+          scope: newScope,
+          scopeLabel:
+            newScope === "organization"
+              ? "チーム全体"
+              : currentTeam?.teamName || "編成",
+          priority: 0,
+          isImportant: newIsImportant,
+          imageUrl: newImageUrl.trim() || null,
+          subLinks: subLinksCheck.subLinks,
+        };
+        setLinks((prev) => [demoNewItem, ...prev]);
+      } else {
+        await refreshCachesAfterMutation();
+      }
+
       setIsCreateModalOpen(false);
       setNewTitle("");
       setNewUrl("");
       setNewDescription("");
       setNewIsImportant(false);
       setNewImageUrl("");
-      loadLinks();
+      setNewSubLinks([]);
     } catch (err: unknown) {
       console.error("Error creating link:", err);
       setSubmitError(
@@ -289,24 +438,36 @@ export default function LiffLinksPage() {
   // 更新処理
   const handleUpdateLink = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!effectiveCanEdit || !editingLink || !editTitle.trim() || !editUrl.trim()) return;
+    if (
+      !effectiveCanEdit ||
+      !editingLink ||
+      !editTitle.trim() ||
+      !editUrl.trim()
+    ) {
+      return;
+    }
 
     try {
       setIsSubmitting(true);
       setSubmitError(null);
       const teamId = currentTeam?.id || "demo-team";
 
-      let finalUrl = editUrl.trim();
-      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(finalUrl)) {
-        finalUrl = `https://${finalUrl}`;
-      }
-      const updateUrlCheck = validateSafeHttpUrl(finalUrl, { allowEmpty: false });
+      const candidateUrl = normalizeHttpUrlInput(editUrl);
+      const updateUrlCheck = validateSafeHttpUrl(candidateUrl, {
+        allowEmpty: false,
+      });
       if (!updateUrlCheck.ok || !updateUrlCheck.url) {
         throw new Error(
           updateUrlCheck.ok ? "URLを入力してください" : updateUrlCheck.error
         );
       }
-      finalUrl = updateUrlCheck.url;
+
+      const subLinksCheck = validateAndNormalizeSubLinksInput(editSubLinks);
+      if (!subLinksCheck.ok) {
+        throw new Error(subLinksCheck.error);
+      }
+
+      const finalUrl = updateUrlCheck.url;
 
       const res = await fetch(`/api/liff/links/${editingLink.id}`, {
         method: "PUT",
@@ -320,6 +481,7 @@ export default function LiffLinksPage() {
           scope: editScope,
           isImportant: editIsImportant,
           imageUrl: editImageUrl.trim() || null,
+          subLinks: subLinksCheck.subLinks,
         }),
       });
 
@@ -328,11 +490,92 @@ export default function LiffLinksPage() {
         throw new Error(data.error || "リンクの更新に失敗しました");
       }
 
+      if (teamId === "demo-team" || editingLink.id.startsWith("demo-")) {
+        setLinks((prev) =>
+          prev.map((item) =>
+            item.id === editingLink.id
+              ? {
+                  ...item,
+                  title: editTitle.trim(),
+                  url: finalUrl,
+                  description: editDescription.trim(),
+                  category: editCategory,
+                  categoryLabel:
+                    CATEGORY_SHORT_LABELS[editCategory] || "その他",
+                  scope: editScope,
+                  scopeLabel:
+                    editScope === "organization"
+                      ? "チーム全体"
+                      : currentTeam?.teamName || "編成",
+                  isImportant: editIsImportant,
+                  imageUrl: editImageUrl.trim() || null,
+                  subLinks: subLinksCheck.subLinks,
+                }
+              : item
+          )
+        );
+      } else {
+        await refreshCachesAfterMutation();
+      }
+
       setEditingLink(null);
-      loadLinks();
     } catch (err: unknown) {
       console.error("Error updating link:", err);
-      setSubmitError(err instanceof Error ? err.message : "リンクの更新に失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "リンクの更新に失敗しました"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // サブリンク専用クイック保存処理
+  const handleSaveQuickSubLinks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!effectiveCanEdit || !subLinkTarget) return;
+
+    try {
+      setIsSubmitting(true);
+      setSubmitError(null);
+      const teamId = currentTeam?.id || "demo-team";
+
+      const subLinksCheck = validateAndNormalizeSubLinksInput(quickSubLinks);
+      if (!subLinksCheck.ok) {
+        throw new Error(subLinksCheck.error);
+      }
+
+      const res = await fetch(`/api/liff/links/${subLinkTarget.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId,
+          subLinks: subLinksCheck.subLinks,
+        }),
+      });
+
+      const data = (await res.json()) as { success: boolean; error?: string };
+      if (!data.success) {
+        throw new Error(data.error || "サブリンクの保存に失敗しました");
+      }
+
+      if (teamId === "demo-team" || subLinkTarget.id.startsWith("demo-")) {
+        setLinks((prev) =>
+          prev.map((item) =>
+            item.id === subLinkTarget.id
+              ? { ...item, subLinks: subLinksCheck.subLinks }
+              : item
+          )
+        );
+      } else {
+        await refreshCachesAfterMutation();
+      }
+
+      setSubLinkTarget(null);
+    } catch (err: unknown) {
+      console.error("Error saving sub-links:", err);
+      setSubmitError(
+        err instanceof Error ? err.message : "サブリンクの保存に失敗しました"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -341,7 +584,13 @@ export default function LiffLinksPage() {
   // 削除処理
   const handleDeleteLink = async () => {
     if (!editingLink || !effectiveCanEdit) return;
-    if (!confirm(`このリンク（${editingLink.title.slice(0, 20)}...）を削除してもよろしいですか？`)) return;
+    if (
+      !confirm(
+        `このリンク（${editingLink.title.slice(0, 20)}...）を削除してもよろしいですか？`
+      )
+    ) {
+      return;
+    }
 
     try {
       setIsDeleting(true);
@@ -360,11 +609,18 @@ export default function LiffLinksPage() {
         throw new Error(data.error || "リンクの削除に失敗しました");
       }
 
+      if (teamId === "demo-team" || editingLink.id.startsWith("demo-")) {
+        setLinks((prev) => prev.filter((item) => item.id !== editingLink.id));
+      } else {
+        await refreshCachesAfterMutation();
+      }
+
       setEditingLink(null);
-      loadLinks();
     } catch (err: unknown) {
       console.error("Error deleting link:", err);
-      setSubmitError(err instanceof Error ? err.message : "リンクの削除に失敗しました");
+      setSubmitError(
+        err instanceof Error ? err.message : "リンクの削除に失敗しました"
+      );
     } finally {
       setIsDeleting(false);
     }
@@ -410,6 +666,7 @@ export default function LiffLinksPage() {
     if (lowerUrl.includes("youtube.com") || lowerUrl.includes("youtu.be")) {
       return {
         icon: <Play className="w-4 h-4 fill-current" />,
+        subIcon: <Play className="w-3.5 h-3.5 fill-current" />,
         iconBoxClass: "bg-[#FF0000]/12 text-[#FF0000]",
         buttonClass: "bg-[#FF0000] hover:bg-[#CC0000] text-white",
         buttonLabel: "YouTube",
@@ -418,6 +675,7 @@ export default function LiffLinksPage() {
     if (lowerUrl.includes("line.me")) {
       return {
         icon: <Share2 className="w-4 h-4" />,
+        subIcon: <Share2 className="w-3.5 h-3.5" />,
         iconBoxClass: "bg-[#06C755]/12 text-[#06C755]",
         buttonClass: "bg-[#06C755] hover:bg-[#05b34c] text-white",
         buttonLabel: "LINE",
@@ -426,6 +684,7 @@ export default function LiffLinksPage() {
     if (lowerUrl.includes("instagram.com")) {
       return {
         icon: <InstagramIcon className="w-4 h-4" />,
+        subIcon: <InstagramIcon className="w-3.5 h-3.5" />,
         iconBoxClass: "bg-[#E1306C]/12 text-[#E1306C]",
         buttonClass: "bg-[#E1306C] hover:bg-[#C1275C] text-white",
         buttonLabel: "Instagram",
@@ -434,7 +693,9 @@ export default function LiffLinksPage() {
     if (lowerUrl.includes("x.com/") || lowerUrl.includes("twitter.com/")) {
       return {
         icon: <Globe className="w-4 h-4" />,
-        iconBoxClass: "bg-slate-900/12 text-slate-900 dark:bg-slate-100/15 dark:text-slate-100",
+        subIcon: <Globe className="w-3.5 h-3.5" />,
+        iconBoxClass:
+          "bg-slate-900/12 text-slate-900 dark:bg-slate-100/15 dark:text-slate-100",
         buttonClass: "bg-[#0f172a] hover:bg-slate-800 text-white",
         buttonLabel: "Xを開く",
       };
@@ -447,6 +708,7 @@ export default function LiffLinksPage() {
     ) {
       return {
         icon: <MapPin className="w-4 h-4" />,
+        subIcon: <MapPin className="w-3.5 h-3.5" />,
         iconBoxClass: "bg-[#1A73E8]/12 text-[#1A73E8]",
         buttonClass: "bg-[#1A73E8] hover:bg-[#1557B0] text-white",
         buttonLabel: "Google Map",
@@ -454,6 +716,7 @@ export default function LiffLinksPage() {
     }
     return {
       icon: getCategoryIcon(category),
+      subIcon: <CornerDownRight className="w-3.5 h-3.5" />,
       iconBoxClass:
         category === "sns"
           ? "bg-[#E1306C]/12 text-[#E1306C]"
@@ -463,14 +726,30 @@ export default function LiffLinksPage() {
     };
   };
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredLinks = links.filter((link) => {
-    const matchesCategory = selectedCategory === "all" || link.category === selectedCategory;
-    const matchesScope = selectedScope === "all" || link.scope === selectedScope;
-    const matchesSearch =
-      link.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (link.description && link.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      link.url.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesScope && matchesSearch;
+    const matchesCategory =
+      selectedCategory === "all" || link.category === selectedCategory;
+    const matchesScope =
+      selectedScope === "all" || link.scope === selectedScope;
+    if (!normalizedQuery) {
+      return matchesCategory && matchesScope;
+    }
+
+    const matchesMain =
+      link.title.toLowerCase().includes(normalizedQuery) ||
+      (link.description &&
+        link.description.toLowerCase().includes(normalizedQuery)) ||
+      link.url.toLowerCase().includes(normalizedQuery);
+
+    const matchesSub = (link.subLinks ?? []).some(
+      (sub) =>
+        sub.title.toLowerCase().includes(normalizedQuery) ||
+        (sub.note && sub.note.toLowerCase().includes(normalizedQuery)) ||
+        sub.url.toLowerCase().includes(normalizedQuery)
+    );
+
+    return matchesCategory && matchesScope && (matchesMain || matchesSub);
   });
 
   return (
@@ -541,7 +820,7 @@ export default function LiffLinksPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="サイト名やキーワードで検索..."
+              placeholder="サイト名・サブリンク名で検索..."
               className="w-full pl-9.5 pr-8 py-2.5 rounded-2xl bg-card border border-border text-xs placeholder:text-muted-foreground/70 focus:outline-hidden focus:ring-2 focus:ring-primary/40 transition-all"
             />
             {searchQuery && (
@@ -559,8 +838,9 @@ export default function LiffLinksPage() {
             <button
               type="button"
               onClick={() => {
-                setIsCreateModalOpen(true);
+                setNewSubLinks([]);
                 setSubmitError(null);
+                setIsCreateModalOpen(true);
               }}
               className="h-10 px-3.5 rounded-2xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
               title="新しい関連リンクを追加"
@@ -608,7 +888,7 @@ export default function LiffLinksPage() {
                     : `${categories.find((c) => c.id === selectedCategory)?.label || ""} のリンク`}
                 </h2>
                 <p className="text-[10px] font-bold text-slate-300 truncate">
-                  公式サイト・大会速報・予約ポータルへ直接アクセス
+                  公式サイト・大会速報・下層サブリンクへ1タップでアクセス
                 </p>
               </div>
             </div>
@@ -618,11 +898,18 @@ export default function LiffLinksPage() {
           </div>
 
           <div className="p-4">
-            {isLoading ? (
+            {isLoading && links.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                <span className="text-xs font-bold">関連リンクを読み込み中...</span>
+                <span className="text-xs font-bold">
+                  関連リンクを読み込み中...
+                </span>
               </div>
+            ) : loadError && links.length === 0 ? (
+              <LiffDataLoadErrorCard
+                onRetry={loadLinks}
+                isRetrying={isLoading}
+              />
             ) : filteredLinks.length === 0 ? (
               <div className="p-8 rounded-2xl border border-border bg-muted/20 text-center space-y-2">
                 <AlertCircle className="w-8 h-8 text-amber-600 dark:text-amber-400 mx-auto" />
@@ -641,6 +928,11 @@ export default function LiffLinksPage() {
                   const isOrg = link.scope === "organization";
                   const isImportant = !!link.isImportant;
                   const brandStyle = getLinkBrandStyle(link.url, link.category);
+                  const subLinks = link.subLinks ?? [];
+                  const canEditThisLink =
+                    effectiveCanEdit &&
+                    (isDemoMode || !link.id.startsWith("demo-"));
+                  const mainCopyKey = `main:${link.id}`;
 
                   return (
                     <div
@@ -663,7 +955,9 @@ export default function LiffLinksPage() {
                                 />
                               </div>
                             ) : (
-                              <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${brandStyle.iconBoxClass}`}>
+                              <span
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${brandStyle.iconBoxClass}`}
+                              >
                                 {brandStyle.icon}
                               </span>
                             )}
@@ -702,12 +996,12 @@ export default function LiffLinksPage() {
                           </div>
 
                           {/* 編集ボタン */}
-                          {effectiveCanEdit && (isDemoMode || !link.id.startsWith("demo-")) && (
+                          {canEditThisLink && (
                             <button
                               type="button"
                               onClick={(e) => openEditModal(link, e)}
-                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0"
-                              title="編集"
+                              className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted active:scale-95 transition-all shrink-0 cursor-pointer"
+                              title="リンクを編集"
                             >
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
@@ -726,14 +1020,18 @@ export default function LiffLinksPage() {
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <button
                               type="button"
-                              onClick={(e) => handleCopyUrl(link, e)}
+                              onClick={(e) =>
+                                handleCopyTextUrl(mainCopyKey, link.url, e)
+                              }
                               className="px-2.5 py-1.5 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground text-[11px] font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer"
                               title="URLをコピー"
                             >
-                              {copiedId === link.id ? (
+                              {copiedKey === mainCopyKey ? (
                                 <>
                                   <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                  <span className="text-emerald-700 dark:text-emerald-400 font-black">コピー済</span>
+                                  <span className="text-emerald-700 dark:text-emerald-400 font-black">
+                                    コピー済
+                                  </span>
                                 </>
                               ) : (
                                 <>
@@ -759,6 +1057,119 @@ export default function LiffLinksPage() {
                           </a>
                         </div>
                       </div>
+
+                      {/* ━━━ サブリンク常時コンパクト一覧（1タップ直接起動） ━━━ */}
+                      {subLinks.length > 0 ? (
+                        <div className="border-t border-border bg-muted/30 px-3.5 py-2.5 sm:px-4 sm:py-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <CornerDownRight className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <span className="text-[11px] font-black text-foreground">
+                                サブリンク
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded-md bg-card border border-border text-[9.5px] font-black text-muted-foreground shrink-0">
+                                {subLinks.length}件
+                              </span>
+                            </div>
+
+                            {canEditThisLink && (
+                              <button
+                                type="button"
+                                onClick={(e) => openSubLinkQuickModal(link, e)}
+                                className="px-2 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[10.5px] font-black text-primary flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                                title="サブリンクを追加・編集"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>追加・編集</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {subLinks.map((sub) => {
+                              const subBrand = getLinkBrandStyle(
+                                sub.url,
+                                link.category
+                              );
+                              const subCopyKey = `sub:${link.id}:${sub.id}`;
+
+                              return (
+                                <div
+                                  key={sub.id}
+                                  className="rounded-xl border border-border bg-card hover:border-primary/45 transition-colors flex items-center gap-1.5 p-1.5 pl-2.5 shadow-2xs"
+                                >
+                                  <a
+                                    href={sanitizeSafeExternalHref(sub.url)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2.5 min-w-0 flex-1 py-0.5 group cursor-pointer"
+                                  >
+                                    <span
+                                      className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${subBrand.iconBoxClass}`}
+                                    >
+                                      {subBrand.subIcon}
+                                    </span>
+
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-black text-foreground group-hover:text-primary transition-colors leading-snug break-words">
+                                        {sub.title}
+                                      </p>
+                                      {sub.note ? (
+                                        <p className="text-[10.5px] font-bold text-muted-foreground leading-snug break-words mt-0.5">
+                                          {sub.note}
+                                        </p>
+                                      ) : (
+                                        <p className="text-[10px] font-mono text-muted-foreground truncate mt-0.5">
+                                          {sub.url.replace(/^https?:\/\//i, "")}
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <span
+                                      className={`px-2.5 py-1 rounded-lg text-[10.5px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-transform ${subBrand.buttonClass}`}
+                                    >
+                                      <span>{subBrand.buttonLabel}</span>
+                                      <ExternalLink className="w-3 h-3" />
+                                    </span>
+                                  </a>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) =>
+                                      handleCopyTextUrl(subCopyKey, sub.url, e)
+                                    }
+                                    className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0 cursor-pointer"
+                                    title="サブリンクのURLをコピー"
+                                  >
+                                    {copiedKey === subCopyKey ? (
+                                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : canEditThisLink ? (
+                        <div className="border-t border-dashed border-border bg-muted/20 px-3.5 py-2 flex items-center justify-between gap-2">
+                          <span className="text-[10.5px] font-bold text-muted-foreground flex items-center gap-1 min-w-0 truncate">
+                            <CornerDownRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                            <span className="truncate">
+                              大会日程・トーナメント表等のサブリンクを追加可能
+                            </span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => openSubLinkQuickModal(link, e)}
+                            className="px-2.5 py-1 rounded-lg bg-card hover:bg-muted border border-border text-[10.5px] font-black text-primary flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>サブリンク追加</span>
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -767,219 +1178,260 @@ export default function LiffLinksPage() {
           </div>
         </section>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div
+          className="h-8 w-full shrink-0 pointer-events-none select-none"
+          aria-hidden="true"
+        />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* ➕ 新規登録モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && isCreateModalOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+      {mounted &&
+        isCreateModalOpen &&
+        createPortal(
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={() => !isSubmitting && setIsCreateModalOpen(false)}
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200"
           >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
-                  <Link2 className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-black text-white">関連リンクの登録</h3>
-                  <p className="text-[10px] text-slate-300 font-bold">
-                    連盟・大会速報・施設予約・公式SNS
-                  </p>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[88dvh] sm:max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
+                    <Link2 className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-white">
+                      関連リンクの登録
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold">
+                      メインリンクと下層サブリンクをまとめて登録できます
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsCreateModalOpen(false)}
-                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 overflow-y-auto">
-              {submitError && (
-                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleCreateLink} className="space-y-4 text-xs font-bold">
-                {/* ⭐ 公式・推奨ピン留め選択 */}
-                <div
-                  onClick={() => setNewIsImportant(!newIsImportant)}
-                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                    newIsImportant
-                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
-                  }`}
+                <button
+                  type="button"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                      newIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                    }`}>
-                      <Flame className="w-4 h-4" />
-                    </span>
-                    <div>
-                      <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
-                      <span className="text-[10px] text-muted-foreground font-bold block">
-                        一覧の上部に優先表示され、推奨バッジが付きます
-                      </span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={newIsImportant}
-                    onChange={(e) => setNewIsImportant(e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary"
-                  />
-                </div>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-                {/* スコープ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">公開範囲</label>
-                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
-                    <button
-                      type="button"
-                      onClick={() => setNewScope("organization")}
-                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                        newScope === "organization"
-                          ? "bg-card text-foreground shadow-sm border border-border font-black"
-                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                      }`}
-                    >
-                      🏢 チーム全体（共通）
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNewScope("team")}
-                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                        newScope === "team"
-                          ? "bg-card text-foreground shadow-sm border border-border font-black"
-                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                      }`}
-                    >
-                      👥 {currentTeam?.teamName || "この編成"} のみ
-                    </button>
-                  </div>
-                </div>
-
-                {/* カテゴリ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">カテゴリ</label>
-                  <LiffSelect
-                    value={newCategory}
-                    onChange={setNewCategory}
-                    options={LINK_CATEGORY_OPTIONS}
-                    title="リンクカテゴリを選択"
-                    accent="amber"
-                    searchable={false}
-                    className="w-full"
-                  />
-                </div>
-
-                {/* タイトル */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">サイト名・リンク名</label>
-                  <input
-                    type="text"
-                    required
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="例: 全日本軟式野球連盟 (JSBB)"
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
-                  />
-                </div>
-
-                {/* URL */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">URL (リンク先)</label>
-                  <input
-                    type="url"
-                    required
-                    value={newUrl}
-                    onChange={(e) => setNewUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 font-mono text-[11px]"
-                  />
-                </div>
-
-                {/* 説明文 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">概要・説明 (任意)</label>
-                  <textarea
-                    rows={3}
-                    value={newDescription}
-                    onChange={(e) => setNewDescription(e.target.value)}
-                    placeholder="リンク先の内容や用途について簡単に記載してください"
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
-                  />
-                </div>
-
-                {/* 📷 ロゴ・画像添付エリア */}
-                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                      <ImageIcon className="w-4 h-4 text-primary" />
-                      <span>ロゴ・サムネイル画像 (任意)</span>
-                    </span>
-                    {newImageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setNewImageUrl("")}
-                        className="text-[10px] text-destructive hover:underline font-bold"
-                      >
-                        画像を削除
-                      </button>
-                    )}
-                  </div>
-
-                  {newImageUrl ? (
-                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
-                      <img
-                        src={newImageUrl}
-                        alt="プレビュー"
-                        loading="lazy"
-                        decoding="async"
-                        className="max-h-32 w-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleImageUpload(e, false)}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        disabled={isUploadingImage}
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        {isUploadingImage ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                            <span>アップロード中...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-primary" />
-                            <span>ロゴ画像を選択</span>
-                          </>
-                        )}
-                      </button>
+              <form
+                onSubmit={handleCreateLink}
+                className="flex flex-col flex-1 min-h-0 text-xs font-bold"
+              >
+                <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+                  {submitError && (
+                    <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{submitError}</span>
                     </div>
                   )}
+
+                  {/* ⭐ 公式・推奨ピン留め選択 */}
+                  <div
+                    onClick={() => setNewIsImportant(!newIsImportant)}
+                    className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                      newIsImportant
+                        ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                        : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                          newIsImportant
+                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <Flame className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <span className="font-black text-xs text-foreground block">
+                          公式・推奨リンクに設定する
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">
+                          一覧の上部に優先表示され、推奨バッジが付きます
+                        </span>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={newIsImportant}
+                      onChange={(e) => setNewIsImportant(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded accent-primary"
+                    />
+                  </div>
+
+                  {/* スコープ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      公開範囲
+                    </label>
+                    <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setNewScope("organization")}
+                        className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                          newScope === "organization"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                        }`}
+                      >
+                        🏢 チーム全体（共通）
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewScope("team")}
+                        className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                          newScope === "team"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                        }`}
+                      >
+                        👥 {currentTeam?.teamName || "この編成"} のみ
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* カテゴリ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      カテゴリ
+                    </label>
+                    <LiffSelect
+                      value={newCategory}
+                      onChange={setNewCategory}
+                      options={LINK_CATEGORY_OPTIONS}
+                      title="リンクカテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* タイトル */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      メインサイト名・リンク名
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="例: 〇〇市軟式野球連盟 公式サイト"
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60"
+                    />
+                  </div>
+
+                  {/* URL */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      メインURL (リンク先)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="url"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      required
+                      value={newUrl}
+                      onChange={(e) => setNewUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 font-mono text-[11px]"
+                    />
+                  </div>
+
+                  {/* 説明文 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      概要・説明 (任意)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={newDescription}
+                      onChange={(e) => setNewDescription(e.target.value)}
+                      placeholder="リンク先の内容や用途について簡単に記載してください"
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 placeholder:text-muted-foreground/60 leading-relaxed"
+                    />
+                  </div>
+
+                  {/* 🌿 サブリンク編集エリア */}
+                  <SubLinksEditorSection
+                    drafts={newSubLinks}
+                    onChange={setNewSubLinks}
+                    disabled={isSubmitting}
+                  />
+
+                  {/* 📷 ロゴ・画像添付エリア */}
+                  <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4 text-primary" />
+                        <span>ロゴ・サムネイル画像 (任意)</span>
+                      </span>
+                      {newImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setNewImageUrl("")}
+                          className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                        >
+                          画像を削除
+                        </button>
+                      )}
+                    </div>
+
+                    {newImageUrl ? (
+                      <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
+                        <img
+                          src={newImageUrl}
+                          alt="プレビュー"
+                          loading="lazy"
+                          decoding="async"
+                          className="max-h-32 w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(e, false)}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={isUploadingImage}
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          {isUploadingImage ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                              <span>アップロード中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-4 h-4 text-primary" />
+                              <span>ロゴ画像を選択</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                <div className="px-5 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-4 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() => setIsCreateModalOpen(false)}
@@ -989,7 +1441,9 @@ export default function LiffLinksPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isSubmitting || !newTitle.trim() || !newUrl.trim()}
+                    disabled={
+                      isSubmitting || !newTitle.trim() || !newUrl.trim()
+                    }
                     className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     {isSubmitting ? (
@@ -1004,220 +1458,261 @@ export default function LiffLinksPage() {
                 </div>
               </form>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {/* ✏️ 編集・削除モーダル (ポータル描画) */}
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {mounted && editingLink && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in duration-200">
+      {mounted &&
+        editingLink &&
+        createPortal(
           <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[90vh] flex flex-col"
+            onClick={() =>
+              !isSubmitting && !isDeleting && setEditingLink(null)
+            }
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200"
           >
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
-                  <Pencil className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-black text-white">関連リンクの編集</h3>
-                  <p className="text-[10px] text-slate-300 font-bold">リンク情報の更新または削除</p>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[88dvh] sm:max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
+                    <Pencil className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-white">
+                      関連リンクの編集
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold">
+                      メインリンク・サブリンクの更新または削除
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingLink(null)}
-                className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4 overflow-y-auto">
-              {submitError && (
-                <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{submitError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleUpdateLink} className="space-y-4 text-xs font-bold">
-                {/* ⭐ 公式・推奨ピン留め選択 */}
-                <div
-                  onClick={() => setEditIsImportant(!editIsImportant)}
-                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
-                    editIsImportant
-                      ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
-                      : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
-                  }`}
+                <button
+                  type="button"
+                  onClick={() => setEditingLink(null)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
-                      editIsImportant ? "bg-amber-500/20 text-amber-700 dark:text-amber-300" : "bg-muted text-muted-foreground"
-                    }`}>
-                      <Flame className="w-4 h-4" />
-                    </span>
-                    <div>
-                      <span className="font-black text-xs text-foreground block">公式・推奨リンクに設定する</span>
-                      <span className="text-[10px] text-muted-foreground font-bold block">
-                        一覧の上部に優先表示され、推奨バッジが付きます
-                      </span>
-                    </div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={editIsImportant}
-                    onChange={(e) => setEditIsImportant(e.target.checked)}
-                    className="w-4 h-4 rounded accent-primary"
-                  />
-                </div>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-                {/* スコープ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">公開範囲</label>
-                  <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
-                    <button
-                      type="button"
-                      onClick={() => setEditScope("organization")}
-                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                        editScope === "organization"
-                          ? "bg-card text-foreground shadow-sm border border-border font-black"
-                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                      }`}
-                    >
-                      🏢 チーム全体（共通）
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditScope("team")}
-                      className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
-                        editScope === "team"
-                          ? "bg-card text-foreground shadow-sm border border-border font-black"
-                          : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                      }`}
-                    >
-                      👥 {currentTeam?.teamName || "この編成"} のみ
-                    </button>
-                  </div>
-                </div>
-
-                {/* カテゴリ選択 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">カテゴリ</label>
-                  <LiffSelect
-                    value={editCategory}
-                    onChange={setEditCategory}
-                    options={LINK_CATEGORY_OPTIONS}
-                    title="リンクカテゴリを選択"
-                    accent="amber"
-                    searchable={false}
-                    className="w-full"
-                  />
-                </div>
-
-                {/* タイトル */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">サイト名・リンク名</label>
-                  <input
-                    type="text"
-                    required
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
-                  />
-                </div>
-
-                {/* URL */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">URL (リンク先)</label>
-                  <input
-                    type="url"
-                    required
-                    value={editUrl}
-                    onChange={(e) => setEditUrl(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 font-mono text-[11px]"
-                  />
-                </div>
-
-                {/* 説明文 */}
-                <div className="space-y-1.5">
-                  <label className="text-muted-foreground">概要・説明 (任意)</label>
-                  <textarea
-                    rows={3}
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
-                  />
-                </div>
-
-                {/* 📷 ロゴ・画像添付エリア */}
-                <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-foreground flex items-center gap-1.5">
-                      <ImageIcon className="w-4 h-4 text-primary" />
-                      <span>ロゴ・サムネイル画像 (任意)</span>
-                    </span>
-                    {editImageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setEditImageUrl("")}
-                        className="text-[10px] text-destructive hover:underline font-bold"
-                      >
-                        画像を削除
-                      </button>
-                    )}
-                  </div>
-
-                  {editImageUrl ? (
-                    <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
-                      <img
-                        src={editImageUrl}
-                        alt="プレビュー"
-                        loading="lazy"
-                        decoding="async"
-                        className="max-h-32 w-full object-contain"
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <input
-                        ref={editFileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => handleImageUpload(e, true)}
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        disabled={isEditUploadingImage}
-                        onClick={() => editFileInputRef.current?.click()}
-                        className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
-                      >
-                        {isEditUploadingImage ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                            <span>アップロード中...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 text-primary" />
-                            <span>ロゴ画像を選択</span>
-                          </>
-                        )}
-                      </button>
+              <form
+                onSubmit={handleUpdateLink}
+                className="flex flex-col flex-1 min-h-0 text-xs font-bold"
+              >
+                <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+                  {submitError && (
+                    <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{submitError}</span>
                     </div>
                   )}
+
+                  {/* ⭐ 公式・推奨ピン留め選択 */}
+                  <div
+                    onClick={() => setEditIsImportant(!editIsImportant)}
+                    className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                      editIsImportant
+                        ? "bg-amber-500/12 border-amber-500/40 text-amber-700 dark:text-amber-300"
+                        : "bg-muted/35 border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`w-7 h-7 rounded-xl flex items-center justify-center text-sm font-black ${
+                          editIsImportant
+                            ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <Flame className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <span className="font-black text-xs text-foreground block">
+                          公式・推奨リンクに設定する
+                        </span>
+                        <span className="text-[10px] text-muted-foreground font-bold block">
+                          一覧の上部に優先表示され、推奨バッジが付きます
+                        </span>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={editIsImportant}
+                      onChange={(e) => setEditIsImportant(e.target.checked)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded accent-primary"
+                    />
+                  </div>
+
+                  {/* スコープ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      公開範囲
+                    </label>
+                    <div className="grid grid-cols-2 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-2xl border border-border">
+                      <button
+                        type="button"
+                        onClick={() => setEditScope("organization")}
+                        className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                          editScope === "organization"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                        }`}
+                      >
+                        🏢 チーム全体（共通）
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditScope("team")}
+                        className={`py-2 px-3 rounded-xl text-xs transition-all cursor-pointer ${
+                          editScope === "team"
+                            ? "bg-card text-foreground shadow-sm border border-border font-black"
+                            : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                        }`}
+                      >
+                        👥 {currentTeam?.teamName || "この編成"} のみ
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* カテゴリ選択 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      カテゴリ
+                    </label>
+                    <LiffSelect
+                      value={editCategory}
+                      onChange={setEditCategory}
+                      options={LINK_CATEGORY_OPTIONS}
+                      title="リンクカテゴリを選択"
+                      accent="amber"
+                      searchable={false}
+                      className="w-full"
+                    />
+                  </div>
+
+                  {/* タイトル */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      メインサイト名・リンク名
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+
+                  {/* URL */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      メインURL (リンク先)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="url"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      required
+                      value={editUrl}
+                      onChange={(e) => setEditUrl(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 font-mono text-[11px]"
+                    />
+                  </div>
+
+                  {/* 説明文 */}
+                  <div className="space-y-1.5">
+                    <label className="text-muted-foreground block">
+                      概要・説明 (任意)
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-card border border-border text-foreground font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
+                    />
+                  </div>
+
+                  {/* 🌿 サブリンク編集エリア */}
+                  <SubLinksEditorSection
+                    drafts={editSubLinks}
+                    onChange={setEditSubLinks}
+                    disabled={isSubmitting || isDeleting}
+                  />
+
+                  {/* 📷 ロゴ・画像添付エリア */}
+                  <div className="space-y-2 p-3 rounded-2xl bg-muted/35 border border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4 text-primary" />
+                        <span>ロゴ・サムネイル画像 (任意)</span>
+                      </span>
+                      {editImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setEditImageUrl("")}
+                          className="text-[10px] text-destructive hover:underline font-bold cursor-pointer"
+                        >
+                          画像を削除
+                        </button>
+                      )}
+                    </div>
+
+                    {editImageUrl ? (
+                      <div className="relative rounded-xl overflow-hidden border border-border bg-card max-h-32 flex items-center justify-center">
+                        <img
+                          src={editImageUrl}
+                          alt="プレビュー"
+                          loading="lazy"
+                          decoding="async"
+                          className="max-h-32 w-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <input
+                          ref={editFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(e, true)}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          disabled={isEditUploadingImage}
+                          onClick={() => editFileInputRef.current?.click()}
+                          className="w-full py-2.5 px-3 rounded-xl border border-dashed border-border hover:border-primary/40 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                        >
+                          {isEditUploadingImage ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                              <span>アップロード中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="w-4 h-4 text-primary" />
+                              <span>ロゴ画像を選択</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-border">
+                <div className="px-5 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-4 border-t border-border bg-card flex items-center justify-between shrink-0">
                   <button
                     type="button"
                     onClick={handleDeleteLink}
-                    disabled={isDeleting}
+                    disabled={isDeleting || isSubmitting}
                     className="px-3 py-2 rounded-xl border border-rose-500/40 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-black text-xs transition-all flex items-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1234,7 +1729,9 @@ export default function LiffLinksPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmitting || !editTitle.trim() || !editUrl.trim()}
+                      disabled={
+                        isSubmitting || !editTitle.trim() || !editUrl.trim()
+                      }
                       className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
                     >
                       {isSubmitting ? (
@@ -1250,10 +1747,95 @@ export default function LiffLinksPage() {
                 </div>
               </form>
             </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {/* 🌿 サブリンク専用クイック追加・整理モーダル (ポータル描画) */}
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {mounted &&
+        subLinkTarget &&
+        createPortal(
+          <div
+            onClick={() => !isSubmitting && setSubLinkTarget(null)}
+            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xs overflow-hidden max-h-[88dvh] sm:max-h-[90dvh] flex flex-col"
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0 gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black shrink-0">
+                    <CornerDownRight className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">
+                      サブリンクの登録・編集
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold truncate">
+                      対象: {subLinkTarget.title}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSubLinkTarget(null)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 transition-all shrink-0 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form
+                onSubmit={handleSaveQuickSubLinks}
+                className="flex flex-col flex-1 min-h-0 text-xs font-bold"
+              >
+                <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1 min-h-0">
+                  {submitError && (
+                    <div className="p-3 rounded-2xl bg-destructive/10 text-destructive text-xs font-bold flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{submitError}</span>
+                    </div>
+                  )}
+
+                  <SubLinksEditorSection
+                    drafts={quickSubLinks}
+                    onChange={setQuickSubLinks}
+                    disabled={isSubmitting}
+                    focusLatestSignal={quickFocusSignal}
+                  />
+                </div>
+
+                <div className="px-5 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-4 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSubLinkTarget(null)}
+                    className="px-4 py-2.5 rounded-xl bg-card border border-border text-muted-foreground hover:bg-muted hover:text-foreground font-black text-xs transition-all cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs shadow-xs hover:bg-primary/90 active:scale-95 disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>保存中...</span>
+                      </>
+                    ) : (
+                      <span>サブリンクを保存</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

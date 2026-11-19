@@ -11,6 +11,7 @@ import {
   Building2,
   CalendarClock,
   ChevronRight,
+  CornerDownRight,
   Crown,
   ExternalLink,
   Globe,
@@ -50,7 +51,7 @@ import {
   type TeamInfoUpdateRequest,
   type TeamLinkSummaryItem,
 } from "@/lib/liff/team-profile-schema";
-import { cn } from "@/lib/utils";
+import { cn, sanitizeSafeExternalHref } from "@/lib/utils";
 
 const TeamCoverPhotoModal = dynamic(
   () =>
@@ -1092,28 +1093,62 @@ export default function LiffTeamInfoPage() {
 
                   {data.officialLinks.length > 0 ? (
                     <div className="space-y-2">
-                      {data.officialLinks.map((lnk) => (
-                        <a
-                          key={lnk.id}
-                          href={lnk.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2.5 p-2.5 rounded-xl border border-border bg-background hover:border-primary/40 transition-colors group"
-                        >
-                          {renderOfficialLinkBadge(lnk)}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-black text-foreground truncate group-hover:text-primary transition-colors">
-                              {lnk.title}
-                            </p>
-                            {lnk.description && (
-                              <p className="text-[10.5px] font-medium text-muted-foreground truncate">
-                                {lnk.description}
-                              </p>
+                      {data.officialLinks.map((lnk) => {
+                        const subLinks = lnk.subLinks ?? [];
+                        return (
+                          <div
+                            key={lnk.id}
+                            className="rounded-xl border border-border bg-background overflow-hidden"
+                          >
+                            <a
+                              href={sanitizeSafeExternalHref(lnk.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2.5 p-2.5 hover:bg-muted/40 transition-colors group"
+                            >
+                              {renderOfficialLinkBadge(lnk)}
+                              <div className="min-w-0 flex-1">
+                                <p className="text-xs font-black text-foreground truncate group-hover:text-primary transition-colors">
+                                  {lnk.title}
+                                </p>
+                                {lnk.description && (
+                                  <p className="text-[10.5px] font-medium text-muted-foreground truncate">
+                                    {lnk.description}
+                                  </p>
+                                )}
+                              </div>
+                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            </a>
+
+                            {subLinks.length > 0 && (
+                              <div className="border-t border-border bg-muted/25 px-2.5 py-2 space-y-1">
+                                {subLinks.map((sub) => (
+                                  <a
+                                    key={sub.id}
+                                    href={sanitizeSafeExternalHref(sub.url)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-border bg-card hover:border-primary/40 transition-colors group"
+                                  >
+                                    <CornerDownRight className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[11px] font-black text-foreground truncate group-hover:text-primary transition-colors">
+                                        {sub.title}
+                                      </p>
+                                      {sub.note && (
+                                        <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                          {sub.note}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
+                                  </a>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        </a>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <Link
