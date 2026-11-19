@@ -235,9 +235,22 @@ export function isPresetStaffRole(roleKey: string, roleLabel: string): boolean {
   return PRESET_ROLE_LABEL_SET.has((roleLabel || "").trim());
 }
 
+const NONE_ASSIGNEE_TOKENS = new Set<string>([
+  "なし",
+  "無し",
+  "ナシ",
+  "不要",
+  "担当なし",
+  "該当なし",
+]);
+
+export function isNoneAssigneeToken(raw: string): boolean {
+  return NONE_ASSIGNEE_TOKENS.has(raw.trim());
+}
+
 /**
  * 既存の「球審」「塁審」個別データを「審判（umpire）」1枠へ自動統合する（後方互換対応）
- * ※固定プリセット枠は担当者またはメモがある場合のみ保持し、手動追加されたカスタム枠は未割当でも枠自体を保持する
+ * ※固定プリセット枠は担当者・メモ・「なし（isNone）」指定のいずれかがある場合のみ保持し、手動追加されたカスタム枠は未割当でも枠自体を保持する
  */
 export function normalizeUnifiedStaffRoles(
   rawRoles: readonly MatchStaffRoleAssignment[] | undefined | null
@@ -246,6 +259,7 @@ export function normalizeUnifiedStaffRoles(
 
   const result: MatchStaffRoleAssignment[] = [];
   let mergedUmpireIndex = -1;
+  let umpireExplicitNone = false;
   const umpireAssignees: string[] = [];
   const umpireAssigneeSet = new Set<string>();
   const umpireNotes: string[] = [];
@@ -256,13 +270,26 @@ export function normalizeUnifiedStaffRoles(
     const cleanLabel = (item.roleLabel || "").trim();
     if (!cleanLabel) continue;
 
-    const cleanAssignees = (item.assignees || [])
+    const trimmedAssignees = (item.assignees || [])
       .map((a) => a.trim())
       .filter((a) => a.length > 0);
+    const hasNoneToken = trimmedAssignees.some((a) => isNoneAssigneeToken(a));
+    const cleanAssignees = trimmedAssignees.filter(
+      (a) => !isNoneAssigneeToken(a)
+    );
+    const effectiveIsNone =
+      cleanAssignees.length === 0 && (Boolean(item.isNone) || hasNoneToken);
     const cleanNote = (item.note || "").trim();
     const isPreset = isPresetStaffRole(cleanKey, cleanLabel);
 
-    if (isPreset && cleanAssignees.length === 0 && !cleanNote) continue;
+    if (
+      isPreset &&
+      !effectiveIsNone &&
+      cleanAssignees.length === 0 &&
+      !cleanNote
+    ) {
+      continue;
+    }
 
     if (isUmpireStaffRole(cleanKey, cleanLabel)) {
       if (mergedUmpireIndex === -1) {
@@ -272,6 +299,9 @@ export function normalizeUnifiedStaffRoles(
           roleLabel: "審判",
           assignees: [],
         });
+      }
+      if (effectiveIsNone) {
+        umpireExplicitNone = true;
       }
       for (const person of cleanAssignees) {
         if (!umpireAssigneeSet.has(person)) {
@@ -289,16 +319,20 @@ export function normalizeUnifiedStaffRoles(
         roleLabel: cleanLabel,
         assignees: cleanAssignees,
         note: cleanNote || undefined,
+        isNone: effectiveIsNone || undefined,
       });
     }
   }
 
   if (mergedUmpireIndex !== -1) {
+    const finalUmpireIsNone =
+      umpireAssignees.length === 0 && umpireExplicitNone;
     result[mergedUmpireIndex] = {
       roleKey: "umpire",
       roleLabel: "審判",
       assignees: umpireAssignees,
       note: umpireNotes.length > 0 ? umpireNotes.join(" / ") : undefined,
+      isNone: finalUmpireIsNone || undefined,
     };
   }
 
@@ -340,7 +374,7 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
       const roleKey = typeof rec.roleKey === "string" ? rec.roleKey.trim() : "";
       const roleLabel =
         typeof rec.roleLabel === "string" ? rec.roleLabel.trim() : "";
-      const assignees = Array.isArray(rec.assignees)
+      const rawAssignees = Array.isArray(rec.assignees)
         ? rec.assignees
             .map((a) => (typeof a === "string" ? a.trim() : ""))
             .filter((a) => a.length > 0)
@@ -350,14 +384,22 @@ export function parseMatchDayOpsJson(raw: unknown): MatchDayOps {
             .map((a) => a.trim())
             .filter((a) => a.length > 0)
         : [];
+      const hasNoneToken = rawAssignees.some((a) => isNoneAssigneeToken(a));
+      const assignees = rawAssignees.filter((a) => !isNoneAssigneeToken(a));
+      const isNone =
+        assignees.length === 0 && (rec.isNone === true || hasNoneToken);
       const note = typeof rec.note === "string" ? rec.note.trim() : "";
       const isPreset = isPresetStaffRole(roleKey, roleLabel);
-      if (roleLabel && (!isPreset || assignees.length > 0 || note.length > 0)) {
+      if (
+        roleLabel &&
+        (!isPreset || isNone || assignees.length > 0 || note.length > 0)
+      ) {
         parsedStaffRoles.push({
           roleKey: roleKey || `custom_${parsedStaffRoles.length + 1}`,
           roleLabel,
           assignees,
           note: note || undefined,
+          isNone: isNone || undefined,
         });
       }
     }
@@ -403,6 +445,7 @@ export interface ResolvedMatchStaffRoleRow {
   assignees: string[];
   note?: string;
   isCustom: boolean;
+  isNone: boolean;
   isAssigned: boolean;
 }
 
@@ -410,8 +453,13 @@ export interface SplitMatchStaffRolesResult {
   presetRoles: ResolvedMatchStaffRoleRow[];
   customRoles: ResolvedMatchStaffRoleRow[];
   assignedPresetCount: number;
+  nonePresetCount: number;
+  activePresetCount: number;
   assignedCustomCount: number;
+  noneCustomCount: number;
   assignedTotalCount: number;
+  noneTotalCount: number;
+  isAllRolesNone: boolean;
 }
 
 /**
@@ -441,6 +489,7 @@ export function splitPresetAndCustomStaffRoles(
 
       const assignees = saved ? [...saved.assignees] : [];
       const note = saved?.note?.trim() || undefined;
+      const isNone = Boolean(saved?.isNone) && assignees.length === 0;
       return {
         roleKey: preset.roleKey,
         roleLabel: preset.roleLabel,
@@ -448,7 +497,8 @@ export function splitPresetAndCustomStaffRoles(
         assignees,
         note,
         isCustom: false,
-        isAssigned: assignees.length > 0 || Boolean(note),
+        isNone,
+        isAssigned: !isNone && (assignees.length > 0 || Boolean(note)),
       };
     }
   );
@@ -460,6 +510,7 @@ export function splitPresetAndCustomStaffRoles(
     if (!cleanLabel) return;
     const assignees = [...item.assignees];
     const note = item.note?.trim() || undefined;
+    const isNone = Boolean(item.isNone) && assignees.length === 0;
     customRoles.push({
       roleKey: item.roleKey || `custom_${idx + 1}`,
       roleLabel: cleanLabel,
@@ -467,35 +518,42 @@ export function splitPresetAndCustomStaffRoles(
       assignees,
       note,
       isCustom: true,
-      isAssigned: assignees.length > 0 || Boolean(note),
+      isNone,
+      isAssigned: !isNone && (assignees.length > 0 || Boolean(note)),
     });
   });
 
   const assignedPresetCount = presetRoles.filter((r) => r.isAssigned).length;
+  const nonePresetCount = presetRoles.filter((r) => r.isNone).length;
+  const activePresetCount = Math.max(0, presetRoles.length - nonePresetCount);
   const assignedCustomCount = customRoles.filter((r) => r.isAssigned).length;
+  const noneCustomCount = customRoles.filter((r) => r.isNone).length;
+  const assignedTotalCount = assignedPresetCount + assignedCustomCount;
+  const noneTotalCount = nonePresetCount + noneCustomCount;
+  const isAllRolesNone =
+    presetRoles.length > 0 &&
+    nonePresetCount === presetRoles.length &&
+    assignedTotalCount === 0 &&
+    customRoles.every((r) => r.isNone);
 
   return {
     presetRoles,
     customRoles,
     assignedPresetCount,
+    nonePresetCount,
+    activePresetCount,
     assignedCustomCount,
-    assignedTotalCount: assignedPresetCount + assignedCustomCount,
+    noneCustomCount,
+    assignedTotalCount,
+    noneTotalCount,
+    isAllRolesNone,
   };
 }
 
-export function getFilledStaffRoles(
-  ops: MatchDayOps | null | undefined
+function sortStaffRolesInDisplayOrder(
+  roles: MatchStaffRoleAssignment[]
 ): MatchStaffRoleAssignment[] {
-  if (!ops?.staffRoles) return [];
-  return normalizeUnifiedStaffRoles(ops.staffRoles)
-    .filter((r) => {
-      const cleanLabel = r.roleLabel.trim();
-      if (!cleanLabel) return false;
-      if (!isPresetStaffRole(r.roleKey, cleanLabel)) {
-        return true;
-      }
-      return r.assignees.length > 0 || Boolean(r.note?.trim());
-    })
+  return roles
     .map((r, originalIdx) => {
       const isCustom = r.roleKey.startsWith("custom_");
       const rank = isCustom
@@ -507,6 +565,42 @@ export function getFilledStaffRoles(
     })
     .sort((a, b) => a.rank - b.rank)
     .map((entry) => entry.role);
+}
+
+/**
+ * 実際に担当者またはメモが記録されている役割一覧（「なし」指定枠は除外：試合後の協力スタッフ記録・自分の担当照合用）
+ */
+export function getFilledStaffRoles(
+  ops: MatchDayOps | null | undefined
+): MatchStaffRoleAssignment[] {
+  if (!ops?.staffRoles) return [];
+  const filtered = normalizeUnifiedStaffRoles(ops.staffRoles).filter((r) => {
+    const cleanLabel = r.roleLabel.trim();
+    if (!cleanLabel || r.isNone) return false;
+    if (!isPresetStaffRole(r.roleKey, cleanLabel)) {
+      return r.assignees.length > 0 || Boolean(r.note?.trim());
+    }
+    return r.assignees.length > 0 || Boolean(r.note?.trim());
+  });
+  return sortStaffRolesInDisplayOrder(filtered);
+}
+
+/**
+ * 試合前しおり・LINE連絡文向け：担当者割当・メモ・「なし（isNone）」を含む設定済み役割一覧
+ */
+export function getConfiguredStaffRoles(
+  ops: MatchDayOps | null | undefined
+): MatchStaffRoleAssignment[] {
+  if (!ops?.staffRoles) return [];
+  const filtered = normalizeUnifiedStaffRoles(ops.staffRoles).filter((r) => {
+    const cleanLabel = r.roleLabel.trim();
+    if (!cleanLabel) return false;
+    if (!isPresetStaffRole(r.roleKey, cleanLabel)) {
+      return true;
+    }
+    return Boolean(r.isNone) || r.assignees.length > 0 || Boolean(r.note?.trim());
+  });
+  return sortStaffRolesInDisplayOrder(filtered);
 }
 
 export function resolveEffectiveMealLabel(
@@ -530,8 +624,8 @@ export function hasAnyGuidebookContent(
   ops: MatchDayOps | null | undefined,
   scheduleSync: LiffMatchScheduleSyncInfo | null | undefined
 ): boolean {
-  const filledRoles = getFilledStaffRoles(ops);
-  if (filledRoles.length > 0) return true;
+  const configuredRoles = getConfiguredStaffRoles(ops);
+  if (configuredRoles.length > 0) return true;
   if (ops?.gatherTime || ops?.gatherPlace || ops?.uniform || ops?.mealNote || ops?.belongingsNote) {
     return true;
   }
@@ -560,6 +654,7 @@ export function isAssigneeMatchingIdentity(
   identity: LiffMyMatchIdentity | null | undefined
 ): boolean {
   if (!identity) return false;
+  if (isNoneAssigneeToken(assigneeRaw)) return false;
   const normTarget = normalizeNameToken(assigneeRaw);
   if (!normTarget || normTarget.length < 2) return false;
 
@@ -586,8 +681,10 @@ export function findMyAssignedStaffRoles(
 ): MatchStaffRoleAssignment[] {
   const filled = getFilledStaffRoles(ops);
   if (!identity || filled.length === 0) return [];
-  return filled.filter((role) =>
-    role.assignees.some((person) => isAssigneeMatchingIdentity(person, identity))
+  return filled.filter(
+    (role) =>
+      !role.isNone &&
+      role.assignees.some((person) => isAssigneeMatchingIdentity(person, identity))
   );
 }
 
@@ -725,14 +822,26 @@ export function buildPreMatchAnnouncementShareText(
   }
 
   // 2. お父さん・保護者の役割担当
-  const filledRoles = getFilledStaffRoles(ops);
-  if (filledRoles.length > 0) {
+  const configuredRoles = getConfiguredStaffRoles(ops);
+  const splitRoles = splitPresetAndCustomStaffRoles(ops);
+  if (configuredRoles.length > 0) {
     lines.push("");
     lines.push("━━ 当日の役割担当 ━━");
-    for (const r of filledRoles) {
-      const who = r.assignees.length > 0 ? r.assignees.join("・") : "調整中";
-      const notePart = r.note ? `（${r.note}）` : "";
-      lines.push(`・${r.roleLabel}: ${who}${notePart}`);
+    if (
+      splitRoles.isAllRolesNone &&
+      configuredRoles.every((r) => !r.note?.trim())
+    ) {
+      lines.push("・役割分担: なし");
+    } else {
+      for (const r of configuredRoles) {
+        const who = r.isNone
+          ? "なし"
+          : r.assignees.length > 0
+            ? r.assignees.join("・")
+            : "調整中";
+        const notePart = r.note ? `（${r.note}）` : "";
+        lines.push(`・${r.roleLabel}: ${who}${notePart}`);
+      }
     }
   }
 

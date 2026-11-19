@@ -15,6 +15,8 @@ export interface MatchStaffRoleAssignment {
   roleLabel: string;
   assignees: string[];
   note?: string;
+  /** この試合では該当役割が不要・「なし」であることを明示（未定と区別） */
+  isNone?: boolean;
 }
 
 export type MatchMealOption =

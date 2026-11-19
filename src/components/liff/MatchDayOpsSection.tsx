@@ -46,11 +46,14 @@ import {
   UNIFORM_QUICK_PRESETS,
   findMyAssignedStaffRoles,
   findMyFamilyCarpoolMatches,
+  getConfiguredStaffRoles,
   getFilledStaffRoles,
   hasAnyGuidebookContent,
   isAssigneeMatchingIdentity,
+  isNoneAssigneeToken,
   normalizeUnifiedStaffRoles,
   resolveEffectiveMealLabel,
+  splitPresetAndCustomStaffRoles,
   type LiffAdultMemberOption,
   type LiffMatchScheduleSyncInfo,
   type LiffMyMatchIdentity,
@@ -82,6 +85,8 @@ export function MatchDayGuideAndRolesSection({
   const [isShareCopied, setIsShareCopied] = useState(false);
 
   const filledRoles = useMemo(() => getFilledStaffRoles(ops), [ops]);
+  const configuredRoles = useMemo(() => getConfiguredStaffRoles(ops), [ops]);
+  const splitRoles = useMemo(() => splitPresetAndCustomStaffRoles(ops), [ops]);
   const myAssignedRoles = useMemo(
     () => findMyAssignedStaffRoles(ops, myIdentity),
     [ops, myIdentity]
@@ -220,11 +225,22 @@ export function MatchDayGuideAndRolesSection({
             <span className="text-xs font-black text-white truncate">
               集合・持ち物・保護者役割分担
             </span>
-            {filledRoles.length > 0 && (
+            {splitRoles.isAllRolesNone ? (
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black shrink-0">
+                役割なし
+              </span>
+            ) : filledRoles.length > 0 ? (
               <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono tabular-nums shrink-0">
                 担当 {filledRoles.length}枠
+                {splitRoles.noneTotalCount > 0
+                  ? `・なし${splitRoles.noneTotalCount}`
+                  : ""}
               </span>
-            )}
+            ) : splitRoles.noneTotalCount > 0 ? (
+              <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black font-mono tabular-nums shrink-0">
+                なし {splitRoles.noneTotalCount}枠
+              </span>
+            ) : null}
           </div>
 
           {canEdit && (
@@ -274,7 +290,7 @@ export function MatchDayGuideAndRolesSection({
               <EmptyState
                 icon={ClipboardList}
                 title="当日の集合・審判/スコア担当が未設定です"
-                description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を1タップで共有できます"
+                description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当（または「なし」）を1タップで共有できます"
               />
               {canEdit && (
                 <div className="grid grid-cols-2 gap-2">
@@ -413,12 +429,12 @@ export function MatchDayGuideAndRolesSection({
                       onClick={() => onOpenEditor("roles")}
                       className="text-[11px] font-black text-primary hover:underline cursor-pointer"
                     >
-                      {filledRoles.length > 0 ? "役割を変更" : "＋ 担当を割り当てる"}
+                      {configuredRoles.length > 0 ? "役割を変更" : "＋ 担当を割り当てる"}
                     </button>
                   )}
                 </div>
 
-                {filledRoles.length === 0 ? (
+                {configuredRoles.length === 0 ? (
                   canEdit ? (
                     <button
                       type="button"
@@ -429,7 +445,7 @@ export function MatchDayGuideAndRolesSection({
                         審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
                       </p>
                       <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
-                        タップして保護者メンバーから1タップ選択できます
+                        タップして保護者メンバー選択・不要な枠は「なし」に設定できます
                       </p>
                     </button>
                   ) : (
@@ -439,22 +455,43 @@ export function MatchDayGuideAndRolesSection({
                       </p>
                     </div>
                   )
+                ) : splitRoles.isAllRolesNone &&
+                  configuredRoles.every((r) => !r.note) ? (
+                  <div className="rounded-xl border border-border bg-muted/40 px-3.5 py-2.5 flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-700 text-white text-[11px] font-black shrink-0">
+                      役割なし
+                    </span>
+                    <span className="text-xs font-bold text-muted-foreground text-right">
+                      この試合は審判・スコアラー等の役割分担はありません
+                    </span>
+                  </div>
                 ) : (
                   <div className="rounded-xl border border-border overflow-hidden bg-card divide-y divide-border">
-                    {filledRoles.map((role) => (
+                    {configuredRoles.map((role) => (
                       <div
                         key={role.roleKey}
                         className="px-3 py-2 flex items-start justify-between gap-2 odd:bg-card even:bg-muted/30"
                       >
                         <div className="min-w-0 shrink-0 pt-0.5">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-900 text-white dark:bg-slate-800 text-[11px] font-black leading-tight">
+                          <span
+                            className={cn(
+                              "inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-black leading-tight",
+                              role.isNone
+                                ? "bg-muted text-muted-foreground border border-border"
+                                : "bg-slate-900 text-white dark:bg-slate-800"
+                            )}
+                          >
                             {role.roleLabel}
                           </span>
                         </div>
 
                         <div className="flex-1 min-w-0 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-1">
-                            {role.assignees.length > 0 ? (
+                            {role.isNone ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-xs font-black">
+                                なし
+                              </span>
+                            ) : role.assignees.length > 0 ? (
                               role.assignees.map((person) => {
                                 const isMe = isAssigneeMatchingIdentity(
                                   person,
@@ -816,6 +853,7 @@ interface EditableStaffRoleRow {
   notePlaceholder: string;
   assignees: string[];
   note: string;
+  isNone: boolean;
   isCustom?: boolean;
 }
 
@@ -905,25 +943,29 @@ export function MatchDayOpsEditorModal({
         if (saved) {
           existingByKey.delete(saved.roleKey);
         }
+        const savedAssignees = saved ? [...saved.assignees] : [];
         return {
           roleKey: preset.roleKey,
           roleLabel: preset.roleLabel,
           shortHint: preset.shortHint,
           notePlaceholder: preset.notePlaceholder,
-          assignees: saved ? [...saved.assignees] : [],
+          assignees: savedAssignees,
           note: saved?.note || "",
+          isNone: Boolean(saved?.isNone) && savedAssignees.length === 0,
         };
       }
     );
 
     for (const leftover of existingByKey.values()) {
+      const leftoverAssignees = [...leftover.assignees];
       mergedRows.push({
         roleKey: leftover.roleKey,
         roleLabel: leftover.roleLabel,
         shortHint: "カスタム役割",
         notePlaceholder: "補足メモ（任意）",
-        assignees: [...leftover.assignees],
+        assignees: leftoverAssignees,
         note: leftover.note || "",
+        isNone: Boolean(leftover.isNone) && leftoverAssignees.length === 0,
         isCustom: true,
       });
     }
@@ -959,16 +1001,84 @@ export function MatchDayOpsEditorModal({
 
   if (!mounted || !isOpen) return null;
 
+  const hasUnsetRoleRows = roleRows.some(
+    (r) => !r.isNone && r.assignees.length === 0 && !r.note.trim()
+  );
+  const areAllRoleRowsNone =
+    roleRows.length > 0 && roleRows.every((r) => r.isNone);
+
+  const toggleRoleNone = (roleKey: string) => {
+    setRoleRows((prev) =>
+      prev.map((row) => {
+        if (row.roleKey !== roleKey) return row;
+        const nextNone = !row.isNone;
+        return {
+          ...row,
+          isNone: nextNone,
+          assignees: nextNone ? [] : row.assignees,
+        };
+      })
+    );
+    setCustomAssigneeInputs((prev) => {
+      if (!prev[roleKey]) return prev;
+      const next = { ...prev };
+      delete next[roleKey];
+      return next;
+    });
+  };
+
+  const clearRoleToUnset = (roleKey: string) => {
+    setRoleRows((prev) =>
+      prev.map((row) =>
+        row.roleKey === roleKey
+          ? { ...row, isNone: false, assignees: [] }
+          : row
+      )
+    );
+    setCustomAssigneeInputs((prev) => {
+      if (!prev[roleKey]) return prev;
+      const next = { ...prev };
+      delete next[roleKey];
+      return next;
+    });
+  };
+
+  const handleFillUnsetRolesWithNone = () => {
+    setRoleRows((prev) =>
+      prev.map((row) => {
+        if (!row.isNone && row.assignees.length === 0 && !row.note.trim()) {
+          return { ...row, isNone: true };
+        }
+        return row;
+      })
+    );
+  };
+
+  const handleToggleAllRolesNone = () => {
+    if (areAllRoleRowsNone) {
+      setRoleRows((prev) =>
+        prev.map((row) => ({ ...row, isNone: false }))
+      );
+      return;
+    }
+    setRoleRows((prev) =>
+      prev.map((row) => ({ ...row, isNone: true, assignees: [] }))
+    );
+    setCustomAssigneeInputs({});
+  };
+
   const toggleRoleAssignee = (roleKey: string, memberName: string) => {
     setRoleRows((prev) =>
       prev.map((row) => {
         if (row.roleKey !== roleKey) return row;
         const exists = row.assignees.includes(memberName);
+        const nextAssignees = exists
+          ? row.assignees.filter((n) => n !== memberName)
+          : [...row.assignees, memberName];
         return {
           ...row,
-          assignees: exists
-            ? row.assignees.filter((n) => n !== memberName)
-            : [...row.assignees, memberName],
+          isNone: false,
+          assignees: nextAssignees,
         };
       })
     );
@@ -984,16 +1094,31 @@ export function MatchDayOpsEditorModal({
     const rawText = customAssigneeInputs[roleKey] || "";
     const tokens = parseFreeTextAssignees(rawText);
     if (tokens.length === 0) return;
+
+    const validPeople = tokens.filter((t) => !isNoneAssigneeToken(t));
+    if (validPeople.length === 0) {
+      // 「なし」「不要」と手入力された場合は「なし（isNone: true）」設定として扱う
+      setRoleRows((prev) =>
+        prev.map((row) =>
+          row.roleKey === roleKey
+            ? { ...row, isNone: true, assignees: [] }
+            : row
+        )
+      );
+      setCustomAssigneeInputs((prev) => ({ ...prev, [roleKey]: "" }));
+      return;
+    }
+
     setRoleRows((prev) =>
       prev.map((row) => {
         if (row.roleKey !== roleKey) return row;
         const merged = [...row.assignees];
-        for (const name of tokens) {
+        for (const name of validPeople) {
           if (!merged.includes(name)) {
             merged.push(name);
           }
         }
-        return { ...row, assignees: merged };
+        return { ...row, isNone: false, assignees: merged };
       })
     );
     setCustomAssigneeInputs((prev) => ({ ...prev, [roleKey]: "" }));
@@ -1036,6 +1161,7 @@ export function MatchDayOpsEditorModal({
         notePlaceholder: "補足メモ（任意）",
         assignees: [],
         note: "",
+        isNone: false,
         isCustom: true,
       },
     ]);
@@ -1050,13 +1176,17 @@ export function MatchDayOpsEditorModal({
         customAssigneeInputs[row.roleKey] || ""
       );
       if (pendingTokens.length === 0) return row;
+      const validPeople = pendingTokens.filter((t) => !isNoneAssigneeToken(t));
+      if (validPeople.length === 0) {
+        return { ...row, isNone: true, assignees: [] };
+      }
       const merged = [...row.assignees];
-      for (const name of pendingTokens) {
+      for (const name of validPeople) {
         if (!merged.includes(name)) {
           merged.push(name);
         }
       }
-      return { ...row, assignees: merged };
+      return { ...row, isNone: false, assignees: merged };
     });
 
     const pendingNewRoleLabel = newCustomRoleLabel.trim();
@@ -1068,6 +1198,7 @@ export function MatchDayOpsEditorModal({
         notePlaceholder: "補足メモ（任意）",
         assignees: [],
         note: "",
+        isNone: false,
         isCustom: true,
       });
     }
@@ -1086,14 +1217,22 @@ export function MatchDayOpsEditorModal({
         const cleanLabel = r.roleLabel.trim();
         if (!cleanLabel) return false;
         if (r.isCustom) return true;
-        return r.assignees.length > 0 || Boolean(r.note.trim());
+        return r.isNone || r.assignees.length > 0 || Boolean(r.note.trim());
       })
-      .map((r) => ({
-        roleKey: r.roleKey,
-        roleLabel: r.roleLabel.trim(),
-        assignees: r.assignees.map((a) => a.trim()).filter(Boolean),
-        note: r.note.trim() || undefined,
-      }));
+      .map((r) => {
+        const cleanAssignees = r.isNone
+          ? []
+          : r.assignees
+              .map((a) => a.trim())
+              .filter((a) => a.length > 0 && !isNoneAssigneeToken(a));
+        return {
+          roleKey: r.roleKey,
+          roleLabel: r.roleLabel.trim(),
+          assignees: cleanAssignees,
+          note: r.note.trim() || undefined,
+          isNone: r.isNone && cleanAssignees.length === 0 ? true : undefined,
+        };
+      });
 
     const payload: MatchDayOps = {
       gatherTime: gatherTime.trim() || undefined,
@@ -1201,24 +1340,53 @@ export function MatchDayOpsEditorModal({
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {activeTab === "roles" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-bold text-muted-foreground">
-                  役割をタップして、お父さん・保護者メンバーを1タップ選択
-                </p>
-                {adultMembers.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-bold text-muted-foreground">
+                    役割ごとに保護者を選択（不要な枠は「なし」を1タップ）
+                  </p>
+                  {adultMembers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFathersFirstOnly((v) => !v)}
+                      className={cn(
+                        "px-2 py-1 rounded-lg border text-[10px] font-black shrink-0 cursor-pointer",
+                        showFathersFirstOnly
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-muted text-foreground border-border"
+                      )}
+                    >
+                      {showFathersFirstOnly ? "父・スタッフのみ" : "保護者全員表示"}
+                    </button>
+                  )}
+                </div>
+
+                {/* 一括「なし」クイック操作バー */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {hasUnsetRoleRows && !areAllRoleRowsNone && (
+                    <button
+                      type="button"
+                      onClick={handleFillUnsetRolesWithNone}
+                      className="h-7 px-2.5 rounded-lg border border-border bg-muted/70 hover:bg-muted text-[10.5px] font-black text-foreground transition-colors cursor-pointer"
+                    >
+                      未入力枠を一括「なし」に
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setShowFathersFirstOnly((v) => !v)}
+                    onClick={handleToggleAllRolesNone}
                     className={cn(
-                      "px-2 py-1 rounded-lg border text-[10px] font-black shrink-0 cursor-pointer",
-                      showFathersFirstOnly
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-foreground border-border"
+                      "h-7 px-2.5 rounded-lg border text-[10.5px] font-black transition-colors cursor-pointer",
+                      areAllRoleRowsNone
+                        ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-700 dark:border-slate-600"
+                        : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border"
                     )}
                   >
-                    {showFathersFirstOnly ? "父・スタッフのみ" : "保護者全員表示"}
+                    {areAllRoleRowsNone
+                      ? "全枠「未定」に戻す"
+                      : "全枠を「なし」にする"}
                   </button>
-                )}
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1241,7 +1409,14 @@ export function MatchDayOpsEditorModal({
                           }
                           className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
                         >
-                          <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white text-[11px] font-black shrink-0 max-w-[140px] truncate">
+                          <span
+                            className={cn(
+                              "px-2 py-0.5 rounded-md text-[11px] font-black shrink-0 max-w-[140px] truncate",
+                              row.isNone
+                                ? "bg-muted text-muted-foreground border border-border"
+                                : "bg-slate-900 text-white"
+                            )}
+                          >
                             {row.roleLabel.trim() || "名称未入力"}
                           </span>
                           {row.isCustom && (
@@ -1250,20 +1425,42 @@ export function MatchDayOpsEditorModal({
                             </span>
                           )}
                           <span className="text-[11px] font-bold text-muted-foreground truncate">
-                            {count > 0
-                              ? row.assignees.join("・")
-                              : row.note
-                                ? row.note
-                                : row.shortHint}
+                            {row.isNone
+                              ? row.note
+                                ? `なし（${row.note}）`
+                                : "なし（担当不要）"
+                              : count > 0
+                                ? row.assignees.join("・")
+                                : row.note
+                                  ? row.note
+                                  : row.shortHint}
                           </span>
                         </button>
 
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {count > 0 && (
+                          {count > 0 && !row.isNone && (
                             <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black font-mono">
                               {count}名
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => toggleRoleNone(row.roleKey)}
+                            aria-pressed={row.isNone}
+                            title={
+                              row.isNone
+                                ? "「なし」を解除して未定に戻す"
+                                : "この役割を「なし」にする"
+                            }
+                            className={cn(
+                              "px-2 py-0.5 rounded-md border text-[10.5px] font-black transition-colors cursor-pointer shrink-0",
+                              row.isNone
+                                ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-700 dark:border-slate-500"
+                                : "bg-card hover:bg-muted text-muted-foreground hover:text-foreground border-border"
+                            )}
+                          >
+                            {row.isNone ? "なし✓" : "なし"}
+                          </button>
                           {row.isCustom && (
                             <button
                               type="button"
@@ -1326,6 +1523,37 @@ export function MatchDayOpsEditorModal({
                               />
                             </div>
                           )}
+
+                          {/* 「なし（不要）」トグル ＆ 未定クリア操作バー */}
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleRoleNone(row.roleKey)}
+                              aria-pressed={row.isNone}
+                              className={cn(
+                                "h-8 px-3 rounded-lg border text-[11px] font-black inline-flex items-center gap-1.5 transition-colors cursor-pointer",
+                                row.isNone
+                                  ? "bg-slate-800 text-white border-slate-800 dark:bg-slate-700 dark:border-slate-600"
+                                  : "bg-muted/60 hover:bg-muted text-foreground border-border"
+                              )}
+                            >
+                              {row.isNone && (
+                                <Check className="w-3.5 h-3.5 shrink-0" />
+                              )}
+                              <span>この役割は「なし」（不要）</span>
+                            </button>
+
+                            {(row.isNone || row.assignees.length > 0) && (
+                              <button
+                                type="button"
+                                onClick={() => clearRoleToUnset(row.roleKey)}
+                                className="h-8 px-2.5 rounded-lg border border-border bg-card hover:bg-muted text-[10.5px] font-bold text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                              >
+                                未定に戻す
+                              </button>
+                            )}
+                          </div>
+
                           {/* 選択済みメンバー */}
                           {row.assignees.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
@@ -1349,7 +1577,9 @@ export function MatchDayOpsEditorModal({
                           {visibleAdultMembers.length > 0 && (
                             <div className="space-y-1">
                               <span className="text-[10px] font-bold text-muted-foreground block">
-                                メンバーからタップで追加・解除:
+                                {row.isNone
+                                  ? "※「なし」設定中です（メンバーをタップすると担当割当に切り替わります）:"
+                                  : "メンバーからタップで追加・解除:"}
                               </span>
                               <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 rounded-lg bg-muted/35 border border-border">
                                 {visibleAdultMembers.map((m) => {
@@ -1393,7 +1623,7 @@ export function MatchDayOpsEditorModal({
                                   handleAddCustomAssignee(row.roleKey);
                                 }
                               }}
-                              placeholder="自由入力で追加（例: 連盟派遣 / 小西父）"
+                              placeholder="自由入力で追加（例: 連盟派遣 / 山田父）"
                               className="flex-1 h-9 px-3 rounded-xl border border-border bg-background text-xs font-bold text-foreground"
                             />
                             <button
@@ -1488,7 +1718,7 @@ export function MatchDayOpsEditorModal({
                   placeholder={
                     scheduleSync?.gatherLocation
                       ? `日程連動: ${scheduleSync.gatherLocation}`
-                      : "例: 現地球場 第1駐車場 / 桜本小 正門前"
+                      : "例: 現地球場 第1駐車場 / 〇〇小 正門前"
                   }
                   className="w-full h-10 px-3 rounded-xl border border-border bg-background text-xs font-bold text-foreground"
                 />
@@ -1648,7 +1878,7 @@ export function MatchDayOpsEditorModal({
                   type="text"
                   value={cargoCarMember}
                   onChange={(e) => setCargoCarMember(e.target.value)}
-                  placeholder="例: 山下 監督 / 小西 父"
+                  placeholder="例: 山田 監督 / 佐藤 父"
                   className="w-full h-10 px-3 rounded-xl border border-border bg-background text-xs font-bold text-foreground"
                 />
                 {adultMembers.length > 0 && (
