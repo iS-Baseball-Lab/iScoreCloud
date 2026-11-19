@@ -7,7 +7,6 @@ import {
   organizations,
   relatedTeams,
   teams,
-  tournaments,
 } from "@/db/schema";
 import {
   parseOrganizationProfileDetails,
@@ -884,11 +883,11 @@ liffRelatedTeamsRouter.get("/", async (c) => {
         orgName: "川崎中央デモクラブ",
         squadName: "Aチーム",
         categoryLabel: "学童野球（軟式）",
-        areaHint: "神奈川県川崎市",
+        areaHint: "",
         leagueSuggestions: [
           "川崎市学童軟式野球連盟",
           "多摩区少年野球連盟",
-          "春季親善リーグ",
+          "練習試合・広域交流",
         ],
       },
     });
@@ -902,7 +901,6 @@ liffRelatedTeamsRouter.get("/", async (c) => {
         id: teams.id,
         name: teams.name,
         organizationId: teams.organizationId,
-        homeGround: teams.homeGround,
       })
       .from(teams)
       .where(eq(teams.id, teamId))
@@ -927,7 +925,7 @@ liffRelatedTeamsRouter.get("/", async (c) => {
 
   const orgId = teamRow.organizationId;
 
-  const [orgRow, relatedRows, tournamentRows] = await Promise.all([
+  const [orgRow, relatedRows] = await Promise.all([
     orgId
       ? db
           .select({
@@ -935,7 +933,6 @@ liffRelatedTeamsRouter.get("/", async (c) => {
             name: organizations.name,
             shortName: organizations.shortName,
             category: organizations.category,
-            profileJson: organizations.profileJson,
           })
           .from(organizations)
           .where(eq(organizations.id, orgId))
@@ -956,25 +953,8 @@ liffRelatedTeamsRouter.get("/", async (c) => {
           : eq(relatedTeams.teamId, teamId)
       )
       .all(),
-    db
-      .select({
-        name: tournaments.name,
-        organizer: tournaments.organizer,
-      })
-      .from(tournaments)
-      .where(
-        orgId
-          ? or(
-              eq(tournaments.teamId, teamId),
-              eq(tournaments.organizationId, orgId)
-            )
-          : eq(tournaments.teamId, teamId)
-      )
-      .all()
-      .catch(() => []),
   ]);
 
-  const orgProfile = parseOrganizationProfileDetails(orgRow?.profileJson);
   const categoryOption = resolveTeamCategoryOption(orgRow?.category);
 
   // 自クラブ自身の名前（誤って未登録対戦相手に出さないように除外）
@@ -1113,16 +1093,8 @@ liffRelatedTeamsRouter.get("/", async (c) => {
     }
   }
 
-  // 連盟・グループ候補リストを生成
+  // 連盟・グループ候補リスト（登録済み関連チームのグループ名のみを採用し、大会主催企業等は含めない）
   const suggestionSet = new Set<string>();
-  for (const lg of orgProfile.affiliatedLeagues) {
-    if (lg.trim()) suggestionSet.add(lg.trim());
-  }
-  for (const tr of tournamentRows) {
-    if (tr.organizer && tr.organizer.trim()) {
-      suggestionSet.add(tr.organizer.trim());
-    }
-  }
   for (const rt of relatedRows) {
     if (rt.leagueName && rt.leagueName.trim()) {
       suggestionSet.add(rt.leagueName.trim());
@@ -1195,7 +1167,7 @@ liffRelatedTeamsRouter.get("/", async (c) => {
       squadName: squadLabel,
       categoryLabel:
         categoryOption.value !== "other" ? categoryOption.shortLabel : "",
-      areaHint: orgProfile.activityArea || teamRow.homeGround || "",
+      areaHint: "",
       leagueSuggestions: Array.from(suggestionSet).slice(0, 15),
     },
   });
@@ -1758,7 +1730,6 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       id: teams.id,
       name: teams.name,
       organizationId: teams.organizationId,
-      homeGround: teams.homeGround,
     })
     .from(teams)
     .where(eq(teams.id, teamId))
@@ -1776,7 +1747,6 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
             name: organizations.name,
             shortName: organizations.shortName,
             category: organizations.category,
-            profileJson: organizations.profileJson,
           })
           .from(organizations)
           .where(eq(organizations.id, orgId))
@@ -1807,12 +1777,10 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     if (k) ownKeys.add(k);
   }
 
-  const orgProfile = parseOrganizationProfileDetails(orgRow?.profileJson);
   const catOpt = resolveTeamCategoryOption(orgRow?.category);
   const effectiveCategory =
     categoryHint || (catOpt.value !== "other" ? catOpt.label : "");
-  const effectiveArea =
-    areaHint || orgProfile.activityArea || teamRow.homeGround || "";
+  const effectiveArea = areaHint;
 
   let pageDigest:
     | {
@@ -2154,7 +2122,6 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
   const teamRow = await db
     .select({
       organizationId: teams.organizationId,
-      homeGround: teams.homeGround,
     })
     .from(teams)
     .where(eq(teams.id, teamId))
@@ -2174,10 +2141,8 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
   const orgProfile = parseOrganizationProfileDetails(orgRow?.profileJson);
   const catOpt = resolveTeamCategoryOption(orgRow?.category);
 
-  const effectiveArea =
-    areaHint || orgProfile.activityArea || teamRow?.homeGround || "";
-  const effectiveLeague =
-    leagueHint || (orgProfile.affiliatedLeagues[0] ?? "");
+  const effectiveArea = areaHint || orgProfile.activityArea || "";
+  const effectiveLeague = leagueHint;
   const effectiveCategory =
     categoryHint || (catOpt.value !== "other" ? catOpt.label : "");
 
@@ -2232,7 +2197,7 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
       '  "name": "正式なチーム名",',
       '  "shortName": "スコアボード等向けの4〜8文字の略称",',
       '  "leagueName": "所属連盟・協会名（不明なら空文字）",',
-      '  "area": "活動地域・市区町村（例: 神奈川県川崎市高津区、不明なら空文字）",',
+      '  "area": "活動地域・市区町村（例: 〇〇県〇〇市〇〇区、不明なら空文字）",',
       '  "homeGround": "主な練習拠点・ホームグラウンド・小学校名（不明なら空文字）",',
       '  "description": "創部・活動方針・対象学年・特徴などの簡潔な紹介文（120文字以内、不明なら空文字）",',
       '  "websiteUrl": "公式サイト・チーム代表ページの実在URL（未確認なら空文字）",',

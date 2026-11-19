@@ -98,7 +98,6 @@ interface CreateOrEditRelatedTeamModalProps {
   teamId: string;
   squadName: string;
   isDemoMode: boolean;
-  defaultAreaHint: string;
   defaultCategoryHint: string;
   leagueSuggestions: ReadonlyArray<string>;
   onClose: () => void;
@@ -112,7 +111,6 @@ export function CreateOrEditRelatedTeamModal({
   teamId,
   squadName,
   isDemoMode,
-  defaultAreaHint,
   defaultCategoryHint,
   leagueSuggestions,
   onClose,
@@ -170,7 +168,7 @@ export function CreateOrEditRelatedTeamModal({
     } else {
       setName("");
       setShortName("");
-      setLeagueName(leagueSuggestions[0] || "");
+      setLeagueName("");
       setRelationType("league_member");
       setArea("");
       setHomeGround("");
@@ -180,7 +178,7 @@ export function CreateOrEditRelatedTeamModal({
       setScope("organization");
       setIsFavorite(false);
     }
-  }, [isOpen, editingTeam, leagueSuggestions]);
+  }, [isOpen, editingTeam]);
 
   if (!mounted || !isOpen) return null;
 
@@ -248,9 +246,9 @@ export function CreateOrEditRelatedTeamModal({
         body: JSON.stringify({
           teamId,
           name: trimmedName,
-          leagueHint: leagueName.trim(),
-          areaHint: area.trim() || defaultAreaHint,
-          categoryHint: defaultCategoryHint,
+          leagueHint: leagueName.trim() || undefined,
+          areaHint: area.trim() || undefined,
+          categoryHint: defaultCategoryHint || undefined,
         }),
       });
       const data = (await res.json()) as {
@@ -865,9 +863,7 @@ interface BulkAiDiscoverModalProps {
   teamId: string;
   squadName: string;
   isDemoMode: boolean;
-  defaultAreaHint: string;
   defaultCategoryHint: string;
-  leagueSuggestions: ReadonlyArray<string>;
   onClose: () => void;
   onBulkRegister: (params: {
     scope: "organization" | "team";
@@ -882,9 +878,7 @@ export function BulkAiDiscoverModal({
   teamId,
   squadName,
   isDemoMode,
-  defaultAreaHint,
   defaultCategoryHint,
-  leagueSuggestions,
   onClose,
   onBulkRegister,
 }: BulkAiDiscoverModalProps) {
@@ -920,11 +914,13 @@ export function BulkAiDiscoverModal({
   useEffect(() => {
     if (!isOpen) return;
     setErrorMsg(null);
-    setAreaHint(defaultAreaHint);
-    if (!query && leagueSuggestions.length > 0) {
-      setQuery(leagueSuggestions[0]);
-    }
-  }, [isOpen, defaultAreaHint, leagueSuggestions, query]);
+    setQuery("");
+    setSourceUrl("");
+    setAreaHint("");
+    setDiscoverResult(null);
+    setSelectedTempIds(new Set());
+    setOverrideLeagueName("");
+  }, [isOpen]);
 
   if (!mounted || !isOpen) return null;
 
@@ -1118,24 +1114,6 @@ export function BulkAiDiscoverModal({
                 placeholder="例: 〇〇市学童軟式野球連盟 / 〇〇区少年野球連盟"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-xs font-bold focus:outline-hidden focus:ring-2 focus:ring-primary/40"
               />
-              {leagueSuggestions.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto pt-0.5 scrollbar-none">
-                  {leagueSuggestions.map((sug) => (
-                    <button
-                      key={sug}
-                      type="button"
-                      onClick={() => setQuery(sug)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border shrink-0 transition-all cursor-pointer ${
-                        query === sug
-                          ? "bg-primary/15 text-primary border-primary/40 font-black"
-                          : "bg-card text-muted-foreground border-border hover:text-foreground"
-                      }`}
-                    >
-                      {sug}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -1456,8 +1434,8 @@ export function PastOpponentsImportModal({
     if (!isOpen) return;
     setErrorMsg(null);
     setSelectedNames(new Set(opponents.map((o) => o.opponentName)));
-    setLeagueName(leagueSuggestions[0] || "");
-  }, [isOpen, opponents, leagueSuggestions]);
+    setLeagueName("");
+  }, [isOpen, opponents]);
 
   if (!mounted || !isOpen) return null;
 

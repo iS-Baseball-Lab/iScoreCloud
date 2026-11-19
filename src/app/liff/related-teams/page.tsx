@@ -168,15 +168,9 @@ export default function LiffRelatedTeamsPage() {
   const [unregisteredOpponents, setUnregisteredOpponents] = useState<
     UnregisteredOpponentItem[]
   >(() => initialCached?.unregisteredOpponents ?? []);
-  const [areaHint, setAreaHint] = useState<string>(
-    () => initialCached?.context?.areaHint ?? ""
-  );
   const [categoryLabel, setCategoryLabel] = useState<string>(
     () => initialCached?.context?.categoryLabel ?? ""
   );
-  const [serverLeagueSuggestions, setServerLeagueSuggestions] = useState<
-    string[]
-  >(() => initialCached?.context?.leagueSuggestions ?? []);
 
   const [isLoading, setIsLoading] = useState<boolean>(
     () => !initialCached?.teams
@@ -215,9 +209,7 @@ export default function LiffRelatedTeamsPage() {
       }
       setTeams(data.teams || []);
       setUnregisteredOpponents(data.unregisteredOpponents || []);
-      setAreaHint(data.context?.areaHint || "");
       setCategoryLabel(data.context?.categoryLabel || "");
-      setServerLeagueSuggestions(data.context?.leagueSuggestions || []);
     } catch (err) {
       console.error("[LiffRelatedTeamsPage] load error:", err);
       setLoadError(true);
@@ -237,17 +229,14 @@ export default function LiffRelatedTeamsPage() {
     await loadRelatedTeams();
   }, [loadRelatedTeams]);
 
-  // 連盟・グループ候補リスト（サーバー提案 ＋ 現在登録中の連盟名をマージ）
+  // 連盟・グループ候補リスト（登録済み関連チームの連盟・グループ名のみ）
   const mergedLeagueSuggestions = useMemo(() => {
     const set = new Set<string>();
-    for (const s of serverLeagueSuggestions) {
-      if (s.trim()) set.add(s.trim());
-    }
     for (const t of teams) {
       if (t.leagueName.trim()) set.add(t.leagueName.trim());
     }
     return Array.from(set);
-  }, [serverLeagueSuggestions, teams]);
+  }, [teams]);
 
   // フィルターチップ用の連盟別件数集計
   const leagueFilterTabs = useMemo(() => {
@@ -1138,7 +1127,6 @@ export default function LiffRelatedTeamsPage() {
         teamId={activeTeamId}
         squadName={squadLabel}
         isDemoMode={isDemoMode}
-        defaultAreaHint={areaHint}
         defaultCategoryHint={categoryLabel}
         leagueSuggestions={mergedLeagueSuggestions}
         onClose={() => {
@@ -1155,9 +1143,7 @@ export default function LiffRelatedTeamsPage() {
         teamId={activeTeamId}
         squadName={squadLabel}
         isDemoMode={isDemoMode}
-        defaultAreaHint={areaHint}
         defaultCategoryHint={categoryLabel}
-        leagueSuggestions={mergedLeagueSuggestions}
         onClose={() => setIsAiDiscoverOpen(false)}
         onBulkRegister={handleBulkRegisterFromAi}
       />

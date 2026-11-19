@@ -112,7 +112,7 @@ description: 草野球・アマチュア野球向けの本格的スコアブッ�
 ・関連チームディレクトリ（連盟・団体別一覧・公式HP/SNSリンク・対戦成績自動連携・AI自動収集）規約（`/liff/related-teams` — `related_teams` ＆ `/api/liff/related-teams`）：
   - `予定・試合` ➔ `試合・記録` カテゴリーに配置し、所属連盟・大会・交流グループ別（`A-3` ダークキャップ見出し）に加盟チーム・対戦相手・兄弟/上部チームを一覧表示する。各チームにはメインの `website_url`（公式サイト）に加え、最大12件の種別付きリンク（`instagram` `#E1306C`・`youtube` `#FF0000`・`line` `#06C755`・`x` `#0f172a`・`facebook` `#1877F2`・`map` `#1A73E8`・`blog`・`official`・`other`、すべてグラデーションなしの単色ソリッドブランドボタン）を `related_teams.links_json` に登録できる。
   - `matches.opponent`（A/Bチーム等の編成サフィックス名寄せ `extractOpponentMatchKeys` 対応）と自動照合し、各チームカードに通算対戦成績・直近対戦日/スコア（`🏆 通算 〇戦 〇勝〇敗`）と未登録の過去対戦相手ワンタップ一括取込バナーを表示する。
-  - AI収集は **① 連盟・団体名キーワードまたは公開加盟チーム一覧URLからのAI一括収集（`POST /api/liff/related-teams/ai-discover`：SSRF防御 `isSafePublicFetchUrl` ＋ `Shift_JIS`/`EUC-JP`/`UTF-8` 自動判定ページ解析 ＋ Gemini マルチプール `google_search` ➔ チェックリスト選択 `POST /api/liff/related-teams/bulk`［D1バインド上限100未満の4件チャンク分割］）** と **② 個別チーム名からの公式HP・SNS・拠点AI自動調査（`POST /api/liff/related-teams/ai-lookup` ➔ 確認反映プレビュー）** の双方を提供する（推測・架空URLの生成は厳禁とし実在確認できた `http(s)` URLのみ抽出する）。
+  - AI収集は **① 連盟・団体名キーワードまたは公開加盟チーム一覧URLからのAI一括収集（`POST /api/liff/related-teams/ai-discover`：キーワード・地域ヒントとも初期値は空文字かつ大会主催企業等の自動候補チップは出さず、SSRF防御 `isSafePublicFetchUrl` ＋ `Shift_JIS`/`EUC-JP`/`UTF-8` 自動判定ページ解析 ＋ Gemini マルチプール `google_search` ➔ チェックリスト選択 `POST /api/liff/related-teams/bulk`［D1バインド上限100未満の4件チャンク分割］）** と **② 個別チーム名からの公式HP・SNS・拠点AI自動調査（`POST /api/liff/related-teams/ai-lookup` ➔ 確認反映プレビュー）** の双方を提供する（推測・架空URLの生成は厳禁とし実在確認できた `http(s)` URLのみ抽出する）。
 
 ## 【パフォーマンス・爆速化規約（超重要）】
 1. DDLロックの完全排除：API（特にGETリクエスト）で毎回 `ALTER TABLE` / `CREATE TABLE` 書き込みクエリを直列実行することを厳禁とする。スキーマ補完が必要な場合は `PRAGMA table_info` / `sqlite_master` の単一バッチ読取＋Isolateメモリキャッシュで判定し、既存環境での書き込みDDLをゼロに保つこと。
