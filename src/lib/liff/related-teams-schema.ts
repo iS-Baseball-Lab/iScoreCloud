@@ -101,6 +101,7 @@ export interface AiDiscoveredTeamCandidate {
   links: RelatedTeamLinkItem[];
   confidence: "high" | "medium" | "low";
   alreadyRegistered: boolean;
+  hasExistingLinks?: boolean;
 }
 
 export interface RelatedTeamAiLookupResult {
@@ -337,6 +338,98 @@ export function toRelatedTeamLinkDrafts(
   }));
 }
 
+/**
+ * 手入力やAI出力でよくある `@account_id` やドット無しハンドル名、`instagram.com/@handle` 等の表記揺れを
+ * 正規の `https://...` URLへ自動補正する
+ */
+export function normalizeRelatedTeamLinkUrlInput(
+  rawUrl: string,
+  kind?: RelatedTeamLinkKind
+): string {
+  const trimmed = rawUrl.trim().replace(/^＠/u, "@");
+  if (!trimmed) return "";
+
+  // 1. `@handle` 形式（Instagram / X / YouTube / LINE公式 / Facebook）の自動URL展開
+  if (trimmed.startsWith("@")) {
+    const handle = trimmed
+      .slice(1)
+      .trim()
+      .replace(/^\/+|\/+$/g, "");
+    if (!handle || /\s/.test(handle)) {
+      return normalizeHttpUrlInput(trimmed);
+    }
+    if (kind === "x") {
+      return `https://x.com/${handle}`;
+    }
+    if (kind === "youtube") {
+      return `https://www.youtube.com/@${handle}`;
+    }
+    if (kind === "line") {
+      return `https://line.me/R/ti/p/@${handle}`;
+    }
+    if (kind === "facebook") {
+      return `https://www.facebook.com/${handle}`;
+    }
+    return `https://www.instagram.com/${handle}/`;
+  }
+
+  // 2. スキームもドットもスラッシュも含まない純粋なアカウントID文字列がSNS種別欄に入力された場合
+  if (
+    !/[.:/\s]/.test(trimmed) &&
+    /^[a-z0-9._-]{2,40}$/i.test(trimmed)
+  ) {
+    if (kind === "instagram") {
+      return `https://www.instagram.com/${trimmed}/`;
+    }
+    if (kind === "x") {
+      return `https://x.com/${trimmed}`;
+    }
+    if (kind === "youtube") {
+      return `https://www.youtube.com/@${trimmed}`;
+    }
+    if (kind === "facebook") {
+      return `https://www.facebook.com/${trimmed}`;
+    }
+    if (kind === "line") {
+      return `https://line.me/R/ti/p/@${trimmed}`;
+    }
+  }
+
+  const normalized = normalizeHttpUrlInput(trimmed);
+
+  // 3. `instagram.com/@handle` や `x.com/@handle` の誤 `@` 付与を正規パスへ補正
+  try {
+    const parsed = new URL(normalized);
+    const host = parsed.hostname.toLowerCase();
+    const segs = parsed.pathname.split("/").filter(Boolean);
+    if (segs.length >= 1 && segs[0].startsWith("@") && segs[0].length > 1) {
+      if (
+        host === "instagram.com" ||
+        host === "www.instagram.com" ||
+        host === "m.instagram.com"
+      ) {
+        segs[0] = segs[0].slice(1);
+        parsed.pathname = `/${segs.join("/")}/`;
+        return parsed.toString();
+      }
+      if (
+        host === "x.com" ||
+        host === "www.x.com" ||
+        host === "twitter.com" ||
+        host === "www.twitter.com"
+      ) {
+        segs[0] = segs[0].slice(1);
+        parsed.pathname = `/${segs.join("/")}`;
+        return parsed.toString();
+      }
+    }
+  } catch {
+    // keep normalized as-is for downstream validator
+  }
+
+  return normalized;
+}
+
 export function parseRelatedTeamLinksJson(
   raw: string | null | undefined
 ): RelatedTeamLinkItem[] {
@@ -361,22 +454,29 @@ export function parseRelatedTeamLinksJson(
       const rawUrl = typeof record.url === "string" ? record.url.trim() : "";
       if (!rawUrl) continue;
 
-      const urlCheck = validateSafeHttpUrl(rawUrl, { allowEmpty: false });
+      const rawLabel =
+        typeof record.label === "string"
+          ? record.label.trim().slice(0, MAX_RELATED_TEAM_LINK_LABEL_LENGTH)
+          : "";
+      const rawKind = typeof record.kind === "string" ? record.kind.trim() : "";
+      const hintKind: RelatedTeamLinkKind | undefined = VALID_LINK_KINDS.has(
+        rawKind as RelatedTeamLinkKind
+      )
+        ? (rawKind as RelatedTeamLinkKind)
+        : undefined;
+
+      const normalizedUrl = normalizeRelatedTeamLinkUrlInput(rawUrl, hintKind);
+      const urlCheck = validateSafeHttpUrl(normalizedUrl, { allowEmpty: false });
       if (!urlCheck.ok || !urlCheck.url) continue;
 
       const urlKey = urlCheck.url.toLowerCase();
       if (seenUrls.has(urlKey)) continue;
       seenUrls.add(urlKey);
 
-      const rawLabel =
-        typeof record.label === "string"
-          ? record.label.trim().slice(0, MAX_RELATED_TEAM_LINK_LABEL_LENGTH)
-          : "";
-      const rawKind = typeof record.kind === "string" ? record.kind.trim() : "";
-      const resolvedKind: RelatedTeamLinkKind = VALID_LINK_KINDS.has(
-        rawKind as RelatedTeamLinkKind
-      )
-        ? (rawKind as RelatedTeamLinkKind)
+      const resolvedKind: RelatedTeamLinkKind = hintKind
+        ? hintKind === "other"
+          ? inferRelatedTeamLinkKind(urlCheck.url, rawLabel)
+          : hintKind
         : inferRelatedTeamLinkKind(urlCheck.url, rawLabel);
 
       const label =
@@ -458,7 +558,14 @@ export function validateAndNormalizeRelatedTeamLinks(
 
   for (let i = 0; i < nonEmptyRows.length; i += 1) {
     const row = nonEmptyRows[i];
-    const candidateUrl = normalizeHttpUrlInput(row.rawUrl);
+    const hintKind: RelatedTeamLinkKind | undefined = VALID_LINK_KINDS.has(
+      row.rawKind as RelatedTeamLinkKind
+    )
+      ? (row.rawKind as RelatedTeamLinkKind)
+      : inferRelatedTeamLinkKind("", row.label) !== "other"
+        ? inferRelatedTeamLinkKind("", row.label)
+        : undefined;
+    const candidateUrl = normalizeRelatedTeamLinkUrlInput(row.rawUrl, hintKind);
     const urlCheck = validateSafeHttpUrl(candidateUrl, { allowEmpty: false });
 
     const inferredKind = inferRelatedTeamLinkKind(candidateUrl, row.label);
@@ -1017,6 +1124,109 @@ export function extractCanonicalSnsIdentity(rawUrl: string): string | null {
   }
 
   return null;
+}
+
+const SUSPICIOUS_GENERIC_SNS_HANDLES = new Set([
+  "sample",
+  "example",
+  "dummy",
+  "test",
+  "official",
+  "baseball",
+  "youthbaseball",
+  "juniorbaseball",
+  "account",
+  "username",
+  "userid",
+  "yourname",
+  "your_account",
+  "your_team",
+  "teamname",
+  "team_name",
+  "instagram",
+  "twitter",
+  "facebook",
+  "youtube",
+  "line",
+  "xxxx",
+  "0000",
+  "1234",
+  "12345",
+  "abc",
+  "abcd",
+]);
+
+const PLATFORM_OFFICIAL_SNS_HANDLES = new Set([
+  "ameba_official",
+  "ameblo_official",
+  "cyberagent",
+  "sposuru",
+  "sposuru_official",
+  "89dream",
+  "ikz",
+  "teams_one",
+  "wix",
+  "wixjp",
+  "jimdo",
+  "jimdo_jp",
+  "fc2info",
+  "blog.fc2",
+  "livedoorblog",
+  "hatenablog",
+  "note_com",
+  "note_pr",
+  "wordpress",
+  "wordpressdotcom",
+  "peraichi",
+  "strikingly",
+  "studio_inc",
+  "studiodesignapp",
+  "google",
+  "googlejapan",
+  "yahoojp",
+]);
+
+/**
+ * AIがハルシネーションで埋めがちなプレースホルダーSNSハンドル（`sample`, `official` 単体, `team_name`, `xxxx` 等）を検出
+ * ※実在チームの `xxx_official` や `baseball_xxx` 等は正常通過させる
+ */
+export function isSuspiciousGenericSnsHandle(rawUrl: string): boolean {
+  const identity = extractCanonicalSnsIdentity(rawUrl);
+  if (!identity) return false;
+
+  const parts = identity.split(":");
+  const handle = (parts[parts.length - 1] || "")
+    .replace(/^@/, "")
+    .trim()
+    .toLowerCase();
+  if (!handle) return true;
+
+  if (SUSPICIOUS_GENERIC_SNS_HANDLES.has(handle)) {
+    return true;
+  }
+  if (
+    /^(?:sample|example|dummy)[_.-]/i.test(handle) ||
+    /[_.-](?:sample|example|dummy)$/i.test(handle) ||
+    /^x{3,}$/i.test(handle)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * ブログ・HP作成サービス自体（Ameba / Wix / Jimdo / スポスル / 89dream 等）の運営公式SNSアカウントかどうかを判定
+ * チームHP内のフッターから運営会社SNSを誤抽出しないために使用
+ */
+export function isPlatformOfficialSnsAccount(rawUrl: string): boolean {
+  const identity = extractCanonicalSnsIdentity(rawUrl);
+  if (!identity) return false;
+  const parts = identity.split(":");
+  const handle = (parts[parts.length - 1] || "")
+    .replace(/^@/, "")
+    .trim()
+    .toLowerCase();
+  return Boolean(handle && PLATFORM_OFFICIAL_SNS_HANDLES.has(handle));
 }
 
 /**

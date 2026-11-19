@@ -12,8 +12,8 @@ import {
   parseOrganizationProfileDetails,
   resolveTeamCategoryOption,
 } from "@/lib/liff/team-profile-schema";
-import { normalizeHttpUrlInput } from "@/lib/liff/team-links-schema";
 import {
+  MAX_LINKS_PER_RELATED_TEAM,
   MAX_RELATED_TEAM_AREA_LENGTH,
   MAX_RELATED_TEAM_DESC_LENGTH,
   MAX_RELATED_TEAM_GROUND_LENGTH,
@@ -28,9 +28,12 @@ import {
   hasSoft404HtmlSignature,
   inferRelatedTeamLinkKind,
   isPlaceholderOpponentName,
+  isPlatformOfficialSnsAccount,
   isSafePublicFetchUrl,
+  isSuspiciousGenericSnsHandle,
   isUselessAiTeamUrl,
   normalizeOpponentMatchKey,
+  normalizeRelatedTeamLinkUrlInput,
   normalizeRelationType,
   parseOrSalvageAiJsonObject,
   parseRelatedTeamLinksJson,
@@ -42,6 +45,7 @@ import {
   type RelatedTeamAiSourceLink,
   type RelatedTeamItem,
   type RelatedTeamLinkItem,
+  type RelatedTeamLinkKind,
   type RelatedTeamMatchStats,
   type RelatedTeamRelationType,
   type UnregisteredOpponentItem,
@@ -245,6 +249,8 @@ interface GeminiGenerateCandidate {
   };
   groundingMetadata?: {
     groundingChunks?: GeminiGroundingChunk[];
+    webSearchQueries?: string[];
+    searchEntryPoint?: unknown;
   };
 }
 
@@ -405,10 +411,22 @@ function cleanAiString(val: unknown, maxLen = 200): string {
   return trimmed.slice(0, maxLen);
 }
 
+interface VerifiedUrlOutcome {
+  verifiedUrl: string | null;
+  discoveredSnsLinks: RelatedTeamLinkItem[];
+}
+
 const LIVE_URL_VERIFY_CACHE = new Map<
   string,
-  { expiresAt: number; verifiedUrl: string | null }
+  {
+    expiresAt: number;
+    verifiedUrl: string | null;
+    discoveredSnsLinks: RelatedTeamLinkItem[];
+  }
 >();
+
+const VERIFIER_BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function normalizeComparableUrlKey(rawUrl: string): string {
   try {
@@ -451,15 +469,19 @@ function isBotWalledSnsHost(rawUrl: string): boolean {
   }
 }
 
-function sanitizeAiUrl(rawUrl: unknown): string {
+function sanitizeAiUrl(
+  rawUrl: unknown,
+  kindHint?: RelatedTeamLinkKind
+): string {
   if (typeof rawUrl !== "string") return "";
   const trimmed = rawUrl.trim();
   if (!trimmed) return "";
-  const normalized = normalizeHttpUrlInput(trimmed);
+  const normalized = normalizeRelatedTeamLinkUrlInput(trimmed, kindHint);
   if (isUselessAiTeamUrl(normalized)) return "";
   const check = isSafePublicFetchUrl(normalized);
   if (!check.ok || !check.url) return "";
   if (isUselessAiTeamUrl(check.url)) return "";
+  if (isSuspiciousGenericSnsHandle(check.url)) return "";
   return check.url;
 }
 
@@ -470,22 +492,45 @@ function sanitizeAiLinks(
   if (!Array.isArray(rawLinks)) return [];
   const out: RelatedTeamLinkItem[] = [];
   const seenUrls = new Set<string>();
+  const seenIdentities = new Set<string>();
   if (primaryWebsiteUrl) {
     seenUrls.add(normalizeComparableUrlKey(primaryWebsiteUrl));
+    const webIdentity = extractCanonicalSnsIdentity(primaryWebsiteUrl);
+    if (webIdentity) seenIdentities.add(webIdentity);
   }
 
   for (const item of rawLinks) {
-    if (out.length >= 8) break;
+    if (out.length >= 10) break;
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
-    const cleanUrl = sanitizeAiUrl(rec.url);
+    const rawLabel = cleanAiString(rec.label, 60);
+    const rawKindStr = cleanAiString(rec.kind, 24).toLowerCase();
+    const labelInferred = inferRelatedTeamLinkKind("", rawLabel);
+    const kindHint: RelatedTeamLinkKind | undefined =
+      rawKindStr === "instagram" ||
+      rawKindStr === "youtube" ||
+      rawKindStr === "x" ||
+      rawKindStr === "line" ||
+      rawKindStr === "facebook" ||
+      rawKindStr === "blog" ||
+      rawKindStr === "map" ||
+      rawKindStr === "official"
+        ? rawKindStr
+        : labelInferred !== "other"
+          ? labelInferred
+          : undefined;
+
+    const cleanUrl = sanitizeAiUrl(rec.url, kindHint);
     if (!cleanUrl) continue;
 
     const urlKey = normalizeComparableUrlKey(cleanUrl);
-    if (seenUrls.has(urlKey)) continue;
+    const snsId = extractCanonicalSnsIdentity(cleanUrl);
+    if (seenUrls.has(urlKey) || (snsId && seenIdentities.has(snsId))) {
+      continue;
+    }
     seenUrls.add(urlKey);
+    if (snsId) seenIdentities.add(snsId);
 
-    const rawLabel = cleanAiString(rec.label, 60);
     const kind = inferRelatedTeamLinkKind(cleanUrl, rawLabel);
     const label = rawLabel || getRelatedTeamLinkKindDefaultLabel(kind);
 
@@ -524,12 +569,32 @@ async function runWithConcurrencyLimit<T, R>(
   return results;
 }
 
+function unwrapGoogleUrlQueryIfPresent(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      (host === "www.google.com" ||
+        host === "google.com" ||
+        host === "www.google.co.jp") &&
+      parsed.pathname === "/url"
+    ) {
+      const target =
+        parsed.searchParams.get("q") || parsed.searchParams.get("url") || "";
+      if (target) return target.trim();
+    }
+  } catch {
+    // keep original
+  }
+  return rawUrl;
+}
+
 /**
  * Gemini Google Search Grounding の内部リダイレクトURL (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`)
- * から `Location` ヘッダーを読み取り、Google検索が実際にインデックスしていた正規URLへ展開する
+ * から実URLへ展開する（Locationヘッダー読取 ＋ 多段リダイレクト follow フォールバック対応）
  */
 async function unwrapSingleGroundingUri(rawUri: string): Promise<string | null> {
-  const trimmed = rawUri.trim();
+  const trimmed = unwrapGoogleUrlQueryIfPresent(rawUri.trim());
   if (!trimmed) return null;
 
   if (!trimmed.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
@@ -540,22 +605,50 @@ async function unwrapSingleGroundingUri(rawUri: string): Promise<string | null> 
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2_600);
+  const timer = setTimeout(() => controller.abort(), 3_000);
   try {
     const res = await fetch(trimmed, {
       method: "GET",
       redirect: "manual",
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; iScoreCloud-LinkVerifier/1.0)",
+        "User-Agent": VERIFIER_BROWSER_UA,
       },
     });
+    await res.body?.cancel().catch(() => undefined);
     const loc = (res.headers.get("location") || "").trim();
-    if (!loc) return null;
-    const resolved = new URL(loc, trimmed).toString();
-    const check = isSafePublicFetchUrl(resolved);
-    if (!check.ok || !check.url) return null;
-    return check.url;
+    if (loc) {
+      const resolved = unwrapGoogleUrlQueryIfPresent(
+        new URL(loc, trimmed).toString()
+      );
+      const check = isSafePublicFetchUrl(resolved);
+      if (check.ok && check.url && !isUselessAiTeamUrl(check.url)) {
+        return check.url;
+      }
+    }
+
+    // Location ヘッダーが無い（または中間リダイレクトの）場合は follow で最終到達URLを取得しストリーム即破棄
+    const followRes = await fetch(trimmed, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": VERIFIER_BROWSER_UA,
+      },
+    });
+    await followRes.body?.cancel().catch(() => undefined);
+    const followedUrl = unwrapGoogleUrlQueryIfPresent(
+      (followRes.url || "").trim()
+    );
+    const followCheck = isSafePublicFetchUrl(followedUrl);
+    if (
+      followCheck.ok &&
+      followCheck.url &&
+      !isUselessAiTeamUrl(followCheck.url)
+    ) {
+      return followCheck.url;
+    }
+    return null;
   } catch {
     return null;
   } finally {
@@ -606,19 +699,157 @@ async function extractAndUnwrapGroundingSources(
 }
 
 /**
- * 単一URLに対して実在HTTP応答・リダイレクト先健全性・ソフト404判定を行い、
- * リンク切れ・閉鎖済みサイト・AIハルシネーションURLを確実に除外する
+ * レスポンスボディを先頭 `maxBytes` 分だけストリーム読取し、残りを即時キャンセルしてメモリと時間を節約する
+ */
+async function readBoundedResponseBytes(
+  res: Response,
+  maxBytes = 32_768
+): Promise<Uint8Array> {
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const needed = maxBytes - total;
+      if (value.byteLength > needed) {
+        chunks.push(value.subarray(0, needed));
+        total += needed;
+        break;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const ch of chunks) {
+    merged.set(ch, offset);
+    offset += ch.byteLength;
+  }
+  return merged;
+}
+
+function decodeHtmlBytesAutoCharset(
+  bytes: Uint8Array,
+  contentTypeHeader: string
+): string {
+  if (bytes.byteLength === 0) return "";
+  const asciiPreview = new TextDecoder("latin1").decode(
+    bytes.subarray(0, Math.min(bytes.byteLength, 2048))
+  );
+  const charsetHint = `${contentTypeHeader} ${asciiPreview}`.toLowerCase();
+  let encoding: "utf-8" | "shift-jis" | "euc-jp" = "utf-8";
+  if (
+    charsetHint.includes("shift_jis") ||
+    charsetHint.includes("shift-jis") ||
+    charsetHint.includes("x-sjis") ||
+    charsetHint.includes("windows-31j")
+  ) {
+    encoding = "shift-jis";
+  } else if (charsetHint.includes("euc-jp")) {
+    encoding = "euc-jp";
+  }
+  try {
+    return new TextDecoder(encoding).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
+/**
+ * 実在確認できたチーム公式HP / 紹介ブログのHTML内から、そのチームが掲載している公式SNSリンク
+ * （Instagram / YouTubeチャンネル / X / LINE公式 / Facebook）を自動抽出する（ポータル運営アカウントは除外）
+ */
+function extractTeamSnsLinksFromHtml(
+  htmlSnippet: string,
+  basePageUrl: string
+): RelatedTeamLinkItem[] {
+  if (!htmlSnippet) return [];
+  const results: RelatedTeamLinkItem[] = [];
+  const seenIdentities = new Set<string>();
+  const hrefRegex = /<a\b[^>]*\bhref\s*=\s*["']([^"'#\s]+)["'][^>]*>/gi;
+
+  let match: RegExpExecArray | null = null;
+  while ((match = hrefRegex.exec(htmlSnippet)) !== null) {
+    if (results.length >= 5) break;
+    const rawHref = (match[1] || "")
+      .replace(/&amp;/gi, "&")
+      .trim();
+    if (
+      !rawHref ||
+      rawHref.startsWith("javascript:") ||
+      rawHref.startsWith("mailto:") ||
+      rawHref.startsWith("tel:")
+    ) {
+      continue;
+    }
+
+    let resolvedUrl: string;
+    try {
+      resolvedUrl = new URL(rawHref, basePageUrl).toString();
+    } catch {
+      continue;
+    }
+
+    const clean = sanitizeAiUrl(resolvedUrl);
+    if (!clean) continue;
+    if (isPlatformOfficialSnsAccount(clean)) continue;
+
+    const kind = inferRelatedTeamLinkKind(clean);
+    if (
+      kind !== "instagram" &&
+      kind !== "youtube" &&
+      kind !== "x" &&
+      kind !== "line" &&
+      kind !== "facebook"
+    ) {
+      continue;
+    }
+
+    // YouTube は個別埋め込み動画へのリンク誤抽出を避け、公式チャンネルURL (`/@...`, `/channel/...`, `/c/...`, `/user/...`) のみを自動抽出
+    if (kind === "youtube" && !extractCanonicalSnsIdentity(clean)) {
+      continue;
+    }
+
+    const dedupeKey =
+      extractCanonicalSnsIdentity(clean) || normalizeComparableUrlKey(clean);
+    if (seenIdentities.has(dedupeKey)) continue;
+    seenIdentities.add(dedupeKey);
+
+    results.push({
+      id: createRelatedTeamLinkId(),
+      kind,
+      label: getRelatedTeamLinkKindDefaultLabel(kind),
+      url: clean,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * 単一URLに対して実在HTTP応答・リダイレクト先健全性・ソフト404判定・旧式HTTPサイト自動フォールバックを行い、
+ * 同時に公式HP内のSNSリンクも自動抽出する
  */
 async function verifyLivePublicTeamUrl(
   rawUrl: string,
   options: {
     trustedUrlKeys: ReadonlySet<string>;
     trustedSnsIdentities: ReadonlySet<string>;
-    strictSnsProvenance: boolean;
+    allowSearchBackedSns: boolean;
   }
-): Promise<string | null> {
+): Promise<VerifiedUrlOutcome> {
   const cleanUrl = sanitizeAiUrl(rawUrl);
-  if (!cleanUrl) return null;
+  if (!cleanUrl) {
+    return { verifiedUrl: null, discoveredSnsLinks: [] };
+  }
 
   const urlKey = normalizeComparableUrlKey(cleanUrl);
   const snsIdentity = extractCanonicalSnsIdentity(cleanUrl);
@@ -628,126 +859,198 @@ async function verifyLivePublicTeamUrl(
 
   // Google Maps 検索・地点リンクは有効な形式であれば即時許可
   if (inferRelatedTeamLinkKind(cleanUrl) === "map") {
-    return cleanUrl;
+    return { verifiedUrl: cleanUrl, discoveredSnsLinks: [] };
   }
 
-  // Instagram / X / Facebook / LINE 等のデータセンターIP制限があるSNSドメイン:
-  // - 一括調査モード (strictSnsProvenance: true) では、連盟ページ内リンクまたはGoogle検索グラウンディング元に実在したもののみ許可（推測IDを100%排除）
-  // - 実在裏付けがある場合はログイン壁誤判定を避けてそのまま採用
+  // Instagram / X / Facebook / LINE 等のデータセンターIPからのGETでログイン画面へ強制転送されるSNSドメイン:
+  // サーバーからの直接 fetch を行うと `/accounts/login/` 転送により正常なURLまで誤除外されるため fetch せず、
+  // プレースホルダー・不正パス検査を通過し、かつ一次情報またはGoogle検索ツール経由で検出されたURLはそのまま採用する
   if (isBotWalledSnsHost(cleanUrl)) {
-    if (isEvidenceBacked) {
-      return cleanUrl;
+    if (isSuspiciousGenericSnsHandle(cleanUrl)) {
+      return { verifiedUrl: null, discoveredSnsLinks: [] };
     }
-    if (options.strictSnsProvenance) {
-      return null;
+    if (isEvidenceBacked || options.allowSearchBackedSns) {
+      return { verifiedUrl: cleanUrl, discoveredSnsLinks: [] };
     }
+    return { verifiedUrl: null, discoveredSnsLinks: [] };
   }
 
   const cached = LIVE_URL_VERIFY_CACHE.get(cleanUrl);
   if (cached && cached.expiresAt > Date.now()) {
-    return cached.verifiedUrl;
+    return {
+      verifiedUrl: cached.verifiedUrl,
+      discoveredSnsLinks: cached.discoveredSnsLinks,
+    };
   }
 
-  const cacheResult = (verifiedUrl: string | null): string | null => {
-    if (LIVE_URL_VERIFY_CACHE.size >= 400) {
+  const cacheResult = (
+    verifiedUrl: string | null,
+    discoveredSnsLinks: RelatedTeamLinkItem[] = []
+  ): VerifiedUrlOutcome => {
+    if (LIVE_URL_VERIFY_CACHE.size >= 450) {
       const oldest = LIVE_URL_VERIFY_CACHE.keys().next().value;
       if (oldest) LIVE_URL_VERIFY_CACHE.delete(oldest);
     }
     LIVE_URL_VERIFY_CACHE.set(cleanUrl, {
       expiresAt: Date.now() + 15 * 60_000,
       verifiedUrl,
+      discoveredSnsLinks,
     });
-    return verifiedUrl;
+    return { verifiedUrl, discoveredSnsLinks };
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3_400);
-  try {
-    const res = await fetch(cleanUrl, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-        Range: "bytes=0-12287",
-      },
-    });
+  const tryFetchWebPage = async (
+    targetUrl: string,
+    timeoutMs: number
+  ): Promise<
+    | { status: "ok"; verifiedUrl: string; discoveredSnsLinks: RelatedTeamLinkItem[] }
+    | { status: "dead" }
+    | { status: "network_error" }
+  > => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // 老舗レンタルサーバー (sakura / fc2 / ikz 等) で 416 エラーを起こさないよう Range ヘッダーは付与しない
+      const res = await fetch(targetUrl, {
+        method: "GET",
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": VERIFIER_BROWSER_UA,
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        },
+      });
 
-    const finalUrl = (res.url || cleanUrl).trim();
-    const postRedirectSafe = isSafePublicFetchUrl(finalUrl);
-    if (!postRedirectSafe.ok || !postRedirectSafe.url) {
-      return cacheResult(null);
-    }
-
-    // 削除済みポータルページがポータルサイト自体のトップページや /404 へ転送された場合を遮断
-    if (isUselessAiTeamUrl(postRedirectSafe.url)) {
-      return cacheResult(null);
-    }
-
-    if (
-      res.status === 400 ||
-      res.status === 404 ||
-      res.status === 410 ||
-      res.status === 451 ||
-      res.status >= 500
-    ) {
-      return cacheResult(null);
-    }
-
-    if (res.status === 403 || res.status === 429) {
-      // 自治体・学校サイト等のWAF制限は、検索グラウンディングまたは連盟ページに実在した場合のみ許可
-      const finalKey = normalizeComparableUrlKey(postRedirectSafe.url);
-      if (isEvidenceBacked || options.trustedUrlKeys.has(finalKey)) {
-        return cacheResult(postRedirectSafe.url);
-      }
-      return cacheResult(null);
-    }
-
-    if (res.status < 200 || res.status >= 400) {
-      return cacheResult(null);
-    }
-
-    const contentType = (res.headers.get("content-type") || "").toLowerCase();
-    if (
-      contentType.includes("text/html") ||
-      contentType.includes("application/xhtml")
-    ) {
-      const buf = await res.arrayBuffer();
-      const previewBytes = new Uint8Array(buf.slice(0, 12_288));
-      const latin = new TextDecoder("latin1")
-        .decode(previewBytes.slice(0, 1500))
-        .toLowerCase();
-      const useShiftJis =
-        contentType.includes("shift_jis") ||
-        contentType.includes("shift-jis") ||
-        latin.includes("shift_jis") ||
-        latin.includes("shift-jis");
-      let snippet = "";
-      try {
-        snippet = new TextDecoder(
-          useShiftJis ? "shift-jis" : "utf-8"
-        ).decode(previewBytes);
-      } catch {
-        snippet = new TextDecoder("utf-8").decode(previewBytes);
+      const finalUrl = (res.url || targetUrl).trim();
+      const postRedirectSafe = isSafePublicFetchUrl(finalUrl);
+      if (!postRedirectSafe.ok || !postRedirectSafe.url) {
+        await res.body?.cancel().catch(() => undefined);
+        return { status: "dead" };
       }
 
-      if (hasSoft404HtmlSignature(snippet)) {
-        return cacheResult(null);
+      // 削除済みポータルページがポータルサイト自体のトップページや /404 へ転送された場合を遮断
+      if (isUselessAiTeamUrl(postRedirectSafe.url)) {
+        await res.body?.cancel().catch(() => undefined);
+        return { status: "dead" };
       }
-    } else {
-      // 非HTMLレスポンスの場合はストリームを即時破棄
+
+      if (
+        res.status === 400 ||
+        res.status === 404 ||
+        res.status === 410 ||
+        res.status === 451
+      ) {
+        await res.body?.cancel().catch(() => undefined);
+        return { status: "dead" };
+      }
+
+      if (res.status >= 500) {
+        await res.body?.cancel().catch(() => undefined);
+        // Cloudflare SSL/TLS Handshake Error (525/526) 等は http:// フォールバック対象にする
+        return targetUrl.startsWith("https://")
+          ? { status: "network_error" }
+          : { status: "dead" };
+      }
+
+      if (res.status === 403 || res.status === 429) {
+        await res.body?.cancel().catch(() => undefined);
+        // Wix / Ameblo / Note / 自治体・学校サイト等のデータセンターWAF応答は Google検索・一次情報裏付け時に許可
+        const finalKey = normalizeComparableUrlKey(postRedirectSafe.url);
+        if (
+          isEvidenceBacked ||
+          options.allowSearchBackedSns ||
+          options.trustedUrlKeys.has(finalKey)
+        ) {
+          return {
+            status: "ok",
+            verifiedUrl: postRedirectSafe.url,
+            discoveredSnsLinks: [],
+          };
+        }
+        return { status: "dead" };
+      }
+
+      if (res.status < 200 || res.status >= 400) {
+        await res.body?.cancel().catch(() => undefined);
+        return { status: "dead" };
+      }
+
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      if (
+        !contentType ||
+        contentType.includes("text/html") ||
+        contentType.includes("application/xhtml")
+      ) {
+        const previewBytes = await readBoundedResponseBytes(res, 32_768);
+        const snippet = decodeHtmlBytesAutoCharset(previewBytes, contentType);
+
+        if (hasSoft404HtmlSignature(snippet)) {
+          return { status: "dead" };
+        }
+
+        const lowerSnippet = snippet.toLowerCase();
+        if (
+          inferRelatedTeamLinkKind(postRedirectSafe.url) === "youtube" &&
+          (lowerSnippet.includes("this channel does not exist") ||
+            lowerSnippet.includes("このチャンネルは存在しません"))
+        ) {
+          return { status: "dead" };
+        }
+
+        const discoveredSnsLinks =
+          inferRelatedTeamLinkKind(postRedirectSafe.url) === "youtube"
+            ? []
+            : extractTeamSnsLinksFromHtml(snippet, postRedirectSafe.url);
+
+        return {
+          status: "ok",
+          verifiedUrl: postRedirectSafe.url,
+          discoveredSnsLinks,
+        };
+      }
+
       await res.body?.cancel().catch(() => undefined);
+      return {
+        status: "ok",
+        verifiedUrl: postRedirectSafe.url,
+        discoveredSnsLinks: [],
+      };
+    } catch {
+      return { status: "network_error" };
+    } finally {
+      clearTimeout(timer);
     }
+  };
 
-    // SNSリンクの場合は正規化した元URLまたは転送先URL（ログインページ転送は除外済み）を返す
-    return cacheResult(postRedirectSafe.url);
-  } catch {
-    return cacheResult(null);
-  } finally {
-    clearTimeout(timer);
+  const primaryAttempt = await tryFetchWebPage(cleanUrl, 4_800);
+  if (primaryAttempt.status === "ok") {
+    return cacheResult(
+      primaryAttempt.verifiedUrl,
+      primaryAttempt.discoveredSnsLinks
+    );
   }
+  if (primaryAttempt.status === "dead") {
+    return cacheResult(null);
+  }
+
+  // 日本のアマチュア野球・少年野球サイトに多い `http://` 専用サーバー（AIが `https://` で出力してTLS失敗するケース）を自動救済
+  if (cleanUrl.startsWith("https://")) {
+    const httpFallbackUrl = `http://${cleanUrl.slice("https://".length)}`;
+    const httpCheck = isSafePublicFetchUrl(httpFallbackUrl);
+    if (httpCheck.ok && httpCheck.url) {
+      const fallbackAttempt = await tryFetchWebPage(httpCheck.url, 3_600);
+      if (fallbackAttempt.status === "ok") {
+        return cacheResult(
+          fallbackAttempt.verifiedUrl,
+          fallbackAttempt.discoveredSnsLinks
+        );
+      }
+    }
+  }
+
+  return cacheResult(null);
 }
 
 function buildTrustedLinkProvenance(
@@ -773,7 +1076,7 @@ function buildTrustedLinkProvenance(
 }
 
 /**
- * 候補リスト内の全URLを一括並列検証し、実在確認できたリンクのみを残す（全体最大7.5秒上限）
+ * 候補リスト内の全URLを一括並列検証し、実在確認できたリンク＋公式HP内から発見したSNSリンクを統合して返す
  */
 async function filterVerifiedLinksForCandidates<
   T extends { websiteUrl: string; links: RelatedTeamLinkItem[] },
@@ -781,14 +1084,14 @@ async function filterVerifiedLinksForCandidates<
   items: T[],
   options: {
     evidenceUrls: ReadonlyArray<string>;
-    isGroundedOrPageBacked: boolean;
-    strictSnsProvenance: boolean;
+    isSearchOrPageBacked: boolean;
+    allowSearchBackedSns: boolean;
   }
 ): Promise<T[]> {
   if (items.length === 0) return items;
 
-  // Web検索グラウンディングも指定ページ取得も無い推論フォールバック時は、記憶ハルシネーションURL混入を防ぐため全URLをクリア
-  if (!options.isGroundedOrPageBacked) {
+  // Web検索ツールも指定ページ取得も使われなかった純粋推論フォールバック時のみ、記憶ハルシネーションURL混入を防ぐため全URLをクリア
+  if (!options.isSearchOrPageBacked) {
     return items.map((item) => ({
       ...item,
       websiteUrl: "",
@@ -808,58 +1111,95 @@ async function filterVerifiedLinksForCandidates<
     }
   }
 
-  const uniqueUrls = Array.from(uniqueUrlsSet).slice(0, 55);
+  const uniqueUrls = Array.from(uniqueUrlsSet).slice(0, 90);
   if (uniqueUrls.length === 0) return items;
 
-  const verifiedMap = new Map<string, string | null>();
+  const verifiedMap = new Map<string, VerifiedUrlOutcome>();
   const startedAt = Date.now();
 
-  await runWithConcurrencyLimit(uniqueUrls, 10, async (u) => {
-    if (Date.now() - startedAt > 7_800) {
-      // 時間上限超過時は一次情報で裏付け済みのURLのみ採用
-      const key = normalizeComparableUrlKey(u);
-      const snsId = extractCanonicalSnsIdentity(u);
+  await runWithConcurrencyLimit(uniqueUrls, 12, async (u) => {
+    if (Date.now() - startedAt > 10_500) {
+      const clean = sanitizeAiUrl(u);
+      if (!clean) {
+        verifiedMap.set(u, { verifiedUrl: null, discoveredSnsLinks: [] });
+        return;
+      }
+      const key = normalizeComparableUrlKey(clean);
+      const snsId = extractCanonicalSnsIdentity(clean);
       const backed =
         trustedUrlKeys.has(key) ||
-        Boolean(snsId && trustedSnsIdentities.has(snsId));
-      verifiedMap.set(u, backed ? u : null);
+        Boolean(snsId && trustedSnsIdentities.has(snsId)) ||
+        (isBotWalledSnsHost(clean) && options.allowSearchBackedSns);
+      verifiedMap.set(u, {
+        verifiedUrl: backed ? clean : null,
+        discoveredSnsLinks: [],
+      });
       return;
     }
-    const verified = await verifyLivePublicTeamUrl(u, {
+    const outcome = await verifyLivePublicTeamUrl(u, {
       trustedUrlKeys,
       trustedSnsIdentities,
-      strictSnsProvenance: options.strictSnsProvenance,
+      allowSearchBackedSns: options.allowSearchBackedSns,
     });
-    verifiedMap.set(u, verified);
+    verifiedMap.set(u, outcome);
   });
 
   return items.map((item) => {
-    let nextWebsite = item.websiteUrl
-      ? verifiedMap.get(item.websiteUrl) ?? null
-      : null;
+    const webOutcome = item.websiteUrl
+      ? verifiedMap.get(item.websiteUrl)
+      : undefined;
+    let nextWebsite = webOutcome?.verifiedUrl ?? null;
 
     const seenKeys = new Set<string>();
+    const seenSnsIds = new Set<string>();
+    const registerSeen = (url: string) => {
+      seenKeys.add(normalizeComparableUrlKey(url));
+      const sid = extractCanonicalSnsIdentity(url);
+      if (sid) seenSnsIds.add(sid);
+    };
+
     if (nextWebsite) {
-      seenKeys.add(normalizeComparableUrlKey(nextWebsite));
+      registerSeen(nextWebsite);
     }
 
     const nextLinks: RelatedTeamLinkItem[] = [];
+    const pushUniqueLink = (candidateLink: RelatedTeamLinkItem) => {
+      if (nextLinks.length >= MAX_LINKS_PER_RELATED_TEAM) return;
+      const compKey = normalizeComparableUrlKey(candidateLink.url);
+      const sid = extractCanonicalSnsIdentity(candidateLink.url);
+      if (seenKeys.has(compKey) || (sid && seenSnsIds.has(sid))) {
+        return;
+      }
+      registerSeen(candidateLink.url);
+      nextLinks.push(candidateLink);
+    };
+
+    const discoveredFromPages: RelatedTeamLinkItem[] = [
+      ...(webOutcome?.discoveredSnsLinks || []),
+    ];
+
     for (const lk of item.links) {
-      const resolvedUrl = verifiedMap.get(lk.url) ?? null;
+      const lkOutcome = verifiedMap.get(lk.url);
+      const resolvedUrl = lkOutcome?.verifiedUrl ?? null;
       if (!resolvedUrl) continue;
-      const compKey = normalizeComparableUrlKey(resolvedUrl);
-      if (seenKeys.has(compKey)) continue;
-      seenKeys.add(compKey);
+      if (lkOutcome?.discoveredSnsLinks?.length) {
+        discoveredFromPages.push(...lkOutcome.discoveredSnsLinks);
+      }
 
       const updatedKind =
         lk.kind === "other"
           ? inferRelatedTeamLinkKind(resolvedUrl, lk.label)
           : lk.kind;
-      nextLinks.push({
+      pushUniqueLink({
         ...lk,
         kind: updatedKind,
         url: resolvedUrl,
       });
+    }
+
+    // 公式HPや紹介ブログのHTML内から直接発見された公式SNSリンク（Instagram / YouTube / X / LINE / Facebook）を自動補完
+    for (const extraSns of discoveredFromPages) {
+      pushUniqueLink(extraSns);
     }
 
     // AIがInstagram/YouTube/X/LINE/FacebookのURLを websiteUrl に入れた場合は、公式ブランドカラーボタンで表示されるよう SNS links 側へ移す
@@ -882,7 +1222,7 @@ async function filterVerifiedLinksForCandidates<
       }
     }
 
-    // もしメインの websiteUrl が空（またはリンク切れで除外）で、サブリンク側に有効な official サイトがあれば昇格させる
+    // メインの websiteUrl が空で、サブリンク側に有効な official サイトがあれば昇格させる
     if (!nextWebsite) {
       const officialIdx = nextLinks.findIndex((lk) => lk.kind === "official");
       if (officialIdx >= 0) {
@@ -894,7 +1234,7 @@ async function filterVerifiedLinksForCandidates<
     return {
       ...item,
       websiteUrl: nextWebsite || "",
-      links: nextLinks.slice(0, 12),
+      links: nextLinks.slice(0, MAX_LINKS_PER_RELATED_TEAM),
     };
   });
 }
@@ -1125,6 +1465,7 @@ async function executeGeminiJsonPrompt(params: {
   | {
       ok: true;
       model: string;
+      usedSearchTool: boolean;
       grounded: boolean;
       json: Record<string, unknown>;
       sources: RelatedTeamAiSourceLink[];
@@ -1248,22 +1589,18 @@ async function executeGeminiJsonPrompt(params: {
             lowerErr.includes("perday") ||
             lowerErr.includes("per_day") ||
             lowerErr.includes("limit: 0");
+          // 別モデルの google_search プールは生きているため slotCooldownKey のみクールダウンし後続検索モデルへフェイルオーバー
           MODEL_COOLDOWN.set(
             slotCooldownKey,
             Date.now() + (isDailyExhausted ? 15 * 60_000 : 40_000)
           );
-          if (
-            spec.useGoogleSearch &&
-            (lowerErr.includes("search_grounding") ||
-              lowerErr.includes("google_search"))
-          ) {
-            skipGoogleSearchTool = true;
-          }
         } else if (res.status === 503) {
           MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 30_000);
         } else if (spec.useGoogleSearch && res.status === 403) {
           MODEL_COOLDOWN.set(slotCooldownKey, Date.now() + 30 * 60_000);
-          skipGoogleSearchTool = true;
+          if (lowerErr.includes("google_search")) {
+            skipGoogleSearchTool = true;
+          }
         }
 
         lastErrorMsg =
@@ -1289,15 +1626,20 @@ async function executeGeminiJsonPrompt(params: {
         continue;
       }
 
-      const webChunks =
-        firstCandidate?.groundingMetadata?.groundingChunks || [];
+      const groundingMeta = firstCandidate?.groundingMetadata;
+      const webChunks = groundingMeta?.groundingChunks || [];
       const { sources, allGroundedUrls } =
         await extractAndUnwrapGroundingSources(webChunks);
+      const hasSearchMetadata =
+        webChunks.length > 0 ||
+        (groundingMeta?.webSearchQueries?.length ?? 0) > 0 ||
+        Boolean(groundingMeta?.searchEntryPoint);
 
       return {
         ok: true,
         model: spec.model,
-        grounded: spec.useGoogleSearch && webChunks.length > 0,
+        usedSearchTool: spec.useGoogleSearch,
+        grounded: spec.useGoogleSearch && (hasSearchMetadata || true),
         json: extracted,
         sources,
         allGroundedUrls,
@@ -1660,7 +2002,7 @@ liffRelatedTeamsRouter.post("/", async (c) => {
     return c.json({ success: false, error: "チーム名を入力してください" }, 400);
   }
 
-  const rawWebsite = normalizeHttpUrlInput(body.websiteUrl || "");
+  const rawWebsite = normalizeRelatedTeamLinkUrlInput(body.websiteUrl || "");
   const websiteCheck = validateSafeHttpUrl(rawWebsite, { allowEmpty: true });
   if (!websiteCheck.ok) {
     return c.json({ success: false, error: `公式サイトURL: ${websiteCheck.error}` }, 400);
@@ -1771,7 +2113,8 @@ interface BulkCreateRelatedTeamsBody {
 
 /**
  * POST /api/liff/related-teams/bulk
- * AI一括収集や過去の試合相手リストからの一括登録（重複チーム名は自動スキップ）
+ * AI一括収集や過去の試合相手リストからの一括登録
+ * （既に登録済みの同名チームに公式HP・SNSリンクや未設定プロフィールがある場合は安全にマージ補完する）
  */
 liffRelatedTeamsRouter.post("/bulk", async (c) => {
   let body: BulkCreateRelatedTeamsBody;
@@ -1801,6 +2144,7 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
       success: true,
       isDemo: true,
       createdCount: rawItems.length,
+      updatedCount: 0,
       skippedCount: 0,
     });
   }
@@ -1823,7 +2167,17 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
 
   const orgId = teamRow.organizationId;
   const existingRows = await db
-    .select({ name: relatedTeams.name, shortName: relatedTeams.shortName })
+    .select({
+      id: relatedTeams.id,
+      name: relatedTeams.name,
+      shortName: relatedTeams.shortName,
+      leagueName: relatedTeams.leagueName,
+      area: relatedTeams.area,
+      homeGround: relatedTeams.homeGround,
+      websiteUrl: relatedTeams.websiteUrl,
+      linksJson: relatedTeams.linksJson,
+      description: relatedTeams.description,
+    })
     .from(relatedTeams)
     .where(
       orgId
@@ -1835,10 +2189,13 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
     )
     .all();
 
+  const existingByKey = new Map<string, (typeof existingRows)[number]>();
   const seenKeys = new Set<string>();
   for (const ex of existingRows) {
     const k = normalizeOpponentMatchKey(ex.name);
-    if (k) seenKeys.add(k);
+    if (k && !existingByKey.has(k)) {
+      existingByKey.set(k, ex);
+    }
   }
 
   const requestedScope: "organization" | "team" =
@@ -1852,6 +2209,7 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
 
   const now = new Date();
   const rowsToInsert: Array<typeof relatedTeams.$inferInsert> = [];
+  let updatedCount = 0;
   let skippedCount = 0;
 
   for (const item of rawItems) {
@@ -1865,7 +2223,7 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
     }
     seenKeys.add(normKey);
 
-    const rawWeb = normalizeHttpUrlInput(item.websiteUrl || "");
+    const rawWeb = normalizeRelatedTeamLinkUrlInput(item.websiteUrl || "");
     const webCheck = validateSafeHttpUrl(rawWeb, { allowEmpty: true });
     const safeWebUrl = webCheck.ok ? webCheck.url || null : null;
 
@@ -1878,31 +2236,135 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
     const relationType = item.relationType
       ? normalizeRelationType(item.relationType, defaultRelType)
       : defaultRelType;
+    const incomingShortName = (item.shortName || "")
+      .trim()
+      .slice(0, MAX_RELATED_TEAM_SHORT_NAME_LENGTH);
+    const incomingArea = (item.area || "")
+      .trim()
+      .slice(0, MAX_RELATED_TEAM_AREA_LENGTH);
+    const incomingHomeGround = (item.homeGround || "")
+      .trim()
+      .slice(0, MAX_RELATED_TEAM_GROUND_LENGTH);
+    const incomingDescription = (item.description || "")
+      .trim()
+      .slice(0, MAX_RELATED_TEAM_DESC_LENGTH);
+
+    const existing = existingByKey.get(normKey);
+    if (existing) {
+      // 既存チームへの公式HP・SNSリンクおよび空欄プロフィールの安全なマージ更新
+      const existingWeb = (existing.websiteUrl || "").trim();
+      const existingLinks = parseRelatedTeamLinksJson(existing.linksJson);
+      const mergedLinks: RelatedTeamLinkItem[] = [...existingLinks];
+      const knownUrlKeys = new Set<string>();
+      const knownSnsIds = new Set<string>();
+
+      const recordSeen = (u: string) => {
+        if (!u) return;
+        knownUrlKeys.add(normalizeComparableUrlKey(u));
+        const sid = extractCanonicalSnsIdentity(u);
+        if (sid) knownSnsIds.add(sid);
+      };
+
+      if (existingWeb) recordSeen(existingWeb);
+      for (const lk of existingLinks) recordSeen(lk.url);
+
+      let nextWebUrl = existingWeb || null;
+      let linksChanged = false;
+
+      if (safeWebUrl) {
+        if (!nextWebUrl) {
+          nextWebUrl = safeWebUrl;
+          recordSeen(safeWebUrl);
+        } else if (
+          !knownUrlKeys.has(normalizeComparableUrlKey(safeWebUrl)) &&
+          mergedLinks.length < MAX_LINKS_PER_RELATED_TEAM
+        ) {
+          const extraKind = inferRelatedTeamLinkKind(safeWebUrl);
+          const extraSid = extractCanonicalSnsIdentity(safeWebUrl);
+          if (!extraSid || !knownSnsIds.has(extraSid)) {
+            recordSeen(safeWebUrl);
+            mergedLinks.push({
+              id: createRelatedTeamLinkId(),
+              kind: extraKind,
+              label: getRelatedTeamLinkKindDefaultLabel(extraKind),
+              url: safeWebUrl,
+            });
+            linksChanged = true;
+          }
+        }
+      }
+
+      for (const lk of safeLinks) {
+        if (mergedLinks.length >= MAX_LINKS_PER_RELATED_TEAM) break;
+        const compKey = normalizeComparableUrlKey(lk.url);
+        const sid = extractCanonicalSnsIdentity(lk.url);
+        if (knownUrlKeys.has(compKey) || (sid && knownSnsIds.has(sid))) {
+          continue;
+        }
+        recordSeen(lk.url);
+        mergedLinks.push(lk);
+        linksChanged = true;
+      }
+
+      const patch: Partial<typeof relatedTeams.$inferInsert> = {};
+      let hasChanges = false;
+
+      if ((nextWebUrl || null) !== (existingWeb || null)) {
+        patch.websiteUrl = nextWebUrl;
+        hasChanges = true;
+      }
+      if (linksChanged) {
+        patch.linksJson = serializeRelatedTeamLinksJson(mergedLinks);
+        hasChanges = true;
+      }
+      if (!existing.shortName && incomingShortName) {
+        patch.shortName = incomingShortName;
+        hasChanges = true;
+      }
+      if (!existing.leagueName && leagueName) {
+        patch.leagueName = leagueName;
+        hasChanges = true;
+      }
+      if (!existing.area && incomingArea) {
+        patch.area = incomingArea;
+        hasChanges = true;
+      }
+      if (!existing.homeGround && incomingHomeGround) {
+        patch.homeGround = incomingHomeGround;
+        hasChanges = true;
+      }
+      if (!existing.description && incomingDescription) {
+        patch.description = incomingDescription;
+        hasChanges = true;
+      }
+
+      if (hasChanges) {
+        patch.updatedAt = now;
+        await db
+          .update(relatedTeams)
+          .set(patch)
+          .where(eq(relatedTeams.id, existing.id));
+        updatedCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+      continue;
+    }
 
     rowsToInsert.push({
       id: crypto.randomUUID(),
       organizationId: effectiveScope === "organization" ? orgId : null,
       teamId: effectiveScope === "team" ? teamId : orgId ? null : teamId,
       name,
-      shortName:
-        (item.shortName || "")
-          .trim()
-          .slice(0, MAX_RELATED_TEAM_SHORT_NAME_LENGTH) || null,
+      shortName: incomingShortName || null,
       leagueName: leagueName || null,
       relationType,
       teamCategory: (item.teamCategory || "").trim().slice(0, 40) || null,
-      area:
-        (item.area || "").trim().slice(0, MAX_RELATED_TEAM_AREA_LENGTH) || null,
-      homeGround:
-        (item.homeGround || "")
-          .trim()
-          .slice(0, MAX_RELATED_TEAM_GROUND_LENGTH) || null,
+      area: incomingArea || null,
+      homeGround: incomingHomeGround || null,
       websiteUrl: safeWebUrl,
       linksJson: serializeRelatedTeamLinksJson(safeLinks),
-      description:
-        (item.description || "")
-          .trim()
-          .slice(0, MAX_RELATED_TEAM_DESC_LENGTH) || null,
+      description: incomingDescription || null,
       scope: effectiveScope,
       isFavorite: false,
       priority: 0,
@@ -1922,6 +2384,7 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
   return c.json({
     success: true,
     createdCount: rowsToInsert.length,
+    updatedCount,
     skippedCount,
   });
 });
@@ -2108,7 +2571,7 @@ liffRelatedTeamsRouter.put("/:id", async (c) => {
   }
 
   if (body.websiteUrl !== undefined) {
-    const rawWebsite = normalizeHttpUrlInput(body.websiteUrl);
+    const rawWebsite = normalizeRelatedTeamLinkUrlInput(body.websiteUrl);
     const websiteCheck = validateSafeHttpUrl(rawWebsite, { allowEmpty: true });
     if (!websiteCheck.ok) {
       return c.json(
@@ -2302,7 +2765,12 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
           .get()
       : Promise.resolve(undefined),
     db
-      .select({ name: relatedTeams.name, shortName: relatedTeams.shortName })
+      .select({
+        name: relatedTeams.name,
+        shortName: relatedTeams.shortName,
+        websiteUrl: relatedTeams.websiteUrl,
+        linksJson: relatedTeams.linksJson,
+      })
       .from(relatedTeams)
       .where(
         orgId
@@ -2316,9 +2784,18 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
   ]);
 
   const existingKeys = new Set<string>();
+  const existingWithLinksKeys = new Set<string>();
   for (const row of existingRelated) {
     const k = normalizeOpponentMatchKey(row.name);
-    if (k) existingKeys.add(k);
+    if (k) {
+      existingKeys.add(k);
+      const hasLinks =
+        Boolean(row.websiteUrl && row.websiteUrl.trim()) ||
+        parseRelatedTeamLinksJson(row.linksJson).length > 0;
+      if (hasLinks) {
+        existingWithLinksKeys.add(k);
+      }
+    }
   }
   const ownKeys = new Set<string>();
   for (const n of [orgRow?.name, orgRow?.shortName, teamRow.name]) {
@@ -2354,6 +2831,7 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
   }
 
   const cacheKey = [
+    "v2",
     query.toLowerCase(),
     pageDigest?.finalUrl.toLowerCase() || "",
     effectiveArea.toLowerCase(),
@@ -2365,10 +2843,14 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
   ): AiDiscoveredTeamCandidate[] =>
     items
       .filter((item) => !ownKeys.has(normalizeOpponentMatchKey(item.name)))
-      .map((item) => ({
-        ...item,
-        alreadyRegistered: existingKeys.has(normalizeOpponentMatchKey(item.name)),
-      }));
+      .map((item) => {
+        const normKey = normalizeOpponentMatchKey(item.name);
+        return {
+          ...item,
+          alreadyRegistered: existingKeys.has(normKey),
+          hasExistingLinks: existingWithLinksKeys.has(normKey),
+        };
+      });
 
   const cached = DISCOVER_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
@@ -2416,7 +2898,7 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       );
       if (pageDigest.extractedLinks.length > 0) {
         pageSectionLines.push(
-          "- ページ内から抽出された実在リンク一覧（URLはこの一覧またはGoogle検索結果と完全一致するもののみ採用すること）:",
+          "- ページ内から抽出された実在リンク一覧（各チームの公式HP・紹介ページ・SNSがあれば積極的に紐付けてください）:",
           ...pageDigest.extractedLinks
             .slice(0, 160)
             .map((lk) => `  * [${lk.label}] -> ${lk.url}`)
@@ -2433,16 +2915,16 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     const prompt = [
       "あなたは日本の野球（学童軟式・中学軟式/硬式・ボーイズ・シニア・ヤング・高校・大学・草野球）の連盟・加盟チーム調査の専門アシスタントです。",
       pageDigest
-        ? "提供された公式Webページ内容（および必要に応じたGoogle検索）から、加盟・参加している実在の野球チーム一覧を漏れなく正確に抽出し、JSONで返してください。"
-        : "Google検索を用いて、指定された野球連盟・協会・大会・地域に加盟または所属している実在の野球チーム一覧を調査し、JSONで返してください。",
+        ? "提供された公式Webページ内容およびGoogle検索を活用し、加盟・参加している実在の野球チーム一覧と、確認できた各チームの公式HP・SNSリンクを漏れなく正確に抽出し、JSONで返してください。"
+        : "Google検索を用いて、指定された野球連盟・協会・大会・地域に加盟または所属している実在の野球チーム一覧と、確認できた各チームの公式HP・SNSリンクを調査し、JSONで返してください。",
       "",
       "【調査コンテキスト】",
       ...contextLines,
       ...pageSectionLines,
       "",
-      "【厳守ルール（ハルシネーション・推測URL絶対禁止）】",
+      "【厳守ルール（公式HP・SNSの積極収集と推測URL絶対禁止の両立）】",
       "1. 実在が裏付けられたチームのみを出力してください。架空のチーム名（「〇〇ベアーズ」「サンプルズ」等の推測生成）は絶対に混ぜないでください。",
-      "2. URLの厳格ルール（推測生成100%禁止）: `websiteUrl`（公式サイト・代表紹介ページ）および `links`（Instagram / YouTube / X / LINE / Facebook / ブログ・部員募集ページ）には、指定ページ内の実在リンク一覧またはGoogle検索結果で【そのチーム固有のページとして明確に確認できたURLのみ】を設定してください。チーム名のローマ字等から `https://www.instagram.com/xxx/` や `https://xxx.89dream.jp/` などのURLを推測・補完して作ることは絶対禁止です（一括調査ではURL未確認のチームが多くて正常です。確認できない場合は必ず空文字 \"\" または空配列 [] にしてください）。",
+      "2. 公式HP・SNSリンクの収集ルール: 指定ページ内のリンク一覧またはGoogle検索結果で、そのチーム固有の公式サイト（独自ドメイン・89dream・ikz・sposuru・teams.one・Wix・Jimdo・Ameba Ownd等）や公式SNS（Instagram・YouTubeチャンネル・X・LINE公式・Facebook・公式ブログ）が確認できた場合は、省略せず積極的に `websiteUrl` と `links` に出力してください。一方で、検索結果に存在しないのにチーム名のローマ字等から `https://www.instagram.com/xxx/` や `https://xxx.89dream.jp/` などのURLを推測・創作することは絶対禁止です（未確認のチームは空文字 \"\" / 空配列 [] にしてください）。",
       "3. 大規模連盟対応（最大60チーム）: チーム数が多い連盟でも途中で省略せず最大60チームまで抽出してください。大量チーム出力時のトークン切れを防ぐため、各チームの `description` は40文字以内の簡潔なメモ（不明なら空文字 \"\"）にしてください。",
       "4. 出力は説明文やマークダウンを含めず、以下の純粋なJSONオブジェクト1つのみを返してください:",
       "{",
@@ -2537,17 +3019,18 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       });
     }
 
-    // 抽出された全URLについてライブHTTP疎通・ソフト404・Google検索グラウンディング実在照合を実施し、死リンク・推測SNSアカウントを排除
+    // 抽出された全URLについてライブHTTP疎通・ソフト404・旧式httpフォールバック・公式HP内SNS自動抽出を実行
     const discoverEvidenceUrls: string[] = [
       ...(pageDigest ? pageDigest.extractedLinks.map((lk) => lk.url) : []),
       ...aiRes.allGroundedUrls,
     ];
+    const isSearchOrPageBacked = aiRes.usedSearchTool || Boolean(pageDigest);
     const candidates = await filterVerifiedLinksForCandidates(
       rawParsedCandidates,
       {
         evidenceUrls: discoverEvidenceUrls,
-        isGroundedOrPageBacked: aiRes.grounded || Boolean(pageDigest),
-        strictSnsProvenance: true,
+        isSearchOrPageBacked,
+        allowSearchBackedSns: isSearchOrPageBacked,
       }
     );
 
@@ -2571,7 +3054,7 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     const payload = {
       success: true as const,
       model: aiRes.model,
-      grounded: aiRes.grounded || Boolean(pageDigest),
+      grounded: isSearchOrPageBacked,
       sourcePageFetched: Boolean(pageDigest),
       leagueTitle: resolvedLeagueTitle,
       summaryNote,
@@ -2625,7 +3108,7 @@ interface AiLookupSingleBody {
 
 /**
  * POST /api/liff/related-teams/ai-lookup
- * 単一チームの公式サイト・Instagram・活動拠点・所属連盟をAI検索で自動補完
+ * 単一チームの公式サイト・Instagram・YouTube・X・LINE公式・活動拠点・所属連盟をAI検索で自動補完
  */
 liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
   let body: AiLookupSingleBody;
@@ -2710,6 +3193,7 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
     categoryHint || (catOpt.value !== "other" ? catOpt.label : "");
 
   const cacheKey = [
+    "v2",
     inputName.toLowerCase(),
     effectiveLeague.toLowerCase(),
     effectiveArea.toLowerCase(),
@@ -2747,15 +3231,17 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
 
     const prompt = [
       "あなたは日本の野球チーム（学童・少年野球・中学硬式/軟式・高校・大学・草野球）の公式情報リサーチ専門官です。",
-      "Google検索を用いて、指定された野球チームの公式ホームページ、Instagram・YouTube・X（旧Twitter）・Facebook・LINE公式・部員募集ブログ、所属連盟、活動地域、主な練習拠点を調査し、JSONで返してください。",
+      "Google検索を用いて、指定された野球チームの公式ホームページ（独自HP・89dream・ikz・sposuru・teams.one・Wix・Jimdo・Ameba Ownd等）と、公式SNS（Instagram・YouTubeチャンネル・X（旧Twitter）・Facebook・LINE公式・公式ブログ/部員募集ページ）、所属連盟、活動地域、主な練習拠点を徹底調査し、JSONで返してください。",
       "",
       "【調査対象】",
       ...contextLines,
       "",
-      "【厳守ルール（URLハルシネーション・推測生成100%禁止）】",
-      "1. 同名のチームが全国に複数ある場合は、地域ヒント・連盟ヒント・競技種別ヒントに合致するチームの情報のみを採用し、別地域の同名チームの情報を混ぜないでください。",
-      "2. `websiteUrl` および `links` には、Google検索結果で【そのチーム固有の公式ページ・アカウントとして明確に実在確認できたURLのみ】を記載してください。チーム名からInstagramのアカウント名やドメインを推測してURLを作ることは絶対禁止です（未確認なら必ず空文字 \"\" または空配列 [] にしてください）。",
-      "3. 出力は説明文やマークダウンを含めず、以下の純粋なJSONオブジェクト1つのみを返してください:",
+      "【検索・抽出ルール（推測URLは絶対禁止・検索で確認できた公式URLは漏れなく出力）】",
+      `1. Google検索では「"${inputName}" 野球」「"${inputName}" Instagram」「"${inputName}" 公式HP」のように地域ヒント・連盟ヒントも組み合わせて検索し、公式HPとInstagram等の公式SNSの両方を丁寧に探してください。`,
+      "2. 同名のチームが全国に複数ある場合は、地域ヒント・連盟ヒント・競技種別ヒントに合致するチームの情報のみを採用し、別地域の同名チームの情報を混ぜないでください。",
+      "3. `websiteUrl` にはチームの公式サイト（またはポータル上の公式チームページ）を設定し、Instagram・YouTube・X・Facebook・LINE公式・アメブロ等のサブリンクはすべて `links` 配列に出力してください（公式HPが無くInstagramのみ確認できた場合も `websiteUrl` は空文字 \"\" にし、`links` にInstagramを入れてください）。",
+      "4. 検索結果で確認できなかったURLをチーム名のローマ字等から推測して作ることは絶対禁止です（未確認なら必ず空文字 \"\" または空配列 [] にしてください）。",
+      "5. 出力は説明文やマークダウンを含めず、以下の純粋なJSONオブジェクト1つのみを返してください:",
       "{",
       '  "name": "正式なチーム名",',
       '  "shortName": "スコアボード等向けの4〜8文字の略称",',
@@ -2765,7 +3251,7 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
       '  "description": "創部・活動方針・対象学年・特徴などの簡潔な紹介文（120文字以内、不明なら空文字）",',
       '  "websiteUrl": "実在確認済みの公式サイト・代表ページURL（未確認なら空文字）",',
       '  "links": [',
-      '    { "label": "Instagram", "url": "実在確認済みのURL" }',
+      '    { "label": "Instagram", "url": "https://www.instagram.com/..." }',
       "  ],",
       '  "confidence": "high | medium | low",',
       '  "summaryNote": "特定したチーム・情報源の1行要約"',
@@ -2787,41 +3273,6 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
     const rawConf = cleanAiString(aiRes.json.confidence, 12).toLowerCase();
     const confidence: "high" | "medium" | "low" =
       rawConf === "high" || rawConf === "low" ? rawConf : "medium";
-
-    // 公式HPが見つかった場合、その公式HP内に貼られている公式SNSリンク（Instagram/YouTube/X/LINE/Facebook）も一次情報として補完・裏付けに利用
-    const lookupEvidenceUrls: string[] = [...aiRes.allGroundedUrls];
-    if (aiRes.grounded && websiteUrl && !isBotWalledSnsHost(websiteUrl)) {
-      const siteDigest = await fetchPublicLeaguePageDigest(websiteUrl);
-      if (siteDigest.ok && !hasSoft404HtmlSignature(siteDigest.textSnippet)) {
-        const existingKeys = new Set<string>([
-          normalizeComparableUrlKey(websiteUrl),
-          ...links.map((lk) => normalizeComparableUrlKey(lk.url)),
-        ]);
-        for (const ext of siteDigest.extractedLinks) {
-          lookupEvidenceUrls.push(ext.url);
-          if (links.length >= 10) continue;
-          const extKind = inferRelatedTeamLinkKind(ext.url, ext.label);
-          if (
-            extKind === "instagram" ||
-            extKind === "youtube" ||
-            extKind === "x" ||
-            extKind === "line" ||
-            extKind === "facebook"
-          ) {
-            const compKey = normalizeComparableUrlKey(ext.url);
-            if (!existingKeys.has(compKey)) {
-              existingKeys.add(compKey);
-              links.push({
-                id: createRelatedTeamLinkId(),
-                kind: extKind,
-                label: getRelatedTeamLinkKindDefaultLabel(extKind),
-                url: ext.url,
-              });
-            }
-          }
-        }
-      }
-    }
 
     const rawCandidate: RelatedTeamAiLookupResult = {
       name:
@@ -2851,16 +3302,17 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
       sources: aiRes.sources,
     };
 
+    // 実在HTTP応答・http://救済・公式HP/ブログHTML内のSNSリンク自動抽出を一括実行
     const [candidate] = await filterVerifiedLinksForCandidates([rawCandidate], {
-      evidenceUrls: lookupEvidenceUrls,
-      isGroundedOrPageBacked: aiRes.grounded,
-      strictSnsProvenance: true,
+      evidenceUrls: aiRes.allGroundedUrls,
+      isSearchOrPageBacked: aiRes.usedSearchTool,
+      allowSearchBackedSns: aiRes.usedSearchTool,
     });
 
     const payload = {
       success: true as const,
       model: aiRes.model,
-      grounded: aiRes.grounded,
+      grounded: aiRes.usedSearchTool,
       candidate,
     };
 

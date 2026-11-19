@@ -1,13 +1,12 @@
 // filepath: src/components/liff/RelatedTeamsModals.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
-import { normalizeHttpUrlInput } from "@/lib/liff/team-links-schema";
 import {
   MAX_LINKS_PER_RELATED_TEAM,
   MAX_RELATED_TEAM_AREA_LENGTH,
@@ -20,8 +19,11 @@ import {
   RELATED_TEAM_LINK_KIND_OPTIONS,
   RELATED_TEAM_RELATION_OPTIONS,
   createEmptyRelatedTeamLinkDraft,
+  createRelatedTeamLinkId,
+  extractCanonicalSnsIdentity,
   getRelatedTeamLinkKindDefaultLabel,
   inferRelatedTeamLinkKind,
+  normalizeRelatedTeamLinkUrlInput,
   toRelatedTeamLinkDrafts,
   validateAndNormalizeRelatedTeamLinks,
   type AiDiscoveredTeamCandidate,
@@ -78,6 +80,43 @@ const QUICK_ADD_LINK_KINDS: ReadonlyArray<{
   { kind: "map", chipLabel: "＋ 拠点マップ" },
 ];
 
+function isSnsLinkKind(kind: RelatedTeamLinkKind): boolean {
+  return (
+    kind === "instagram" ||
+    kind === "youtube" ||
+    kind === "x" ||
+    kind === "line" ||
+    kind === "facebook"
+  );
+}
+
+function getLinkUrlPlaceholder(kind: RelatedTeamLinkKind): string {
+  switch (kind) {
+    case "instagram":
+      return "https://www.instagram.com/... または @アカウント名";
+    case "x":
+      return "https://x.com/... または @アカウント名";
+    case "youtube":
+      return "https://www.youtube.com/@... または @ハンドル名";
+    case "line":
+      return "https://line.me/R/ti/p/@...";
+    case "facebook":
+      return "https://www.facebook.com/...";
+    case "map":
+      return "https://maps.google.com/...";
+    default:
+      return "https://...";
+  }
+}
+
+function normalizeUrlDedupeKey(rawUrl: string): string {
+  const clean = rawUrl.trim();
+  if (!clean) return "";
+  const snsId = extractCanonicalSnsIdentity(clean);
+  if (snsId) return `sns:${snsId}`;
+  return clean.replace(/\/+$/, "").toLowerCase();
+}
+
 export interface RelatedTeamFormPayload {
   name: string;
   shortName: string;
@@ -95,6 +134,7 @@ export interface RelatedTeamFormPayload {
 interface CreateOrEditRelatedTeamModalProps {
   isOpen: boolean;
   editingTeam: RelatedTeamItem | null;
+  autoRunAiLookup?: boolean;
   teamId: string;
   squadName: string;
   isDemoMode: boolean;
@@ -108,6 +148,7 @@ interface CreateOrEditRelatedTeamModalProps {
 export function CreateOrEditRelatedTeamModal({
   isOpen,
   editingTeam,
+  autoRunAiLookup = false,
   teamId,
   squadName,
   isDemoMode,
@@ -135,23 +176,188 @@ export function CreateOrEditRelatedTeamModal({
   const [isDeleting, setIsDeleting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // 個別AI自動検索ステート
+  // 個別AI自動検索＆自動反映ステート
   const [isAiLookingUp, setIsAiLookingUp] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiPreview, setAiPreview] = useState<{
+  const [aiLookupResult, setAiLookupResult] = useState<{
     grounded: boolean;
     candidate: RelatedTeamAiLookupResult;
+    reflectedLinkCount: number;
+    hasOverwritableDiff: boolean;
   } | null>(null);
+  const autoTriggeredForOpenRef = useRef<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  const applyCandidateToForm = (
+    cand: RelatedTeamAiLookupResult,
+    mode: "fill_empty_and_merge_links" | "overwrite_all"
+  ) => {
+    if (mode === "overwrite_all") {
+      if (cand.name) setName(cand.name);
+      if (cand.shortName) setShortName(cand.shortName);
+      if (cand.leagueName) setLeagueName(cand.leagueName);
+      if (cand.area) setArea(cand.area);
+      if (cand.homeGround) setHomeGround(cand.homeGround);
+      if (cand.description) setDescription(cand.description);
+      if (cand.websiteUrl) setWebsiteUrl(cand.websiteUrl);
+    } else {
+      setName((prev) => (prev.trim() ? prev : cand.name || prev));
+      setShortName((prev) => (prev.trim() ? prev : cand.shortName || ""));
+      setLeagueName((prev) => (prev.trim() ? prev : cand.leagueName || ""));
+      setArea((prev) => (prev.trim() ? prev : cand.area || ""));
+      setHomeGround((prev) => (prev.trim() ? prev : cand.homeGround || ""));
+      setDescription((prev) => (prev.trim() ? prev : cand.description || ""));
+      setWebsiteUrl((prev) => {
+        if (prev.trim()) return prev;
+        return cand.websiteUrl || "";
+      });
+    }
+
+    setLinkDrafts((prev) => {
+      // 空欄のまま放置されている仮行はAIリンク反映時に整理して枠を空ける
+      const nonEmptyPrev = prev.filter((p) => p.url.trim().length > 0);
+      const seen = new Set<string>();
+      for (const p of nonEmptyPrev) {
+        const k = normalizeUrlDedupeKey(
+          normalizeRelatedTeamLinkUrlInput(p.url, p.kind)
+        );
+        if (k) seen.add(k);
+      }
+
+      const merged = [...nonEmptyPrev];
+
+      // 既に別の websiteUrl が入っている状態で AI が新URLを見つけた場合はサブリンク側にも取りこぼさず追加
+      if (
+        mode !== "overwrite_all" &&
+        cand.websiteUrl &&
+        websiteUrl.trim() &&
+        normalizeUrlDedupeKey(websiteUrl) !==
+          normalizeUrlDedupeKey(cand.websiteUrl) &&
+        merged.length < MAX_LINKS_PER_RELATED_TEAM
+      ) {
+        const extraKey = normalizeUrlDedupeKey(cand.websiteUrl);
+        if (extraKey && !seen.has(extraKey)) {
+          seen.add(extraKey);
+          const extraKind = inferRelatedTeamLinkKind(cand.websiteUrl);
+          merged.push({
+            id: createRelatedTeamLinkId(),
+            kind: extraKind,
+            label: getRelatedTeamLinkKindDefaultLabel(extraKind),
+            url: cand.websiteUrl,
+          });
+        }
+      }
+
+      for (const lk of cand.links) {
+        if (merged.length >= MAX_LINKS_PER_RELATED_TEAM) break;
+        const k = normalizeUrlDedupeKey(lk.url);
+        if (!k || seen.has(k)) continue;
+        seen.add(k);
+        merged.push({
+          id: lk.id || createRelatedTeamLinkId(),
+          kind: lk.kind,
+          label: lk.label || getRelatedTeamLinkKindDefaultLabel(lk.kind),
+          url: lk.url,
+        });
+      }
+
+      return merged.length > 0 ? merged : prev;
+    });
+  };
+
+  const executeAiLookupRequest = async (params: {
+    targetName: string;
+    targetLeague: string;
+    targetArea: string;
+    currentWebsite: string;
+    currentArea: string;
+    currentGround: string;
+    currentLeague: string;
+  }) => {
+    const trimmedName = params.targetName.trim();
+    if (!trimmedName) {
+      setAiError("先にチーム名を入力してからAI自動検索を押してください");
+      return;
+    }
+    if (isDemoMode || teamId === "demo-team") {
+      setAiError(
+        "デモモードではAI自動検索を実行できません。チームを作成・参加してご利用ください"
+      );
+      return;
+    }
+
+    setIsAiLookingUp(true);
+    setAiError(null);
+    setAiLookupResult(null);
+
+    try {
+      const res = await fetch("/api/liff/related-teams/ai-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId,
+          name: trimmedName,
+          leagueHint: params.targetLeague.trim() || undefined,
+          areaHint: params.targetArea.trim() || undefined,
+          categoryHint: defaultCategoryHint || undefined,
+        }),
+      });
+      const data = (await res.json()) as {
+        success: boolean;
+        grounded?: boolean;
+        candidate?: RelatedTeamAiLookupResult;
+        error?: string;
+      };
+      if (!res.ok || !data.success || !data.candidate) {
+        throw new Error(data.error || "AI検索に失敗しました");
+      }
+
+      const cand = data.candidate;
+      const foundLinkCount = (cand.websiteUrl ? 1 : 0) + cand.links.length;
+      const hasOverwritableDiff = Boolean(
+        (cand.websiteUrl &&
+          params.currentWebsite.trim() &&
+          params.currentWebsite.trim() !== cand.websiteUrl) ||
+          (cand.area &&
+            params.currentArea.trim() &&
+            params.currentArea.trim() !== cand.area) ||
+          (cand.homeGround &&
+            params.currentGround.trim() &&
+            params.currentGround.trim() !== cand.homeGround) ||
+          (cand.leagueName &&
+            params.currentLeague.trim() &&
+            params.currentLeague.trim() !== cand.leagueName)
+      );
+
+      // 2段階の「フォームに反映する」押し忘れを防ぐため、取得完了と同時にフォームへ自動反映する
+      applyCandidateToForm(cand, "fill_empty_and_merge_links");
+
+      setAiLookupResult({
+        grounded: Boolean(data.grounded),
+        candidate: cand,
+        reflectedLinkCount: foundLinkCount,
+        hasOverwritableDiff,
+      });
+    } catch (err: unknown) {
+      setAiError(
+        err instanceof Error ? err.message : "AI検索中にエラーが発生しました"
+      );
+    } finally {
+      setIsAiLookingUp(false);
+    }
+  };
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      autoTriggeredForOpenRef.current = null;
+      return;
+    }
     setSubmitError(null);
     setAiError(null);
-    setAiPreview(null);
+    setAiLookupResult(null);
 
     if (editingTeam) {
       setName(editingTeam.name);
@@ -165,6 +371,25 @@ export function CreateOrEditRelatedTeamModal({
       setDescription(editingTeam.description || "");
       setScope(editingTeam.scope || "organization");
       setIsFavorite(Boolean(editingTeam.isFavorite));
+
+      const openKey = `${editingTeam.id}:${autoRunAiLookup ? "auto" : "manual"}`;
+      if (
+        autoRunAiLookup &&
+        !isDemoMode &&
+        teamId !== "demo-team" &&
+        autoTriggeredForOpenRef.current !== openKey
+      ) {
+        autoTriggeredForOpenRef.current = openKey;
+        void executeAiLookupRequest({
+          targetName: editingTeam.name,
+          targetLeague: editingTeam.leagueName || "",
+          targetArea: editingTeam.area || "",
+          currentWebsite: editingTeam.websiteUrl || "",
+          currentArea: editingTeam.area || "",
+          currentGround: editingTeam.homeGround || "",
+          currentLeague: editingTeam.leagueName || "",
+        });
+      }
     } else {
       setName("");
       setShortName("");
@@ -178,7 +403,8 @@ export function CreateOrEditRelatedTeamModal({
       setScope("organization");
       setIsFavorite(false);
     }
-  }, [isOpen, editingTeam]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editingTeam, autoRunAiLookup]);
 
   if (!mounted || !isOpen) return null;
 
@@ -202,7 +428,14 @@ export function CreateOrEditRelatedTeamModal({
           }
         }
         if (patch.url !== undefined && patch.url.trim()) {
-          const inferred = inferRelatedTeamLinkKind(patch.url, updated.label);
+          const normalizedPreview = normalizeRelatedTeamLinkUrlInput(
+            patch.url,
+            updated.kind
+          );
+          const inferred = inferRelatedTeamLinkKind(
+            normalizedPreview,
+            updated.label
+          );
           if (inferred !== "other" && updated.kind === "other") {
             updated.kind = inferred;
             if (
@@ -218,97 +451,87 @@ export function CreateOrEditRelatedTeamModal({
     );
   };
 
+  const handleBlurLinkDraftUrl = (id: string) => {
+    setLinkDrafts((prev) =>
+      prev.map((row) => {
+        if (row.id !== id || !row.url.trim()) return row;
+        const normalized = normalizeRelatedTeamLinkUrlInput(row.url, row.kind);
+        const inferred = inferRelatedTeamLinkKind(normalized, row.label);
+        const nextKind =
+          row.kind === "other" && inferred !== "other" ? inferred : row.kind;
+        const nextLabel =
+          !row.label ||
+          row.label === getRelatedTeamLinkKindDefaultLabel(row.kind)
+            ? getRelatedTeamLinkKindDefaultLabel(nextKind)
+            : row.label;
+        return {
+          ...row,
+          kind: nextKind,
+          label: nextLabel,
+          url: normalized,
+        };
+      })
+    );
+  };
+
   const handleRemoveLinkDraft = (id: string) => {
     setLinkDrafts((prev) => prev.filter((row) => row.id !== id));
   };
 
-  const handleRunSingleAiLookup = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setAiError("先にチーム名を入力してからAI自動検索を押してください");
-      return;
-    }
-    if (isDemoMode || teamId === "demo-team") {
-      setAiError(
-        "デモモードではAI自動検索を実行できません。チームを作成・参加してご利用ください"
-      );
-      return;
-    }
+  const normalizedWebsitePreview = websiteUrl.trim()
+    ? normalizeRelatedTeamLinkUrlInput(websiteUrl)
+    : "";
+  const websiteInferredKind = normalizedWebsitePreview
+    ? inferRelatedTeamLinkKind(normalizedWebsitePreview)
+    : "official";
+  const isWebsiteActuallySns = isSnsLinkKind(websiteInferredKind);
 
-    setIsAiLookingUp(true);
-    setAiError(null);
-    setAiPreview(null);
-
-    try {
-      const res = await fetch("/api/liff/related-teams/ai-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          teamId,
-          name: trimmedName,
-          leagueHint: leagueName.trim() || undefined,
-          areaHint: area.trim() || undefined,
-          categoryHint: defaultCategoryHint || undefined,
-        }),
-      });
-      const data = (await res.json()) as {
-        success: boolean;
-        grounded?: boolean;
-        candidate?: RelatedTeamAiLookupResult;
-        error?: string;
-      };
-      if (!res.ok || !data.success || !data.candidate) {
-        throw new Error(data.error || "AI検索に失敗しました");
+  const handleMoveWebsiteToSnsLinks = () => {
+    if (!normalizedWebsitePreview || !isWebsiteActuallySns) return;
+    setLinkDrafts((prev) => {
+      if (prev.length >= MAX_LINKS_PER_RELATED_TEAM) return prev;
+      const key = normalizeUrlDedupeKey(normalizedWebsitePreview);
+      if (
+        prev.some(
+          (p) =>
+            normalizeUrlDedupeKey(
+              normalizeRelatedTeamLinkUrlInput(p.url, p.kind)
+            ) === key
+        )
+      ) {
+        return prev;
       }
-      setAiPreview({
-        grounded: Boolean(data.grounded),
-        candidate: data.candidate,
-      });
-    } catch (err: unknown) {
-      setAiError(
-        err instanceof Error ? err.message : "AI検索中にエラーが発生しました"
-      );
-    } finally {
-      setIsAiLookingUp(false);
-    }
+      return [
+        {
+          id: createRelatedTeamLinkId(),
+          kind: websiteInferredKind,
+          label: getRelatedTeamLinkKindDefaultLabel(websiteInferredKind),
+          url: normalizedWebsitePreview,
+        },
+        ...prev.filter((p) => p.url.trim().length > 0),
+      ].slice(0, MAX_LINKS_PER_RELATED_TEAM);
+    });
+    setWebsiteUrl("");
   };
 
-  const handleApplyAiPreview = () => {
-    if (!aiPreview) return;
-    const cand = aiPreview.candidate;
-    if (cand.name) setName(cand.name);
-    if (cand.shortName && !shortName.trim()) setShortName(cand.shortName);
-    if (cand.leagueName && !leagueName.trim()) setLeagueName(cand.leagueName);
-    if (cand.area) setArea(cand.area);
-    if (cand.homeGround) setHomeGround(cand.homeGround);
-    if (cand.description && !description.trim()) {
-      setDescription(cand.description);
-    }
-    if (cand.websiteUrl) {
-      setWebsiteUrl(cand.websiteUrl);
-    }
-    if (cand.links.length > 0) {
-      setLinkDrafts((prev) => {
-        const existingUrls = new Set(
-          prev.map((p) => p.url.trim().toLowerCase()).filter(Boolean)
-        );
-        const merged = [...prev];
-        for (const lk of cand.links) {
-          if (merged.length >= MAX_LINKS_PER_RELATED_TEAM) break;
-          if (!existingUrls.has(lk.url.toLowerCase())) {
-            existingUrls.add(lk.url.toLowerCase());
-            merged.push({
-              id: lk.id,
-              kind: lk.kind,
-              label: lk.label,
-              url: lk.url,
-            });
-          }
-        }
-        return merged;
-      });
-    }
-    setAiPreview(null);
+  const handleRunSingleAiLookup = async () => {
+    await executeAiLookupRequest({
+      targetName: name,
+      targetLeague: leagueName,
+      targetArea: area,
+      currentWebsite: websiteUrl,
+      currentArea: area,
+      currentGround: homeGround,
+      currentLeague: leagueName,
+    });
+  };
+
+  const handleOverwriteWithAiResult = () => {
+    if (!aiLookupResult) return;
+    applyCandidateToForm(aiLookupResult.candidate, "overwrite_all");
+    setAiLookupResult((prev) =>
+      prev ? { ...prev, hasOverwritableDiff: false } : null
+    );
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -319,7 +542,7 @@ export function CreateOrEditRelatedTeamModal({
       return;
     }
 
-    const normalizedWebInput = normalizeHttpUrlInput(websiteUrl);
+    const normalizedWebInput = normalizeRelatedTeamLinkUrlInput(websiteUrl);
     const webCheck = validateSafeHttpUrl(normalizedWebInput, {
       allowEmpty: true,
     });
@@ -446,7 +669,7 @@ export function CreateOrEditRelatedTeamModal({
                 {isAiLookingUp ? (
                   <>
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>AI調査中...</span>
+                    <span>Web検索＆疎通確認中...</span>
                   </>
                 ) : (
                   <>
@@ -484,72 +707,109 @@ export function CreateOrEditRelatedTeamModal({
               </p>
             )}
 
-            {aiPreview && (
-              <div className="p-3 rounded-2xl border border-primary/35 bg-primary/5 space-y-2">
+            {aiLookupResult && (
+              <div
+                className={`p-3 rounded-2xl border space-y-2 ${
+                  aiLookupResult.reflectedLinkCount > 0
+                    ? "border-emerald-500/40 bg-emerald-500/8"
+                    : "border-amber-500/35 bg-amber-500/8"
+                }`}
+              >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Sparkles className="w-3.5 h-3.5 text-primary shrink-0" />
+                    <Sparkles
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        aiLookupResult.reflectedLinkCount > 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-amber-600 dark:text-amber-400"
+                      }`}
+                    />
                     <span className="text-xs font-black text-foreground truncate">
-                      AI調査結果: {aiPreview.candidate.name}
+                      {aiLookupResult.reflectedLinkCount > 0
+                        ? `公式HP・SNS ${aiLookupResult.reflectedLinkCount}件をフォームに自動反映しました！`
+                        : "公開HP・公式SNSはWeb検索上で確認できませんでした"}
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-primary/15 text-primary text-[10px] font-black shrink-0">
-                    {aiPreview.grounded ? "Web検索検証済" : "AI推論"}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAiLookupResult(null)}
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground cursor-pointer shrink-0"
+                    aria-label="案内を閉じる"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                {aiPreview.candidate.summaryNote && (
-                  <p className="text-[11px] text-muted-foreground font-bold">
-                    {aiPreview.candidate.summaryNote}
+                {aiLookupResult.candidate.summaryNote && (
+                  <p className="text-[11px] text-muted-foreground font-bold leading-relaxed">
+                    {aiLookupResult.candidate.summaryNote}
                   </p>
                 )}
 
-                <div className="text-[11px] space-y-1 text-foreground">
-                  {aiPreview.candidate.leagueName && (
-                    <p>
-                      <span className="font-black text-muted-foreground">連盟: </span>
-                      {aiPreview.candidate.leagueName}
+                {aiLookupResult.reflectedLinkCount > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {aiLookupResult.candidate.websiteUrl &&
+                        sanitizeSafeExternalHref(
+                          aiLookupResult.candidate.websiteUrl,
+                          ""
+                        ) && (
+                          <a
+                            href={sanitizeSafeExternalHref(
+                              aiLookupResult.candidate.websiteUrl,
+                              ""
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground hover:border-primary/40"
+                          >
+                            <Globe className="w-3 h-3 text-primary" />
+                            <span>公式サイトを確認</span>
+                            <ExternalLink className="w-2.5 h-2.5 text-muted-foreground" />
+                          </a>
+                        )}
+                      {aiLookupResult.candidate.links.map((lk) => {
+                        const safeHref = sanitizeSafeExternalHref(lk.url, "");
+                        if (!safeHref) return null;
+                        return (
+                          <a
+                            key={lk.id}
+                            href={safeHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-foreground hover:border-primary/40"
+                          >
+                            <span>{lk.label}を確認</span>
+                            <ExternalLink className="w-2.5 h-2.5 text-muted-foreground" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                      ※下の入力欄に自動セット済みです。問題なければそのまま「
+                      {editingTeam ? "変更を保存" : "登録する"}
+                      」を押して確定してください。
                     </p>
-                  )}
-                  {(aiPreview.candidate.area || aiPreview.candidate.homeGround) && (
-                    <p>
-                      <span className="font-black text-muted-foreground">地域・拠点: </span>
-                      {[aiPreview.candidate.area, aiPreview.candidate.homeGround]
-                        .filter(Boolean)
-                        .join(" / ")}
-                    </p>
-                  )}
-                  {aiPreview.candidate.websiteUrl && (
-                    <p className="truncate">
-                      <span className="font-black text-muted-foreground">公式HP: </span>
-                      {aiPreview.candidate.websiteUrl}
-                    </p>
-                  )}
-                  {aiPreview.candidate.links.length > 0 && (
-                    <p>
-                      <span className="font-black text-muted-foreground">検出SNS等: </span>
-                      {aiPreview.candidate.links.map((l) => l.label).join("・")}
-                    </p>
-                  )}
-                </div>
+                  </>
+                ) : (
+                  <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                    ※活動地域や所属連盟が分かる場合は入力してから再検索するか、Instagramの{" "}
+                    <span className="font-mono">@アカウント名</span>{" "}
+                    やURLを下の欄に直接入力してください。
+                  </p>
+                )}
 
-                <div className="flex items-center justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setAiPreview(null)}
-                    className="px-2.5 py-1.5 rounded-lg border border-border bg-card text-[11px] font-bold text-muted-foreground cursor-pointer"
-                  >
-                    閉じる
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleApplyAiPreview}
-                    className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[11px] font-black flex items-center gap-1 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>フォームに反映する</span>
-                  </button>
-                </div>
+                {aiLookupResult.hasOverwritableDiff && (
+                  <div className="pt-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleOverwriteWithAiResult}
+                      className="px-2.5 py-1 rounded-lg bg-card border border-border text-[10px] font-black text-primary hover:border-primary/40 cursor-pointer"
+                    >
+                      既存の入力項目もAI結果で上書きする
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -677,9 +937,29 @@ export function CreateOrEditRelatedTeamModal({
               inputMode="url"
               value={websiteUrl}
               onChange={(e) => setWebsiteUrl(e.target.value)}
-              placeholder="https://..."
+              onBlur={() => {
+                if (websiteUrl.trim()) {
+                  setWebsiteUrl(normalizeRelatedTeamLinkUrlInput(websiteUrl));
+                }
+              }}
+              placeholder="https://... (公式HPが無い場合は空欄のままでOK)"
               className="w-full px-3.5 py-2.5 rounded-xl bg-background border border-border text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-primary/40"
             />
+            {isWebsiteActuallySns && (
+              <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                <span className="text-[10px] font-bold text-foreground">
+                  {getRelatedTeamLinkKindDefaultLabel(websiteInferredKind)}
+                  のURLが入力されています
+                </span>
+                <button
+                  type="button"
+                  onClick={handleMoveWebsiteToSnsLinks}
+                  className="px-2 py-0.5 rounded-md bg-card border border-border text-[10px] font-black text-primary hover:border-primary/40 shrink-0 cursor-pointer"
+                >
+                  公式SNS枠へ移動する
+                </button>
+              </div>
+            )}
           </div>
 
           {/* SNS・サブリンク一覧 */}
@@ -690,7 +970,8 @@ export function CreateOrEditRelatedTeamModal({
                   公式SNS・関連リンク ({linkDrafts.length}/{MAX_LINKS_PER_RELATED_TEAM})
                 </p>
                 <p className="text-[10px] font-bold text-muted-foreground">
-                  Instagram・YouTube・X・募集ブログ・拠点マップ等を複数登録可能
+                  Instagram・YouTube・XはURLまたは{" "}
+                  <span className="font-mono">@アカウント名</span> でも登録可能
                 </p>
               </div>
             </div>
@@ -764,7 +1045,8 @@ export function CreateOrEditRelatedTeamModal({
                           url: e.target.value,
                         })
                       }
-                      placeholder="https://www.instagram.com/..."
+                      onBlur={() => handleBlurLinkDraftUrl(draft.id)}
+                      placeholder={getLinkUrlPlaceholder(draft.kind)}
                       className="w-full px-2.5 py-1.5 rounded-lg bg-background border border-border text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -979,10 +1261,14 @@ export function BulkAiDiscoverModal({
       });
       setOverrideLeagueName(data.leagueTitle || query.trim());
 
-      // 未登録のチームを初期選択状態にする
+      // 未登録チーム ＆ リンク未設定の既登録チーム（今回AIでHP/SNSが検出されたもの）を初期選択状態にする
       const initialSet = new Set<string>();
       for (const c of cands) {
-        if (!c.alreadyRegistered) {
+        const foundLinks = (c.websiteUrl ? 1 : 0) + c.links.length;
+        if (
+          !c.alreadyRegistered ||
+          (!c.hasExistingLinks && foundLinks > 0)
+        ) {
           initialSet.add(c.tempId);
         }
       }
@@ -1008,13 +1294,21 @@ export function BulkAiDiscoverModal({
     });
   };
 
-  const handleSelectAllUnregistered = () => {
+  const handleSelectRecommended = () => {
     if (!discoverResult) return;
     const next = new Set<string>();
     for (const c of discoverResult.candidates) {
-      if (!c.alreadyRegistered) next.add(c.tempId);
+      const foundLinks = (c.websiteUrl ? 1 : 0) + c.links.length;
+      if (!c.alreadyRegistered || (!c.hasExistingLinks && foundLinks > 0)) {
+        next.add(c.tempId);
+      }
     }
     setSelectedTempIds(next);
+  };
+
+  const handleSelectAllCandidates = () => {
+    if (!discoverResult) return;
+    setSelectedTempIds(new Set(discoverResult.candidates.map((c) => c.tempId)));
   };
 
   const handleBulkSave = async () => {
@@ -1023,7 +1317,7 @@ export function BulkAiDiscoverModal({
       selectedTempIds.has(c.tempId)
     );
     if (chosen.length === 0) {
-      setErrorMsg("登録するチームを1つ以上チェックしてください");
+      setErrorMsg("登録またはリンク反映するチームを1つ以上チェックしてください");
       return;
     }
 
@@ -1053,6 +1347,12 @@ export function BulkAiDiscoverModal({
     }
   };
 
+  const hasSelectedExisting = Boolean(
+    discoverResult?.candidates.some(
+      (c) => c.alreadyRegistered && selectedTempIds.has(c.tempId)
+    )
+  );
+
   return createPortal(
     <div
       className="fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
@@ -1075,7 +1375,7 @@ export function BulkAiDiscoverModal({
                 関連チームのAI一括収集
               </h2>
               <p className="text-[10px] font-bold text-slate-300 truncate">
-                所属連盟名や連盟HPのURLから加盟チーム・公式SNSを自動調査
+                所属連盟名や連盟HPのURLから加盟チーム・公式HP・SNSを自動調査
               </p>
             </div>
           </div>
@@ -1152,7 +1452,7 @@ export function BulkAiDiscoverModal({
               {isSearching ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Web検索＆リンク疎通チェック中（最大60チーム対応）...</span>
+                  <span>Web検索＆公式HP・SNS疎通チェック中（最大60チーム対応）...</span>
                 </>
               ) : (
                 <>
@@ -1163,7 +1463,7 @@ export function BulkAiDiscoverModal({
             </button>
 
             <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-              ※最大60チームの大規模連盟に対応しています。リンク切れや実在未確認のURLは自動で除外されます（登録後に個別カードの編集画面から1チームずつ詳細なHP・SNS再検索も可能です）。
+              ※既に登録済みのチームにも、検出された公式HP・SNSリンクを重複なしでマージ反映できます。登録後にグループ見出しの「AI補完」から1チームずつ詳細検索も可能です。
             </p>
           </form>
 
@@ -1191,10 +1491,18 @@ export function BulkAiDiscoverModal({
                   <div className="flex items-center gap-2 text-[11px] font-bold">
                     <button
                       type="button"
-                      onClick={handleSelectAllUnregistered}
+                      onClick={handleSelectRecommended}
                       className="text-primary hover:underline cursor-pointer"
                     >
-                      未登録を全選択
+                      未登録＋リンク補完を選択
+                    </button>
+                    <span className="text-border">|</span>
+                    <button
+                      type="button"
+                      onClick={handleSelectAllCandidates}
+                      className="text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      全選択
                     </button>
                     <span className="text-border">|</span>
                     <button
@@ -1276,22 +1584,30 @@ export function BulkAiDiscoverModal({
                   <div className="space-y-2 max-h-[38dvh] overflow-y-auto pr-0.5">
                     {discoverResult.candidates.map((cand) => {
                       const isChecked = selectedTempIds.has(cand.tempId);
-                      const linkCount =
-                        (cand.websiteUrl ? 1 : 0) + cand.links.length;
+                      const linkBadges: string[] = [];
+                      if (cand.websiteUrl) linkBadges.push("公式HP");
+                      for (const lk of cand.links) {
+                        linkBadges.push(
+                          lk.label || getRelatedTeamLinkKindDefaultLabel(lk.kind)
+                        );
+                      }
+                      const canComplementLinks =
+                        cand.alreadyRegistered &&
+                        !cand.hasExistingLinks &&
+                        linkBadges.length > 0;
                       return (
                         <label
                           key={cand.tempId}
                           className={`flex items-start gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
-                            cand.alreadyRegistered
-                              ? "border-border bg-muted/30 opacity-70"
-                              : isChecked
-                                ? "border-primary/50 bg-primary/5 shadow-2xs"
+                            isChecked
+                              ? "border-primary/50 bg-primary/5 shadow-2xs"
+                              : cand.alreadyRegistered
+                                ? "border-border bg-muted/25 hover:border-primary/30"
                                 : "border-border bg-card hover:border-primary/30"
                           }`}
                         >
                           <input
                             type="checkbox"
-                            disabled={cand.alreadyRegistered}
                             checked={isChecked}
                             onChange={() => toggleCandidate(cand.tempId)}
                             className="mt-1 w-4 h-4 rounded accent-primary shrink-0"
@@ -1302,15 +1618,26 @@ export function BulkAiDiscoverModal({
                                 {cand.name}
                               </span>
                               {cand.alreadyRegistered && (
-                                <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10px] font-black">
-                                  登録済
+                                <span
+                                  className={`px-2 py-0.5 rounded-md text-[10px] font-black border ${
+                                    canComplementLinks
+                                      ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                      : "bg-muted text-muted-foreground border-border"
+                                  }`}
+                                >
+                                  {canComplementLinks
+                                    ? "登録済（HP/SNS補完可）"
+                                    : "登録済"}
                                 </span>
                               )}
-                              {linkCount > 0 && (
-                                <span className="px-2 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 text-[10px] font-black">
-                                  HP/SNS {linkCount}件
+                              {linkBadges.map((badge, bIdx) => (
+                                <span
+                                  key={`${cand.tempId}-b-${bIdx}`}
+                                  className="px-2 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 text-[10px] font-black"
+                                >
+                                  {badge}
                                 </span>
-                              )}
+                              ))}
                             </div>
 
                             {(cand.area || cand.homeGround) && (
@@ -1343,7 +1670,10 @@ export function BulkAiDiscoverModal({
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {discoverResult.sources.slice(0, 4).map((src) => {
-                          const safeHref = sanitizeSafeExternalHref(src.url);
+                          const safeHref = sanitizeSafeExternalHref(
+                            src.url,
+                            ""
+                          );
                           if (!safeHref) return null;
                           return (
                             <a
@@ -1384,7 +1714,9 @@ export function BulkAiDiscoverModal({
                         <Plus className="w-4 h-4" />
                       )}
                       <span>
-                        選択した {selectedTempIds.size} チームを一括登録
+                        {hasSelectedExisting
+                          ? `選択した ${selectedTempIds.size} チームを登録・リンク反映`
+                          : `選択した ${selectedTempIds.size} チームを一括登録`}
                       </span>
                     </button>
                   </div>
@@ -1896,3 +2228,553 @@ export function GroupBulkDeleteModal({
     document.body
   );
 }
+
+interface GroupAiEnrichModalProps {
+  isOpen: boolean;
+  groupTitle: string;
+  teamsInGroup: ReadonlyArray<RelatedTeamItem>;
+  teamId: string;
+  isDemoMode: boolean;
+  defaultCategoryHint: string;
+  onClose: () => void;
+  onCompleted: (summary: {
+    updatedCount: number;
+    checkedCount: number;
+  }) => Promise<void> | void;
+}
+
+type EnrichItemStatus =
+  | { state: "idle" }
+  | { state: "running" }
+  | { state: "updated"; addedBadges: string[] }
+  | { state: "no_links" }
+  | { state: "error"; message: string };
+
+export function GroupAiEnrichModal({
+  isOpen,
+  groupTitle,
+  teamsInGroup,
+  teamId,
+  isDemoMode,
+  defaultCategoryHint,
+  onClose,
+  onCompleted,
+}: GroupAiEnrichModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [areaHint, setAreaHint] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [statusMap, setStatusMap] = useState<Record<string, EnrichItemStatus>>(
+    {}
+  );
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+    updated: number;
+  }>({ done: 0, total: 0, updated: 0 });
+  const abortRequestedRef = useRef(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      abortRequestedRef.current = true;
+      return;
+    }
+    abortRequestedRef.current = false;
+    setErrorMsg(null);
+    setAreaHint("");
+    setIsRunning(false);
+    setIsFinished(false);
+    setStatusMap({});
+    setProgress({ done: 0, total: 0, updated: 0 });
+
+    const missingLinkIds = teamsInGroup
+      .filter((t) => !t.websiteUrl && t.links.length === 0)
+      .map((t) => t.id);
+    setSelectedIds(
+      new Set(
+        missingLinkIds.length > 0
+          ? missingLinkIds
+          : teamsInGroup.map((t) => t.id)
+      )
+    );
+  }, [isOpen, teamsInGroup]);
+
+  if (!mounted || !isOpen) return null;
+
+  const toggleTeamId = (id: string) => {
+    if (isRunning) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectMissingOnly = () => {
+    if (isRunning) return;
+    setSelectedIds(
+      new Set(
+        teamsInGroup
+          .filter((t) => !t.websiteUrl && t.links.length === 0)
+          .map((t) => t.id)
+      )
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (isRunning) return;
+    setSelectedIds(new Set(teamsInGroup.map((t) => t.id)));
+  };
+
+  const handleClearAll = () => {
+    if (isRunning) return;
+    setSelectedIds(new Set());
+  };
+
+  const handleRunBatchEnrich = async () => {
+    const targets = teamsInGroup.filter((t) => selectedIds.has(t.id));
+    if (targets.length === 0) {
+      setErrorMsg("AI検索を実行するチームを1つ以上選択してください");
+      return;
+    }
+    if (isDemoMode || teamId === "demo-team") {
+      setErrorMsg(
+        "デモモードではAI一括補完を実行できません。チームを作成・参加してご利用ください"
+      );
+      return;
+    }
+
+    abortRequestedRef.current = false;
+    setIsRunning(true);
+    setIsFinished(false);
+    setErrorMsg(null);
+    setProgress({ done: 0, total: targets.length, updated: 0 });
+
+    const initialStatuses: Record<string, EnrichItemStatus> = {};
+    for (const t of targets) {
+      initialStatuses[t.id] = { state: "idle" };
+    }
+    setStatusMap(initialStatuses);
+
+    let cursor = 0;
+    let doneCount = 0;
+    let updatedTotal = 0;
+    const concurrency = 2;
+
+    const processSingleTeam = async (item: RelatedTeamItem) => {
+      if (abortRequestedRef.current) return;
+      setStatusMap((prev) => ({
+        ...prev,
+        [item.id]: { state: "running" },
+      }));
+
+      try {
+        const effectiveLeague =
+          item.leagueName.trim() ||
+          (groupTitle !== "連盟・グループ未設定" ? groupTitle : "");
+        const lookupRes = await fetch("/api/liff/related-teams/ai-lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId,
+            name: item.name,
+            leagueHint: effectiveLeague || undefined,
+            areaHint: areaHint.trim() || item.area || undefined,
+            categoryHint: defaultCategoryHint || undefined,
+          }),
+        });
+        const lookupJson = (await lookupRes.json()) as {
+          success: boolean;
+          candidate?: RelatedTeamAiLookupResult;
+          error?: string;
+        };
+
+        if (!lookupRes.ok || !lookupJson.success || !lookupJson.candidate) {
+          throw new Error(lookupJson.error || "検索失敗");
+        }
+
+        const cand = lookupJson.candidate;
+        const existingWeb = (item.websiteUrl || "").trim();
+        const mergedLinks: RelatedTeamLinkItem[] = [...item.links];
+        const seenKeys = new Set<string>();
+        if (existingWeb) seenKeys.add(normalizeUrlDedupeKey(existingWeb));
+        for (const lk of item.links) {
+          const k = normalizeUrlDedupeKey(lk.url);
+          if (k) seenKeys.add(k);
+        }
+
+        let nextWebUrl = existingWeb;
+        const addedBadges: string[] = [];
+
+        if (cand.websiteUrl) {
+          const webKey = normalizeUrlDedupeKey(cand.websiteUrl);
+          if (!nextWebUrl) {
+            nextWebUrl = cand.websiteUrl;
+            if (webKey) seenKeys.add(webKey);
+            addedBadges.push("公式HP");
+          } else if (
+            webKey &&
+            !seenKeys.has(webKey) &&
+            mergedLinks.length < MAX_LINKS_PER_RELATED_TEAM
+          ) {
+            seenKeys.add(webKey);
+            const extraKind = inferRelatedTeamLinkKind(cand.websiteUrl);
+            const extraLabel = getRelatedTeamLinkKindDefaultLabel(extraKind);
+            mergedLinks.push({
+              id: createRelatedTeamLinkId(),
+              kind: extraKind,
+              label: extraLabel,
+              url: cand.websiteUrl,
+            });
+            addedBadges.push(extraLabel);
+          }
+        }
+
+        for (const lk of cand.links) {
+          if (mergedLinks.length >= MAX_LINKS_PER_RELATED_TEAM) break;
+          const k = normalizeUrlDedupeKey(lk.url);
+          if (!k || seenKeys.has(k)) continue;
+          seenKeys.add(k);
+          const lbl = lk.label || getRelatedTeamLinkKindDefaultLabel(lk.kind);
+          mergedLinks.push({
+            id: lk.id || createRelatedTeamLinkId(),
+            kind: lk.kind,
+            label: lbl,
+            url: lk.url,
+          });
+          addedBadges.push(lbl);
+        }
+
+        const nextShortName = item.shortName || cand.shortName || "";
+        const nextArea = item.area || cand.area || "";
+        const nextHomeGround = item.homeGround || cand.homeGround || "";
+        const nextDesc = item.description || cand.description || "";
+
+        const metadataFilled =
+          nextShortName !== item.shortName ||
+          nextArea !== item.area ||
+          nextHomeGround !== item.homeGround ||
+          nextDesc !== item.description;
+
+        if (addedBadges.length === 0 && !metadataFilled) {
+          setStatusMap((prev) => ({
+            ...prev,
+            [item.id]: { state: "no_links" },
+          }));
+          return;
+        }
+
+        const putRes = await fetch(
+          `/api/liff/related-teams/${encodeURIComponent(item.id)}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId,
+              websiteUrl: nextWebUrl,
+              links: mergedLinks,
+              shortName: nextShortName,
+              area: nextArea,
+              homeGround: nextHomeGround,
+              description: nextDesc,
+            }),
+          }
+        );
+        const putJson = (await putRes.json()) as {
+          success: boolean;
+          error?: string;
+        };
+        if (!putRes.ok || !putJson.success) {
+          throw new Error(putJson.error || "保存失敗");
+        }
+
+        updatedTotal += 1;
+        setStatusMap((prev) => ({
+          ...prev,
+          [item.id]: {
+            state: "updated",
+            addedBadges:
+              addedBadges.length > 0 ? addedBadges : ["拠点・紹介情報"],
+          },
+        }));
+      } catch (err: unknown) {
+        setStatusMap((prev) => ({
+          ...prev,
+          [item.id]: {
+            state: "error",
+            message: err instanceof Error ? err.message : "エラー",
+          },
+        }));
+      } finally {
+        doneCount += 1;
+        setProgress({
+          done: doneCount,
+          total: targets.length,
+          updated: updatedTotal,
+        });
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(concurrency, targets.length) },
+      async () => {
+        while (!abortRequestedRef.current) {
+          const idx = cursor;
+          cursor += 1;
+          if (idx >= targets.length) break;
+          await processSingleTeam(targets[idx]);
+        }
+      }
+    );
+
+    await Promise.all(workers);
+    setIsRunning(false);
+    setIsFinished(true);
+
+    if (updatedTotal > 0) {
+      await onCompleted({
+        updatedCount: updatedTotal,
+        checkedCount: doneCount,
+      });
+    }
+  };
+
+  const progressPct =
+    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
+      onClick={() => {
+        if (!isRunning) onClose();
+      }}
+    >
+      <div
+        className="w-full sm:max-w-lg max-h-[90dvh] bg-card border-t sm:border border-border rounded-t-3xl sm:rounded-3xl shadow-xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* A-3 Dark Solid Header Cap */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3.5 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-black text-white truncate">
+                公式HP・SNSリンクをAI一括補完
+              </h2>
+              <p className="text-[10px] font-bold text-slate-300 truncate">
+                {groupTitle}（1チームずつ精密にWeb検索＆自動保存）
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (isRunning) {
+                abortRequestedRef.current = true;
+              } else {
+                onClose();
+              }
+            }}
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-slate-700 cursor-pointer"
+            aria-label="閉じる"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-4">
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs font-bold flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <div className="p-3 rounded-2xl border border-amber-500/30 bg-amber-500/8 space-y-2">
+            <p className="text-[11px] font-bold text-foreground leading-relaxed">
+              選択した各チームについてGoogle検索を実行し、実在が確認できた公式HP・Instagram・YouTube・X・公式ブログを自動で登録・保存します（既存のリンクは消えません）。
+            </p>
+            <div className="space-y-1">
+              <label className="text-[10px] font-black text-muted-foreground">
+                活動地域ヒント（任意・他県の同名チーム誤検出を防ぐ場合に指定）
+              </label>
+              <input
+                type="text"
+                disabled={isRunning}
+                value={areaHint}
+                onChange={(e) => setAreaHint(e.target.value)}
+                placeholder="例: 〇〇県〇〇市"
+                className="w-full px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-bold disabled:opacity-50"
+              />
+            </div>
+          </div>
+
+          {(isRunning || isFinished) && progress.total > 0 && (
+            <div className="p-3 rounded-2xl border border-border bg-muted/20 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-black">
+                <span className="text-foreground">
+                  {isRunning
+                    ? `AI調査＆保存中... (${progress.done}/${progress.total})`
+                    : `完了: ${progress.done}チーム調査 / ${progress.updated}チームに反映`}
+                </span>
+                <span className="text-primary">{progressPct}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-amber-500 transition-all duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+            <span className="text-xs font-black text-foreground">
+              対象: {selectedIds.size} / {teamsInGroup.length} チーム
+            </span>
+            <div className="flex items-center gap-2 text-[11px] font-bold">
+              <button
+                type="button"
+                disabled={isRunning}
+                onClick={handleSelectMissingOnly}
+                className="text-primary hover:underline disabled:opacity-40 cursor-pointer"
+              >
+                リンク未設定のみ
+              </button>
+              <span className="text-border">|</span>
+              <button
+                type="button"
+                disabled={isRunning}
+                onClick={handleSelectAll}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-40 cursor-pointer"
+              >
+                すべて選択
+              </button>
+              <span className="text-border">|</span>
+              <button
+                type="button"
+                disabled={isRunning || selectedIds.size === 0}
+                onClick={handleClearAll}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-40 cursor-pointer"
+              >
+                解除
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 max-h-[38dvh] overflow-y-auto pr-0.5">
+            {teamsInGroup.map((item) => {
+              const checked = selectedIds.has(item.id);
+              const existingCount =
+                (item.websiteUrl ? 1 : 0) + item.links.length;
+              const st = statusMap[item.id];
+              return (
+                <label
+                  key={item.id}
+                  className={`flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-all ${
+                    isRunning ? "cursor-default" : "cursor-pointer"
+                  } ${
+                    checked
+                      ? "border-amber-500/45 bg-amber-500/5"
+                      : "border-border bg-card opacity-75"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isRunning}
+                      onChange={() => toggleTeamId(item.id)}
+                      className="w-4 h-4 rounded accent-amber-500 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-foreground truncate">
+                        {item.name}
+                      </p>
+                      <p className="text-[10px] font-bold text-muted-foreground truncate">
+                        {existingCount > 0
+                          ? `登録済リンク ${existingCount}件`
+                          : "リンク未設定"}
+                        {item.area ? ` ・ ${item.area}` : ""}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0">
+                    {st?.state === "running" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px] font-black">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>検索中</span>
+                      </span>
+                    ) : st?.state === "updated" ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-black max-w-[150px] truncate">
+                        <Check className="w-3 h-3 shrink-0" />
+                        <span className="truncate">
+                          {st.addedBadges.join("・")}
+                        </span>
+                      </span>
+                    ) : st?.state === "no_links" ? (
+                      <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10px] font-bold">
+                        未検出
+                      </span>
+                    ) : st?.state === "error" ? (
+                      <span className="px-2 py-0.5 rounded-md bg-destructive/12 text-destructive text-[10px] font-bold">
+                        失敗
+                      </span>
+                    ) : null}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+            {isRunning ? (
+              <button
+                type="button"
+                onClick={() => {
+                  abortRequestedRef.current = true;
+                }}
+                className="px-4 py-2.5 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive text-xs font-black cursor-pointer"
+              >
+                中断する
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 rounded-xl border border-border bg-card text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  {isFinished ? "閉じる" : "キャンセル"}
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedIds.size === 0}
+                  onClick={() => void handleRunBatchEnrich()}
+                  className="px-4 py-2.5 rounded-xl bg-[#0f172a] text-amber-300 border border-slate-700 text-xs font-black shadow-xs hover:bg-slate-800 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>
+                    選択した {selectedIds.size} チームをAI検索＆保存
+                  </span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+

@@ -7,9 +7,12 @@ import {
   hasSoft404HtmlSignature,
   inferRelatedTeamLinkKind,
   isPlaceholderOpponentName,
+  isPlatformOfficialSnsAccount,
   isSafePublicFetchUrl,
+  isSuspiciousGenericSnsHandle,
   isUselessAiTeamUrl,
   normalizeOpponentMatchKey,
+  normalizeRelatedTeamLinkUrlInput,
   parseOrSalvageAiJsonObject,
   parseRelatedTeamLinksJson,
   stripSquadSuffixFromMatchKey,
@@ -249,6 +252,107 @@ describe("related-teams-schema", () => {
       expect(cands).toHaveLength(50);
       expect(cands[0].name).toBe("テストクラブ第1");
       expect(cands[49].name).toBe("テストクラブ第50");
+    });
+  });
+
+  describe("normalizeRelatedTeamLinkUrlInput & SNS handle validation", () => {
+    it("expands @handles, bare handles, and fixes instagram/x @-path typos", () => {
+      expect(
+        normalizeRelatedTeamLinkUrlInput("@club_alpha_bbc", "instagram")
+      ).toBe("https://www.instagram.com/club_alpha_bbc/");
+      expect(
+        normalizeRelatedTeamLinkUrlInput("club_alpha_bbc", "instagram")
+      ).toBe("https://www.instagram.com/club_alpha_bbc/");
+      expect(
+        normalizeRelatedTeamLinkUrlInput(
+          "https://www.instagram.com/@club_alpha_bbc",
+          "instagram"
+        )
+      ).toBe("https://www.instagram.com/club_alpha_bbc/");
+      expect(normalizeRelatedTeamLinkUrlInput("@club_x", "x")).toBe(
+        "https://x.com/club_x"
+      );
+      expect(
+        normalizeRelatedTeamLinkUrlInput("https://x.com/@club_x", "x")
+      ).toBe("https://x.com/club_x");
+      expect(normalizeRelatedTeamLinkUrlInput("@club_yt", "youtube")).toBe(
+        "https://www.youtube.com/@club_yt"
+      );
+      expect(normalizeRelatedTeamLinkUrlInput("@club_line", "line")).toBe(
+        "https://line.me/R/ti/p/@club_line"
+      );
+    });
+
+    it("accepts @handle rows inside validateAndNormalizeRelatedTeamLinks", () => {
+      const res = validateAndNormalizeRelatedTeamLinks([
+        { id: "1", kind: "instagram", label: "", url: "@club_alpha_bbc" },
+        { id: "2", kind: "x", label: "", url: "@club_alpha_x" },
+        { id: "3", kind: "youtube", label: "", url: "@club_alpha_yt" },
+      ]);
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.links).toEqual([
+        {
+          id: "1",
+          kind: "instagram",
+          label: "Instagram",
+          url: "https://www.instagram.com/club_alpha_bbc/",
+        },
+        {
+          id: "2",
+          kind: "x",
+          label: "X (旧Twitter)",
+          url: "https://x.com/club_alpha_x",
+        },
+        {
+          id: "3",
+          kind: "youtube",
+          label: "YouTube",
+          url: "https://www.youtube.com/@club_alpha_yt",
+        },
+      ]);
+    });
+
+    it("blocks suspicious generic SNS placeholder handles while allowing real team handles", () => {
+      expect(
+        isSuspiciousGenericSnsHandle("https://www.instagram.com/sample/")
+      ).toBe(true);
+      expect(
+        isSuspiciousGenericSnsHandle("https://www.instagram.com/official/")
+      ).toBe(true);
+      expect(isSuspiciousGenericSnsHandle("https://x.com/team_name")).toBe(
+        true
+      );
+      expect(
+        isSuspiciousGenericSnsHandle("https://www.instagram.com/xxxx/")
+      ).toBe(true);
+
+      // Real team handles containing `_official` or `baseball` must pass
+      expect(
+        isSuspiciousGenericSnsHandle(
+          "https://www.instagram.com/river_official_bbc/"
+        )
+      ).toBe(false);
+      expect(
+        isSuspiciousGenericSnsHandle("https://x.com/baseball_club_stars")
+      ).toBe(false);
+    });
+
+    it("blocks website-builder / blog platform official SNS accounts while allowing team accounts", () => {
+      expect(
+        isPlatformOfficialSnsAccount("https://x.com/ameba_official")
+      ).toBe(true);
+      expect(
+        isPlatformOfficialSnsAccount("https://www.instagram.com/wix/")
+      ).toBe(true);
+      expect(
+        isPlatformOfficialSnsAccount("https://www.instagram.com/sposuru/")
+      ).toBe(true);
+      expect(
+        isPlatformOfficialSnsAccount(
+          "https://www.instagram.com/river_stars_bbc/"
+        )
+      ).toBe(false);
     });
   });
 });
