@@ -1,7 +1,14 @@
 // filepath: src/app/liff/related-teams/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { toast } from "sonner";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -10,14 +17,7 @@ import {
   LiffDataLoadErrorCard,
   useLiffAutoRetryOnResume,
 } from "@/components/liff/LiffDataLoadErrorCard";
-import {
-  BulkAiDiscoverModal,
-  CreateOrEditRelatedTeamModal,
-  GroupAiEnrichModal,
-  GroupBulkDeleteModal,
-  PastOpponentsImportModal,
-  type RelatedTeamFormPayload,
-} from "@/components/liff/RelatedTeamsModals";
+import type { RelatedTeamFormPayload } from "@/components/liff/RelatedTeamsModals";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import {
   invalidateLiffApiCache,
@@ -26,6 +26,8 @@ import {
 } from "@/lib/liff/api-cache";
 import {
   getRelationShortLabel,
+  sanitizeRelatedTeamItems,
+  sanitizeUnregisteredOpponents,
   type AiDiscoveredTeamCandidate,
   type RelatedTeamItem,
   type RelatedTeamLinkKind,
@@ -58,6 +60,46 @@ import {
   Users2,
   X,
 } from "lucide-react";
+
+const CreateOrEditRelatedTeamModal = dynamic(
+  () =>
+    import("@/components/liff/RelatedTeamsModals").then(
+      (mod) => mod.CreateOrEditRelatedTeamModal
+    ),
+  { ssr: false }
+);
+
+const BulkAiDiscoverModal = dynamic(
+  () =>
+    import("@/components/liff/RelatedTeamsModals").then(
+      (mod) => mod.BulkAiDiscoverModal
+    ),
+  { ssr: false }
+);
+
+const PastOpponentsImportModal = dynamic(
+  () =>
+    import("@/components/liff/RelatedTeamsModals").then(
+      (mod) => mod.PastOpponentsImportModal
+    ),
+  { ssr: false }
+);
+
+const GroupAiEnrichModal = dynamic(
+  () =>
+    import("@/components/liff/RelatedTeamsModals").then(
+      (mod) => mod.GroupAiEnrichModal
+    ),
+  { ssr: false }
+);
+
+const GroupBulkDeleteModal = dynamic(
+  () =>
+    import("@/components/liff/RelatedTeamsModals").then(
+      (mod) => mod.GroupBulkDeleteModal
+    ),
+  { ssr: false }
+);
 
 function InstagramIcon({ className }: { className?: string }) {
   return (
@@ -121,8 +163,26 @@ interface RelatedTeamsApiResponse {
   error?: string;
 }
 
+interface QuickBrandLinkEntry {
+  key: string;
+  kind: RelatedTeamLinkKind;
+  label: string;
+  href: string;
+  buttonClass: string;
+  icon: React.ReactNode;
+}
+
 const UNGROUPED_LEAGUE_KEY = "__ungrouped__";
 const UNGROUPED_LEAGUE_LABEL = "所属連盟・グループ未設定";
+
+function readStoredTeamIdFallback(): string {
+  if (typeof window === "undefined") return "demo-team";
+  try {
+    return localStorage.getItem("iscore_selectedTeamId") || "demo-team";
+  } catch {
+    return "demo-team";
+  }
+}
 
 function getBrandLinkButtonStyle(kind: RelatedTeamLinkKind): {
   buttonClass: string;
@@ -178,16 +238,366 @@ function getBrandLinkButtonStyle(kind: RelatedTeamLinkKind): {
   }
 }
 
+function buildRelatedTeamQuickLinks(
+  team: RelatedTeamItem
+): QuickBrandLinkEntry[] {
+  const quickLinks: QuickBrandLinkEntry[] = [];
+  const seenHrefKeys = new Set<string>();
+
+  const safeWebsiteHref = sanitizeSafeExternalHref(team.websiteUrl || "", "");
+  if (safeWebsiteHref) {
+    seenHrefKeys.add(safeWebsiteHref.replace(/\/+$/, "").toLowerCase());
+    const officialStyle = getBrandLinkButtonStyle("official");
+    quickLinks.push({
+      key: "website",
+      kind: "official",
+      label: "公式サイト",
+      href: safeWebsiteHref,
+      buttonClass: officialStyle.buttonClass,
+      icon: officialStyle.icon,
+    });
+  }
+
+  const rawLinks = Array.isArray(team.links) ? team.links : [];
+  for (let idx = 0; idx < rawLinks.length; idx += 1) {
+    const lk = rawLinks[idx];
+    if (!lk) continue;
+    const href = sanitizeSafeExternalHref(lk.url || "", "");
+    if (!href) continue;
+    const norm = href.replace(/\/+$/, "").toLowerCase();
+    if (seenHrefKeys.has(norm)) continue;
+    seenHrefKeys.add(norm);
+    const style = getBrandLinkButtonStyle(lk.kind);
+    quickLinks.push({
+      key: lk.id || `sub-${idx}`,
+      kind: lk.kind,
+      label: lk.label || "リンク",
+      href,
+      buttonClass: style.buttonClass,
+      icon: style.icon,
+    });
+  }
+
+  return quickLinks;
+}
+
+interface RelatedTeamRowItemProps {
+  team: RelatedTeamItem;
+  isExpanded: boolean;
+  effectiveCanEdit: boolean;
+  currentTeamId?: string;
+  onToggleExpand: (id: string) => void;
+  onToggleFavorite: (target: RelatedTeamItem) => void;
+  onOpenEdit: (target: RelatedTeamItem, autoRunAi: boolean) => void;
+}
+
+function RelatedTeamRowItem({
+  team,
+  isExpanded,
+  effectiveCanEdit,
+  currentTeamId,
+  onToggleExpand,
+  onToggleFavorite,
+  onOpenEdit,
+}: RelatedTeamRowItemProps) {
+  const quickLinks = useMemo(() => buildRelatedTeamQuickLinks(team), [team]);
+  const hasAnyLink = quickLinks.length > 0;
+  const stats = team.matchStats;
+  const hasMatchRecord = Boolean(
+    stats && (stats.totalFinished > 0 || stats.scheduledCount > 0)
+  );
+
+  return (
+    <article
+      className={team.isFavorite ? "border-l-[3px] border-l-amber-500" : ""}
+    >
+      {/* コンパクト一覧行（通常表示） */}
+      <div
+        className={`px-3.5 py-2.5 sm:px-4 flex items-center gap-2 transition-colors ${
+          isExpanded ? "bg-muted/30" : "hover:bg-muted/30"
+        }`}
+      >
+        {/* 左〜中央: タップでアコーディオン開閉 */}
+        <button
+          type="button"
+          onClick={() => onToggleExpand(team.id)}
+          aria-expanded={isExpanded}
+          className="flex-1 min-w-0 text-left cursor-pointer"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            {team.isFavorite && (
+              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+            )}
+            <h3 className="text-[13px] sm:text-sm font-black text-foreground truncate leading-snug">
+              {team.name}
+            </h3>
+            {team.shortName && team.shortName !== team.name && (
+              <span className="hidden sm:inline text-[11px] font-bold text-muted-foreground shrink-0">
+                ({team.shortName})
+              </span>
+            )}
+          </div>
+
+          {(team.area || hasMatchRecord) && (
+            <div className="flex items-center gap-2.5 text-[11px] font-bold text-muted-foreground truncate mt-0.5">
+              {team.area && (
+                <span className="inline-flex items-center gap-0.5 truncate">
+                  <MapPin className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span className="truncate">{team.area}</span>
+                </span>
+              )}
+              {hasMatchRecord && stats && (
+                <span className="inline-flex items-center gap-0.5 text-foreground/85 shrink-0">
+                  <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
+                  <span>
+                    {stats.totalFinished > 0
+                      ? `${stats.wins}勝${stats.losses}敗${
+                          stats.draws > 0 ? `${stats.draws}分` : ""
+                        }`
+                      : `予定${stats.scheduledCount}`}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
+        </button>
+
+        {/* 右側: 1タップ外部リンク小アイコン（最大3件）＋ アコーディオン開閉シェブロン */}
+        <div className="flex items-center gap-1 shrink-0">
+          {quickLinks.slice(0, 3).map((ql) => (
+            <a
+              key={ql.key}
+              href={ql.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={ql.label}
+              aria-label={`${team.name}の${ql.label}を開く`}
+              className={`w-7 h-7 rounded-lg flex items-center justify-center shadow-2xs active:scale-95 transition-transform ${ql.buttonClass}`}
+            >
+              {ql.icon}
+            </a>
+          ))}
+
+          {quickLinks.length > 3 && (
+            <button
+              type="button"
+              onClick={() => onToggleExpand(team.id)}
+              className="h-7 px-1.5 rounded-lg bg-muted text-muted-foreground border border-border text-[10px] font-black hover:text-foreground transition-colors cursor-pointer"
+              title={`他${quickLinks.length - 3}件のリンクを表示`}
+            >
+              +{quickLinks.length - 3}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onToggleExpand(team.id)}
+            aria-expanded={isExpanded}
+            aria-label={
+              isExpanded
+                ? `${team.name}の詳細を閉じる`
+                : `${team.name}の詳細を開く`
+            }
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
+          >
+            <ChevronDown
+              className={`w-4 h-4 transition-transform duration-200 ${
+                isExpanded ? "rotate-180 text-primary" : ""
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* アコーディオン詳細パネル（タップ展開時のみ表示） */}
+      {isExpanded && (
+        <div className="px-3.5 pb-3.5 pt-2.5 sm:px-4 bg-muted/20 border-t border-border/60 space-y-2.5">
+          {/* 属性バッジ ＆ 地域・拠点フル表示 */}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
+                {team.relationLabel}
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-card text-muted-foreground border border-border text-[10px] font-bold">
+                {team.scopeLabel}
+              </span>
+              {team.shortName && (
+                <span className="px-2 py-0.5 rounded-md bg-card text-muted-foreground border border-border text-[10px] font-bold">
+                  略称: {team.shortName}
+                </span>
+              )}
+            </div>
+
+            {(team.area || team.homeGround) && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-muted-foreground">
+                {team.area && (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                    <span>地域: {team.area}</span>
+                  </span>
+                )}
+                {team.homeGround && (
+                  <span className="inline-flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span>拠点: {team.homeGround}</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 試合記録との自動連携・通算対戦成績バー */}
+          {hasMatchRecord && stats && (
+            <div className="rounded-xl bg-card border border-border px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1 font-black text-foreground">
+                  <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  {stats.totalFinished > 0 ? (
+                    <span>
+                      通算 {stats.totalFinished}戦 {stats.wins}勝{stats.losses}
+                      敗{stats.draws > 0 ? `${stats.draws}分` : ""}
+                    </span>
+                  ) : (
+                    <span>対戦予定あり</span>
+                  )}
+                </span>
+                {stats.lastMatchDate && (
+                  <span className="text-[11px] font-bold text-muted-foreground">
+                    直近 {stats.lastMatchDate}
+                    {stats.lastScoreSummary ? ` (${stats.lastScoreSummary})` : ""}
+                  </span>
+                )}
+                {stats.scheduledCount > 0 && stats.totalFinished > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[10px] font-black">
+                    予定+{stats.scheduledCount}
+                  </span>
+                )}
+              </div>
+
+              <Link
+                href="/liff/matches"
+                onPointerDown={() =>
+                  warmupLiffEndpointForHref("/liff/matches", currentTeamId)
+                }
+                className="inline-flex items-center gap-0.5 text-[11px] font-black text-primary hover:underline shrink-0"
+              >
+                <span>試合記録</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          )}
+
+          {/* チーム紹介・メモ */}
+          {team.description && (
+            <p className="text-xs text-foreground/85 bg-card border border-border/80 rounded-xl px-3 py-2 leading-relaxed whitespace-pre-wrap">
+              {team.description}
+            </p>
+          )}
+
+          {/* 公式サイト ＆ SNSブランドリンクボタン群（ラベル付きフル表示） */}
+          {hasAnyLink ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {quickLinks.map((ql) => (
+                <a
+                  key={ql.key}
+                  href={ql.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black shadow-2xs active:scale-95 transition-all ${ql.buttonClass}`}
+                >
+                  {ql.icon}
+                  <span className="truncate max-w-[160px]">{ql.label}</span>
+                  <ExternalLink className="w-3 h-3 opacity-80 shrink-0" />
+                </a>
+              ))}
+            </div>
+          ) : effectiveCanEdit ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenEdit(team, true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0f172a] text-amber-300 border border-slate-700 hover:bg-slate-800 active:scale-95 text-[11px] font-black transition-all cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>AIで公式HP・SNSを自動検索</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenEdit(team, false)}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-dashed border-border bg-card hover:border-primary/40 hover:text-primary text-[11px] font-bold text-muted-foreground transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span>手動でリンク追加</span>
+              </button>
+            </div>
+          ) : (
+            !team.description &&
+            !team.area &&
+            !team.homeGround &&
+            !hasMatchRecord && (
+              <p className="text-[11px] font-bold text-muted-foreground">
+                公式HP・SNSリンクや詳細メモは未登録です
+              </p>
+            )
+          )}
+
+          {/* 管理者アクションバー（注目ピン留め・AI再検索・編集） */}
+          {effectiveCanEdit && (
+            <div className="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(team)}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors cursor-pointer ${
+                    team.isFavorite
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 font-black"
+                      : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Star
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      team.isFavorite ? "text-amber-500 fill-amber-500" : ""
+                    }`}
+                  />
+                  <span>
+                    {team.isFavorite ? "注目ピン留め中" : "注目にピン留め"}
+                  </span>
+                </button>
+
+                {hasAnyLink && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenEdit(team, true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0f172a] text-amber-300 border border-slate-700 hover:bg-slate-800 text-[11px] font-black transition-colors cursor-pointer"
+                  >
+                    <Sparkles className="w-3 h-3 shrink-0" />
+                    <span>AI再検索</span>
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onOpenEdit(team, false)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-card text-foreground hover:bg-muted text-[11px] font-black transition-colors cursor-pointer"
+              >
+                <Pencil className="w-3 h-3 shrink-0" />
+                <span>編集</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export default function LiffRelatedTeamsPage() {
   const { currentTeam } = useLiff();
   const { canMutate, isDemoMode } = useLiffPermissions();
   const effectiveCanEdit = canMutate || isDemoMode;
 
-  const activeTeamId =
-    currentTeam?.id ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem("iscore_selectedTeamId") || "demo-team"
-      : "demo-team");
+  const activeTeamId = currentTeam?.id || readStoredTeamIdFallback();
 
   const initialCached = useMemo(() => {
     if (typeof window === "undefined") return null;
@@ -196,20 +606,25 @@ export default function LiffRelatedTeamsPage() {
     );
   }, [activeTeamId]);
 
-  const [teams, setTeams] = useState<RelatedTeamItem[]>(
-    () => initialCached?.teams ?? []
+  const [teams, setTeams] = useState<RelatedTeamItem[]>(() =>
+    sanitizeRelatedTeamItems(initialCached?.teams)
   );
   const [unregisteredOpponents, setUnregisteredOpponents] = useState<
     UnregisteredOpponentItem[]
-  >(() => initialCached?.unregisteredOpponents ?? []);
-  const [categoryLabel, setCategoryLabel] = useState<string>(
-    () => initialCached?.context?.categoryLabel ?? ""
+  >(() => sanitizeUnregisteredOpponents(initialCached?.unregisteredOpponents));
+  const [categoryLabel, setCategoryLabel] = useState<string>(() =>
+    typeof initialCached?.context?.categoryLabel === "string"
+      ? initialCached.context.categoryLabel
+      : ""
   );
 
   const [isLoading, setIsLoading] = useState<boolean>(
-    () => !initialCached?.teams
+    () => !Array.isArray(initialCached?.teams)
   );
   const [loadError, setLoadError] = useState<boolean>(false);
+
+  const teamsCountRef = useRef<number>(teams.length);
+  teamsCountRef.current = teams.length;
 
   // フィルター＆検索＆アコーディオン開閉ステート
   const [selectedScope, setSelectedScope] = useState<
@@ -272,14 +687,39 @@ export default function LiffRelatedTeamsPage() {
     });
   }, []);
 
+  const handleOpenEditModal = useCallback(
+    (target: RelatedTeamItem, autoRunAi: boolean) => {
+      setEditingTeam(target);
+      setAutoRunAiLookupOnEdit(autoRunAi);
+      setIsCreateEditOpen(true);
+    },
+    []
+  );
+
   const loadRelatedTeams = useCallback(async () => {
-    const tid = currentTeam?.id || "demo-team";
-    try {
-      setIsLoading(true);
-      setLoadError(false);
-      const res = await fetch(
-        `/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`
+    const tid = activeTeamId || "demo-team";
+    const cacheUrl = `/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`;
+    const cached = peekLiffApiCache<RelatedTeamsApiResponse>(cacheUrl);
+    const hasCachedArray = Array.isArray(cached?.teams);
+
+    if (hasCachedArray) {
+      setTeams(sanitizeRelatedTeamItems(cached?.teams));
+      setUnregisteredOpponents(
+        sanitizeUnregisteredOpponents(cached?.unregisteredOpponents)
       );
+      setCategoryLabel(
+        typeof cached?.context?.categoryLabel === "string"
+          ? cached.context.categoryLabel
+          : ""
+      );
+      setIsLoading(false);
+      setLoadError(false);
+    } else if (teamsCountRef.current === 0) {
+      setIsLoading(true);
+    }
+
+    try {
+      const res = await fetch(cacheUrl);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -287,16 +727,25 @@ export default function LiffRelatedTeamsPage() {
       if (!data.success) {
         throw new Error(data.error || "取得失敗");
       }
-      setTeams(data.teams || []);
-      setUnregisteredOpponents(data.unregisteredOpponents || []);
-      setCategoryLabel(data.context?.categoryLabel || "");
+      setTeams(sanitizeRelatedTeamItems(data.teams));
+      setUnregisteredOpponents(
+        sanitizeUnregisteredOpponents(data.unregisteredOpponents)
+      );
+      setCategoryLabel(
+        typeof data.context?.categoryLabel === "string"
+          ? data.context.categoryLabel
+          : ""
+      );
+      setLoadError(false);
     } catch (err) {
       console.error("[LiffRelatedTeamsPage] load error:", err);
-      setLoadError(true);
+      if (teamsCountRef.current === 0 && !hasCachedArray) {
+        setLoadError(true);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [currentTeam?.id]);
+  }, [activeTeamId]);
 
   useEffect(() => {
     void loadRelatedTeams();
@@ -313,7 +762,8 @@ export default function LiffRelatedTeamsPage() {
   const mergedLeagueSuggestions = useMemo(() => {
     const set = new Set<string>();
     for (const t of teams) {
-      if (t.leagueName.trim()) set.add(t.leagueName.trim());
+      const lg = (t.leagueName || "").trim();
+      if (lg) set.add(lg);
     }
     return Array.from(set);
   }, [teams]);
@@ -332,7 +782,7 @@ export default function LiffRelatedTeamsPage() {
       if (selectedScope === "favorite" && !t.isFavorite) {
         continue;
       }
-      const lg = t.leagueName.trim();
+      const lg = (t.leagueName || "").trim();
       if (lg) {
         counts.set(lg, (counts.get(lg) || 0) + 1);
       } else {
@@ -344,7 +794,9 @@ export default function LiffRelatedTeamsPage() {
     for (const [lg, count] of Array.from(counts.entries())) {
       tabs.push({ key: lg, label: lg, count });
     }
-    tabs.sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ja"));
+    tabs.sort(
+      (a, b) => b.count - a.count || a.label.localeCompare(b.label, "ja")
+    );
     if (ungroupedCount > 0) {
       tabs.push({
         key: UNGROUPED_LEAGUE_KEY,
@@ -370,7 +822,7 @@ export default function LiffRelatedTeamsPage() {
       }
 
       if (selectedLeague !== "all") {
-        const lg = t.leagueName.trim();
+        const lg = (t.leagueName || "").trim();
         if (selectedLeague === UNGROUPED_LEAGUE_KEY) {
           if (lg !== "") return false;
         } else if (lg !== selectedLeague) {
@@ -380,14 +832,15 @@ export default function LiffRelatedTeamsPage() {
 
       if (!q) return true;
 
+      const safeLinks = Array.isArray(t.links) ? t.links : [];
       const haystack = [
-        t.name,
-        t.shortName,
-        t.leagueName,
-        t.area,
-        t.homeGround,
-        t.description,
-        ...t.links.map((l) => l.label),
+        t.name || "",
+        t.shortName || "",
+        t.leagueName || "",
+        t.area || "",
+        t.homeGround || "",
+        t.description || "",
+        ...safeLinks.map((l) => l?.label || ""),
       ]
         .join(" ")
         .toLowerCase();
@@ -400,7 +853,7 @@ export default function LiffRelatedTeamsPage() {
   const groupedSections = useMemo(() => {
     const map = new Map<string, RelatedTeamItem[]>();
     for (const t of filteredTeams) {
-      const key = t.leagueName.trim() || UNGROUPED_LEAGUE_KEY;
+      const key = (t.leagueName || "").trim() || UNGROUPED_LEAGUE_KEY;
       let arr = map.get(key);
       if (!arr) {
         arr = [];
@@ -413,14 +866,16 @@ export default function LiffRelatedTeamsPage() {
       key,
       title: key === UNGROUPED_LEAGUE_KEY ? UNGROUPED_LEAGUE_LABEL : key,
       items: [...items].sort(
-        (a, b) => Number(b.isFavorite) - Number(a.isFavorite)
+        (a, b) => Number(Boolean(b.isFavorite)) - Number(Boolean(a.isFavorite))
       ),
     }));
 
     entries.sort((a, b) => {
       if (a.key === UNGROUPED_LEAGUE_KEY) return 1;
       if (b.key === UNGROUPED_LEAGUE_KEY) return -1;
-      return b.items.length - a.items.length || a.title.localeCompare(b.title, "ja");
+      return (
+        b.items.length - a.items.length || a.title.localeCompare(b.title, "ja")
+      );
     });
 
     return entries;
@@ -461,7 +916,7 @@ export default function LiffRelatedTeamsPage() {
 
   // 新規・編集保存ハンドラ
   const handleSaveTeam = async (payload: RelatedTeamFormPayload) => {
-    const tid = currentTeam?.id || "demo-team";
+    const tid = activeTeamId || "demo-team";
 
     if (editingTeam) {
       const res = await fetch(
@@ -547,7 +1002,7 @@ export default function LiffRelatedTeamsPage() {
 
   // 削除ハンドラ
   const handleDeleteTeam = async (target: RelatedTeamItem) => {
-    const tid = currentTeam?.id || "demo-team";
+    const tid = activeTeamId || "demo-team";
     const res = await fetch(
       `/api/liff/related-teams/${encodeURIComponent(target.id)}?teamId=${encodeURIComponent(tid)}`,
       { method: "DELETE" }
@@ -567,7 +1022,7 @@ export default function LiffRelatedTeamsPage() {
 
   // グループ単位（またはグループ内の選択チーム）一括削除ハンドラ
   const handleBulkDeleteTeams = async (selectedIds: string[]) => {
-    const tid = currentTeam?.id || "demo-team";
+    const tid = activeTeamId || "demo-team";
     const res = await fetch("/api/liff/related-teams/bulk-delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -609,48 +1064,53 @@ export default function LiffRelatedTeamsPage() {
   };
 
   // お気に入りピン留めの1タップ切替
-  const handleToggleFavorite = async (target: RelatedTeamItem) => {
-    if (!effectiveCanEdit) return;
-    const tid = currentTeam?.id || "demo-team";
-    const nextFav = !target.isFavorite;
+  const handleToggleFavorite = useCallback(
+    async (target: RelatedTeamItem) => {
+      if (!effectiveCanEdit) return;
+      const tid = activeTeamId || "demo-team";
+      const nextFav = !target.isFavorite;
 
-    // 楽観的UI反映
-    setTeams((prev) =>
-      prev.map((item) =>
-        item.id === target.id ? { ...item, isFavorite: nextFav } : item
-      )
-    );
-
-    if (tid === "demo-team" || target.id.startsWith("demo-")) {
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `/api/liff/related-teams/${encodeURIComponent(target.id)}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamId: tid,
-            isFavorite: nextFav,
-          }),
-        }
-      );
-      if (!res.ok) {
-        throw new Error("更新失敗");
-      }
-      invalidateLiffApiCache("/api/liff/related-teams");
-    } catch {
-      // ロールバック
+      // 楽観的UI反映
       setTeams((prev) =>
         prev.map((item) =>
-          item.id === target.id ? { ...item, isFavorite: target.isFavorite } : item
+          item.id === target.id ? { ...item, isFavorite: nextFav } : item
         )
       );
-      toast.error("ピン留め状態の更新に失敗しました");
-    }
-  };
+
+      if (tid === "demo-team" || target.id.startsWith("demo-")) {
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/liff/related-teams/${encodeURIComponent(target.id)}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              teamId: tid,
+              isFavorite: nextFav,
+            }),
+          }
+        );
+        if (!res.ok) {
+          throw new Error("更新失敗");
+        }
+        invalidateLiffApiCache("/api/liff/related-teams");
+      } catch {
+        // ロールバック
+        setTeams((prev) =>
+          prev.map((item) =>
+            item.id === target.id
+              ? { ...item, isFavorite: target.isFavorite }
+              : item
+          )
+        );
+        toast.error("ピン留め状態の更新に失敗しました");
+      }
+    },
+    [effectiveCanEdit, activeTeamId]
+  );
 
   // AI一括収集からの一括登録＆既存チームリンク反映ハンドラ
   const handleBulkRegisterFromAi = async (params: {
@@ -659,7 +1119,7 @@ export default function LiffRelatedTeamsPage() {
     defaultRelationType: RelatedTeamRelationType;
     items: AiDiscoveredTeamCandidate[];
   }) => {
-    const tid = currentTeam?.id || "demo-team";
+    const tid = activeTeamId || "demo-team";
     const res = await fetch("/api/liff/related-teams/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -715,7 +1175,7 @@ export default function LiffRelatedTeamsPage() {
     relationType: RelatedTeamRelationType;
     selectedNames: string[];
   }) => {
-    const tid = currentTeam?.id || "demo-team";
+    const tid = activeTeamId || "demo-team";
     const res = await fetch("/api/liff/related-teams/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1162,397 +1622,23 @@ export default function LiffRelatedTeamsPage() {
                   {!isGroupCollapsed && (
                     <div className="divide-y divide-border">
                       {section.items.map((team) => {
-                        const safeWebsiteHref = sanitizeSafeExternalHref(
-                          team.websiteUrl,
-                          ""
-                        );
-                        const validSubLinks = team.links.filter((lk) =>
-                          Boolean(sanitizeSafeExternalHref(lk.url, ""))
-                        );
-
-                        const quickLinks: Array<{
-                          key: string;
-                          kind: RelatedTeamLinkKind;
-                          label: string;
-                          href: string;
-                          buttonClass: string;
-                          icon: React.ReactNode;
-                        }> = [];
-                        const seenHrefKeys = new Set<string>();
-
-                        if (safeWebsiteHref) {
-                          seenHrefKeys.add(
-                            safeWebsiteHref.replace(/\/+$/, "").toLowerCase()
-                          );
-                          const officialStyle =
-                            getBrandLinkButtonStyle("official");
-                          quickLinks.push({
-                            key: "website",
-                            kind: "official",
-                            label: "公式サイト",
-                            href: safeWebsiteHref,
-                            buttonClass: officialStyle.buttonClass,
-                            icon: officialStyle.icon,
-                          });
-                        }
-
-                        for (const lk of validSubLinks) {
-                          const href = sanitizeSafeExternalHref(lk.url, "");
-                          if (!href) continue;
-                          const norm = href.replace(/\/+$/, "").toLowerCase();
-                          if (seenHrefKeys.has(norm)) continue;
-                          seenHrefKeys.add(norm);
-                          const style = getBrandLinkButtonStyle(lk.kind);
-                          quickLinks.push({
-                            key: lk.id,
-                            kind: lk.kind,
-                            label: lk.label,
-                            href,
-                            buttonClass: style.buttonClass,
-                            icon: style.icon,
-                          });
-                        }
-
-                        const hasAnyLink = quickLinks.length > 0;
-                        const stats = team.matchStats;
-                        const hasMatchRecord = Boolean(
-                          stats &&
-                            (stats.totalFinished > 0 ||
-                              stats.scheduledCount > 0)
-                        );
                         const isExpanded =
                           expandedTeamIds.has(team.id) ||
                           (hasActiveSearch && filteredTeams.length === 1);
 
                         return (
-                          <article
+                          <RelatedTeamRowItem
                             key={team.id}
-                            className={`[content-visibility:auto] [contain-intrinsic-size:auto_48px] ${
-                              team.isFavorite
-                                ? "border-l-[3px] border-l-amber-500"
-                                : ""
-                            }`}
-                          >
-                            {/* コンパクト一覧行（通常表示） */}
-                            <div
-                              className={`px-3.5 py-2.5 sm:px-4 flex items-center gap-2 transition-colors ${
-                                isExpanded
-                                  ? "bg-muted/30"
-                                  : "hover:bg-muted/30"
-                              }`}
-                            >
-                              {/* 左〜中央: タップでアコーディオン開閉 */}
-                              <button
-                                type="button"
-                                onClick={() => toggleTeamExpanded(team.id)}
-                                aria-expanded={isExpanded}
-                                className="flex-1 min-w-0 text-left cursor-pointer"
-                              >
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  {team.isFavorite && (
-                                    <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
-                                  )}
-                                  <h3 className="text-[13px] sm:text-sm font-black text-foreground truncate leading-snug">
-                                    {team.name}
-                                  </h3>
-                                  {team.shortName &&
-                                    team.shortName !== team.name && (
-                                      <span className="hidden sm:inline text-[11px] font-bold text-muted-foreground shrink-0">
-                                        ({team.shortName})
-                                      </span>
-                                    )}
-                                </div>
-
-                                {(team.area || hasMatchRecord) && (
-                                  <div className="flex items-center gap-2.5 text-[11px] font-bold text-muted-foreground truncate mt-0.5">
-                                    {team.area && (
-                                      <span className="inline-flex items-center gap-0.5 truncate">
-                                        <MapPin className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
-                                        <span className="truncate">
-                                          {team.area}
-                                        </span>
-                                      </span>
-                                    )}
-                                    {hasMatchRecord && stats && (
-                                      <span className="inline-flex items-center gap-0.5 text-foreground/85 shrink-0">
-                                        <Trophy className="w-3 h-3 text-amber-500 shrink-0" />
-                                        <span>
-                                          {stats.totalFinished > 0
-                                            ? `${stats.wins}勝${stats.losses}敗${
-                                                stats.draws > 0
-                                                  ? `${stats.draws}分`
-                                                  : ""
-                                              }`
-                                            : `予定${stats.scheduledCount}`}
-                                        </span>
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                              </button>
-
-                              {/* 右側: 1タップ外部リンク小アイコン（最大3件）＋ アコーディオン開閉シェブロン */}
-                              <div className="flex items-center gap-1 shrink-0">
-                                {quickLinks.slice(0, 3).map((ql) => (
-                                  <a
-                                    key={ql.key}
-                                    href={ql.href}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title={ql.label}
-                                    aria-label={`${team.name}の${ql.label}を開く`}
-                                    className={`w-7 h-7 rounded-lg flex items-center justify-center shadow-2xs active:scale-95 transition-transform ${ql.buttonClass}`}
-                                  >
-                                    {ql.icon}
-                                  </a>
-                                ))}
-
-                                {quickLinks.length > 3 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleTeamExpanded(team.id)}
-                                    className="h-7 px-1.5 rounded-lg bg-muted text-muted-foreground border border-border text-[10px] font-black hover:text-foreground transition-colors cursor-pointer"
-                                    title={`他${quickLinks.length - 3}件のリンクを表示`}
-                                  >
-                                    +{quickLinks.length - 3}
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => toggleTeamExpanded(team.id)}
-                                  aria-expanded={isExpanded}
-                                  aria-label={
-                                    isExpanded
-                                      ? `${team.name}の詳細を閉じる`
-                                      : `${team.name}の詳細を開く`
-                                  }
-                                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                                >
-                                  <ChevronDown
-                                    className={`w-4 h-4 transition-transform duration-200 ${
-                                      isExpanded
-                                        ? "rotate-180 text-primary"
-                                        : ""
-                                    }`}
-                                  />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* アコーディオン詳細パネル（タップ展開時のみ表示） */}
-                            {isExpanded && (
-                              <div className="px-3.5 pb-3.5 pt-2.5 sm:px-4 bg-muted/20 border-t border-border/60 space-y-2.5">
-                                {/* 属性バッジ ＆ 地域・拠点フル表示 */}
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-black">
-                                      {team.relationLabel}
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded-md bg-card text-muted-foreground border border-border text-[10px] font-bold">
-                                      {team.scopeLabel}
-                                    </span>
-                                    {team.shortName && (
-                                      <span className="px-2 py-0.5 rounded-md bg-card text-muted-foreground border border-border text-[10px] font-bold">
-                                        略称: {team.shortName}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  {(team.area || team.homeGround) && (
-                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-muted-foreground">
-                                      {team.area && (
-                                        <span className="inline-flex items-center gap-1">
-                                          <MapPin className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
-                                          <span>地域: {team.area}</span>
-                                        </span>
-                                      )}
-                                      {team.homeGround && (
-                                        <span className="inline-flex items-center gap-1">
-                                          <Building2 className="w-3 h-3 text-muted-foreground shrink-0" />
-                                          <span>拠点: {team.homeGround}</span>
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* 試合記録との自動連携・通算対戦成績バー */}
-                                {hasMatchRecord && stats && (
-                                  <div className="rounded-xl bg-card border border-border px-3 py-2 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
-                                      <span className="inline-flex items-center gap-1 font-black text-foreground">
-                                        <Trophy className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                        {stats.totalFinished > 0 ? (
-                                          <span>
-                                            通算 {stats.totalFinished}戦{" "}
-                                            {stats.wins}勝{stats.losses}敗
-                                            {stats.draws > 0
-                                              ? `${stats.draws}分`
-                                              : ""}
-                                          </span>
-                                        ) : (
-                                          <span>対戦予定あり</span>
-                                        )}
-                                      </span>
-                                      {stats.lastMatchDate && (
-                                        <span className="text-[11px] font-bold text-muted-foreground">
-                                          直近 {stats.lastMatchDate}
-                                          {stats.lastScoreSummary
-                                            ? ` (${stats.lastScoreSummary})`
-                                            : ""}
-                                        </span>
-                                      )}
-                                      {stats.scheduledCount > 0 &&
-                                        stats.totalFinished > 0 && (
-                                          <span className="px-1.5 py-0.5 rounded-md bg-primary/12 text-primary text-[10px] font-black">
-                                            予定+{stats.scheduledCount}
-                                          </span>
-                                        )}
-                                    </div>
-
-                                    <Link
-                                      href="/liff/matches"
-                                      onPointerDown={() =>
-                                        warmupLiffEndpointForHref(
-                                          "/liff/matches",
-                                          currentTeam?.id
-                                        )
-                                      }
-                                      className="inline-flex items-center gap-0.5 text-[11px] font-black text-primary hover:underline shrink-0"
-                                    >
-                                      <span>試合記録</span>
-                                      <ChevronRight className="w-3.5 h-3.5" />
-                                    </Link>
-                                  </div>
-                                )}
-
-                                {/* チーム紹介・メモ */}
-                                {team.description && (
-                                  <p className="text-xs text-foreground/85 bg-card border border-border/80 rounded-xl px-3 py-2 leading-relaxed whitespace-pre-wrap">
-                                    {team.description}
-                                  </p>
-                                )}
-
-                                {/* 公式サイト ＆ SNSブランドリンクボタン群（ラベル付きフル表示） */}
-                                {hasAnyLink ? (
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    {quickLinks.map((ql) => (
-                                      <a
-                                        key={ql.key}
-                                        href={ql.href}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black shadow-2xs active:scale-95 transition-all ${ql.buttonClass}`}
-                                      >
-                                        {ql.icon}
-                                        <span className="truncate max-w-[160px]">
-                                          {ql.label}
-                                        </span>
-                                        <ExternalLink className="w-3 h-3 opacity-80 shrink-0" />
-                                      </a>
-                                    ))}
-                                  </div>
-                                ) : effectiveCanEdit ? (
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingTeam(team);
-                                        setAutoRunAiLookupOnEdit(true);
-                                        setIsCreateEditOpen(true);
-                                      }}
-                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0f172a] text-amber-300 border border-slate-700 hover:bg-slate-800 active:scale-95 text-[11px] font-black transition-all cursor-pointer"
-                                    >
-                                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                                      <span>AIで公式HP・SNSを自動検索</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingTeam(team);
-                                        setAutoRunAiLookupOnEdit(false);
-                                        setIsCreateEditOpen(true);
-                                      }}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-dashed border-border bg-card hover:border-primary/40 hover:text-primary text-[11px] font-bold text-muted-foreground transition-colors cursor-pointer"
-                                    >
-                                      <Plus className="w-3.5 h-3.5 shrink-0" />
-                                      <span>手動でリンク追加</span>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  !team.description &&
-                                  !team.area &&
-                                  !team.homeGround &&
-                                  !hasMatchRecord && (
-                                    <p className="text-[11px] font-bold text-muted-foreground">
-                                      公式HP・SNSリンクや詳細メモは未登録です
-                                    </p>
-                                  )
-                                )}
-
-                                {/* 管理者アクションバー（注目ピン留め・AI再検索・編集） */}
-                                {effectiveCanEdit && (
-                                  <div className="pt-2 border-t border-border/60 flex flex-wrap items-center justify-between gap-2">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          void handleToggleFavorite(team)
-                                        }
-                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-colors cursor-pointer ${
-                                          team.isFavorite
-                                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 font-black"
-                                            : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted"
-                                        }`}
-                                      >
-                                        <Star
-                                          className={`w-3.5 h-3.5 shrink-0 ${
-                                            team.isFavorite
-                                              ? "text-amber-500 fill-amber-500"
-                                              : ""
-                                          }`}
-                                        />
-                                        <span>
-                                          {team.isFavorite
-                                            ? "注目ピン留め中"
-                                            : "注目にピン留め"}
-                                        </span>
-                                      </button>
-
-                                      {hasAnyLink && (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setEditingTeam(team);
-                                            setAutoRunAiLookupOnEdit(true);
-                                            setIsCreateEditOpen(true);
-                                          }}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0f172a] text-amber-300 border border-slate-700 hover:bg-slate-800 text-[11px] font-black transition-colors cursor-pointer"
-                                        >
-                                          <Sparkles className="w-3 h-3 shrink-0" />
-                                          <span>AI再検索</span>
-                                        </button>
-                                      )}
-                                    </div>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingTeam(team);
-                                        setAutoRunAiLookupOnEdit(false);
-                                        setIsCreateEditOpen(true);
-                                      }}
-                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-card text-foreground hover:bg-muted text-[11px] font-black transition-colors cursor-pointer"
-                                    >
-                                      <Pencil className="w-3 h-3 shrink-0" />
-                                      <span>編集</span>
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </article>
+                            team={team}
+                            isExpanded={isExpanded}
+                            effectiveCanEdit={effectiveCanEdit}
+                            currentTeamId={currentTeam?.id}
+                            onToggleExpand={toggleTeamExpanded}
+                            onToggleFavorite={(target) => {
+                              void handleToggleFavorite(target);
+                            }}
+                            onOpenEdit={handleOpenEditModal}
+                          />
                         );
                       })}
                     </div>
@@ -1569,71 +1655,81 @@ export default function LiffRelatedTeamsPage() {
         />
       </div>
 
-      {/* 個別チーム追加・編集モーダル */}
-      <CreateOrEditRelatedTeamModal
-        isOpen={isCreateEditOpen}
-        editingTeam={editingTeam}
-        autoRunAiLookup={autoRunAiLookupOnEdit}
-        teamId={activeTeamId}
-        squadName={squadLabel}
-        isDemoMode={isDemoMode}
-        defaultCategoryHint={categoryLabel}
-        leagueSuggestions={mergedLeagueSuggestions}
-        onClose={() => {
-          setIsCreateEditOpen(false);
-          setEditingTeam(null);
-          setAutoRunAiLookupOnEdit(false);
-        }}
-        onSave={handleSaveTeam}
-        onDelete={handleDeleteTeam}
-      />
+      {/* 個別チーム追加・編集モーダル（オープン時のみ遅延マウント） */}
+      {isCreateEditOpen && (
+        <CreateOrEditRelatedTeamModal
+          isOpen={isCreateEditOpen}
+          editingTeam={editingTeam}
+          autoRunAiLookup={autoRunAiLookupOnEdit}
+          teamId={activeTeamId}
+          squadName={squadLabel}
+          isDemoMode={isDemoMode}
+          defaultCategoryHint={categoryLabel}
+          leagueSuggestions={mergedLeagueSuggestions}
+          onClose={() => {
+            setIsCreateEditOpen(false);
+            setEditingTeam(null);
+            setAutoRunAiLookupOnEdit(false);
+          }}
+          onSave={handleSaveTeam}
+          onDelete={handleDeleteTeam}
+        />
+      )}
 
-      {/* AI一括チーム収集モーダル */}
-      <BulkAiDiscoverModal
-        isOpen={isAiDiscoverOpen}
-        teamId={activeTeamId}
-        squadName={squadLabel}
-        isDemoMode={isDemoMode}
-        defaultCategoryHint={categoryLabel}
-        onClose={() => setIsAiDiscoverOpen(false)}
-        onBulkRegister={handleBulkRegisterFromAi}
-      />
+      {/* AI一括チーム収集モーダル（オープン時のみ遅延マウント） */}
+      {isAiDiscoverOpen && (
+        <BulkAiDiscoverModal
+          isOpen={isAiDiscoverOpen}
+          teamId={activeTeamId}
+          squadName={squadLabel}
+          isDemoMode={isDemoMode}
+          defaultCategoryHint={categoryLabel}
+          onClose={() => setIsAiDiscoverOpen(false)}
+          onBulkRegister={handleBulkRegisterFromAi}
+        />
+      )}
 
-      {/* 過去の試合相手一括取込モーダル */}
-      <PastOpponentsImportModal
-        isOpen={isImportOpponentsOpen}
-        opponents={unregisteredOpponents}
-        squadName={squadLabel}
-        leagueSuggestions={mergedLeagueSuggestions}
-        onClose={() => setIsImportOpponentsOpen(false)}
-        onImport={handleImportPastOpponents}
-      />
+      {/* 過去の試合相手一括取込モーダル（オープン時のみ遅延マウント） */}
+      {isImportOpponentsOpen && (
+        <PastOpponentsImportModal
+          isOpen={isImportOpponentsOpen}
+          opponents={unregisteredOpponents}
+          squadName={squadLabel}
+          leagueSuggestions={mergedLeagueSuggestions}
+          onClose={() => setIsImportOpponentsOpen(false)}
+          onImport={handleImportPastOpponents}
+        />
+      )}
 
-      {/* グループ単位での公式HP・SNS AI一括補完モーダル */}
-      <GroupAiEnrichModal
-        isOpen={Boolean(enrichingGroup)}
-        groupTitle={enrichingGroup?.title || ""}
-        teamsInGroup={enrichingGroup?.items || []}
-        teamId={activeTeamId}
-        isDemoMode={isDemoMode}
-        defaultCategoryHint={categoryLabel}
-        onClose={() => setEnrichingGroup(null)}
-        onCompleted={async ({ updatedCount }) => {
-          await refreshAfterMutation();
-          toast.success(
-            `${updatedCount}チームの公式HP・SNSリンクを自動保存しました！`
-          );
-        }}
-      />
+      {/* グループ単位での公式HP・SNS AI一括補完モーダル（オープン時のみ遅延マウント） */}
+      {enrichingGroup && (
+        <GroupAiEnrichModal
+          isOpen={true}
+          groupTitle={enrichingGroup.title}
+          teamsInGroup={enrichingGroup.items}
+          teamId={activeTeamId}
+          isDemoMode={isDemoMode}
+          defaultCategoryHint={categoryLabel}
+          onClose={() => setEnrichingGroup(null)}
+          onCompleted={async ({ updatedCount }) => {
+            await refreshAfterMutation();
+            toast.success(
+              `${updatedCount}チームの公式HP・SNSリンクを自動保存しました！`
+            );
+          }}
+        />
+      )}
 
-      {/* グループ単位一括削除モーダル */}
-      <GroupBulkDeleteModal
-        isOpen={Boolean(bulkDeletingGroup)}
-        groupTitle={bulkDeletingGroup?.title || ""}
-        teamsInGroup={bulkDeletingGroup?.items || []}
-        onClose={() => setBulkDeletingGroup(null)}
-        onConfirmDelete={handleBulkDeleteTeams}
-      />
+      {/* グループ単位一括削除モーダル（オープン時のみ遅延マウント） */}
+      {bulkDeletingGroup && (
+        <GroupBulkDeleteModal
+          isOpen={true}
+          groupTitle={bulkDeletingGroup.title}
+          teamsInGroup={bulkDeletingGroup.items}
+          onClose={() => setBulkDeletingGroup(null)}
+          onConfirmDelete={handleBulkDeleteTeams}
+        />
+      )}
     </div>
   );
 }

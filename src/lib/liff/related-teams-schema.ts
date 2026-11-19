@@ -1394,3 +1394,182 @@ export function parseOrSalvageAiJsonObject(
   };
 }
 
+/**
+ * キャッシュ（L1/L2/L3 localStorage）やAPIレスポンスから復元された関連チーム配列を安全に正規化し、
+ * 旧スキーマや欠損フィールド（`leagueName: null` / `links: undefined` 等）によるレンダー時 TypeError を完全に防ぐ
+ */
+export function sanitizeRelatedTeamItems(raw: unknown): RelatedTeamItem[] {
+  if (!Array.isArray(raw)) return [];
+  const result: RelatedTeamItem[] = [];
+
+  for (let idx = 0; idx < raw.length; idx += 1) {
+    const entry = raw[idx];
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+
+    const id =
+      typeof rec.id === "string" && rec.id.trim()
+        ? rec.id.trim()
+        : `rt-fallback-${idx}`;
+    const name = typeof rec.name === "string" ? rec.name.trim() : "";
+    if (!name) continue;
+
+    const relationType = normalizeRelationType(rec.relationType);
+    const relationLabel =
+      typeof rec.relationLabel === "string" && rec.relationLabel.trim()
+        ? rec.relationLabel.trim()
+        : getRelationShortLabel(relationType);
+
+    const scope: "organization" | "team" =
+      rec.scope === "team" ? "team" : "organization";
+    const scopeLabel =
+      typeof rec.scopeLabel === "string" && rec.scopeLabel.trim()
+        ? rec.scopeLabel.trim()
+        : scope === "team"
+          ? "編成"
+          : "チーム全体";
+
+    const safeLinks: RelatedTeamLinkItem[] = [];
+    if (Array.isArray(rec.links)) {
+      for (let lIdx = 0; lIdx < rec.links.length; lIdx += 1) {
+        const lk = rec.links[lIdx];
+        if (!lk || typeof lk !== "object") continue;
+        const lRec = lk as Record<string, unknown>;
+        const url = typeof lRec.url === "string" ? lRec.url.trim() : "";
+        if (!url) continue;
+        const rawKind = typeof lRec.kind === "string" ? lRec.kind.trim() : "";
+        const rawLabel =
+          typeof lRec.label === "string" ? lRec.label.trim() : "";
+        const kind: RelatedTeamLinkKind = VALID_LINK_KINDS.has(
+          rawKind as RelatedTeamLinkKind
+        )
+          ? (rawKind as RelatedTeamLinkKind)
+          : inferRelatedTeamLinkKind(url, rawLabel);
+        safeLinks.push({
+          id:
+            typeof lRec.id === "string" && lRec.id.trim()
+              ? lRec.id.trim()
+              : `rtlink-safe-${idx}-${lIdx}`,
+          kind,
+          label: rawLabel || getRelatedTeamLinkKindDefaultLabel(kind),
+          url,
+        });
+      }
+    }
+
+    let safeStats: RelatedTeamMatchStats | null = null;
+    if (rec.matchStats && typeof rec.matchStats === "object") {
+      const st = rec.matchStats as Record<string, unknown>;
+      const totalFinished =
+        typeof st.totalFinished === "number" && Number.isFinite(st.totalFinished)
+          ? st.totalFinished
+          : 0;
+      const scheduledCount =
+        typeof st.scheduledCount === "number" &&
+        Number.isFinite(st.scheduledCount)
+          ? st.scheduledCount
+          : 0;
+      if (totalFinished > 0 || scheduledCount > 0) {
+        safeStats = {
+          totalFinished,
+          wins:
+            typeof st.wins === "number" && Number.isFinite(st.wins)
+              ? st.wins
+              : 0,
+          losses:
+            typeof st.losses === "number" && Number.isFinite(st.losses)
+              ? st.losses
+              : 0,
+          draws:
+            typeof st.draws === "number" && Number.isFinite(st.draws)
+              ? st.draws
+              : 0,
+          scheduledCount,
+          lastMatchDate:
+            typeof st.lastMatchDate === "string" && st.lastMatchDate.trim()
+              ? st.lastMatchDate.trim()
+              : null,
+          lastScoreSummary:
+            typeof st.lastScoreSummary === "string" &&
+            st.lastScoreSummary.trim()
+              ? st.lastScoreSummary.trim()
+              : null,
+        };
+      }
+    }
+
+    result.push({
+      id,
+      name,
+      shortName: typeof rec.shortName === "string" ? rec.shortName : "",
+      leagueName: typeof rec.leagueName === "string" ? rec.leagueName : "",
+      relationType,
+      relationLabel,
+      teamCategory:
+        typeof rec.teamCategory === "string" ? rec.teamCategory : "",
+      area: typeof rec.area === "string" ? rec.area : "",
+      homeGround: typeof rec.homeGround === "string" ? rec.homeGround : "",
+      websiteUrl: typeof rec.websiteUrl === "string" ? rec.websiteUrl : "",
+      links: safeLinks,
+      description: typeof rec.description === "string" ? rec.description : "",
+      scope,
+      scopeLabel,
+      isFavorite: Boolean(rec.isFavorite),
+      priority:
+        typeof rec.priority === "number" && Number.isFinite(rec.priority)
+          ? rec.priority
+          : 0,
+      matchStats: safeStats,
+    });
+  }
+
+  return result;
+}
+
+export function sanitizeUnregisteredOpponents(
+  raw: unknown
+): UnregisteredOpponentItem[] {
+  if (!Array.isArray(raw)) return [];
+  const result: UnregisteredOpponentItem[] = [];
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const rec = entry as Record<string, unknown>;
+    const opponentName =
+      typeof rec.opponentName === "string" ? rec.opponentName.trim() : "";
+    if (!opponentName) continue;
+    result.push({
+      opponentName,
+      totalFinished:
+        typeof rec.totalFinished === "number" &&
+        Number.isFinite(rec.totalFinished)
+          ? rec.totalFinished
+          : 0,
+      wins:
+        typeof rec.wins === "number" && Number.isFinite(rec.wins)
+          ? rec.wins
+          : 0,
+      losses:
+        typeof rec.losses === "number" && Number.isFinite(rec.losses)
+          ? rec.losses
+          : 0,
+      draws:
+        typeof rec.draws === "number" && Number.isFinite(rec.draws)
+          ? rec.draws
+          : 0,
+      scheduledCount:
+        typeof rec.scheduledCount === "number" &&
+        Number.isFinite(rec.scheduledCount)
+          ? rec.scheduledCount
+          : 0,
+      lastMatchDate:
+        typeof rec.lastMatchDate === "string" && rec.lastMatchDate.trim()
+          ? rec.lastMatchDate.trim()
+          : null,
+    });
+  }
+
+  return result;
+}
+
+

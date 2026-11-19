@@ -15,6 +15,8 @@ import {
   normalizeRelatedTeamLinkUrlInput,
   parseOrSalvageAiJsonObject,
   parseRelatedTeamLinksJson,
+  sanitizeRelatedTeamItems,
+  sanitizeUnregisteredOpponents,
   stripSquadSuffixFromMatchKey,
   validateAndNormalizeRelatedTeamLinks,
 } from "@/lib/liff/related-teams-schema";
@@ -355,4 +357,82 @@ describe("related-teams-schema", () => {
       ).toBe(false);
     });
   });
+
+  describe("sanitizeRelatedTeamItems & sanitizeUnregisteredOpponents", () => {
+    it("safely normalizes partial or legacy cached related team entries without throwing", () => {
+      const sanitized = sanitizeRelatedTeamItems([
+        null,
+        undefined,
+        "invalid",
+        { id: "", name: "ID補完クラブ" },
+        { id: "rt_1", name: "   " },
+        {
+          id: "rt_valid",
+          name: "サンプルクラブ",
+          leagueName: null,
+          links: undefined,
+          relationType: "unknown_type",
+          scope: "invalid_scope",
+          isFavorite: 1,
+          matchStats: {
+            totalFinished: 3,
+            wins: 2,
+            losses: 1,
+          },
+        },
+      ]);
+
+      expect(sanitized).toHaveLength(2);
+      expect(sanitized[0]).toMatchObject({
+        id: "rt-fallback-3",
+        name: "ID補完クラブ",
+        leagueName: "",
+        links: [],
+      });
+      expect(sanitized[1]).toMatchObject({
+        id: "rt_valid",
+        name: "サンプルクラブ",
+        leagueName: "",
+        links: [],
+        relationType: "league_member",
+        scope: "organization",
+        isFavorite: true,
+        matchStats: {
+          totalFinished: 3,
+          wins: 2,
+          losses: 1,
+          draws: 0,
+          scheduledCount: 0,
+          lastMatchDate: null,
+          lastScoreSummary: null,
+        },
+      });
+    });
+
+    it("safely normalizes unregistered opponent entries", () => {
+      expect(sanitizeUnregisteredOpponents(null)).toEqual([]);
+      const sanitized = sanitizeUnregisteredOpponents([
+        null,
+        { opponentName: "  " },
+        {
+          opponentName: "リバースターズ",
+          totalFinished: 2,
+          wins: 1,
+          losses: 1,
+        },
+      ]);
+      expect(sanitized).toEqual([
+        {
+          opponentName: "リバースターズ",
+          totalFinished: 2,
+          wins: 1,
+          losses: 1,
+          draws: 0,
+          scheduledCount: 0,
+          lastMatchDate: null,
+        },
+      ]);
+    });
+  });
 });
+

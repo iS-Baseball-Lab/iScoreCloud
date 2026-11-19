@@ -18,40 +18,78 @@ const CHUNK_RECOVERY_COOLDOWN_MS = 30_000;
 
 let isRuntimeRecoveryInstalled = false;
 
-function isChunkOrAssetLoadFailureMessage(rawMessage: string): boolean {
-  if (!rawMessage) return false;
+function isChunkOrAssetLoadFailureMessage(
+  rawMessage: string,
+  rawStack = ""
+): boolean {
+  if (!rawMessage && !rawStack) return false;
   const msg = rawMessage.toLowerCase();
-  return (
+  const stack = rawStack.toLowerCase();
+
+  if (
     msg.includes("chunkloaderror") ||
     msg.includes("loading chunk") ||
     msg.includes("loading css chunk") ||
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("importing a module script failed") ||
     msg.includes("unable to preload css") ||
+    msg.includes("failed to fetch rsc payload") ||
     (msg.includes("/_next/static/") && msg.includes("404"))
-  );
+  ) {
+    return true;
+  }
+
+  // デプロイ更新直後、LINE WebView メモリ上の旧共有チャンク（installedChunks 済）と
+  // 新ルートのチャンク（新規モジュールID参照）が噛み合わず `__webpack_modules__[id]` が undefined になる
+  // Webpack クロスビルドスキュー（V8: `Cannot read properties of undefined (reading 'call')` /
+  // JavaScriptCore: `undefined is not an object (evaluating '...call')`）を検知
+  if (
+    msg.includes("cannot read properties of undefined (reading 'call')") ||
+    (msg.includes("undefined is not an object") && msg.includes(".call")) ||
+    (stack.includes("/_next/static/chunks/webpack-") &&
+      (msg.includes("reading 'call'") || msg.includes("is not a function")))
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
-function extractReasonText(reason: unknown): string {
-  if (!reason) return "";
-  if (typeof reason === "string") return reason;
+function extractReasonDetails(reason: unknown): {
+  text: string;
+  stack: string;
+} {
+  if (!reason) return { text: "", stack: "" };
+  if (typeof reason === "string") return { text: reason, stack: "" };
   if (reason instanceof Error) {
-    return `${reason.name}: ${reason.message}`;
+    return {
+      text: `${reason.name}: ${reason.message}`,
+      stack: typeof reason.stack === "string" ? reason.stack : "",
+    };
   }
   if (typeof reason === "object") {
     const rec = reason as Record<string, unknown>;
     const name = typeof rec.name === "string" ? rec.name : "";
     const message = typeof rec.message === "string" ? rec.message : "";
-    return `${name} ${message}`.trim();
+    const stack = typeof rec.stack === "string" ? rec.stack : "";
+    return {
+      text: `${name} ${message}`.trim(),
+      stack,
+    };
   }
-  return "";
+  return { text: "", stack: "" };
 }
 
-function attemptDeploySkewReload(): void {
-  if (typeof window === "undefined") return;
+export function isDeploySkewOrChunkError(reason: unknown): boolean {
+  const { text, stack } = extractReasonDetails(reason);
+  return isChunkOrAssetLoadFailureMessage(text, stack);
+}
+
+function attemptDeploySkewReload(): boolean {
+  if (typeof window === "undefined") return false;
   if (typeof navigator !== "undefined" && navigator.onLine === false) {
     // オフライン状態での無限リロードは行わない
-    return;
+    return false;
   }
 
   const now = Date.now();
@@ -59,13 +97,46 @@ function attemptDeploySkewReload(): void {
     const prevRaw = sessionStorage.getItem(CHUNK_RECOVERY_STORAGE_KEY);
     const prevAt = prevRaw ? Number(prevRaw) : 0;
     if (prevAt > 0 && now - prevAt < CHUNK_RECOVERY_COOLDOWN_MS) {
-      return;
+      return false;
     }
     sessionStorage.setItem(CHUNK_RECOVERY_STORAGE_KEY, String(now));
   } catch {
     // sessionStorage 利用不可時は1回のみ再読込を試行
   }
 
+  try {
+    window.location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * React Error Boundary（`error.tsx` / `global-error.tsx`）で捕捉された例外が
+ * デプロイ更新直後のチャンク不一致・Webpack モジュールスキューである場合、
+ * ループ防止クールダウン付きで自動的にページを再読込して最新ビルドへ復旧させる。
+ */
+export function tryAutoRecoverFromErrorBoundary(error: unknown): boolean {
+  releaseOrphanedBodyLocks();
+  if (!isDeploySkewOrChunkError(error)) {
+    return false;
+  }
+  return attemptDeploySkewReload();
+}
+
+/**
+ * エラー画面の「再読み込み」ボタン等から、ロック解除を伴ってクリーンにページを再読込する
+ * （`src/app/` 配下で直接 `window.location` を触らないための共通リカバリ関数）
+ */
+export function reloadCurrentPageCleanly(): void {
+  if (typeof window === "undefined") return;
+  releaseOrphanedBodyLocks();
+  try {
+    sessionStorage.removeItem(CHUNK_RECOVERY_STORAGE_KEY);
+  } catch {
+    // ignore storage errors
+  }
   try {
     window.location.reload();
   } catch {
@@ -140,8 +211,9 @@ export function installLiffRuntimeRecovery(): void {
       }
 
       if (event instanceof ErrorEvent) {
-        const combined = `${event.message || ""} ${extractReasonText(event.error)}`;
-        if (isChunkOrAssetLoadFailureMessage(combined)) {
+        const details = extractReasonDetails(event.error);
+        const combined = `${event.message || ""} ${details.text}`.trim();
+        if (isChunkOrAssetLoadFailureMessage(combined, details.stack)) {
           attemptDeploySkewReload();
         }
       }
@@ -151,8 +223,7 @@ export function installLiffRuntimeRecovery(): void {
 
   // 2. `next/dynamic` やクライアントルーター遷移時の動的 import() 404 Rejection を検知
   window.addEventListener("unhandledrejection", (event: PromiseRejectionEvent) => {
-    const reasonText = extractReasonText(event.reason);
-    if (isChunkOrAssetLoadFailureMessage(reasonText)) {
+    if (isDeploySkewOrChunkError(event.reason)) {
       event.preventDefault();
       attemptDeploySkewReload();
     }
