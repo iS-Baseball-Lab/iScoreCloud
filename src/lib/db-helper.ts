@@ -76,6 +76,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "score_settings", ddl: "ALTER TABLE teams ADD COLUMN score_settings text" },
     { name: "cheer_songs_json", ddl: "ALTER TABLE teams ADD COLUMN cheer_songs_json text" },
     { name: "weekend_reminder_settings", ddl: "ALTER TABLE teams ADD COLUMN weekend_reminder_settings text" },
+    { name: "equipment_sets_json", ddl: "ALTER TABLE teams ADD COLUMN equipment_sets_json text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },
@@ -134,6 +135,10 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   ],
   match_live_reports: [
     { name: "editor_owner_key", ddl: "ALTER TABLE match_live_reports ADD COLUMN editor_owner_key text" },
+  ],
+  team_equipments: [
+    { name: "default_car_id", ddl: "ALTER TABLE team_equipments ADD COLUMN default_car_id text" },
+    { name: "default_member_id", ddl: "ALTER TABLE team_equipments ADD COLUMN default_member_id text" },
   ],
 };
 
@@ -263,6 +268,8 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       description text,
       is_heavy integer DEFAULT 0,
       quantity integer DEFAULT 1,
+      default_car_id text,
+      default_member_id text,
       created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },

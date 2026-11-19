@@ -5,6 +5,14 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import {
+  inferEquipmentSetCategoryFromName,
+  parseEquipmentSetsJson,
+  sanitizeEquipmentSetsForSave,
+  type EquipmentSetCategory,
+  type EquipmentSetItem,
+  type PreviousCarpoolEquipmentEntry,
+} from "@/lib/liff/equipment-sets-schema";
+import {
   comparePlayersByConditionAndUniform,
   getTodayJstDateKey,
   resolveEffectivePlayerConditionOnDate,
@@ -86,6 +94,15 @@ export interface SimpleCarpoolEquipmentOption {
   description: string | null;
   isHeavy: boolean;
   quantity: number;
+  defaultCarId?: string | null;
+  defaultMemberId?: string | null;
+}
+
+export interface SimpleCarpoolPreviousEquipmentSnapshot {
+  eventId: string;
+  eventTitle: string;
+  dateLabel: string;
+  cars: PreviousCarpoolEquipmentEntry[];
 }
 
 export interface SimpleCarpoolExistingCar {
@@ -126,6 +143,8 @@ export interface SimpleCarpoolContextResponse {
   sharedCars?: SimpleCarpoolSharedCarItem[];
   players: SimpleCarpoolPlayerCandidate[];
   teamEquipments?: SimpleCarpoolEquipmentOption[];
+  equipmentSets?: EquipmentSetItem[];
+  previousEquipmentSnapshot?: SimpleCarpoolPreviousEquipmentSnapshot | null;
   venues: SimpleCarpoolVenueOption[];
   homeGround: string;
   existingCars: SimpleCarpoolExistingCar[];
@@ -377,6 +396,8 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         description: "ヘルメット・レガース含む",
         isHeavy: true,
         quantity: 2,
+        defaultCarId: "demo-car-3",
+        defaultMemberId: "demo-m-3",
       },
       {
         id: "demo-eq-2",
@@ -384,6 +405,8 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         description: "試合球・練習球",
         isHeavy: true,
         quantity: 1,
+        defaultCarId: "demo-car-3",
+        defaultMemberId: null,
       },
       {
         id: "demo-eq-3",
@@ -391,6 +414,8 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         description: "熱中症対策用",
         isHeavy: true,
         quantity: 1,
+        defaultCarId: null,
+        defaultMemberId: null,
       },
       {
         id: "demo-eq-4",
@@ -398,8 +423,61 @@ function buildDemoContext(): SimpleCarpoolContextResponse {
         description: "コールドスプレー確認",
         isHeavy: false,
         quantity: 1,
+        defaultCarId: null,
+        defaultMemberId: "demo-m-1",
+      },
+      {
+        id: "demo-eq-5",
+        name: "BSOインジケーター・携帯得点盤",
+        description: "OP戦・練習試合用",
+        isHeavy: false,
+        quantity: 1,
+        defaultCarId: null,
+        defaultMemberId: null,
       },
     ],
+    equipmentSets: [
+      {
+        id: "demo-set-official",
+        name: "公式戦セット",
+        category: "official",
+        description: "大会・トーナメント戦用の道具一式",
+        equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-4"],
+      },
+      {
+        id: "demo-set-op",
+        name: "OP戦セット",
+        category: "practice_match",
+        description: "練習試合・交流戦用の道具＋得点盤セット",
+        equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-4", "demo-eq-5"],
+      },
+      {
+        id: "demo-set-summer",
+        name: "遠征・夏場セット",
+        category: "expedition",
+        description: "タープテント・アイシングセット",
+        equipmentIds: ["demo-eq-3", "demo-eq-4"],
+      },
+    ],
+    previousEquipmentSnapshot: {
+      eventId: "demo-prev-ev",
+      eventTitle: "先週のOP戦 遠征",
+      dateLabel: "8/23(日)",
+      cars: [
+        {
+          carId: "demo-car-3",
+          driverMemberId: "demo-m-3",
+          isCargo: true,
+          equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-3"],
+        },
+        {
+          carId: "demo-car-1",
+          driverMemberId: "demo-m-1",
+          isCargo: false,
+          equipmentIds: ["demo-eq-4", "demo-eq-5"],
+        },
+      ],
+    },
     venues: [
       { id: "demo-v-1", name: "〇〇市民球場 第1駐車場" },
     ],
@@ -470,7 +548,11 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       periodsByPlayerId,
     ] = await Promise.all([
       db
-        .select({ id: teams.id, homeGround: teams.homeGround })
+        .select({
+          id: teams.id,
+          homeGround: teams.homeGround,
+          equipmentSetsJson: teams.equipmentSetsJson,
+        })
         .from(teams)
         .where(eq(teams.id, teamId))
         .get(),
@@ -851,6 +933,10 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       eqIdsByCarpoolId.set(eqRow.carpoolId, list);
     }
 
+    const validCarIdsSet = new Set(allCars.map((cRow) => cRow.id));
+    const validAdultMemberIdsSet = new Set(allMembers.map((m) => m.id));
+    const validEquipmentIdsSet = new Set(allEquipments.map((e) => e.id));
+
     const formattedTeamEquipments: SimpleCarpoolEquipmentOption[] =
       allEquipments
         .map((eqItem) => ({
@@ -859,11 +945,117 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
           description: eqItem.description || null,
           isHeavy: Boolean(eqItem.isHeavy),
           quantity: Math.max(1, Number(eqItem.quantity) || 1),
+          defaultCarId:
+            eqItem.defaultCarId && validCarIdsSet.has(eqItem.defaultCarId)
+              ? eqItem.defaultCarId
+              : null,
+          defaultMemberId:
+            eqItem.defaultMemberId &&
+            validAdultMemberIdsSet.has(eqItem.defaultMemberId)
+              ? eqItem.defaultMemberId
+              : null,
         }))
         .sort((a, b) => {
           if (a.isHeavy !== b.isHeavy) return a.isHeavy ? -1 : 1;
           return a.name.localeCompare(b.name, "ja");
         });
+
+    const equipmentSets = parseEquipmentSetsJson(
+      teamRow.equipmentSetsJson,
+      validEquipmentIdsSet
+    );
+
+    // 直近の別予定で道具割当がある配車スナップショットを1往復で取得（「前回の配車から道具を引継」用）
+    let previousEquipmentSnapshot: SimpleCarpoolPreviousEquipmentSnapshot | null =
+      null;
+    const candidatePrevEvents = teamEvents
+      .filter((ev) => ev.id !== selectedEvent?.id)
+      .slice(0, 15);
+    if (candidatePrevEvents.length > 0 && validEquipmentIdsSet.size > 0) {
+      const candidatePrevEventIds = candidatePrevEvents.map((ev) => ev.id);
+      const prevEqRows = await db
+        .select({
+          eventId: eventEquipments.eventId,
+          equipmentId: eventEquipments.equipmentId,
+          carpoolId: eventEquipments.carpoolId,
+        })
+        .from(eventEquipments)
+        .where(inArray(eventEquipments.eventId, candidatePrevEventIds))
+        .all()
+        .catch(() => []);
+
+      const eqByEventAndCarpool = new Map<string, Map<string, string[]>>();
+      for (const row of prevEqRows) {
+        if (
+          !row.carpoolId ||
+          !row.equipmentId ||
+          !validEquipmentIdsSet.has(row.equipmentId)
+        ) {
+          continue;
+        }
+        let cpMap = eqByEventAndCarpool.get(row.eventId);
+        if (!cpMap) {
+          cpMap = new Map<string, string[]>();
+          eqByEventAndCarpool.set(row.eventId, cpMap);
+        }
+        const list = cpMap.get(row.carpoolId) || [];
+        if (!list.includes(row.equipmentId)) {
+          list.push(row.equipmentId);
+        }
+        cpMap.set(row.carpoolId, list);
+      }
+
+      // 対象予定日以前の直近予定を優先、なければ最新の登録済み予定を採用
+      const targetStartMs = selectedEvent
+        ? new Date(selectedEvent.startAt).getTime()
+        : Date.now();
+      const sortedPrevCandidates = [...candidatePrevEvents].sort((a, b) => {
+        const aBefore = new Date(a.startAt).getTime() <= targetStartMs ? 1 : 0;
+        const bBefore = new Date(b.startAt).getTime() <= targetStartMs ? 1 : 0;
+        if (aBefore !== bBefore) return bBefore - aBefore;
+        return new Date(b.startAt).getTime() - new Date(a.startAt).getTime();
+      });
+
+      const matchedPrevEv = sortedPrevCandidates.find((ev) =>
+        eqByEventAndCarpool.has(ev.id)
+      );
+      if (matchedPrevEv) {
+        const cpMap = eqByEventAndCarpool.get(matchedPrevEv.id);
+        const prevCarpools = await db
+          .select({
+            id: eventCarpools.id,
+            carId: eventCarpools.carId,
+            driverId: eventCarpools.driverId,
+            carType: eventCarpools.carType,
+          })
+          .from(eventCarpools)
+          .where(eq(eventCarpools.eventId, matchedPrevEv.id))
+          .all()
+          .catch(() => []);
+
+        const snapCars: PreviousCarpoolEquipmentEntry[] = [];
+        for (const pcp of prevCarpools) {
+          const assignedIds = cpMap?.get(pcp.id) || [];
+          if (assignedIds.length === 0) continue;
+          snapCars.push({
+            carId: pcp.carId || null,
+            driverMemberId: pcp.driverId || null,
+            isCargo: pcp.carType === "cargo",
+            equipmentIds: assignedIds,
+          });
+        }
+
+        if (snapCars.length > 0) {
+          const prevParts = toJstDateParts(new Date(matchedPrevEv.startAt));
+          previousEquipmentSnapshot = {
+            eventId: matchedPrevEv.id,
+            eventTitle: matchedPrevEv.title,
+            dateLabel: prevParts.dateLabel,
+            cars: snapCars,
+          };
+        }
+      }
+    }
 
     const existingCars: SimpleCarpoolExistingCar[] = existingCarpoolRows.map(
       (cp) => {
@@ -902,6 +1094,8 @@ liffCarpoolSimpleRouter.get("/context", async (c) => {
       sharedCars,
       players: playerCandidates,
       teamEquipments: formattedTeamEquipments,
+      equipmentSets,
+      previousEquipmentSnapshot,
       venues: allVenues,
       homeGround: teamRow.homeGround || "",
       existingCars,
@@ -1518,4 +1712,125 @@ liffCarpoolSimpleRouter.post("/equipment-status", async (c) => {
   }
 });
 
+/**
+ * POST /api/liff/carpool-simple/save-equipment-set
+ * 配車作成モーダルから現在選択中の道具リストをそのまま「道具セット」として保存
+ */
+liffCarpoolSimpleRouter.post("/save-equipment-set", async (c) => {
+  try {
+    const body = (await c.req.json()) as {
+      teamId?: string;
+      name?: string;
+      category?: EquipmentSetCategory;
+      description?: string;
+      equipmentIds?: string[];
+    };
+
+    const teamId = (body.teamId || "").trim();
+    const setName = (body.name || "").trim().slice(0, 40);
+    const rawIds = Array.isArray(body.equipmentIds) ? body.equipmentIds : [];
+
+    if (!teamId || !setName) {
+      return c.json(
+        { success: false, error: "セット名を入力してください" },
+        400
+      );
+    }
+    if (rawIds.length === 0) {
+      return c.json(
+        { success: false, error: "1つ以上の道具を選択してください" },
+        400
+      );
+    }
+
+    if (teamId === "demo-team") {
+      const demoSet: EquipmentSetItem = {
+        id: `demo-set-${Date.now()}`,
+        name: setName,
+        category: body.category || inferEquipmentSetCategoryFromName(setName),
+        description: (body.description || "").trim().slice(0, 120),
+        equipmentIds: rawIds,
+      };
+      return c.json({
+        success: true,
+        isDemo: true,
+        savedSet: demoSet,
+        equipmentSets: [demoSet],
+      });
+    }
+
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+      return c.json({ success: false, error: "編集権限がありません" }, 403);
+    }
+
+    const db = drizzle(c.env.DB);
+    const [eqRows, teamRow] = await Promise.all([
+      db
+        .select({ id: teamEquipments.id })
+        .from(teamEquipments)
+        .where(eq(teamEquipments.teamId, teamId))
+        .all(),
+      db
+        .select({ equipmentSetsJson: teams.equipmentSetsJson })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get(),
+    ]);
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    const validIds = new Set(eqRows.map((r) => r.id));
+    const existingSets = parseEquipmentSetsJson(
+      teamRow.equipmentSetsJson,
+      validIds
+    );
+    const sameNameExisting = existingSets.find(
+      (s) => s.name.toLowerCase() === setName.toLowerCase()
+    );
+    const newSet: EquipmentSetItem = {
+      id:
+        sameNameExisting?.id ||
+        `eqset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+      name: setName,
+      category: body.category || inferEquipmentSetCategoryFromName(setName),
+      description:
+        (body.description || "").trim().slice(0, 120) ||
+        sameNameExisting?.description ||
+        "",
+      equipmentIds: rawIds,
+    };
+
+    const mergedRaw = sameNameExisting
+      ? existingSets.map((s) => (s.id === sameNameExisting.id ? newSet : s))
+      : [...existingSets, newSet];
+    const sanitized = sanitizeEquipmentSetsForSave(mergedRaw, validIds);
+
+    await db
+      .update(teams)
+      .set({ equipmentSetsJson: JSON.stringify(sanitized) })
+      .where(eq(teams.id, teamId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      savedSet: newSet,
+      equipmentSets: sanitized,
+    });
+  } catch (err) {
+    console.error(
+      "[POST /api/liff/carpool-simple/save-equipment-set] Error:",
+      err
+    );
+    return c.json(
+      { success: false, error: "道具セットの保存に失敗しました" },
+      500
+    );
+  }
+});
+
 export default liffCarpoolSimpleRouter;
+

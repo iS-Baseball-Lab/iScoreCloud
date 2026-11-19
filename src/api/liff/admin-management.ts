@@ -30,6 +30,13 @@ import {
 } from "@/db/schema";
 import { ensureAuthSchema } from "@/lib/auth";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
+import {
+  inferEquipmentSetCategoryFromName,
+  parseEquipmentSetsJson,
+  sanitizeEquipmentSetsForSave,
+  type EquipmentSetCategory,
+  type EquipmentSetItem,
+} from "@/lib/liff/equipment-sets-schema";
 import { parsePlayerProfileDetails } from "@/lib/liff/player-profile-schema";
 import { deleteR2UrlsSafely } from "@/lib/r2-cleanup";
 import { canManageSystem, canManageTeam, ROLES } from "@/lib/roles";
@@ -237,6 +244,25 @@ export interface AdminEquipmentItem {
   description: string;
   isHeavy: boolean;
   quantity: number;
+  defaultCarId: string | null;
+  defaultCarLabel: string | null;
+  defaultMemberId: string | null;
+  defaultMemberName: string | null;
+}
+
+export interface AdminEquipmentCarOption {
+  id: string;
+  label: string;
+  sublabel: string;
+  isCargo: boolean;
+  isBus: boolean;
+  isShared: boolean;
+}
+
+export interface AdminEquipmentMemberOption {
+  id: string;
+  name: string;
+  roleLabel: string;
 }
 
 export interface AdminEquipmentsResponse {
@@ -245,6 +271,9 @@ export interface AdminEquipmentsResponse {
   canManage: boolean;
   myRole: string;
   equipments: AdminEquipmentItem[];
+  equipmentSets?: EquipmentSetItem[];
+  carOptions?: AdminEquipmentCarOption[];
+  memberOptions?: AdminEquipmentMemberOption[];
   error?: string;
 }
 
@@ -2606,7 +2635,7 @@ liffAdminMgmtRouter.delete("/tournaments/:tournamentId", async (c) => {
 });
 
 // =========================================================
-// 6. チーム道具・備品マスタ管理 API (/equipments)
+// 6. チーム道具・備品マスタ ＆ 道具セット管理 API (/equipments)
 // =========================================================
 
 liffAdminMgmtRouter.get("/equipments", async (c) => {
@@ -2632,6 +2661,10 @@ liffAdminMgmtRouter.get("/equipments", async (c) => {
           description: "マスク・プロテクター・レガース（正・副2セット）",
           isHeavy: true,
           quantity: 2,
+          defaultCarId: "demo-car-3",
+          defaultCarLabel: "ハイエース（山下 監督）",
+          defaultMemberId: "demo-m-3",
+          defaultMemberName: "山下 監督",
         },
         {
           id: "demo-eq-2",
@@ -2640,6 +2673,10 @@ liffAdminMgmtRouter.get("/equipments", async (c) => {
           description: "チーム共用バット6本＋打者用ヘルメット7個",
           isHeavy: true,
           quantity: 1,
+          defaultCarId: "demo-car-3",
+          defaultCarLabel: "ハイエース（山下 監督）",
+          defaultMemberId: null,
+          defaultMemberName: null,
         },
         {
           id: "demo-eq-3",
@@ -2648,6 +2685,10 @@ liffAdminMgmtRouter.get("/equipments", async (c) => {
           description: "夏場・雨天待機用（道具車への積載必須）",
           isHeavy: true,
           quantity: 2,
+          defaultCarId: null,
+          defaultCarLabel: null,
+          defaultMemberId: null,
+          defaultMemberName: null,
         },
         {
           id: "demo-eq-4",
@@ -2656,28 +2697,215 @@ liffAdminMgmtRouter.get("/equipments", async (c) => {
           description: "コールドスプレー・氷嚢・絆創膏・経口補水液",
           isHeavy: false,
           quantity: 1,
+          defaultCarId: null,
+          defaultCarLabel: null,
+          defaultMemberId: "demo-m-1",
+          defaultMemberName: "鈴木 パパ",
         },
+        {
+          id: "demo-eq-5",
+          teamId: "demo-team",
+          name: "BSOインジケーター・携帯得点盤",
+          description: "OP戦・練習試合用スコアボード",
+          isHeavy: false,
+          quantity: 1,
+          defaultCarId: null,
+          defaultCarLabel: null,
+          defaultMemberId: null,
+          defaultMemberName: null,
+        },
+        {
+          id: "demo-eq-6",
+          teamId: "demo-team",
+          name: "団旗・プラカード・公認試合球ケース",
+          description: "公式戦・開会式および大会本部提出球",
+          isHeavy: false,
+          quantity: 1,
+          defaultCarId: null,
+          defaultCarLabel: null,
+          defaultMemberId: null,
+          defaultMemberName: null,
+        },
+      ],
+      equipmentSets: [
+        {
+          id: "demo-set-official",
+          name: "公式戦セット",
+          category: "official",
+          description: "大会・トーナメント戦に持参する基本道具一式",
+          equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-4", "demo-eq-6"],
+        },
+        {
+          id: "demo-set-op",
+          name: "OP戦セット",
+          category: "practice_match",
+          description: "OP戦（練習試合）用の道具・携帯得点盤一式",
+          equipmentIds: ["demo-eq-1", "demo-eq-2", "demo-eq-4", "demo-eq-5"],
+        },
+        {
+          id: "demo-set-summer",
+          name: "遠征・夏場セット",
+          category: "expedition",
+          description: "日除けテント・アイシングなど遠征暑熱対策セット",
+          equipmentIds: ["demo-eq-3", "demo-eq-4"],
+        },
+      ],
+      carOptions: [
+        {
+          id: "demo-car-cargo-shared",
+          label: "チーム道具車（ハイエース）",
+          sublabel: "チーム共有車両・道具車（2席）",
+          isCargo: true,
+          isBus: false,
+          isShared: true,
+        },
+        {
+          id: "demo-car-3",
+          label: "ハイエース（山下 監督）",
+          sublabel: "個人車両・道具車（3席）",
+          isCargo: true,
+          isBus: false,
+          isShared: false,
+        },
+        {
+          id: "demo-car-1",
+          label: "セレナ（鈴木 パパ）",
+          sublabel: "個人車両・普通車（6席）",
+          isCargo: false,
+          isBus: false,
+          isShared: false,
+        },
+      ],
+      memberOptions: [
+        { id: "demo-m-3", name: "山下 監督", roleLabel: "指導者" },
+        { id: "demo-m-2", name: "田中 パパ", roleLabel: "指導者" },
+        { id: "demo-m-1", name: "鈴木 パパ", roleLabel: "保護者" },
       ],
     };
     return c.json(payload);
   }
 
   const db = drizzle(c.env.DB);
-  const rows = await db
-    .select()
-    .from(teamEquipments)
-    .where(eq(teamEquipments.teamId, ctx.teamId))
-    .orderBy(desc(teamEquipments.isHeavy), desc(teamEquipments.createdAt))
-    .all();
+  const [rows, teamRow, carRows, memberRows] = await Promise.all([
+    db
+      .select()
+      .from(teamEquipments)
+      .where(eq(teamEquipments.teamId, ctx.teamId))
+      .orderBy(desc(teamEquipments.isHeavy), desc(teamEquipments.createdAt))
+      .all(),
+    db
+      .select({ equipmentSetsJson: teams.equipmentSetsJson })
+      .from(teams)
+      .where(eq(teams.id, ctx.teamId))
+      .get(),
+    db
+      .select()
+      .from(memberCars)
+      .where(eq(memberCars.teamId, ctx.teamId))
+      .all()
+      .catch(() => []),
+    db
+      .select({
+        id: teamMembers.id,
+        name: teamMembers.name,
+        memberType: teamMembers.memberType,
+        role: teamMembers.role,
+        status: teamMembers.status,
+      })
+      .from(teamMembers)
+      .where(eq(teamMembers.teamId, ctx.teamId))
+      .all()
+      .catch(() => []),
+  ]);
 
-  const equipments: AdminEquipmentItem[] = rows.map((r) => ({
-    id: r.id,
-    teamId: r.teamId,
-    name: r.name,
-    description: r.description || "",
-    isHeavy: Boolean(r.isHeavy),
-    quantity: Number(r.quantity) || 1,
-  }));
+  const memberNameById = new Map<string, string>();
+  const memberOptions: AdminEquipmentMemberOption[] = [];
+  for (const m of memberRows) {
+    if (m.status === "rejected" || m.memberType === "player") continue;
+    const cleanName = (m.name || "").trim();
+    if (!cleanName) continue;
+    memberNameById.set(m.id, cleanName);
+    const isStaff =
+      m.memberType === "staff" ||
+      m.role === "manager" ||
+      m.role === "coach" ||
+      m.role === "owner";
+    memberOptions.push({
+      id: m.id,
+      name: cleanName,
+      roleLabel: isStaff ? "指導者" : "保護者",
+    });
+  }
+  memberOptions.sort((a, b) => {
+    if (a.roleLabel !== b.roleLabel) {
+      return a.roleLabel === "指導者" ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name, "ja");
+  });
+
+  const carLabelById = new Map<string, string>();
+  const carOptions: AdminEquipmentCarOption[] = carRows.map((cRow) => {
+    const isBus = cRow.carType === "bus";
+    const isCargo = cRow.carType === "cargo";
+    const isShared = !cRow.ownerId && !cRow.ownerId2;
+    const ownerNames = [cRow.ownerId, cRow.ownerId2]
+      .map((oid) => (oid ? memberNameById.get(oid) || "" : ""))
+      .filter(Boolean);
+    const label =
+      ownerNames.length > 0
+        ? `${cRow.name}（${ownerNames.join("・")}）`
+        : cRow.name;
+    carLabelById.set(cRow.id, label);
+    const cap =
+      cRow.capacity !== null && cRow.capacity !== undefined
+        ? Math.max(0, Number(cRow.capacity))
+        : 4;
+    const typeLabel = isBus ? "バス" : isCargo ? "道具車" : "普通車";
+    return {
+      id: cRow.id,
+      label,
+      sublabel: `${isShared ? "チーム共有車両" : "個人車両"}・${typeLabel}（${cap}席）`,
+      isCargo,
+      isBus,
+      isShared,
+    };
+  });
+  carOptions.sort((a, b) => {
+    if (a.isCargo !== b.isCargo) return a.isCargo ? -1 : 1;
+    if (a.isShared !== b.isShared) return a.isShared ? -1 : 1;
+    return a.label.localeCompare(b.label, "ja");
+  });
+
+  const validEquipmentIds = new Set(rows.map((r) => r.id));
+  const equipmentSets = parseEquipmentSetsJson(
+    teamRow?.equipmentSetsJson,
+    validEquipmentIds
+  );
+
+  const equipments: AdminEquipmentItem[] = rows.map((r) => {
+    const defCarId =
+      r.defaultCarId && carLabelById.has(r.defaultCarId)
+        ? r.defaultCarId
+        : null;
+    const defMemberId =
+      r.defaultMemberId && memberNameById.has(r.defaultMemberId)
+        ? r.defaultMemberId
+        : null;
+    return {
+      id: r.id,
+      teamId: r.teamId,
+      name: r.name,
+      description: r.description || "",
+      isHeavy: Boolean(r.isHeavy),
+      quantity: Number(r.quantity) || 1,
+      defaultCarId: defCarId,
+      defaultCarLabel: defCarId ? carLabelById.get(defCarId) || null : null,
+      defaultMemberId: defMemberId,
+      defaultMemberName: defMemberId
+        ? memberNameById.get(defMemberId) || null
+        : null,
+    };
+  });
 
   const payload: AdminEquipmentsResponse = {
     success: true,
@@ -2685,9 +2913,154 @@ liffAdminMgmtRouter.get("/equipments", async (c) => {
     canManage: ctx.canManage,
     myRole: ctx.myRole,
     equipments,
+    equipmentSets,
+    carOptions,
+    memberOptions,
   };
 
   return c.json(payload);
+});
+
+liffAdminMgmtRouter.post("/equipments/sets", async (c) => {
+  const body = (await c.req.json()) as {
+    teamId?: string;
+    userId?: string;
+    set?: {
+      id?: string | null;
+      name?: string;
+      category?: EquipmentSetCategory;
+      description?: string;
+      equipmentIds?: string[];
+    };
+    sets?: EquipmentSetItem[];
+  };
+
+  const resolved = await resolveAdminMgmtContext(
+    c,
+    body.teamId || "",
+    body.userId
+  );
+  if (!resolved.ok) {
+    return c.json({ success: false, error: resolved.error }, resolved.status);
+  }
+  const { ctx } = resolved;
+
+  if (ctx.isDemo) {
+    return c.json({
+      success: true,
+      isDemo: true,
+      message: "道具セットを保存しました（デモ）",
+    });
+  }
+  if (!ctx.canManage) {
+    return c.json({ success: false, error: "管理者権限がありません" }, 403);
+  }
+
+  const db = drizzle(c.env.DB);
+  const [eqRows, teamRow] = await Promise.all([
+    db
+      .select({ id: teamEquipments.id })
+      .from(teamEquipments)
+      .where(eq(teamEquipments.teamId, ctx.teamId))
+      .all(),
+    db
+      .select({ equipmentSetsJson: teams.equipmentSetsJson })
+      .from(teams)
+      .where(eq(teams.id, ctx.teamId))
+      .get(),
+  ]);
+  const validEquipmentIds = new Set(eqRows.map((r) => r.id));
+
+  let nextSets: EquipmentSetItem[];
+  if (Array.isArray(body.sets)) {
+    nextSets = sanitizeEquipmentSetsForSave(body.sets, validEquipmentIds);
+  } else if (body.set) {
+    const setName = (body.set.name || "").trim().slice(0, 40);
+    if (!setName) {
+      return c.json(
+        { success: false, error: "セット名を入力してください" },
+        400
+      );
+    }
+    const existingSets = parseEquipmentSetsJson(
+      teamRow?.equipmentSetsJson,
+      validEquipmentIds
+    );
+    const targetId =
+      body.set.id && body.set.id.trim()
+        ? body.set.id.trim()
+        : `eqset_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const candidate: EquipmentSetItem = {
+      id: targetId,
+      name: setName,
+      category: body.set.category || inferEquipmentSetCategoryFromName(setName),
+      description: (body.set.description || "").trim().slice(0, 120),
+      equipmentIds: Array.isArray(body.set.equipmentIds)
+        ? body.set.equipmentIds
+        : [],
+    };
+    const mergedRaw = existingSets.some((s) => s.id === targetId)
+      ? existingSets.map((s) => (s.id === targetId ? candidate : s))
+      : [...existingSets, candidate];
+    nextSets = sanitizeEquipmentSetsForSave(mergedRaw, validEquipmentIds);
+  } else {
+    return c.json({ success: false, error: "保存データが不正です" }, 400);
+  }
+
+  await db
+    .update(teams)
+    .set({ equipmentSetsJson: JSON.stringify(nextSets) })
+    .where(eq(teams.id, ctx.teamId));
+
+  return c.json({
+    success: true,
+    equipmentSets: nextSets,
+    message: "道具セットを保存しました",
+  });
+});
+
+liffAdminMgmtRouter.delete("/equipments/sets/:setId", async (c) => {
+  const setId = c.req.param("setId");
+  const teamId = c.req.query("teamId") || "";
+  const userId = c.req.query("userId");
+
+  const resolved = await resolveAdminMgmtContext(c, teamId, userId);
+  if (!resolved.ok) {
+    return c.json({ success: false, error: resolved.error }, resolved.status);
+  }
+  const { ctx } = resolved;
+
+  if (ctx.isDemo || setId.startsWith("demo-")) {
+    return c.json({
+      success: true,
+      isDemo: true,
+      message: "道具セットを削除しました（デモ）",
+    });
+  }
+  if (!ctx.canManage) {
+    return c.json({ success: false, error: "管理者権限がありません" }, 403);
+  }
+
+  const db = drizzle(c.env.DB);
+  const teamRow = await db
+    .select({ equipmentSetsJson: teams.equipmentSetsJson })
+    .from(teams)
+    .where(eq(teams.id, ctx.teamId))
+    .get();
+
+  const currentSets = parseEquipmentSetsJson(teamRow?.equipmentSetsJson);
+  const filtered = currentSets.filter((s) => s.id !== setId);
+
+  await db
+    .update(teams)
+    .set({ equipmentSetsJson: JSON.stringify(filtered) })
+    .where(eq(teams.id, ctx.teamId));
+
+  return c.json({
+    success: true,
+    equipmentSets: filtered,
+    message: "道具セットを削除しました",
+  });
 });
 
 liffAdminMgmtRouter.post("/equipments", async (c) => {
@@ -2699,6 +3072,8 @@ liffAdminMgmtRouter.post("/equipments", async (c) => {
     description?: string;
     isHeavy?: boolean;
     quantity?: number;
+    defaultCarId?: string | null;
+    defaultMemberId?: string | null;
   };
 
   const resolved = await resolveAdminMgmtContext(c, body.teamId || "", body.userId);
@@ -2727,6 +3102,36 @@ liffAdminMgmtRouter.post("/equipments", async (c) => {
   const isHeavy = Boolean(body.isHeavy);
   const db = drizzle(c.env.DB);
 
+  // クロステナント防止：同一チーム内の車両ID・メンバーIDのみ許可
+  let safeDefaultCarId: string | null = null;
+  const rawCarId = (body.defaultCarId || "").trim();
+  if (rawCarId) {
+    const carRow = await db
+      .select({ id: memberCars.id })
+      .from(memberCars)
+      .where(
+        and(eq(memberCars.id, rawCarId), eq(memberCars.teamId, ctx.teamId))
+      )
+      .get();
+    if (carRow) safeDefaultCarId = carRow.id;
+  }
+
+  let safeDefaultMemberId: string | null = null;
+  const rawMemberId = (body.defaultMemberId || "").trim();
+  if (rawMemberId) {
+    const memRow = await db
+      .select({ id: teamMembers.id })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.id, rawMemberId),
+          eq(teamMembers.teamId, ctx.teamId)
+        )
+      )
+      .get();
+    if (memRow) safeDefaultMemberId = memRow.id;
+  }
+
   if (body.id) {
     await db
       .update(teamEquipments)
@@ -2735,6 +3140,8 @@ liffAdminMgmtRouter.post("/equipments", async (c) => {
         description: descText,
         isHeavy,
         quantity: qty,
+        defaultCarId: safeDefaultCarId,
+        defaultMemberId: safeDefaultMemberId,
       })
       .where(and(eq(teamEquipments.id, body.id), eq(teamEquipments.teamId, ctx.teamId)));
     return c.json({ success: true, message: "道具情報を更新しました" });
@@ -2748,6 +3155,8 @@ liffAdminMgmtRouter.post("/equipments", async (c) => {
     description: descText,
     isHeavy,
     quantity: qty,
+    defaultCarId: safeDefaultCarId,
+    defaultMemberId: safeDefaultMemberId,
     createdAt: new Date(),
   });
 
@@ -2772,11 +3181,30 @@ liffAdminMgmtRouter.delete("/equipments/:equipmentId", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
+  const teamRow = await db
+    .select({ equipmentSetsJson: teams.equipmentSetsJson })
+    .from(teams)
+    .where(eq(teams.id, ctx.teamId))
+    .get();
+
   await db
     .delete(teamEquipments)
     .where(
       and(eq(teamEquipments.id, equipmentId), eq(teamEquipments.teamId, ctx.teamId))
     );
+
+  // 登録済みセット内に削除対象の道具IDが含まれていればクリーンアップ
+  if (teamRow?.equipmentSetsJson) {
+    const existingSets = parseEquipmentSetsJson(teamRow.equipmentSetsJson);
+    const cleanedSets = existingSets.map((s) => ({
+      ...s,
+      equipmentIds: s.equipmentIds.filter((id) => id !== equipmentId),
+    }));
+    await db
+      .update(teams)
+      .set({ equipmentSetsJson: JSON.stringify(cleanedSets) })
+      .where(eq(teams.id, ctx.teamId));
+  }
 
   return c.json({ success: true, message: "道具を削除しました" });
 });

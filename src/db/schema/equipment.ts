@@ -15,6 +15,8 @@ export const teamEquipments = sqliteTable("team_equipments", {
   description: text("description"), // 補足説明
   isHeavy: integer("is_heavy", { mode: "boolean" }).default(false), // 道具車（cargo車）推奨フラグ
   quantity: integer("quantity").default(1), // 道具の個数/数量
+  defaultCarId: text("default_car_id"), // いつもの積載車両（member_cars.id）
+  defaultMemberId: text("default_member_id"), // 普段の保管・持出担当メンバー（team_members.id）
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_team_equipments_team_id").on(table.teamId),
