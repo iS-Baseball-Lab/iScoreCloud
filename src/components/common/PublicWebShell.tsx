@@ -56,15 +56,15 @@ export function PublicWebHeader() {
         <Link
           href="/"
           id="header-brand-link"
-          className="flex items-center gap-2.5 hover:opacity-85 transition-opacity min-w-0"
+          className="flex items-center gap-2.5 shrink-0 hover:opacity-85 transition-opacity"
         >
           <PublicBrandLogoImg size={40} className="w-10 h-10" />
-          <div className="flex items-baseline gap-0.5 truncate">
-            <span className="text-xl sm:text-2xl font-black italic tracking-tighter text-foreground">
-              iScore
+          <div className="flex flex-col justify-center">
+            <span className="inline-block pr-1.5 text-[19px] sm:text-[22px] font-black italic tracking-tighter leading-none text-foreground">
+              iScore<span className="text-primary">Cloud</span>
             </span>
-            <span className="text-xl sm:text-2xl font-black italic tracking-tighter text-primary">
-              Cloud
+            <span className="text-[10px] sm:text-[11px] font-bold tracking-tight leading-none text-muted-foreground mt-1 select-none whitespace-nowrap">
+              野球スコア＆チーム運営クラウド
             </span>
           </div>
         </Link>
@@ -139,7 +139,7 @@ export function PublicWebFooter() {
             className="flex items-center gap-2 hover:opacity-85 transition-opacity"
           >
             <PublicBrandLogoImg size={28} className="w-7 h-7" />
-            <span className="text-sm font-black italic tracking-tight text-foreground">
+            <span className="inline-block pr-1 text-sm font-black italic tracking-tight text-foreground">
               iScore<span className="text-primary">Cloud</span>
             </span>
           </Link>

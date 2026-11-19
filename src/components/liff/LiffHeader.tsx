@@ -219,7 +219,7 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
           <div className="flex flex-col justify-center">
             <h1
               className={cn(
-                "font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors",
+                "pr-1 font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors",
                 compact ? "text-[13.5px]" : "text-[15px] sm:text-lg"
               )}
             >
