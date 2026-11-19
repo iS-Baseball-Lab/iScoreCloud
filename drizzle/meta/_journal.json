@@ -351,6 +351,13 @@
       "when": 1794967200000,
       "tag": "0049_phase4_line_reminder_and_schema_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1795049400000,
+      "tag": "0050_team_profile_json",
+      "breakpoints": true
     }
   ]
 }

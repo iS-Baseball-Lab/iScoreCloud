@@ -17,6 +17,7 @@ export const organizations = sqliteTable("organizations", {
   description: text("description"), // チームのスローガンや紹介文
   foundedYear: integer("founded_year"), // 結成された年（西暦）
   category: text("category").notNull().default('other'), // 学童、中学硬式、草野球など
+  profileJson: text("profile_json"), // チーム情報ページ用の拡張プロフィールJSON（スローガン・指導方針・活動日時・加盟連盟・戦績等）
   createdAt: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

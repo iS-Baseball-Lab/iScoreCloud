@@ -71,6 +71,7 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/carpool",
   "/api/liff/stats",
   "/api/liff/players",
+  "/api/liff/team-info",
   "/api/liff/grounds",
   "/api/liff/rules",
   "/api/liff/documents",
@@ -1455,6 +1456,10 @@ export function warmupLiffEndpointForHref(
   }
   if (cleanPath === "/liff/stats") {
     triggerWarmupUrl(`/api/liff/stats?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
+  if (cleanPath === "/liff/team") {
+    triggerWarmupUrl(`/api/liff/team-info?teamId=${encodeURIComponent(tid)}`);
     return;
   }
   if (cleanPath === "/liff/players") {

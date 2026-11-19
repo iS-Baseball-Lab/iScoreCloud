@@ -35,6 +35,7 @@ import {
   LayoutGrid,
   Settings,
   ChevronRight,
+  Shield,
   ShieldCheck,
   Link2,
   BookOpen,
@@ -195,6 +196,16 @@ const MENU_ITEMS: MenuItem[] = [
   },
 
   // 📖 タブ2: 選手・資料（① 選手・成績・写真）
+  {
+    title: "チーム情報",
+    subtitle: "クラブ概要・指導体制・拠点・戦績",
+    href: "/liff/team",
+    icon: Shield,
+    colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
+    category: "player_docs" as const,
+    subGroup: "player_media",
+  },
   {
     title: "選手名鑑",
     subtitle: "背番号・プロフィール・選手紹介",

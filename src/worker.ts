@@ -36,6 +36,7 @@ import liffGroundsAiRoute from './api/liff/grounds-ai'
 import liffGalleryRoute from './api/liff/gallery'
 import liffAdminMgmtRoute from './api/liff/admin-management'
 import liffPhase3TeamToolsRoute from './api/liff/phase3-team-tools'
+import liffTeamInfoRoute from './api/liff/team-info'
 import documentsRoute from './api/documents'
 import { ensureAllSchemasOnce } from './lib/db-helper'
 import {
@@ -174,6 +175,7 @@ app.route('/api/liff/carpool-simple', liffCarpoolSimpleRoute)
 app.route('/api/liff/grounds/ai-lookup', liffGroundsAiRoute)
 app.route('/api/liff/gallery', liffGalleryRoute)
 app.route('/api/liff/admin/mgmt', liffAdminMgmtRoute)
+app.route('/api/liff/team-info', liffTeamInfoRoute)
 app.route('/api/liff', liffPhase3TeamToolsRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)

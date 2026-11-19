@@ -17,6 +17,7 @@ import {
   Music,
   ScanLine,
   Settings,
+  Shield,
   ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
@@ -34,6 +35,7 @@ export type QuickMenuItemId =
   | "lineup"
   | "news_generator"
   | "scorebook_import"
+  | "team_info"
   | "players"
   | "stats"
   | "player_growth"
@@ -298,6 +300,17 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
 
   // 📖 選手・資料（選手・成績・写真 ➔ ルール・資料）
   {
+    id: "team_info",
+    label: "チーム情報",
+    shortLabel: "チーム情報",
+    description: "クラブ概要・指導体制・拠点・戦績",
+    badge: "チーム",
+    href: "/liff/team",
+    category: "player_docs",
+    tone: "primary",
+    icon: Shield,
+  },
+  {
     id: "players",
     label: "選手名鑑",
     shortLabel: "選手名鑑",
@@ -489,8 +502,8 @@ export const QUICK_MENU_PRESETS: readonly QuickMenuPreset[] = [
   {
     id: "guide",
     label: "入団案内・資料",
-    description: "予定・配車・ルール・Q&A・資料・リンク",
-    itemIds: ["schedule", "carpool", "rules", "faq", "documents", "links"],
+    description: "チーム情報・予定・ルール・Q&A・資料・リンク",
+    itemIds: ["team_info", "schedule", "rules", "faq", "documents", "links"],
   },
 ];
 

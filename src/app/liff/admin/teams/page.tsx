@@ -452,13 +452,21 @@ export default function LiffAdminTeamsPage() {
               1. クラブ基本情報 ＆ 現在の編成設定
             </h2>
           </div>
-          <Link
-            href="/liff/settings/team"
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1 shrink-0"
-          >
-            <ImageIcon className="w-3 h-3 text-teal-400" />
-            <span>ロゴ・表示設定</span>
-          </Link>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Link
+              href="/liff/team"
+              className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 text-[11px] font-black flex items-center gap-1"
+            >
+              <span>チーム情報</span>
+            </Link>
+            <Link
+              href="/liff/settings/team"
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1"
+            >
+              <ImageIcon className="w-3 h-3 text-teal-400" />
+              <span>表示設定</span>
+            </Link>
+          </div>
         </div>
 
         <div className="p-4 space-y-4 text-xs">

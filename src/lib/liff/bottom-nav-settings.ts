@@ -99,6 +99,7 @@ export const BOTTOM_NAV_SHORT_LABELS: Readonly<Record<QuickMenuItemId, string>> 
   lineup: "スタメン",
   news_generator: "LINE速報",
   scorebook_import: "スコア取込",
+  team_info: "チーム情報",
   players: "選手名鑑",
   stats: "チーム成績",
   player_growth: "個人成長",
