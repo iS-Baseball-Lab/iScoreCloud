@@ -1668,6 +1668,7 @@ export function createLiffTeamIsolationMiddleware(options?: {
       const nonIdSubroutes = new Set([
         "upload",
         "bulk",
+        "bulk-delete",
         "ai-discover",
         "ai-lookup",
       ]);

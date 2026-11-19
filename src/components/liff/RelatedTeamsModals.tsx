@@ -1152,7 +1152,7 @@ export function BulkAiDiscoverModal({
               {isSearching ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Web検索で加盟チームと公式SNSを調査中...</span>
+                  <span>Web検索＆リンク疎通チェック中（最大60チーム対応）...</span>
                 </>
               ) : (
                 <>
@@ -1161,6 +1161,10 @@ export function BulkAiDiscoverModal({
                 </>
               )}
             </button>
+
+            <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+              ※最大60チームの大規模連盟に対応しています。リンク切れや実在未確認のURLは自動で除外されます（登録後に個別カードの編集画面から1チームずつ詳細なHP・SNS再検索も可能です）。
+            </p>
           </form>
 
           {/* 調査結果プレビュー＆チェックリスト */}
@@ -1655,6 +1659,235 @@ export function PastOpponentsImportModal({
                 <Check className="w-4 h-4" />
               )}
               <span>{selectedNames.size} チームを取り込む</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+interface GroupBulkDeleteModalProps {
+  isOpen: boolean;
+  groupTitle: string;
+  teamsInGroup: ReadonlyArray<RelatedTeamItem>;
+  onClose: () => void;
+  onConfirmDelete: (selectedIds: string[]) => Promise<void>;
+}
+
+export function GroupBulkDeleteModal({
+  isOpen,
+  groupTitle,
+  teamsInGroup,
+  onClose,
+  onConfirmDelete,
+}: GroupBulkDeleteModalProps) {
+  const [mounted, setMounted] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setErrorMsg(null);
+    setSelectedIds(new Set(teamsInGroup.map((t) => t.id)));
+  }, [isOpen, teamsInGroup]);
+
+  if (!mounted || !isOpen) return null;
+
+  const toggleTeamId = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds(new Set(teamsInGroup.map((t) => t.id)));
+  };
+
+  const handleClearAll = () => {
+    setSelectedIds(new Set());
+  };
+
+  const handleExecuteDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) {
+      setErrorMsg("削除するチームを1つ以上選択してください");
+      return;
+    }
+    setIsDeleting(true);
+    setErrorMsg(null);
+    try {
+      await onConfirmDelete(ids);
+      onClose();
+    } catch (err: unknown) {
+      setErrorMsg(
+        err instanceof Error ? err.message : "一括削除に失敗しました"
+      );
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const isAllSelected =
+    teamsInGroup.length > 0 && selectedIds.size === teamsInGroup.length;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
+      onClick={() => {
+        if (!isDeleting) onClose();
+      }}
+    >
+      <div
+        className="w-full sm:max-w-lg max-h-[88dvh] bg-card border-t sm:border border-border rounded-t-3xl sm:rounded-3xl shadow-xl flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* A-3 Dark Solid Header Cap */}
+        <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 px-4 py-3.5 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-400/30 flex items-center justify-center shrink-0">
+              <Trash2 className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-black text-white truncate">
+                グループ単位で一括削除
+              </h2>
+              <p className="text-[10px] font-bold text-slate-300 truncate">
+                {groupTitle}（計 {teamsInGroup.length}チーム）
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isDeleting}
+            className="p-1.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white border border-slate-700 cursor-pointer"
+            aria-label="閉じる"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-4">
+          {errorMsg && (
+            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-xs font-bold flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <div className="p-3 rounded-2xl border border-rose-500/30 bg-rose-500/5 space-y-1">
+            <p className="text-xs font-black text-foreground">
+              「{groupTitle}」の登録チームを削除します
+            </p>
+            <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+              残したいチームがある場合はチェックを外してください。関連チーム一覧からのみ削除され、過去の試合スコアや個人成績データは一切消えません。
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="text-xs font-black text-foreground">
+              削除対象: {selectedIds.size} / {teamsInGroup.length} チーム
+            </span>
+            <div className="flex items-center gap-2 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                disabled={isAllSelected || isDeleting}
+                className="text-primary hover:underline disabled:opacity-40 cursor-pointer"
+              >
+                すべて選択
+              </button>
+              <span className="text-border">|</span>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                disabled={selectedIds.size === 0 || isDeleting}
+                className="text-muted-foreground hover:text-foreground disabled:opacity-40 cursor-pointer"
+              >
+                選択解除
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5 max-h-[42dvh] overflow-y-auto pr-0.5">
+            {teamsInGroup.map((item) => {
+              const checked = selectedIds.has(item.id);
+              return (
+                <label
+                  key={item.id}
+                  className={`flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    checked
+                      ? "border-rose-500/45 bg-rose-500/5"
+                      : "border-border bg-card opacity-75"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isDeleting}
+                      onChange={() => toggleTeamId(item.id)}
+                      className="w-4 h-4 rounded accent-rose-600 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-foreground truncate">
+                        {item.name}
+                      </p>
+                      {(item.area || item.homeGround) && (
+                        <p className="text-[10px] font-bold text-muted-foreground truncate">
+                          {[item.area, item.homeGround]
+                            .filter(Boolean)
+                            .join(" ・ ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10px] font-bold shrink-0">
+                    {item.scopeLabel}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl border border-border bg-card text-xs font-bold text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              キャンセル
+            </button>
+            <button
+              type="button"
+              disabled={isDeleting || selectedIds.size === 0}
+              onClick={() => void handleExecuteDelete()}
+              className="px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-xs font-black shadow-xs hover:bg-destructive/90 active:scale-95 transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              <span>
+                {isAllSelected
+                  ? `グループ全 ${selectedIds.size} チームを一括削除`
+                  : `選択した ${selectedIds.size} チームを削除`}
+              </span>
             </button>
           </div>
         </div>

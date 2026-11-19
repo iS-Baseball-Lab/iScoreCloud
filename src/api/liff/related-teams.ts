@@ -1,6 +1,6 @@
 // filepath: src/api/liff/related-teams.ts
 import { Hono } from "hono";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   matches,
@@ -21,14 +21,18 @@ import {
   MAX_RELATED_TEAM_NAME_LENGTH,
   MAX_RELATED_TEAM_SHORT_NAME_LENGTH,
   createRelatedTeamLinkId,
+  extractCanonicalSnsIdentity,
   extractOpponentMatchKeys,
   getRelatedTeamLinkKindDefaultLabel,
   getRelationShortLabel,
+  hasSoft404HtmlSignature,
   inferRelatedTeamLinkKind,
   isPlaceholderOpponentName,
   isSafePublicFetchUrl,
+  isUselessAiTeamUrl,
   normalizeOpponentMatchKey,
   normalizeRelationType,
+  parseOrSalvageAiJsonObject,
   parseRelatedTeamLinksJson,
   serializeRelatedTeamLinksJson,
   stripSquadSuffixFromMatchKey,
@@ -401,28 +405,61 @@ function cleanAiString(val: unknown, maxLen = 200): string {
   return trimmed.slice(0, maxLen);
 }
 
-function isDummyOrPlaceholderUrl(rawUrl: string): boolean {
-  const lower = rawUrl.trim().toLowerCase();
-  if (!lower) return true;
-  return (
-    lower.includes("example.com") ||
-    lower.includes("example.jp") ||
-    lower.includes("example.org") ||
-    lower.includes("sample.jp") ||
-    lower.includes("sample.com") ||
-    lower.includes("xxxx") ||
-    lower.includes("your-team") ||
-    lower.includes("dummy")
-  );
+const LIVE_URL_VERIFY_CACHE = new Map<
+  string,
+  { expiresAt: number; verifiedUrl: string | null }
+>();
+
+function normalizeComparableUrlKey(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl.trim());
+    const host = u.hostname.toLowerCase().replace(/^www\./, "");
+    const path = u.pathname.replace(/\/+$/, "") || "/";
+    return `${host}${path.toLowerCase()}${u.search}`;
+  } catch {
+    return rawUrl.trim().toLowerCase();
+  }
+}
+
+function isBotWalledSnsHost(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.toLowerCase();
+    return (
+      host === "instagram.com" ||
+      host === "www.instagram.com" ||
+      host === "m.instagram.com" ||
+      host === "instagr.am" ||
+      host === "x.com" ||
+      host === "www.x.com" ||
+      host === "twitter.com" ||
+      host === "www.twitter.com" ||
+      host === "mobile.twitter.com" ||
+      host === "facebook.com" ||
+      host === "www.facebook.com" ||
+      host === "m.facebook.com" ||
+      host === "fb.com" ||
+      host === "threads.net" ||
+      host === "www.threads.net" ||
+      host === "tiktok.com" ||
+      host === "www.tiktok.com" ||
+      host === "line.me" ||
+      host === "page.line.me" ||
+      host === "lin.ee"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function sanitizeAiUrl(rawUrl: unknown): string {
   if (typeof rawUrl !== "string") return "";
   const trimmed = rawUrl.trim();
-  if (!trimmed || isDummyOrPlaceholderUrl(trimmed)) return "";
+  if (!trimmed) return "";
   const normalized = normalizeHttpUrlInput(trimmed);
-  const check = validateSafeHttpUrl(normalized, { allowEmpty: false });
+  if (isUselessAiTeamUrl(normalized)) return "";
+  const check = isSafePublicFetchUrl(normalized);
   if (!check.ok || !check.url) return "";
+  if (isUselessAiTeamUrl(check.url)) return "";
   return check.url;
 }
 
@@ -434,7 +471,7 @@ function sanitizeAiLinks(
   const out: RelatedTeamLinkItem[] = [];
   const seenUrls = new Set<string>();
   if (primaryWebsiteUrl) {
-    seenUrls.add(primaryWebsiteUrl.toLowerCase());
+    seenUrls.add(normalizeComparableUrlKey(primaryWebsiteUrl));
   }
 
   for (const item of rawLinks) {
@@ -444,7 +481,7 @@ function sanitizeAiLinks(
     const cleanUrl = sanitizeAiUrl(rec.url);
     if (!cleanUrl) continue;
 
-    const urlKey = cleanUrl.toLowerCase();
+    const urlKey = normalizeComparableUrlKey(cleanUrl);
     if (seenUrls.has(urlKey)) continue;
     seenUrls.add(urlKey);
 
@@ -462,53 +499,422 @@ function sanitizeAiLinks(
   return out;
 }
 
-function extractFirstJsonObject(text: string): Record<string, unknown> | null {
-  if (!text) return null;
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced ? fenced[1].trim() : text.trim();
+async function runWithConcurrencyLimit<T, R>(
+  items: ReadonlyArray<T>,
+  concurrency: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let cursor = 0;
 
-  const startIdx = candidate.indexOf("{");
-  const endIdx = candidate.lastIndexOf("}");
-  if (startIdx < 0 || endIdx <= startIdx) return null;
-
-  const slice = candidate.slice(startIdx, endIdx + 1);
-  try {
-    const parsed: unknown = JSON.parse(slice);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+  const runners = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const idx = cursor;
+        cursor += 1;
+        if (idx >= items.length) break;
+        results[idx] = await worker(items[idx]);
+      }
     }
-  } catch {
-    // ignore parse failure
-  }
-  return null;
+  );
+
+  await Promise.all(runners);
+  return results;
 }
 
-function extractGroundingWebSources(
+/**
+ * Gemini Google Search Grounding の内部リダイレクトURL (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`)
+ * から `Location` ヘッダーを読み取り、Google検索が実際にインデックスしていた正規URLへ展開する
+ */
+async function unwrapSingleGroundingUri(rawUri: string): Promise<string | null> {
+  const trimmed = rawUri.trim();
+  if (!trimmed) return null;
+
+  if (!trimmed.includes("vertexaisearch.cloud.google.com/grounding-api-redirect")) {
+    const check = isSafePublicFetchUrl(trimmed);
+    return check.ok && check.url && !isUselessAiTeamUrl(check.url)
+      ? check.url
+      : null;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_600);
+  try {
+    const res = await fetch(trimmed, {
+      method: "GET",
+      redirect: "manual",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; iScoreCloud-LinkVerifier/1.0)",
+      },
+    });
+    const loc = (res.headers.get("location") || "").trim();
+    if (!loc) return null;
+    const resolved = new URL(loc, trimmed).toString();
+    const check = isSafePublicFetchUrl(resolved);
+    if (!check.ok || !check.url) return null;
+    return check.url;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function extractAndUnwrapGroundingSources(
   chunks: ReadonlyArray<GeminiGroundingChunk>
-): RelatedTeamAiSourceLink[] {
-  const out: RelatedTeamAiSourceLink[] = [];
+): Promise<{
+  sources: RelatedTeamAiSourceLink[];
+  allGroundedUrls: string[];
+}> {
+  const limited = chunks.slice(0, 30);
+  const unwrappedList = await runWithConcurrencyLimit(
+    limited,
+    10,
+    async (chunk) => {
+      const uri = (chunk.web?.uri || "").trim();
+      if (!uri) return null;
+      const finalUrl = await unwrapSingleGroundingUri(uri);
+      if (!finalUrl) return null;
+      const title =
+        (chunk.web?.title || "").trim() || new URL(finalUrl).hostname;
+      return {
+        title: title.slice(0, 100),
+        url: finalUrl,
+      };
+    }
+  );
+
+  const sources: RelatedTeamAiSourceLink[] = [];
+  const allGroundedUrls: string[] = [];
   const seen = new Set<string>();
-  for (const chunk of chunks) {
-    const uri = (chunk.web?.uri || "").trim();
-    if (!uri) continue;
-    const check = validateSafeHttpUrl(uri, { allowEmpty: false });
-    if (!check.ok || !check.url) continue;
-    const key = check.url.toLowerCase();
+
+  for (const item of unwrappedList) {
+    if (!item) continue;
+    allGroundedUrls.push(item.url);
+    const key = normalizeComparableUrlKey(item.url);
     if (seen.has(key)) continue;
     seen.add(key);
-
-    const title = (chunk.web?.title || "").trim() || new URL(check.url).hostname;
-    out.push({
-      title: title.slice(0, 100),
-      url: check.url,
-    });
-    if (out.length >= 8) break;
+    if (sources.length < 10) {
+      sources.push(item);
+    }
   }
-  return out;
+
+  return { sources, allGroundedUrls };
+}
+
+/**
+ * 単一URLに対して実在HTTP応答・リダイレクト先健全性・ソフト404判定を行い、
+ * リンク切れ・閉鎖済みサイト・AIハルシネーションURLを確実に除外する
+ */
+async function verifyLivePublicTeamUrl(
+  rawUrl: string,
+  options: {
+    trustedUrlKeys: ReadonlySet<string>;
+    trustedSnsIdentities: ReadonlySet<string>;
+    strictSnsProvenance: boolean;
+  }
+): Promise<string | null> {
+  const cleanUrl = sanitizeAiUrl(rawUrl);
+  if (!cleanUrl) return null;
+
+  const urlKey = normalizeComparableUrlKey(cleanUrl);
+  const snsIdentity = extractCanonicalSnsIdentity(cleanUrl);
+  const isEvidenceBacked =
+    options.trustedUrlKeys.has(urlKey) ||
+    Boolean(snsIdentity && options.trustedSnsIdentities.has(snsIdentity));
+
+  // Google Maps 検索・地点リンクは有効な形式であれば即時許可
+  if (inferRelatedTeamLinkKind(cleanUrl) === "map") {
+    return cleanUrl;
+  }
+
+  // Instagram / X / Facebook / LINE 等のデータセンターIP制限があるSNSドメイン:
+  // - 一括調査モード (strictSnsProvenance: true) では、連盟ページ内リンクまたはGoogle検索グラウンディング元に実在したもののみ許可（推測IDを100%排除）
+  // - 実在裏付けがある場合はログイン壁誤判定を避けてそのまま採用
+  if (isBotWalledSnsHost(cleanUrl)) {
+    if (isEvidenceBacked) {
+      return cleanUrl;
+    }
+    if (options.strictSnsProvenance) {
+      return null;
+    }
+  }
+
+  const cached = LIVE_URL_VERIFY_CACHE.get(cleanUrl);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.verifiedUrl;
+  }
+
+  const cacheResult = (verifiedUrl: string | null): string | null => {
+    if (LIVE_URL_VERIFY_CACHE.size >= 400) {
+      const oldest = LIVE_URL_VERIFY_CACHE.keys().next().value;
+      if (oldest) LIVE_URL_VERIFY_CACHE.delete(oldest);
+    }
+    LIVE_URL_VERIFY_CACHE.set(cleanUrl, {
+      expiresAt: Date.now() + 15 * 60_000,
+      verifiedUrl,
+    });
+    return verifiedUrl;
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3_400);
+  try {
+    const res = await fetch(cleanUrl, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+        Range: "bytes=0-12287",
+      },
+    });
+
+    const finalUrl = (res.url || cleanUrl).trim();
+    const postRedirectSafe = isSafePublicFetchUrl(finalUrl);
+    if (!postRedirectSafe.ok || !postRedirectSafe.url) {
+      return cacheResult(null);
+    }
+
+    // 削除済みポータルページがポータルサイト自体のトップページや /404 へ転送された場合を遮断
+    if (isUselessAiTeamUrl(postRedirectSafe.url)) {
+      return cacheResult(null);
+    }
+
+    if (
+      res.status === 400 ||
+      res.status === 404 ||
+      res.status === 410 ||
+      res.status === 451 ||
+      res.status >= 500
+    ) {
+      return cacheResult(null);
+    }
+
+    if (res.status === 403 || res.status === 429) {
+      // 自治体・学校サイト等のWAF制限は、検索グラウンディングまたは連盟ページに実在した場合のみ許可
+      const finalKey = normalizeComparableUrlKey(postRedirectSafe.url);
+      if (isEvidenceBacked || options.trustedUrlKeys.has(finalKey)) {
+        return cacheResult(postRedirectSafe.url);
+      }
+      return cacheResult(null);
+    }
+
+    if (res.status < 200 || res.status >= 400) {
+      return cacheResult(null);
+    }
+
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    if (
+      contentType.includes("text/html") ||
+      contentType.includes("application/xhtml")
+    ) {
+      const buf = await res.arrayBuffer();
+      const previewBytes = new Uint8Array(buf.slice(0, 12_288));
+      const latin = new TextDecoder("latin1")
+        .decode(previewBytes.slice(0, 1500))
+        .toLowerCase();
+      const useShiftJis =
+        contentType.includes("shift_jis") ||
+        contentType.includes("shift-jis") ||
+        latin.includes("shift_jis") ||
+        latin.includes("shift-jis");
+      let snippet = "";
+      try {
+        snippet = new TextDecoder(
+          useShiftJis ? "shift-jis" : "utf-8"
+        ).decode(previewBytes);
+      } catch {
+        snippet = new TextDecoder("utf-8").decode(previewBytes);
+      }
+
+      if (hasSoft404HtmlSignature(snippet)) {
+        return cacheResult(null);
+      }
+    } else {
+      // 非HTMLレスポンスの場合はストリームを即時破棄
+      await res.body?.cancel().catch(() => undefined);
+    }
+
+    // SNSリンクの場合は正規化した元URLまたは転送先URL（ログインページ転送は除外済み）を返す
+    return cacheResult(postRedirectSafe.url);
+  } catch {
+    return cacheResult(null);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function buildTrustedLinkProvenance(
+  evidenceUrls: ReadonlyArray<string>
+): {
+  trustedUrlKeys: Set<string>;
+  trustedSnsIdentities: Set<string>;
+} {
+  const trustedUrlKeys = new Set<string>();
+  const trustedSnsIdentities = new Set<string>();
+
+  for (const raw of evidenceUrls) {
+    const clean = sanitizeAiUrl(raw);
+    if (!clean) continue;
+    trustedUrlKeys.add(normalizeComparableUrlKey(clean));
+    const snsId = extractCanonicalSnsIdentity(clean);
+    if (snsId) {
+      trustedSnsIdentities.add(snsId);
+    }
+  }
+
+  return { trustedUrlKeys, trustedSnsIdentities };
+}
+
+/**
+ * 候補リスト内の全URLを一括並列検証し、実在確認できたリンクのみを残す（全体最大7.5秒上限）
+ */
+async function filterVerifiedLinksForCandidates<
+  T extends { websiteUrl: string; links: RelatedTeamLinkItem[] },
+>(
+  items: T[],
+  options: {
+    evidenceUrls: ReadonlyArray<string>;
+    isGroundedOrPageBacked: boolean;
+    strictSnsProvenance: boolean;
+  }
+): Promise<T[]> {
+  if (items.length === 0) return items;
+
+  // Web検索グラウンディングも指定ページ取得も無い推論フォールバック時は、記憶ハルシネーションURL混入を防ぐため全URLをクリア
+  if (!options.isGroundedOrPageBacked) {
+    return items.map((item) => ({
+      ...item,
+      websiteUrl: "",
+      links: [],
+    }));
+  }
+
+  const { trustedUrlKeys, trustedSnsIdentities } = buildTrustedLinkProvenance(
+    options.evidenceUrls
+  );
+
+  const uniqueUrlsSet = new Set<string>();
+  for (const item of items) {
+    if (item.websiteUrl) uniqueUrlsSet.add(item.websiteUrl);
+    for (const lk of item.links) {
+      if (lk.url) uniqueUrlsSet.add(lk.url);
+    }
+  }
+
+  const uniqueUrls = Array.from(uniqueUrlsSet).slice(0, 55);
+  if (uniqueUrls.length === 0) return items;
+
+  const verifiedMap = new Map<string, string | null>();
+  const startedAt = Date.now();
+
+  await runWithConcurrencyLimit(uniqueUrls, 10, async (u) => {
+    if (Date.now() - startedAt > 7_800) {
+      // 時間上限超過時は一次情報で裏付け済みのURLのみ採用
+      const key = normalizeComparableUrlKey(u);
+      const snsId = extractCanonicalSnsIdentity(u);
+      const backed =
+        trustedUrlKeys.has(key) ||
+        Boolean(snsId && trustedSnsIdentities.has(snsId));
+      verifiedMap.set(u, backed ? u : null);
+      return;
+    }
+    const verified = await verifyLivePublicTeamUrl(u, {
+      trustedUrlKeys,
+      trustedSnsIdentities,
+      strictSnsProvenance: options.strictSnsProvenance,
+    });
+    verifiedMap.set(u, verified);
+  });
+
+  return items.map((item) => {
+    let nextWebsite = item.websiteUrl
+      ? verifiedMap.get(item.websiteUrl) ?? null
+      : null;
+
+    const seenKeys = new Set<string>();
+    if (nextWebsite) {
+      seenKeys.add(normalizeComparableUrlKey(nextWebsite));
+    }
+
+    const nextLinks: RelatedTeamLinkItem[] = [];
+    for (const lk of item.links) {
+      const resolvedUrl = verifiedMap.get(lk.url) ?? null;
+      if (!resolvedUrl) continue;
+      const compKey = normalizeComparableUrlKey(resolvedUrl);
+      if (seenKeys.has(compKey)) continue;
+      seenKeys.add(compKey);
+
+      const updatedKind =
+        lk.kind === "other"
+          ? inferRelatedTeamLinkKind(resolvedUrl, lk.label)
+          : lk.kind;
+      nextLinks.push({
+        ...lk,
+        kind: updatedKind,
+        url: resolvedUrl,
+      });
+    }
+
+    // AIがInstagram/YouTube/X/LINE/FacebookのURLを websiteUrl に入れた場合は、公式ブランドカラーボタンで表示されるよう SNS links 側へ移す
+    if (nextWebsite) {
+      const webKind = inferRelatedTeamLinkKind(nextWebsite);
+      if (
+        webKind === "instagram" ||
+        webKind === "youtube" ||
+        webKind === "x" ||
+        webKind === "line" ||
+        webKind === "facebook"
+      ) {
+        nextLinks.unshift({
+          id: createRelatedTeamLinkId(),
+          kind: webKind,
+          label: getRelatedTeamLinkKindDefaultLabel(webKind),
+          url: nextWebsite,
+        });
+        nextWebsite = null;
+      }
+    }
+
+    // もしメインの websiteUrl が空（またはリンク切れで除外）で、サブリンク側に有効な official サイトがあれば昇格させる
+    if (!nextWebsite) {
+      const officialIdx = nextLinks.findIndex((lk) => lk.kind === "official");
+      if (officialIdx >= 0) {
+        nextWebsite = nextLinks[officialIdx].url;
+        nextLinks.splice(officialIdx, 1);
+      }
+    }
+
+    return {
+      ...item,
+      websiteUrl: nextWebsite || "",
+      links: nextLinks.slice(0, 12),
+    };
+  });
+}
+
+const NAV_NOISE_ANCHOR_PATTERNS = [
+  /^(?:top|home|トップ|トップページ|ホーム|メニュー|menu)$/i,
+  /^(?:お知らせ|新着情報|ニュース|news|更新履歴)$/i,
+  /^(?:大会結果|試合結果|試合日程|スケジュール|日程表|トーナメント表)$/i,
+  /^(?:お問い合わせ|連絡先|プライバシーポリシー|個人情報|サイトマップ|ログイン|管理画面|規約|会則|審判部)$/i,
+];
+
+function isNavigationNoiseAnchor(label: string): boolean {
+  const clean = label.trim();
+  if (!clean || clean.length < 2) return true;
+  return NAV_NOISE_ANCHOR_PATTERNS.some((re) => re.test(clean));
 }
 
 /**
  * 連盟公式サイトの加盟チーム一覧ページ等を安全に取得し、文字コード自動判定＋テキスト・リンク抽出を行う
+ * （50〜70チーム規模の大規模連盟サイト・画像バナーリンク `<img alt>` にも対応）
  */
 async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
   | {
@@ -529,14 +935,15 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6_500);
+  const timer = setTimeout(() => controller.abort(), 7_500);
   try {
     const res = await fetch(safeCheck.url, {
       method: "GET",
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; iScoreCloud-TeamDirectory/1.0)",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
       },
     });
@@ -570,7 +977,7 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
     }
 
     const buf = await res.arrayBuffer();
-    const limitedBytes = new Uint8Array(buf.slice(0, 260_000));
+    const limitedBytes = new Uint8Array(buf.slice(0, 380_000));
 
     // Shift_JIS / EUC-JP の老舗連盟サイトにも対応
     const asciiPreview = new TextDecoder("latin1").decode(
@@ -597,6 +1004,7 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
     }
 
     const finalUrl = postRedirectCheck.url;
+    const finalUrlKey = normalizeComparableUrlKey(finalUrl);
     const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const pageTitle = titleMatch
       ? titleMatch[1]
@@ -606,24 +1014,47 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
           .slice(0, 120)
       : "";
 
-    // ページ内の <a href="...">テキスト</a> を最大90件抽出
+    // ページ内の <a href="...">テキスト / <img alt="..."></a> を最大180件抽出（ナビゲーションノイズ除外）
     const extractedLinks: Array<{ label: string; url: string }> = [];
     const seenLinkKeys = new Set<string>();
-    const anchorRegex = /<a\b[^>]*href\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    const anchorRegex = /<a\b([^>]*)href\s*=\s*["']([^"'#]+)["']([^>]*)>([\s\S]*?)<\/a>/gi;
     let match: RegExpExecArray | null = null;
     while ((match = anchorRegex.exec(html)) !== null) {
-      if (extractedLinks.length >= 90) break;
-      const rawHref = match[1].trim();
-      const rawAnchorHtml = match[2];
-      const anchorText = rawAnchorHtml
+      if (extractedLinks.length >= 180) break;
+      const attrsBefore = match[1] || "";
+      const rawHref = (match[2] || "").trim();
+      const attrsAfter = match[3] || "";
+      const rawAnchorHtml = match[4] || "";
+
+      if (
+        !rawHref ||
+        rawHref.startsWith("javascript:") ||
+        rawHref.startsWith("mailto:") ||
+        rawHref.startsWith("tel:")
+      ) {
+        continue;
+      }
+
+      let anchorText = rawAnchorHtml
         .replace(/<[^>]+>/g, " ")
         .replace(/&nbsp;/gi, " ")
         .replace(/&amp;/gi, "&")
         .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 80);
+        .trim();
 
-      if (!rawHref || rawHref.startsWith("javascript:") || rawHref.startsWith("mailto:") || rawHref.startsWith("tel:")) {
+      // バナー画像のみのリンク (<img alt="〇〇少年野球部">) からチーム名を救出
+      if (!anchorText) {
+        const imgAltMatch = rawAnchorHtml.match(/\balt\s*=\s*["']([^"']+)["']/i);
+        const titleAttrMatch = `${attrsBefore} ${attrsAfter}`.match(
+          /\btitle\s*=\s*["']([^"']+)["']/i
+        );
+        anchorText = (imgAltMatch?.[1] || titleAttrMatch?.[1] || "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+      anchorText = anchorText.slice(0, 80);
+
+      if (isNavigationNoiseAnchor(anchorText)) {
         continue;
       }
 
@@ -631,24 +1062,29 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
         const resolved = new URL(rawHref, finalUrl).toString();
         const urlValid = validateSafeHttpUrl(resolved, { allowEmpty: false });
         if (!urlValid.ok || !urlValid.url) continue;
-        const key = `${anchorText}::${urlValid.url.toLowerCase()}`;
-        if (seenLinkKeys.has(key)) continue;
-        seenLinkKeys.add(key);
+        if (isUselessAiTeamUrl(urlValid.url)) continue;
 
-        if (anchorText) {
-          extractedLinks.push({ label: anchorText, url: urlValid.url });
-        }
+        const compUrlKey = normalizeComparableUrlKey(urlValid.url);
+        if (compUrlKey === finalUrlKey) continue;
+
+        const dedupeKey = `${anchorText}::${compUrlKey}`;
+        if (seenLinkKeys.has(dedupeKey)) continue;
+        seenLinkKeys.add(dedupeKey);
+
+        extractedLinks.push({ label: anchorText, url: urlValid.url });
       } catch {
         // ignore invalid relative url
       }
     }
 
+    // <img alt="..."> のテキストも本文抜粋に残るように変換してからタグ除去
     const textSnippet = html
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
       .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
       .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-      .replace(/<\/(?:tr|li|p|div|h1|h2|h3|h4|td|th|br)>/gi, "\n")
+      .replace(/<img\b[^>]*\balt\s*=\s*["']([^"']+)["'][^>]*>/gi, " $1 ")
+      .replace(/<\/(?:tr|li|p|div|h1|h2|h3|h4|td|th|br|dt|dd)>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/gi, " ")
       .replace(/&amp;/gi, "&")
@@ -657,7 +1093,7 @@ async function fetchPublicLeaguePageDigest(rawUrl: string): Promise<
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim()
-      .slice(0, 14_000);
+      .slice(0, 24_000);
 
     return {
       ok: true,
@@ -683,6 +1119,7 @@ async function executeGeminiJsonPrompt(params: {
   apiKey: string;
   basePrompt: string;
   preferPlainJsonFirst?: boolean;
+  fastBulkMode?: boolean;
   maxBudgetMs?: number;
 }): Promise<
   | {
@@ -691,6 +1128,7 @@ async function executeGeminiJsonPrompt(params: {
       grounded: boolean;
       json: Record<string, unknown>;
       sources: RelatedTeamAiSourceLink[];
+      allGroundedUrls: string[];
     }
   | { ok: false; status: 429 | 502; error: string }
 > {
@@ -698,6 +1136,7 @@ async function executeGeminiJsonPrompt(params: {
     apiKey,
     basePrompt,
     preferPlainJsonFirst = false,
+    fastBulkMode = false,
     maxBudgetMs = 45_000,
   } = params;
   const overallStart = Date.now();
@@ -710,7 +1149,10 @@ async function executeGeminiJsonPrompt(params: {
     withThinking: boolean
   ): Record<string, unknown> => {
     const isGemini4 = spec.model.startsWith("gemini-4");
-    const cfg: Record<string, unknown> = {};
+    const cfg: Record<string, unknown> = {
+      // 50〜60チームの一括JSON出力でも途中でトークン上限切れしないよう 8192 トークンを確保
+      maxOutputTokens: 8192,
+    };
     if (!isGemini4) {
       cfg.temperature = 0.1;
     }
@@ -720,11 +1162,13 @@ async function executeGeminiJsonPrompt(params: {
     if (withThinking) {
       if (spec.thinkingMode.type === "budget" && !isGemini4) {
         cfg.thinkingConfig = {
-          thinkingBudget: spec.thinkingMode.budget,
+          thinkingBudget: fastBulkMode
+            ? Math.min(spec.thinkingMode.budget, 512)
+            : spec.thinkingMode.budget,
         };
       } else if (spec.thinkingMode.type === "level") {
         cfg.thinkingConfig = {
-          thinkingLevel: spec.thinkingMode.level,
+          thinkingLevel: fastBulkMode ? "LOW" : spec.thinkingMode.level,
         };
       }
     }
@@ -735,7 +1179,7 @@ async function executeGeminiJsonPrompt(params: {
     if (spec.useGoogleSearch && skipGoogleSearchTool) continue;
 
     const remainingMs = maxBudgetMs - (Date.now() - overallStart);
-    if (remainingMs < 4_000) break;
+    if (remainingMs < 4_500) break;
 
     const modelDeadUntil = MODEL_COOLDOWN.get(`model:${spec.model}`) || 0;
     const slotCooldownKey = `${spec.model}:${spec.useGoogleSearch ? "gs" : "plain"}`;
@@ -744,10 +1188,16 @@ async function executeGeminiJsonPrompt(params: {
       continue;
     }
 
+    // 大規模連盟の一括抽出時は検索＋大量JSON生成に十分な時間を確保する
+    const effectiveSpecTimeout =
+      fastBulkMode && spec.useGoogleSearch
+        ? Math.max(spec.timeoutMs, 34_000)
+        : spec.timeoutMs;
+
     const controller = new AbortController();
     const timeoutId = setTimeout(
       () => controller.abort(),
-      Math.min(spec.timeoutMs, remainingMs)
+      Math.min(effectiveSpecTimeout, remainingMs)
     );
 
     try {
@@ -832,7 +1282,8 @@ async function executeGeminiJsonPrompt(params: {
         .join("\n")
         .trim();
 
-      const extracted = extractFirstJsonObject(combinedText);
+      // 万一 60+ チームの大量出力で末尾が途切れた場合でも、完結している全チーム配列要素を自動救出する
+      const extracted = parseOrSalvageAiJsonObject(combinedText);
       if (!extracted) {
         lastErrorMsg = "AI応答データの解析に失敗しました";
         continue;
@@ -840,7 +1291,8 @@ async function executeGeminiJsonPrompt(params: {
 
       const webChunks =
         firstCandidate?.groundingMetadata?.groundingChunks || [];
-      const sources = extractGroundingWebSources(webChunks);
+      const { sources, allGroundedUrls } =
+        await extractAndUnwrapGroundingSources(webChunks);
 
       return {
         ok: true,
@@ -848,11 +1300,12 @@ async function executeGeminiJsonPrompt(params: {
         grounded: spec.useGoogleSearch && webChunks.length > 0,
         json: extracted,
         sources,
+        allGroundedUrls,
       };
     } catch (err) {
       const isAbort = err instanceof Error && err.name === "AbortError";
       lastErrorMsg = isAbort
-        ? "AI検索がタイムアウトしました。条件を絞って再度お試しください"
+        ? "AI検索がタイムアウトしました。支部・区単位に分けるか、連盟HPの加盟チーム一覧URLを指定して再度お試しください"
         : err instanceof Error
           ? err.message
           : "AI検索中にエラーが発生しました";
@@ -1336,9 +1789,9 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
       400
     );
   }
-  if (rawItems.length > 60) {
+  if (rawItems.length > 120) {
     return c.json(
-      { success: false, error: "一度に一括登録できるのは最大60チームまでです" },
+      { success: false, error: "一度に一括登録できるのは最大120チームまでです" },
       400
     );
   }
@@ -1470,6 +1923,102 @@ liffRelatedTeamsRouter.post("/bulk", async (c) => {
     success: true,
     createdCount: rowsToInsert.length,
     skippedCount,
+  });
+});
+
+interface BulkDeleteRelatedTeamsBody {
+  teamId?: string;
+  ids?: unknown;
+}
+
+/**
+ * POST /api/liff/related-teams/bulk-delete
+ * 所属連盟・グループ単位（またはグループ内の選択チーム）を一括削除（試合スコア記録自体は削除されない）
+ */
+liffRelatedTeamsRouter.post("/bulk-delete", async (c) => {
+  let body: BulkDeleteRelatedTeamsBody;
+  try {
+    body = await c.req.json<BulkDeleteRelatedTeamsBody>();
+  } catch {
+    return c.json({ success: false, error: "リクエスト形式が不正です" }, 400);
+  }
+
+  const teamId = (body.teamId || "").trim();
+  const rawIds = Array.isArray(body.ids) ? body.ids : [];
+  const uniqueIds = Array.from(
+    new Set(
+      rawIds
+        .filter((v): v is string => typeof v === "string")
+        .map((v) => v.trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (uniqueIds.length === 0) {
+    return c.json(
+      { success: false, error: "削除するチームを1件以上選択してください" },
+      400
+    );
+  }
+  if (uniqueIds.length > 200) {
+    return c.json(
+      { success: false, error: "一度に一括削除できるのは最大200チームまでです" },
+      400
+    );
+  }
+
+  if (
+    teamId === "demo-team" ||
+    uniqueIds.every((id) => id.startsWith("demo-"))
+  ) {
+    return c.json({
+      success: true,
+      isDemo: true,
+      deletedCount: uniqueIds.length,
+    });
+  }
+
+  if (!teamId) {
+    return c.json({ success: false, error: "teamIdが必要です" }, 400);
+  }
+
+  const access = await resolveCallerTeamAccess(c);
+  if (!access.canMutateTeamData(teamId)) {
+    return c.json({ success: false, error: "削除権限がありません" }, 403);
+  }
+
+  const db = drizzle(c.env.DB);
+  const teamRow = await db
+    .select({ id: teams.id, organizationId: teams.organizationId })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .get();
+
+  if (!teamRow) {
+    return c.json({ success: false, error: "対象チームが見つかりません" }, 404);
+  }
+
+  const orgId = teamRow.organizationId;
+  const dbIds = uniqueIds.filter((id) => !id.startsWith("demo-"));
+  const ownershipCondition = orgId
+    ? or(
+        eq(relatedTeams.teamId, teamId),
+        eq(relatedTeams.organizationId, orgId)
+      )
+    : eq(relatedTeams.teamId, teamId);
+
+  // D1 の SQLite バインド変数上限（100パラメータ）を下回るよう 50件ずつチャンク削除
+  const CHUNK_SIZE = 50;
+  for (let i = 0; i < dbIds.length; i += CHUNK_SIZE) {
+    const chunk = dbIds.slice(i, i + CHUNK_SIZE);
+    await db
+      .delete(relatedTeams)
+      .where(and(inArray(relatedTeams.id, chunk), ownershipCondition));
+  }
+
+  return c.json({
+    success: true,
+    deletedCount: uniqueIds.length,
   });
 });
 
@@ -1867,9 +2416,9 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       );
       if (pageDigest.extractedLinks.length > 0) {
         pageSectionLines.push(
-          "- ページ内から抽出された実在リンク一覧:",
+          "- ページ内から抽出された実在リンク一覧（URLはこの一覧またはGoogle検索結果と完全一致するもののみ採用すること）:",
           ...pageDigest.extractedLinks
-            .slice(0, 75)
+            .slice(0, 160)
             .map((lk) => `  * [${lk.label}] -> ${lk.url}`)
         );
       }
@@ -1884,17 +2433,17 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     const prompt = [
       "あなたは日本の野球（学童軟式・中学軟式/硬式・ボーイズ・シニア・ヤング・高校・大学・草野球）の連盟・加盟チーム調査の専門アシスタントです。",
       pageDigest
-        ? "提供された公式Webページ内容（および必要に応じたGoogle検索）から、加盟・参加している実在の野球チーム一覧を正確に抽出し、JSONで返してください。"
+        ? "提供された公式Webページ内容（および必要に応じたGoogle検索）から、加盟・参加している実在の野球チーム一覧を漏れなく正確に抽出し、JSONで返してください。"
         : "Google検索を用いて、指定された野球連盟・協会・大会・地域に加盟または所属している実在の野球チーム一覧を調査し、JSONで返してください。",
       "",
       "【調査コンテキスト】",
       ...contextLines,
       ...pageSectionLines,
       "",
-      "【厳守ルール（ハルシネーション絶対禁止）】",
+      "【厳守ルール（ハルシネーション・推測URL絶対禁止）】",
       "1. 実在が裏付けられたチームのみを出力してください。架空のチーム名（「〇〇ベアーズ」「サンプルズ」等の推測生成）は絶対に混ぜないでください。",
-      "2. URLの厳格ルール: `websiteUrl`（公式サイト・代表紹介ページ）および `links`（Instagram / YouTube / X / LINE / Facebook / ブログ・部員募集ページ）には、Web検索結果または指定ページ内の実在リンクで【明確に確認できた実在URLのみ】を設定してください。URLを推測・創作することは絶対禁止です（未確認の場合は空文字 \"\" または空配列 [] にしてください）。",
-      "3. 最大30チームまで抽出し、各チームの活動エリア（市区町村や小学校区等）や主な拠点グラウンドが分かる場合は簡潔に記載してください。",
+      "2. URLの厳格ルール（推測生成100%禁止）: `websiteUrl`（公式サイト・代表紹介ページ）および `links`（Instagram / YouTube / X / LINE / Facebook / ブログ・部員募集ページ）には、指定ページ内の実在リンク一覧またはGoogle検索結果で【そのチーム固有のページとして明確に確認できたURLのみ】を設定してください。チーム名のローマ字等から `https://www.instagram.com/xxx/` や `https://xxx.89dream.jp/` などのURLを推測・補完して作ることは絶対禁止です（一括調査ではURL未確認のチームが多くて正常です。確認できない場合は必ず空文字 \"\" または空配列 [] にしてください）。",
+      "3. 大規模連盟対応（最大60チーム）: チーム数が多い連盟でも途中で省略せず最大60チームまで抽出してください。大量チーム出力時のトークン切れを防ぐため、各チームの `description` は40文字以内の簡潔なメモ（不明なら空文字 \"\"）にしてください。",
       "4. 出力は説明文やマークダウンを含めず、以下の純粋なJSONオブジェクト1つのみを返してください:",
       "{",
       '  "leagueTitle": "特定された正式な連盟・団体・グループ名（例: 〇〇市学童軟式野球連盟）",',
@@ -1906,10 +2455,10 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       '      "leagueName": "所属連盟・ブロック名",',
       '      "area": "活動地域（例: 〇〇県〇〇市〇〇区、不明なら空文字）",',
       '      "homeGround": "主な練習拠点・小学校・球場名（不明なら空文字）",',
-      '      "description": "チームの特徴・学年構成・所属支部などの簡潔な1行メモ（不明なら空文字）",',
-      '      "websiteUrl": "確認できた公式サイトURL（未確認なら空文字）",',
+      '      "description": "所属支部・対象学年などの簡潔メモ（40文字以内、不明なら空文字）",',
+      '      "websiteUrl": "実在確認済みの公式サイトURL（未確認なら空文字）",',
       '      "links": [',
-      '        { "label": "Instagram", "url": "確認できた実在URL" }',
+      '        { "label": "Instagram", "url": "実在確認済みのURL" }',
       "      ],",
       '      "confidence": "high | medium | low"',
       "    }",
@@ -1920,9 +2469,9 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     const aiRes = await executeGeminiJsonPrompt({
       apiKey,
       basePrompt: prompt,
-      // 指定ページ本文で十分なリンクとテキストが取れている場合でも、Google検索で各チームのInstagram/公式HPが補完できるよう検索優先で実行
       preferPlainJsonFirst: false,
-      maxBudgetMs: 44_000,
+      fastBulkMode: true,
+      maxBudgetMs: 52_000,
     });
 
     if (!aiRes.ok) {
@@ -1939,11 +2488,11 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
     const rawCandidates = Array.isArray(aiRes.json.candidates)
       ? aiRes.json.candidates
       : [];
-    const candidates: AiDiscoveredTeamCandidate[] = [];
+    const rawParsedCandidates: AiDiscoveredTeamCandidate[] = [];
     const seenCandidateKeys = new Set<string>();
 
     for (let i = 0; i < rawCandidates.length; i += 1) {
-      if (candidates.length >= 35) break;
+      if (rawParsedCandidates.length >= 65) break;
       const entry = rawCandidates[i];
       if (!entry || typeof entry !== "object") continue;
       const rec = entry as Record<string, unknown>;
@@ -1961,7 +2510,7 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
       const confidence: "high" | "medium" | "low" =
         rawConf === "high" || rawConf === "low" ? rawConf : "medium";
 
-      candidates.push({
+      rawParsedCandidates.push({
         tempId: `cand_${i + 1}_${Date.now().toString(36)}`,
         name,
         shortName: cleanAiString(
@@ -1987,6 +2536,20 @@ liffRelatedTeamsRouter.post("/ai-discover", async (c) => {
         alreadyRegistered: false,
       });
     }
+
+    // 抽出された全URLについてライブHTTP疎通・ソフト404・Google検索グラウンディング実在照合を実施し、死リンク・推測SNSアカウントを排除
+    const discoverEvidenceUrls: string[] = [
+      ...(pageDigest ? pageDigest.extractedLinks.map((lk) => lk.url) : []),
+      ...aiRes.allGroundedUrls,
+    ];
+    const candidates = await filterVerifiedLinksForCandidates(
+      rawParsedCandidates,
+      {
+        evidenceUrls: discoverEvidenceUrls,
+        isGroundedOrPageBacked: aiRes.grounded || Boolean(pageDigest),
+        strictSnsProvenance: true,
+      }
+    );
 
     const mergedSources: RelatedTeamAiSourceLink[] = [];
     if (pageDigest) {
@@ -2184,14 +2747,14 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
 
     const prompt = [
       "あなたは日本の野球チーム（学童・少年野球・中学硬式/軟式・高校・大学・草野球）の公式情報リサーチ専門官です。",
-      "Google検索を用いて、指定された野球チームの公式ホームページ、Instagram・YouTube・X（旧Twitter）・Facebook・部員募集ブログ、所属連盟、活動地域、主な練習拠点を調査し、JSONで返してください。",
+      "Google検索を用いて、指定された野球チームの公式ホームページ、Instagram・YouTube・X（旧Twitter）・Facebook・LINE公式・部員募集ブログ、所属連盟、活動地域、主な練習拠点を調査し、JSONで返してください。",
       "",
       "【調査対象】",
       ...contextLines,
       "",
-      "【厳守ルール（URLハルシネーション絶対禁止）】",
+      "【厳守ルール（URLハルシネーション・推測生成100%禁止）】",
       "1. 同名のチームが全国に複数ある場合は、地域ヒント・連盟ヒント・競技種別ヒントに合致するチームの情報のみを採用し、別地域の同名チームの情報を混ぜないでください。",
-      "2. `websiteUrl` および `links` には、Google検索で実在が確認できたURLのみを記載してください。URLの推測・創作は絶対禁止です（見つからない場合は空文字 \"\" または空配列 [] にしてください）。",
+      "2. `websiteUrl` および `links` には、Google検索結果で【そのチーム固有の公式ページ・アカウントとして明確に実在確認できたURLのみ】を記載してください。チーム名からInstagramのアカウント名やドメインを推測してURLを作ることは絶対禁止です（未確認なら必ず空文字 \"\" または空配列 [] にしてください）。",
       "3. 出力は説明文やマークダウンを含めず、以下の純粋なJSONオブジェクト1つのみを返してください:",
       "{",
       '  "name": "正式なチーム名",',
@@ -2200,9 +2763,9 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
       '  "area": "活動地域・市区町村（例: 〇〇県〇〇市〇〇区、不明なら空文字）",',
       '  "homeGround": "主な練習拠点・ホームグラウンド・小学校名（不明なら空文字）",',
       '  "description": "創部・活動方針・対象学年・特徴などの簡潔な紹介文（120文字以内、不明なら空文字）",',
-      '  "websiteUrl": "公式サイト・チーム代表ページの実在URL（未確認なら空文字）",',
+      '  "websiteUrl": "実在確認済みの公式サイト・代表ページURL（未確認なら空文字）",',
       '  "links": [',
-      '    { "label": "Instagram", "url": "確認できた実在URL" }',
+      '    { "label": "Instagram", "url": "実在確認済みのURL" }',
       "  ],",
       '  "confidence": "high | medium | low",',
       '  "summaryNote": "特定したチーム・情報源の1行要約"',
@@ -2212,7 +2775,7 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
     const aiRes = await executeGeminiJsonPrompt({
       apiKey,
       basePrompt: prompt,
-      maxBudgetMs: 40_000,
+      maxBudgetMs: 42_000,
     });
 
     if (!aiRes.ok) {
@@ -2225,7 +2788,42 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
     const confidence: "high" | "medium" | "low" =
       rawConf === "high" || rawConf === "low" ? rawConf : "medium";
 
-    const candidate: RelatedTeamAiLookupResult = {
+    // 公式HPが見つかった場合、その公式HP内に貼られている公式SNSリンク（Instagram/YouTube/X/LINE/Facebook）も一次情報として補完・裏付けに利用
+    const lookupEvidenceUrls: string[] = [...aiRes.allGroundedUrls];
+    if (aiRes.grounded && websiteUrl && !isBotWalledSnsHost(websiteUrl)) {
+      const siteDigest = await fetchPublicLeaguePageDigest(websiteUrl);
+      if (siteDigest.ok && !hasSoft404HtmlSignature(siteDigest.textSnippet)) {
+        const existingKeys = new Set<string>([
+          normalizeComparableUrlKey(websiteUrl),
+          ...links.map((lk) => normalizeComparableUrlKey(lk.url)),
+        ]);
+        for (const ext of siteDigest.extractedLinks) {
+          lookupEvidenceUrls.push(ext.url);
+          if (links.length >= 10) continue;
+          const extKind = inferRelatedTeamLinkKind(ext.url, ext.label);
+          if (
+            extKind === "instagram" ||
+            extKind === "youtube" ||
+            extKind === "x" ||
+            extKind === "line" ||
+            extKind === "facebook"
+          ) {
+            const compKey = normalizeComparableUrlKey(ext.url);
+            if (!existingKeys.has(compKey)) {
+              existingKeys.add(compKey);
+              links.push({
+                id: createRelatedTeamLinkId(),
+                kind: extKind,
+                label: getRelatedTeamLinkKindDefaultLabel(extKind),
+                url: ext.url,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const rawCandidate: RelatedTeamAiLookupResult = {
       name:
         cleanAiString(aiRes.json.name, MAX_RELATED_TEAM_NAME_LENGTH) ||
         inputName,
@@ -2252,6 +2850,12 @@ liffRelatedTeamsRouter.post("/ai-lookup", async (c) => {
       summaryNote: cleanAiString(aiRes.json.summaryNote, 200),
       sources: aiRes.sources,
     };
+
+    const [candidate] = await filterVerifiedLinksForCandidates([rawCandidate], {
+      evidenceUrls: lookupEvidenceUrls,
+      isGroundedOrPageBacked: aiRes.grounded,
+      strictSnsProvenance: true,
+    });
 
     const payload = {
       success: true as const,

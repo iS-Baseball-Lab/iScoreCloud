@@ -61,6 +61,7 @@ const FOREGROUND_GET_TIMEOUT_MS = 11_000; // リトライ試行の最大待機�
 const WARMUP_GET_TIMEOUT_MS = 8_000; // 先行プリフェッチ通信の最大待機時間
 const MUTATION_JSON_TIMEOUT_MS = 22_000; // 更新系通信のハング防止タイムアウト（コネクション枠枯渇を防止）
 const MUTATION_UPLOAD_TIMEOUT_MS = 60_000; // 画像・PDFアップロード系の最大待機時間
+const AI_REQUEST_TIMEOUT_MS = 65_000; // AI調査・解析系（大規模連盟一括収集・URL実在検証を含む）の最大待機時間
 const RESUME_ZOMBIE_THRESHOLD_MS = 4_500; // バックグラウンド復帰時に強制解除する滞留通信の閾値
 const AUTO_RETRY_BACKOFF_MS = 220;
 
@@ -1217,6 +1218,13 @@ export function installLiffFastFetchCache(): void {
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
       const callerMutationSignal =
         init?.signal || (input instanceof Request ? input.signal : null);
+      const isAiRequest =
+        rawUrl.includes("/ai-discover") ||
+        rawUrl.includes("/ai-lookup") ||
+        rawUrl.includes("/analyze-inning") ||
+        rawUrl.includes("/news-generator");
+      const isReadOnlyAiPost =
+        rawUrl.includes("/ai-discover") || rawUrl.includes("/ai-lookup");
       const isUploadBody =
         rawUrl.includes("/upload") ||
         rawUrl.includes("/photos") ||
@@ -1224,9 +1232,11 @@ export function installLiffFastFetchCache(): void {
         rawUrl.includes("/cover") ||
         (typeof FormData !== "undefined" && init?.body instanceof FormData) ||
         (typeof Blob !== "undefined" && init?.body instanceof Blob);
-      const mutationTimeoutMs = isUploadBody
-        ? MUTATION_UPLOAD_TIMEOUT_MS
-        : MUTATION_JSON_TIMEOUT_MS;
+      const mutationTimeoutMs = isAiRequest
+        ? AI_REQUEST_TIMEOUT_MS
+        : isUploadBody
+          ? MUTATION_UPLOAD_TIMEOUT_MS
+          : MUTATION_JSON_TIMEOUT_MS;
       const { controller: mutController, cleanup: cleanupMut } = createTimedSignal(
         mutationTimeoutMs,
         callerMutationSignal
@@ -1253,7 +1263,9 @@ export function installLiffFastFetchCache(): void {
         return res;
       } finally {
         cleanupMut();
-        invalidateLiffApiCache();
+        if (!isReadOnlyAiPost) {
+          invalidateLiffApiCache();
+        }
       }
     }
 

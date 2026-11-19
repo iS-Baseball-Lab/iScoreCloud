@@ -13,6 +13,7 @@ import {
 import {
   BulkAiDiscoverModal,
   CreateOrEditRelatedTeamModal,
+  GroupBulkDeleteModal,
   PastOpponentsImportModal,
   type RelatedTeamFormPayload,
 } from "@/components/liff/RelatedTeamsModals";
@@ -48,6 +49,7 @@ import {
   Search,
   Sparkles,
   Star,
+  Trash2,
   Trophy,
   Users2,
   X,
@@ -189,6 +191,11 @@ export default function LiffRelatedTeamsPage() {
   const [editingTeam, setEditingTeam] = useState<RelatedTeamItem | null>(null);
   const [isAiDiscoverOpen, setIsAiDiscoverOpen] = useState(false);
   const [isImportOpponentsOpen, setIsImportOpponentsOpen] = useState(false);
+  const [bulkDeletingGroup, setBulkDeletingGroup] = useState<{
+    key: string;
+    title: string;
+    items: RelatedTeamItem[];
+  } | null>(null);
 
   const squadLabel = currentTeam?.teamName || "編成";
 
@@ -448,6 +455,49 @@ export default function LiffRelatedTeamsPage() {
       await refreshAfterMutation();
     }
     toast.success(`「${target.name}」を削除しました`);
+  };
+
+  // グループ単位（またはグループ内の選択チーム）一括削除ハンドラ
+  const handleBulkDeleteTeams = async (selectedIds: string[]) => {
+    const tid = currentTeam?.id || "demo-team";
+    const res = await fetch("/api/liff/related-teams/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        teamId: tid,
+        ids: selectedIds,
+      }),
+    });
+    const data = (await res.json()) as {
+      success: boolean;
+      deletedCount?: number;
+      error?: string;
+    };
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || "一括削除に失敗しました");
+    }
+
+    const idSet = new Set(selectedIds);
+    if (
+      bulkDeletingGroup &&
+      selectedLeague === bulkDeletingGroup.key &&
+      selectedIds.length >= bulkDeletingGroup.items.length
+    ) {
+      setSelectedLeague("all");
+    }
+
+    if (
+      tid === "demo-team" ||
+      selectedIds.every((id) => id.startsWith("demo-"))
+    ) {
+      setTeams((prev) => prev.filter((item) => !idSet.has(item.id)));
+    } else {
+      await refreshAfterMutation();
+    }
+
+    toast.success(
+      `${data.deletedCount ?? selectedIds.length}チームを一括削除しました`
+    );
   };
 
   // お気に入りピン留めの1タップ切替
@@ -896,9 +946,28 @@ export default function LiffRelatedTeamsPage() {
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
-                    {section.items.length}チーム
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black">
+                      {section.items.length}チーム
+                    </span>
+                    {effectiveCanEdit && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setBulkDeletingGroup({
+                            key: section.key,
+                            title: section.title,
+                            items: section.items,
+                          })
+                        }
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-950 text-rose-300 border border-rose-500/40 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                        title={`「${section.title}」のチームを一括削除`}
+                      >
+                        <Trash2 className="w-3 h-3 shrink-0" />
+                        <span>一括削除</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="p-3.5 sm:p-4 space-y-3">
@@ -1156,6 +1225,15 @@ export default function LiffRelatedTeamsPage() {
         leagueSuggestions={mergedLeagueSuggestions}
         onClose={() => setIsImportOpponentsOpen(false)}
         onImport={handleImportPastOpponents}
+      />
+
+      {/* グループ単位一括削除モーダル */}
+      <GroupBulkDeleteModal
+        isOpen={Boolean(bulkDeletingGroup)}
+        groupTitle={bulkDeletingGroup?.title || ""}
+        teamsInGroup={bulkDeletingGroup?.items || []}
+        onClose={() => setBulkDeletingGroup(null)}
+        onConfirmDelete={handleBulkDeleteTeams}
       />
     </div>
   );

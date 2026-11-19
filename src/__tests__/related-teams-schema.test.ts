@@ -2,11 +2,15 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_LINKS_PER_RELATED_TEAM,
+  extractCanonicalSnsIdentity,
   extractOpponentMatchKeys,
+  hasSoft404HtmlSignature,
   inferRelatedTeamLinkKind,
   isPlaceholderOpponentName,
   isSafePublicFetchUrl,
+  isUselessAiTeamUrl,
   normalizeOpponentMatchKey,
+  parseOrSalvageAiJsonObject,
   parseRelatedTeamLinksJson,
   stripSquadSuffixFromMatchKey,
   validateAndNormalizeRelatedTeamLinks,
@@ -140,6 +144,111 @@ describe("related-teams-schema", () => {
       expect(isSafePublicFetchUrl("https://public-site.jp:8443/list").ok).toBe(
         false
       );
+    });
+  });
+
+  describe("AI URL accuracy filters & canonical SNS identity", () => {
+    it("rejects dummy URLs, vertexaisearch redirects, bare portal roots, login walls, and share intents", () => {
+      expect(isUselessAiTeamUrl("https://example.jp/team")).toBe(true);
+      expect(
+        isUselessAiTeamUrl(
+          "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbCdEf"
+        )
+      ).toBe(true);
+      expect(isUselessAiTeamUrl("https://www.instagram.com/")).toBe(true);
+      expect(
+        isUselessAiTeamUrl("https://www.instagram.com/accounts/login/")
+      ).toBe(true);
+      expect(isUselessAiTeamUrl("https://x.com/intent/tweet?text=hi")).toBe(
+        true
+      );
+      expect(isUselessAiTeamUrl("https://twitter.com/share?url=x")).toBe(true);
+      expect(
+        isUselessAiTeamUrl("https://www.facebook.com/sharer/sharer.php?u=x")
+      ).toBe(true);
+      expect(isUselessAiTeamUrl("https://line.me/R/msg/text/?hello")).toBe(
+        true
+      );
+      expect(isUselessAiTeamUrl("https://89dream.jp/")).toBe(true);
+      expect(isUselessAiTeamUrl("https://ikz.jp/")).toBe(true);
+      expect(isUselessAiTeamUrl("https://some-team.jp/404.html")).toBe(true);
+
+      // Valid team-specific URLs pass
+      expect(
+        isUselessAiTeamUrl("https://www.instagram.com/kawasaki_dreams_bbc/")
+      ).toBe(false);
+      expect(isUselessAiTeamUrl("https://89dream.jp/modules/club/12345/")).toBe(
+        false
+      );
+      expect(isUselessAiTeamUrl("https://lin.ee/AbCdEfG")).toBe(false);
+    });
+
+    it("extracts canonical SNS identities for grounding provenance comparison", () => {
+      expect(
+        extractCanonicalSnsIdentity("https://www.instagram.com/Team_Alpha.BBC/?hl=ja")
+      ).toBe("instagram:team_alpha.bbc");
+      expect(
+        extractCanonicalSnsIdentity("https://instagram.com/team_alpha.bbc/reels/")
+      ).toBe("instagram:team_alpha.bbc");
+      expect(extractCanonicalSnsIdentity("https://twitter.com/ClubBeta99")).toBe(
+        "x:clubbeta99"
+      );
+      expect(
+        extractCanonicalSnsIdentity("https://www.youtube.com/@ClubBetaChannel/videos")
+      ).toBe("youtube:@clubbetachannel");
+    });
+
+    it("detects soft-404, closed service, and parked domain HTML signatures", () => {
+      expect(
+        hasSoft404HtmlSignature(
+          "<html><head><title>404 Not Found</title></head><body></body></html>"
+        )
+      ).toBe(true);
+      expect(
+        hasSoft404HtmlSignature(
+          "<html><head><title>エラー</title></head><body>このホームページは公開されていません。</body></html>"
+        )
+      ).toBe(true);
+      expect(
+        hasSoft404HtmlSignature(
+          "<html><head><title>このドメインはお名前.comで取得されています</title></head></html>"
+        )
+      ).toBe(true);
+      expect(
+        hasSoft404HtmlSignature(
+          "<html><head><title>〇〇少年野球連盟 公式ホームページ</title></head><body>加盟チーム一覧</body></html>"
+        )
+      ).toBe(false);
+    });
+  });
+
+  describe("parseOrSalvageAiJsonObject (large-league truncated JSON salvage)", () => {
+    it("parses valid JSON and salvages all completed team objects when truncated mid-array", () => {
+      const complete = parseOrSalvageAiJsonObject(
+        '```json\n{"leagueTitle":"〇〇市学童軟式野球連盟","candidates":[{"name":"チーム1"},{"name":"チーム2"}]}\n```'
+      );
+      expect(complete).not.toBeNull();
+      expect(Array.isArray(complete?.candidates)).toBe(true);
+      expect((complete?.candidates as unknown[]).length).toBe(2);
+
+      // Simulate 52 teams where team #51 truncated mid-object due to maxOutputTokens
+      const itemsJson = Array.from({ length: 50 }, (_, idx) =>
+        JSON.stringify({
+          name: `テストクラブ第${idx + 1}`,
+          area: "〇〇市",
+          links: [{ label: "Instagram", url: `https://www.instagram.com/club_${idx + 1}/` }],
+        })
+      ).join(",\n");
+      const truncatedRaw = `\`\`\`json\n{\n  "leagueTitle": "〇〇市少年野球連盟",\n  "summaryNote": "加盟52チームを抽出",\n  "candidates": [\n${itemsJson},\n{"name": "途中切れチーム51", "area": "〇〇`;
+
+      const salvaged = parseOrSalvageAiJsonObject(truncatedRaw);
+      expect(salvaged).not.toBeNull();
+      expect(salvaged?.leagueTitle).toBe("〇〇市少年野球連盟");
+      expect(salvaged?.summaryNote).toBe("加盟52チームを抽出");
+      const cands = salvaged?.candidates as Array<{ name: string }>;
+      expect(cands).toHaveLength(50);
+      expect(cands[0].name).toBe("テストクラブ第1");
+      expect(cands[49].name).toBe("テストクラブ第50");
     });
   });
 });

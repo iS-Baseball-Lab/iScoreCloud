@@ -681,3 +681,506 @@ export function isSafePublicFetchUrl(rawUrl: string): {
 
   return { ok: true, url: parsed.toString() };
 }
+
+const BARE_MULTI_TENANT_PORTAL_HOSTS = new Set([
+  "89dream.jp",
+  "www.89dream.jp",
+  "ikz.jp",
+  "www.ikz.jp",
+  "netto.jp",
+  "www.netto.jp",
+  "sposuru.com",
+  "www.sposuru.com",
+  "teams.one",
+  "www.teams.one",
+  "ameblo.jp",
+  "www.ameblo.jp",
+  "note.com",
+  "www.note.com",
+  "jimdofree.com",
+  "www.jimdo.com",
+  "jp.jimdo.com",
+  "wix.com",
+  "www.wix.com",
+  "fc2.com",
+  "web.fc2.com",
+  "blog.fc2.com",
+  "livedoor.jp",
+  "blog.livedoor.jp",
+  "hatenablog.com",
+  "pop.co.jp",
+  "www.pop.co.jp",
+  "jsbb.or.jp",
+  "www.jsbb.or.jp",
+]);
+
+const INSTAGRAM_RESERVED_SEGMENTS = new Set([
+  "p",
+  "reel",
+  "reels",
+  "stories",
+  "explore",
+  "accounts",
+  "about",
+  "legal",
+  "developer",
+  "press",
+  "direct",
+  "challenge",
+]);
+
+const X_RESERVED_SEGMENTS = new Set([
+  "home",
+  "explore",
+  "search",
+  "login",
+  "logout",
+  "i",
+  "intent",
+  "share",
+  "settings",
+  "tos",
+  "privacy",
+  "hashtag",
+]);
+
+/**
+ * AI出力URLから「SNSやポータルのトップページのみ」「Google内部リダイレクトURL」「プレースホルダー」「エラーURL」を除外する判定
+ */
+export function isUselessAiTeamUrl(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return true;
+  const lower = trimmed.toLowerCase();
+
+  if (
+    lower.includes("example.com") ||
+    lower.includes("example.jp") ||
+    lower.includes("example.org") ||
+    lower.includes("sample.jp") ||
+    lower.includes("sample.com") ||
+    lower.includes("xxxx") ||
+    lower.includes("your-team") ||
+    lower.includes("dummy") ||
+    lower.includes("vertexaisearch.cloud.google.com")
+  ) {
+    return true;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return true;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const segments = parsed.pathname
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const firstSeg = (segments[0] || "").toLowerCase();
+
+  // 明らかなエラー・閉鎖パス
+  if (
+    firstSeg === "404" ||
+    firstSeg === "404.html" ||
+    firstSeg === "error" ||
+    firstSeg === "error.html" ||
+    firstSeg === "notfound" ||
+    firstSeg === "not_found"
+  ) {
+    return true;
+  }
+
+  // Google 検索結果・リダイレクトページ自体はチーム公式URLではない
+  if (
+    (host === "www.google.com" ||
+      host === "google.com" ||
+      host === "www.google.co.jp" ||
+      host === "search.yahoo.co.jp") &&
+    firstSeg !== "maps"
+  ) {
+    return true;
+  }
+
+  // Instagram: アカウント識別子または個別投稿パスが必須
+  if (
+    host === "instagram.com" ||
+    host === "www.instagram.com" ||
+    host === "m.instagram.com" ||
+    host === "instagr.am"
+  ) {
+    if (segments.length === 0) return true;
+    if (
+      firstSeg === "accounts" ||
+      firstSeg === "explore" ||
+      firstSeg === "about" ||
+      firstSeg === "legal" ||
+      firstSeg === "developer" ||
+      firstSeg === "challenge"
+    ) {
+      return true;
+    }
+    if ((firstSeg === "p" || firstSeg === "reel" || firstSeg === "reels") && !segments[1]) {
+      return true;
+    }
+    if (
+      !INSTAGRAM_RESERVED_SEGMENTS.has(firstSeg) &&
+      !/^[a-z0-9._]{2,30}$/i.test(segments[0])
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // X (旧Twitter): ハンドルが必須
+  if (
+    host === "x.com" ||
+    host === "www.x.com" ||
+    host === "twitter.com" ||
+    host === "www.twitter.com" ||
+    host === "mobile.twitter.com"
+  ) {
+    if (segments.length === 0) return true;
+    if (X_RESERVED_SEGMENTS.has(firstSeg)) return true;
+    if (!/^[a-z0-9_]{1,15}$/i.test(segments[0])) return true;
+    return false;
+  }
+
+  // YouTube: チャンネルまたは動画パスが必須
+  if (
+    host === "youtube.com" ||
+    host === "www.youtube.com" ||
+    host === "m.youtube.com"
+  ) {
+    if (segments.length === 0) return true;
+    if (
+      firstSeg === "results" ||
+      firstSeg === "feed" ||
+      firstSeg === "account" ||
+      firstSeg === "about"
+    ) {
+      return true;
+    }
+    return false;
+  }
+  if (host === "youtu.be") {
+    return segments.length === 0;
+  }
+
+  // Facebook: ページパスまたは profile.php?id=... が必須（シェアボタンURL除外）
+  if (
+    host === "facebook.com" ||
+    host === "www.facebook.com" ||
+    host === "m.facebook.com" ||
+    host === "fb.com"
+  ) {
+    if (segments.length === 0) return true;
+    if (
+      firstSeg === "login" ||
+      firstSeg === "login.php" ||
+      firstSeg === "sharer" ||
+      firstSeg === "sharer.php" ||
+      firstSeg === "share.php" ||
+      firstSeg === "dialog" ||
+      firstSeg === "plugins" ||
+      firstSeg === "help" ||
+      firstSeg === "policies" ||
+      firstSeg === "recover"
+    ) {
+      return true;
+    }
+    if (firstSeg === "profile.php" && !parsed.searchParams.get("id")) {
+      return true;
+    }
+    return false;
+  }
+
+  // LINE シェアプラグイン・テキスト共有URLは公式アカウントではないため除外
+  if (host === "social-plugins.line.me") {
+    return true;
+  }
+
+  // LINE / Threads / TikTok: トップページ単体は不可
+  if (
+    host === "line.me" ||
+    host === "page.line.me" ||
+    host === "lin.ee" ||
+    host === "threads.net" ||
+    host === "www.threads.net" ||
+    host === "tiktok.com" ||
+    host === "www.tiktok.com"
+  ) {
+    if (segments.length === 0) return true;
+    if (firstSeg === "ja" || firstSeg === "en" || firstSeg === "login") {
+      return segments.length <= 1;
+    }
+    if (
+      host === "line.me" &&
+      firstSeg === "r" &&
+      (segments[1] || "").toLowerCase() === "msg"
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // ポータルサービス自体のルートトップ（削除済みチームの転送先を含む）は除外
+  if (BARE_MULTI_TENANT_PORTAL_HOSTS.has(host) && segments.length === 0) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * SNSアカウントURLから正規化ハンドルID（例: "instagram:tama_bears", "x:tamabears"）を抽出する
+ * 検索グラウンディング元URLや連盟ページ内リンクとの実在照合に使用
+ */
+export function extractCanonicalSnsIdentity(rawUrl: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const segments = parsed.pathname
+    .split("/")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length === 0) return null;
+  const first = segments[0].toLowerCase();
+
+  if (
+    host === "instagram.com" ||
+    host === "www.instagram.com" ||
+    host === "m.instagram.com" ||
+    host === "instagr.am"
+  ) {
+    if (INSTAGRAM_RESERVED_SEGMENTS.has(first)) {
+      return segments[1] ? `instagram:${first}:${segments[1].toLowerCase()}` : null;
+    }
+    return `instagram:${first}`;
+  }
+
+  if (
+    host === "x.com" ||
+    host === "www.x.com" ||
+    host === "twitter.com" ||
+    host === "www.twitter.com" ||
+    host === "mobile.twitter.com"
+  ) {
+    if (X_RESERVED_SEGMENTS.has(first)) return null;
+    return `x:${first}`;
+  }
+
+  if (
+    host === "facebook.com" ||
+    host === "www.facebook.com" ||
+    host === "m.facebook.com" ||
+    host === "fb.com"
+  ) {
+    if (first === "profile.php") {
+      const id = parsed.searchParams.get("id");
+      return id ? `facebook:id:${id}` : null;
+    }
+    if (first === "people" && segments[1]) {
+      return `facebook:people:${segments[1].toLowerCase()}`;
+    }
+    return `facebook:${first}`;
+  }
+
+  if (
+    host === "youtube.com" ||
+    host === "www.youtube.com" ||
+    host === "m.youtube.com"
+  ) {
+    if (first.startsWith("@")) return `youtube:${first}`;
+    if ((first === "channel" || first === "c" || first === "user") && segments[1]) {
+      return `youtube:${first}:${segments[1].toLowerCase()}`;
+    }
+    return null;
+  }
+
+  if (host === "threads.net" || host === "www.threads.net") {
+    return `threads:${first.replace(/^@/, "")}`;
+  }
+
+  if (host === "tiktok.com" || host === "www.tiktok.com") {
+    return `tiktok:${first.replace(/^@/, "")}`;
+  }
+
+  if (host === "line.me" || host === "page.line.me" || host === "lin.ee") {
+    return `line:${segments.join("/").toLowerCase()}`;
+  }
+
+  return null;
+}
+
+/**
+ * HTTP 200 を返しつつ実際は「ページが見つかりません」「サービス終了」「中古ドメイン販売」になっているソフト404ページの判定
+ */
+export function hasSoft404HtmlSignature(htmlSnippet: string): boolean {
+  if (!htmlSnippet) return false;
+
+  const titleMatch = htmlSnippet.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const titleText = (titleMatch ? titleMatch[1] : "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  if (
+    titleText.includes("404 not found") ||
+    titleText === "404" ||
+    titleText === "not found" ||
+    titleText.includes("page not found") ||
+    titleText.includes("ページが見つかりません") ||
+    titleText.includes("お探しのページは") ||
+    titleText.includes("ページを表示できません") ||
+    titleText.includes("サイトが見つかりません") ||
+    titleText.includes("ホームページが見つかりません") ||
+    titleText.includes("公開されていません") ||
+    titleText.includes("サービス終了") ||
+    titleText.includes("domain for sale") ||
+    titleText.includes("このドメインはお名前.com")
+  ) {
+    return true;
+  }
+
+  const bodyLower = htmlSnippet.slice(0, 8000).toLowerCase();
+  if (
+    bodyLower.includes("このホームページは公開されていません") ||
+    bodyLower.includes("指定されたページ（url）は見つかりません") ||
+    bodyLower.includes("指定されたページは存在しません") ||
+    bodyLower.includes("お探しのページは見つかりませんでした") ||
+    bodyLower.includes("このページはご利用いただけません") ||
+    bodyLower.includes("sorry, this page isn't available") ||
+    bodyLower.includes("this domain may be for sale") ||
+    bodyLower.includes("parked free, courtesy of") ||
+    bodyLower.includes("sedoparking.com") ||
+    bodyLower.includes("hugedomains.com")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 大規模連盟（40〜70チーム等）でAI出力トークンが末尾で途切れた場合でも、
+ * 完成している全てのチームオブジェクト（`candidates` 配列要素）を欠損なく救出するパーサー
+ */
+export function parseOrSalvageAiJsonObject(
+  rawText: string
+): Record<string, unknown> | null {
+  if (!rawText || typeof rawText !== "string") return null;
+
+  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const cleanText = fenced ? fenced[1].trim() : rawText.trim();
+
+  const firstBrace = cleanText.indexOf("{");
+  if (firstBrace < 0) return null;
+
+  // 1. まずは通常の完全なJSONパースを試行
+  const lastBrace = cleanText.lastIndexOf("}");
+  if (lastBrace > firstBrace) {
+    try {
+      const parsed: unknown = JSON.parse(
+        cleanText.slice(firstBrace, lastBrace + 1)
+      );
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // 途中切れの場合は下のサルベージ処理へ進む
+    }
+  }
+
+  // 2. 出力トークン上限等で途中切断された `"candidates": [ ...` から完結済み `{...}` 要素をすべて救出
+  const tail = cleanText.slice(firstBrace);
+  const candidatesKeyMatch = /"candidates"\s*:\s*\[/.exec(tail);
+  if (!candidatesKeyMatch) return null;
+
+  const arrayOpenIdx =
+    candidatesKeyMatch.index + candidatesKeyMatch[0].length;
+  const salvagedItems: Record<string, unknown>[] = [];
+
+  let inString = false;
+  let escaped = false;
+  let objDepth = 0;
+  let objStart = -1;
+
+  for (let i = arrayOpenIdx; i < tail.length; i += 1) {
+    const ch = tail[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (objDepth === 0) {
+        objStart = i;
+      }
+      objDepth += 1;
+    } else if (ch === "}") {
+      if (objDepth > 0) {
+        objDepth -= 1;
+        if (objDepth === 0 && objStart >= 0) {
+          const itemSlice = tail.slice(objStart, i + 1);
+          try {
+            const parsedItem: unknown = JSON.parse(itemSlice);
+            if (
+              parsedItem &&
+              typeof parsedItem === "object" &&
+              !Array.isArray(parsedItem)
+            ) {
+              salvagedItems.push(parsedItem as Record<string, unknown>);
+            }
+          } catch {
+            // 不完全な要素はスキップ
+          }
+          objStart = -1;
+        }
+      }
+    } else if (ch === "]" && objDepth === 0) {
+      break;
+    }
+  }
+
+  if (salvagedItems.length === 0) {
+    return null;
+  }
+
+  const leagueTitleMatch = tail.match(/"leagueTitle"\s*:\s*"((?:\\.|[^"\\])*)"/);
+  const summaryNoteMatch = tail.match(/"summaryNote"\s*:\s*"((?:\\.|[^"\\])*)"/);
+
+  const decodeJsonStr = (raw: string | undefined): string => {
+    if (!raw) return "";
+    try {
+      return JSON.parse(`"${raw}"`) as string;
+    } catch {
+      return raw;
+    }
+  };
+
+  return {
+    leagueTitle: decodeJsonStr(leagueTitleMatch?.[1]),
+    summaryNote: decodeJsonStr(summaryNoteMatch?.[1]),
+    candidates: salvagedItems,
+  };
+}
+
