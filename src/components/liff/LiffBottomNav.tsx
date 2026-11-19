@@ -53,6 +53,7 @@ import {
   KeyRound,
   Package,
   Lock,
+  Handshake,
 } from "lucide-react";
 
 type MenuCategory = "schedule_match" | "player_docs" | "settings_admin";
@@ -193,6 +194,17 @@ const MENU_ITEMS: MenuItem[] = [
     hoverBorderClass: "hover:border-primary/40",
     category: "schedule_match" as const,
     subGroup: "match_record",
+  },
+  {
+    title: "関連チーム",
+    subtitle: "所属連盟・対戦チームの公式HP・SNS",
+    href: "/liff/related-teams",
+    icon: Handshake,
+    colorClass: "bg-primary/12 text-primary",
+    hoverBorderClass: "hover:border-primary/40",
+    category: "schedule_match" as const,
+    subGroup: "match_record",
+    fullWidth: true,
   },
 
   // 📖 タブ2: 選手・資料（① 選手・成績・写真）

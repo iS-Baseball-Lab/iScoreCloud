@@ -9,6 +9,7 @@ import {
   Car,
   ClipboardCheck,
   FileText,
+  Handshake,
   HelpCircle,
   IdCard,
   Link2,
@@ -35,6 +36,7 @@ export type QuickMenuItemId =
   | "lineup"
   | "news_generator"
   | "scorebook_import"
+  | "related_teams"
   | "team_info"
   | "players"
   | "stats"
@@ -296,6 +298,17 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
     category: "schedule_match",
     tone: "primary",
     icon: ScanLine,
+  },
+  {
+    id: "related_teams",
+    label: "関連チーム",
+    shortLabel: "関連チーム",
+    description: "所属連盟・対戦チームのHP・SNS",
+    badge: "連盟・対戦",
+    href: "/liff/related-teams",
+    category: "schedule_match",
+    tone: "primary",
+    icon: Handshake,
   },
 
   // 📖 選手・資料（選手・成績・写真 ➔ ルール・資料）

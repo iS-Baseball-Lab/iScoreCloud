@@ -280,6 +280,30 @@ export const teamLinks = sqliteTable('team_links', {
   teamIdx: index("idx_team_links_team_id").on(table.teamId),
 }));
 
-
-
-
+// ==========================================
+// 🤝 関連チーム・所属連盟チーム名鑑 (Related Teams) テーブル
+// ==========================================
+export const relatedTeams = sqliteTable('related_teams', {
+  id: text('id').primaryKey(),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'cascade' }),
+  teamId: text('team_id').references(() => teams.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  shortName: text('short_name'),
+  leagueName: text('league_name'),
+  relationType: text('relation_type').notNull().default('league_member'),
+  teamCategory: text('team_category'),
+  area: text('area'),
+  homeGround: text('home_ground'),
+  websiteUrl: text('website_url'),
+  linksJson: text('links_json'),
+  description: text('description'),
+  scope: text('scope').$type<'organization' | 'team'>().notNull().default('organization'),
+  isFavorite: integer('is_favorite', { mode: 'boolean' }).default(false),
+  priority: integer('priority').default(0),
+  createdById: text('created_by_id'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
+}, (table) => ({
+  orgIdx: index("idx_related_teams_org_id").on(table.organizationId),
+  teamIdx: index("idx_related_teams_team_id").on(table.teamId),
+}));

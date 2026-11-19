@@ -15,6 +15,7 @@ import {
   parentChildRelations,
   playLogs,
   players,
+  relatedTeams,
   teamDocuments,
   teamEquipments,
   teamFaqs,
@@ -1269,7 +1270,15 @@ async function findTeamIdForGalleryPhoto(
 export async function verifyScopedRecordOwnership(
   db: ReturnType<typeof drizzle>,
   access: CallerTeamAccess,
-  kind: "document" | "faq" | "rule" | "link" | "relation" | "car" | "equipment",
+  kind:
+    | "document"
+    | "faq"
+    | "rule"
+    | "link"
+    | "related_team"
+    | "relation"
+    | "car"
+    | "equipment",
   id: string,
   expectedTeamId?: string
 ): Promise<boolean> {
@@ -1317,6 +1326,8 @@ export async function verifyScopedRecordOwnership(
       ? teamFaqs
       : kind === "rule"
       ? teamRules
+      : kind === "related_team"
+      ? relatedTeams
       : teamLinks;
 
   const row = await db
@@ -1644,14 +1655,24 @@ export function createLiffTeamIsolationMiddleware(options?: {
         }
       }
 
-      const kindMap: Record<string, "document" | "faq" | "rule" | "link"> = {
+      const kindMap: Record<
+        string,
+        "document" | "faq" | "rule" | "link" | "related_team"
+      > = {
         documents: "document",
         faqs: "faq",
         rules: "rule",
         links: "link",
+        "related-teams": "related_team",
       };
+      const nonIdSubroutes = new Set([
+        "upload",
+        "bulk",
+        "ai-discover",
+        "ai-lookup",
+      ]);
       const scopedKind = kindMap[segs[2] || ""];
-      if (scopedKind && segs[3] && segs[3] !== "upload") {
+      if (scopedKind && segs[3] && !nonIdSubroutes.has(segs[3])) {
         const ok = await verifyScopedRecordOwnership(
           db,
           access,

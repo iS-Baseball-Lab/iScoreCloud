@@ -78,6 +78,7 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/gallery",
   "/api/liff/faqs",
   "/api/liff/links",
+  "/api/liff/related-teams",
   "/api/liff/attendance-matrix",
   "/api/liff/my-family",
   "/api/liff/admin",
@@ -1497,6 +1498,10 @@ export function warmupLiffEndpointForHref(
     triggerWarmupUrl(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
     return;
   }
+  if (cleanPath === "/liff/related-teams") {
+    triggerWarmupUrl(`/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`);
+    return;
+  }
   if (cleanPath === "/liff/admin" || cleanPath === "/liff/admin/roles") {
     const aQs = new URLSearchParams({ teamId: tid });
     if (uid) aQs.set("userId", uid);
@@ -1687,6 +1692,10 @@ export function prefetchLiffCoreEndpoints(params: {
           urlSet.add(`/api/liff/documents?teamId=${encodeURIComponent(tid)}`);
         } else if (slotId === "gallery") {
           urlSet.add(`/api/liff/gallery?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "links") {
+          urlSet.add(`/api/liff/links?teamId=${encodeURIComponent(tid)}`);
+        } else if (slotId === "related_teams") {
+          urlSet.add(`/api/liff/related-teams?teamId=${encodeURIComponent(tid)}`);
         }
       }
     }

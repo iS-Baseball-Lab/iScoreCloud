@@ -278,6 +278,30 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "related_teams",
+    ddl: `CREATE TABLE IF NOT EXISTS related_teams (
+      id text PRIMARY KEY NOT NULL,
+      organization_id text,
+      team_id text,
+      name text NOT NULL,
+      short_name text,
+      league_name text,
+      relation_type text NOT NULL DEFAULT 'league_member',
+      team_category text,
+      area text,
+      home_ground text,
+      website_url text,
+      links_json text,
+      description text,
+      scope text NOT NULL DEFAULT 'organization',
+      is_favorite integer DEFAULT 0,
+      priority integer DEFAULT 0,
+      created_by_id text,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -285,6 +309,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_team_rules_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_rules_team_id ON team_rules (team_id)" },
   { name: "idx_team_links_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_links_org_id ON team_links (organization_id)" },
   { name: "idx_team_links_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_links_team_id ON team_links (team_id)" },
+  { name: "idx_related_teams_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_related_teams_org_id ON related_teams (organization_id)" },
+  { name: "idx_related_teams_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_related_teams_team_id ON related_teams (team_id)" },
   { name: "idx_lineup_templates_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_lineup_templates_team_id ON lineup_templates (team_id)" },
   { name: "idx_match_live_reports_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_team_id ON match_live_reports (team_id)" },
   { name: "idx_match_live_reports_match_id", ddl: "CREATE INDEX IF NOT EXISTS idx_match_live_reports_match_id ON match_live_reports (match_id)" },
