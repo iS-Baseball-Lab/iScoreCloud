@@ -546,8 +546,11 @@ export function LiffBottomNav() {
     (!isHome && !isLeftActive && !isCenterActive && !isRightActive);
   const isArchStyle = navConfig.style === "arch";
 
-  // 試合速報ジェネレータではボトムナビの代わりに最下部固定キーパッドを配置するため非表示
-  if (pathname?.startsWith("/liff/tools/news-generator")) {
+  // 1画面コックピット画面（試合速報ジェネレータ・野球盤ゲーム）ではボトムナビを非表示
+  if (
+    pathname?.startsWith("/liff/tools/news-generator") ||
+    pathname?.startsWith("/liff/baseball-board")
+  ) {
     return null;
   }
 

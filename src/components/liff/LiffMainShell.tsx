@@ -13,16 +13,17 @@ interface LiffMainShellProps {
 /**
  * LIFF 共通メインシェル
  * - 通常ルート: 従来通り `min-h-screen` + 下部ボトムナビ余白 (`pb-28 sm:pb-32`) + `<LiffBottomNav />`
- * - 試合速報ジェネレータ (`/liff/tools/news-generator`):
- *   ボトムナビを非表示にし、最下部に片手操作キーパッドを固定配置する 1画面コックピットモード (`h-dvh max-h-dvh overflow-hidden pb-0`)
+ * - 1画面コックピットルート (`/liff/tools/news-generator`・`/liff/baseball-board`):
+ *   ボトムナビを非表示にし、スクロールゼロの1画面完結レイアウト (`h-dvh max-h-dvh overflow-hidden pb-0`) とする
  */
 export function LiffMainShell({ children }: LiffMainShellProps) {
   const pathname = usePathname();
-  const isNewsGeneratorCockpit = Boolean(
-    pathname?.startsWith("/liff/tools/news-generator")
+  const isFullViewportCockpit = Boolean(
+    pathname?.startsWith("/liff/tools/news-generator") ||
+      pathname?.startsWith("/liff/baseball-board")
   );
 
-  if (isNewsGeneratorCockpit) {
+  if (isFullViewportCockpit) {
     return (
       <div className="h-dvh max-h-dvh overflow-hidden bg-slate-200/60 dark:bg-slate-950 text-foreground flex justify-center selection:bg-primary/20">
         <main className="w-full max-w-lg h-dvh max-h-dvh bg-background border-x border-border shadow-xs flex flex-col pb-0 relative overflow-hidden">

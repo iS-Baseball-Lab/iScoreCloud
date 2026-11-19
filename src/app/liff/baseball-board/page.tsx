@@ -9,8 +9,11 @@ import React, {
   useCallback,
 } from "react";
 import { createPortal } from "react-dom";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Gamepad2,
+  ChevronLeft,
+  Settings2,
   Volume2,
   VolumeX,
   HelpCircle,
@@ -26,19 +29,20 @@ import {
   Lock,
   ListOrdered,
   X,
-  Zap,
-  Target,
   Trash2,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { LiffHeader } from "@/components/liff/LiffHeader";
-import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import {
   useLiff,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
-import { sharePlainTextViaLine } from "@/lib/liff/liff-client";
+import {
+  shareLiffPageViaLine,
+  sharePlainTextViaLine,
+} from "@/lib/liff/liff-client";
+import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 import {
   BaseballBoardCanvas,
   type BaseballBoardCanvasHandle,
@@ -136,6 +140,8 @@ const STANDARD_PITCH_TYPES: readonly PitchType[] = [
 ];
 
 export default function LiffBaseballBoardPage() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { currentTeam, profile, liff } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
 
@@ -156,6 +162,7 @@ export default function LiffBaseballBoardPage() {
   const [difficulty, setDifficulty] = useState<CpuDifficulty>("normal");
   const [useTeamRoster, setUseTeamRoster] = useState<boolean>(true);
   const [autoPitchEnabled, setAutoPitchEnabled] = useState<boolean>(false);
+  const [isPageSharing, setIsPageSharing] = useState<boolean>(false);
 
   // チーム選手名鑑（読取専用キャッシュ連携）
   const [rosterPlayers, setRosterPlayers] = useState<RawRosterPlayerCandidate[]>(
@@ -199,8 +206,6 @@ export default function LiffBaseballBoardPage() {
   const [boardPhase, setBoardPhase] = useState<BoardActionPhase>("idle");
   const [stance, setStance] = useState<BatterStance>("contact");
   const [selectedCourse, setSelectedCourse] = useState<PitchCourse>("middle");
-  const [selectedPitchType, setSelectedPitchType] =
-    useState<PitchType>("straight");
   // 2P 1台対戦用：投手が球種をセット完了した状態（打者に球種を見せないためのロック）
   const [lockedVersusPitch, setLockedVersusPitch] = useState<PitchSpec | null>(
     null
@@ -216,9 +221,13 @@ export default function LiffBaseballBoardPage() {
     loadBaseballBoardLocalStats(activeTeamId)
   );
 
-  // モーダル開閉ステート（チーム切替時は自動クローズ）
+  // モーダル開閉ステート（1画面コックピットのため設定・成績・遊び方はすべてPortalモーダル化）
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBoxScoreOpen, setIsBoxScoreOpen] = useState(false);
+  const [statsModalTab, setStatsModalTab] = useState<"match" | "records">(
+    "match"
+  );
   const [isConfirmResetStatsOpen, setIsConfirmResetStatsOpen] = useState(false);
 
   const clearTimers = useCallback(() => {
@@ -236,7 +245,7 @@ export default function LiffBaseballBoardPage() {
     (
       title: string,
       tone: "hr" | "hit" | "out" | "walk" | "magic" | "neutral",
-      durationMs = 1550
+      durationMs = 1500
     ) => {
       if (bannerTimerRef.current) {
         clearTimeout(bannerTimerRef.current);
@@ -301,6 +310,7 @@ export default function LiffBaseballBoardPage() {
     if (prevTeamIdRef.current !== activeTeamId) {
       prevTeamIdRef.current = activeTeamId;
       clearTimers();
+      setIsSettingsOpen(false);
       setIsGuideOpen(false);
       setIsBoxScoreOpen(false);
       setIsConfirmResetStatsOpen(false);
@@ -414,20 +424,44 @@ export default function LiffBaseballBoardPage() {
       ? matchState.homeVanishLeft
       : matchState.awayVanishLeft;
 
-  // 現在人間プレイヤーが「打者操作」か「投手操作」か
-  // - cpuモード: 表＝人間が投手（CPU打者）、裏＝人間が打者（CPU投手）
-  // - derbyモード: 常時人間が打者
-  // - versusモード: 球種未ロック時は投手フェーズ、球種ロック後は打者フェーズ
   const isHumanBatterTurn =
     matchState.mode === "derby" ||
     (matchState.mode === "cpu" && !matchState.isTop) ||
     (matchState.mode === "versus" && lockedVersusPitch !== null);
 
+  const handleBackClick = () => {
+    if (canGoBackInLiff()) {
+      router.back();
+    } else {
+      navigateToLiffRoot(router, pathname);
+    }
+  };
+
   const handleToggleSound = () => {
     const next = !soundEnabled;
     setSoundEnabled(next);
     saveBaseballBoardSoundEnabled(next);
-    toast.success(next ? "効果音をONにしました" : "効果音をOFF（消音）にしました");
+    toast.success(next ? "効果音 ON" : "効果音 OFF（消音）");
+  };
+
+  const handleSharePage = async () => {
+    if (isPageSharing) return;
+    setIsPageSharing(true);
+    try {
+      const outcome = await shareLiffPageViaLine({
+        title: "野球盤ゲーム｜iScoreCloud",
+        text: "懐かしの野球盤ミニゲームで対決しよう！（消える魔球・柵越えHR対応）",
+        pathname,
+        teamId: currentTeam?.id || null,
+        teamName: currentTeam?.orgName || currentTeam?.name || null,
+        liff,
+      });
+      if (outcome === "shared") {
+        toast.success("LINEでページを共有しました！");
+      }
+    } finally {
+      setIsPageSharing(false);
+    }
   };
 
   // CPU投手（裏イニング / HR競争）または 2Pロック済み球種での投球開始
@@ -476,16 +510,14 @@ export default function LiffBaseballBoardPage() {
   ]);
 
   // 1P vs CPU の表イニング：プレイヤーが球種を選んでCPU打者へ投げる
-  const handleHumanPitchToCpu = (pitchTypeOverride?: PitchType) => {
+  const handleHumanPitchToCpu = (pitchType: PitchType) => {
     if (boardPhase !== "idle" || matchState.isGameOver) return;
-    const chosenType = pitchTypeOverride ?? selectedPitchType;
-    if (chosenType === "vanish" && pitcherVanishLeft <= 0) {
+    if (pitchType === "vanish" && pitcherVanishLeft <= 0) {
       toast.error("消える魔球の残り回数がありません");
       return;
     }
-    setSelectedPitchType(chosenType);
     canvasRef.current?.launchPitch({
-      pitch: { type: chosenType, course: selectedCourse },
+      pitch: { type: pitchType, course: selectedCourse },
       batterBats: currentBatter.bats,
       batterIsCpu: true,
       cpuDifficulty: matchState.difficulty,
@@ -496,15 +528,14 @@ export default function LiffBaseballBoardPage() {
   };
 
   // 2P 1台対戦：投手が球種＆コースを秘密ロックして打者へ渡す
-  const handleLockVersusPitch = (pitchTypeOverride?: PitchType) => {
+  const handleLockVersusPitch = (pitchType: PitchType) => {
     if (boardPhase !== "idle" || matchState.isGameOver) return;
-    const chosenType = pitchTypeOverride ?? selectedPitchType;
-    if (chosenType === "vanish" && pitcherVanishLeft <= 0) {
+    if (pitchType === "vanish" && pitcherVanishLeft <= 0) {
       toast.error("消える魔球の残り回数がありません");
       return;
     }
     setLockedVersusPitch({
-      type: chosenType,
+      type: pitchType,
       course: selectedCourse,
     });
   };
@@ -532,7 +563,7 @@ export default function LiffBaseballBoardPage() {
         showTemporaryBanner(
           applied.bannerTitle,
           applied.bannerTone,
-          applied.nextState.isGameOver ? 2600 : 1500
+          applied.nextState.isGameOver ? 2500 : 1450
         );
 
         if (applied.nextState.isGameOver && !prev.isGameOver) {
@@ -550,26 +581,24 @@ export default function LiffBaseballBoardPage() {
           playPocketResult(soundEnabled, applied.soundKind);
         }
 
-        // 魔球残り0になった場合、選択球種をストレートへ安全に戻す
-        const nextDefVanish = applied.nextState.isTop
-          ? applied.nextState.homeVanishLeft
-          : applied.nextState.awayVanishLeft;
-        if (nextDefVanish <= 0) {
-          setSelectedPitchType((cur) => (cur === "vanish" ? "straight" : cur));
-        }
-
         return applied.nextState;
       });
     },
     [activeTeamId, showTemporaryBanner, soundEnabled]
   );
 
-  // 自動投球モード ON 時：打者ターン待機になったら 1.0秒後に自動で次球を投げる（モーダル表示中・非表示タブ時は完全停止）
+  // 自動投球モード ON 時：モーダル非表示・打者待機中のみ自動投球
   useEffect(() => {
     if (autoPitchTimerRef.current) {
       clearTimeout(autoPitchTimerRef.current);
       autoPitchTimerRef.current = null;
     }
+
+    const anyModalOpen =
+      isSettingsOpen ||
+      isGuideOpen ||
+      isBoxScoreOpen ||
+      isConfirmResetStatsOpen;
 
     const canAutoPitch =
       autoPitchEnabled &&
@@ -577,9 +606,7 @@ export default function LiffBaseballBoardPage() {
       !matchState.isGameOver &&
       (matchState.mode === "derby" ||
         (matchState.mode === "cpu" && !matchState.isTop)) &&
-      !isGuideOpen &&
-      !isBoxScoreOpen &&
-      !isConfirmResetStatsOpen;
+      !anyModalOpen;
 
     if (!canAutoPitch) return;
 
@@ -601,6 +628,7 @@ export default function LiffBaseballBoardPage() {
     isBoxScoreOpen,
     isConfirmResetStatsOpen,
     isGuideOpen,
+    isSettingsOpen,
     matchState.isGameOver,
     matchState.isTop,
     matchState.mode,
@@ -633,892 +661,1061 @@ export default function LiffBaseballBoardPage() {
   );
 
   return (
-    <div className="flex flex-col flex-1">
-      <LiffHeader />
+    <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden overscroll-none bg-background select-none">
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ① 上部固定：コンパクト操作バー ＆ 電光スコアボード（A-3 Dark Cap・ヘッダーなし専用）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <header className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary pt-[max(env(safe-area-inset-top),8px)] px-2.5 pb-2 space-y-1.5">
+        {/* 最上段ナビバー：戻る ＋ タイトル・回表示 ＋ 設定/成績/音/遊び方/共有 */}
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              type="button"
+              id="btn-baseball-board-back"
+              onClick={handleBackClick}
+              className="h-8 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
+              aria-label="前の画面へ戻る"
+            >
+              <ChevronLeft className="w-4 h-4 -ml-0.5" />
+              <span>戻る</span>
+            </button>
 
-      <div className="p-4 space-y-4">
-        <LiffPageHeader
-          title="野球盤ゲーム"
-          subtitle="投げて打つ懐かしの盤上対決"
-          icon={
-            <span className="w-8 h-8 rounded-xl bg-primary/12 text-primary flex items-center justify-center font-black">
-              <Gamepad2 className="w-4 h-4" />
-            </span>
-          }
-          showBack
-          shareData={{
-            title: "野球盤ゲーム｜iScoreCloud",
-            text: "懐かしの野球盤ミニゲームで対決しよう！（消える魔球・柵越えHR対応）",
-          }}
-          rightElement={
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                id="btn-baseball-board-sound"
-                onClick={handleToggleSound}
-                className={`h-9 px-2.5 rounded-2xl border text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer ${
-                  soundEnabled
-                    ? "bg-card border-border text-foreground hover:bg-muted"
-                    : "bg-muted border-border text-muted-foreground"
-                }`}
-                aria-label={soundEnabled ? "効果音ON" : "効果音OFF"}
-              >
-                {soundEnabled ? (
-                  <Volume2 className="w-3.5 h-3.5 text-primary" />
-                ) : (
-                  <VolumeX className="w-3.5 h-3.5" />
-                )}
-                <span>{soundEnabled ? "音ON" : "消音"}</span>
-              </button>
-              <button
-                type="button"
-                id="btn-baseball-board-guide"
-                onClick={() => setIsGuideOpen(true)}
-                className="h-9 px-2.5 rounded-2xl bg-card border border-border text-foreground hover:bg-muted text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 transition-all cursor-pointer"
-              >
-                <HelpCircle className="w-3.5 h-3.5 text-primary" />
-                <span>遊び方</span>
-              </button>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-xs font-black text-white truncate">
+                野球盤
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black shrink-0">
+                {matchState.isGameOver
+                  ? "試合終了"
+                  : matchState.mode === "derby"
+                  ? `${matchState.derbyPitchNumber}/${DERBY_TOTAL_PITCHES}球`
+                  : `${
+                      matchState.inning > matchState.totalInnings ? "延" : ""
+                    }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
+              </span>
             </div>
-          }
-        />
-
-        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🏟️ メイン野球盤スタジアムカード（A-3 上帯電光スコアボード × 盤面 × 片手操作パネル）
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          {/* A-3 電光掲示板ダークキャップ */}
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary p-3 space-y-2.5">
-            {/* 上段ステータス＆やり直しボタン */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black shrink-0">
-                  {matchState.mode === "cpu"
-                    ? "1P vs CPU"
-                    : matchState.mode === "versus"
-                    ? "2P 対戦"
-                    : "HR競争"}
-                </span>
-                <span className="text-xs font-black text-amber-300 truncate">
-                  {matchState.isGameOver
-                    ? "試合終了（GAME SET）"
-                    : matchState.mode === "derby"
-                    ? `第 ${matchState.derbyPitchNumber} / ${DERBY_TOTAL_PITCHES} 球`
-                    : `${
-                        matchState.inning > matchState.totalInnings ? "延長" : ""
-                      }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-1.5 shrink-0">
-                {matchState.mode !== "derby" && (
-                  <span
-                    className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-black text-amber-300 flex items-center gap-1"
-                    title="守備側チームの消える魔球残り回数"
-                  >
-                    <Sparkles className="w-3 h-3 text-amber-400" />
-                    <span>魔球あと{pitcherVanishLeft}</span>
-                  </span>
-                )}
-                <button
-                  type="button"
-                  id="btn-baseball-board-restart"
-                  onClick={() => startNewGame()}
-                  className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-black text-slate-200 flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>最初</span>
-                </button>
-              </div>
-            </div>
-
-            {matchState.mode === "derby" ? (
-              /* ホームラン競争専用スコアバー */
-              <div className="grid grid-cols-3 gap-2 pt-0.5">
-                <div className="rounded-xl bg-slate-900 border border-slate-800 px-2.5 py-2 text-center">
-                  <p className="text-[10px] font-bold text-slate-400">球数</p>
-                  <p className="text-sm font-black text-white tabular-nums">
-                    {matchState.derbyPitchNumber}{" "}
-                    <span className="text-[11px] text-slate-400">
-                      / {DERBY_TOTAL_PITCHES}
-                    </span>
-                  </p>
-                </div>
-                <div className="rounded-xl bg-slate-900 border border-slate-800 px-2.5 py-2 text-center">
-                  <p className="text-[10px] font-bold text-slate-400">
-                    ホームラン
-                  </p>
-                  <p className="text-sm font-black text-amber-400 tabular-nums">
-                    {matchState.derbyHomeRuns} 本
-                  </p>
-                </div>
-                <div className="rounded-xl bg-slate-900 border border-slate-800 px-2.5 py-2 text-center">
-                  <p className="text-[10px] font-bold text-slate-400">
-                    獲得ポイント
-                  </p>
-                  <p className="text-sm font-black text-emerald-400 tabular-nums">
-                    {matchState.derbyPoints} pt
-                  </p>
-                </div>
-              </div>
-            ) : (
-              /* 公式スコアボード ＋ BSOランプ ＋ 走者ダイヤモンド */
-              <div className="flex items-stretch gap-2">
-                <div className="flex-1 min-w-0 rounded-xl bg-slate-900 border border-slate-800 overflow-x-auto">
-                  <table className="w-full text-center border-collapse text-[11px] tabular-nums">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-[9.5px] font-bold text-slate-400">
-                        <th className="py-1 px-2 text-left font-bold">チーム</th>
-                        {matchState.innings.map((_, idx) => (
-                          <th key={idx} className="py-1 px-1 min-w-[18px]">
-                            {idx + 1}
-                          </th>
-                        ))}
-                        <th className="py-1 px-1.5 text-amber-300 font-black border-l border-slate-800">
-                          計
-                        </th>
-                        <th className="py-1 px-1.5 text-slate-300 font-bold">
-                          安
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-black">
-                      <tr
-                        className={`border-b border-slate-800/80 ${
-                          matchState.isTop && !matchState.isGameOver
-                            ? "bg-slate-800/70"
-                            : ""
-                        }`}
-                      >
-                        <td className="py-1 px-2 text-left truncate max-w-[92px] text-[10.5px] text-slate-100">
-                          {matchState.isTop && !matchState.isGameOver && (
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
-                          )}
-                          {matchState.awayTeamName}
-                        </td>
-                        {matchState.innings.map((cell, idx) => (
-                          <td
-                            key={idx}
-                            className={`py-1 px-1 ${
-                              matchState.inning === idx + 1 &&
-                              matchState.isTop &&
-                              !matchState.isGameOver
-                                ? "text-amber-300"
-                                : "text-slate-200"
-                            }`}
-                          >
-                            {cell.top === null ? "-" : cell.top}
-                          </td>
-                        ))}
-                        <td className="py-1 px-1.5 text-amber-300 text-xs border-l border-slate-800">
-                          {matchState.awayScore}
-                        </td>
-                        <td className="py-1 px-1.5 text-slate-400 text-[10.5px]">
-                          {matchState.awayHits}
-                        </td>
-                      </tr>
-                      <tr
-                        className={
-                          !matchState.isTop && !matchState.isGameOver
-                            ? "bg-slate-800/70"
-                            : ""
-                        }
-                      >
-                        <td className="py-1 px-2 text-left truncate max-w-[92px] text-[10.5px] text-slate-100">
-                          {!matchState.isTop && !matchState.isGameOver && (
-                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
-                          )}
-                          {matchState.homeTeamName}
-                        </td>
-                        {matchState.innings.map((cell, idx) => (
-                          <td
-                            key={idx}
-                            className={`py-1 px-1 ${
-                              matchState.inning === idx + 1 &&
-                              !matchState.isTop &&
-                              !matchState.isGameOver
-                                ? "text-amber-300"
-                                : "text-slate-200"
-                            }`}
-                          >
-                            {cell.bottom === null
-                              ? "-"
-                              : cell.bottom === "x"
-                              ? "X"
-                              : typeof cell.bottomWalkOffRuns === "number"
-                              ? `${cell.bottom}x`
-                              : cell.bottom}
-                          </td>
-                        ))}
-                        <td className="py-1 px-1.5 text-amber-300 text-xs border-l border-slate-800">
-                          {matchState.homeScore}
-                        </td>
-                        <td className="py-1 px-1.5 text-slate-400 text-[10.5px]">
-                          {matchState.homeHits}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* BSO電光インジケーター ＋ 塁状況ミニダイヤ */}
-                <div className="w-[104px] shrink-0 rounded-xl bg-slate-900 border border-slate-800 px-2 py-1.5 flex items-center justify-between gap-1">
-                  <div className="space-y-1 text-[10px] font-black leading-none">
-                    <div className="flex items-center gap-1">
-                      <span className="w-3 text-emerald-400">B</span>
-                      {[0, 1, 2].map((i) => (
-                        <span
-                          key={i}
-                          className={`w-2.5 h-2.5 rounded-full border ${
-                            i < matchState.balls
-                              ? "bg-[#22c55e] border-emerald-300"
-                              : "bg-slate-800 border-slate-700"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-3 text-amber-400">S</span>
-                      {[0, 1].map((i) => (
-                        <span
-                          key={i}
-                          className={`w-2.5 h-2.5 rounded-full border ${
-                            i < matchState.strikes
-                              ? "bg-[#f59e0b] border-amber-300"
-                              : "bg-slate-800 border-slate-700"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="w-3 text-red-400">O</span>
-                      {[0, 1].map((i) => (
-                        <span
-                          key={i}
-                          className={`w-2.5 h-2.5 rounded-full border ${
-                            i < matchState.outs
-                              ? "bg-[#ef4444] border-red-300"
-                              : "bg-slate-800 border-slate-700"
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* ミニ走者ダイヤモンド */}
-                  <svg
-                    viewBox="0 0 36 36"
-                    className="w-9 h-9 shrink-0"
-                    aria-label={formatRunnerSituationLabel(matchState.bases)}
-                  >
-                    {/* 二塁 */}
-                    <polygon
-                      points="18,4 24,10 18,16 12,10"
-                      fill={matchState.bases.second ? "#fbbf24" : "#1e293b"}
-                      stroke="#64748b"
-                      strokeWidth="1.5"
-                    />
-                    {/* 三塁 */}
-                    <polygon
-                      points="8,14 14,20 8,26 2,20"
-                      fill={matchState.bases.third ? "#fbbf24" : "#1e293b"}
-                      stroke="#64748b"
-                      strokeWidth="1.5"
-                    />
-                    {/* 一塁 */}
-                    <polygon
-                      points="28,14 34,20 28,26 22,20"
-                      fill={matchState.bases.first ? "#fbbf24" : "#1e293b"}
-                      stroke="#64748b"
-                      strokeWidth="1.5"
-                    />
-                    {/* 本塁 */}
-                    <polygon
-                      points="15,26 21,26 21,29 18,32 15,29"
-                      fill="#e2e8f0"
-                    />
-                  </svg>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* 打席情報 ＆ 実況アナウンス帯 */}
-          <div className="px-3.5 py-2.5 bg-muted/60 border-b border-border flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-1.5 py-0.5 rounded bg-[#0f172a] text-white text-[10px] font-black shrink-0">
-                  #{currentBatter.uniformNumber}
-                </span>
-                <span className="text-xs font-black text-foreground truncate">
-                  {currentBatter.name}
-                </span>
-                <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[9.5px] font-bold text-muted-foreground shrink-0">
-                  {currentBatter.bats === "L" ? "左打" : "右打"}・
-                  {currentBatter.atBats}打数{currentBatter.hits}安打
-                  {currentBatter.homeRuns > 0
-                    ? ` ${currentBatter.homeRuns}HR`
-                    : ""}
-                </span>
-              </div>
-              <p className="text-[11px] font-bold text-primary truncate mt-0.5">
-                {matchState.lastCallout}
-              </p>
-            </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              id="btn-baseball-board-settings"
+              onClick={() => setIsSettingsOpen(true)}
+              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            >
+              <Settings2 className="w-3.5 h-3.5 text-blue-300" />
+              <span>設定</span>
+            </button>
 
             <button
               type="button"
-              id="btn-baseball-board-boxscore"
-              onClick={() => setIsBoxScoreOpen(true)}
-              className="h-8 px-2.5 rounded-xl bg-card hover:bg-muted border border-border text-[10.5px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+              id="btn-baseball-board-records"
+              onClick={() => {
+                setStatsModalTab("match");
+                setIsBoxScoreOpen(true);
+              }}
+              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
             >
-              <ListOrdered className="w-3.5 h-3.5 text-primary" />
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
               <span>成績</span>
             </button>
+
+            <button
+              type="button"
+              id="btn-baseball-board-sound"
+              onClick={handleToggleSound}
+              className={`w-8 h-8 rounded-xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+                soundEnabled
+                  ? "bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700"
+                  : "bg-slate-900 border-slate-800 text-slate-500"
+              }`}
+              aria-label={soundEnabled ? "効果音ON" : "効果音OFF"}
+              title={soundEnabled ? "効果音ON" : "消音中"}
+            >
+              {soundEnabled ? (
+                <Volume2 className="w-4 h-4" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              id="btn-baseball-board-guide"
+              onClick={() => setIsGuideOpen(true)}
+              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              aria-label="遊び方ガイド"
+              title="遊び方ガイド"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              id="btn-baseball-board-share-page"
+              disabled={isPageSharing}
+              onClick={() => void handleSharePage()}
+              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[#06C755] flex items-center justify-center active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+              aria-label="LINEで共有"
+              title="LINEでページを共有"
+            >
+              {isPageSharing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Share2 className="w-3.5 h-3.5" />
+              )}
+            </button>
           </div>
+        </div>
 
-          {/* 🎯 野球盤メイン盤面 Canvas */}
-          <div className="p-3 bg-card">
-            <BaseballBoardCanvas
-              ref={canvasRef}
-              bases={matchState.bases}
-              outs={matchState.outs}
-              strikes={matchState.strikes}
-              batterBats={currentBatter.bats}
-              stance={stance}
-              soundEnabled={soundEnabled}
-              canTapToSwing={isHumanBatterTurn && !matchState.isGameOver}
-              canTapToPitch={
-                isHumanBatterTurn &&
-                boardPhase === "idle" &&
-                !matchState.isGameOver
-              }
-              bannerText={bannerText}
-              bannerTone={bannerTone}
-              onPhaseChange={setBoardPhase}
-              onPlayResolved={handlePlayResolved}
-              onRequestQuickPitch={handleStartPitchForBatter}
-            />
+        {/* 電光スコアボード行 */}
+        {matchState.mode === "derby" ? (
+          <div className="grid grid-cols-3 gap-1.5">
+            <div className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400">球数</span>
+              <span className="text-xs font-black text-white tabular-nums">
+                {matchState.derbyPitchNumber}/{DERBY_TOTAL_PITCHES}
+              </span>
+            </div>
+            <div className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400">HR</span>
+              <span className="text-xs font-black text-amber-400 tabular-nums">
+                {matchState.derbyHomeRuns}本
+              </span>
+            </div>
+            <div className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between">
+              <span className="text-[10px] font-bold text-slate-400">得点</span>
+              <span className="text-xs font-black text-emerald-400 tabular-nums">
+                {matchState.derbyPoints}pt
+              </span>
+            </div>
           </div>
-
-          {/* 🕹️ 片手親指コックピット操作エリア */}
-          <div className="px-3.5 pb-4 pt-1 space-y-2.5 border-t border-border bg-muted/30">
-            {matchState.isGameOver ? (
-              /* 🏁 試合終了パネル */
-              <div className="pt-2 space-y-2.5">
-                <div className="p-3 rounded-2xl bg-card border border-border text-center space-y-1">
-                  <p className="text-xs font-black text-primary">
-                    {matchState.mode === "derby"
-                      ? "🌈 ホームラン競争 終了！"
-                      : matchState.winner === "home"
-                      ? `🏆 ${matchState.homeTeamName} の勝利！！`
-                      : matchState.winner === "away"
-                      ? `⚾ ${matchState.awayTeamName} の勝利！`
-                      : "🤝 白熱の引き分け！"}
-                  </p>
-                  <p className="text-sm font-black text-foreground">
-                    {matchState.mode === "derby"
-                      ? `${DERBY_TOTAL_PITCHES}球中 ${matchState.derbyHomeRuns}本塁打 / ${matchState.derbyPoints}pt`
-                      : `${matchState.awayTeamName} ${matchState.awayScore} - ${matchState.homeScore} ${matchState.homeTeamName}`}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  id="btn-baseball-board-play-again"
-                  onClick={() => startNewGame()}
-                  className="w-full h-12 rounded-2xl bg-primary hover:brightness-105 text-primary-foreground font-black text-sm flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all cursor-pointer"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>もう1試合あそぶ！</span>
-                </button>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    id="btn-baseball-board-copy-result"
-                    onClick={() => void handleCopyResultText()}
-                    className="h-10 rounded-xl bg-card hover:bg-muted border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+        ) : (
+          <div className="flex items-stretch gap-1.5">
+            <div className="flex-1 min-w-0 rounded-xl bg-slate-900 border border-slate-800 overflow-x-auto">
+              <table className="w-full text-center border-collapse text-[10.5px] tabular-nums">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[9px] font-bold text-slate-400">
+                    <th className="py-0.5 px-1.5 text-left font-bold">
+                      {matchState.mode === "versus" ? "2P対戦" : "1P対戦"}
+                    </th>
+                    {matchState.innings.map((_, idx) => (
+                      <th key={idx} className="py-0.5 px-1 min-w-[16px]">
+                        {idx + 1}
+                      </th>
+                    ))}
+                    <th className="py-0.5 px-1.5 text-amber-300 font-black border-l border-slate-800">
+                      計
+                    </th>
+                    <th className="py-0.5 px-1 text-slate-400 font-bold">安</th>
+                  </tr>
+                </thead>
+                <tbody className="font-black leading-tight">
+                  <tr
+                    className={`border-b border-slate-800/80 ${
+                      matchState.isTop && !matchState.isGameOver
+                        ? "bg-slate-800/70"
+                        : ""
+                    }`}
                   >
-                    <Copy className="w-3.5 h-3.5 text-primary" />
-                    <span>結果をコピー</span>
-                  </button>
-                  <button
-                    type="button"
-                    id="btn-baseball-board-share-line"
-                    onClick={() => void handleShareResultLine()}
-                    className="h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <Share2 className="w-3.5 h-3.5" />
-                    <span>LINEで共有</span>
-                  </button>
-                </div>
-              </div>
-            ) : isHumanBatterTurn ? (
-              /* 🏏 打者ターン操作UI（裏イニング / HR競争 / 2P球種ロック後） */
-              <div className="pt-2 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-black text-foreground flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5 text-amber-500" />
-                    <span>
-                      {matchState.mode === "versus"
-                        ? `${
-                            matchState.isTop
-                              ? matchState.awayTeamName
-                              : matchState.homeTeamName
-                          }（打者）の番！`
-                        : "あなたの打席：狙いを選んでスイング！"}
-                    </span>
-                  </span>
-
-                  {matchState.mode !== "versus" && (
-                    <button
-                      type="button"
-                      id="btn-baseball-board-autopitch"
-                      onClick={() => setAutoPitchEnabled((prev) => !prev)}
-                      className={`px-2.5 py-1 rounded-full border text-[10px] font-black transition-all cursor-pointer ${
-                        autoPitchEnabled
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-card text-muted-foreground border-border hover:text-foreground"
-                      }`}
-                    >
-                      自動投球 {autoPitchEnabled ? "ON" : "OFF"}
-                    </button>
-                  )}
-                </div>
-
-                {/* 打撃スタイル3択 */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(
-                    [
-                      {
-                        id: "contact" as const,
-                        label: "⚡ ミート",
-                        sub: "広角・安打",
-                      },
-                      {
-                        id: "power" as const,
-                        label: "🔥 強振",
-                        sub: "柵越えHR狙い",
-                      },
-                      {
-                        id: "bunt" as const,
-                        label: "🎯 バント",
-                        sub: "進塁・内野安打",
-                      },
-                    ] as const
-                  ).map((opt) => {
-                    const active = stance === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setStance(opt.id)}
-                        className={`py-2 px-2 rounded-xl border text-center transition-all active:scale-95 cursor-pointer ${
-                          active
-                            ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
-                            : "bg-card text-foreground border-border hover:bg-muted"
+                    <td className="py-0.5 px-1.5 text-left truncate max-w-[84px] text-[10px] text-slate-100">
+                      {matchState.isTop && !matchState.isGameOver && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
+                      )}
+                      {matchState.awayTeamName}
+                    </td>
+                    {matchState.innings.map((cell, idx) => (
+                      <td
+                        key={idx}
+                        className={`py-0.5 px-1 ${
+                          matchState.inning === idx + 1 &&
+                          matchState.isTop &&
+                          !matchState.isGameOver
+                            ? "text-amber-300"
+                            : "text-slate-200"
                         }`}
                       >
-                        <p className="text-xs font-black leading-tight">
-                          {opt.label}
-                        </p>
-                        <p
-                          className={`text-[9.5px] font-bold mt-0.5 ${
-                            active ? "text-slate-300" : "text-muted-foreground"
-                          }`}
-                        >
-                          {opt.sub}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* メイン大型アクションボタン（投球スタート ➔ 0msスイング！） */}
-                {boardPhase === "pitching" ? (
-                  <button
-                    type="button"
-                    id="btn-baseball-board-swing"
-                    onPointerDown={handleSwingPointerDown}
-                    className="w-full h-14 rounded-2xl bg-[#dc2626] hover:bg-[#b91c1c] text-white font-black text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer select-none touch-manipulation"
+                        {cell.top === null ? "-" : cell.top}
+                      </td>
+                    ))}
+                    <td className="py-0.5 px-1.5 text-amber-300 text-[11px] border-l border-slate-800">
+                      {matchState.awayScore}
+                    </td>
+                    <td className="py-0.5 px-1 text-slate-400 text-[10px]">
+                      {matchState.awayHits}
+                    </td>
+                  </tr>
+                  <tr
+                    className={
+                      !matchState.isTop && !matchState.isGameOver
+                        ? "bg-slate-800/70"
+                        : ""
+                    }
                   >
-                    <span>🏏 スイング！！（盤面タップでもOK）</span>
-                  </button>
-                ) : boardPhase === "idle" ? (
-                  <button
-                    type="button"
-                    id="btn-baseball-board-pitch-start"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      handleStartPitchForBatter();
-                    }}
-                    className="w-full h-14 rounded-2xl bg-primary hover:brightness-105 text-primary-foreground font-black text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer select-none touch-manipulation"
-                  >
-                    <span>
-                      ⚾{" "}
-                      {autoPitchEnabled
-                        ? "すぐ投球する（自動投球待機中）"
-                        : "ピッチャー投球スタート！"}
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled
-                    className="w-full h-14 rounded-2xl bg-muted border border-border text-muted-foreground font-black text-sm flex items-center justify-center cursor-not-allowed"
-                  >
-                    <span>打球の行方を見守り中…！</span>
-                  </button>
-                )}
-              </div>
-            ) : (
-              /* ⚾ 投手ターン操作UI（1P表イニング守備 または 2P投手の球種セット） */
-              <div className="pt-2 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-black text-foreground flex items-center gap-1">
-                    <Target className="w-3.5 h-3.5 text-primary" />
-                    <span>
-                      {matchState.mode === "versus"
-                        ? `${
-                            matchState.isTop
-                              ? matchState.homeTeamName
-                              : matchState.awayTeamName
-                          }（投手）：打者に見せないよう球種を選択！`
-                        : "あなたの投球（守備）：コースと球種で打ち取ろう！"}
-                    </span>
-                  </span>
-                </div>
-
-                {/* コース3択 */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  {COURSE_OPTIONS.map((c) => {
-                    const active = selectedCourse === c.id;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        disabled={boardPhase !== "idle"}
-                        onClick={() => setSelectedCourse(c.id)}
-                        className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
-                          active
-                            ? "bg-[#0f172a] text-white border-primary"
-                            : "bg-card text-foreground border-border hover:bg-muted"
+                    <td className="py-0.5 px-1.5 text-left truncate max-w-[84px] text-[10px] text-slate-100">
+                      {!matchState.isTop && !matchState.isGameOver && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
+                      )}
+                      {matchState.homeTeamName}
+                    </td>
+                    {matchState.innings.map((cell, idx) => (
+                      <td
+                        key={idx}
+                        className={`py-0.5 px-1 ${
+                          matchState.inning === idx + 1 &&
+                          !matchState.isTop &&
+                          !matchState.isGameOver
+                            ? "text-amber-300"
+                            : "text-slate-200"
                         }`}
                       >
-                        コース：{c.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 4球種ボタン（1タップ即投球 / 2P時は1タップ秘密セット） */}
-                <div className="grid grid-cols-2 gap-2">
-                  {STANDARD_PITCH_TYPES.map((pType) => {
-                    const meta = PITCH_TYPE_META[pType];
-                    return (
-                      <button
-                        key={pType}
-                        type="button"
-                        disabled={boardPhase !== "idle"}
-                        onClick={() =>
-                          matchState.mode === "versus"
-                            ? handleLockVersusPitch(pType)
-                            : handleHumanPitchToCpu(pType)
-                        }
-                        className="p-2.5 rounded-xl bg-card hover:bg-muted border border-border hover:border-primary/50 text-left transition-all active:scale-97 cursor-pointer disabled:opacity-50"
-                      >
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-black text-foreground">
-                            ⚾ {meta.label}
-                          </span>
-                          {matchState.mode === "versus" && (
-                            <Lock className="w-3 h-3 text-muted-foreground" />
-                          )}
-                        </div>
-                        <p className="text-[10px] font-bold text-muted-foreground mt-0.5 truncate">
-                          {meta.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 必殺「消える魔球」ボタン */}
-                <button
-                  type="button"
-                  id="btn-baseball-board-vanish-pitch"
-                  disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
-                  onClick={() =>
-                    matchState.mode === "versus"
-                      ? handleLockVersusPitch("vanish")
-                      : handleHumanPitchToCpu("vanish")
-                  }
-                  className={`w-full h-11 rounded-2xl border-2 font-black text-xs flex items-center justify-center gap-2 transition-all active:scale-98 ${
-                    pitcherVanishLeft > 0 && boardPhase === "idle"
-                      ? "bg-[#0f172a] hover:bg-slate-800 text-amber-300 border-amber-500 cursor-pointer shadow-xs"
-                      : "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-60"
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 text-amber-400" />
-                  <span>
-                    {pitcherVanishLeft > 0
-                      ? `必殺「消える魔球」を投げる！（残り ${pitcherVanishLeft} / ${MAX_VANISH_PITCHES_PER_GAME} 球）`
-                      : "消える魔球は使い切りました（0球）"}
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            ⚙️ 対戦モード・イニング・選手連動設定カード（A-3 ソリッドカード）
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-2.5 flex items-center justify-between">
-            <span className="text-xs font-black flex items-center gap-1.5">
-              <Gamepad2 className="w-4 h-4 text-blue-300" />
-              <span>ゲームモード・試合設定</span>
-            </span>
-            <span className="text-[10px] font-bold text-slate-300">
-              切替で新規プレイ開始
-            </span>
-          </div>
-
-          <div className="p-4 space-y-3.5">
-            {/* 対戦モード選択 */}
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-black text-foreground">
-                1. 遊び方モード
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {MODE_OPTIONS.map((opt) => {
-                  const Icon = opt.icon;
-                  const active = mode === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => {
-                        setMode(opt.id);
-                        startNewGame({ nextMode: opt.id });
-                      }}
-                      className={`p-2.5 rounded-2xl border text-left transition-all active:scale-96 cursor-pointer ${
-                        active
-                          ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/30"
-                          : "bg-card border-border text-foreground hover:bg-muted"
-                      }`}
-                    >
-                      <Icon
-                        className={`w-4 h-4 mb-1 ${
-                          active ? "text-primary" : "text-muted-foreground"
-                        }`}
-                      />
-                      <p className="text-[11px] font-black leading-tight">
-                        {opt.label}
-                      </p>
-                      <p className="text-[9.5px] font-bold text-muted-foreground mt-0.5 leading-snug">
-                        {opt.shortDesc}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
+                        {cell.bottom === null
+                          ? "-"
+                          : cell.bottom === "x"
+                          ? "X"
+                          : typeof cell.bottomWalkOffRuns === "number"
+                          ? `${cell.bottom}x`
+                          : cell.bottom}
+                      </td>
+                    ))}
+                    <td className="py-0.5 px-1.5 text-amber-300 text-[11px] border-l border-slate-800">
+                      {matchState.homeScore}
+                    </td>
+                    <td className="py-0.5 px-1 text-slate-400 text-[10px]">
+                      {matchState.homeHits}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            {mode !== "derby" && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* イニング数 */}
+            {/* BSO電光ランプ ＋ 走者ミニダイヤ */}
+            <div className="w-[96px] shrink-0 rounded-xl bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between gap-1">
+              <div className="space-y-0.5 text-[9.5px] font-black leading-none">
+                <div className="flex items-center gap-0.5">
+                  <span className="w-2.5 text-emerald-400">B</span>
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className={`w-2.5 h-2.5 rounded-full border ${
+                        i < matchState.balls
+                          ? "bg-[#22c55e] border-emerald-300"
+                          : "bg-slate-800 border-slate-700"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <span className="w-2.5 text-amber-400">S</span>
+                  {[0, 1].map((i) => (
+                    <span
+                      key={i}
+                      className={`w-2.5 h-2.5 rounded-full border ${
+                        i < matchState.strikes
+                          ? "bg-[#f59e0b] border-amber-300"
+                          : "bg-slate-800 border-slate-700"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div className="flex items-center gap-0.5">
+                  <span className="w-2.5 text-red-400">O</span>
+                  {[0, 1].map((i) => (
+                    <span
+                      key={i}
+                      className={`w-2.5 h-2.5 rounded-full border ${
+                        i < matchState.outs
+                          ? "bg-[#ef4444] border-red-300"
+                          : "bg-slate-800 border-slate-700"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <svg
+                viewBox="0 0 36 36"
+                className="w-8 h-8 shrink-0"
+                aria-label={formatRunnerSituationLabel(matchState.bases)}
+              >
+                <polygon
+                  points="18,4 24,10 18,16 12,10"
+                  fill={matchState.bases.second ? "#fbbf24" : "#1e293b"}
+                  stroke="#64748b"
+                  strokeWidth="1.5"
+                />
+                <polygon
+                  points="8,14 14,20 8,26 2,20"
+                  fill={matchState.bases.third ? "#fbbf24" : "#1e293b"}
+                  stroke="#64748b"
+                  strokeWidth="1.5"
+                />
+                <polygon
+                  points="28,14 34,20 28,26 22,20"
+                  fill={matchState.bases.first ? "#fbbf24" : "#1e293b"}
+                  stroke="#64748b"
+                  strokeWidth="1.5"
+                />
+                <polygon
+                  points="15,26 21,26 21,29 18,32 15,29"
+                  fill="#e2e8f0"
+                />
+              </svg>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ② 打者＆実況スリムバー（shrink-0）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div className="shrink-0 px-3 py-1.5 bg-card border-b border-border flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="px-1.5 py-0.2 rounded bg-[#0f172a] text-white text-[9.5px] font-black shrink-0">
+              #{currentBatter.uniformNumber}
+            </span>
+            <span className="text-xs font-black text-foreground truncate">
+              {currentBatter.name}
+            </span>
+            <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+              ({currentBatter.bats === "L" ? "左" : "右"}・{currentBatter.atBats}
+              -{currentBatter.hits}
+              {currentBatter.homeRuns > 0
+                ? ` ${currentBatter.homeRuns}HR`
+                : ""}
+              )
+            </span>
+          </div>
+          <p className="text-[10.5px] font-bold text-primary truncate leading-tight mt-0.5">
+            {matchState.lastCallout}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {isHumanBatterTurn &&
+            matchState.mode !== "versus" &&
+            !matchState.isGameOver && (
+              <button
+                type="button"
+                id="btn-baseball-board-autopitch"
+                onClick={() => setAutoPitchEnabled((prev) => !prev)}
+                className={`h-7 px-2 rounded-full border text-[10px] font-black transition-all cursor-pointer ${
+                  autoPitchEnabled
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                }`}
+              >
+                自動投球 {autoPitchEnabled ? "ON" : "OFF"}
+              </button>
+            )}
+
+          {matchState.mode !== "derby" && !isHumanBatterTurn && (
+            <span className="px-2 py-1 rounded-full bg-[#0f172a] text-amber-300 text-[10px] font-black flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>魔球あと{pitcherVanishLeft}</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            id="btn-baseball-board-restart"
+            onClick={() => startNewGame()}
+            className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+            title="最初からやり直す"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>最初</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ③ 中央伸縮：野球盤メインステージ（flex-1 min-h-0 で画面縦幅に100%自動フィット）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div className="flex-1 min-h-0 w-full px-2 py-1.5 bg-background flex items-center justify-center overflow-hidden">
+        <BaseballBoardCanvas
+          ref={canvasRef}
+          bases={matchState.bases}
+          outs={matchState.outs}
+          strikes={matchState.strikes}
+          batterBats={currentBatter.bats}
+          stance={stance}
+          soundEnabled={soundEnabled}
+          canTapToSwing={isHumanBatterTurn && !matchState.isGameOver}
+          canTapToPitch={
+            isHumanBatterTurn &&
+            boardPhase === "idle" &&
+            !matchState.isGameOver
+          }
+          bannerText={bannerText}
+          bannerTone={bannerTone}
+          onPhaseChange={setBoardPhase}
+          onPlayResolved={handlePlayResolved}
+          onRequestQuickPitch={handleStartPitchForBatter}
+        />
+      </div>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ④ 最下部固定：親指ワンハンド操作ドック（shrink-0・ボトムナビ非表示のためSafe Area直置き）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <footer className="shrink-0 px-3 pt-2 pb-[max(env(safe-area-inset-bottom),12px)] bg-card border-t border-border">
+        {matchState.isGameOver ? (
+          /* 🏁 試合終了ドック */
+          <div className="space-y-2">
+            <div className="px-3 py-1.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-primary truncate">
+                {matchState.mode === "derby"
+                  ? "🌈 ホームラン競争 終了！"
+                  : matchState.winner === "home"
+                  ? `🏆 ${matchState.homeTeamName} 勝利！`
+                  : matchState.winner === "away"
+                  ? `⚾ ${matchState.awayTeamName} 勝利！`
+                  : "🤝 引き分け！"}
+              </span>
+              <span className="text-xs font-black text-foreground tabular-nums shrink-0">
+                {matchState.mode === "derby"
+                  ? `${matchState.derbyHomeRuns}本 / ${matchState.derbyPoints}pt`
+                  : `${matchState.awayScore} - ${matchState.homeScore}`}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-12 gap-1.5">
+              <button
+                type="button"
+                id="btn-baseball-board-play-again"
+                onClick={() => startNewGame()}
+                className="col-span-6 h-11 rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>もう1試合！</span>
+              </button>
+              <button
+                type="button"
+                id="btn-baseball-board-copy-result"
+                onClick={() => void handleCopyResultText()}
+                className="col-span-3 h-11 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-primary" />
+                <span>コピー</span>
+              </button>
+              <button
+                type="button"
+                id="btn-baseball-board-share-line"
+                onClick={() => void handleShareResultLine()}
+                className="col-span-3 h-11 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>LINE</span>
+              </button>
+            </div>
+          </div>
+        ) : isHumanBatterTurn ? (
+          /* 🏏 打者ターンドック（狙い3択 ＋ 大型スイングボタン） */
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  { id: "contact" as const, label: "⚡ ミート", sub: "広角安打" },
+                  { id: "power" as const, label: "🔥 強振", sub: "柵越えHR" },
+                  { id: "bunt" as const, label: "🎯 バント", sub: "進塁・内安" },
+                ] as const
+              ).map((opt) => {
+                const active = stance === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setStance(opt.id)}
+                    className={`h-9 px-1.5 rounded-xl border flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer ${
+                      active
+                        ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
+                        : "bg-muted/60 text-foreground border-border hover:bg-muted"
+                    }`}
+                  >
+                    <span className="text-xs font-black">{opt.label}</span>
+                    <span
+                      className={`text-[9.5px] font-bold hidden xs:inline ${
+                        active ? "text-slate-300" : "text-muted-foreground"
+                      }`}
+                    >
+                      ({opt.sub})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {boardPhase === "pitching" ? (
+              <button
+                type="button"
+                id="btn-baseball-board-swing"
+                onPointerDown={handleSwingPointerDown}
+                className="w-full h-12 rounded-2xl bg-[#dc2626] hover:bg-[#b91c1c] text-white font-black text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+              >
+                <span>🏏 スイング！！（盤面タップ可）</span>
+              </button>
+            ) : boardPhase === "idle" ? (
+              <button
+                type="button"
+                id="btn-baseball-board-pitch-start"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  handleStartPitchForBatter();
+                }}
+                className="w-full h-12 rounded-2xl bg-primary hover:brightness-105 text-primary-foreground font-black text-sm sm:text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
+              >
+                <span>
+                  ⚾{" "}
+                  {matchState.mode === "versus"
+                    ? `${
+                        matchState.isTop
+                          ? matchState.awayTeamName
+                          : matchState.homeTeamName
+                      }：投球スタート！`
+                    : autoPitchEnabled
+                    ? "すぐ投球する（自動投球ON）"
+                    : "ピッチャー投球スタート！"}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="w-full h-12 rounded-2xl bg-muted border border-border text-muted-foreground font-black text-xs flex items-center justify-center cursor-not-allowed"
+              >
+                <span>打球の行方を見守り中…！</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          /* ⚾ 投手ターンドック（コース3択 ＋ 5球種アーケードデッキ：打者ターンと同高に揃えて盤面サイズ変動ゼロ！） */
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
+              {COURSE_OPTIONS.map((c) => {
+                const active = selectedCourse === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={boardPhase !== "idle"}
+                    onClick={() => setSelectedCourse(c.id)}
+                    className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
+                      active
+                        ? "bg-[#0f172a] text-white border-primary"
+                        : "bg-muted/60 text-foreground border-border hover:bg-muted"
+                    }`}
+                  >
+                    コース：{c.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="grid grid-cols-5 gap-1.5">
+              {STANDARD_PITCH_TYPES.map((pType) => {
+                const meta = PITCH_TYPE_META[pType];
+                return (
+                  <button
+                    key={pType}
+                    type="button"
+                    disabled={boardPhase !== "idle"}
+                    onClick={() =>
+                      matchState.mode === "versus"
+                        ? handleLockVersusPitch(pType)
+                        : handleHumanPitchToCpu(pType)
+                    }
+                    className="h-12 px-1 rounded-xl bg-card hover:bg-muted border border-border hover:border-primary/50 flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                  >
+                    <span className="text-[11px] font-black text-foreground leading-tight truncate max-w-full">
+                      {meta.shortLabel}
+                    </span>
+                    <span className="text-[9px] font-bold text-muted-foreground mt-0.5 flex items-center gap-0.5">
+                      {matchState.mode === "versus" ? (
+                        <>
+                          <Lock className="w-2.5 h-2.5" />
+                          <span>セット</span>
+                        </>
+                      ) : (
+                        <span>投球</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {/* 5枠目：必殺「消える魔球」ボタン */}
+              <button
+                type="button"
+                id="btn-baseball-board-vanish-pitch"
+                disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
+                onClick={() =>
+                  matchState.mode === "versus"
+                    ? handleLockVersusPitch("vanish")
+                    : handleHumanPitchToCpu("vanish")
+                }
+                className={`h-12 px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
+                  pitcherVanishLeft > 0 && boardPhase === "idle"
+                    ? "bg-[#0f172a] hover:bg-slate-800 text-amber-300 border-amber-500 cursor-pointer"
+                    : "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
+                }`}
+              >
+                <span className="text-[11px] font-black leading-tight flex items-center gap-0.5">
+                  <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span>魔球</span>
+                </span>
+                <span className="text-[9px] font-bold mt-0.5">
+                  残{pitcherVanishLeft}/{MAX_VANISH_PITCHES_PER_GAME}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+      </footer>
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ⚙️ ゲームモード・試合設定モーダル（createPortal & z-[9999]）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {isSettingsOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60">
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsSettingsOpen(false)}
+            />
+            <div className="relative z-10 w-full max-w-md max-h-[88dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3.5 flex items-center justify-between shrink-0">
+                <span className="text-sm font-black flex items-center gap-2">
+                  <Gamepad2 className="w-4 h-4 text-blue-300" />
+                  <span>ゲームモード・試合設定</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4 overflow-y-auto">
+                {/* 1. 遊び方モード */}
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-black text-foreground">
-                    2. 規定イニング数
+                  <p className="text-xs font-black text-foreground">
+                    1. 遊び方モード（切替で新規開始）
                   </p>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {INNING_OPTIONS.map((inn) => {
-                      const active = totalInnings === inn;
+                  <div className="grid grid-cols-3 gap-2">
+                    {MODE_OPTIONS.map((opt) => {
+                      const Icon = opt.icon;
+                      const active = mode === opt.id;
                       return (
                         <button
-                          key={inn}
+                          key={opt.id}
                           type="button"
                           onClick={() => {
-                            setTotalInnings(inn);
-                            startNewGame({ nextInnings: inn });
+                            setMode(opt.id);
+                            startNewGame({ nextMode: opt.id });
                           }}
-                          className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                          className={`p-2.5 rounded-2xl border text-left transition-all active:scale-96 cursor-pointer ${
                             active
-                              ? "bg-[#0f172a] text-white border-primary"
-                              : "bg-card text-foreground border-border hover:bg-muted"
+                              ? "bg-primary/10 border-primary text-foreground ring-1 ring-primary/30"
+                              : "bg-card border-border text-foreground hover:bg-muted"
                           }`}
                         >
-                          {inn}回制
+                          <Icon
+                            className={`w-4 h-4 mb-1 ${
+                              active ? "text-primary" : "text-muted-foreground"
+                            }`}
+                          />
+                          <p className="text-[11px] font-black leading-tight">
+                            {opt.label}
+                          </p>
+                          <p className="text-[9.5px] font-bold text-muted-foreground mt-0.5 leading-snug">
+                            {opt.shortDesc}
+                          </p>
                         </button>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* CPU強さ */}
-                {mode === "cpu" && (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] font-black text-foreground">
-                      3. CPUの強さ
-                    </p>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {DIFFICULTY_OPTIONS.map((diff) => {
-                        const active = difficulty === diff.id;
-                        return (
-                          <button
-                            key={diff.id}
-                            type="button"
-                            onClick={() => {
-                              setDifficulty(diff.id);
-                              startNewGame({ nextDifficulty: diff.id });
-                            }}
-                            className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
-                              active
-                                ? "bg-[#0f172a] text-white border-primary"
-                                : "bg-card text-foreground border-border hover:bg-muted"
-                            }`}
-                          >
-                            {diff.label}
-                          </button>
-                        );
-                      })}
+                {mode !== "derby" && (
+                  <>
+                    {/* 2. イニング数 */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-black text-foreground">
+                        2. 規定イニング数
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {INNING_OPTIONS.map((inn) => {
+                          const active = totalInnings === inn;
+                          return (
+                            <button
+                              key={inn}
+                              type="button"
+                              onClick={() => {
+                                setTotalInnings(inn);
+                                startNewGame({ nextInnings: inn });
+                              }}
+                              className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                active
+                                  ? "bg-[#0f172a] text-white border-primary"
+                                  : "bg-card text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              {inn}回制
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
+
+                    {/* 3. CPU強さ */}
+                    {mode === "cpu" && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-black text-foreground">
+                          3. CPUの強さ
+                        </p>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {DIFFICULTY_OPTIONS.map((diff) => {
+                            const active = difficulty === diff.id;
+                            return (
+                              <button
+                                key={diff.id}
+                                type="button"
+                                onClick={() => {
+                                  setDifficulty(diff.id);
+                                  startNewGame({ nextDifficulty: diff.id });
+                                }}
+                                className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                  active
+                                    ? "bg-[#0f172a] text-white border-primary"
+                                    : "bg-card text-foreground border-border hover:bg-muted"
+                                }`}
+                              >
+                                {diff.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* 出場メンバー表示 */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-black text-foreground">
+                    出場メンバー表示
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseTeamRoster(true);
+                        startNewGame({ nextUseRoster: true });
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
+                        useTeamRoster
+                          ? "bg-[#0f172a] text-white border-primary"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      }`}
+                    >
+                      <p className="text-xs font-black">🧢 チーム選手で遊ぶ</p>
+                      <p
+                        className={`text-[10px] font-bold mt-0.5 ${
+                          useTeamRoster
+                            ? "text-slate-300"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {activeRosterCount > 0
+                          ? `名鑑（${activeRosterCount}名）から自動編成`
+                          : "未登録時は標準打順を使用"}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUseTeamRoster(false);
+                        startNewGame({ nextUseRoster: false });
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
+                        !useTeamRoster
+                          ? "bg-[#0f172a] text-white border-primary"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      }`}
+                    >
+                      <p className="text-xs font-black">⚾ 標準メンバーで遊ぶ</p>
+                      <p
+                        className={`text-[10px] font-bold mt-0.5 ${
+                          !useTeamRoster
+                            ? "text-slate-300"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        1番〜9番の汎用ポジション名
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 安全保護の注記 */}
+                <div className="p-3 rounded-xl bg-muted border border-border flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <p className="text-[10.5px] font-bold text-muted-foreground leading-relaxed">
+                    この野球盤のスコア・打撃結果は端末内のお楽しみ専用です。公式の「試合・スコア」「チーム成績」「個人成長レポート」には一切影響しません。
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card grid grid-cols-2 gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    startNewGame();
+                    setIsSettingsOpen(false);
+                    toast.success("新しい試合を開始しました！");
+                  }}
+                  className="h-11 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>最初からやり直す</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsOpen(false)}
+                  className="h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs cursor-pointer"
+                >
+                  設定を閉じて遊ぶ
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          🏆 出場打順・本日の打撃成績 ＆ マイ戦績レコードモーダル（createPortal & z-[9999]）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      {isBoxScoreOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60">
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsBoxScoreOpen(false)}
+            />
+            <div className="relative z-10 w-full max-w-md max-h-[88dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden">
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3.5 flex items-center justify-between shrink-0">
+                <span className="text-sm font-black flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  <span>打順成績・マイ野球盤レコード</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsBoxScoreOpen(false)}
+                  className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* モーダル内2タブ */}
+              <div className="px-4 pt-3 pb-2 bg-card border-b border-border shrink-0">
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setStatsModalTab("match")}
+                    className={`py-1.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer ${
+                      statsModalTab === "match"
+                        ? "bg-card text-foreground border border-border shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <ListOrdered className="w-3.5 h-3.5 text-primary" />
+                    <span>この試合の打順</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatsModalTab("records")}
+                    className={`py-1.5 rounded-lg text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer ${
+                      statsModalTab === "records"
+                        ? "bg-card text-foreground border border-border shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                    <span>マイ通算レコード</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-4 overflow-y-auto">
+                {statsModalTab === "match" ? (
+                  <>
+                    {[
+                      {
+                        title: matchState.homeTeamName,
+                        lineup: matchState.homeLineup,
+                        activeIdx:
+                          !matchState.isTop || matchState.mode === "derby"
+                            ? matchState.homeBatterIdx
+                            : -1,
+                      },
+                      ...(matchState.mode !== "derby"
+                        ? [
+                            {
+                              title: matchState.awayTeamName,
+                              lineup: matchState.awayLineup,
+                              activeIdx: matchState.isTop
+                                ? matchState.awayBatterIdx
+                                : -1,
+                            },
+                          ]
+                        : []),
+                    ].map((side) => (
+                      <div
+                        key={side.title}
+                        className="rounded-xl border border-border overflow-hidden"
+                      >
+                        <div className="px-3 py-2 bg-muted border-b border-border text-xs font-black text-foreground">
+                          {side.title}
+                        </div>
+                        <table className="w-full text-xs border-collapse tabular-nums">
+                          <thead>
+                            <tr className="border-b border-border text-[10px] font-bold text-muted-foreground bg-card">
+                              <th className="py-1.5 px-2 text-left">
+                                打順・選手
+                              </th>
+                              <th className="py-1.5 px-1.5 text-center">打数</th>
+                              <th className="py-1.5 px-1.5 text-center">安打</th>
+                              <th className="py-1.5 px-1.5 text-center">
+                                本塁打
+                              </th>
+                              <th className="py-1.5 px-1.5 text-center">打点</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border bg-card">
+                            {side.lineup.map((p, idx) => (
+                              <tr
+                                key={p.id}
+                                className={
+                                  side.activeIdx === idx ? "bg-primary/8" : ""
+                                }
+                              >
+                                <td className="py-1.5 px-2 font-black text-foreground truncate max-w-[175px]">
+                                  <span className="text-muted-foreground mr-1">
+                                    {idx + 1}.
+                                  </span>
+                                  <span className="text-primary mr-1">
+                                    #{p.uniformNumber}
+                                  </span>
+                                  <span>{p.name}</span>
+                                </td>
+                                <td className="py-1.5 px-1.5 text-center font-bold">
+                                  {p.atBats}
+                                </td>
+                                <td className="py-1.5 px-1.5 text-center font-black text-primary">
+                                  {p.hits}
+                                </td>
+                                <td className="py-1.5 px-1.5 text-center font-black text-amber-600 dark:text-amber-400">
+                                  {p.homeRuns}
+                                </td>
+                                <td className="py-1.5 px-1.5 text-center font-bold">
+                                  {p.rbi}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="p-3 rounded-xl bg-muted border border-border text-center">
+                        <p className="text-[10px] font-bold text-muted-foreground">
+                          通算勝敗
+                        </p>
+                        <p className="text-sm font-black text-foreground tabular-nums mt-0.5">
+                          {localStats.wins}勝 {localStats.losses}敗{" "}
+                          {localStats.draws > 0 ? `${localStats.draws}分` : ""}
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted border border-border text-center">
+                        <p className="text-[10px] font-bold text-muted-foreground">
+                          通算ホームラン
+                        </p>
+                        <p className="text-sm font-black text-primary tabular-nums mt-0.5">
+                          {localStats.totalHomeRuns} 本
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted border border-border text-center">
+                        <p className="text-[10px] font-bold text-muted-foreground">
+                          1試合最多得点
+                        </p>
+                        <p className="text-sm font-black text-foreground tabular-nums mt-0.5">
+                          {localStats.bestSingleGameRuns} 点
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-muted border border-border text-center">
+                        <p className="text-[10px] font-bold text-muted-foreground">
+                          HR競争ハイスコア
+                        </p>
+                        <p className="text-sm font-black text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">
+                          {localStats.derbyHighScore} pt (
+                          {localStats.derbyBestHr}本)
+                        </p>
+                      </div>
+                    </div>
+
+                    {(localStats.gamesPlayed > 0 ||
+                      localStats.derbyHighScore > 0) && (
+                      <button
+                        type="button"
+                        onClick={() => setIsConfirmResetStatsOpen(true)}
+                        className="w-full h-10 rounded-xl bg-card hover:bg-muted border border-border text-muted-foreground hover:text-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>この端末のマイ戦績をリセット</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-            )}
 
-            {/* 出場打順の名鑑選手連動トグル */}
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-black text-foreground">
-                出場メンバー表示
-              </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card grid grid-cols-3 gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    setUseTeamRoster(true);
-                    startNewGame({ nextUseRoster: true });
-                  }}
-                  className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
-                    useTeamRoster
-                      ? "bg-[#0f172a] text-white border-primary"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  }`}
+                  onClick={() => void handleCopyResultText()}
+                  className="h-10 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
                 >
-                  <p className="text-xs font-black">
-                    🧢 チーム選手で遊ぶ
-                  </p>
-                  <p
-                    className={`text-[10px] font-bold mt-0.5 ${
-                      useTeamRoster ? "text-slate-300" : "text-muted-foreground"
-                    }`}
-                  >
-                    {activeRosterCount > 0
-                      ? `選手名鑑（${activeRosterCount}名）から自動編成`
-                      : "未登録時は標準打順を使用"}
-                  </p>
+                  <Copy className="w-3.5 h-3.5 text-primary" />
+                  <span>コピー</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setUseTeamRoster(false);
-                    startNewGame({ nextUseRoster: false });
-                  }}
-                  className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
-                    !useTeamRoster
-                      ? "bg-[#0f172a] text-white border-primary"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  }`}
+                  onClick={() => void handleShareResultLine()}
+                  className="h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center justify-center gap-1 cursor-pointer"
                 >
-                  <p className="text-xs font-black">⚾ 標準メンバーで遊ぶ</p>
-                  <p
-                    className={`text-[10px] font-bold mt-0.5 ${
-                      !useTeamRoster ? "text-slate-300" : "text-muted-foreground"
-                    }`}
-                  >
-                    1番〜9番の汎用ポジション名
-                  </p>
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>LINE共有</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBoxScoreOpen(false)}
+                  className="h-10 rounded-xl bg-primary text-primary-foreground font-black text-xs cursor-pointer"
+                >
+                  閉じる
                 </button>
               </div>
             </div>
-
-            {/* 安全保護の注記 */}
-            <div className="p-3 rounded-xl bg-muted border border-border flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <p className="text-[10.5px] font-bold text-muted-foreground leading-relaxed">
-                この野球盤ゲームのスコアや打撃成績は端末内のお楽しみ専用です。チームの公式「試合・スコア」や「チーム成績」「個人成長レポート」のデータには一切影響しませんので安心して遊べます。
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🏆 マイ戦績＆ハイスコア（端末ローカル保存・チーム別分離）
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-        <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-2.5 flex items-center justify-between">
-            <span className="text-xs font-black flex items-center gap-1.5">
-              <Trophy className="w-4 h-4 text-amber-400" />
-              <span>マイ野球盤レコード（この端末の記録）</span>
-            </span>
-            {localStats.gamesPlayed > 0 || localStats.derbyHighScore > 0 ? (
-              <button
-                type="button"
-                onClick={() => setIsConfirmResetStatsOpen(true)}
-                className="text-[10px] font-bold text-slate-300 hover:text-white flex items-center gap-1 cursor-pointer"
-              >
-                <Trash2 className="w-3 h-3" />
-                <span>記録クリア</span>
-              </button>
-            ) : null}
-          </div>
-
-          <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="p-2.5 rounded-xl bg-muted border border-border text-center">
-              <p className="text-[10px] font-bold text-muted-foreground">
-                通算勝敗
-              </p>
-              <p className="text-sm font-black text-foreground tabular-nums mt-0.5">
-                {localStats.wins}勝 {localStats.losses}敗{" "}
-                {localStats.draws > 0 ? `${localStats.draws}分` : ""}
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-muted border border-border text-center">
-              <p className="text-[10px] font-bold text-muted-foreground">
-                通算ホームラン
-              </p>
-              <p className="text-sm font-black text-primary tabular-nums mt-0.5">
-                {localStats.totalHomeRuns} 本
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-muted border border-border text-center">
-              <p className="text-[10px] font-bold text-muted-foreground">
-                1試合最多得点
-              </p>
-              <p className="text-sm font-black text-foreground tabular-nums mt-0.5">
-                {localStats.bestSingleGameRuns} 点
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-muted border border-border text-center">
-              <p className="text-[10px] font-bold text-muted-foreground">
-                HR競争ハイスコア
-              </p>
-              <p className="text-sm font-black text-amber-600 dark:text-amber-400 tabular-nums mt-0.5">
-                {localStats.derbyHighScore} pt ({localStats.derbyBestHr}本)
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <div
-          className="h-8 w-full shrink-0 pointer-events-none select-none"
-          aria-hidden="true"
-        />
-      </div>
+          </div>,
+          document.body
+        )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           📖 遊び方＆野球盤ルールガイドモーダル（createPortal & z-[9999]）
@@ -1582,10 +1779,10 @@ export default function LiffBaseballBoardPage() {
 
                 <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
                   <p className="font-black text-foreground">
-                    4. 2P 1台対戦（スマホ1台で交互プレイ）
+                    4. モード切替・出場選手変更
                   </p>
                   <p className="text-muted-foreground font-bold">
-                    まず投手側がコースと球種をタップしてロック（画面上では球種が隠れます）し、打者側へスマホを渡して投球スタート＆スイングで対戦できます！移動中や雨天待機中にもおすすめです。
+                    右上の「設定」ボタンから、1P vs CPU・2P 1台交互対戦・10球ホームラン競争の切り替えや、チーム登録選手／標準メンバーの切り替えが行えます。
                   </p>
                 </div>
               </div>
@@ -1605,128 +1802,12 @@ export default function LiffBaseballBoardPage() {
         )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📋 出場メンバー・本日の打撃成績モーダル（createPortal & z-[9999]）
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isBoxScoreOpen &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60">
-            <div
-              className="absolute inset-0"
-              onClick={() => setIsBoxScoreOpen(false)}
-            />
-            <div className="relative z-10 w-full max-w-md max-h-[88dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden">
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3.5 flex items-center justify-between shrink-0">
-                <span className="text-sm font-black flex items-center gap-2">
-                  <ListOrdered className="w-4 h-4 text-blue-300" />
-                  <span>出場打順・この試合の打撃成績</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsBoxScoreOpen(false)}
-                  className="p-1 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-4 space-y-4 overflow-y-auto">
-                {[
-                  {
-                    title: matchState.homeTeamName,
-                    lineup: matchState.homeLineup,
-                    activeIdx:
-                      !matchState.isTop || matchState.mode === "derby"
-                        ? matchState.homeBatterIdx
-                        : -1,
-                  },
-                  ...(matchState.mode !== "derby"
-                    ? [
-                        {
-                          title: matchState.awayTeamName,
-                          lineup: matchState.awayLineup,
-                          activeIdx: matchState.isTop
-                            ? matchState.awayBatterIdx
-                            : -1,
-                        },
-                      ]
-                    : []),
-                ].map((side) => (
-                  <div
-                    key={side.title}
-                    className="rounded-xl border border-border overflow-hidden"
-                  >
-                    <div className="px-3 py-2 bg-muted border-b border-border text-xs font-black text-foreground">
-                      {side.title}
-                    </div>
-                    <table className="w-full text-xs border-collapse tabular-nums">
-                      <thead>
-                        <tr className="border-b border-border text-[10px] font-bold text-muted-foreground bg-card">
-                          <th className="py-1.5 px-2 text-left">打順・選手</th>
-                          <th className="py-1.5 px-1.5 text-center">打数</th>
-                          <th className="py-1.5 px-1.5 text-center">安打</th>
-                          <th className="py-1.5 px-1.5 text-center">本塁打</th>
-                          <th className="py-1.5 px-1.5 text-center">打点</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border bg-card">
-                        {side.lineup.map((p, idx) => (
-                          <tr
-                            key={p.id}
-                            className={
-                              side.activeIdx === idx ? "bg-primary/8" : ""
-                            }
-                          >
-                            <td className="py-1.5 px-2 font-black text-foreground truncate max-w-[175px]">
-                              <span className="text-muted-foreground mr-1">
-                                {idx + 1}.
-                              </span>
-                              <span className="text-primary mr-1">
-                                #{p.uniformNumber}
-                              </span>
-                              <span>{p.name}</span>
-                            </td>
-                            <td className="py-1.5 px-1.5 text-center font-bold">
-                              {p.atBats}
-                            </td>
-                            <td className="py-1.5 px-1.5 text-center font-black text-primary">
-                              {p.hits}
-                            </td>
-                            <td className="py-1.5 px-1.5 text-center font-black text-amber-600 dark:text-amber-400">
-                              {p.homeRuns}
-                            </td>
-                            <td className="py-1.5 px-1.5 text-center font-bold">
-                              {p.rbi}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </div>
-
-              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsBoxScoreOpen(false)}
-                  className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs cursor-pointer"
-                >
-                  閉じる
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
-      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          🗑️ 戦績リセット確認モーダル（createPortal & z-[9999]）
+          🗑️ 戦績リセット確認モーダル（createPortal & z-[10010]）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isConfirmResetStatsOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60">
+          <div className="fixed inset-0 z-[10010] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60">
             <div
               className="absolute inset-0"
               onClick={() => setIsConfirmResetStatsOpen(false)}

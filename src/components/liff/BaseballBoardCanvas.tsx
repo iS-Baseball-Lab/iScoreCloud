@@ -2,6 +2,7 @@
 "use client";
 
 import React, {
+  useState,
   useEffect,
   useRef,
   useImperativeHandle,
@@ -1375,6 +1376,42 @@ export const BaseballBoardCanvas = forwardRef<
     drawBoard();
   }, [bases, outs, strikes, batterBats, stance, bannerText, bannerTone, drawBoard]);
 
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [fitSize, setFitSize] = useState<{ w: number; h: number } | null>(null);
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+
+    const updateFit = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const maxW = Math.min(rect.width, 460);
+      const maxH = rect.height;
+      const scale = Math.min(maxW / BOARD_WIDTH, maxH / BOARD_HEIGHT);
+      const nextW = Math.max(180, Math.floor(BOARD_WIDTH * scale));
+      const nextH = Math.max(194, Math.floor(BOARD_HEIGHT * scale));
+      setFitSize((prev) =>
+        prev && prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }
+      );
+    };
+
+    updateFit();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => {
+        updateFit();
+      });
+      ro.observe(el);
+      return () => {
+        ro.disconnect();
+      };
+    }
+    window.addEventListener("resize", updateFit);
+    return () => {
+      window.removeEventListener("resize", updateFit);
+    };
+  }, []);
+
   useEffect(() => {
     return () => {
       stopLoop();
@@ -1395,12 +1432,20 @@ export const BaseballBoardCanvas = forwardRef<
   };
 
   return (
-    <div className="w-full flex justify-center select-none">
+    <div
+      ref={stageRef}
+      className="w-full h-full min-h-0 flex items-center justify-center select-none overflow-hidden"
+    >
       <canvas
         ref={canvasRef}
         id="baseball-board-canvas"
         onPointerDown={handleCanvasPointerDown}
-        className="w-full max-w-[410px] aspect-[400/432] rounded-2xl border-2 border-[#0f172a] shadow-sm touch-manipulation cursor-pointer block bg-[#0f172a]"
+        style={
+          fitSize
+            ? { width: `${fitSize.w}px`, height: `${fitSize.h}px` }
+            : { maxWidth: "100%", maxHeight: "100%", aspectRatio: "400 / 432" }
+        }
+        className="rounded-2xl border-2 border-[#0f172a] shadow-sm touch-manipulation cursor-pointer block bg-[#0f172a] shrink-0"
         aria-label="野球盤ゲーム盤面"
       />
     </div>
