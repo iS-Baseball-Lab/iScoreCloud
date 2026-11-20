@@ -1596,63 +1596,63 @@ export default function LiffBaseballBoardPage() {
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           ① 上部固定：コンパクトナビ ＆ 電光スコアボード（A-3 Dark Cap）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <header className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary pt-[max(env(safe-area-inset-top),8px)] px-2.5 pb-2 space-y-1.5">
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1 min-w-0">
+      <header className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary pt-[max(env(safe-area-inset-top),8px)] px-3 pb-2 space-y-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
             <button
               type="button"
               id="btn-baseball-board-back"
               onClick={handleBackClick}
-              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
+              className="h-8 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
               aria-label="前の画面へ戻る"
             >
               <ChevronLeft className="w-4 h-4 -ml-0.5" />
               <span>戻る</span>
             </button>
 
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="hidden min-[380px]:inline text-xs font-black text-white truncate">
-                野球盤
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black shrink-0">
-                {mode === "online" && onlineRoom?.status === "waiting"
-                  ? "相手待ち"
-                  : matchState.isGameOver
-                  ? "試合終了"
-                  : matchState.mode === "derby"
-                  ? `${matchState.derbyPitchNumber}/${DERBY_TOTAL_PITCHES}球`
-                  : `${
-                      matchState.inning > matchState.totalInnings ? "延" : ""
-                    }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
-              </span>
-              {!matchState.isGameOver &&
-                (matchState.mode === "cpu" ||
-                  (mode === "online" && onlineRoom?.status === "playing")) && (
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
-                      mode === "online" && onlineRoom?.myRole === "spectator"
-                        ? "bg-slate-700 text-slate-200"
-                        : isHumanBatterTurn
-                        ? "bg-[#dc2626] text-white"
-                        : "bg-sky-600 text-white"
-                    }`}
-                  >
-                    {mode === "online" && onlineRoom?.myRole === "spectator"
-                      ? "観戦"
+            <span className="text-xs font-black text-white whitespace-nowrap shrink-0">
+              野球盤
+            </span>
+
+            <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black shrink-0">
+              {mode === "online" && onlineRoom?.status === "waiting"
+                ? "相手待ち"
+                : matchState.isGameOver
+                ? "試合終了"
+                : matchState.mode === "derby"
+                ? `${matchState.derbyPitchNumber}/${DERBY_TOTAL_PITCHES}球`
+                : `${
+                    matchState.inning > matchState.totalInnings ? "延" : ""
+                  }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
+            </span>
+
+            {!matchState.isGameOver &&
+              (matchState.mode === "cpu" ||
+                (mode === "online" && onlineRoom?.status === "playing")) && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
+                    mode === "online" && onlineRoom?.myRole === "spectator"
+                      ? "bg-slate-700 text-slate-200"
                       : isHumanBatterTurn
-                      ? "攻撃"
-                      : "守備"}
-                  </span>
-                )}
-            </div>
+                      ? "bg-[#dc2626] text-white"
+                      : "bg-sky-600 text-white"
+                  }`}
+                >
+                  {mode === "online" && onlineRoom?.myRole === "spectator"
+                    ? "観戦"
+                    : isHumanBatterTurn
+                    ? "攻撃"
+                    : "守備"}
+                </span>
+              )}
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               id="btn-baseball-board-online"
               onClick={handleOpenOnlineLobby}
-              className={`h-8 px-2 rounded-xl border text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer ${
+              className={`h-8 px-2.5 rounded-xl border text-xs font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer ${
                 mode === "online"
                   ? "bg-primary border-primary text-primary-foreground"
                   : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-300"
@@ -1667,78 +1667,25 @@ export default function LiffBaseballBoardPage() {
               type="button"
               id="btn-baseball-board-settings"
               onClick={() => setIsSettingsOpen(true)}
-              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+              className="h-8 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+              title="メニュー・試合設定・成績・遊び方"
             >
               <Settings2 className="w-3.5 h-3.5 text-blue-300" />
-              <span>設定</span>
-            </button>
-
-            <button
-              type="button"
-              id="btn-baseball-board-records"
-              onClick={() => {
-                setStatsModalTab("match");
-                setIsBoxScoreOpen(true);
-              }}
-              className="h-8 w-8 sm:w-auto sm:px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
-              aria-label="打順成績・マイ戦績"
-              title="打順成績・マイ戦績"
-            >
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">成績</span>
-            </button>
-
-            <button
-              type="button"
-              id="btn-baseball-board-sound"
-              onClick={handleToggleSound}
-              className={`w-8 h-8 rounded-xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
-                soundEnabled
-                  ? "bg-slate-800 border-slate-700 text-blue-300 hover:bg-slate-700"
-                  : "bg-slate-900 border-slate-800 text-slate-500"
-              }`}
-              aria-label={soundEnabled ? "効果音ON" : "効果音OFF"}
-              title={soundEnabled ? "効果音ON" : "消音中"}
-            >
-              {soundEnabled ? (
-                <Volume2 className="w-4 h-4" />
-              ) : (
-                <VolumeX className="w-4 h-4" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              id="btn-baseball-board-guide"
-              onClick={() => setIsGuideOpen(true)}
-              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
-              aria-label="遊び方ガイド"
-              title="遊び方ガイド"
-            >
-              <HelpCircle className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              id="btn-baseball-board-share-page"
-              disabled={isPageSharing}
-              onClick={() => void handleSharePage()}
-              className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[#06C755] flex items-center justify-center active:scale-95 transition-all cursor-pointer disabled:opacity-60"
-              aria-label="LINEで共有"
-              title="LINEでページを共有"
-            >
-              {isPageSharing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Share2 className="w-3.5 h-3.5" />
-              )}
+              <span>メニュー</span>
             </button>
           </div>
         </div>
 
-        {/* 電光スコアボード */}
+        {/* 電光スコアボード（タップで打順成績・マイレコードを表示） */}
         {matchState.mode === "derby" ? (
-          <div className="grid grid-cols-3 gap-1.5">
+          <div
+            onClick={() => {
+              setStatsModalTab("records");
+              setIsBoxScoreOpen(true);
+            }}
+            title="タップでマイ戦績レコードを表示"
+            className="grid grid-cols-3 gap-1.5 cursor-pointer"
+          >
             <div className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400">球数</span>
               <span className="text-xs font-black text-white tabular-nums">
@@ -1760,7 +1707,14 @@ export default function LiffBaseballBoardPage() {
           </div>
         ) : (
           <div className="flex items-stretch gap-1.5">
-            <div className="flex-1 min-w-0 rounded-xl bg-slate-900 border border-slate-800 overflow-x-auto">
+            <div
+              onClick={() => {
+                setStatsModalTab("match");
+                setIsBoxScoreOpen(true);
+              }}
+              title="タップでこの試合の打順成績・マイレコードを表示"
+              className="flex-1 min-w-0 rounded-xl bg-slate-900 hover:bg-slate-900/90 border border-slate-800 hover:border-slate-700 overflow-x-auto cursor-pointer transition-colors"
+            >
               <table className="w-full text-center border-collapse text-[10.5px] tabular-nums">
                 <thead>
                   <tr className="border-b border-slate-800 text-[9px] font-bold text-slate-400">
@@ -1790,7 +1744,7 @@ export default function LiffBaseballBoardPage() {
                         : ""
                     }`}
                   >
-                    <td className="py-0.5 px-1.5 text-left truncate max-w-[84px] text-[10px] text-slate-100">
+                    <td className="py-0.5 px-1.5 text-left truncate max-w-[92px] text-[10px] text-slate-100">
                       {matchState.isTop && !matchState.isGameOver && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
                       )}
@@ -1824,7 +1778,7 @@ export default function LiffBaseballBoardPage() {
                         : ""
                     }
                   >
-                    <td className="py-0.5 px-1.5 text-left truncate max-w-[84px] text-[10px] text-slate-100">
+                    <td className="py-0.5 px-1.5 text-left truncate max-w-[92px] text-[10px] text-slate-100">
                       {!matchState.isTop && !matchState.isGameOver && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 align-middle" />
                       )}
@@ -1939,7 +1893,7 @@ export default function LiffBaseballBoardPage() {
       </header>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ② 打者＆実況スリムバー（h-[46px] 完全固定で攻守交代時の縦ズレを防止）
+          ② 打者＆実況スリムバー（h-[46px] 完全固定・余計なボタンを排除して実況を広く表示！）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className="shrink-0 h-[46px] px-3 bg-card border-b border-border flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -1964,77 +1918,48 @@ export default function LiffBaseballBoardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {mode === "online" ? (
-            <>
-              {onlineRoom && (
-                <span
-                  className={`h-7 px-2 rounded-full border text-[10px] font-black flex items-center gap-1 max-w-[116px] truncate ${
-                    onlineRoom.status === "waiting"
-                      ? "bg-muted text-muted-foreground border-border"
-                      : onlineRoom.opponentOnline
-                      ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
-                      : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
-                  }`}
-                  title="オンライン接続ステータス"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      onlineRoom.status === "waiting"
-                        ? "bg-slate-400"
-                        : onlineRoom.opponentOnline
-                        ? "bg-[#22c55e]"
-                        : "bg-[#f59e0b]"
-                    }`}
-                  />
-                  <span className="truncate">
-                    {onlineRoom.status === "waiting"
-                      ? `#${onlineRoom.roomCode} 募集`
-                      : onlineRoom.opponentName || `#${onlineRoom.roomCode}`}
-                  </span>
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={handleOpenOnlineLobby}
-                className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-              >
-                <Wifi className="w-3 h-3 text-primary" />
-                <span>部屋</span>
-              </button>
-            </>
-          ) : (
-            <>
-              {isHumanBatterTurn &&
-                matchState.mode !== "versus" &&
-                !matchState.isGameOver && (
-                  <button
-                    type="button"
-                    id="btn-baseball-board-autopitch"
-                    onClick={() => setAutoPitchEnabled((prev) => !prev)}
-                    className={`h-7 px-2 rounded-full border text-[10px] font-black transition-all cursor-pointer ${
-                      autoPitchEnabled
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
-                    }`}
-                  >
-                    自動投球 {autoPitchEnabled ? "ON" : "OFF"}
-                  </button>
-                )}
-
-              <button
-                type="button"
-                id="btn-baseball-board-restart"
-                onClick={() => startNewGame()}
-                className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-                title="最初からやり直す"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>最初</span>
-              </button>
-            </>
-          )}
-        </div>
+        {mode === "online" && onlineRoom ? (
+          <button
+            type="button"
+            onClick={handleOpenOnlineLobby}
+            className={`h-7 px-2.5 rounded-full border text-[10px] font-black flex items-center gap-1.5 max-w-[128px] shrink-0 active:scale-95 transition-all cursor-pointer ${
+              onlineRoom.status === "waiting"
+                ? "bg-muted text-muted-foreground border-border"
+                : onlineRoom.opponentOnline
+                ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
+                : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+            }`}
+            title="オンラインルーム情報"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                onlineRoom.status === "waiting"
+                  ? "bg-slate-400"
+                  : onlineRoom.opponentOnline
+                  ? "bg-[#22c55e]"
+                  : "bg-[#f59e0b]"
+              }`}
+            />
+            <span className="truncate">
+              {onlineRoom.status === "waiting"
+                ? `#${onlineRoom.roomCode} 待機中`
+                : onlineRoom.opponentName || `#${onlineRoom.roomCode}`}
+            </span>
+          </button>
+        ) : autoPitchEnabled &&
+          isHumanBatterTurn &&
+          matchState.mode !== "versus" &&
+          !matchState.isGameOver ? (
+          <button
+            type="button"
+            id="btn-baseball-board-autopitch"
+            onClick={() => setAutoPitchEnabled(false)}
+            className="h-6 px-2 rounded-full bg-primary text-primary-foreground text-[9.5px] font-black shrink-0 active:scale-95 transition-all cursor-pointer"
+            title="タップで自動投球をOFFにする"
+          >
+            自動投球 ON
+          </button>
+        ) : null}
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2419,7 +2344,7 @@ export default function LiffBaseballBoardPage() {
       </footer>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ⚙️ ゲームモード・試合設定モーダル（createPortal & z-[9999]）
+          ⚙️ ゲームメニュー・試合設定モーダル（createPortal & z-[9999]）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       {isSettingsOpen &&
         typeof document !== "undefined" &&
@@ -2433,7 +2358,7 @@ export default function LiffBaseballBoardPage() {
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3.5 flex items-center justify-between shrink-0">
                 <span className="text-sm font-black flex items-center gap-2">
                   <Gamepad2 className="w-4 h-4 text-blue-300" />
-                  <span>ゲームモード・試合設定</span>
+                  <span>ゲームメニュー・試合設定</span>
                 </span>
                 <button
                   type="button"
@@ -2445,6 +2370,93 @@ export default function LiffBaseballBoardPage() {
               </div>
 
               <div className="p-4 space-y-4 overflow-y-auto">
+                {/* クイックメニュー（成績・効果音・遊び方・LINE共有をここにスッキリ集約） */}
+                <div className="grid grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    id="btn-baseball-board-records"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      setStatsModalTab("match");
+                      setIsBoxScoreOpen(true);
+                    }}
+                    className="p-2.5 rounded-2xl border border-border bg-muted/60 hover:bg-muted flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Trophy className="w-4 h-4 text-amber-500" />
+                    <span className="text-[11px] font-black text-foreground leading-none">
+                      成績
+                    </span>
+                    <span className="text-[9px] font-bold text-muted-foreground leading-none">
+                      打順・記録
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-baseball-board-sound"
+                    onClick={handleToggleSound}
+                    className={`p-2.5 rounded-2xl border flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                      soundEnabled
+                        ? "bg-[#0f172a] text-white border-primary"
+                        : "bg-muted/60 text-muted-foreground border-border hover:bg-muted"
+                    }`}
+                  >
+                    {soundEnabled ? (
+                      <Volume2 className="w-4 h-4 text-sky-300" />
+                    ) : (
+                      <VolumeX className="w-4 h-4 text-slate-400" />
+                    )}
+                    <span className="text-[11px] font-black leading-none">
+                      効果音
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold leading-none ${
+                        soundEnabled ? "text-sky-300" : "text-muted-foreground"
+                      }`}
+                    >
+                      {soundEnabled ? "ON" : "消音"}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-baseball-board-guide"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      setIsGuideOpen(true);
+                    }}
+                    className="p-2.5 rounded-2xl border border-border bg-muted/60 hover:bg-muted flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <HelpCircle className="w-4 h-4 text-primary" />
+                    <span className="text-[11px] font-black text-foreground leading-none">
+                      遊び方
+                    </span>
+                    <span className="text-[9px] font-bold text-muted-foreground leading-none">
+                      ルール説明
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-baseball-board-share-page"
+                    disabled={isPageSharing}
+                    onClick={() => void handleSharePage()}
+                    className="p-2.5 rounded-2xl border border-[#06C755] bg-[#06C755] hover:bg-[#05b34c] text-white flex flex-col items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                  >
+                    {isPageSharing ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Share2 className="w-4 h-4" />
+                    )}
+                    <span className="text-[11px] font-black leading-none">
+                      LINE共有
+                    </span>
+                    <span className="text-[9px] font-bold text-white/90 leading-none">
+                      仲間を誘う
+                    </span>
+                  </button>
+                </div>
+
                 {/* 1. 遊び方モード */}
                 <div className="space-y-1.5">
                   <p className="text-xs font-black text-foreground">
@@ -2592,62 +2604,89 @@ export default function LiffBaseballBoardPage() {
                   </>
                 )}
 
-                {/* 出場メンバー表示 */}
-                <div className="space-y-1.5">
-                  <p className="text-xs font-black text-foreground">
-                    出場メンバー表示
-                  </p>
-                  <div className="grid grid-cols-2 gap-2">
+                {/* 自動投球オプション（1P vs CPU / HR競争時） */}
+                {(mode === "cpu" || mode === "derby") && (
+                  <div className="p-3 rounded-xl border border-border bg-muted/40 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-foreground">
+                        自動投球モード（打撃時）
+                      </p>
+                      <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
+                        左下の「投球」ボタンを押さずに自動で次球を投げます
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setUseTeamRoster(true);
-                        startNewGame({ nextUseRoster: true });
-                      }}
-                      className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
-                        useTeamRoster
-                          ? "bg-[#0f172a] text-white border-primary"
-                          : "bg-card text-foreground border-border hover:bg-muted"
+                      onClick={() => setAutoPitchEnabled((prev) => !prev)}
+                      className={`h-8 px-3 rounded-xl border text-xs font-black shrink-0 active:scale-95 transition-all cursor-pointer ${
+                        autoPitchEnabled
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-card text-muted-foreground border-border hover:text-foreground"
                       }`}
                     >
-                      <p className="text-xs font-black">🧢 チーム選手で遊ぶ</p>
-                      <p
-                        className={`text-[10px] font-bold mt-0.5 ${
-                          useTeamRoster
-                            ? "text-slate-300"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {activeRosterCount > 0
-                          ? `名鑑（${activeRosterCount}名）から自動編成`
-                          : "未登録時は標準打順を使用"}
-                      </p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUseTeamRoster(false);
-                        startNewGame({ nextUseRoster: false });
-                      }}
-                      className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
-                        !useTeamRoster
-                          ? "bg-[#0f172a] text-white border-primary"
-                          : "bg-card text-foreground border-border hover:bg-muted"
-                      }`}
-                    >
-                      <p className="text-xs font-black">⚾ 標準メンバーで遊ぶ</p>
-                      <p
-                        className={`text-[10px] font-bold mt-0.5 ${
-                          !useTeamRoster
-                            ? "text-slate-300"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        1番〜9番の汎用ポジション名
-                      </p>
+                      {autoPitchEnabled ? "ON" : "OFF"}
                     </button>
                   </div>
-                </div>
+                )}
+
+                {mode !== "online" && (
+                  /* 出場メンバー表示 */
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black text-foreground">
+                      出場メンバー表示
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseTeamRoster(true);
+                          startNewGame({ nextUseRoster: true });
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
+                          useTeamRoster
+                            ? "bg-[#0f172a] text-white border-primary"
+                            : "bg-card text-foreground border-border hover:bg-muted"
+                        }`}
+                      >
+                        <p className="text-xs font-black">🧢 チーム選手で遊ぶ</p>
+                        <p
+                          className={`text-[10px] font-bold mt-0.5 ${
+                            useTeamRoster
+                              ? "text-slate-300"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {activeRosterCount > 0
+                            ? `名鑑（${activeRosterCount}名）から自動編成`
+                            : "未登録時は標準打順を使用"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseTeamRoster(false);
+                          startNewGame({ nextUseRoster: false });
+                        }}
+                        className={`p-2.5 rounded-xl border text-left transition-all active:scale-97 cursor-pointer ${
+                          !useTeamRoster
+                            ? "bg-[#0f172a] text-white border-primary"
+                            : "bg-card text-foreground border-border hover:bg-muted"
+                        }`}
+                      >
+                        <p className="text-xs font-black">⚾ 標準メンバーで遊ぶ</p>
+                        <p
+                          className={`text-[10px] font-bold mt-0.5 ${
+                            !useTeamRoster
+                              ? "text-slate-300"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          1番〜9番の汎用ポジション名
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* 安全保護の注記 */}
                 <div className="p-3 rounded-xl bg-muted border border-border flex items-start gap-2">
@@ -2662,21 +2701,34 @@ export default function LiffBaseballBoardPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    if (mode === "online") {
+                      handleOpenOnlineLobby();
+                      return;
+                    }
                     startNewGame();
                     setIsSettingsOpen(false);
                     toast.success("新しい試合を開始しました！");
                   }}
                   className="h-11 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>最初からやり直す</span>
+                  {mode === "online" ? (
+                    <>
+                      <Wifi className="w-3.5 h-3.5 text-primary" />
+                      <span>対戦ロビーを開く</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>最初からやり直す</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsSettingsOpen(false)}
                   className="h-11 rounded-xl bg-primary text-primary-foreground font-black text-xs cursor-pointer"
                 >
-                  設定を閉じて遊ぶ
+                  閉じてゲームに戻る
                 </button>
               </div>
             </div>
