@@ -2,12 +2,14 @@
 import { describe, expect, it } from "vitest";
 import {
   DERBY_TOTAL_PITCHES,
+  HOME_Y,
   MAX_VANISH_PITCHES_PER_GAME,
   applyPlayOutcome,
   buildBaseballBoardShareText,
   buildTeamLineupFromRoster,
   createGenericLineup,
   createInitialMatchState,
+  decideCpuBatterPlan,
   isFairTerritory,
   resolveFencePocketAtAngle,
   resolveLaunchSpeedMetrics,
@@ -226,6 +228,57 @@ describe("baseball-board-engine", () => {
       "看板直撃！特大本塁打！！"
     );
     expect(billboardRes.nextState.derbyPoints).toBe(150);
+  });
+
+  it("distinguishes swinging strikes from called strikes and induces CPU whiffs on speed-differential pitches", () => {
+    let state = createInitialMatchState({
+      mode: "cpu",
+      totalInnings: 3,
+      difficulty: "normal",
+      myTeamName: "テストチーム",
+      myLineup: createGenericLineup("my"),
+    });
+
+    const s1 = applyPlayOutcome(
+      state,
+      "swinging_strike",
+      "振り遅れ！空振りストライク！"
+    );
+    expect(s1.bannerTitle).toContain("空振り STRIKE");
+    expect(s1.nextState.lastCallout).toBe("振り遅れ！空振りストライク！");
+
+    const s2 = applyPlayOutcome(
+      s1.nextState,
+      "called_strike",
+      "見逃しストライク！"
+    );
+    expect(s2.bannerTitle).toContain("見逃し STRIKE");
+
+    const so = applyPlayOutcome(
+      s2.nextState,
+      "swinging_strike",
+      "変化球が外れた！空振りストライク！"
+    );
+    expect(so.bannerTitle).toBe("💨 空振り三振！！");
+    expect(so.outsAdded).toBe(1);
+
+    // 165km直球のあとに75kmチェンジアップ（外角）を投げた際、CPUが空振りスイングを一定確率で発生させる
+    let whiffs = 0;
+    for (let i = 0; i < 60; i++) {
+      const plan = decideCpuBatterPlan({
+        difficulty: "normal",
+        pitch: { type: "changeup", course: "outside", speedPreset: "slow" },
+        currentPitchKmh: 75,
+        prevPitchKmh: 165,
+        strikes: 2,
+        outs: 0,
+        bases: { first: false, second: false, third: false },
+      });
+      if (plan.willSwing && Math.abs(plan.targetHitY - (HOME_Y - 6)) > 21) {
+        whiffs += 1;
+      }
+    }
+    expect(whiffs).toBeGreaterThan(5);
   });
 
   it("places baseball_board right after related_teams in QUICK_MENU_CATALOG", () => {

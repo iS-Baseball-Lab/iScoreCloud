@@ -888,11 +888,13 @@ export function chooseCpuPitch(params: {
 }
 
 /**
- * CPU打者のスイング意思決定（プレイヤーが投球する表イニング用）
+ * CPU打者のスイング意思決定（緩急差・変化球・剛速球でリアルに空振りを奪える設計）
  */
 export function decideCpuBatterPlan(params: {
   difficulty: CpuDifficulty;
   pitch: PitchSpec;
+  currentPitchKmh?: number;
+  prevPitchKmh?: number;
   strikes: number;
   outs: number;
   bases: RunnerBases;
@@ -901,7 +903,15 @@ export function decideCpuBatterPlan(params: {
   stance: BatterStance;
   targetHitY: number;
 } {
-  const { difficulty, pitch, strikes, outs, bases } = params;
+  const {
+    difficulty,
+    pitch,
+    currentPitchKmh = 115,
+    prevPitchKmh = 0,
+    strikes,
+    outs,
+    bases,
+  } = params;
 
   // 消える魔球への反応（難易度が高いほど見極める確率UP）
   if (pitch.type === "vanish") {
@@ -914,44 +924,91 @@ export function decideCpuBatterPlan(params: {
   }
 
   // 送りバント戦術（無死一塁・接戦時たまに）
-  if (outs === 0 && bases.first && !bases.second && strikes < 2 && Math.random() < 0.16) {
+  if (
+    outs === 0 &&
+    bases.first &&
+    !bases.second &&
+    strikes < 2 &&
+    Math.random() < 0.14
+  ) {
     return {
       willSwing: true,
       stance: "bunt",
-      targetHitY: HOME_Y - 8 + (Math.random() - 0.5) * 6,
+      targetHitY: HOME_Y - 8 + (Math.random() - 0.5) * 10,
     };
   }
 
-  // 見送り判定
-  const swingProb = strikes === 2 ? 0.92 : 0.78;
+  // 見送り判定（コーナー球・変化球は手を出したり見送ったりする駆け引き）
+  const isCorner = pitch.course !== "middle";
+  const swingProb =
+    strikes === 2
+      ? isCorner
+        ? 0.86
+        : 0.94
+      : isCorner
+      ? 0.72
+      : 0.82;
   if (Math.random() > swingProb) {
     return { willSwing: false, stance: "contact", targetHitY: HOME_Y - 6 };
   }
 
+  const stance: BatterStance =
+    strikes === 2
+      ? Math.random() < (difficulty === "hard" ? 0.25 : 0.35)
+        ? "power"
+        : "contact"
+      : Math.random() < (difficulty === "hard" ? 0.48 : 0.38)
+      ? "power"
+      : "contact";
+
   const preset = pitch.speedPreset ?? "normal";
-  const speedExtraJitter =
-    preset === "monster"
-      ? 9
-      : preset === "fast"
-      ? 5
-      : preset === "chaos"
-      ? 11
-      : 0;
-  const jitterRange =
-    (difficulty === "hard" ? 13 : difficulty === "normal" ? 20 : 28) +
-    speedExtraJitter;
-  // チェンジアップやスロー球は前に突っ込み、剛速球は振り遅れやすくなるリアルな緩急効果
+  const isBreakingOrOffspeed =
+    pitch.type === "curve" ||
+    pitch.type === "shoot" ||
+    pitch.type === "changeup";
+  const speedDiff =
+    prevPitchKmh > 0 ? Math.abs(currentPitchKmh - prevPitchKmh) : 0;
+
+  // 空振り誘発率：球速ギア・変化球・コーナー・前球との緩急差に応じてリアルに上昇！
+  let whiffProb =
+    difficulty === "easy" ? 0.25 : difficulty === "normal" ? 0.16 : 0.09;
+  if (isCorner) whiffProb += 0.08;
+  if (isBreakingOrOffspeed) whiffProb += 0.1;
+  if (preset === "monster") whiffProb += 0.14;
+  else if (preset === "fast") whiffProb += 0.06;
+  if (speedDiff >= 30) {
+    // 165kmのあとの80kmスロー球など「緩急コンビネーション」が決まったら大幅空振り率UP！
+    whiffProb += 0.22;
+  }
+
+  if (Math.random() < Math.min(0.68, whiffProb)) {
+    // 空振り発生：遅い球・変化球なら泳いで早振り、速球なら振り遅れ！
+    const swingsEarly =
+      pitch.type === "changeup" ||
+      pitch.type === "curve" ||
+      preset === "slow" ||
+      (prevPitchKmh > 0 && currentPitchKmh < prevPitchKmh - 20);
+    const missOffset = swingsEarly
+      ? -(24 + Math.random() * 12)
+      : 22 + Math.random() * 11;
+    return {
+      willSwing: true,
+      stance,
+      targetHitY: HOME_Y - 6 + missOffset,
+    };
+  }
+
+  // バットに当てるスイング（真芯〜ファウルチップ）
+  const hitSpread =
+    difficulty === "hard" ? 18 : difficulty === "normal" ? 24 : 28;
   const speedBias =
     pitch.type === "changeup" || preset === "slow"
-      ? -6
+      ? -4
       : preset === "monster"
-      ? 5
+      ? 4
       : 0;
   const targetHitY =
-    HOME_Y - 6 + speedBias + (Math.random() - 0.5) * jitterRange;
-
-  const stance: BatterStance =
-    Math.random() < (difficulty === "hard" ? 0.42 : 0.28) ? "power" : "contact";
+    HOME_Y - 6 + speedBias + (Math.random() - 0.5) * hitSpread;
 
   return { willSwing: true, stance, targetHitY };
 }
@@ -1202,6 +1259,7 @@ export function applyPlayOutcome(
   const batter = lineup[batterIdx];
   const batterTag = batter ? `#${batter.uniformNumber} ${batter.name}` : "打者";
 
+  const wasSwingingStrike = outcome === "swinging_strike";
   let effectiveOutcome = outcome;
 
   // カウント変動の解決
@@ -1236,7 +1294,7 @@ export function applyPlayOutcome(
         effectiveOutcome === "swinging_strike"
           ? usedVanishPitch
             ? "消える魔球で空振り！！"
-            : "空振りストライク！"
+            : detailLabel || "空振りストライク！"
           : "見逃しストライク！";
       next.lastSubCallout = `カウント ${next.balls}B-${next.strikes}S`;
       return {
@@ -1246,7 +1304,11 @@ export function applyPlayOutcome(
         halfInningEnded: false,
         isWalkOff: false,
         soundKind: null,
-        bannerTitle: usedVanishPitch ? "✨ 消える魔球！ STRIKE" : "STRIKE!",
+        bannerTitle: usedVanishPitch
+          ? "✨ 消える魔球！空振り！"
+          : effectiveOutcome === "swinging_strike"
+          ? "💨 空振り STRIKE!"
+          : "👀 見逃し STRIKE!",
         bannerTone: usedVanishPitch ? "magic" : "out",
       };
     }
@@ -1305,7 +1367,9 @@ export function applyPlayOutcome(
           ? "スリーバント失敗！三振アウト！"
           : usedVanishPitch
           ? "✨ 消える魔球で空振り三振！！"
-          : "三振アウト！！";
+          : wasSwingingStrike
+          ? "💨 空振り三振！！"
+          : "👀 見逃し三振！！";
       bannerTone = usedVanishPitch ? "magic" : "out";
       soundKind = "strikeout";
       const updated = updateCurrentBatterStats(lineup, batterIdx, {

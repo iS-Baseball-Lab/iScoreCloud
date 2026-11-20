@@ -123,8 +123,10 @@ interface InternalSimState {
   pitchSpeedPxPerSec: number;
   carryMultiplier: number;
   isFireball: boolean;
+  prevPitchKmh: number;
   lastPitchKmh: number;
   lastExitVelocityKmh: number;
+  whiffDetail: string;
   billboardFlashedUntilMs: number;
   pitchStartX: number;
   pitchTargetX: number;
@@ -175,8 +177,10 @@ function createInitialSimState(
     pitchSpeedPxPerSec: 235,
     carryMultiplier: 1,
     isFireball: false,
+    prevPitchKmh: 0,
     lastPitchKmh: 0,
     lastExitVelocityKmh: 0,
+    whiffDetail: "",
     billboardFlashedUntilMs: 0,
     pitchStartX: MOUND_X,
     pitchTargetX: HOME_X,
@@ -696,7 +700,7 @@ export const BaseballBoardCanvas = forwardRef<
       const inHitWindow =
         sim.phase === "pitching" &&
         !sim.ballVanished &&
-        Math.abs(sim.ballY - idealY) <= 25;
+        Math.abs(sim.ballY - idealY) <= 18;
 
       ctx.strokeStyle = inHitWindow ? "#facc15" : "#e2e8f0";
       ctx.lineWidth = inHitWindow ? 2.4 : 1.3;
@@ -947,6 +951,7 @@ export const BaseballBoardCanvas = forwardRef<
       if (sim.pitchSpec.type === "vanish" && sim.ballY >= TRAPDOOR_Y - 10) {
         sim.trapdoorOpen = true;
         sim.ballVanished = true;
+        sim.whiffDetail = "消える魔球で空振り！！";
         playSwingWhoosh(propsRef.current.soundEnabled);
         return true;
       }
@@ -954,17 +959,38 @@ export const BaseballBoardCanvas = forwardRef<
       const idealY = HOME_Y - 6;
       const deltaY = sim.ballY - idealY;
       const absDeltaY = Math.abs(deltaY);
-      // 高速球時も気持ちよく当てられるよう少しリーチ補正
-      const speedForgiveness = sim.isFireball ? 4 : 0;
+      // リアルなミート幅：強振は空振りリスクあり、ミートは広め
+      const speedForgiveness = sim.isFireball ? 2.5 : 0;
       const maxReachY =
         (chosenStance === "bunt"
-          ? 29
+          ? 21
           : chosenStance === "contact"
-          ? 27
-          : 22) + speedForgiveness;
+          ? 19.5
+          : 15.0) + speedForgiveness;
+
+      // 横方向のバットリーチ：外角へ逃げるカーブ・シュートに強振で手を出すと空振り！
+      const maxLateral =
+        chosenStance === "power"
+          ? 20.5
+          : chosenStance === "bunt"
+          ? 22.0
+          : 24.5;
 
       const lateralDist = Math.abs(sim.ballX - HOME_X);
-      if (absDeltaY > maxReachY || lateralDist > 26 || sim.ballVanished) {
+      if (
+        absDeltaY > maxReachY ||
+        lateralDist > maxLateral ||
+        sim.ballVanished
+      ) {
+        if (sim.ballVanished) {
+          sim.whiffDetail = "消える魔球で空振り！！";
+        } else if (lateralDist > maxLateral) {
+          sim.whiffDetail = "変化球が外れた！空振りストライク！";
+        } else if (deltaY < 0) {
+          sim.whiffDetail = "泳いだ！空振りストライク！";
+        } else {
+          sim.whiffDetail = "振り遅れ！空振りストライク！";
+        }
         playSwingWhoosh(propsRef.current.soundEnabled);
         return true;
       }
@@ -1005,11 +1031,11 @@ export const BaseballBoardCanvas = forwardRef<
 
       const timingQuality = Math.max(0, 1 - absDeltaY / maxReachY);
       const isSweet =
-        timingQuality >= (chosenStance === "power" ? 0.68 : 0.76) &&
+        timingQuality >= (chosenStance === "power" ? 0.66 : 0.74) &&
         Math.abs(sprayOffsetRad) <= 0.76;
       sim.isSweetHit = isSweet;
 
-      // 打球速度（km/h）算出：速球×強振×真芯なら175km/h超の大谷級打球！
+      // 打球速度（km/h）算出
       const rawExitKmh =
         (chosenStance === "power" ? 112 : 102) +
         timingQuality * (chosenStance === "power" ? 50 : 38) +
@@ -1068,7 +1094,7 @@ export const BaseballBoardCanvas = forwardRef<
     (dt: number, nowMs: number) => {
       const sim = simRef.current;
 
-      // 素振りアニメーション進行（idleのまま0.26秒だけバットを振って完全停止）
+      // 素振りアニメーション進行
       if (sim.isPracticeSwinging) {
         sim.swingAnimProgress += dt * 4.2;
         if (sim.swingAnimProgress >= 1) {
@@ -1111,17 +1137,18 @@ export const BaseballBoardCanvas = forwardRef<
 
       if (sim.phase === "pitching") {
         const meta = PITCH_TYPE_META[sim.pitchSpec.type];
-        const totalDist = HOME_Y + 22 - MOUND_Y;
+        // ホームベース上で変化球の変化量が100%になるよう基準距離を設定し、捕手後方(HOME_Y + 36)まで通過させて振り遅れ空振りも確実に判定！
+        const plateDist = HOME_Y - MOUND_Y;
         const prevY = sim.ballY;
         sim.ballY += sim.pitchSpeedPxPerSec * dt;
         sim.pitchProgress = Math.max(
           0,
-          Math.min(1.2, (sim.ballY - MOUND_Y) / totalDist)
+          Math.min(1.3, (sim.ballY - MOUND_Y) / plateDist)
         );
 
         const handSign = sim.batterBats === "R" ? 1 : -1;
         const curveBend =
-          meta.curveFactor * handSign * Math.pow(sim.pitchProgress, 2.1) * 19;
+          meta.curveFactor * handSign * Math.pow(sim.pitchProgress, 2.0) * 18;
         sim.ballX =
           sim.pitchStartX +
           (sim.pitchTargetX - sim.pitchStartX) * sim.pitchProgress +
@@ -1155,15 +1182,15 @@ export const BaseballBoardCanvas = forwardRef<
           if ((sim.phase as BoardActionPhase) !== "pitching") return;
         }
 
-        // 捕手到達
-        if (sim.ballY >= HOME_Y + 22) {
+        // 捕手ミット・バックネット到達（HOME_Y + 36 まで余白を持たせることで剛速球への振り遅れ空振りがリアルに発生！）
+        if (sim.ballY >= HOME_Y + 36) {
           const usedVanish = sim.pitchSpec.type === "vanish";
           if (sim.hasSwung) {
             beginResolving({
               outcome: "swinging_strike",
-              detailLabel: usedVanish
-                ? "消える魔球で空振り！"
-                : "空振りストライク！",
+              detailLabel:
+                sim.whiffDetail ||
+                (usedVanish ? "消える魔球で空振り！" : "空振りストライク！"),
               usedVanishPitch: usedVanish,
             });
           } else if (usedVanish) {
@@ -1173,7 +1200,10 @@ export const BaseballBoardCanvas = forwardRef<
               usedVanishPitch: true,
             });
           } else {
-            const inZone = Math.abs(sim.ballX - HOME_X) <= 16.5;
+            // ホームベース通過時点(progress = 1.0)の横位置でストライク/ボール判定
+            const plateX =
+              sim.pitchTargetX + meta.curveFactor * handSign * 18;
+            const inZone = Math.abs(plateX - HOME_X) <= 16.5;
             const isBallCall =
               !inZone ||
               (sim.pitchSpec.course !== "middle" && Math.random() < 0.28);
@@ -1516,8 +1546,11 @@ export const BaseballBoardCanvas = forwardRef<
         sim.pitchSpeedPxPerSec = speedMetrics.effectiveSpeedPxPerSec;
         sim.carryMultiplier = speedMetrics.carryMultiplier;
         sim.isFireball = speedMetrics.isFireball;
+        const prevKmh = sim.lastPitchKmh;
+        sim.prevPitchKmh = prevKmh;
         sim.lastPitchKmh = speedMetrics.displayKmh;
         sim.lastExitVelocityKmh = 0;
+        sim.whiffDetail = "";
         sim.pitchStartX = MOUND_X;
         sim.pitchTargetX = targetX;
         sim.pitchProgress = 0;
@@ -1536,6 +1569,8 @@ export const BaseballBoardCanvas = forwardRef<
           const plan = decideCpuBatterPlan({
             difficulty: cpuDifficulty,
             pitch: { ...pitch, speedPreset },
+            currentPitchKmh: speedMetrics.displayKmh,
+            prevPitchKmh: prevKmh,
             strikes: curStrikes,
             outs: curOuts,
             bases: curBases,
