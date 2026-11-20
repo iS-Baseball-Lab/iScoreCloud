@@ -1090,7 +1090,7 @@ export function LiffBottomNav() {
             />
 
             <div
-              className={`w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl relative z-10 max-h-[88dvh] flex flex-col overflow-hidden ${
+              className={`liff-menu-sheet w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl relative z-10 max-h-[92dvh] flex flex-col overflow-hidden ${
                 !isOtherMenuOpen && isMenuClosing
                   ? "animate-liff-sheet-down"
                   : "animate-liff-sheet-up"
@@ -1098,7 +1098,7 @@ export function LiffBottomNav() {
             >
               {/* 🏷️ 固定ヘッダー (A-3 Dark Solid Header Cap) & 3分割カテゴリタブ */}
               <div className="shrink-0 bg-background border-b border-border">
-                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 flex items-center justify-between">
+                <div className="liff-menu-cap bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
                       <LayoutGrid className="w-4 h-4" />
@@ -1108,14 +1108,14 @@ export function LiffBottomNav() {
                   <button
                     type="button"
                     onClick={closeMenuAnimated}
-                    className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                    className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 transition-colors cursor-pointer"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
                 {/* 🏷️ 均等3分割セグメントタブ（スライドピル連動・チラつきゼロ） */}
-                <div className="px-5 py-3 bg-card">
+                <div className="liff-menu-tabs-bar px-5 py-3 bg-card">
                   <div className="relative grid grid-cols-3 p-1 bg-muted rounded-2xl border border-border overflow-hidden">
                     <div
                       ref={tabPillRef}
@@ -1135,7 +1135,7 @@ export function LiffBottomNav() {
                           key={tab.id}
                           type="button"
                           onClick={() => handleSelectCategory(tab.id)}
-                          className={`relative z-10 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-colors duration-150 cursor-pointer select-none ${
+                          className={`liff-menu-tab-btn relative z-10 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-colors duration-150 cursor-pointer select-none ${
                             isSelected
                               ? "text-foreground"
                               : "text-muted-foreground hover:text-foreground"
@@ -1163,12 +1163,12 @@ export function LiffBottomNav() {
                 </div>
               </div>
 
-              {/* 🌟 スクロール＆左右スワイプ領域（横並び3ペイントラックにより全3タブ高さ完全統一＆チラつきゼロ） */}
+              {/* 🌟 スクロール＆左右スワイプ領域（shrink-0で見切れクリップを完全防止し極小画面では縦スクロール可能） */}
               <div
                 ref={menuScrollBodyRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-4 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col touch-pan-y"
+                className="liff-menu-scroll-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-4 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col touch-pan-y"
               >
-                <div ref={swipeViewportRef} className="w-full overflow-hidden">
+                <div ref={swipeViewportRef} className="w-full shrink-0 overflow-hidden">
                   <div
                     ref={swipeTrackRef}
                     className="flex w-full items-start transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
@@ -1185,7 +1185,7 @@ export function LiffBottomNav() {
                         <div
                           key={tab.id}
                           aria-hidden={!isTabSelected}
-                          className="w-full shrink-0 px-5 self-start space-y-4 select-none"
+                          className="liff-menu-pane w-full shrink-0 px-5 self-start flex flex-col gap-4 select-none"
                         >
                           {sections ? (
                             sections.map((section) => {
@@ -1194,8 +1194,8 @@ export function LiffBottomNav() {
                                 (item) => item.subGroup === section.key
                               );
                               return (
-                                <div key={section.key} className="space-y-2">
-                                  <div className="flex items-center justify-between gap-2 px-1 min-h-[22px]">
+                                <div key={section.key} className="liff-menu-section flex flex-col gap-2">
+                                  <div className="liff-menu-section-header flex items-center justify-between gap-2 px-1 min-h-[22px]">
                                     <div className="flex items-center gap-1.5 min-w-0">
                                       <SectionIcon
                                         className={`w-3.5 h-3.5 shrink-0 ${section.iconTextClass}`}
@@ -1219,7 +1219,7 @@ export function LiffBottomNav() {
                                       </span>
                                     )}
                                   </div>
-                                  <div className="grid grid-cols-2 gap-2.5">
+                                  <div className="liff-menu-grid grid grid-cols-2 gap-2.5">
                                     {sectionItems.map((item) => {
                                       const ItemIcon = item.icon;
                                       const isFullWidth = item.fullWidth;
@@ -1232,16 +1232,16 @@ export function LiffBottomNav() {
                                           tabIndex={isTabSelected ? undefined : -1}
                                           onPointerDown={() => handlePointerWarmup(item.href)}
                                           onClick={handleMenuItemLinkClick}
-                                          className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${
+                                          className={`liff-menu-card min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${
                                             item.hoverBorderClass ?? "hover:border-primary/40"
                                           } transition-[transform,border-color] duration-150 group active:scale-[0.98] ${
                                             isFullWidth ? "col-span-2" : ""
                                           }`}
                                         >
                                           <span
-                                            className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
+                                            className={`liff-menu-card-icon relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
                                           >
-                                            <ItemIcon className="w-5 h-5" />
+                                            <ItemIcon className="liff-menu-item-svg w-5 h-5" />
                                             {item.adminOnly && (
                                               <span
                                                 aria-label="管理者専用"
@@ -1252,10 +1252,10 @@ export function LiffBottomNav() {
                                             )}
                                           </span>
                                           <div className="min-w-0 flex-1">
-                                            <p className="text-xs font-black text-foreground truncate">
+                                            <p className="text-xs font-black text-foreground truncate leading-tight">
                                               {item.title}
                                             </p>
-                                            <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                            <p className="text-[10px] text-muted-foreground font-bold truncate leading-tight mt-0.5">
                                               {item.subtitle}
                                             </p>
                                           </div>
@@ -1270,7 +1270,7 @@ export function LiffBottomNav() {
                               );
                             })
                           ) : (
-                            <div className="grid grid-cols-2 gap-2.5">
+                            <div className="liff-menu-grid grid grid-cols-2 gap-2.5">
                               {tabItems.map((item) => {
                                 const ItemIcon = item.icon;
                                 const isFullWidth = item.fullWidth;
@@ -1283,14 +1283,14 @@ export function LiffBottomNav() {
                                     tabIndex={isTabSelected ? undefined : -1}
                                     onPointerDown={() => handlePointerWarmup(item.href)}
                                     onClick={handleMenuItemLinkClick}
-                                    className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-[transform,border-color] duration-150 group active:scale-[0.98] ${
+                                    className={`liff-menu-card min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-[transform,border-color] duration-150 group active:scale-[0.98] ${
                                       isFullWidth ? "col-span-2" : ""
                                     }`}
                                   >
                                     <span
-                                      className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
+                                      className={`liff-menu-card-icon relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
                                     >
-                                      <ItemIcon className="w-5 h-5" />
+                                      <ItemIcon className="liff-menu-item-svg w-5 h-5" />
                                       {item.adminOnly && (
                                         <span
                                           aria-label="管理者専用"
@@ -1301,10 +1301,10 @@ export function LiffBottomNav() {
                                       )}
                                     </span>
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-black text-foreground truncate">
+                                      <p className="text-xs font-black text-foreground truncate leading-tight">
                                         {item.title}
                                       </p>
-                                      <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                      <p className="text-[10px] text-muted-foreground font-bold truncate leading-tight mt-0.5">
                                         {item.subtitle}
                                       </p>
                                     </div>
@@ -1323,12 +1323,12 @@ export function LiffBottomNav() {
                 </div>
 
                 {/* 📜 法務・規約リンク */}
-                <div className="mt-4 mx-5 pt-3 border-t border-border flex items-center justify-center gap-3 shrink-0">
+                <div className="liff-menu-footer mt-4 mx-5 pt-3 border-t border-border flex items-center justify-center gap-3 shrink-0">
                   <Link
                     href="/liff/terms"
                     draggable={false}
                     onClick={handleMenuItemLinkClick}
-                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
+                    className="liff-menu-legal-btn py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
                   >
                     <FileText className="w-3.5 h-3.5 text-primary" />
                     <span>利用規約</span>
@@ -1338,7 +1338,7 @@ export function LiffBottomNav() {
                     href="/liff/privacy"
                     draggable={false}
                     onClick={handleMenuItemLinkClick}
-                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
+                    className="liff-menu-legal-btn py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                     <span>プライバシーポリシー</span>
