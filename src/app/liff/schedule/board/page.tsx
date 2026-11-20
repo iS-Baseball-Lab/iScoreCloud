@@ -3,13 +3,12 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { LiffHeader } from "@/components/liff/LiffHeader";
-import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AttendanceSummaryShareModal } from "@/components/liff/AttendanceSummaryShareModal";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
+import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
+import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
 import {
   PLAYER_CONDITION_META,
   comparePlayersByConditionAndUniform,
@@ -23,24 +22,18 @@ import {
 import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
 import {
   Calendar as CalendarIcon,
-  Users,
   ChevronLeft,
-  ChevronRight,
-  Filter,
   Check,
   X,
   MessageSquare,
-  Sparkles,
   ClipboardCopy,
   Lock,
   Unlock,
-  ShieldAlert,
   Loader2,
   RefreshCw,
   Search,
   AlertCircle,
   HelpCircle,
-  ArrowRight,
   Info,
   Eye,
   EyeOff,
@@ -52,6 +45,7 @@ import {
   SlidersHorizontal,
   ClipboardCheck,
   Tag,
+  Share2,
 } from "lucide-react";
 import { Reorder, useDragControls } from "motion/react";
 import { toast } from "sonner";
@@ -569,6 +563,8 @@ function parseUrlMonthParam(raw: string | null): string | null {
 }
 
 function AttendanceMatrixBoardContent() {
+  const router = useRouter();
+  const pathname = usePathname();
   const { liff, profile, currentTeam, isDemo } = useLiff();
   const { canMutate } = useLiffPermissions();
   const effectiveCanMutate = canMutate || isDemo;
@@ -576,6 +572,8 @@ function AttendanceMatrixBoardContent() {
   const urlGroupTab = parseUrlGroupTab(searchParams.get("group"));
   const urlMonthParam = parseUrlMonthParam(searchParams.get("month"));
   const hasUrlGroupParamRef = useRef<boolean>(Boolean(urlGroupTab));
+  const matrixScrollRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const initialCachedMatrix = useMemo<AttendanceMatrixApiResponse | null>(() => {
     if (typeof window === "undefined") return null;
@@ -800,10 +798,59 @@ function AttendanceMatrixBoardContent() {
 
   // 📋 出欠集計テキスト作成・共有（コピー＆LINE転送）モーダル状態
   const [sharingSummaryEvent, setSharingSummaryEvent] = useState<EventItem | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isToolsSheetOpen, setIsToolsSheetOpen] = useState(false);
+  const [isSharingPage, setIsSharingPage] = useState(false);
 
   useEffect(() => {
     setSharingSummaryEvent(null);
+    setIsLegendMeaningOpen(false);
+    setIsToolsSheetOpen(false);
+    setIsSearchOpen(false);
   }, [currentTeam?.id]);
+
+  const handleBackNavigation = useCallback(() => {
+    if (canGoBackInLiff()) {
+      router.back();
+    } else {
+      navigateToLiffRoot(router, pathname);
+    }
+  }, [router, pathname]);
+
+  const handleSelectGroupTab = useCallback((nextTab: GroupTabType) => {
+    setSelectedGroupTab(nextTab);
+    if (matrixScrollRef.current) {
+      matrixScrollRef.current.scrollLeft = 0;
+    }
+  }, []);
+
+  const handleSelectMonth = useCallback((nextMonth: string) => {
+    setSelectedMonth(nextMonth);
+    if (matrixScrollRef.current) {
+      matrixScrollRef.current.scrollTop = 0;
+    }
+  }, []);
+
+  const handleShareBoardPage = useCallback(async () => {
+    if (isSharingPage) return;
+    setIsSharingPage(true);
+    try {
+      const outcome = await shareLiffPageViaLine({
+        title: `【出欠一覧表】${currentTeam?.orgName || currentTeam?.name || "チーム"} 出欠・当番状況`,
+        text: "月別の活動予定と出欠一覧・当番集計はこちらから確認できます",
+        pathname,
+        teamId: currentTeam?.id || null,
+        teamName: currentTeam?.orgName || currentTeam?.name || null,
+        liff,
+      });
+      if (outcome === "shared") {
+        toast.success("LINEで出欠一覧表を共有しました！");
+        setIsToolsSheetOpen(false);
+      }
+    } finally {
+      setIsSharingPage(false);
+    }
+  }, [isSharingPage, currentTeam, pathname, liff]);
 
   const applyMatrixPayload = useCallback(
     (data: AttendanceMatrixApiResponse, teamId: string, isInitialApply: boolean) => {
@@ -1923,743 +1970,632 @@ function AttendanceMatrixBoardContent() {
   };
 
   return (
-    <div className="flex flex-col flex-1">
-      {/* ヘッダー */}
-      <LiffHeader />
-
-      <div className="p-4 space-y-4 max-w-lg mx-auto w-full">
-        {/* ページ内ヘッダー */}
-        <LiffPageHeader
-          title="出欠一覧表"
-          subtitle="当番集計・出欠確認"
-          icon={
-            <span className="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center font-black">
-              <ClipboardCheck className="w-4 h-4" />
-            </span>
-          }
-          showBack
-          shareData={{
-            title: `【出欠一覧表】${currentTeam?.name || "チーム"} 出欠・当番状況`,
-            text: `月別の活動予定と出欠一覧・当番集計はこちらから確認できます`,
-          }}
-        />
-
-        {/* ① 👥 グループ切り分けタブ（上段・横幅いっぱいに均等配置） */}
-        <div className="grid grid-cols-5 gap-1 w-full bg-muted p-1 rounded-2xl border border-border">
-          {([
-            { id: "player" as GroupTabType, label: "選手", count: groups.players.length },
-            { id: "mother" as GroupTabType, label: "母", count: groups.mothers.length },
-            { id: "father" as GroupTabType, label: "父", count: groups.fathers.length },
-            { id: "staff" as GroupTabType, label: "スタッフ", count: groups.staff.length },
-            { id: "all" as GroupTabType, label: "全員", count: new Set([...groups.players, ...(groups.parents.length > 0 ? groups.parents : [...groups.mothers, ...groups.fathers]), ...groups.staff].map(m => m.id)).size },
-          ]).map(tab => {
-            const isTabActive = !isLoading && selectedGroupTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSelectedGroupTab(tab.id)}
-                className={`flex items-center justify-center gap-1 py-1.5 px-0.5 rounded-xl text-[10.5px] transition-all active:scale-95 ${
-                  isTabActive
-                    ? "bg-card text-foreground shadow-xs border border-border font-black"
-                    : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span className={`text-[8.5px] px-1 py-0 rounded-full font-bold leading-none ${
-                  isTabActive ? "bg-primary/12 text-primary" : "bg-card text-muted-foreground"
-                }`}>
-                  {isLoading ? "-" : tab.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ② 🏷️ 凡例 ＆ アクション操作バー（グループ別の凡例を横幅いっぱいに均等配置） */}
-        <div className="rounded-2xl border border-border bg-card shadow-xs px-3 py-2.5 space-y-2">
-          <div className="flex items-center justify-between gap-1 text-[9.5px]">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <div className="flex items-center gap-1 font-black text-muted-foreground truncate">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
-                <span className="truncate">
-                  凡例（{isLoading ? "読み込み中..." : selectedGroupTab === "player" ? "選手" : selectedGroupTab === "mother" ? "母" : selectedGroupTab === "father" ? "父" : selectedGroupTab === "staff" ? "スタッフ" : selectedGroupTab === "all" ? "全員" : "未選択"}）:
-                </span>
-              </div>
-              {activeLegendMeaningRows.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setIsLegendMeaningOpen((prev) => !prev)}
-                  className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black border transition-all active:scale-95 shrink-0 cursor-pointer ${
-                    isLegendMeaningOpen
-                      ? "bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-500/35"
-                      : "bg-muted/60 text-muted-foreground hover:text-foreground border-border"
-                  }`}
-                  title="確認項目の意味合いを表示・非表示"
-                >
-                  <HelpCircle className="w-2.5 h-2.5 shrink-0" />
-                  <span>意味</span>
-                </button>
-              )}
-            </div>
-
-            {effectiveCanMutate && (
-              <div className="flex items-center gap-1 shrink-0">
-                {/* ステータス設定ボタン */}
-                <button
-                  type="button"
-                  onClick={handleOpenStatusConfigModal}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
-                  title="グループ別の確認項目・名称・意味合いを設定"
-                >
-                  <SlidersHorizontal className="w-3 h-3 text-primary" />
-                  <span>項目設定</span>
-                </button>
-
-                {/* メンバー並び順設定ボタン */}
-                <button
-                  type="button"
-                  onClick={handleOpenOrderModal}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-muted hover:bg-muted/80 text-foreground border border-border active:scale-95 transition-all shrink-0 cursor-pointer"
-                  title="グループ内のメンバー列の並び順を設定"
-                >
-                  <ArrowUpDown className="w-3 h-3 text-primary" />
-                  <span>並び順設定</span>
-                </button>
-
-                {/* 🏷️ メンバー班・サブラベル設定ボタン */}
-                {myInfo.isManager && (
-                  <button
-                    type="button"
-                    onClick={handleOpenSubLabelsModal}
-                    className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 active:scale-95 transition-all shrink-0 cursor-pointer"
-                    title="メンバーの班（1班・2班等）やサブラベルを一括設定"
-                  >
-                    <Tag className="w-3 h-3 text-primary" />
-                    <span>班・ラベル</span>
-                  </button>
-                )}
-
-                {(myInfo.isITAdmin || myInfo.isManager) && (
-                  <button
-                    type="button"
-                    onClick={() => setIsManagerOverrideMode((prev) => !prev)}
-                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-black transition-all active:scale-95 border cursor-pointer ${
-                      isManagerOverrideMode
-                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35 shadow-2xs"
-                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
-                    }`}
-                  >
-                    {isManagerOverrideMode ? (
-                      <>
-                        <Unlock className="w-3 h-3" />
-                        <span>代理入力ON</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="w-3 h-3" />
-                        <span>通常入力</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 凡例アイコン（グループで有効なステータスのみ・横幅いっぱいに均等配置・タップで意味表示） */}
-          <div className="flex items-center gap-1 text-[9.5px] pt-1.5 border-t border-border overflow-x-auto no-scrollbar">
-            {activeLegendItems.length === 0 ? (
-              <span className="text-[9px] text-muted-foreground py-1 px-2">有効なステータスがありません</span>
-            ) : (
-              <>
-                {activeLegendItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setIsLegendMeaningOpen((prev) => !prev)}
-                    title={
-                      item.description?.trim()
-                        ? `${item.mark} ${item.label}：${item.description.trim()}（タップで一覧表示）`
-                        : `${item.mark} ${item.label}（タップで意味を表示）`
-                    }
-                    className={`flex-1 min-w-[50px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg border text-center transition-colors active:scale-95 cursor-pointer ${
-                      isLegendMeaningOpen
-                        ? "bg-teal-500/[0.08] border-teal-500/30"
-                        : "bg-muted/35 hover:bg-muted/60 border-border"
-                    }`}
-                  >
-                    <span className={`w-3.5 h-3.5 rounded-full ${STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>
-                      {item.mark}
-                    </span>
-                    <span className="truncate text-foreground text-[9px]">{item.label}</span>
-                  </button>
-                ))}
-                {(selectedGroupTab === "player" || selectedGroupTab === "all") &&
-                  groups.players.some(
-                    (p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave"
-                  ) && (
-                    <div className="flex-1 min-w-[52px] flex items-center justify-center gap-1 font-bold py-1 px-0.5 rounded-lg bg-slate-100 dark:bg-slate-800/80 border border-slate-300 dark:border-slate-700 text-center">
-                      <span className="w-3.5 h-3.5 rounded-full bg-slate-500 text-white flex items-center justify-center text-[8.5px] font-black shrink-0">
-                        休
-                      </span>
-                      <span className="truncate text-slate-600 dark:text-slate-300 text-[9px]">
-                        休部中
-                      </span>
-                    </div>
-                  )}
-              </>
-            )}
-          </div>
-
-          {/* 📖 確認項目の意味合い一覧（タップ展開時のみ表示） */}
-          {isLegendMeaningOpen && activeLegendMeaningRows.length > 0 && (
-            <div className="pt-2 border-t border-border space-y-1.5 animate-in fade-in duration-150">
-              <div className="flex items-center justify-between gap-2 text-[9.5px]">
-                <span className="font-black text-muted-foreground flex items-center gap-1">
-                  <Info className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
-                  <span>確認項目の意味合い・判断基準</span>
-                </span>
-                {effectiveCanMutate && (
-                  <button
-                    type="button"
-                    onClick={handleOpenStatusConfigModal}
-                    className="text-[9.5px] font-black text-primary hover:underline cursor-pointer shrink-0"
-                  >
-                    項目設定を編集 &gt;
-                  </button>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                {activeLegendMeaningRows.map((row) => (
-                  <div
-                    key={`legend-meaning-${row.id}`}
-                    className="flex items-start gap-2 px-2.5 py-1.5 rounded-xl bg-muted/35 border border-border text-[10.5px] leading-snug"
-                  >
-                    <span
-                      className={`w-4.5 h-4.5 rounded-md ${row.bgClass} text-white flex items-center justify-center text-[9.5px] font-black shrink-0 mt-0.5`}
-                    >
-                      {row.mark}
-                    </span>
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      {row.entries.map((entry, idx) => (
-                        <div key={`${row.id}-e-${idx}`} className="min-w-0">
-                          {entry.groupTag && (
-                            <span className="inline-block px-1 py-0.1 mr-1 rounded bg-card border border-border text-[9px] font-black text-muted-foreground">
-                              {entry.groupTag}
-                            </span>
-                          )}
-                          <span className="font-black text-foreground">{entry.label}</span>
-                          {entry.description ? (
-                            <span className="text-muted-foreground font-bold">
-                              {" ： "}
-                              {entry.description}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground/60 font-medium">
-                              {" ： （意味合い未設定）"}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ③ 📅 月単位選択 ＆ 過去日表示切替 ＆ 検索バー (コンパクト統合) */}
-        <div className="rounded-2xl border border-border bg-card shadow-xs p-2 sm:p-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-[9.5px]">
-          {/* 月選択ピル */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-            <span className="font-black text-muted-foreground shrink-0 flex items-center gap-0.5 mr-0.5">
-              <CalendarIcon className="w-3 h-3 text-teal-600 dark:text-teal-400" />
-              <span>月:</span>
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setSelectedMonth("all")}
-              className={`px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                selectedMonth === "all"
-                  ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
-              }`}
-            >
-              全期間
-            </button>
-
-            {availableMonths.map(m => {
-              const parts = m.split("-");
-              const mNum = parseInt(parts[1], 10);
-              const label = `${mNum}月`;
-              const isCurrent = m === currentMonthStr;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setSelectedMonth(m)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] whitespace-nowrap transition-all active:scale-95 shrink-0 ${
-                    selectedMonth === m
-                      ? "bg-primary/12 text-primary border border-primary/35 font-black shadow-2xs"
-                      : "bg-card text-muted-foreground border border-border hover:text-foreground hover:bg-muted font-bold"
-                  }`}
-                >
-                  {label}{isCurrent ? "(今月)" : ""}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 過去日トグル ＆ メンバー名検索 */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* 過去日 表示・非表示トグル */}
-            <button
-              type="button"
-              onClick={() => setShowPastDates(prev => !prev)}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] transition-all active:scale-95 border shrink-0 ${
-                showPastDates
-                  ? "bg-primary/12 text-primary border-primary/35 font-black shadow-2xs"
-                  : "bg-card text-muted-foreground border-border hover:text-foreground hover:bg-muted font-bold"
-              }`}
-            >
-              {showPastDates ? (
-                <>
-                  <Eye className="w-3 h-3" />
-                  <span>過去日: 表示中</span>
-                </>
-              ) : (
-                <>
-                  <EyeOff className="w-3 h-3" />
-                  <span>過去日: 非表示</span>
-                </>
-              )}
-            </button>
-
-            {/* 氏名検索インプット */}
-            <div className="relative shrink-0 flex-1 sm:w-36">
-              <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="メンバー名検索..."
-                className="w-full pl-6 pr-5 py-0.5 text-[10px] rounded-lg bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground h-6"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            📊 出欠マトリクス表（スプレッドシート型UI・余白極小・不透明完全固定）
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ① 上部フル領域：出欠マトリクス表（余白ゼロ・ページ最上部から直配置・縦横2軸固定スクロール）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden bg-card">
         {isLoading ? (
-          <div className="p-8 flex flex-col items-center justify-center gap-2 rounded-2xl border border-border bg-card shadow-xs">
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 bg-card">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
             <p className="text-[11px] text-muted-foreground font-bold">出欠一覧表を読み込み中...</p>
           </div>
         ) : filteredEvents.length === 0 ? (
-          <div className="p-6 text-center rounded-2xl border border-border bg-card shadow-xs">
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-card">
             <AlertCircle className="w-6 h-6 text-muted-foreground mx-auto mb-1.5" />
             <p className="text-xs font-black text-foreground">表示する予定・イベントがありません</p>
             {events.length > 0 && !showPastDates ? (
-              <div className="mt-2 space-y-1">
+              <div className="mt-2 space-y-1.5">
                 <p className="text-[10px] text-muted-foreground">過去の予定が非表示になっている可能性があります。</p>
                 <button
                   type="button"
                   onClick={() => setShowPastDates(true)}
-                  className="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[10px] font-black transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-[11px] font-black transition-all active:scale-95 cursor-pointer"
                 >
                   過去日の予定を表示する
                 </button>
               </div>
             ) : (
-              <p className="text-[10px] text-muted-foreground mt-0.5">「活動予定の一括登録」から予定を追加してください。</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">「活動予定」から予定を追加してください。</p>
             )}
           </div>
         ) : (
-          <div className="relative rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-            {/* A-3 Dark Solid Header Cap */}
-            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-2.5 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-7 h-7 rounded-lg bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
-                  <ClipboardCheck className="w-4 h-4" />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h2 className="text-xs font-black text-white truncate">出欠マトリクス一覧</h2>
-                    <span className="text-[9px] font-black tracking-wider text-slate-400 uppercase hidden sm:inline">
-                      ATTENDANCE MATRIX
-                    </span>
-                  </div>
-                  <p className="text-[9.5px] font-bold text-slate-300 truncate leading-tight">
-                    セルをタップして出欠登録・日別集計コピー＆LINE転送
-                  </p>
-                </div>
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-800 text-slate-200 border border-slate-700 shrink-0 tabular-nums">
-                {filteredEvents.length}日程 × {currentMembers.length}名
-              </span>
-            </div>
+          <div
+            ref={matrixScrollRef}
+            className="flex-1 min-h-0 w-full overflow-auto overscroll-contain relative bg-card"
+            style={{ WebkitOverflowScrolling: "touch" }}
+          >
+            <table
+              className="w-max min-w-full text-left border-separate border-spacing-0 select-none"
+              style={{ borderCollapse: "separate", borderSpacing: 0 }}
+            >
+              {/* 📌 ヘッダー行 (縦スクロール時も最上部固定 sticky top-0・不透明ソリッド背景) */}
+              <thead>
+                <tr className="h-9">
+                  {/* 左上コーナー固定セル: イベント情報列 (縦横スクロール双方で固定 z-30) */}
+                  <th className="sticky top-0 left-0 z-30 bg-muted border-b-2 border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
+                      <span className="text-[9px] text-muted-foreground font-bold shrink-0 tabular-nums">
+                        {filteredEvents.length}日
+                      </span>
+                    </div>
+                  </th>
 
-            <div className="overflow-x-auto relative" style={{ WebkitOverflowScrolling: "touch" }}>
-              <table className="w-max min-w-full text-left border-separate border-spacing-0 select-none" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-                {/* 📌 ヘッダー行 (メンバー一覧 & 出欠記号別集計ヘッダー: 縦固定化なし) */}
-                <thead>
-                  <tr className="h-9">
-                    {/* 左側固定セル: イベント情報列 (横スクロール時のみ左固定・完全固定幅124px) */}
+                  {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・幅25px・項目設定で有効なもののみ動的表示) */}
+                  {activeSummaryStatuses.map((st) => (
                     <th
-                      className="sticky left-0 z-20 bg-muted border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 text-[11px] font-black text-foreground shadow-xs align-middle"
+                      key={st.id}
+                      className={`sticky top-0 z-20 w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b-2 border-r border-border font-black text-[11px] align-middle ${st.headerBgClass}`}
+                      title={
+                        st.description
+                          ? `${st.mark} ${st.label}：${st.description}`
+                          : `${st.mark} ${st.label}`
+                      }
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-[11px] font-black truncate">日付 / 班 / イベント</span>
-                        <span className="text-[9px] text-muted-foreground font-bold shrink-0">
-                          {filteredEvents.length}日
-                        </span>
-                      </div>
+                      {st.mark}
                     </th>
+                  ))}
 
-                    {/* 📊 出欠集計列 (各記号ごとの専用タイトル列・幅25px・項目設定で有効なもののみ動的表示) */}
-                    {activeSummaryStatuses.map((st) => (
+                  {/* メンバー列 (超コンパクト・幅35px・縦スクロール時も上端固定＆完全不透明背景) */}
+                  {currentMembers.map((person) => {
+                    const isMe =
+                      person.id === myInfo.memberId ||
+                      myInfo.memberIds.includes(person.id) ||
+                      myInfo.playerIds.includes(person.id);
+                    const subLabel = memberSubLabels[person.id];
+                    const headerCond = resolvePersonHeaderCondition(person);
+                    const pCond = headerCond.status;
+                    const isOnLeave = pCond === "on_leave";
+                    const pCondMeta = PLAYER_CONDITION_META[pCond];
+                    const periodLabel = headerCond.period
+                      ? formatConditionPeriodRange(
+                          headerCond.period.startDate,
+                          headerCond.period.endDate,
+                          { compact: true }
+                        )
+                      : "";
+                    return (
                       <th
-                        key={st.id}
-                        className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[11px] align-middle ${st.headerBgClass}`}
-                        title={
-                          st.description
-                            ? `${st.mark} ${st.label}：${st.description}`
-                            : `${st.mark} ${st.label}`
+                        key={person.id}
+                        onClick={
+                          effectiveCanMutate && myInfo.isManager
+                            ? () => handleOpenSingleSubLabelModal(person)
+                            : undefined
                         }
+                        style={
+                          isMe
+                            ? {
+                                backgroundColor:
+                                  "color-mix(in srgb, var(--primary) 16%, var(--card))",
+                              }
+                            : undefined
+                        }
+                        className={`sticky top-0 z-20 w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b-2 border-r border-border align-middle transition-colors select-none ${
+                          effectiveCanMutate && myInfo.isManager
+                            ? "cursor-pointer hover:brightness-95"
+                            : ""
+                        } ${
+                          isMe
+                            ? "bg-card text-primary font-black"
+                            : isOnLeave
+                            ? "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"
+                            : "bg-muted text-foreground"
+                        }`}
+                        title={`${person.name}${
+                          pCond !== "active"
+                            ? `（${pCondMeta.label}${periodLabel ? `: ${periodLabel}` : ""}）`
+                            : ""
+                        }${effectiveCanMutate && myInfo.isManager ? ": タップして班・ラベルを変更" : ""}`}
                       >
-                        {st.mark}
-                      </th>
-                    ))}
-
-                    {/* メンバー列 (超コンパクト・幅35px) */}
-                    {currentMembers.map((person) => {
-                      const isMe =
-                        person.id === myInfo.memberId ||
-                        myInfo.memberIds.includes(person.id) ||
-                        myInfo.playerIds.includes(person.id);
-                      const subLabel = memberSubLabels[person.id];
-                      const headerCond = resolvePersonHeaderCondition(person);
-                      const pCond = headerCond.status;
-                      const isOnLeave = pCond === "on_leave";
-                      const pCondMeta = PLAYER_CONDITION_META[pCond];
-                      const periodLabel = headerCond.period
-                        ? formatConditionPeriodRange(
-                            headerCond.period.startDate,
-                            headerCond.period.endDate,
-                            { compact: true }
-                          )
-                        : "";
-                      return (
-                        <th
-                          key={person.id}
-                          onClick={effectiveCanMutate && myInfo.isManager ? () => handleOpenSingleSubLabelModal(person) : undefined}
-                          className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border align-middle transition-colors select-none ${
-                            effectiveCanMutate && myInfo.isManager ? "cursor-pointer hover:brightness-95" : ""
-                          } ${
-                            isMe
-                              ? "bg-primary/15 text-primary font-black"
-                              : isOnLeave
-                              ? "bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400"
-                              : "bg-muted text-foreground"
-                          }`}
-                          title={`${person.name}${
-                            pCond !== "active"
-                              ? `（${pCondMeta.label}${periodLabel ? `: ${periodLabel}` : ""}）`
-                              : ""
-                          }${effectiveCanMutate && myInfo.isManager ? ": タップして班・ラベルを変更" : ""}`}
-                        >
-                          <div className="flex flex-col items-center justify-center leading-none py-0.5">
-                            {person.uniformNumber ? (
+                        <div className="flex flex-col items-center justify-center leading-none py-0.5">
+                          {person.uniformNumber ? (
+                            <span
+                              className={`text-[8.5px] font-black px-0.5 py-0.1 rounded ${
+                                isOnLeave
+                                  ? "bg-slate-500/20 text-slate-600 dark:text-slate-300"
+                                  : pCond === "rehab"
+                                  ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
+                                  : pCond === "restricted"
+                                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                                  : "bg-primary/10 text-primary"
+                              }`}
+                            >
+                              #{person.uniformNumber}
+                              {pCond !== "active" ? pCondMeta.mark : ""}
+                            </span>
+                          ) : person.groupType === "mother" ? (
+                            <span className="text-[8.5px] font-black text-muted-foreground">母</span>
+                          ) : person.groupType === "father" ? (
+                            <span className="text-[8.5px] font-black text-muted-foreground">父</span>
+                          ) : person.groupType === "staff" ? (
+                            <span className="text-[8.5px] font-black text-muted-foreground">指導</span>
+                          ) : pCond !== "active" ? (
+                            <span
+                              className={`text-[8px] font-black px-0.5 py-0.1 rounded ${pCondMeta.softBadgeClass}`}
+                            >
+                              {pCondMeta.matrixTag}
+                            </span>
+                          ) : (
+                            <span className="text-[8.5px] font-black text-muted-foreground">保護</span>
+                          )}
+                          <span
+                            className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${
+                              isMe
+                                ? "text-primary font-black"
+                                : isOnLeave
+                                ? "text-slate-500 dark:text-slate-400"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
+                          </span>
+                          {/* 3行目: 班・サブラベル または 在籍コンディションタグ */}
+                          <div className="min-h-[14px] flex items-center justify-center mt-0.5">
+                            {subLabel ? (
                               <span
-                                className={`text-[8.5px] font-black px-0.5 py-0.1 rounded ${
+                                className={`text-[8px] font-black px-1 py-0.2 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${
                                   isOnLeave
-                                    ? "bg-slate-500/20 text-slate-600 dark:text-slate-300"
-                                    : pCond === "rehab"
-                                    ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-                                    : pCond === "restricted"
-                                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                                    : "bg-primary/10 text-primary"
+                                    ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600"
+                                    : "bg-primary/10 text-primary border border-primary/25"
                                 }`}
+                                title={subLabel}
                               >
-                                #{person.uniformNumber}
-                                {pCond !== "active" ? pCondMeta.mark : ""}
+                                {subLabel}
                               </span>
-                            ) : person.groupType === "mother" ? (
-                              <span className="text-[8.5px] font-black text-muted-foreground">母</span>
-                            ) : person.groupType === "father" ? (
-                              <span className="text-[8.5px] font-black text-muted-foreground">父</span>
-                            ) : person.groupType === "staff" ? (
-                              <span className="text-[8.5px] font-black text-muted-foreground">指導</span>
                             ) : pCond !== "active" ? (
                               <span
-                                className={`text-[8px] font-black px-0.5 py-0.1 rounded ${pCondMeta.softBadgeClass}`}
+                                className={`text-[7.5px] font-black px-0.5 py-0.1 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${pCondMeta.softBadgeClass}`}
+                                title={pCondMeta.label}
                               >
                                 {pCondMeta.matrixTag}
                               </span>
-                            ) : (
-                              <span className="text-[8.5px] font-black text-muted-foreground">保護</span>
-                            )}
-                            <span
-                              className={`text-[9.5px] font-black truncate max-w-[33px] mt-0.5 ${
-                                isMe
-                                  ? "text-primary font-black"
-                                  : isOnLeave
-                                  ? "text-slate-500 dark:text-slate-400"
-                                  : "text-foreground"
-                              }`}
-                            >
-                              {person.name.length > 3 ? person.name.slice(0, 3) : person.name}
-                            </span>
-                            {/* 3行目: 班・サブラベル または 在籍コンディションタグ */}
-                            <div className="min-h-[14px] flex items-center justify-center mt-0.5">
-                              {subLabel ? (
-                                <span
-                                  className={`text-[8px] font-black px-1 py-0.2 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${
-                                    isOnLeave
-                                      ? "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-600"
-                                      : "bg-primary/10 text-primary border border-primary/25"
-                                  }`}
-                                  title={subLabel}
-                                >
-                                  {subLabel}
-                                </span>
-                              ) : pCond !== "active" ? (
-                                <span
-                                  className={`text-[7.5px] font-black px-0.5 py-0.1 rounded truncate max-w-[33px] whitespace-nowrap leading-tight ${pCondMeta.softBadgeClass}`}
-                                  title={pCondMeta.label}
-                                >
-                                  {pCondMeta.matrixTag}
-                                </span>
-                              ) : myInfo.isManager && effectiveCanMutate ? (
-                                <span
-                                  className="text-[7.5px] font-bold text-muted-foreground/60 hover:text-primary px-0.5 py-0.2 rounded hover:bg-primary/10 leading-tight transition-colors"
-                                  title="タップして班・ラベルを設定"
-                                >
-                                  +班
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-
-                {/* 📌 ボディ行 (イベントごと) */}
-                <tbody>
-                  {filteredEvents.map((ev) => {
-                    const isSaturday = ev.dayOfWeek === "土";
-                    const isSunday = ev.dayOfWeek === "日";
-
-                    // 🌟 表示中メンバー(currentMembers)に基づいた動的集計を算出
-                    let duty = 0;
-                    let help = 0;
-                    let setup = 0;
-                    let game = 0;
-                    let absent = 0;
-                    const evMatrix = matrix[ev.id] || {};
-                    for (const p of currentMembers) {
-                      const st = evMatrix[p.id]?.status;
-                      if (st === "duty") duty++;
-                      else if (st === "help") help++;
-                      else if (st === "setup") setup++;
-                      else if (st === "game") game++;
-                      else if (st === "absent") absent++;
-                    }
-                    const summary = {
-                      duty,
-                      help,
-                      setup,
-                      game,
-                      absent,
-                      totalPresent: duty + help + setup + game,
-                    };
-
-                    return (
-                      <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・幅124px・日付幅52px完全統一) */}
-                        <td
-                          className="sticky left-0 z-10 bg-card border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs"
-                        >
-                          <div className="flex items-center justify-between gap-0.5 leading-tight">
-                            <div className="flex items-center gap-1 min-w-0">
-                              {/* 統一幅の日付バッジ (幅52px固定) */}
+                            ) : myInfo.isManager && effectiveCanMutate ? (
                               <span
-                                className={`w-[52px] min-w-[52px] max-w-[52px] text-center inline-block tabular-nums font-bold text-[10px] py-0.5 px-0.5 rounded shrink-0 ${
-                                  isSunday
-                                    ? "bg-red-500/10 text-red-500"
-                                    : isSaturday
-                                    ? "bg-blue-500/10 text-blue-500"
-                                    : "bg-muted text-foreground"
-                                }`}
+                                className="text-[7.5px] font-bold text-muted-foreground/60 hover:text-primary px-0.5 py-0.2 rounded hover:bg-primary/10 leading-tight transition-colors"
+                                title="タップして班・ラベルを設定"
                               >
-                                {ev.date}({ev.dayOfWeek})
+                                +班
                               </span>
-                              {ev.dutyGroup && ev.dutyGroup !== "なし" && (
-                                <span className="w-[28px] min-w-[28px] max-w-[28px] text-center inline-flex items-center justify-center text-[8.5px] font-black py-0.5 rounded bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 whitespace-nowrap shrink-0">
-                                  {ev.dutyGroup}
-                                </span>
-                              )}
-                            </div>
-
-                            {/* 出欠集計テキスト作成・コピー・LINE転送ダイアログ起動ボタン */}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenShareSummaryModal(ev)}
-                              title="出欠集計テキストの表示・コピー・LINE転送"
-                              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-primary active:text-primary bg-muted hover:bg-primary/10 active:bg-primary/20 rounded border border-border active:scale-95 transition-all cursor-pointer shrink-0"
-                            >
-                              <ClipboardCopy className="w-3.5 h-3.5" />
-                            </button>
+                            ) : null}
                           </div>
-
-                          <p className="text-[9.5px] font-black text-foreground truncate max-w-[115px] mt-0.5 leading-tight" title={ev.title}>
-                            {ev.title}
-                          </p>
-
-                          {/* 💬 日別メモ・備考の表示 */}
-                          {ev.description && (
-                            <p
-                              onClick={
-                                effectiveCanMutate
-                                  ? () => handleOpenDayNoteModal(ev)
-                                  : undefined
-                              }
-                              className={`text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 ${
-                                effectiveCanMutate ? "cursor-pointer hover:underline" : ""
-                              }`}
-                              title={
-                                effectiveCanMutate
-                                  ? `備考: ${ev.description} (タップして編集)`
-                                  : `備考: ${ev.description}`
-                              }
-                            >
-                              <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
-                              <span className="truncate">{ev.description}</span>
-                            </p>
-                          )}
-                        </td>
-
-                        {/* ② 出欠集計 各記号ごとの集計値セル (項目設定で有効なもののみ動的表示) */}
-                        {activeSummaryStatuses.map((st) => {
-                          const count = summary[st.id as keyof typeof summary] || 0;
-                          return (
-                            <td
-                              key={st.id}
-                              className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
-                                count > 0 ? st.cellTextClass : st.cellMutedClass
-                              }`}
-                            >
-                              {count}
-                            </td>
-                          );
-                        })}
-
-                        {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5・休部期間＆父母連動対応) */}
-                        {currentMembers.map((person) => {
-                          const att = matrix[ev.id]?.[person.id] || { status: "pending", comment: "" };
-                          const condOnEvent = resolvePersonConditionOnDate(person, ev.dateStr);
-                          const isPersonOnLeave = condOnEvent.status === "on_leave";
-                          const isDefaultOnLeaveCell =
-                            isPersonOnLeave && (att.status === "pending" || !att.status);
-                          const leavePeriodTip = condOnEvent.period
-                            ? ` ${formatConditionPeriodRange(
-                                condOnEvent.period.startDate,
-                                condOnEvent.period.endDate,
-                                { compact: true }
-                              )}`
-                            : "";
-                          const statusConfig =
-                            ATTENDANCE_STATUSES[att.status as AttendanceMarkType] ||
-                            ATTENDANCE_STATUSES.pending;
-                          const isEditable = canEditPerson(person.id, person.groupType);
-                          const isMe =
-                            person.id === myInfo.memberId ||
-                            myInfo.memberIds.includes(person.id) ||
-                            myInfo.playerIds.includes(person.id);
-
-                          return (
-                            <td
-                              key={person.id}
-                              onClick={() => handleCellClick(ev, person)}
-                              title={
-                                isDefaultOnLeaveCell
-                                  ? `${person.name}（${
-                                      person.groupType === "player" ? "休部期間中" : "ご家族休部期間中"
-                                    }${leavePeriodTip}）`
-                                  : undefined
-                              }
-                              className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border transition-all overflow-hidden ${
-                                isMe
-                                  ? "bg-primary/5"
-                                  : isPersonOnLeave
-                                  ? "bg-slate-50 dark:bg-slate-900/45"
-                                  : "bg-card"
-                              } ${
-                                isEditable
-                                  ? "cursor-pointer hover:bg-primary/10 active:scale-90"
-                                  : att.comment
-                                  ? "cursor-pointer hover:bg-primary/10 active:scale-90"
-                                  : "opacity-90"
-                              }`}
-                            >
-                              <div className="relative z-0 inline-flex items-center justify-center">
-                                {isDefaultOnLeaveCell ? (
-                                  <span
-                                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[9.5px] font-black transition-transform bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 ${
-                                      isEditable ? "group-hover:scale-105" : ""
-                                    }`}
-                                  >
-                                    休
-                                  </span>
-                                ) : (
-                                  <span
-                                    className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-black transition-transform ${statusConfig.badgeClass} ${
-                                      isEditable ? "group-hover:scale-105" : ""
-                                    }`}
-                                  >
-                                    {statusConfig.mark}
-                                  </span>
-                                )}
-
-                                {/* コメント/メモがある場合のドットインジケータ */}
-                                {att.comment && (
-                                  <span
-                                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border border-card"
-                                    title={att.comment}
-                                  />
-                                )}
-                              </div>
-                            </td>
-                          );
-                        })}
-                      </tr>
+                        </div>
+                      </th>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+
+              {/* 📌 ボディ行 (イベントごと) */}
+              <tbody>
+                {filteredEvents.map((ev) => {
+                  const isSaturday = ev.dayOfWeek === "土";
+                  const isSunday = ev.dayOfWeek === "日";
+
+                  // 🌟 表示中メンバー(currentMembers)に基づいた動的集計を算出
+                  let duty = 0;
+                  let help = 0;
+                  let setup = 0;
+                  let game = 0;
+                  let absent = 0;
+                  const evMatrix = matrix[ev.id] || {};
+                  for (const p of currentMembers) {
+                    const st = evMatrix[p.id]?.status;
+                    if (st === "duty") duty++;
+                    else if (st === "help") help++;
+                    else if (st === "setup") setup++;
+                    else if (st === "game") game++;
+                    else if (st === "absent") absent++;
+                  }
+                  const summary = {
+                    duty,
+                    help,
+                    setup,
+                    game,
+                    absent,
+                    totalPresent: duty + help + setup + game,
+                  };
+
+                  return (
+                    <tr key={ev.id} className="hover:bg-muted/30 transition-colors group">
+                      {/* ① 左側固定セル: 日付・班・イベント (完全不透明bg-card・幅124px・日付幅52px完全統一) */}
+                      <td className="sticky left-0 z-10 bg-card border-b border-r border-border w-[124px] min-w-[124px] max-w-[124px] p-1 shadow-xs">
+                        <div className="flex items-center justify-between gap-0.5 leading-tight">
+                          <div className="flex items-center gap-1 min-w-0">
+                            {/* 統一幅の日付バッジ (幅52px固定) */}
+                            <span
+                              className={`w-[52px] min-w-[52px] max-w-[52px] text-center inline-block tabular-nums font-bold text-[10px] py-0.5 px-0.5 rounded shrink-0 ${
+                                isSunday
+                                  ? "bg-red-500/10 text-red-500"
+                                  : isSaturday
+                                  ? "bg-blue-500/10 text-blue-500"
+                                  : "bg-muted text-foreground"
+                              }`}
+                            >
+                              {ev.date}({ev.dayOfWeek})
+                            </span>
+                            {ev.dutyGroup && ev.dutyGroup !== "なし" && (
+                              <span className="w-[28px] min-w-[28px] max-w-[28px] text-center inline-flex items-center justify-center text-[8.5px] font-black py-0.5 rounded bg-amber-500/12 text-amber-700 dark:text-amber-300 border border-amber-500/25 whitespace-nowrap shrink-0">
+                                {ev.dutyGroup}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* 出欠集計テキスト作成・コピー・LINE転送ダイアログ起動ボタン */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenShareSummaryModal(ev)}
+                            title="出欠集計テキストの表示・コピー・LINE転送"
+                            className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-primary active:text-primary bg-muted hover:bg-primary/10 active:bg-primary/20 rounded border border-border active:scale-95 transition-all cursor-pointer shrink-0"
+                          >
+                            <ClipboardCopy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <p
+                          className="text-[9.5px] font-black text-foreground truncate max-w-[115px] mt-0.5 leading-tight"
+                          title={ev.title}
+                        >
+                          {ev.title}
+                        </p>
+
+                        {/* 💬 日別メモ・備考の表示 */}
+                        {ev.description && (
+                          <p
+                            onClick={
+                              effectiveCanMutate ? () => handleOpenDayNoteModal(ev) : undefined
+                            }
+                            className={`text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 ${
+                              effectiveCanMutate ? "cursor-pointer hover:underline" : ""
+                            }`}
+                            title={
+                              effectiveCanMutate
+                                ? `備考: ${ev.description} (タップして編集)`
+                                : `備考: ${ev.description}`
+                            }
+                          >
+                            <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span className="truncate">{ev.description}</span>
+                          </p>
+                        )}
+                      </td>
+
+                      {/* ② 出欠集計 各記号ごとの集計値セル (項目設定で有効なもののみ動的表示) */}
+                      {activeSummaryStatuses.map((st) => {
+                        const count = summary[st.id as keyof typeof summary] || 0;
+                        return (
+                          <td
+                            key={st.id}
+                            className={`w-6 min-w-[25px] max-w-[25px] p-0.5 text-center border-b border-r border-border font-black text-[10.5px] ${
+                              count > 0 ? st.cellTextClass : st.cellMutedClass
+                            }`}
+                          >
+                            {count}
+                          </td>
+                        );
+                      })}
+
+                      {/* ③ メンバー別 出欠セル (超コンパクト・幅35px・完全不透明背景・記号w-5 h-5・休部期間＆父母連動対応) */}
+                      {currentMembers.map((person) => {
+                        const att = matrix[ev.id]?.[person.id] || {
+                          status: "pending",
+                          comment: "",
+                        };
+                        const condOnEvent = resolvePersonConditionOnDate(person, ev.dateStr);
+                        const isPersonOnLeave = condOnEvent.status === "on_leave";
+                        const isDefaultOnLeaveCell =
+                          isPersonOnLeave && (att.status === "pending" || !att.status);
+                        const leavePeriodTip = condOnEvent.period
+                          ? ` ${formatConditionPeriodRange(
+                              condOnEvent.period.startDate,
+                              condOnEvent.period.endDate,
+                              { compact: true }
+                            )}`
+                          : "";
+                        const statusConfig =
+                          ATTENDANCE_STATUSES[att.status as AttendanceMarkType] ||
+                          ATTENDANCE_STATUSES.pending;
+                        const isEditable = canEditPerson(person.id, person.groupType);
+                        const isMe =
+                          person.id === myInfo.memberId ||
+                          myInfo.memberIds.includes(person.id) ||
+                          myInfo.playerIds.includes(person.id);
+
+                        return (
+                          <td
+                            key={person.id}
+                            onClick={() => handleCellClick(ev, person)}
+                            title={
+                              isDefaultOnLeaveCell
+                                ? `${person.name}（${
+                                    person.groupType === "player"
+                                      ? "休部期間中"
+                                      : "ご家族休部期間中"
+                                  }${leavePeriodTip}）`
+                                : undefined
+                            }
+                            className={`w-9 min-w-[35px] max-w-[35px] p-0.5 text-center border-b border-r border-border transition-all overflow-hidden ${
+                              isMe
+                                ? "bg-primary/5"
+                                : isPersonOnLeave
+                                ? "bg-slate-50 dark:bg-slate-900/45"
+                                : "bg-card"
+                            } ${
+                              isEditable
+                                ? "cursor-pointer hover:bg-primary/10 active:scale-90"
+                                : att.comment
+                                ? "cursor-pointer hover:bg-primary/10 active:scale-90"
+                                : "opacity-90"
+                            }`}
+                          >
+                            <div className="relative z-0 inline-flex items-center justify-center">
+                              {isDefaultOnLeaveCell ? (
+                                <span
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[9.5px] font-black transition-transform bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-300 dark:border-slate-700 ${
+                                    isEditable ? "group-hover:scale-105" : ""
+                                  }`}
+                                >
+                                  休
+                                </span>
+                              ) : (
+                                <span
+                                  className={`w-5 h-5 rounded-md flex items-center justify-center text-[10.5px] font-black transition-transform ${statusConfig.badgeClass} ${
+                                    isEditable ? "group-hover:scale-105" : ""
+                                  }`}
+                                >
+                                  {statusConfig.mark}
+                                </span>
+                              )}
+
+                              {/* コメント/メモがある場合のドットインジケータ */}
+                              {att.comment && (
+                                <span
+                                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary border border-card"
+                                  title={att.comment}
+                                />
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+      </div>
 
-        {/* 🌟 最下部マージン（ボトムナビに被らず快適にタップできる適度な余白） */}
-        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ② 下部固定ドック：ボトムナビ代替の切替関連コントロールバー（片手親指操作対応）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <footer className="shrink-0 bg-card border-t-2 border-border shadow-[0_-2px_10px_rgba(15,23,42,0.06)] z-40 pb-[max(env(safe-area-inset-bottom),8px)] select-none">
+        <div className="max-w-2xl mx-auto w-full px-2 pt-1.5 space-y-1.5">
+          {/* 🔍 メンバー名・班検索バー（検索トグル展開時のみ表示） */}
+          {isSearchOpen && (
+            <div className="flex items-center gap-1.5 pb-0.5">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="メンバー名・班で絞り込み..."
+                  className="w-full h-8 pl-7 pr-7 text-xs font-bold rounded-xl bg-muted/60 border border-border focus:outline-none focus:border-primary text-foreground placeholder:text-muted-foreground"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    aria-label="検索キーワードをクリア"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <span className="px-2 py-1 rounded-lg bg-muted text-[10px] font-black text-muted-foreground tabular-nums shrink-0">
+                {currentMembers.length}名
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(false)}
+                className="h-8 px-2.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-[10.5px] font-black text-foreground active:scale-95 transition-all shrink-0 cursor-pointer"
+              >
+                閉じる
+              </button>
+            </div>
+          )}
+
+          {/* 上段：月切替ピル ＋ 過去日・検索・凡例・設定 */}
+          <div className="flex items-center justify-between gap-1.5">
+            {/* 月単位切替ピル（横スクロール） */}
+            <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+              <button
+                type="button"
+                onClick={() => handleSelectMonth("all")}
+                className={`h-7 px-2.5 rounded-full text-[10.5px] whitespace-nowrap transition-all active:scale-95 shrink-0 cursor-pointer ${
+                  selectedMonth === "all"
+                    ? "bg-primary text-primary-foreground border border-primary font-black shadow-2xs"
+                    : "bg-muted/60 text-muted-foreground border border-border hover:text-foreground font-bold"
+                }`}
+              >
+                全期間
+              </button>
+
+              {availableMonths.map((m) => {
+                const parts = m.split("-");
+                const mNum = parseInt(parts[1], 10);
+                const isCurrent = m === currentMonthStr;
+                const isSelected = selectedMonth === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => handleSelectMonth(m)}
+                    className={`h-7 px-2.5 rounded-full text-[10.5px] whitespace-nowrap transition-all active:scale-95 shrink-0 cursor-pointer ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground border border-primary font-black shadow-2xs"
+                        : "bg-muted/60 text-muted-foreground border border-border hover:text-foreground font-bold"
+                    }`}
+                  >
+                    {mNum}月{isCurrent ? "(今月)" : ""}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* 右側クイック切替・ツール群 */}
+            <div className="shrink-0 flex items-center gap-1 pl-1.5 border-l border-border">
+              {/* 過去日 表示/非表示トグル */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPastDates((prev) => !prev);
+                  if (matrixScrollRef.current) {
+                    matrixScrollRef.current.scrollTop = 0;
+                  }
+                }}
+                className={`h-7 px-2 rounded-lg text-[10px] flex items-center gap-1 border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                  showPastDates
+                    ? "bg-primary/12 text-primary border-primary/35 font-black"
+                    : "bg-muted/60 text-muted-foreground border-border hover:text-foreground font-bold"
+                }`}
+                title={showPastDates ? "過去日の予定を表示中" : "過去日の予定は非表示"}
+              >
+                {showPastDates ? (
+                  <Eye className="w-3 h-3 shrink-0" />
+                ) : (
+                  <EyeOff className="w-3 h-3 shrink-0" />
+                )}
+                <span>過去</span>
+              </button>
+
+              {/* メンバー名検索トグル */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSearchOpen((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      setTimeout(() => searchInputRef.current?.focus(), 30);
+                    }
+                    return next;
+                  });
+                }}
+                className={`relative w-7 h-7 rounded-lg flex items-center justify-center border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                  isSearchOpen || searchQuery.trim().length > 0
+                    ? "bg-primary/12 text-primary border-primary/35 font-black"
+                    : "bg-muted/60 text-muted-foreground border-border hover:text-foreground"
+                }`}
+                aria-label="メンバー名検索"
+                title="メンバー名・班で検索"
+              >
+                <Search className="w-3.5 h-3.5" />
+                {searchQuery.trim().length > 0 && !isSearchOpen && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary" />
+                )}
+              </button>
+
+              {/* 凡例・確認項目の意味シート起動 */}
+              <button
+                type="button"
+                onClick={() => setIsLegendMeaningOpen(true)}
+                className="h-7 px-2 rounded-lg text-[10px] font-bold bg-muted/60 hover:bg-muted text-foreground border border-border flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
+                title="記号の凡例・意味合いを確認"
+              >
+                <HelpCircle className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                <span>凡例</span>
+              </button>
+
+              {/* 設定・代理入力・共有シート起動（代理入力ON時はアンバー強調） */}
+              <button
+                type="button"
+                onClick={() => setIsToolsSheetOpen(true)}
+                className={`h-7 px-2 rounded-lg text-[10px] flex items-center gap-1 border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                  isManagerOverrideMode
+                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/40 font-black"
+                    : "bg-muted/60 hover:bg-muted text-foreground border-border font-bold"
+                }`}
+                title="表示設定・代理入力切替・LINE共有"
+              >
+                {isManagerOverrideMode ? (
+                  <>
+                    <Unlock className="w-3 h-3 shrink-0" />
+                    <span>代理ON</span>
+                  </>
+                ) : (
+                  <>
+                    <SlidersHorizontal className="w-3 h-3 text-primary shrink-0" />
+                    <span>{effectiveCanMutate ? "設定" : "共有"}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* 下段：戻るボタン ＋ 5グループ切替タブ */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              id="btn-attendance-board-back"
+              onClick={handleBackNavigation}
+              className="h-10 px-2.5 rounded-xl bg-muted hover:bg-muted/80 border border-border text-foreground flex items-center justify-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
+              aria-label="前の画面へ戻る"
+            >
+              <ChevronLeft className="w-4 h-4 -ml-0.5 shrink-0" />
+              <span className="text-[11px] font-black">戻る</span>
+            </button>
+
+            <div className="flex-1 min-w-0 grid grid-cols-5 gap-1 bg-muted p-0.5 rounded-xl border border-border">
+              {([
+                { id: "player" as GroupTabType, label: "選手", count: groups.players.length },
+                { id: "mother" as GroupTabType, label: "母", count: groups.mothers.length },
+                { id: "father" as GroupTabType, label: "父", count: groups.fathers.length },
+                { id: "staff" as GroupTabType, label: "スタッフ", count: groups.staff.length },
+                {
+                  id: "all" as GroupTabType,
+                  label: "全員",
+                  count: new Set(
+                    [
+                      ...groups.players,
+                      ...(groups.parents.length > 0
+                        ? groups.parents
+                        : [...groups.mothers, ...groups.fathers]),
+                      ...groups.staff,
+                    ].map((m) => m.id)
+                  ).size,
+                },
+              ]).map((tab) => {
+                const isTabActive = !isLoading && selectedGroupTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleSelectGroupTab(tab.id)}
+                    className={`h-9 rounded-lg flex flex-col items-center justify-center leading-none transition-all active:scale-95 cursor-pointer ${
+                      isTabActive
+                        ? "bg-card text-foreground shadow-xs border border-border font-black"
+                        : "text-muted-foreground hover:text-foreground font-bold border border-transparent"
+                    }`}
+                  >
+                    <span className="text-[10.5px] whitespace-nowrap">{tab.label}</span>
+                    <span
+                      className={`text-[8.5px] tabular-nums mt-0.5 ${
+                        isTabActive ? "text-primary font-black" : "text-muted-foreground font-bold"
+                      }`}
+                    >
+                      {isLoading ? "-" : tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </footer>
 
         {mounted &&
           createPortal(
@@ -3931,32 +3867,389 @@ function AttendanceMatrixBoardContent() {
             </div>
           </div>
         )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            📖 記号の凡例・確認項目の意味ボトムシート (A-3 Solid規格)
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {isLegendMeaningOpen && (
+          <div className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150">
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsLegendMeaningOpen(false)}
+            />
+            <div
+              className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[85dvh] sm:max-h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+                    <HelpCircle className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">
+                      凡例・確認項目の意味（
+                      {selectedGroupTab === "player"
+                        ? "選手"
+                        : selectedGroupTab === "mother"
+                        ? "母"
+                        : selectedGroupTab === "father"
+                        ? "父"
+                        : selectedGroupTab === "staff"
+                        ? "スタッフ"
+                        : selectedGroupTab === "all"
+                        ? "全員"
+                        : "一覧"}
+                      ）
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold">
+                      各記号の名称と選ぶ基準を確認できます
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLegendMeaningOpen(false)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 no-scrollbar">
+                {/* 記号バッジ早見バー */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {activeLegendItems.map((item) => (
+                    <div
+                      key={`sheet-pill-${item.id}`}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/50 border border-border text-[11px] font-black text-foreground"
+                    >
+                      <span
+                        className={`w-4 h-4 rounded-full ${
+                          STATUS_BG_CLASS_BY_ID[item.id] || item.bgClass
+                        } text-white flex items-center justify-center text-[9.5px] font-black shrink-0`}
+                      >
+                        {item.mark}
+                      </span>
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
+                  {(selectedGroupTab === "player" || selectedGroupTab === "all") &&
+                    groups.players.some(
+                      (p) => normalizePlayerConditionStatus(p.conditionStatus) === "on_leave"
+                    ) && (
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[11px] font-black text-slate-600 dark:text-slate-300">
+                        <span className="w-4 h-4 rounded-full bg-slate-500 text-white flex items-center justify-center text-[9px] font-black shrink-0">
+                          休
+                        </span>
+                        <span>休部中</span>
+                      </div>
+                    )}
+                </div>
+
+                {/* 意味合い・判断基準リスト */}
+                {activeLegendMeaningRows.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4 font-bold">
+                    有効な確認項目がありません
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {activeLegendMeaningRows.map((row) => (
+                      <div
+                        key={`legend-sheet-${row.id}`}
+                        className="flex items-start gap-2.5 p-2.5 rounded-xl bg-muted/35 border border-border text-xs leading-snug"
+                      >
+                        <span
+                          className={`w-6 h-6 rounded-lg ${row.bgClass} text-white flex items-center justify-center text-[11px] font-black shrink-0 mt-0.5`}
+                        >
+                          {row.mark}
+                        </span>
+                        <div className="min-w-0 flex-1 space-y-1">
+                          {row.entries.map((entry, idx) => (
+                            <div key={`${row.id}-sheet-e-${idx}`} className="min-w-0">
+                              {entry.groupTag && (
+                                <span className="inline-block px-1.5 py-0.2 mr-1.5 rounded bg-card border border-border text-[9.5px] font-black text-muted-foreground">
+                                  {entry.groupTag}
+                                </span>
+                              )}
+                              <span className="font-black text-foreground">{entry.label}</span>
+                              {entry.description ? (
+                                <span className="text-muted-foreground font-bold">
+                                  {" ： "}
+                                  {entry.description}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground/60 font-medium">
+                                  {" ： （意味合い未設定）"}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
+                {effectiveCanMutate ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLegendMeaningOpen(false);
+                      handleOpenStatusConfigModal();
+                    }}
+                    className="px-3.5 py-2.5 rounded-xl bg-primary/10 hover:bg-primary/15 text-primary border border-primary/25 text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                    <span>項目設定を編集</span>
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsLegendMeaningOpen(false)}
+                  className="px-5 py-2.5 rounded-xl bg-card hover:bg-muted text-foreground border border-border text-xs font-black active:scale-95 transition-all cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            ⚙️ 出欠一覧表の表示設定・代理入力・共有ボトムシート (A-3 Solid規格)
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {isToolsSheetOpen && (
+          <div className="fixed inset-0 z-[9994] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-150">
+            <div
+              className="absolute inset-0"
+              onClick={() => setIsToolsSheetOpen(false)}
+            />
+            <div
+              className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col max-h-[88dvh] sm:max-h-[88vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 px-4 py-3 flex items-start justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+                    <ClipboardCheck className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">
+                      出欠一覧表の操作・設定
+                    </h3>
+                    <p className="text-[10px] text-slate-300 font-bold tabular-nums">
+                      現在 {filteredEvents.length}日程 × {currentMembers.length}名 を表示中
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsToolsSheetOpen(false)}
+                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 shrink-0 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 no-scrollbar">
+                {/* 管理者・指導者向け：代理入力モード切替 */}
+                {effectiveCanMutate && (myInfo.isITAdmin || myInfo.isManager) && (
+                  <div className="rounded-xl border border-border bg-muted/35 p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-foreground flex items-center gap-1.5">
+                          {isManagerOverrideMode ? (
+                            <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                          ) : (
+                            <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          )}
+                          <span>管理者・指導者 代理入力モード</span>
+                        </p>
+                        <p className="text-[10px] text-muted-foreground font-bold mt-0.5 leading-snug">
+                          {isManagerOverrideMode
+                            ? "現在ON：チーム全メンバーの出欠セルを代理で変更できます"
+                            : "現在OFF：ご本人・ご家族のセルのみ編集可能です（誤操作防止）"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsManagerOverrideMode((prev) => !prev)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                          isManagerOverrideMode
+                            ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                            : "bg-card text-foreground border-border hover:bg-muted"
+                        }`}
+                      >
+                        {isManagerOverrideMode ? "代理入力ON" : "ONにする"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 表示・項目カスタマイズ（編集権限者） */}
+                {effectiveCanMutate && (
+                  <div className="space-y-1.5">
+                    <p className="text-[10.5px] font-black text-muted-foreground px-0.5">
+                      表の項目・並び順設定
+                    </p>
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsToolsSheetOpen(false);
+                          handleOpenStatusConfigModal();
+                        }}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted active:scale-[0.99] transition-all text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <SlidersHorizontal className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground">確認項目の設定</p>
+                            <p className="text-[10px] font-bold text-muted-foreground truncate">
+                              グループ別の記号（◎○▲△×）の名称・意味・使用有無
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsToolsSheetOpen(false);
+                          handleOpenOrderModal();
+                        }}
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted active:scale-[0.99] transition-all text-left cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <ArrowUpDown className="w-4 h-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-foreground">メンバー並び順設定</p>
+                            <p className="text-[10px] font-bold text-muted-foreground truncate">
+                              グループ内でのメンバー列の表示順を並び替え
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+
+                      {myInfo.isManager && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsToolsSheetOpen(false);
+                            handleOpenSubLabelsModal();
+                          }}
+                          className="flex items-center justify-between gap-3 p-3 rounded-xl border border-border bg-card hover:bg-muted active:scale-[0.99] transition-all text-left cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                              <Tag className="w-4 h-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-black text-foreground">班・サブラベル設定</p>
+                              <p className="text-[10px] font-bold text-muted-foreground truncate">
+                                氏名の下に表示する当番班（1班・2班等）を一括設定
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 共有・データ更新・予定ページ遷移（全員利用可能） */}
+                <div className="space-y-1.5">
+                  <p className="text-[10.5px] font-black text-muted-foreground px-0.5">
+                    共有・画面移動
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={isSharingPage}
+                      onClick={() => void handleShareBoardPage()}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                    >
+                      {isSharingPage ? (
+                        <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      ) : (
+                        <Share2 className="w-4 h-4 shrink-0" />
+                      )}
+                      <span>LINEで共有</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsSheetOpen(false);
+                        void loadMatrixData(true);
+                      }}
+                      className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black active:scale-95 transition-all cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span>最新に更新</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsToolsSheetOpen(false);
+                      router.push("/liff/schedule");
+                    }}
+                    className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl border border-border bg-muted/50 hover:bg-muted text-foreground text-xs font-black active:scale-95 transition-all cursor-pointer"
+                  >
+                    <CalendarIcon className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                    <span>活動予定（カレンダー・カード一覧）へ移動</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsToolsSheetOpen(false)}
+                  className="w-full py-2.5 rounded-xl bg-card hover:bg-muted text-foreground border border-border text-xs font-black active:scale-95 transition-all cursor-pointer"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
             </>,
             document.body
           )}
 
-        {/* 📋 出欠集計テキスト作成・共有（コピー・他グループ挿入・自由編集・リセット・LINE転送）モーダル */}
-        <AttendanceSummaryShareModal
-          event={activeSharingEvent}
-          onClose={() => setSharingSummaryEvent(null)}
-          initialGroupTab={selectedGroupTab}
-          teamPrefixSource={currentTeam}
-          teamId={currentTeam?.id || null}
-          liff={liff}
-          groups={{
-            players: groups.players,
-            mothers: groups.mothers,
-            fathers: groups.fathers,
-            staff: groups.staff,
-          }}
-          evMatrix={activeSharingEvent ? matrix[activeSharingEvent.id] || {} : {}}
-          groupStatusConfig={groupStatusConfig}
-          memberSortOrder={memberSortOrder}
-          memberSubLabels={memberSubLabels}
-          sortMembersByCustomOrder={sortMembersByCustomOrder}
-          resolvePersonConditionOnDate={resolvePersonConditionOnDate}
-        />
-      </div>
+      {/* 📋 出欠集計テキスト作成・共有（コピー・他グループ挿入・自由編集・リセット・LINE転送）モーダル */}
+      <AttendanceSummaryShareModal
+        event={activeSharingEvent}
+        onClose={() => setSharingSummaryEvent(null)}
+        initialGroupTab={selectedGroupTab}
+        teamPrefixSource={currentTeam}
+        teamId={currentTeam?.id || null}
+        liff={liff}
+        groups={{
+          players: groups.players,
+          mothers: groups.mothers,
+          fathers: groups.fathers,
+          staff: groups.staff,
+        }}
+        evMatrix={activeSharingEvent ? matrix[activeSharingEvent.id] || {} : {}}
+        groupStatusConfig={groupStatusConfig}
+        memberSortOrder={memberSortOrder}
+        memberSubLabels={memberSubLabels}
+        sortMembersByCustomOrder={sortMembersByCustomOrder}
+        resolvePersonConditionOnDate={resolvePersonConditionOnDate}
+      />
     </div>
   );
 }
@@ -3965,12 +4258,9 @@ export default function AttendanceMatrixBoardPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col flex-1">
-          <LiffHeader />
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground space-y-2">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
-            <span className="text-xs font-bold">出欠一覧表を読み込み中...</span>
-          </div>
+        <div className="flex flex-col flex-1 min-h-0 h-full w-full items-center justify-center bg-card text-muted-foreground space-y-2">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <span className="text-xs font-bold">出欠一覧表を読み込み中...</span>
         </div>
       }
     >
