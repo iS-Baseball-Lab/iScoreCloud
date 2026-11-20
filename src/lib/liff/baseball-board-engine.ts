@@ -751,7 +751,7 @@ export function createInitialMatchState(params: {
         ? "①左下「投球」➔ ②右下「打つ！」で柵越え連発を狙おう！"
         : !playerIsHome
         ? "プレイボール！①左下「投球」➔ ②右下「打つ！」で攻撃開始！"
-        : "プレイボール！コース・球速・球種を選んで投球開始！",
+        : "プレイボール！球速・球種を選んで左下「投球」で勝負！",
     lastSubCallout:
       mode === "derby"
         ? "センター看板直撃ならボーナス +150pt！"

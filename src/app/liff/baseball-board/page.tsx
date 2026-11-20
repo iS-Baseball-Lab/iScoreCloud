@@ -1074,9 +1074,9 @@ export default function LiffBaseballBoardPage() {
       </header>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ② 打者＆実況スリムバー（shrink-0）
+          ② 打者＆実況スリムバー（h-[46px] 完全固定で攻守交代時の縦ズレを防止）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <div className="shrink-0 px-3 py-1.5 bg-card border-b border-border flex items-center justify-between gap-2">
+      <div className="shrink-0 h-[46px] px-3 bg-card border-b border-border flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="px-1.5 py-0.2 rounded bg-[#0f172a] text-white text-[9.5px] font-black shrink-0">
@@ -1131,7 +1131,7 @@ export default function LiffBaseballBoardPage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ③ 中央伸縮：野球盤メインステージ（左下「⚾投球」＆右下「🏏打つ！」ボタン内蔵！）
+          ③ 中央伸縮：野球盤メインステージ（左下「⚾投球」＆右下「🏏打つ！」丸ボタン内蔵）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className="flex-1 min-h-0 w-full px-2 py-1.5 bg-background flex items-center justify-center overflow-hidden">
         <BaseballBoardCanvas
@@ -1141,7 +1141,7 @@ export default function LiffBaseballBoardPage() {
           strikes={matchState.strikes}
           batterBats={currentBatter.bats}
           stance={stance}
-          speedBadgeText={currentSpeedMeta.kmhBadge}
+          speedBadgeText={`${PITCH_TYPE_META[selectedPitchType].shortLabel}・${currentSpeedMeta.baseKmh}k`}
           soundEnabled={soundEnabled}
           isHumanBatterTurn={isHumanBatterTurn}
           isGameOver={matchState.isGameOver}
@@ -1158,142 +1158,154 @@ export default function LiffBaseballBoardPage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ④ 最下部固定：球速セレクター ＆ 打撃/投球スタイルドック（shrink-0）
+          ④ 最下部固定ドック（内部 h-[78px] 完全固定により攻守交代・試合終了時も盤面位置が1pxもズレない！）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <footer className="shrink-0 px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] bg-card border-t border-border">
-        {matchState.isGameOver ? (
-          <div className="space-y-1.5">
-            <div className="px-3 py-1.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
-              <span className="text-xs font-black text-primary truncate">
-                {matchState.mode === "derby"
-                  ? "🌈 ホームラン競争 終了！"
-                  : matchState.winner === "home"
-                  ? `🏆 ${matchState.homeTeamName} 勝利！`
-                  : matchState.winner === "away"
-                  ? `⚾ ${matchState.awayTeamName} 勝利！`
-                  : "🤝 引き分け！"}
-              </span>
-              <span className="text-xs font-black text-foreground tabular-nums shrink-0">
-                {matchState.mode === "derby"
-                  ? `${matchState.derbyHomeRuns}本 / ${matchState.derbyPoints}pt`
-                  : `${matchState.awayScore} - ${matchState.homeScore}`}
-              </span>
-            </div>
+        <div className="h-[78px] flex flex-col justify-between">
+          {matchState.isGameOver ? (
+            <>
+              <div className="h-[32px] px-3 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-primary truncate">
+                  {matchState.mode === "derby"
+                    ? "🌈 ホームラン競争 終了！"
+                    : matchState.winner === "home"
+                    ? `🏆 ${matchState.homeTeamName} 勝利！`
+                    : matchState.winner === "away"
+                    ? `⚾ ${matchState.awayTeamName} 勝利！`
+                    : "🤝 引き分け！"}
+                </span>
+                <span className="text-xs font-black text-foreground tabular-nums shrink-0">
+                  {matchState.mode === "derby"
+                    ? `${matchState.derbyHomeRuns}本 / ${matchState.derbyPoints}pt`
+                    : `${matchState.awayScore} - ${matchState.homeScore}`}
+                </span>
+              </div>
 
-            <div className="grid grid-cols-12 gap-1.5">
-              <button
-                type="button"
-                id="btn-baseball-board-play-again"
-                onClick={() => startNewGame()}
-                className="col-span-6 h-10 rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>もう1試合！</span>
-              </button>
-              <button
-                type="button"
-                id="btn-baseball-board-copy-result"
-                onClick={() => void handleCopyResultText()}
-                className="col-span-3 h-10 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
-              >
-                <Copy className="w-3.5 h-3.5 text-primary" />
-                <span>コピー</span>
-              </button>
-              <button
-                type="button"
-                id="btn-baseball-board-share-line"
-                onClick={() => void handleShareResultLine()}
-                className="col-span-3 h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                <span>LINE</span>
-              </button>
-            </div>
-          </div>
-        ) : isHumanBatterTurn ? (
-          /* 打者ターン：相手投手の球速は選べず、バッターの打撃スタイル3択のみをシンプル表示！ */
-          <div className="grid grid-cols-3 gap-1.5">
-            {(
-              [
-                {
-                  id: "contact" as const,
-                  label: "⚡ ミート",
-                  sub: "広角ヒット",
-                },
-                {
-                  id: "power" as const,
-                  label: "🔥 強振",
-                  sub: "柵越えHR",
-                },
-                {
-                  id: "bunt" as const,
-                  label: "🎯 バント",
-                  sub: "進塁・内安",
-                },
-              ] as const
-            ).map((opt) => {
-              const active = stance === opt.id;
-              return (
+              <div className="grid grid-cols-12 gap-1.5 h-[40px]">
                 <button
-                  key={opt.id}
                   type="button"
-                  onClick={() => setStance(opt.id)}
-                  className={`h-11 px-1.5 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
-                    active
-                      ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  }`}
+                  id="btn-baseball-board-play-again"
+                  onClick={() => startNewGame()}
+                  className="col-span-6 h-full rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
                 >
-                  <span className="text-xs font-black leading-none">
-                    {opt.label}
-                  </span>
-                  <span
-                    className={`text-[9px] font-bold mt-1 leading-none ${
-                      active ? "text-slate-300" : "text-muted-foreground"
-                    }`}
-                  >
-                    {opt.sub}
-                  </span>
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>もう1試合！</span>
                 </button>
-              );
-            })}
-          </div>
-        ) : (
-          /* 投手ターン（1P守備 ／ 2P投手）：ピッチャーだけが球速ギア4段階＋コース・球種を自在に選べる！ */
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-4 gap-1.5">
-              {PITCH_SPEED_PRESETS.filter((sp) => sp.id !== "chaos").map(
-                (sp) => {
-                  const active = speedPreset === sp.id;
-                  const isMonster = sp.id === "monster";
+                <button
+                  type="button"
+                  id="btn-baseball-board-copy-result"
+                  onClick={() => void handleCopyResultText()}
+                  className="col-span-3 h-full rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5 text-primary" />
+                  <span>コピー</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-baseball-board-share-line"
+                  onClick={() => void handleShareResultLine()}
+                  className="col-span-3 h-full rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>LINE</span>
+                </button>
+              </div>
+            </>
+          ) : isHumanBatterTurn ? (
+            /* 打者ターン（h-[78px] 内にガイド行20px ＋ 打撃スタイル52px を配置） */
+            <>
+              <div className="h-[20px] px-1 flex items-center justify-between gap-2 text-[10px]">
+                <span className="font-black text-foreground">
+                  🏏 打撃スタイルを選択
+                </span>
+                <span className="font-bold text-muted-foreground truncate">
+                  ①左下「投球」➔ ②右下「打つ！」
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 h-[52px]">
+                {(
+                  [
+                    {
+                      id: "contact" as const,
+                      label: "⚡ ミート",
+                      sub: "広角ヒット",
+                    },
+                    {
+                      id: "power" as const,
+                      label: "🔥 強振",
+                      sub: "柵越えHR",
+                    },
+                    {
+                      id: "bunt" as const,
+                      label: "🎯 バント",
+                      sub: "進塁・内安",
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const active = stance === opt.id;
                   return (
                     <button
-                      key={sp.id}
+                      key={opt.id}
                       type="button"
-                      disabled={boardPhase !== "idle"}
-                      onClick={() => setSpeedPreset(sp.id)}
-                      className={`h-8 px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
+                      onClick={() => setStance(opt.id)}
+                      className={`h-full px-1.5 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
                         active
-                          ? isMonster
-                            ? "bg-[#dc2626] text-white border-[#991b1b]"
-                            : "bg-[#0f172a] text-amber-300 border-primary"
-                          : "bg-muted/60 text-foreground border-border hover:bg-muted"
+                          ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
+                          : "bg-card text-foreground border-border hover:bg-muted"
                       }`}
-                      title={sp.description}
                     >
-                      {sp.shortLabel}
+                      <span className="text-xs font-black leading-none">
+                        {opt.label}
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold mt-1 leading-none ${
+                          active ? "text-slate-300" : "text-muted-foreground"
+                        }`}
+                      >
+                        {opt.sub}
+                      </span>
                     </button>
                   );
-                }
-              )}
-            </div>
+                })}
+              </div>
+            </>
+          ) : (
+            /* 投手ターン（h-[78px] 内に球速32px ＋ コース・球種40px を配置。投球発射はボード左下の丸い「投球」ボタンのみ！） */
+            <>
+              <div className="grid grid-cols-4 gap-1.5 h-[32px]">
+                {PITCH_SPEED_PRESETS.filter((sp) => sp.id !== "chaos").map(
+                  (sp) => {
+                    const active = speedPreset === sp.id;
+                    const isMonster = sp.id === "monster";
+                    return (
+                      <button
+                        key={sp.id}
+                        type="button"
+                        disabled={boardPhase !== "idle"}
+                        onClick={() => setSpeedPreset(sp.id)}
+                        className={`h-full px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
+                          active
+                            ? isMonster
+                              ? "bg-[#dc2626] text-white border-[#991b1b]"
+                              : "bg-[#0f172a] text-amber-300 border-primary"
+                            : "bg-muted/60 text-foreground border-border hover:bg-muted"
+                        }`}
+                        title={sp.description}
+                      >
+                        {sp.shortLabel}
+                      </button>
+                    );
+                  }
+                )}
+              </div>
 
-            <div className="grid grid-cols-6 gap-1">
+              <div className="grid grid-cols-6 gap-1 h-[40px]">
                 <button
                   type="button"
                   disabled={boardPhase !== "idle"}
                   onClick={handleCycleCourse}
-                  className="h-10 px-1 rounded-xl bg-[#0f172a] text-sky-300 border border-slate-700 flex flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50"
+                  className="h-full px-1 rounded-xl bg-[#0f172a] text-sky-300 border border-slate-700 flex flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50"
                   title="タップでコース切り替え"
                 >
                   <span className="text-[8.5px] font-bold text-slate-300 leading-none">
@@ -1312,66 +1324,61 @@ export default function LiffBaseballBoardPage() {
                       key={pType}
                       type="button"
                       disabled={boardPhase !== "idle"}
-                      onClick={() => {
-                        setSelectedPitchType(pType);
-                        if (matchState.mode === "versus") {
-                          handleLockVersusPitch(pType);
-                        } else {
-                          handleHumanPitchToCpu(pType);
-                        }
-                      }}
-                      className={`h-10 px-1 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
+                      onClick={() => setSelectedPitchType(pType)}
+                      className={`h-full px-1 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
                         isSelected
-                          ? "bg-primary/12 border-primary text-foreground"
+                          ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
                           : "bg-card hover:bg-muted border-border text-foreground"
                       }`}
                     >
                       <span className="text-[10.5px] font-black leading-none truncate max-w-full">
                         {meta.shortLabel}
                       </span>
-                      <span className="text-[8.5px] font-bold text-muted-foreground mt-0.5 leading-none flex items-center gap-0.5">
-                        {matchState.mode === "versus" ? (
-                          <>
-                            <Lock className="w-2.5 h-2.5" />
-                            <span>セット</span>
-                          </>
-                        ) : (
-                          <span>投球</span>
-                        )}
+                      <span
+                        className={`text-[8px] font-bold mt-0.5 leading-none ${
+                          isSelected ? "text-sky-300" : "text-muted-foreground"
+                        }`}
+                      >
+                        {isSelected ? "選択中" : "球種"}
                       </span>
                     </button>
                   );
                 })}
 
-                {/* 消える魔球 */}
+                {/* 消える魔球（選択のみ：実際の発射はボード左下の投球ボタン！） */}
                 <button
                   type="button"
                   id="btn-baseball-board-vanish-pitch"
                   disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
-                  onClick={() => {
-                    if (matchState.mode === "versus") {
-                      handleLockVersusPitch("vanish");
-                    } else {
-                      handleHumanPitchToCpu("vanish");
-                    }
-                  }}
-                  className={`h-10 px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
-                    pitcherVanishLeft > 0 && boardPhase === "idle"
-                      ? "bg-[#0f172a] hover:bg-slate-800 text-amber-300 border-amber-500 cursor-pointer"
-                      : "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
+                  onClick={() => setSelectedPitchType("vanish")}
+                  className={`h-full px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
+                    pitcherVanishLeft <= 0 || boardPhase !== "idle"
+                      ? "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
+                      : selectedPitchType === "vanish"
+                      ? "bg-[#0f172a] text-amber-300 border-amber-400 ring-2 ring-amber-400/35 cursor-pointer"
+                      : "bg-card hover:bg-muted text-foreground border-amber-500/60 cursor-pointer"
                   }`}
                 >
                   <span className="text-[10.5px] font-black leading-none flex items-center gap-0.5">
-                    <Sparkles className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                    <Sparkles className="w-2.5 h-2.5 text-amber-500 shrink-0" />
                     <span>魔球</span>
                   </span>
-                  <span className="text-[8.5px] font-bold mt-0.5 leading-none">
-                    残{pitcherVanishLeft}/{MAX_VANISH_PITCHES_PER_GAME}
+                  <span
+                    className={`text-[8px] font-bold mt-0.5 leading-none ${
+                      selectedPitchType === "vanish"
+                        ? "text-amber-200"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {selectedPitchType === "vanish"
+                      ? `選択(残${pitcherVanishLeft})`
+                      : `残${pitcherVanishLeft}/${MAX_VANISH_PITCHES_PER_GAME}`}
                   </span>
                 </button>
               </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </footer>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1913,7 +1920,7 @@ export default function LiffBaseballBoardPage() {
                   <p className="text-muted-foreground font-bold">
                     ・攻撃（打撃）時は相手ピッチャーが緩急（スロー〜165km剛速球）を織り交ぜて投げてきます！
                     <br />
-                    ・守備（投球）時はピッチャーとして「🐢80km」「⚾115km」「⚡145km」「🔥165km」の4段階ギアと球種を自在に選んで相手打者を翻弄できます！
+                    ・守備（投球）時は下部バーで「球速ギア（80〜165km）・コース・球種」を選択し、ボード左下の青い「⚾ 投球」ボタンで投げ込みます！
                     <br />
                     ・センター最上部の「🎯看板直撃」に空中アーチが当たればボーナス演出（HR競争では+150pt）が発動します！
                   </p>
