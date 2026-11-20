@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Copy,
   FileSpreadsheet,
+  Globe,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -372,6 +373,37 @@ export default function LandingPage() {
                 </div>
               </article>
             ))}
+          </div>
+
+          {/* 実行基盤カード（A-3 ソリッド規格 × Cloudflare 文字商標ガイドライン準拠・ロゴ画像不使用） */}
+          <div className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#F6821F] px-4 py-2.5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Globe className="w-4 h-4 text-[#F6821F] shrink-0" />
+                <span className="text-[11px] font-black tracking-wider uppercase text-slate-200 truncate">
+                  CLOUD INFRASTRUCTURE
+                </span>
+              </div>
+              <span className="font-mono text-[11px] font-black text-slate-400 shrink-0">
+                EDGE SERVERLESS
+              </span>
+            </div>
+
+            <div className="p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5 min-w-0">
+                <h3 className="text-sm sm:text-base font-black tracking-tight text-foreground">
+                  アプリケーション実行基盤に Cloudflare Workers® プラットフォームを採用
+                </h3>
+                <p className="text-xs leading-relaxed font-medium text-muted-foreground">
+                  世界中に分散配置されたエッジサーバーレス基盤上で稼働。グラウンドのスマートフォンからでも待ち時間を感じさせない高速応答と、チームごとの堅牢な通信・データ保護を支えています。
+                </p>
+              </div>
+              <div className="shrink-0 self-start sm:self-center">
+                <span className="inline-flex items-center px-3 py-1.5 rounded-xl border border-border bg-muted text-[11px] font-black text-foreground">
+                  Runs on Cloudflare Workers® platform
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </section>

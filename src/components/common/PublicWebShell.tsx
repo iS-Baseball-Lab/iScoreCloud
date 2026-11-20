@@ -166,6 +166,12 @@ export function PublicWebHeader() {
   );
 }
 
+export const LINE_TRADEMARK_NOTICE =
+  "※LINEおよびLINEミニアプリ、各種ロゴは、LINEヤフー株式会社の登録商標または商標です。";
+
+export const CLOUDFLARE_TRADEMARK_NOTICE =
+  "※米国およびその他の管轄区域において、CloudflareおよびCloudflare Workersは、Cloudflare, Inc.の商標および/または登録商標です。";
+
 /**
  * 公開Webページ共通フッター（`/`・`/terms`・`/privacy` 共通）
  */
@@ -175,7 +181,7 @@ export function PublicWebFooter() {
   return (
     <footer className="border-t border-border bg-card">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-7 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-2.5 gap-y-1.5">
           <Link
             href="/"
             className="flex items-center gap-2 hover:opacity-85 transition-opacity"
@@ -187,6 +193,9 @@ export function PublicWebFooter() {
           </Link>
           <span className="text-xs font-medium text-muted-foreground">
             © {new Date().getFullYear()} iS Baseball Lab
+          </span>
+          <span className="px-2 py-0.5 rounded-md border border-border bg-muted text-[10px] font-bold text-muted-foreground">
+            Runs on Cloudflare Workers® platform
           </span>
         </div>
 
@@ -225,9 +234,12 @@ export function PublicWebFooter() {
           </Link>
         </nav>
       </div>
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-6 -mt-2 text-center sm:text-left">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-6 -mt-2 text-center sm:text-left space-y-1">
         <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
-          ※LINEおよびLINEミニアプリ、各種ロゴは、LINEヤフー株式会社の登録商標または商標です。
+          {LINE_TRADEMARK_NOTICE}
+        </p>
+        <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
+          {CLOUDFLARE_TRADEMARK_NOTICE}
         </p>
       </div>
     </footer>

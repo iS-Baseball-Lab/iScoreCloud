@@ -296,7 +296,7 @@ export function TermsDocumentContent({
           </h3>
           <div className="space-y-1.5">
             <p className={styles.p}>
-              1. 当運営は、システム保守、セキュリティ対応、天災地変、または連携する外部プラットフォーム（LINEヤフー、Cloudflare、Google Maps、Google Gemini、YouTube等）の仕様変更・通信障害・利用制限等により、事前の予告なく本サービスの全部または一部を変更、中断、または終了することがあります。
+              1. 当運営は、システム保守、セキュリティ対応、天災地変、または連携する外部プラットフォーム（LINEヤフー、Cloudflare®、Google Maps、Google Gemini、YouTube等）の仕様変更・通信障害・利用制限等により、事前の予告なく本サービスの全部または一部を変更、中断、または終了することがあります。
             </p>
             <p className={styles.p}>
               2. 当運営は、本サービスに事実上または法律上の瑕疵（安全性、信頼性、正確性、完全性、特定目的への適合性、セキュリティ上の欠陥、エラー・バグ等を含みます）がないことを明示的にも黙示的にも保証しません。
@@ -593,7 +593,7 @@ export function PrivacyDocumentContent({
                 1. Cloudflare, Inc.（アメリカ合衆国）
               </div>
               <p className="text-[11px] leading-relaxed font-medium text-muted-foreground">
-                アプリケーション実行基盤（Cloudflare Workers）、データベース（Cloudflare D1）、および写真・配布資料等のファイルストレージ（Cloudflare R2）として利用しています。
+                アプリケーション実行基盤（Cloudflare Workers®）、データベース（Cloudflare D1）、および写真・配布資料等のファイルストレージ（Cloudflare R2）として利用しています。
               </p>
             </div>
 

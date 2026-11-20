@@ -5,6 +5,10 @@ import React from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { TermsDocumentContent } from "@/components/legal/LegalDocumentContents";
+import {
+  CLOUDFLARE_TRADEMARK_NOTICE,
+  LINE_TRADEMARK_NOTICE,
+} from "@/components/common/PublicWebShell";
 import { Scale } from "lucide-react";
 
 export default function LiffTermsPage() {
@@ -25,6 +29,11 @@ export default function LiffTermsPage() {
         />
 
         <TermsDocumentContent privacyHref="/liff/privacy" />
+
+        <div className="px-1 pt-1 space-y-1 text-[10px] leading-relaxed font-medium text-muted-foreground">
+          <p>{LINE_TRADEMARK_NOTICE}</p>
+          <p>{CLOUDFLARE_TRADEMARK_NOTICE}</p>
+        </div>
 
         <div
           className="h-8 w-full shrink-0 pointer-events-none select-none"

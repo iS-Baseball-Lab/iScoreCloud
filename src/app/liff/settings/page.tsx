@@ -33,6 +33,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { QuickMenuSettingsSection } from "@/components/liff/QuickMenuSettingsSection";
+import { CLOUDFLARE_TRADEMARK_NOTICE } from "@/components/common/PublicWebShell";
 import { BottomNavSettingsSection } from "@/components/liff/BottomNavSettingsSection";
 import { useDensity, type Density } from "@/components/providers/density-provider";
 import {
@@ -393,6 +394,13 @@ export default function LiffSettingsPage() {
               <span className="font-bold text-muted-foreground">アプリバージョン</span>
               <span className="font-black text-foreground">iScoreCloud LINEミニアプリ v2.6.0</span>
             </div>
+
+            <div className="pt-2 border-t border-border flex items-center justify-between gap-3 text-xs">
+              <span className="font-bold text-muted-foreground shrink-0">システム実行基盤</span>
+              <span className="font-black text-foreground text-right">
+                Cloudflare Workers® プラットフォーム
+              </span>
+            </div>
           </div>
         </section>
 
@@ -449,7 +457,14 @@ export default function LiffSettingsPage() {
           </Link>
         </div>
 
-        <div className="h-8 w-full shrink-0" aria-hidden="true" />
+        <div className="px-1 pt-1 space-y-1 text-[10px] leading-relaxed font-medium text-muted-foreground">
+          <p>
+            ※LINEおよびLINEミニアプリは、LINEヤフー株式会社の登録商標または商標です。
+          </p>
+          <p>{CLOUDFLARE_TRADEMARK_NOTICE}</p>
+        </div>
+
+        <div className="h-8 w-full shrink-0 pointer-events-none select-none" aria-hidden="true" />
       </div>
     </div>
   );
