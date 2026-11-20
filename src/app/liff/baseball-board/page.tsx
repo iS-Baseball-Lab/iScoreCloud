@@ -1893,7 +1893,7 @@ export default function LiffBaseballBoardPage() {
       </header>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ② 打者＆実況スリムバー（h-[46px] 完全固定・余計なボタンを排除して実況を広く表示！）
+          ② 打者＆実況スリムバー（h-[46px] 完全固定・右端に「自動投球 ON/OFF」＆「リセット」を1タップ配置）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className="shrink-0 h-[46px] px-3 bg-card border-b border-border flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
@@ -1918,48 +1918,84 @@ export default function LiffBaseballBoardPage() {
           </p>
         </div>
 
-        {mode === "online" && onlineRoom ? (
-          <button
-            type="button"
-            onClick={handleOpenOnlineLobby}
-            className={`h-7 px-2.5 rounded-full border text-[10px] font-black flex items-center gap-1.5 max-w-[128px] shrink-0 active:scale-95 transition-all cursor-pointer ${
-              onlineRoom.status === "waiting"
-                ? "bg-muted text-muted-foreground border-border"
-                : onlineRoom.opponentOnline
-                ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
-                : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
-            }`}
-            title="オンラインルーム情報"
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                onlineRoom.status === "waiting"
-                  ? "bg-slate-400"
-                  : onlineRoom.opponentOnline
-                  ? "bg-[#22c55e]"
-                  : "bg-[#f59e0b]"
-              }`}
-            />
-            <span className="truncate">
-              {onlineRoom.status === "waiting"
-                ? `#${onlineRoom.roomCode} 待機中`
-                : onlineRoom.opponentName || `#${onlineRoom.roomCode}`}
-            </span>
-          </button>
-        ) : autoPitchEnabled &&
-          isHumanBatterTurn &&
-          matchState.mode !== "versus" &&
-          !matchState.isGameOver ? (
-          <button
-            type="button"
-            id="btn-baseball-board-autopitch"
-            onClick={() => setAutoPitchEnabled(false)}
-            className="h-6 px-2 rounded-full bg-primary text-primary-foreground text-[9.5px] font-black shrink-0 active:scale-95 transition-all cursor-pointer"
-            title="タップで自動投球をOFFにする"
-          >
-            自動投球 ON
-          </button>
-        ) : null}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {mode === "online" ? (
+            onlineRoom ? (
+              <button
+                type="button"
+                onClick={handleOpenOnlineLobby}
+                className={`h-7 px-2.5 rounded-full border text-[10px] font-black flex items-center gap-1.5 max-w-[128px] shrink-0 active:scale-95 transition-all cursor-pointer ${
+                  onlineRoom.status === "waiting"
+                    ? "bg-muted text-muted-foreground border-border"
+                    : onlineRoom.opponentOnline
+                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
+                    : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                }`}
+                title="オンラインルーム情報"
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    onlineRoom.status === "waiting"
+                      ? "bg-slate-400"
+                      : onlineRoom.opponentOnline
+                      ? "bg-[#22c55e]"
+                      : "bg-[#f59e0b]"
+                  }`}
+                />
+                <span className="truncate">
+                  {onlineRoom.status === "waiting"
+                    ? `#${onlineRoom.roomCode} 待機中`
+                    : onlineRoom.opponentName || `#${onlineRoom.roomCode}`}
+                </span>
+              </button>
+            ) : null
+          ) : (
+            <>
+              {(matchState.mode === "cpu" || matchState.mode === "derby") &&
+                !matchState.isGameOver && (
+                  <button
+                    type="button"
+                    id="btn-baseball-board-autopitch"
+                    aria-pressed={autoPitchEnabled}
+                    onClick={() => setAutoPitchEnabled((prev) => !prev)}
+                    className={`h-7 px-2 rounded-full border text-[10px] font-black flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer ${
+                      autoPitchEnabled
+                        ? "bg-primary text-primary-foreground border-primary shadow-xs"
+                        : "bg-muted hover:bg-accent text-muted-foreground hover:text-foreground border-border"
+                    }`}
+                    title={
+                      autoPitchEnabled
+                        ? "タップで自動投球をOFFにする"
+                        : "タップで自動投球をONにする"
+                    }
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        autoPitchEnabled ? "bg-white" : "bg-slate-400"
+                      }`}
+                    />
+                    <span>
+                      {autoPitchEnabled ? "自動投球 ON" : "自動投球 OFF"}
+                    </span>
+                  </button>
+                )}
+
+              <button
+                type="button"
+                id="btn-baseball-board-restart"
+                onClick={() => {
+                  startNewGame();
+                  showTemporaryBanner("⚾ プレイボール！", "neutral", 1100);
+                }}
+                className="h-7 px-2 rounded-full bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                title="試合をリセットして最初からやり直す"
+              >
+                <RotateCcw className="w-3 h-3 text-muted-foreground" />
+                <span>リセット</span>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2155,6 +2191,8 @@ export default function LiffBaseballBoardPage() {
                 <span className="font-bold text-muted-foreground truncate">
                   {mode === "online"
                     ? "相手投球が来たら右下「打つ！」"
+                    : autoPitchEnabled && matchState.mode !== "versus"
+                    ? "自動投球中！来たら右下「打つ！」"
                     : "①左下「投球」➔ ②右下「打つ！」"}
                 </span>
               </div>
