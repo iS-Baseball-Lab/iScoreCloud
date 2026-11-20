@@ -28,6 +28,7 @@ import {
   PublicBrandLogoImg,
   PublicWebLayoutShell,
 } from "@/components/common/PublicWebShell";
+import { QrCodeSvg } from "@/components/common/QrCodeSvg";
 import { cn } from "@/lib/utils";
 
 interface FeatureDomainItem {
@@ -156,7 +157,6 @@ export default function LandingPage() {
     const cached = getCachedLineMiniAppConfig();
     return Boolean(cached.liffId || cached.miniAppUrl);
   });
-  const [qrLoadFailed, setQrLoadFailed] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
@@ -178,12 +178,6 @@ export default function LandingPage() {
 
   // LINEミニアプリ起動URL（LIFF ID / ミニアプリURL優先）
   const lineLaunchUrl = targets.externalLineUrl || targets.qrTargetUrl;
-
-  const qrImageSrc = useMemo(() => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&ecc=M&data=${encodeURIComponent(
-      targets.qrTargetUrl
-    )}`;
-  }, [targets.qrTargetUrl]);
 
   const handleCopyUrl = useCallback(async () => {
     try {
@@ -263,24 +257,18 @@ export default function LandingPage() {
               <div className="h-px flex-1 bg-border" />
             </div>
 
-            {/* 2. 中央2次元コード表示 */}
+            {/* 2. 中央2次元コード表示（外部API通信ゼロ・アプリ内SVG即時生成） */}
             <div className="flex flex-col items-center space-y-3 w-full">
               <div className="rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white p-3 shadow-xs flex items-center justify-center w-48 h-48">
                 {!configResolved ? (
                   <div className="w-full h-full rounded-xl bg-slate-100 animate-pulse" />
-                ) : !qrLoadFailed ? (
-                  <img
-                    src={qrImageSrc}
-                    alt="iScoreCloud LINEミニアプリ 2次元コード"
-                    width={164}
-                    height={164}
-                    className="w-[164px] h-[164px] object-contain"
-                    onError={() => setQrLoadFailed(true)}
-                  />
                 ) : (
-                  <p className="text-[11px] font-bold text-slate-600 px-2 break-all">
-                    {lineLaunchUrl}
-                  </p>
+                  <QrCodeSvg
+                    value={targets.qrTargetUrl}
+                    size={164}
+                    alt="iScoreCloud LINEミニアプリ 2次元コード"
+                    className="w-[164px] h-[164px]"
+                  />
                 )}
               </div>
 

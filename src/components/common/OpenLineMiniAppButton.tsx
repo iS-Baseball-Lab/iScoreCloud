@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { LineMiniAppWordmarkImg } from "@/components/common/PublicWebShell";
+import { QrCodeSvg } from "@/components/common/QrCodeSvg";
 import { cn } from "@/lib/utils";
 import {
   buildLineMiniAppTargets,
@@ -61,7 +62,6 @@ export function OpenLineMiniAppButton({
   const [isMobile, setIsMobile] = useState(false);
   const [isQrOpen, setIsQrOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  const [qrLoadFailed, setQrLoadFailed] = useState(false);
 
   useEffect(() => {
     setIsMobile(detectIsMobileBrowser());
@@ -144,12 +144,6 @@ export function OpenLineMiniAppButton({
     isMobile && targets.externalLineUrl
   );
 
-  const qrImageSrc = useMemo(() => {
-    return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(
-      targets.qrTargetUrl
-    )}`;
-  }, [targets.qrTargetUrl]);
-
   const qrModal =
     isQrOpen && typeof document !== "undefined"
       ? createPortal(
@@ -193,22 +187,14 @@ export function OpenLineMiniAppButton({
                     <span>スマホのカメラ / LINE QRリーダーで読み取り</span>
                   </div>
 
-                  {!qrLoadFailed ? (
-                    <div className="rounded-xl border-2 border-slate-300 bg-white p-2 shadow-xs">
-                      <img
-                        src={qrImageSrc}
-                        alt="LINEミニアプリ起動用QRコード"
-                        width={184}
-                        height={184}
-                        className="w-44 h-44 object-contain"
-                        onError={() => setQrLoadFailed(true)}
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full rounded-xl border border-border bg-card p-3 text-xs font-bold text-muted-foreground break-all">
-                      {targets.qrTargetUrl}
-                    </div>
-                  )}
+                  <div className="rounded-xl border-2 border-slate-300 bg-white p-2 shadow-xs">
+                    <QrCodeSvg
+                      value={targets.qrTargetUrl}
+                      size={176}
+                      alt="LINEミニアプリ起動用QRコード"
+                      className="w-44 h-44"
+                    />
+                  </div>
 
                   <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
                     {targets.externalLineUrl

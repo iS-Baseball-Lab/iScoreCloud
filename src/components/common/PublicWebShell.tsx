@@ -172,6 +172,9 @@ export const LINE_TRADEMARK_NOTICE =
 export const CLOUDFLARE_TRADEMARK_NOTICE =
   "※米国およびその他の管轄区域において、CloudflareおよびCloudflare Workersは、Cloudflare, Inc.の商標および/または登録商標です。";
 
+export const GOOGLE_TRADEMARK_NOTICE =
+  "※Google、Google マップ、Google Gemini、およびYouTubeは、Google LLCの商標または登録商標です。";
+
 /**
  * 公開Webページ共通フッター（`/`・`/terms`・`/privacy` 共通）
  * - A-3 ダークネイビー（`#0f172a` × `#090f1d`）2層ソリッド設計
@@ -356,6 +359,11 @@ export function PublicWebFooter() {
               <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 leading-snug sm:leading-relaxed">
                 {CLOUDFLARE_TRADEMARK_NOTICE}
               </p>
+              {(pathname === "/terms" || pathname === "/privacy") && (
+                <p className="text-[10px] sm:text-[11px] font-medium text-slate-400 leading-snug sm:leading-relaxed">
+                  {GOOGLE_TRADEMARK_NOTICE}
+                </p>
+              )}
             </div>
           </div>
         </div>
