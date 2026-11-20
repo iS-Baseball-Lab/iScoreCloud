@@ -61,7 +61,8 @@ type MenuCategory = "schedule_match" | "player_docs" | "settings_admin";
 type MenuSubGroup =
   | "schedule_access"
   | "match_record"
-  | "player_media"
+  | "team_player"
+  | "photo_cheer"
   | "docs_rules"
   | "settings_personal"
   | "settings_operation"
@@ -102,7 +103,8 @@ const CATEGORY_SECTIONS: Record<
     { key: "match_record", label: "試合・記録", icon: Trophy, iconTextClass: "text-primary" },
   ],
   player_docs: [
-    { key: "player_media", label: "選手・成績・写真", icon: IdCard, iconTextClass: "text-primary" },
+    { key: "team_player", label: "チーム・選手", icon: IdCard, iconTextClass: "text-primary" },
+    { key: "photo_cheer", label: "写真・応援", icon: Camera, iconTextClass: "text-primary" },
     { key: "docs_rules", label: "ルール・資料", icon: BookOpen, iconTextClass: "text-amber-600 dark:text-amber-400" },
   ],
   settings_admin: [
@@ -217,7 +219,7 @@ const MENU_ITEMS: MenuItem[] = [
     subGroup: "match_record",
   },
 
-  // 📖 タブ2: 選手・資料（① 選手・成績・写真）
+  // 📖 タブ2: 選手・資料（① チーム・選手）
   {
     title: "チーム情報",
     subtitle: "クラブ概要・指導体制・拠点・戦績",
@@ -226,7 +228,7 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "team_player",
   },
   {
     title: "選手名鑑",
@@ -236,7 +238,7 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "team_player",
   },
   {
     title: "チーム成績",
@@ -246,7 +248,7 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "team_player",
   },
   {
     title: "個人成長レポート",
@@ -256,8 +258,10 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "team_player",
   },
+
+  // 📖 タブ2: 選手・資料（② 写真・応援）
   {
     title: "写真アルバム",
     subtitle: "試合写真の共有・一括保存",
@@ -266,7 +270,7 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "photo_cheer",
   },
   {
     title: "応援歌・コール",
@@ -276,10 +280,10 @@ const MENU_ITEMS: MenuItem[] = [
     colorClass: "bg-primary/12 text-primary",
     hoverBorderClass: "hover:border-primary/40",
     category: "player_docs" as const,
-    subGroup: "player_media",
+    subGroup: "photo_cheer",
   },
 
-  // 📖 タブ2: 選手・資料（② ルール・資料）
+  // 📖 タブ2: 選手・資料（③ ルール・資料）
   {
     title: "チームルール・心得",
     subtitle: "活動ルール・当番・配車の決まり",
@@ -485,6 +489,8 @@ export function LiffBottomNav() {
     ) {
       setSelectedCategory("settings_admin");
     } else if (
+      pathname === "/liff/team" ||
+      pathname?.startsWith("/liff/team/") ||
       pathname?.startsWith("/liff/players") ||
       pathname?.startsWith("/liff/stats") ||
       pathname?.startsWith("/liff/gallery") ||

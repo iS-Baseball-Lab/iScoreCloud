@@ -324,7 +324,7 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
     icon: Gamepad2,
   },
 
-  // 📖 選手・資料（選手・成績・写真 ➔ ルール・資料）
+  // 📖 選手・資料（チーム・選手 ➔ 写真・応援 ➔ ルール・資料）
   {
     id: "team_info",
     label: "チーム情報",
