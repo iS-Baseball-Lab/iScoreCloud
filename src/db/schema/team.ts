@@ -81,6 +81,7 @@ export const players = sqliteTable('players', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 }, (table) => ({
   teamIdx: index("idx_players_team_id").on(table.teamId),
+  userIdx: index("idx_players_user_id").on(table.userId),
 }));
 
 // ==========================================

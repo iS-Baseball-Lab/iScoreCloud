@@ -47,6 +47,7 @@ import {
   sharePlainTextViaLine,
 } from "@/lib/liff/liff-client";
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
+import dynamic from "next/dynamic";
 import {
   BaseballBoardCanvas,
   type BaseballBoardCanvasHandle,
@@ -54,7 +55,14 @@ import {
   type OnlinePitchButtonMode,
   type ResolvedBoardPlay,
 } from "@/components/liff/BaseballBoardCanvas";
-import { BaseballBoardOnlineModal } from "@/components/liff/BaseballBoardOnlineModal";
+
+const BaseballBoardOnlineModal = dynamic(
+  () =>
+    import("@/components/liff/BaseballBoardOnlineModal").then(
+      (m) => m.BaseballBoardOnlineModal
+    ),
+  { ssr: false }
+);
 import {
   DERBY_TOTAL_PITCHES,
   MAX_VANISH_PITCHES_PER_GAME,
@@ -3093,24 +3101,26 @@ export default function LiffBaseballBoardPage() {
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           🌐 チーム内オンライン対戦ロビー＆ルームモーダル（createPortal & z-[9999]）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <BaseballBoardOnlineModal
-        isOpen={isOnlineModalOpen}
-        onClose={() => setIsOnlineModalOpen(false)}
-        isDemoTeam={activeTeamId === "demo-team"}
-        teamDisplayName={scoreTeamName}
-        myDefaultName={onlineMyDefaultName}
-        rooms={onlineRooms}
-        activeRoom={onlineRoom}
-        isLoadingRooms={isLoadingOnlineRooms}
-        isSubmitting={isSubmittingOnline}
-        onRefreshRooms={() => void fetchOnlineLobbyRooms()}
-        onCreateRoom={handleCreateOnlineRoom}
-        onJoinByRoomId={(rId, name) => handleJoinOnlineByRoomId(rId, name)}
-        onJoinByCode={handleJoinOnlineByCode}
-        onShareRoomLine={handleShareOnlineRoomLine}
-        onCopyRoomCode={handleCopyRoomCode}
-        onLeaveRoom={handleLeaveOnlineRoom}
-      />
+      {isOnlineModalOpen && (
+        <BaseballBoardOnlineModal
+          isOpen={isOnlineModalOpen}
+          onClose={() => setIsOnlineModalOpen(false)}
+          isDemoTeam={activeTeamId === "demo-team"}
+          teamDisplayName={scoreTeamName}
+          myDefaultName={onlineMyDefaultName}
+          rooms={onlineRooms}
+          activeRoom={onlineRoom}
+          isLoadingRooms={isLoadingOnlineRooms}
+          isSubmitting={isSubmittingOnline}
+          onRefreshRooms={() => void fetchOnlineLobbyRooms()}
+          onCreateRoom={handleCreateOnlineRoom}
+          onJoinByRoomId={(rId, name) => handleJoinOnlineByRoomId(rId, name)}
+          onJoinByCode={handleJoinOnlineByCode}
+          onShareRoomLine={handleShareOnlineRoomLine}
+          onCopyRoomCode={handleCopyRoomCode}
+          onLeaveRoom={handleLeaveOnlineRoom}
+        />
+      )}
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           🗑️ 戦績リセット確認モーダル（createPortal & z-[10010]）

@@ -1505,7 +1505,7 @@ app.get("/hub", async (c) => {
         }
       : null;
 
-    // 本人アカウントで申請中（status = 'pending'）のチーム名・ロゴのみを取得（実データは一切含めない）
+    // 本人アカウントで申請中（status = 'pending'）のチーム名・ロゴのみを取得（resolveCallerTeamAccess 取得済みの pendingTeamIds を再利用して D1 往復 0 回化）
     const allTeamsById = new Map(allTeams.map((t) => [t.id, t]));
     const pendingTeams: Array<{
       id: string;
@@ -1516,37 +1516,21 @@ app.get("/hub", async (c) => {
       logoImageUrl?: string;
     }> = [];
 
-    if (candidateIdsArray.length > 0) {
-      const pendingRows = await db
-        .select({ teamId: teamMembers.teamId })
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.status, "pending"),
-            inArray(teamMembers.userId, candidateIdsArray)
-          )
-        )
-        .all();
-
-      const seenPendingIds = new Set<string>();
-      for (const row of pendingRows) {
-        const tid = row.teamId;
-        if (!tid || userTeamIds.has(tid) || seenPendingIds.has(tid)) continue;
-        const foundTeam = allTeamsById.get(tid);
-        if (!foundTeam) continue;
-        seenPendingIds.add(tid);
-        pendingTeams.push({
-          id: foundTeam.id,
-          name:
-            foundTeam.orgName && foundTeam.orgName !== foundTeam.name
-              ? `${foundTeam.orgName} ${foundTeam.name}`.trim()
-              : foundTeam.orgName || foundTeam.name,
-          orgName: foundTeam.orgName || foundTeam.name,
-          teamName: foundTeam.name,
-          shortName: foundTeam.shortName,
-          logoImageUrl: foundTeam.logoImageUrl || undefined,
-        });
-      }
+    for (const tid of access.pendingTeamIds) {
+      if (!tid || userTeamIds.has(tid)) continue;
+      const foundTeam = allTeamsById.get(tid);
+      if (!foundTeam) continue;
+      pendingTeams.push({
+        id: foundTeam.id,
+        name:
+          foundTeam.orgName && foundTeam.orgName !== foundTeam.name
+            ? `${foundTeam.orgName} ${foundTeam.name}`.trim()
+            : foundTeam.orgName || foundTeam.name,
+        orgName: foundTeam.orgName || foundTeam.name,
+        teamName: foundTeam.name,
+        shortName: foundTeam.shortName,
+        logoImageUrl: foundTeam.logoImageUrl || undefined,
+      });
     }
 
     const hubLiffId = c.env.NEXT_PUBLIC_LIFF_ID || c.env.LIFF_ID || "";

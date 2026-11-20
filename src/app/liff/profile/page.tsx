@@ -25,11 +25,16 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffSelect } from "@/components/liff/LiffSelect";
+import dynamic from "next/dynamic";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
-import { JoinTeamModal } from "@/components/liff/JoinTeamModal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
+
+const JoinTeamModal = dynamic(
+  () => import("@/components/liff/JoinTeamModal").then((m) => m.JoinTeamModal),
+  { ssr: false }
+);
 
 type MemberTypeId = "parent" | "staff" | "player" | "other";
 type DefaultCarStatus = "can_drive" | "need_ride" | "not_needed";
@@ -1649,16 +1654,18 @@ export default function LiffProfilePage() {
         <div className="h-8 w-full shrink-0" aria-hidden="true" />
       </div>
 
-      <JoinTeamModal
-        isOpen={isJoinModalOpen}
-        onClose={() => setIsJoinModalOpen(false)}
-        onSuccess={({ status }) => {
-          void refreshTeams();
-          if (status === "active") {
-            setIsJoinModalOpen(false);
-          }
-        }}
-      />
+      {isJoinModalOpen && (
+        <JoinTeamModal
+          isOpen={isJoinModalOpen}
+          onClose={() => setIsJoinModalOpen(false)}
+          onSuccess={({ status }) => {
+            void refreshTeams();
+            if (status === "active") {
+              setIsJoinModalOpen(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

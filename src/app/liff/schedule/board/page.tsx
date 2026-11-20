@@ -4,9 +4,17 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
-import { AttendanceSummaryShareModal } from "@/components/liff/AttendanceSummaryShareModal";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
+
+const AttendanceSummaryShareModal = dynamic(
+  () =>
+    import("@/components/liff/AttendanceSummaryShareModal").then(
+      (m) => m.AttendanceSummaryShareModal
+    ),
+  { ssr: false }
+);
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
@@ -4239,26 +4247,28 @@ function AttendanceMatrixBoardContent() {
           )}
 
       {/* 📋 出欠集計テキスト作成・共有（コピー・他グループ挿入・自由編集・リセット・LINE転送）モーダル */}
-      <AttendanceSummaryShareModal
-        event={activeSharingEvent}
-        onClose={() => setSharingSummaryEvent(null)}
-        initialGroupTab={selectedGroupTab}
-        teamPrefixSource={currentTeam}
-        teamId={currentTeam?.id || null}
-        liff={liff}
-        groups={{
-          players: groups.players,
-          mothers: groups.mothers,
-          fathers: groups.fathers,
-          staff: groups.staff,
-        }}
-        evMatrix={activeSharingEvent ? matrix[activeSharingEvent.id] || {} : {}}
-        groupStatusConfig={groupStatusConfig}
-        memberSortOrder={memberSortOrder}
-        memberSubLabels={memberSubLabels}
-        sortMembersByCustomOrder={sortMembersByCustomOrder}
-        resolvePersonConditionOnDate={resolvePersonConditionOnDate}
-      />
+      {activeSharingEvent && (
+        <AttendanceSummaryShareModal
+          event={activeSharingEvent}
+          onClose={() => setSharingSummaryEvent(null)}
+          initialGroupTab={selectedGroupTab}
+          teamPrefixSource={currentTeam}
+          teamId={currentTeam?.id || null}
+          liff={liff}
+          groups={{
+            players: groups.players,
+            mothers: groups.mothers,
+            fathers: groups.fathers,
+            staff: groups.staff,
+          }}
+          evMatrix={matrix[activeSharingEvent.id] || {}}
+          groupStatusConfig={groupStatusConfig}
+          memberSortOrder={memberSortOrder}
+          memberSubLabels={memberSubLabels}
+          sortMembersByCustomOrder={sortMembersByCustomOrder}
+          resolvePersonConditionOnDate={resolvePersonConditionOnDate}
+        />
+      )}
     </div>
   );
 }

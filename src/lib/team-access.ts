@@ -79,6 +79,7 @@ export interface CallerTeamAccess {
   isAuthenticated: boolean;
   isSystemAdmin: boolean;
   activeTeamIds: Set<string>;
+  pendingTeamIds: Set<string>;
   activeOrgIds: Set<string>;
   managedTeamIds: Set<string>;
   scoreEditableTeamIds: Set<string>;
@@ -909,6 +910,7 @@ async function computeCallerTeamAccess(
     : [];
 
   const activeTeamIds = new Set<string>();
+  const pendingTeamIds = new Set<string>();
   const activeOrgIds = new Set<string>();
   const managedTeamIds = new Set<string>();
   const scoreEditableTeamIds = new Set<string>();
@@ -1032,10 +1034,14 @@ async function computeCallerTeamAccess(
     }
 
     const pendingOrBlockedTeams = new Set<string>();
+    const rawPendingTeamIds = new Set<string>();
     for (const m of memberRows) {
       if (!m.teamId) continue;
       const normalizedStatus = (m.status || "active").toLowerCase();
       const normalizedRole = (m.role || "parent").toLowerCase();
+      if (normalizedStatus === "pending") {
+        rawPendingTeamIds.add(m.teamId);
+      }
       if (normalizedStatus !== "active" || normalizedRole === "pending") {
         pendingOrBlockedTeams.add(m.teamId);
         continue;
@@ -1105,6 +1111,12 @@ async function computeCallerTeamAccess(
         if (orgId) activeOrgIds.add(orgId);
       }
     }
+
+    for (const tid of rawPendingTeamIds) {
+      if (!activeTeamIds.has(tid)) {
+        pendingTeamIds.add(tid);
+      }
+    }
   }
 
   const canAccessTeam = (teamId: string | null | undefined): boolean => {
@@ -1149,6 +1161,7 @@ async function computeCallerTeamAccess(
     isAuthenticated: candidateUserIds.length > 0,
     isSystemAdmin,
     activeTeamIds,
+    pendingTeamIds,
     activeOrgIds,
     managedTeamIds,
     scoreEditableTeamIds,

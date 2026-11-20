@@ -46,5 +46,6 @@ export const attendances = sqliteTable("attendances", {
   eventMemberUniqueIdx: uniqueIndex("idx_event_member_uniq").on(table.eventId, table.memberId),
   playerIdx: index("idx_attendances_player_id").on(table.playerId),
   memberIdx: index("idx_attendances_member_id").on(table.memberId),
+  userIdx: index("idx_attendances_user_id").on(table.userId),
 }));
 

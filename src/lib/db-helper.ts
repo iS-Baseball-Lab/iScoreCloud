@@ -363,6 +363,19 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_teams_created_by", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams (created_by)" },
   { name: "idx_baseball_board_rooms_team_status", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_status ON baseball_board_rooms (team_id, status, updated_at)" },
   { name: "idx_baseball_board_rooms_team_code", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_code ON baseball_board_rooms (team_id, room_code)" },
+  { name: "idx_session_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_session_user_id ON session (user_id)" },
+  { name: "idx_account_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_account_user_id ON account (user_id)" },
+  { name: "idx_account_account_id", ddl: "CREATE INDEX IF NOT EXISTS idx_account_account_id ON account (account_id)" },
+  { name: "idx_verification_identifier", ddl: "CREATE INDEX IF NOT EXISTS idx_verification_identifier ON verification (identifier)" },
+  { name: "idx_players_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_players_team_id ON players (team_id)" },
+  { name: "idx_players_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_players_user_id ON players (user_id)" },
+  { name: "idx_team_members_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_members_team_id ON team_members (team_id)" },
+  { name: "idx_team_members_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members (user_id)" },
+  { name: "idx_org_members_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_org_members_org_id ON organization_members (organization_id)" },
+  { name: "idx_org_members_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON organization_members (user_id)" },
+  { name: "idx_attendances_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_attendances_user_id ON attendances (user_id)" },
+  { name: "idx_events_team_start_at", ddl: "CREATE INDEX IF NOT EXISTS idx_events_team_start_at ON events (team_id, start_at)" },
+  { name: "idx_matches_team_norm_date", ddl: "CREATE INDEX IF NOT EXISTS idx_matches_team_norm_date ON matches (team_id, replace(date, '/', '-') DESC, created_at DESC)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {

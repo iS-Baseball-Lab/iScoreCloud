@@ -2,6 +2,7 @@ name = "iscorecloud"
 main = "src/worker.ts"
 compatibility_date = "2026-11-04"
 compatibility_flags = ["nodejs_compat"]
+minify = true
 
 [assets]
 directory = "out"

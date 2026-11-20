@@ -377,6 +377,7 @@ export default function LandingPage() {
                       height={640}
                       loading="lazy"
                       decoding="async"
+                      fetchPriority="low"
                       style={{
                         WebkitMaskImage:
                           "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
