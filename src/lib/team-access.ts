@@ -686,6 +686,15 @@ export async function sanitizeIncomingApiRequest(
   issuedSessionToken: string | null;
   clearInvalidSessionProof: boolean;
 }> {
+  const reqMethod = request.method.toUpperCase();
+  if (
+    reqMethod !== "GET" &&
+    reqMethod !== "HEAD" &&
+    reqMethod !== "OPTIONS"
+  ) {
+    userGetAccessBurstCache.clear();
+  }
+
   const url = new URL(request.url);
   if (
     !url.pathname.startsWith("/api/") ||
@@ -1155,6 +1164,17 @@ async function computeCallerTeamAccess(
   };
 }
 
+const USER_GET_ACCESS_BURST_TTL_MS = 2_500;
+const USER_GET_ACCESS_BURST_MAX = 256;
+const userGetAccessBurstCache = new Map<
+  string,
+  { expiresAtMs: number; promise: Promise<CallerTeamAccess> }
+>();
+
+export function invalidateCallerTeamAccessBurstCache(): void {
+  userGetAccessBurstCache.clear();
+}
+
 export async function resolveCallerTeamAccess(
   c: Context<{ Bindings: WorkerEnv }>,
   _ignoredExtraUserIds?: Array<string | null | undefined>
@@ -1162,7 +1182,50 @@ export async function resolveCallerTeamAccess(
   const existing = requestAccessCache.get(c.req.raw);
   if (existing) return existing;
 
-  const promise = computeCallerTeamAccess(c);
+  const method = c.req.method.toUpperCase();
+  const isReadOnlyGet = method === "GET" || method === "HEAD";
+  const bypassBurstCache = c.req.header("X-iScore-Bypass-Cache") === "1";
+
+  if (!isReadOnlyGet || bypassBurstCache) {
+    userGetAccessBurstCache.clear();
+    const freshPromise = computeCallerTeamAccess(c);
+    requestAccessCache.set(c.req.raw, freshPromise);
+    return freshPromise;
+  }
+
+  const promise = (async () => {
+    const identity = await resolveVerifiedRequestIdentity(c.req.raw, c.env);
+    const uid = identity.userId;
+    if (!uid) {
+      return computeCallerTeamAccess(c);
+    }
+
+    const now = Date.now();
+    const hit = userGetAccessBurstCache.get(uid);
+    if (hit && hit.expiresAtMs > now) {
+      return hit.promise;
+    }
+
+    if (userGetAccessBurstCache.size >= USER_GET_ACCESS_BURST_MAX) {
+      for (const [k, v] of userGetAccessBurstCache) {
+        if (v.expiresAtMs <= now) userGetAccessBurstCache.delete(k);
+      }
+      if (userGetAccessBurstCache.size >= USER_GET_ACCESS_BURST_MAX) {
+        userGetAccessBurstCache.clear();
+      }
+    }
+
+    const computePromise = computeCallerTeamAccess(c).catch((err) => {
+      userGetAccessBurstCache.delete(uid);
+      throw err;
+    });
+    userGetAccessBurstCache.set(uid, {
+      expiresAtMs: now + USER_GET_ACCESS_BURST_TTL_MS,
+      promise: computePromise,
+    });
+    return computePromise;
+  })();
+
   requestAccessCache.set(c.req.raw, promise);
   return promise;
 }

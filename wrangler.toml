@@ -8,6 +8,10 @@ directory = "out"
 binding = "ASSETS"
 run_worker_first = ["/api/*"]
 
+# API Worker を D1 データベース近傍へ自動最適配置（静的ファイルは引き続き最寄りエッジから 0 ホップ配信）
+[placement]
+mode = "smart"
+
 [observability]
 enabled = true
 

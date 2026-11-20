@@ -32,24 +32,29 @@ function isChunkOrAssetLoadFailureMessage(
     msg.includes("chunkloaderror") ||
     msg.includes("loading chunk") ||
     msg.includes("loading css chunk") ||
+    msg.includes("failed to load chunk") ||
     msg.includes("failed to fetch dynamically imported module") ||
     msg.includes("importing a module script failed") ||
     msg.includes("unable to preload css") ||
     msg.includes("failed to fetch rsc payload") ||
+    msg.includes("module factory is not available") ||
     (msg.includes("/_next/static/") && msg.includes("404"))
   ) {
     return true;
   }
 
-  // デプロイ更新直後、LINE WebView メモリ上の旧共有チャンク（installedChunks 済）と
-  // 新ルートのチャンク（新規モジュールID参照）が噛み合わず `__webpack_modules__[id]` が undefined になる
-  // Webpack クロスビルドスキュー（V8: `Cannot read properties of undefined (reading 'call')` /
+  // デプロイ更新直後、LINE WebView メモリ上の旧共有チャンクと新ルートのチャンクが噛み合わない
+  // Webpack / Turbopack クロスビルドスキュー（V8: `Cannot read properties of undefined (reading 'call')` /
   // JavaScriptCore: `undefined is not an object (evaluating '...call')`）を検知
   if (
     msg.includes("cannot read properties of undefined (reading 'call')") ||
     (msg.includes("undefined is not an object") && msg.includes(".call")) ||
-    (stack.includes("/_next/static/chunks/webpack-") &&
-      (msg.includes("reading 'call'") || msg.includes("is not a function")))
+    ((stack.includes("/_next/static/chunks/webpack-") ||
+      stack.includes("/_next/static/chunks/turbopack-") ||
+      stack.includes("[turbopack]")) &&
+      (msg.includes("reading 'call'") ||
+        msg.includes("is not a function") ||
+        msg.includes("was instantiated")))
   ) {
     return true;
   }

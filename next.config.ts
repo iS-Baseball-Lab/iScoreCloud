@@ -22,9 +22,9 @@ const nextConfig: NextConfig = {
       "react-icons",
     ],
   },
-  // 🛡️ TypeScript 厳格型検査ゲートを有効化（型エラーがある状態でのビルド通過を防止）
+  // 🛡️ TypeScript 厳格型検査ゲート（`pnpm run check` 時は直後の `pnpm exec tsc` に一本化して約38秒の二重実行を省く。単体 `pnpm run build` では false のまま厳格検査を実施）
   typescript: {
-    ignoreBuildErrors: false,
+    ignoreBuildErrors: process.env.SKIP_NEXT_TYPECHECK === "1",
   },
 
   // 💡 開発環境のみ、APIリクエストを Workers (wrangler dev - localhost:8787) へプロキシする

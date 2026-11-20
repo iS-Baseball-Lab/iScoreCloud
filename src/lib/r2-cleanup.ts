@@ -1,4 +1,5 @@
 // filepath: src/lib/r2-cleanup.ts
+import { purgeR2EdgeCacheKeys } from "@/lib/r2-edge-cache";
 
 /**
  * 🧹 R2 オブジェクトストレージ 孤立ファイル防止・安全クリーンアップヘルパー
@@ -76,5 +77,6 @@ export async function deleteR2UrlsSafely(
       }
     }
   }
+  await purgeR2EdgeCacheKeys(keys);
   return deleted;
 }

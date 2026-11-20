@@ -62,11 +62,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack && node scripts/fix-next-export-segments.mjs",
+    "build": "next build && node scripts/fix-next-export-segments.mjs",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "check": "pnpm run test && pnpm run build && pnpm exec tsc",
+    "check": "pnpm run test && node -e \"process.env.SKIP_NEXT_TYPECHECK='1';require('node:child_process').execSync('pnpm run build',{stdio:'inherit'})\" && pnpm exec tsc",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
     "deploy": "pnpm run build && pnpm run db:mig:remote && pnpm exec wrangler deploy",
     "preview": "pnpm run build && pnpm exec wrangler dev",

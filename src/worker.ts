@@ -153,8 +153,15 @@ app.use(
 
 const sharedTeamGuard = createSharedApiTeamIsolationMiddleware()
 app.use('/api/*', async (c, next) => {
-  await ensureAllSchemasOnce(c.env.DB)
   const pathname = new URL(c.req.url).pathname
+  const isReadOnlyMediaOrConfig =
+    pathname === '/api/liff/config' ||
+    (c.req.method === 'GET' &&
+      (pathname.startsWith('/api/images/') ||
+        pathname.startsWith('/api/liff/gallery/media/')))
+  if (!isReadOnlyMediaOrConfig) {
+    await ensureAllSchemasOnce(c.env.DB)
+  }
   if (
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/liff') ||
@@ -211,6 +218,18 @@ export default {
 
     // 💡 規約: API パスは Hono に、静的アセットは ASSETS (Cloudflare Workers) に振り分け
     if (url.pathname.startsWith('/api/')) {
+      // ⚡ 公開環境設定エンドポイント（D1・個人セッション不使用）の 0ms 即時応答パス
+      if (request.method === 'GET' && url.pathname === '/api/liff/config') {
+        const cfgRes = await app.fetch(request, env, ctx)
+        const cfgHeaders = new Headers(cfgRes.headers)
+        applySecurityHeaders(cfgHeaders, isHttps)
+        cfgHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+        return new Response(cfgRes.body, {
+          status: cfgRes.status,
+          headers: cfgHeaders,
+        })
+      }
+
       const {
         sanitizedRequest,
         issuedSessionToken,

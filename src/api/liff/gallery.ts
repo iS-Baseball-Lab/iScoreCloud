@@ -9,6 +9,10 @@ import {
   tournaments,
 } from "@/db/schema";
 import {
+  purgeR2EdgeCacheKeys,
+  serveR2WithEdgeCache,
+} from "@/lib/r2-edge-cache";
+import {
   extractHeaderUserName,
   resolveCallerTeamAccess,
 } from "@/lib/team-access";
@@ -157,6 +161,7 @@ async function deleteR2KeysInChunks(
     const slice = uniqueKeys.slice(i, i + CHUNK_SIZE);
     await bucket.delete(slice);
   }
+  await purgeR2EdgeCacheKeys(uniqueKeys);
 }
 
 async function recalculateAlbumCounters(
@@ -565,18 +570,6 @@ app.get("/media/:teamId/:albumId/:filename", async (c) => {
     ? `gallery-raw/${teamId}/${albumId}/${filename}`
     : `gallery/${teamId}/${albumId}/${filename}`;
 
-  const object = await c.env.BUCKET.get(r2Key);
-  if (!object) {
-    return c.text("Not found", 404);
-  }
-
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-  const storedMime = (headers.get("content-type") || "image/jpeg")
-    .toLowerCase()
-    .split(";")[0]
-    .trim();
   const allowedMediaMimes = new Set([
     "image/jpeg",
     "image/png",
@@ -585,32 +578,62 @@ app.get("/media/:teamId/:albumId/:filename", async (c) => {
     "image/heic",
     "image/heif",
   ]);
-  const safeMediaMime = allowedMediaMimes.has(storedMime)
-    ? storedMime
-    : "application/octet-stream";
-  headers.set("content-type", safeMediaMime);
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Content-Security-Policy", "sandbox");
-
-  const wantDownload =
-    c.req.query("download") === "1" || safeMediaMime === "application/octet-stream";
+  const wantDownloadQuery = c.req.query("download") === "1";
   const dlName = (c.req.query("dlName") || "").trim();
-  if (wantDownload) {
-    const safeName = (dlName || filename).replace(/[\r\n"]/g, "_");
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`
-    );
+
+  let execCtx: ExecutionContext | null = null;
+  try {
+    execCtx = c.executionCtx;
+  } catch {
+    execCtx = null;
   }
 
-  headers.set(
-    "Cache-Control",
-    isOrig
-      ? "private, max-age=604800"
-      : "private, max-age=31536000, immutable"
-  );
+  const res = await serveR2WithEdgeCache({
+    bucket: c.env.BUCKET,
+    r2Key,
+    requestHeaders: c.req.raw.headers,
+    executionCtx: execCtx,
+    edgeTtlSeconds: isOrig ? 0 : 604800,
+    buildResponseHeaders: ({ httpEtag, storedContentType }) => {
+      const storedMime = (storedContentType || "image/jpeg")
+        .toLowerCase()
+        .split(";")[0]
+        .trim();
+      const safeMediaMime = allowedMediaMimes.has(storedMime)
+        ? storedMime
+        : "application/octet-stream";
 
-  return new Response(object.body, { status: 200, headers });
+      const headers = new Headers();
+      if (httpEtag) headers.set("ETag", httpEtag);
+      headers.set("Content-Type", safeMediaMime);
+      headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Content-Security-Policy", "sandbox");
+
+      const wantDownload =
+        wantDownloadQuery || safeMediaMime === "application/octet-stream";
+      if (wantDownload) {
+        const safeName = (dlName || filename).replace(/[\r\n"]/g, "_");
+        headers.set(
+          "Content-Disposition",
+          `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}`
+        );
+      }
+
+      headers.set(
+        "Cache-Control",
+        isOrig
+          ? "private, max-age=604800"
+          : "private, max-age=31536000, immutable"
+      );
+      return headers;
+    },
+  });
+
+  if (!res) {
+    return c.text("Not found", 404);
+  }
+
+  return res;
 });
 
 // ==========================================

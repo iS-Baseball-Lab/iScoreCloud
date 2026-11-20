@@ -1,5 +1,6 @@
 // filepath: src/api/images.ts
 import { Hono, type Context } from "hono";
+import { serveR2WithEdgeCache } from "@/lib/r2-edge-cache";
 import { resolveCallerTeamAccess } from "@/lib/team-access";
 import type { WorkerEnv } from "@/types/api";
 
@@ -105,7 +106,7 @@ app.post("/upload", async (c) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 💡 2. 画像・添付ファイル配信 API
+// 💡 2. 画像・添付ファイル配信 API（認証通過後 Edge Cache ＋ ETag 304 対応）
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function serveImage(
   c: Context<{ Bindings: WorkerEnv }>,
@@ -123,29 +124,41 @@ async function serveImage(
   }
 
   const path = `${folder}/${segments.join("/")}`;
-  const object = await c.env.BUCKET.get(path);
-  if (!object) return c.text("Not found", 404);
-
-  const rawHeaders = new Headers();
-  object.writeHttpMetadata(rawHeaders);
-  const { contentType, forceAttachment } = resolveSafeServeMimeType(
-    path,
-    rawHeaders.get("content-type") || ""
-  );
-
-  const headers = new Headers();
-  headers.set("ETag", object.httpEtag);
-  headers.set("Content-Type", contentType);
-  headers.set("X-Content-Type-Options", "nosniff");
-  headers.set("Content-Security-Policy", "sandbox");
-  if (forceAttachment) {
-    headers.set("Content-Disposition", "attachment");
-  } else if (contentType === "application/pdf") {
-    headers.set("Content-Disposition", "inline");
+  let execCtx: ExecutionContext | null = null;
+  try {
+    execCtx = c.executionCtx;
+  } catch {
+    execCtx = null;
   }
-  headers.set("Cache-Control", "private, max-age=86400");
 
-  return new Response(object.body, { status: 200, headers });
+  const res = await serveR2WithEdgeCache({
+    bucket: c.env.BUCKET,
+    r2Key: path,
+    requestHeaders: c.req.raw.headers,
+    executionCtx: execCtx,
+    edgeTtlSeconds: 86400,
+    buildResponseHeaders: ({ httpEtag, storedContentType }) => {
+      const { contentType, forceAttachment } = resolveSafeServeMimeType(
+        path,
+        storedContentType
+      );
+      const headers = new Headers();
+      if (httpEtag) headers.set("ETag", httpEtag);
+      headers.set("Content-Type", contentType);
+      headers.set("X-Content-Type-Options", "nosniff");
+      headers.set("Content-Security-Policy", "sandbox");
+      if (forceAttachment) {
+        headers.set("Content-Disposition", "attachment");
+      } else if (contentType === "application/pdf") {
+        headers.set("Content-Disposition", "inline");
+      }
+      headers.set("Cache-Control", "private, max-age=86400");
+      return headers;
+    },
+  });
+
+  if (!res) return c.text("Not found", 404);
+  return res;
 }
 
 app.get("/:folder/:filename", async (c) => {
