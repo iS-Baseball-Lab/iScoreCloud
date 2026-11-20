@@ -354,6 +354,7 @@ function MatchesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId");
+  const focusSection = searchParams.get("section");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
   const { canMutate, canManagePlayers, canUsePaidAi } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
@@ -597,6 +598,31 @@ function MatchesContent() {
   }, [match, isDeletingMatch, currentTeam?.id, router]);
 
   const loadedDetailMatchIdRef = useRef<string | null>(null);
+  const scrolledVideoMatchIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!matchId || focusSection !== "video") {
+      scrolledVideoMatchIdRef.current = null;
+      return;
+    }
+    if (
+      isDetailLoading ||
+      !match ||
+      match.id !== matchId ||
+      !match.youtubeUrl ||
+      scrolledVideoMatchIdRef.current === matchId
+    ) {
+      return;
+    }
+    const frameId = window.requestAnimationFrame(() => {
+      const videoEl = document.getElementById("section-video");
+      if (videoEl) {
+        scrolledVideoMatchIdRef.current = matchId;
+        videoEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [matchId, focusSection, isDetailLoading, match]);
 
   // 1. 試合詳細 ＆ 出場メンバー・成績データのロード (matchId がある場合)
   useEffect(() => {
@@ -1861,7 +1887,12 @@ function MatchesContent() {
 
     // 🔒 試合映像（動画URL登録時のみ表示・未登録時は空枠を出さずスッキリ非表示）
     const videoSection = match.youtubeUrl ? (
-      <section key="section-video" className="space-y-2" aria-label="試合映像">
+      <section
+        id="section-video"
+        key="section-video"
+        className="space-y-2 scroll-mt-16"
+        aria-label="試合映像"
+      >
         <div className="flex items-center justify-between px-1">
           <h2 className="flex items-center gap-1.5 text-xs font-black text-foreground">
             <Video className="w-4 h-4 text-[#FF0000] shrink-0" />

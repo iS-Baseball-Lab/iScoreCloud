@@ -10,49 +10,36 @@ import {
 } from "@/lib/liff/match-card-bg";
 
 describe("MatchScoreCard photo-melt background resolver", () => {
-  it("always returns the scorebook photo for scheduled matches without YouTube video", () => {
+  it("always returns the scorebook photo for scheduled matches", () => {
     expect(
       resolveMatchCardPhotoMelt({
         matchId: "match-001",
         isScheduledMatch: true,
         isRainout: false,
-        hasYoutubeVideo: false,
       })
     ).toEqual(SCHEDULED_MATCH_PHOTO_MELT_ASSET);
   });
 
-  it("returns null when a YouTube video is registered or when the match is rained out", () => {
-    expect(
-      resolveMatchCardPhotoMelt({
-        matchId: "match-002",
-        isScheduledMatch: false,
-        isRainout: false,
-        hasYoutubeVideo: true,
-      })
-    ).toBeNull();
-
+  it("returns null only when the match is rained out", () => {
     expect(
       resolveMatchCardPhotoMelt({
         matchId: "match-003",
         isScheduledMatch: false,
         isRainout: true,
-        hasYoutubeVideo: false,
       })
     ).toBeNull();
   });
 
-  it("deterministically assigns one of the 5 post-game photos for video-less finished/live matches without flickering", () => {
+  it("deterministically assigns one of the 5 post-game photos for finished/live matches regardless of video without flickering", () => {
     const first = resolveMatchCardPhotoMelt({
       matchId: "finished-match-abc",
       isScheduledMatch: false,
       isRainout: false,
-      hasYoutubeVideo: false,
     });
     const second = resolveMatchCardPhotoMelt({
       matchId: "finished-match-abc",
       isScheduledMatch: false,
       isRainout: false,
-      hasYoutubeVideo: false,
     });
 
     expect(first).not.toBeNull();

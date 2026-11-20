@@ -1683,7 +1683,7 @@ function LiffMatchEditContent() {
               )}
             </div>
             <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-              YouTubeの限定公開リンクを設定すると、試合カードおよび試合詳細ページで動画を再生できます。
+              YouTubeの限定公開リンクを設定すると、試合カードに「動画あり」バッジが表示され、試合詳細ページで動画を再生できます。
             </p>
           </div>
         </section>

@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Play, 
   Users,
-  Video,
   FileText,
   CheckCircle2,
   ShieldCheck,
@@ -52,6 +51,7 @@ import {
   type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
 import { resolveMatchCardPhotoMelt } from "@/lib/liff/match-card-bg";
+import { extractYouTubeVideoId } from "@/lib/youtube";
 
 export interface MatchCardData {
   id: string;
@@ -88,43 +88,36 @@ interface MatchScoreCardProps {
   isLoading?: boolean;
 }
 
-// 🌟 試合カード用スケルトンローダー（動画エリア含む）
-export function MatchScoreCardSkeleton({ hasVideo = true }: { hasVideo?: boolean }) {
+// 🌟 試合カード用スケルトンローダー（A-3 上帯ダークキャップ × フォト染み込み領域対応）
+export function MatchScoreCardSkeleton(_props?: { hasVideo?: boolean }) {
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-xs animate-pulse">
-      {/* 📹 試合動画プレースホルダー（スケルトン表示） */}
-      {hasVideo && (
-        <div className="w-full aspect-video bg-muted relative flex flex-col items-center justify-center border-b border-border">
-          <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-            <Video className="w-6 h-6 text-[#FF0000]/45" />
-          </div>
-          <div className="mt-2.5 h-2.5 w-28 bg-border rounded-full" />
-        </div>
-      )}
-
       {/* A-3 ダークヘッダーキャップ（スケルトン） */}
       <div className="px-3.5 py-2 bg-[#0f172a] border-b-[3px] border-primary flex items-center justify-between">
         <div className="h-4 w-36 bg-slate-700 rounded" />
         <div className="h-4 w-12 bg-slate-700 rounded" />
       </div>
 
-      {/* カードボディ */}
-      <div className="p-3.5 space-y-3">
-        {/* スコア対戦エリア */}
-        <div className="flex items-center justify-between py-1">
-          <div className="space-y-1.5 flex-1">
-            <div className="h-5 w-32 bg-muted rounded" />
-            <div className="h-3.5 w-40 bg-muted rounded" />
+      {/* カードボディ（上部フォト領域余白付き） */}
+      <div className="relative bg-card overflow-hidden">
+        <div className="h-30 sm:h-34 bg-muted/55 border-b border-border/40" />
+        <div className="p-3.5 sm:p-4 space-y-3">
+          {/* スコア対戦エリア */}
+          <div className="flex items-center justify-between py-1">
+            <div className="space-y-1.5 flex-1">
+              <div className="h-5 w-32 bg-muted rounded" />
+              <div className="h-3.5 w-40 bg-muted rounded" />
+            </div>
+            <div className="h-10 w-20 bg-muted rounded-xl border border-border" />
           </div>
-          <div className="h-10 w-20 bg-muted rounded-xl border border-border" />
-        </div>
 
-        {/* 下部情報 */}
-        <div className="flex items-center justify-between pt-2.5 border-t border-border/60 gap-2">
-          <div className="h-3.5 w-12 bg-muted rounded" />
-          <div className="flex items-center gap-1.5">
-            <div className="h-7 w-24 bg-muted rounded-lg" />
-            <div className="h-7 w-24 bg-muted rounded-lg" />
+          {/* 下部情報 */}
+          <div className="flex items-center justify-between pt-2.5 border-t border-border/60 gap-2">
+            <div className="h-3.5 w-16 bg-muted rounded" />
+            <div className="flex items-center gap-1.5">
+              <div className="h-7 w-24 bg-muted rounded-lg" />
+              <div className="h-7 w-24 bg-muted rounded-lg" />
+            </div>
           </div>
         </div>
       </div>
@@ -168,14 +161,6 @@ const normalizeInningScores = (raw: unknown): number[] => {
   }
   return [];
 };
-
-// YouTube 動画ID 抽出ユーティリティ
-function getYoutubeVideoId(url: string | null | undefined): string | null {
-  if (!url) return null;
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return match && match[2].length === 11 ? match[2] : null;
-}
 
 // 🌟 カウントダウン用サブコンポーネント（不正日付防止 ＋ 省電力アダプティブ更新：1時間超は分単位更新・バックグラウンド時は完全停止）
 function computeMatchCountdownState(date: string): {
@@ -276,8 +261,6 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
   const { canMutate } = useLiffPermissions();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
   const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
-  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
-  const [isThumbLoaded, setIsThumbLoaded] = useState(false);
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const handleDetailPointerDown = useCallback(
@@ -306,7 +289,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
   }
 
   const canEditMatch = canMutate || isDemoMatchId(match.id);
-  const youtubeVideoId = getYoutubeVideoId(match.youtubeUrl);
+  const hasMatchVideo = Boolean(extractYouTubeVideoId(match.youtubeUrl));
 
   const parsedMatchDate = parseSafeMatchDate(match.date);
   const isFuture = Boolean(
@@ -329,7 +312,6 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
     matchId: match.id,
     isScheduledMatch,
     isRainout,
-    hasYoutubeVideo: Boolean(youtubeVideoId),
   });
 
   let effectiveRawOps: unknown = match.matchDayOps ?? null;
@@ -449,72 +431,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
         isExpanded && "border-primary/50 shadow-sm"
       )}
     >
-      {/* 🌟 1. YouTube 試合動画（本家同様の美しいサムネイル＆インライン埋め込み） */}
-      {youtubeVideoId && (
-        <div className="w-full aspect-video border-b border-border overflow-hidden bg-black relative group/video">
-          {isPlayingVideo ? (
-            <iframe
-              src={`https://www.youtube-nocookie.com/embed/${youtubeVideoId}?autoplay=1&rel=0&modestbranding=1`}
-              title="YouTube video player"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-              className="w-full h-full"
-            />
-          ) : (
-            <div
-              onClick={() => setIsPlayingVideo(true)}
-              className="relative w-full h-full cursor-pointer overflow-hidden group/thumb bg-muted"
-            >
-              {/* 🌟 サムネイル読み込み中プレースホルダー（lazy未読込カードやエラー時の常時60fps GPU負荷を防ぐため静的ソリッド表示） */}
-              {!isThumbLoaded && (
-                <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center z-0">
-                  <div className="w-12 h-12 rounded-full bg-card flex items-center justify-center shadow-xs">
-                    <Video className="w-6 h-6 text-[#FF0000]/45" />
-                  </div>
-                </div>
-              )}
-
-              {/* サムネイル画像 */}
-              <img
-                src={`https://img.youtube.com/vi/${youtubeVideoId}/hqdefault.jpg`}
-                alt="Game Video Thumbnail"
-                loading="lazy"
-                decoding="async"
-                onLoad={() => setIsThumbLoaded(true)}
-                onError={() => setIsThumbLoaded(true)}
-                className={cn(
-                  "w-full h-full object-cover transition-transform duration-500 group-hover/thumb:scale-105",
-                  !isThumbLoaded && "opacity-0"
-                )}
-              />
-
-              {/* ソリッドスクリム（グラデーションゼロ） */}
-              <div className="absolute inset-0 bg-black/30 group-hover/thumb:bg-black/40 transition-colors" />
-
-              {/* 再生ボタン（YouTube公式ブランドレッド・ソリッド単色） */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#FF0000] group-hover/thumb:bg-[#CC0000] text-white flex items-center justify-center shadow-lg group-hover/thumb:scale-110 transition-all duration-300 ring-4 ring-white/25">
-                  <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current translate-x-0.5" />
-                </div>
-              </div>
-
-              {/* ガイドラベル */}
-              <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white pointer-events-none">
-                <span className="flex items-center gap-1.5 bg-slate-950/85 px-2.5 py-1 rounded-full border border-white/20">
-                  <Play className="w-3 h-3 fill-current text-[#FF0000]" />
-                  タップして試合動画を再生
-                </span>
-                <span className="bg-[#FF0000] text-white px-2 py-0.5 rounded-md font-black shadow-2xs">
-                  YouTube
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 🌟 2. A-3 上帯ダークキャップ ＆ 純白スコアサマリー */}
+      {/* 🌟 1. A-3 上帯ダークキャップ ＆ 背景フォト染み込みスコアサマリー */}
       <div
         className="cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -568,6 +485,18 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           </div>
 
           <div className="shrink-0 flex items-center gap-1">
+            {hasMatchVideo && !photoMeltAsset && (
+              <Link
+                href={`/liff/matches?id=${encodeURIComponent(match.id)}&section=video`}
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={() => handleDetailPointerDown(isScheduledMatch)}
+                aria-label="試合動画を見る"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#FF0000] hover:bg-[#CC0000] text-white text-[10px] font-black transition-colors"
+              >
+                <Play className="w-2.5 h-2.5 fill-current shrink-0" />
+                <span>動画あり</span>
+              </Link>
+            )}
             {isLive ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-600 text-white text-[10px] font-black rounded">
                 <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
@@ -597,7 +526,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           </div>
         </div>
 
-        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス（動画なしの予定・試合中・終了時は上部背景フォト染み込み表現） */}
+        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス（動画の有無にかかわらず予定・試合中・終了すべて上部背景フォト染み込み表現） */}
         <div className="relative bg-card overflow-hidden">
           {photoMeltAsset && (
             <div
@@ -623,6 +552,20 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 )}
               />
             </div>
+          )}
+
+          {/* 📹 動画登録済みピルバッジ（写真エリア右上角・ソリッド公式ブランドレッド #FF0000、タップで試合詳細の動画セクションへ直行） */}
+          {hasMatchVideo && photoMeltAsset && (
+            <Link
+              href={`/liff/matches?id=${encodeURIComponent(match.id)}&section=video`}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={() => handleDetailPointerDown(isScheduledMatch)}
+              aria-label="試合動画を見る"
+              className="absolute top-2.5 right-2.5 z-20 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FF0000] hover:bg-[#CC0000] text-white text-[10.5px] sm:text-[11px] font-black border border-white/35 shadow-sm active:scale-95 transition-all"
+            >
+              <Play className="w-3 h-3 fill-current shrink-0" />
+              <span>動画あり</span>
+            </Link>
           )}
 
           <div

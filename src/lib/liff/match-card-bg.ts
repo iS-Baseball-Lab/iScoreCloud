@@ -14,7 +14,7 @@ export const SCHEDULED_MATCH_PHOTO_MELT_ASSET: MatchCardPhotoMeltAsset = {
 };
 
 /**
- * 動画未登録の終了試合・進行中試合用の専用野球風景WebPプール（全5種・960×640）
+ * 終了試合・進行中試合用の専用野球風景WebPプール（全5種・960×640）
  * 特定の背番号・人物・文字を含まない汎用グラウンド情景で構成
  */
 export const MATCH_RESULT_PHOTO_MELT_POOL: readonly MatchCardPhotoMeltAsset[] = [
@@ -68,22 +68,20 @@ export interface ResolveMatchCardPhotoMeltParams {
   matchId: string;
   isScheduledMatch: boolean;
   isRainout: boolean;
-  hasYoutubeVideo: boolean;
 }
 
 /**
- * 試合カード（MatchScoreCard）の上部フォト染み込み背景を解決する
- * - YouTube動画登録済み、または雨天中止時は null（フォト染み込み非表示）
+ * 試合カード（MatchScoreCard）の上部フォト染み込み背景を解決する（動画の有無にかかわらず統一適用）
+ * - 雨天中止時は null（コンパクト表示を維持）
  * - 予定の試合（isScheduledMatch）は常に `/feature-bg-scorebook.webp` 固定
- * - 動画なしの終了試合・進行中試合は 5種の専用野球風景WebPから試合ID固定ランダムで選択
+ * - 終了試合・進行中試合は 5種の専用野球風景WebPから試合ID固定ランダムで選択
  */
 export function resolveMatchCardPhotoMelt({
   matchId,
   isScheduledMatch,
   isRainout,
-  hasYoutubeVideo,
 }: ResolveMatchCardPhotoMeltParams): MatchCardPhotoMeltAsset | null {
-  if (hasYoutubeVideo || isRainout) {
+  if (isRainout) {
     return null;
   }
   if (isScheduledMatch) {
