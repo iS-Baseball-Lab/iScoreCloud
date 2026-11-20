@@ -10,6 +10,7 @@ import {
   createInitialMatchState,
   isFairTerritory,
   resolveFencePocketAtAngle,
+  resolveLaunchSpeedMetrics,
 } from "@/lib/liff/baseball-board-engine";
 import { QUICK_MENU_CATALOG } from "@/lib/liff/quick-menu-settings";
 
@@ -189,6 +190,42 @@ describe("baseball-board-engine", () => {
     expect(resolveFencePocketAtAngle(-90)?.kind).toBe("hr");
     expect(resolveFencePocketAtAngle(-160)?.kind).toBe("1b");
     expect(resolveFencePocketAtAngle(-45)?.kind).toBe("3b");
+  });
+
+  it("supports pitch speed presets (slow/monster/chaos), billboard +150pt bonus, and batting-first playerSide", () => {
+    const slowMetrics = resolveLaunchSpeedMetrics("straight", "slow");
+    const monsterMetrics = resolveLaunchSpeedMetrics("straight", "monster");
+    expect(slowMetrics.displayKmh).toBeLessThan(95);
+    expect(monsterMetrics.displayKmh).toBeGreaterThanOrEqual(158);
+    expect(monsterMetrics.isFireball).toBe(true);
+    expect(monsterMetrics.effectiveSpeedPxPerSec).toBeGreaterThan(
+      slowMetrics.effectiveSpeedPxPerSec
+    );
+
+    const awayFirst = createInitialMatchState({
+      mode: "cpu",
+      totalInnings: 3,
+      difficulty: "normal",
+      myTeamName: "テストチーム",
+      myLineup: createGenericLineup("my"),
+      playerIsHome: false,
+    });
+    expect(awayFirst.playerSide).toBe("away");
+    expect(awayFirst.awayTeamName).toBe("テストチーム");
+
+    const derby = createInitialMatchState({
+      mode: "derby",
+      totalInnings: 3,
+      difficulty: "normal",
+      myTeamName: "テストチーム",
+      myLineup: createGenericLineup("my"),
+    });
+    const billboardRes = applyPlayOutcome(
+      derby,
+      "homerun",
+      "看板直撃！特大本塁打！！"
+    );
+    expect(billboardRes.nextState.derbyPoints).toBe(150);
   });
 
   it("places baseball_board right after related_teams in QUICK_MENU_CATALOG", () => {

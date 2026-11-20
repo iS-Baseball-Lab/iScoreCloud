@@ -19,16 +19,92 @@ export interface BoardPlayer {
   rbi: number;
 }
 
+export type PitchSpeedPreset = "slow" | "normal" | "fast" | "monster" | "chaos";
+
 export interface PitchSpec {
   type: PitchType;
   course: PitchCourse;
+  speedPreset?: PitchSpeedPreset;
 }
+
+export interface PitchSpeedPresetMeta {
+  id: PitchSpeedPreset;
+  label: string;
+  shortLabel: string;
+  kmhBadge: string;
+  baseKmh: number;
+  speedMultiplier: number;
+  carryMultiplier: number;
+  description: string;
+}
+
+export const PITCH_SPEED_PRESETS: readonly PitchSpeedPresetMeta[] = [
+  {
+    id: "slow",
+    label: "スロー (80km)",
+    shortLabel: "🐢 80km",
+    kmhBadge: "80km/h",
+    baseKmh: 80,
+    speedMultiplier: 0.64,
+    carryMultiplier: 0.96,
+    description: "初心者でもしっかり見て打てる安心スピード",
+  },
+  {
+    id: "normal",
+    label: "ふつう (115km)",
+    shortLabel: "⚾ 115km",
+    kmhBadge: "115km/h",
+    baseKmh: 115,
+    speedMultiplier: 0.95,
+    carryMultiplier: 1.0,
+    description: "草野球・中学野球の心地よい標準スピード",
+  },
+  {
+    id: "fast",
+    label: "剛速球 (145km)",
+    shortLabel: "⚡ 145km",
+    kmhBadge: "145km/h",
+    baseKmh: 145,
+    speedMultiplier: 1.25,
+    carryMultiplier: 1.09,
+    description: "プロ級の速球！球威に負けず弾き返せば飛距離UP",
+  },
+  {
+    id: "monster",
+    label: "怪物級 (165km)",
+    shortLabel: "🔥 165km",
+    kmhBadge: "165km/h",
+    baseKmh: 165,
+    speedMultiplier: 1.54,
+    carryMultiplier: 1.18,
+    description: "うなる火の玉ストレート！真芯で捉えれば超特大アーチ",
+  },
+  {
+    id: "chaos",
+    label: "緩急MIX",
+    shortLabel: "🛸 緩急",
+    kmhBadge: "65〜168km",
+    baseKmh: 125,
+    speedMultiplier: 1.0,
+    carryMultiplier: 1.08,
+    description: "超スロー山なり球と168km剛速球がランダムに来る魔境モード！",
+  },
+];
+
+const PITCH_SPEED_PRESET_MAP: Readonly<Record<PitchSpeedPreset, PitchSpeedPresetMeta>> = {
+  slow: PITCH_SPEED_PRESETS[0]!,
+  normal: PITCH_SPEED_PRESETS[1]!,
+  fast: PITCH_SPEED_PRESETS[2]!,
+  monster: PITCH_SPEED_PRESETS[3]!,
+  chaos: PITCH_SPEED_PRESETS[4]!,
+};
 
 export interface PitchTypeMeta {
   id: PitchType;
   label: string;
   shortLabel: string;
   speedPxPerSec: number;
+  kmhRatio: number;
   curveFactor: number;
   description: string;
 }
@@ -39,6 +115,7 @@ export const PITCH_TYPE_META: Readonly<Record<PitchType, PitchTypeMeta>> = {
     label: "ストレート",
     shortLabel: "直球",
     speedPxPerSec: 235,
+    kmhRatio: 1.0,
     curveFactor: 0,
     description: "伸びのある王道ストレート",
   },
@@ -47,6 +124,7 @@ export const PITCH_TYPE_META: Readonly<Record<PitchType, PitchTypeMeta>> = {
     label: "カーブ",
     shortLabel: "カーブ",
     speedPxPerSec: 178,
+    kmhRatio: 0.81,
     curveFactor: 1,
     description: "外角方向へ大きく曲がる変化球",
   },
@@ -55,6 +133,7 @@ export const PITCH_TYPE_META: Readonly<Record<PitchType, PitchTypeMeta>> = {
     label: "シュート",
     shortLabel: "シュート",
     speedPxPerSec: 196,
+    kmhRatio: 0.91,
     curveFactor: -1,
     description: "打者の手元へ食い込む変化球",
   },
@@ -63,6 +142,7 @@ export const PITCH_TYPE_META: Readonly<Record<PitchType, PitchTypeMeta>> = {
     label: "チェンジアップ",
     shortLabel: "緩球",
     speedPxPerSec: 136,
+    kmhRatio: 0.69,
     curveFactor: 0.2,
     description: "タイミングを外すスローボール",
   },
@@ -71,10 +151,77 @@ export const PITCH_TYPE_META: Readonly<Record<PitchType, PitchTypeMeta>> = {
     label: "消える魔球",
     shortLabel: "魔球",
     speedPxPerSec: 205,
+    kmhRatio: 0.9,
     curveFactor: 0,
     description: "本塁手前で床下へ消える必殺魔球！見送ればボール",
   },
 };
+
+export interface LaunchSpeedMetrics {
+  displayKmh: number;
+  effectiveSpeedPxPerSec: number;
+  carryMultiplier: number;
+  isFireball: boolean;
+  isUltraSlow: boolean;
+}
+
+/**
+ * 球種×球速プリセットからスピードガン表示値(km/h)と盤面物理速度を算出する
+ */
+export function resolveLaunchSpeedMetrics(
+  pitchType: PitchType,
+  preset: PitchSpeedPreset = "normal"
+): LaunchSpeedMetrics {
+  const typeMeta = PITCH_TYPE_META[pitchType];
+  let baseKmh: number;
+  let speedMul: number;
+  let carryMul: number;
+
+  if (preset === "chaos") {
+    const roll = Math.random();
+    if (roll < 0.28) {
+      // 超スローボール（イーファス風）
+      baseKmh = 68;
+      speedMul = 0.5;
+      carryMul = 0.95;
+    } else if (roll < 0.52) {
+      baseKmh = 92;
+      speedMul = 0.74;
+      carryMul = 0.98;
+    } else if (roll < 0.76) {
+      baseKmh = 146;
+      speedMul = 1.26;
+      carryMul = 1.1;
+    } else {
+      baseKmh = 167;
+      speedMul = 1.57;
+      carryMul = 1.2;
+    }
+  } else {
+    const pMeta = PITCH_SPEED_PRESET_MAP[preset] ?? PITCH_SPEED_PRESETS[1]!;
+    baseKmh = pMeta.baseKmh;
+    speedMul = pMeta.speedMultiplier;
+    carryMul = pMeta.carryMultiplier;
+  }
+
+  const jitterKmh = Math.round((Math.random() - 0.5) * 6);
+  const displayKmh = Math.max(
+    52,
+    Math.min(175, Math.round(baseKmh * typeMeta.kmhRatio + jitterKmh))
+  );
+  const effectiveSpeedPxPerSec = Math.max(
+    88,
+    Math.round(typeMeta.speedPxPerSec * speedMul)
+  );
+
+  return {
+    displayKmh,
+    effectiveSpeedPxPerSec,
+    carryMultiplier: carryMul,
+    isFireball: displayKmh >= 152,
+    isUltraSlow: displayKmh <= 82,
+  };
+}
 
 export const MAX_VANISH_PITCHES_PER_GAME = 2;
 export const DERBY_TOTAL_PITCHES = 10;
@@ -354,6 +501,7 @@ export interface BaseballBoardMatchState {
   mode: GameMode;
   totalInnings: number;
   difficulty: CpuDifficulty;
+  playerSide: "away" | "home";
   inning: number;
   isTop: boolean;
   balls: number;
@@ -403,6 +551,7 @@ export interface BaseballBoardLocalStats {
   bestSingleGameRuns: number;
   derbyHighScore: number;
   derbyBestHr: number;
+  maxExitVelocityKmh: number;
 }
 
 export const EMPTY_LOCAL_STATS: BaseballBoardLocalStats = {
@@ -414,6 +563,7 @@ export const EMPTY_LOCAL_STATS: BaseballBoardLocalStats = {
   bestSingleGameRuns: 0,
   derbyHighScore: 0,
   derbyBestHr: 0,
+  maxExitVelocityKmh: 0,
 };
 
 const DEFAULT_POSITION_ORDER: ReadonlyArray<{
@@ -574,6 +724,7 @@ export function createInitialMatchState(params: {
     mode,
     totalInnings: Math.max(1, totalInnings),
     difficulty,
+    playerSide: playerIsHome ? "home" : "away",
     inning: 1,
     isTop: mode !== "derby",
     balls: 0,
@@ -597,12 +748,14 @@ export function createInitialMatchState(params: {
     winner: null,
     lastCallout:
       mode === "derby"
-        ? "ホームラン競争（全10球）プレイボール！"
-        : "プレイボール！投球またはスイングで対決開始！",
+        ? "①左下「投球」➔ ②右下「打つ！」で柵越え連発を狙おう！"
+        : !playerIsHome
+        ? "プレイボール！①左下「投球」➔ ②右下「打つ！」で攻撃開始！"
+        : "プレイボール！コース・球速・球種を選んで投球開始！",
     lastSubCallout:
       mode === "derby"
-        ? "ジャストミートで柵越えスタンドインを狙おう！"
-        : "消える魔球は1試合2球まで使用できます",
+        ? "センター看板直撃ならボーナス +150pt！"
+        : "球速ギア変更・素振りテストもいつでもOK",
     derbyPitchNumber: 1,
     derbyHomeRuns: 0,
     derbyPoints: 0,
@@ -745,10 +898,25 @@ export function decideCpuBatterPlan(params: {
     return { willSwing: false, stance: "contact", targetHitY: HOME_Y - 6 };
   }
 
+  const preset = pitch.speedPreset ?? "normal";
+  const speedExtraJitter =
+    preset === "monster"
+      ? 9
+      : preset === "fast"
+      ? 5
+      : preset === "chaos"
+      ? 11
+      : 0;
   const jitterRange =
-    difficulty === "hard" ? 13 : difficulty === "normal" ? 20 : 28;
-  // チェンジアップで少し前に突っ込む揺さぶり
-  const speedBias = pitch.type === "changeup" ? -5 : 0;
+    (difficulty === "hard" ? 13 : difficulty === "normal" ? 20 : 28) +
+    speedExtraJitter;
+  // チェンジアップやスロー球は前に突っ込み、剛速球は振り遅れやすくなるリアルな緩急効果
+  const speedBias =
+    pitch.type === "changeup" || preset === "slow"
+      ? -6
+      : preset === "monster"
+      ? 5
+      : 0;
   const targetHitY =
     HOME_Y - 6 + speedBias + (Math.random() - 0.5) * jitterRange;
 
@@ -871,9 +1039,12 @@ function applyDerbyOutcome(
   let soundKind: PlayApplyResult["soundKind"] = "out";
 
   if (outcome === "homerun") {
+    const isBillboard = detailLabel.includes("看板直撃");
     hrAdded = 1;
-    pointsAdded = 100;
-    bannerTitle = "🌈 HOME RUN!! +100pt";
+    pointsAdded = isBillboard ? 150 : 100;
+    bannerTitle = isBillboard
+      ? "🎯 看板直撃弾！！ +150pt"
+      : "🌈 HOME RUN!! +100pt";
     bannerTone = "hr";
     soundKind = "hr";
     next.homeLineup = updateCurrentBatterStats(next.homeLineup, next.homeBatterIdx, {
@@ -1222,6 +1393,7 @@ export function applyPlayOutcome(
       runsScored = adv.runs;
       hitsAdded = 1;
       if (effectiveOutcome === "homerun") {
+        const isBillboard = detailLabel.includes("看板直撃");
         const hrKind =
           runsScored === 4
             ? "満塁ホームラン！！"
@@ -1230,7 +1402,9 @@ export function applyPlayOutcome(
             : runsScored === 2
             ? "2ランホームラン！！"
             : "ソロホームラン！！";
-        bannerTitle = `🌈 ${hrKind} (+${runsScored}点)`;
+        bannerTitle = isBillboard
+          ? `🎯 看板直撃！${hrKind} (+${runsScored}点)`
+          : `🌈 ${hrKind} (+${runsScored}点)`;
         bannerTone = "hr";
         soundKind = "hr";
       } else if (effectiveOutcome === "triple") {
@@ -1440,10 +1614,32 @@ export function loadBaseballBoardLocalStats(teamId: string): BaseballBoardLocalS
         typeof parsed.bestSingleGameRuns === "number" ? parsed.bestSingleGameRuns : 0,
       derbyHighScore: typeof parsed.derbyHighScore === "number" ? parsed.derbyHighScore : 0,
       derbyBestHr: typeof parsed.derbyBestHr === "number" ? parsed.derbyBestHr : 0,
+      maxExitVelocityKmh:
+        typeof parsed.maxExitVelocityKmh === "number" ? parsed.maxExitVelocityKmh : 0,
     };
   } catch {
     return { ...EMPTY_LOCAL_STATS };
   }
+}
+
+export function recordMaxExitVelocityToLocalStats(
+  teamId: string,
+  exitVelocityKmh: number
+): BaseballBoardLocalStats {
+  const current = loadBaseballBoardLocalStats(teamId);
+  if (exitVelocityKmh <= current.maxExitVelocityKmh) return current;
+  const next: BaseballBoardLocalStats = {
+    ...current,
+    maxExitVelocityKmh: Math.round(exitVelocityKmh),
+  };
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(getStatsStorageKey(teamId), JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+  return next;
 }
 
 export function recordFinishedGameToLocalStats(
@@ -1459,21 +1655,33 @@ export function recordFinishedGameToLocalStats(
     next.derbyBestHr = Math.max(next.derbyBestHr, state.derbyHomeRuns);
   } else {
     next.gamesPlayed += 1;
-    // 1P vs CPU では自チームは home、2P では全体の試合記録として集計
-    const myRuns = state.homeScore;
-    const myHrs = state.homeLineup.reduce((acc, p) => acc + p.homeRuns, 0);
-    const awayHrs =
+    const isMyHome = state.playerSide === "home";
+    const myRuns = isMyHome ? state.homeScore : state.awayScore;
+    const myLineup = isMyHome ? state.homeLineup : state.awayLineup;
+    const myHrs = myLineup.reduce((acc, p) => acc + p.homeRuns, 0);
+    const otherHrs =
       state.mode === "versus"
-        ? state.awayLineup.reduce((acc, p) => acc + p.homeRuns, 0)
+        ? (isMyHome ? state.awayLineup : state.homeLineup).reduce(
+            (acc, p) => acc + p.homeRuns,
+            0
+          )
         : 0;
-    next.totalHomeRuns += myHrs + awayHrs;
+    next.totalHomeRuns += myHrs + otherHrs;
     next.bestSingleGameRuns = Math.max(
       next.bestSingleGameRuns,
       state.mode === "versus" ? Math.max(state.awayScore, state.homeScore) : myRuns
     );
-    if (state.winner === "home") next.wins += 1;
-    else if (state.winner === "away") next.losses += 1;
-    else next.draws += 1;
+    if (state.winner === "draw" || state.winner === null) {
+      next.draws += 1;
+    } else if (
+      state.mode === "versus"
+        ? state.winner === "away"
+        : state.winner === state.playerSide
+    ) {
+      next.wins += 1;
+    } else {
+      next.losses += 1;
+    }
   }
 
   if (typeof window !== "undefined") {

@@ -29,10 +29,12 @@ import {
   getCourseTargetX,
   isFairTerritory,
   resolveFencePocketAtAngle,
+  resolveLaunchSpeedMetrics,
   type BatterHand,
   type BatterStance,
   type CpuDifficulty,
   type PitchSpec,
+  type PitchSpeedPreset,
   type PlayOutcomeCode,
   type RunnerBases,
 } from "@/lib/liff/baseball-board-engine";
@@ -50,11 +52,14 @@ export interface ResolvedBoardPlay {
   outcome: PlayOutcomeCode;
   detailLabel: string;
   usedVanishPitch: boolean;
+  pitchKmh: number;
+  exitVelocityKmh: number;
 }
 
 export interface BaseballBoardCanvasHandle {
   launchPitch: (params: {
     pitch: PitchSpec;
+    speedPreset: PitchSpeedPreset;
     batterBats: BatterHand;
     batterIsCpu: boolean;
     cpuDifficulty: CpuDifficulty;
@@ -72,14 +77,17 @@ interface BaseballBoardCanvasProps {
   strikes: number;
   batterBats: BatterHand;
   stance: BatterStance;
+  speedBadgeText: string;
   soundEnabled: boolean;
-  canTapToSwing: boolean;
-  canTapToPitch: boolean;
+  isHumanBatterTurn: boolean;
+  isGameOver: boolean;
+  isVersusPitchLockMode?: boolean;
   bannerText: string | null;
   bannerTone: "hr" | "hit" | "out" | "walk" | "magic" | "neutral";
   onPhaseChange: (phase: BoardActionPhase) => void;
   onPlayResolved: (play: ResolvedBoardPlay) => void;
-  onRequestQuickPitch?: () => void;
+  onPressBoardPitch: () => void;
+  onPracticeSwing?: () => void;
 }
 
 interface TrailPoint {
@@ -110,18 +118,25 @@ interface InternalSimState {
   isSweetHit: boolean;
   isBuntBall: boolean;
   elapsedSec: number;
-  // 投球パラメータ
+  // 投球・スピードガンパラメータ
   pitchSpec: PitchSpec;
+  pitchSpeedPxPerSec: number;
+  carryMultiplier: number;
+  isFireball: boolean;
+  lastPitchKmh: number;
+  lastExitVelocityKmh: number;
+  billboardFlashedUntilMs: number;
   pitchStartX: number;
   pitchTargetX: number;
   pitchProgress: number;
   trapdoorOpen: boolean;
   ballVanished: boolean;
-  // 打者スイング状態
+  // 打者スイング・素振り状態
   batterBats: BatterHand;
   activeStance: BatterStance;
   hasSwung: boolean;
-  swingAnimProgress: number; // 0 = 構え, 0..1 = スイング軌道
+  swingAnimProgress: number;
+  isPracticeSwinging: boolean;
   // CPU打者自動スイング予約
   cpuPlan: {
     enabled: boolean;
@@ -140,7 +155,10 @@ interface InternalSimState {
 
 const CONFETTI_COLORS = ["#ef4444", "#f59e0b", "#2563eb", "#10b981", "#ffffff"];
 
-function createInitialSimState(batterBats: BatterHand, stance: BatterStance): InternalSimState {
+function createInitialSimState(
+  batterBats: BatterHand,
+  stance: BatterStance
+): InternalSimState {
   return {
     phase: "idle",
     ballVisible: true,
@@ -154,6 +172,12 @@ function createInitialSimState(batterBats: BatterHand, stance: BatterStance): In
     isBuntBall: false,
     elapsedSec: 0,
     pitchSpec: { type: "straight", course: "middle" },
+    pitchSpeedPxPerSec: 235,
+    carryMultiplier: 1,
+    isFireball: false,
+    lastPitchKmh: 0,
+    lastExitVelocityKmh: 0,
+    billboardFlashedUntilMs: 0,
     pitchStartX: MOUND_X,
     pitchTargetX: HOME_X,
     pitchProgress: 0,
@@ -163,6 +187,7 @@ function createInitialSimState(batterBats: BatterHand, stance: BatterStance): In
     activeStance: stance,
     hasSwung: false,
     swingAnimProgress: 0,
+    isPracticeSwinging: false,
     cpuPlan: {
       enabled: false,
       willSwing: false,
@@ -188,20 +213,24 @@ export const BaseballBoardCanvas = forwardRef<
     strikes,
     batterBats,
     stance,
+    speedBadgeText,
     soundEnabled,
-    canTapToSwing,
-    canTapToPitch,
+    isHumanBatterTurn,
+    isGameOver,
+    isVersusPitchLockMode = false,
     bannerText,
     bannerTone,
     onPhaseChange,
     onPlayResolved,
-    onRequestQuickPitch,
+    onPressBoardPitch,
+    onPracticeSwing,
   },
   ref
 ) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafIdRef = useRef<number | null>(null);
   const lastFrameMsRef = useRef<number>(0);
+  const [livePhaseUi, setLivePhaseUi] = useState<BoardActionPhase>("idle");
 
   const propsRef = useRef({
     bases,
@@ -210,10 +239,12 @@ export const BaseballBoardCanvas = forwardRef<
     batterBats,
     stance,
     soundEnabled,
+    isHumanBatterTurn,
     bannerText,
     bannerTone,
     onPhaseChange,
     onPlayResolved,
+    onPracticeSwing,
   });
   propsRef.current = {
     bases,
@@ -222,15 +253,23 @@ export const BaseballBoardCanvas = forwardRef<
     batterBats,
     stance,
     soundEnabled,
+    isHumanBatterTurn,
     bannerText,
     bannerTone,
     onPhaseChange,
     onPlayResolved,
+    onPracticeSwing,
   };
 
   const simRef = useRef<InternalSimState>(
     createInitialSimState(batterBats, stance)
   );
+
+  const syncPhase = useCallback((nextPhase: BoardActionPhase) => {
+    simRef.current.phase = nextPhase;
+    setLivePhaseUi(nextPhase);
+    propsRef.current.onPhaseChange(nextPhase);
+  }, []);
 
   const stopLoop = useCallback(() => {
     if (rafIdRef.current !== null) {
@@ -245,7 +284,10 @@ export const BaseballBoardCanvas = forwardRef<
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1, 2);
+    const dpr = Math.min(
+      typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1,
+      2
+    );
     const targetW = Math.round(BOARD_WIDTH * dpr);
     const targetH = Math.round(BOARD_HEIGHT * dpr);
     if (canvas.width !== targetW || canvas.height !== targetH) {
@@ -261,14 +303,16 @@ export const BaseballBoardCanvas = forwardRef<
       bases: curBases,
       bannerText: curBanner,
       bannerTone: curBannerTone,
+      isHumanBatterTurn: humanBatting,
     } = propsRef.current;
-    const nowMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const nowMs =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
 
     // 1. 野球盤の外枠筐体（ソリッドダークネイビー・グラデーション完全不使用）
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
-    // 四隅のボードビス装飾
+    // 四隅のビス装飾
     const rivets = [
       [12, 12],
       [BOARD_WIDTH - 12, 12],
@@ -278,11 +322,11 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.fillStyle = "#334155";
     for (const [rx, ry] of rivets) {
       ctx.beginPath();
-      ctx.arc(rx ?? 0, ry ?? 0, 3.5, 0, Math.PI * 2);
+      ctx.arc(rx ?? 0, ry ?? 0, 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 2. 上部スタンド席（柵越え HOME RUN ゾーン）
+    // 2. 上部スタンド席（電光スピードガン ＋ センター大当たり看板 ＋ 打球速度計）
     ctx.fillStyle = "#1e293b";
     ctx.beginPath();
     ctx.roundRect(10, 8, BOARD_WIDTH - 20, 42, 10);
@@ -291,23 +335,62 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // LEFT / CENTER / RIGHT HOME RUN アーチ看板
-    const standSigns = [
-      { x: 18, w: 96, label: "LEFT HR", bg: "#1d4ed8" },
-      { x: 124, w: 152, label: "★ HOME RUN STAND ★", bg: "#dc2626" },
-      { x: 286, w: 96, label: "RIGHT HR", bg: "#1d4ed8" },
-    ];
-    for (const sign of standSigns) {
-      ctx.fillStyle = sign.bg;
-      ctx.beginPath();
-      ctx.roundRect(sign.x, 13, sign.w, 20, 5);
-      ctx.fill();
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "900 9.5px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(sign.label, sign.x + sign.w / 2, 23.5);
-    }
+    // 左LED：投球スピードガン
+    ctx.fillStyle = "#020617";
+    ctx.beginPath();
+    ctx.roundRect(16, 12, 102, 22, 5);
+    ctx.fill();
+    ctx.strokeStyle = sim.isFireball ? "#ef4444" : "#334155";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.fillStyle = sim.ballVanished
+      ? "#f59e0b"
+      : sim.lastPitchKmh >= 152
+      ? "#f87171"
+      : sim.lastPitchKmh > 0 && sim.lastPitchKmh <= 85
+      ? "#a3e635"
+      : "#38bdf8";
+    ctx.font = "900 9.5px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const pitchGunLabel = sim.ballVanished
+      ? "球速 ??? 魔球"
+      : sim.lastPitchKmh > 0
+      ? `球速 ${sim.lastPitchKmh} km/h`
+      : "球速 --- km/h";
+    ctx.fillText(pitchGunLabel, 67, 23.5);
+
+    // 中央：🎯 看板直撃 ★ HOME RUN ターゲット
+    const isBillboardLit = nowMs < sim.billboardFlashedUntilMs;
+    ctx.fillStyle = isBillboardLit ? "#facc15" : "#dc2626";
+    ctx.beginPath();
+    ctx.roundRect(124, 12, 152, 22, 5);
+    ctx.fill();
+    ctx.strokeStyle = "#fde047";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.fillStyle = isBillboardLit ? "#0f172a" : "#ffffff";
+    ctx.font = "900 9.5px sans-serif";
+    ctx.fillText("🎯 看板直撃 ★ HOME RUN", 200, 23.5);
+
+    // 右LED：打球速度スピードガン
+    ctx.fillStyle = "#020617";
+    ctx.beginPath();
+    ctx.roundRect(282, 12, 102, 22, 5);
+    ctx.fill();
+    ctx.strokeStyle = sim.lastExitVelocityKmh >= 155 ? "#f59e0b" : "#334155";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    ctx.fillStyle =
+      sim.lastExitVelocityKmh >= 155 ? "#fbbf24" : "#34d399";
+    ctx.font = "900 9.5px sans-serif";
+    const exitGunLabel =
+      sim.lastExitVelocityKmh > 0
+        ? `打球 ${sim.lastExitVelocityKmh} km/h`
+        : "打球 --- km/h";
+    ctx.fillText(exitGunLabel, 333, 23.5);
 
     // 3. グラウンド土台（ファウルゾーン濃緑）
     ctx.save();
@@ -337,7 +420,6 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.fillStyle = "#15803d";
     ctx.fillRect(0, 0, BOARD_WIDTH, BOARD_HEIGHT);
 
-    // 同心円の刈り込み模様（すべて単色ソリッド）
     const stripeRadii = [320, 276, 232, 188, 144];
     stripeRadii.forEach((r, idx) => {
       ctx.fillStyle = idx % 2 === 0 ? "#166534" : "#15803d";
@@ -359,7 +441,6 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.closePath();
     ctx.fill();
 
-    // 内野中央の芝生ダイヤモンド
     ctx.fillStyle = "#15803d";
     ctx.beginPath();
     ctx.moveTo(HOME_X, HOME_Y - 18);
@@ -382,11 +463,11 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // マウンドから本塁への投球レーンガイド（野球盤らしい溝表現）
+    // 投球レーン溝ガイド
     ctx.fillStyle = "#14532d";
     ctx.fillRect(HOME_X - 7, MOUND_Y + 14, 14, TRAPDOOR_Y - MOUND_Y - 12);
 
-    // 5. 「消える魔球」トラップドア（本塁手前の秘密ハッチ）
+    // 5. 「消える魔球」トラップドア
     if (sim.trapdoorOpen) {
       ctx.fillStyle = "#020617";
       ctx.beginPath();
@@ -411,7 +492,6 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.lineTo(378, 210);
     ctx.stroke();
 
-    // 左右バッターボックス
     ctx.lineWidth = 1.5;
     ctx.strokeRect(HOME_X - 24, HOME_Y - 16, 13, 24);
     ctx.strokeRect(HOME_X + 11, HOME_Y - 16, 13, 24);
@@ -458,7 +538,6 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.restore();
 
       if (occupied) {
-        // 塁上の走者バッジ（単色アンバー丸バッジ）
         ctx.fillStyle = "#d97706";
         ctx.beginPath();
         ctx.arc(b.x, b.y - 13, 7.5, 0, Math.PI * 2);
@@ -474,7 +553,7 @@ export const BaseballBoardCanvas = forwardRef<
       }
     }
 
-    // 8. 外野フェンス 7つの判定ポケット（アーチ型ソリッドポケット）
+    // 8. 外野フェンス 7つの判定ポケット
     const pocketInnerR = FENCE_ARC_RADIUS - 11;
     const pocketOuterR = FENCE_ARC_RADIUS + 7;
     for (const pocket of FENCE_POCKETS) {
@@ -483,8 +562,22 @@ export const BaseballBoardCanvas = forwardRef<
 
       ctx.fillStyle = pocket.colorHex;
       ctx.beginPath();
-      ctx.arc(FENCE_ARC_CX, FENCE_ARC_CY, pocketOuterR, startRad, endRad, false);
-      ctx.arc(FENCE_ARC_CX, FENCE_ARC_CY, pocketInnerR, endRad, startRad, true);
+      ctx.arc(
+        FENCE_ARC_CX,
+        FENCE_ARC_CY,
+        pocketOuterR,
+        startRad,
+        endRad,
+        false
+      );
+      ctx.arc(
+        FENCE_ARC_CX,
+        FENCE_ARC_CY,
+        pocketInnerR,
+        endRad,
+        startRad,
+        true
+      );
       ctx.closePath();
       ctx.fill();
 
@@ -492,7 +585,8 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.lineWidth = 1.3;
       ctx.stroke();
 
-      const midRad = ((pocket.startDeg + pocket.endDeg) * 0.5 * Math.PI) / 180;
+      const midRad =
+        ((pocket.startDeg + pocket.endDeg) * 0.5 * Math.PI) / 180;
       const labelR = (pocketInnerR + pocketOuterR) * 0.5;
       const lx = FENCE_ARC_CX + labelR * Math.cos(midRad);
       const ly = FENCE_ARC_CY + labelR * Math.sin(midRad);
@@ -508,7 +602,7 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.restore();
     }
 
-    // 左右ファウルポールの黄色丸ポスト
+    // 左右ファウルポール
     const poles = [
       { x: 22, y: 210 },
       { x: 378, y: 210 },
@@ -526,7 +620,6 @@ export const BaseballBoardCanvas = forwardRef<
     // 9. 野手ポケット（OUT / 併殺トラップ穴 ＋ 守備人形バッジ）
     for (const trap of FIELDER_TRAPS) {
       const isDpActive = trap.canDoublePlay && curBases.first && outs < 2;
-      // ポケット穴
       ctx.fillStyle = "#0f172a";
       ctx.beginPath();
       ctx.arc(trap.x, trap.y, trap.radius, 0, Math.PI * 2);
@@ -542,7 +635,6 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.textBaseline = "middle";
       ctx.fillText(isDpActive ? "併殺" : "OUT", trap.x, trap.y + 0.5);
 
-      // ポケット後方の守備人形ピン
       const fy = trap.y - trap.radius - 6;
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
@@ -557,7 +649,7 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.fillText(trap.shortLabel, trap.x, fy + 0.5);
     }
 
-    // 10. 銀色の反射ピン（ボールが当たるとカン！と跳ね返る野球盤の名物ピン）
+    // 10. 銀色の反射ピン
     BOARD_PINS.forEach((pin, idx) => {
       const isFlashed =
         sim.flashedPinIdx === idx && nowMs < sim.flashedPinUntilMs;
@@ -580,7 +672,35 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.fill();
     });
 
-    // 11. 打者フィギュア＆可動バット（右打席 / 左打席・バント対応）
+    // 11. 初心者にも一目で分かるミートタイミング枠（人間打者ターン時）
+    if (humanBatting && (sim.phase === "idle" || (sim.phase === "pitching" && !sim.hasSwung))) {
+      const idealY = HOME_Y - 6;
+      const inHitWindow =
+        sim.phase === "pitching" &&
+        !sim.ballVanished &&
+        Math.abs(sim.ballY - idealY) <= 25;
+
+      ctx.strokeStyle = inHitWindow ? "#facc15" : "#e2e8f0";
+      ctx.lineWidth = inHitWindow ? 2.4 : 1.3;
+      ctx.setLineDash(inHitWindow ? [] : [3, 3]);
+      ctx.strokeRect(HOME_X - 15, HOME_Y - 17, 30, 22);
+      ctx.setLineDash([]);
+
+      if (inHitWindow) {
+        // ボールがミート枠に入った瞬間に「今だ！」サイン点灯！
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.roundRect(HOME_X - 20, HOME_Y + 9, 40, 14, 4);
+        ctx.fill();
+        ctx.fillStyle = "#0f172a";
+        ctx.font = "900 8.5px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("今だ！", HOME_X, HOME_Y + 16.5);
+      }
+    }
+
+    // 12. 打者フィギュア＆可動バット（素振りアニメーション対応！）
     const activeBats =
       sim.phase === "idle" ? propsRef.current.batterBats : sim.batterBats;
     const activeStance =
@@ -589,7 +709,6 @@ export const BaseballBoardCanvas = forwardRef<
     const batterX = isRightBatter ? HOME_X - 18 : HOME_X + 18;
     const batterY = HOME_Y - 4;
 
-    // 打者ヘルメット丸アイコン
     ctx.fillStyle = "#2563eb";
     ctx.beginPath();
     ctx.arc(batterX, batterY, 6.5, 0, Math.PI * 2);
@@ -598,29 +717,37 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // バット描画
     ctx.save();
     const pivotX = isRightBatter ? HOME_X - 13 : HOME_X + 13;
     const pivotY = HOME_Y + 2;
     ctx.translate(pivotX, pivotY);
 
+    const isSwingingVisual = sim.hasSwung || sim.isPracticeSwinging;
     let batAngleRad = 0;
     if (activeStance === "bunt") {
-      // バント構え：本塁上に水平セット
-      const buntSlide = sim.hasSwung ? Math.min(1, sim.swingAnimProgress * 2.5) : 0;
+      const buntSlide = isSwingingVisual
+        ? Math.min(1, sim.swingAnimProgress * 2.5)
+        : 0;
       ctx.translate(0, -6 - buntSlide * 4);
       batAngleRad = isRightBatter ? 0.04 : Math.PI - 0.04;
     } else {
       const restAngle = isRightBatter ? 2.25 : Math.PI - 2.25;
       const finishAngle = isRightBatter ? -1.15 : Math.PI + 1.15;
-      const t = sim.hasSwung ? Math.min(1, sim.swingAnimProgress) : 0;
-      // イーズアウトで鋭く振り抜く
+      let t = 0;
+      if (sim.isPracticeSwinging) {
+        // 素振り時は振り抜いてから構えへスッと戻る
+        t =
+          sim.swingAnimProgress <= 0.65
+            ? sim.swingAnimProgress / 0.65
+            : Math.max(0, 1 - (sim.swingAnimProgress - 0.65) / 0.35);
+      } else if (sim.hasSwung) {
+        t = Math.min(1, sim.swingAnimProgress);
+      }
       const eased = 1 - Math.pow(1 - t, 3);
       batAngleRad = restAngle + (finishAngle - restAngle) * eased;
     }
 
     ctx.rotate(batAngleRad);
-    // グリップ＋木製/ゴールドバレル（ソリッド単色）
     ctx.fillStyle = activeStance === "power" ? "#f59e0b" : "#fde68a";
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 1.4;
@@ -633,33 +760,35 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.fillRect(0, -2.2, 8, 4.4);
     ctx.restore();
 
-    // キャッチャーミット目標ゾーン（投球中のみ控えめガイド）
-    if (sim.phase === "pitching" && !sim.hasSwung) {
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([3, 3]);
-      ctx.strokeRect(HOME_X - 14, HOME_Y - 14, 28, 18);
-      ctx.setLineDash([]);
-    }
-
-    // 12. ボール軌跡（単色ソリッドドット）＆白球（フライ時は地面の影＋拡大球）
+    // 13. ボール軌跡（火の玉ストレート時は赤系ソリッドドット！）＆白球
     if (sim.ballVisible && !sim.ballVanished) {
       for (let i = 0; i < sim.trail.length; i++) {
         const pt = sim.trail[i];
         if (!pt) continue;
-        const r = 1.6 + (i / Math.max(1, sim.trail.length)) * 2.2;
-        ctx.fillStyle = sim.isSweetHit ? "#fde047" : "#bae6fd";
+        const r = 1.6 + (i / Math.max(1, sim.trail.length)) * 2.3;
+        ctx.fillStyle = sim.isSweetHit
+          ? "#fde047"
+          : sim.isFireball && sim.phase === "pitching"
+          ? "#fca5a5"
+          : "#bae6fd";
         ctx.beginPath();
         ctx.arc(pt.x, pt.y - pt.z * 0.72, r, 0, Math.PI * 2);
         ctx.fill();
       }
 
       if (sim.ballZ > 1) {
-        // 地面に落ちるソリッドな影（フライの立体感が一目で分かる）
         ctx.fillStyle = "#052e16";
         ctx.beginPath();
         const shadowR = Math.max(2.5, 5 - sim.ballZ * 0.03);
-        ctx.ellipse(sim.ballX, sim.ballY, shadowR * 1.2, shadowR * 0.75, 0, 0, Math.PI * 2);
+        ctx.ellipse(
+          sim.ballX,
+          sim.ballY,
+          shadowR * 1.2,
+          shadowR * 0.75,
+          0,
+          0,
+          Math.PI * 2
+        );
         ctx.fill();
       }
 
@@ -671,19 +800,25 @@ export const BaseballBoardCanvas = forwardRef<
       ctx.arc(sim.ballX, drawY, ballRadius, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = "#0f172a";
-      ctx.lineWidth = 1.3;
+      ctx.strokeStyle =
+        sim.isFireball && sim.phase === "pitching" ? "#dc2626" : "#0f172a";
+      ctx.lineWidth = 1.4;
       ctx.stroke();
 
-      // 赤い縫い目
       ctx.strokeStyle = "#dc2626";
       ctx.lineWidth = 1.1;
       ctx.beginPath();
-      ctx.arc(sim.ballX - ballRadius * 0.3, drawY, ballRadius * 0.55, -0.7, 0.7);
+      ctx.arc(
+        sim.ballX - ballRadius * 0.3,
+        drawY,
+        ballRadius * 0.55,
+        -0.7,
+        0.7
+      );
       ctx.stroke();
     }
 
-    // 13. ホームラン等の紙吹雪（単色ソリッド矩形のみ）
+    // 14. ホームラン紙吹雪
     for (const c of sim.confetti) {
       ctx.fillStyle = c.color;
       ctx.fillRect(c.x, c.y, c.w, c.h);
@@ -691,7 +826,7 @@ export const BaseballBoardCanvas = forwardRef<
 
     ctx.restore(); // グラウンドクリップ解除
 
-    // 14. 判定ポップアップバナー（盤面中央上部・ソリッドA-3スタイル）
+    // 15. 判定ポップアップバナー
     if (curBanner) {
       const toneColors: Record<
         BaseballBoardCanvasProps["bannerTone"],
@@ -705,9 +840,12 @@ export const BaseballBoardCanvas = forwardRef<
         neutral: { bg: "#0f172a", border: "#94a3b8", text: "#f8fafc" },
       };
       const style = toneColors[curBannerTone];
-      const boxW = Math.min(BOARD_WIDTH - 44, Math.max(176, curBanner.length * 14 + 34));
+      const boxW = Math.min(
+        BOARD_WIDTH - 44,
+        Math.max(176, curBanner.length * 14 + 34)
+      );
       const boxX = (BOARD_WIDTH - boxW) / 2;
-      const boxY = 74;
+      const boxY = 72;
 
       ctx.fillStyle = style.bg;
       ctx.beginPath();
@@ -727,14 +865,14 @@ export const BaseballBoardCanvas = forwardRef<
     ctx.restore();
   }, []);
 
-  const spawnCelebrationConfetti = useCallback(() => {
+  const spawnCelebrationConfetti = useCallback((count = 28) => {
     const pieces: ConfettiPiece[] = [];
-    for (let i = 0; i < 26; i++) {
-      const angle = (Math.PI * 2 * i) / 26 + Math.random() * 0.2;
-      const speed = 55 + Math.random() * 110;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.2;
+      const speed = 55 + Math.random() * 120;
       pieces.push({
         x: BOARD_WIDTH / 2,
-        y: 120,
+        y: 112,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed - 35,
         w: 6,
@@ -746,20 +884,32 @@ export const BaseballBoardCanvas = forwardRef<
   }, []);
 
   const beginResolving = useCallback(
-    (result: ResolvedBoardPlay, celebrateHr = false) => {
+    (
+      partial: {
+        outcome: PlayOutcomeCode;
+        detailLabel: string;
+        usedVanishPitch: boolean;
+      },
+      celebrateHr = false
+    ) => {
       const sim = simRef.current;
       if (sim.phase === "resolving") return;
-      sim.phase = "resolving";
-      sim.pendingResult = result;
-      sim.resolveTimerSec = celebrateHr ? 0.95 : 0.52;
+      const fullResult: ResolvedBoardPlay = {
+        ...partial,
+        pitchKmh: sim.lastPitchKmh,
+        exitVelocityKmh: sim.lastExitVelocityKmh,
+      };
+      sim.pendingResult = fullResult;
+      sim.resolveTimerSec = celebrateHr ? 0.98 : 0.52;
       if (celebrateHr) {
-        spawnCelebrationConfetti();
+        spawnCelebrationConfetti(
+          partial.detailLabel.includes("看板直撃") ? 42 : 26
+        );
       }
-      propsRef.current.onPhaseChange("resolving");
-      // スコアボード・バナー更新は即座に親へ通知し、余韻後に idle へ戻す
-      propsRef.current.onPlayResolved(result);
+      syncPhase("resolving");
+      propsRef.current.onPlayResolved(fullResult);
     },
-    [spawnCelebrationConfetti]
+    [spawnCelebrationConfetti, syncPhase]
   );
 
   const executeSwingOnCurrentPitch = useCallback(
@@ -772,6 +922,7 @@ export const BaseballBoardCanvas = forwardRef<
       const chosenStance = overrideStance ?? propsRef.current.stance;
       sim.activeStance = chosenStance;
       sim.hasSwung = true;
+      sim.isPracticeSwinging = false;
       sim.swingAnimProgress = 0.05;
 
       // 消える魔球で既に消えている・または直前で消えた場合は空振り！
@@ -782,33 +933,32 @@ export const BaseballBoardCanvas = forwardRef<
         return true;
       }
 
-      const idealY = HOME_Y - 6; // 382
+      const idealY = HOME_Y - 6;
       const deltaY = sim.ballY - idealY;
       const absDeltaY = Math.abs(deltaY);
+      // 高速球時も気持ちよく当てられるよう少しリーチ補正
+      const speedForgiveness = sim.isFireball ? 4 : 0;
       const maxReachY =
-        chosenStance === "bunt"
+        (chosenStance === "bunt"
           ? 29
           : chosenStance === "contact"
           ? 27
-          : 21;
+          : 22) + speedForgiveness;
 
       const lateralDist = Math.abs(sim.ballX - HOME_X);
       if (absDeltaY > maxReachY || lateralDist > 26 || sim.ballVanished) {
-        // 空振り（ボールはそのままキャッチャーまで抜けてから判定）
         playSwingWhoosh(propsRef.current.soundEnabled);
         return true;
       }
 
       // バットに当たった！打球物理モードへ移行
-      sim.phase = "batted";
       sim.elapsedSec = 0;
       sim.trail = [];
-      propsRef.current.onPhaseChange("batted");
+      syncPhase("batted");
 
       const isRightBatter = sim.batterBats === "R";
 
       if (chosenStance === "bunt") {
-        // 2ストライクからのバントファウルはスリーバント失敗のスリル！
         const buntAngleOffset = (Math.random() - 0.5) * 1.15;
         const angleRad = -Math.PI / 2 + buntAngleOffset;
         const speed = 72 + Math.random() * 48;
@@ -818,16 +968,16 @@ export const BaseballBoardCanvas = forwardRef<
         sim.ballZ = 0;
         sim.isBuntBall = true;
         sim.isSweetHit = false;
+        sim.lastExitVelocityKmh = Math.round(58 + Math.random() * 20);
         playBatContact(propsRef.current.soundEnabled, "bunt");
         return true;
       }
 
       sim.isBuntBall = false;
-      // タイミングに応じた打球方向（早め＝引っ張り、遅め＝流し打ち）
-      // deltaY < 0: 早振り, deltaY > 0: 振り遅れ
-      const normalizedTiming = Math.max(-1.15, Math.min(1.15, deltaY / maxReachY));
-      // 右打者: 早振り(-1) -> レフト方向(左: -0.88 rad from -PI/2), 遅振り(+1) -> ライト方向(+0.88 rad)
-      // 左打者: 早振り(-1) -> ライト方向(+0.88 rad), 遅振り(+1) -> レフト方向(-0.88 rad)
+      const normalizedTiming = Math.max(
+        -1.15,
+        Math.min(1.15, deltaY / maxReachY)
+      );
       const pullSign = isRightBatter ? 1 : -1;
       const courseInfluence = (sim.ballX - HOME_X) * 0.012;
       const jitter = (Math.random() - 0.5) * 0.14;
@@ -837,12 +987,22 @@ export const BaseballBoardCanvas = forwardRef<
 
       const timingQuality = Math.max(0, 1 - absDeltaY / maxReachY);
       const isSweet =
-        timingQuality >= (chosenStance === "power" ? 0.7 : 0.78) &&
+        timingQuality >= (chosenStance === "power" ? 0.68 : 0.76) &&
         Math.abs(sprayOffsetRad) <= 0.76;
       sim.isSweetHit = isSweet;
 
+      // 打球速度（km/h）算出：速球×強振×真芯なら175km/h超の大谷級打球！
+      const rawExitKmh =
+        (chosenStance === "power" ? 112 : 102) +
+        timingQuality * (chosenStance === "power" ? 50 : 38) +
+        (sim.lastPitchKmh - 110) * 0.28 +
+        (Math.random() - 0.5) * 6;
+      sim.lastExitVelocityKmh = Math.max(
+        78,
+        Math.min(188, Math.round(rawExitKmh))
+      );
+
       if (Math.abs(sprayOffsetRad) > 0.82) {
-        // ファウルゾーン方向への鋭い打球
         const foulSpeed = 230 + Math.random() * 60;
         sim.vx = Math.cos(launchAngleRad) * foulSpeed;
         sim.vy = Math.sin(launchAngleRad) * foulSpeed;
@@ -851,28 +1011,27 @@ export const BaseballBoardCanvas = forwardRef<
         return true;
       }
 
+      const carryMul = sim.carryMultiplier;
       if (chosenStance === "power") {
-        const baseSpeed = isSweet
-          ? 275 + timingQuality * 75
-          : 190 + timingQuality * 65;
+        const baseSpeed =
+          (isSweet ? 275 + timingQuality * 75 : 190 + timingQuality * 65) *
+          carryMul;
         sim.vx = Math.cos(launchAngleRad) * baseSpeed;
         sim.vy = Math.sin(launchAngleRad) * baseSpeed;
-        // 強振ジャストミート時は高弾道アーチ（柵越えスタンドイン軌道！）
         sim.vz = isSweet
-          ? 122 + Math.random() * 26
+          ? (122 + Math.random() * 26) * Math.min(1.12, carryMul)
           : Math.random() < 0.55
           ? 82 + Math.random() * 24
           : 18;
       } else {
-        // ミート打ち：ライナー＆鋭いゴロ中心（真芯なら柵越えもあり！）
-        const baseSpeed = isSweet
-          ? 258 + timingQuality * 58
-          : 195 + timingQuality * 55;
+        const baseSpeed =
+          (isSweet ? 258 + timingQuality * 58 : 195 + timingQuality * 55) *
+          carryMul;
         sim.vx = Math.cos(launchAngleRad) * baseSpeed;
         sim.vy = Math.sin(launchAngleRad) * baseSpeed;
         sim.vz =
-          isSweet && Math.random() < 0.42
-            ? 116 + Math.random() * 18
+          isSweet && Math.random() < 0.45
+            ? (116 + Math.random() * 18) * Math.min(1.1, carryMul)
             : isSweet
             ? 44 + Math.random() * 28
             : 12;
@@ -884,14 +1043,23 @@ export const BaseballBoardCanvas = forwardRef<
       );
       return true;
     },
-    []
+    [syncPhase]
   );
 
   const stepSimulation = useCallback(
     (dt: number, nowMs: number) => {
       const sim = simRef.current;
 
-      // スイングアニメーション進行
+      // 素振りアニメーション進行（idleのまま0.26秒だけバットを振って完全停止）
+      if (sim.isPracticeSwinging) {
+        sim.swingAnimProgress += dt * 4.2;
+        if (sim.swingAnimProgress >= 1) {
+          sim.isPracticeSwinging = false;
+          sim.swingAnimProgress = 0;
+        }
+      }
+
+      // 実スイングアニメーション進行
       if (sim.hasSwung && sim.swingAnimProgress < 1) {
         sim.swingAnimProgress = Math.min(1, sim.swingAnimProgress + dt * 7.5);
       }
@@ -908,7 +1076,6 @@ export const BaseballBoardCanvas = forwardRef<
       if (sim.phase === "resolving") {
         sim.resolveTimerSec -= dt;
         if (sim.resolveTimerSec <= 0) {
-          sim.phase = "idle";
           sim.confetti = [];
           sim.trail = [];
           sim.trapdoorOpen = false;
@@ -919,7 +1086,7 @@ export const BaseballBoardCanvas = forwardRef<
           sim.ballZ = 0;
           sim.hasSwung = false;
           sim.swingAnimProgress = 0;
-          propsRef.current.onPhaseChange("idle");
+          syncPhase("idle");
         }
         return;
       }
@@ -928,13 +1095,12 @@ export const BaseballBoardCanvas = forwardRef<
         const meta = PITCH_TYPE_META[sim.pitchSpec.type];
         const totalDist = HOME_Y + 22 - MOUND_Y;
         const prevY = sim.ballY;
-        sim.ballY += meta.speedPxPerSec * dt;
+        sim.ballY += sim.pitchSpeedPxPerSec * dt;
         sim.pitchProgress = Math.max(
           0,
           Math.min(1.2, (sim.ballY - MOUND_Y) / totalDist)
         );
 
-        // 変化球の横変化（打者の左右に合わせてカーブ＝外角方向、シュート＝内角方向）
         const handSign = sim.batterBats === "R" ? 1 : -1;
         const curveBend =
           meta.curveFactor * handSign * Math.pow(sim.pitchProgress, 2.1) * 19;
@@ -971,27 +1137,28 @@ export const BaseballBoardCanvas = forwardRef<
           if ((sim.phase as BoardActionPhase) !== "pitching") return;
         }
 
-        // 捕手到達（見逃し or 空振り確定）
+        // 捕手到達
         if (sim.ballY >= HOME_Y + 22) {
           const usedVanish = sim.pitchSpec.type === "vanish";
           if (sim.hasSwung) {
             beginResolving({
               outcome: "swinging_strike",
-              detailLabel: usedVanish ? "消える魔球で空振り！" : "空振りストライク！",
+              detailLabel: usedVanish
+                ? "消える魔球で空振り！"
+                : "空振りストライク！",
               usedVanishPitch: usedVanish,
             });
           } else if (usedVanish) {
-            // 消える魔球を見送ったらボール！
             beginResolving({
               outcome: "ball",
               detailLabel: "消える魔球を見極めた！ボール！",
               usedVanishPitch: true,
             });
           } else {
-            // ストライクゾーン通過判定
             const inZone = Math.abs(sim.ballX - HOME_X) <= 16.5;
-            // 内角・外角ぎりぎりでたまにボール球になるリアルな駆け引き
-            const isBallCall = !inZone || (sim.pitchSpec.course !== "middle" && Math.random() < 0.28);
+            const isBallCall =
+              !inZone ||
+              (sim.pitchSpec.course !== "middle" && Math.random() < 0.28);
             beginResolving({
               outcome: isBallCall ? "ball" : "called_strike",
               detailLabel: isBallCall ? "ボール！" : "見逃しストライク！",
@@ -1005,7 +1172,6 @@ export const BaseballBoardCanvas = forwardRef<
       if (sim.phase === "batted") {
         sim.elapsedSec += dt;
 
-        // サブステップ分割でピンすり抜けを防止
         const subSteps = 3;
         const subDt = dt / subSteps;
 
@@ -1015,14 +1181,16 @@ export const BaseballBoardCanvas = forwardRef<
 
           if (sim.ballZ > 0 || sim.vz > 0) {
             sim.ballZ += sim.vz * subDt;
-            sim.vz -= 165 * subDt; // 重力加速度
+            sim.vz -= 165 * subDt;
             if (sim.ballZ <= 0) {
               sim.ballZ = 0;
-              // 外野手のフライ直接捕球チェック！
               for (const trap of FIELDER_TRAPS) {
                 const dist = Math.hypot(sim.ballX - trap.x, sim.ballY - trap.y);
                 const flyCatchRadius = trap.isOutfield ? 21 : 15;
-                if (dist <= flyCatchRadius && isFairTerritory(sim.ballX, sim.ballY)) {
+                if (
+                  dist <= flyCatchRadius &&
+                  isFairTerritory(sim.ballX, sim.ballY)
+                ) {
                   const canSacFly =
                     trap.isOutfield &&
                     propsRef.current.outs < 2 &&
@@ -1036,7 +1204,6 @@ export const BaseballBoardCanvas = forwardRef<
                 }
               }
 
-              // ワンバウンド減衰
               if (Math.abs(sim.vz) > 28) {
                 sim.vz = Math.abs(sim.vz) * 0.28;
                 sim.vx *= 0.78;
@@ -1046,13 +1213,12 @@ export const BaseballBoardCanvas = forwardRef<
               }
             }
           } else {
-            // 芝生上の転がり摩擦
             const friction = Math.pow(sim.isBuntBall ? 0.26 : 0.58, subDt);
             sim.vx *= friction;
             sim.vy *= friction;
           }
 
-          // 1) ファウル判定（本塁〜ポール間のライン外へ出た場合）
+          // 1) ファウル判定
           if (sim.ballY > 210 && !isFairTerritory(sim.ballX, sim.ballY)) {
             const isThreeBuntOut =
               sim.isBuntBall && propsRef.current.strikes >= 2;
@@ -1066,7 +1232,7 @@ export const BaseballBoardCanvas = forwardRef<
             return;
           }
 
-          // 2) 外野フェンス到達判定（中心 (200, 236) からの距離 >= R）
+          // 2) 外野フェンス到達判定
           if (sim.ballY <= 236) {
             const dxFence = sim.ballX - FENCE_ARC_CX;
             const dyFence = sim.ballY - FENCE_ARC_CY;
@@ -1085,14 +1251,20 @@ export const BaseballBoardCanvas = forwardRef<
                 return;
               }
 
-              // 空中でフェンスを越えた場合は問答無用の「柵越えスタンドイン HOME RUN!!」
+              // 空中柵越えスタンドイン！（センター中央なら「看板直撃弾」ボーナス！）
               if (sim.ballZ >= 9) {
-                const standDirection =
-                  angleDeg < -118
-                    ? "レフトスタンドへ柵越え本塁打！！"
-                    : angleDeg > -62
-                    ? "ライトスタンドへ柵越え本塁打！！"
-                    : "バックスクリーン直撃の特大本塁打！！";
+                const isCenterBillboard =
+                  angleDeg >= -100 && angleDeg <= -80 && sim.ballZ >= 12;
+                if (isCenterBillboard) {
+                  sim.billboardFlashedUntilMs = nowMs + 1400;
+                }
+                const standDirection = isCenterBillboard
+                  ? `看板直撃！打球${sim.lastExitVelocityKmh}km/hの特大本塁打！！`
+                  : angleDeg < -118
+                  ? "レフトスタンドへ柵越え本塁打！！"
+                  : angleDeg > -62
+                  ? "ライトスタンドへ柵越え本塁打！！"
+                  : "バックスクリーンへ特大本塁打！！";
                 beginResolving(
                   {
                     outcome: "homerun",
@@ -1104,7 +1276,7 @@ export const BaseballBoardCanvas = forwardRef<
                 return;
               }
 
-              // 地上ゴロ・ワンバウンドで外野ポケットにスポッ！と入った場合
+              // 地上ゴロ・ワンバウンドで外野ポケットにスポッ！
               const outcomeMap: Record<typeof pocket.kind, PlayOutcomeCode> = {
                 "1b": "single",
                 "2b": "double",
@@ -1125,9 +1297,8 @@ export const BaseballBoardCanvas = forwardRef<
             }
           }
 
-          // 3) 地上転がり中（ballZ < 5）のピン反射 ＆ 野手OUTポケット吸い込み判定
+          // 3) 地上転がり中のピン反射 ＆ 野手OUTポケット吸い込み
           if (sim.ballZ < 5) {
-            // 銀色ピンとの衝突反射
             for (let pIdx = 0; pIdx < BOARD_PINS.length; pIdx++) {
               const pin = BOARD_PINS[pIdx];
               if (!pin) continue;
@@ -1143,7 +1314,9 @@ export const BaseballBoardCanvas = forwardRef<
                 const dot = sim.vx * nx + sim.vy * ny;
                 if (dot < 0) {
                   const restitution = 0.78;
-                  sim.vx = (sim.vx - 2 * dot * nx) * restitution + (Math.random() - 0.5) * 16;
+                  sim.vx =
+                    (sim.vx - 2 * dot * nx) * restitution +
+                    (Math.random() - 0.5) * 16;
                   sim.vy = (sim.vy - 2 * dot * ny) * restitution;
                   sim.flashedPinIdx = pIdx;
                   sim.flashedPinUntilMs = nowMs + 130;
@@ -1152,7 +1325,6 @@ export const BaseballBoardCanvas = forwardRef<
               }
             }
 
-            // 野手OUTトラップポケット判定
             for (const trap of FIELDER_TRAPS) {
               const dist = Math.hypot(sim.ballX - trap.x, sim.ballY - trap.y);
               if (dist <= trap.radius - 0.5) {
@@ -1178,7 +1350,6 @@ export const BaseballBoardCanvas = forwardRef<
         sim.trail.push({ x: sim.ballX, y: sim.ballY, z: sim.ballZ });
         if (sim.trail.length > 7) sim.trail.shift();
 
-        // 4) 芝生上でボールが完全停止した場合（バント成功 / セーフティ内野安打 / 凡打判定）
         const groundSpeed = Math.hypot(sim.vx, sim.vy);
         if ((sim.ballZ <= 0.5 && groundSpeed < 14) || sim.elapsedSec > 3.1) {
           if (!isFairTerritory(sim.ballX, sim.ballY)) {
@@ -1198,7 +1369,6 @@ export const BaseballBoardCanvas = forwardRef<
                 propsRef.current.bases.second ||
                 propsRef.current.bases.third) &&
               propsRef.current.outs < 2;
-            // 絶妙なライン際バントはセーフティ内野安打！
             const lineProximity = Math.abs(
               Math.abs(sim.ballX - HOME_X) - (HOME_Y - sim.ballY)
             );
@@ -1224,7 +1394,6 @@ export const BaseballBoardCanvas = forwardRef<
             return;
           }
 
-          // 外野芝生まで転がって止まった打球はクリーンヒット！内野内で止まった場合は内野安打 or 内野ゴロ
           if (sim.ballY < 225) {
             beginResolving({
               outcome: "single",
@@ -1244,7 +1413,7 @@ export const BaseballBoardCanvas = forwardRef<
         }
       }
     },
-    [beginResolving, executeSwingOnCurrentPitch]
+    [beginResolving, executeSwingOnCurrentPitch, syncPhase]
   );
 
   const startAnimationLoop = useCallback(() => {
@@ -1254,13 +1423,12 @@ export const BaseballBoardCanvas = forwardRef<
 
     const tick = (nowMs: number) => {
       if (typeof document !== "undefined" && document.hidden) {
-        // バックグラウンド遷移時は省電力のため即座に停止・安全リセット
         rafIdRef.current = null;
         simRef.current = createInitialSimState(
           propsRef.current.batterBats,
           propsRef.current.stance
         );
-        propsRef.current.onPhaseChange("idle");
+        syncPhase("idle");
         return;
       }
 
@@ -1271,7 +1439,10 @@ export const BaseballBoardCanvas = forwardRef<
       stepSimulation(dt, nowMs);
       drawBoard();
 
-      if (simRef.current.phase !== "idle") {
+      if (
+        simRef.current.phase !== "idle" ||
+        simRef.current.isPracticeSwinging
+      ) {
         rafIdRef.current = requestAnimationFrame(tick);
       } else {
         rafIdRef.current = null;
@@ -1279,13 +1450,27 @@ export const BaseballBoardCanvas = forwardRef<
     };
 
     rafIdRef.current = requestAnimationFrame(tick);
-  }, [drawBoard, stepSimulation]);
+  }, [drawBoard, stepSimulation, syncPhase]);
+
+  // 投球前の「素振り（テストスイング）」発動
+  const triggerPracticeSwing = useCallback(() => {
+    const sim = simRef.current;
+    if (sim.phase !== "idle") return;
+    sim.batterBats = propsRef.current.batterBats;
+    sim.activeStance = propsRef.current.stance;
+    sim.isPracticeSwinging = true;
+    sim.swingAnimProgress = 0.04;
+    playSwingWhoosh(propsRef.current.soundEnabled);
+    propsRef.current.onPracticeSwing?.();
+    startAnimationLoop();
+  }, [startAnimationLoop]);
 
   useImperativeHandle(
     ref,
     () => ({
       launchPitch: ({
         pitch,
+        speedPreset,
         batterBats: targetBats,
         batterIsCpu,
         cpuDifficulty,
@@ -1296,8 +1481,9 @@ export const BaseballBoardCanvas = forwardRef<
         const sim = simRef.current;
         if (sim.phase !== "idle") return;
 
+        const speedMetrics = resolveLaunchSpeedMetrics(pitch.type, speedPreset);
         const targetX = getCourseTargetX(pitch.course, targetBats);
-        sim.phase = "pitching";
+
         sim.ballVisible = true;
         sim.ballX = MOUND_X;
         sim.ballY = MOUND_Y + 8;
@@ -1308,7 +1494,12 @@ export const BaseballBoardCanvas = forwardRef<
         sim.isSweetHit = false;
         sim.isBuntBall = false;
         sim.elapsedSec = 0;
-        sim.pitchSpec = pitch;
+        sim.pitchSpec = { ...pitch, speedPreset };
+        sim.pitchSpeedPxPerSec = speedMetrics.effectiveSpeedPxPerSec;
+        sim.carryMultiplier = speedMetrics.carryMultiplier;
+        sim.isFireball = speedMetrics.isFireball;
+        sim.lastPitchKmh = speedMetrics.displayKmh;
+        sim.lastExitVelocityKmh = 0;
         sim.pitchStartX = MOUND_X;
         sim.pitchTargetX = targetX;
         sim.pitchProgress = 0;
@@ -1317,6 +1508,7 @@ export const BaseballBoardCanvas = forwardRef<
         sim.batterBats = targetBats;
         sim.activeStance = propsRef.current.stance;
         sim.hasSwung = false;
+        sim.isPracticeSwinging = false;
         sim.swingAnimProgress = 0;
         sim.trail = [];
         sim.confetti = [];
@@ -1325,7 +1517,7 @@ export const BaseballBoardCanvas = forwardRef<
         if (batterIsCpu) {
           const plan = decideCpuBatterPlan({
             difficulty: cpuDifficulty,
-            pitch,
+            pitch: { ...pitch, speedPreset },
             strikes: curStrikes,
             outs: curOuts,
             bases: curBases,
@@ -1344,7 +1536,7 @@ export const BaseballBoardCanvas = forwardRef<
         }
 
         playPitchSpring(propsRef.current.soundEnabled);
-        propsRef.current.onPhaseChange("pitching");
+        syncPhase("pitching");
         startAnimationLoop();
       },
       triggerSwing: (overrideStance) => {
@@ -1360,14 +1552,13 @@ export const BaseballBoardCanvas = forwardRef<
           propsRef.current.batterBats,
           propsRef.current.stance
         );
-        propsRef.current.onPhaseChange("idle");
+        syncPhase("idle");
         drawBoard();
       },
     }),
-    [drawBoard, executeSwingOnCurrentPitch, startAnimationLoop, stopLoop]
+    [drawBoard, executeSwingOnCurrentPitch, startAnimationLoop, stopLoop, syncPhase]
   );
 
-  // 待機中の表示プロパティ更新時に静止1フレームのみ再描画（0 FPS 省電力）
   useEffect(() => {
     if (simRef.current.phase === "idle") {
       simRef.current.batterBats = batterBats;
@@ -1392,7 +1583,9 @@ export const BaseballBoardCanvas = forwardRef<
       const nextW = Math.max(180, Math.floor(BOARD_WIDTH * scale));
       const nextH = Math.max(194, Math.floor(BOARD_HEIGHT * scale));
       setFitSize((prev) =>
-        prev && prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }
+        prev && prev.w === nextW && prev.h === nextH
+          ? prev
+          : { w: nextW, h: nextH }
       );
     };
 
@@ -1418,36 +1611,159 @@ export const BaseballBoardCanvas = forwardRef<
     };
   }, [stopLoop]);
 
-  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (simRef.current.phase === "pitching" && canTapToSwing) {
+  const handleCanvasPointerDown = (
+    e: React.PointerEvent<HTMLCanvasElement>
+  ) => {
+    if (simRef.current.phase === "pitching" && isHumanBatterTurn && !isGameOver) {
       e.preventDefault();
       executeSwingOnCurrentPitch();
       drawBoard();
-      return;
-    }
-    if (simRef.current.phase === "idle" && canTapToPitch && onRequestQuickPitch) {
-      e.preventDefault();
-      onRequestQuickPitch();
     }
   };
+
+  // 盤面右下「🏏 打つ！」ボタン押下（投球中は実スイング、待機中は素振り！）
+  const handleCornerSwingPointerDown = (
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isGameOver || !isHumanBatterTurn) return;
+    if (simRef.current.phase === "pitching") {
+      executeSwingOnCurrentPitch();
+      drawBoard();
+    } else if (simRef.current.phase === "idle") {
+      triggerPracticeSwing();
+    }
+  };
+
+  // 盤面左下「⚾ 投球」ボタン押下
+  const handleCornerPitchPointerDown = (
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isGameOver || simRef.current.phase !== "idle") return;
+    onPressBoardPitch();
+  };
+
+  const canPitchNow = !isGameOver && livePhaseUi === "idle";
+  const isPitchingLive = !isGameOver && livePhaseUi === "pitching";
 
   return (
     <div
       ref={stageRef}
       className="w-full h-full min-h-0 flex items-center justify-center select-none overflow-hidden"
     >
-      <canvas
-        ref={canvasRef}
-        id="baseball-board-canvas"
-        onPointerDown={handleCanvasPointerDown}
+      <div
         style={
           fitSize
             ? { width: `${fitSize.w}px`, height: `${fitSize.h}px` }
             : { maxWidth: "100%", maxHeight: "100%", aspectRatio: "400 / 432" }
         }
-        className="rounded-2xl border-2 border-[#0f172a] shadow-sm touch-manipulation cursor-pointer block bg-[#0f172a] shrink-0"
-        aria-label="野球盤ゲーム盤面"
-      />
+        className="relative shrink-0"
+      >
+        <canvas
+          ref={canvasRef}
+          id="baseball-board-canvas"
+          onPointerDown={handleCanvasPointerDown}
+          className="w-full h-full rounded-2xl border-2 border-[#0f172a] shadow-sm touch-manipulation block bg-[#0f172a]"
+          aria-label="野球盤ゲーム盤面"
+        />
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🕹️ ボード左下：本物の野球盤風「⚾ 投球」プッシュボタン
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {!isGameOver && (
+          <button
+            type="button"
+            id="btn-board-corner-pitch"
+            disabled={!canPitchNow}
+            onPointerDown={handleCornerPitchPointerDown}
+            className={`absolute bottom-2.5 left-2.5 w-[25%] min-w-[78px] max-w-[104px] h-[18.5%] min-h-[60px] max-h-[80px] rounded-2xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
+              canPitchNow
+                ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-white border-b-4 border-b-[#1e3a8a] active:translate-y-0.5 shadow-md cursor-pointer"
+                : "bg-slate-800/95 text-slate-400 border-slate-600 cursor-not-allowed"
+            }`}
+          >
+            <span
+              className={`text-[9px] font-black leading-none px-1.5 py-0.5 rounded ${
+                canPitchNow
+                  ? "bg-[#0f172a] text-sky-300"
+                  : "bg-slate-900 text-slate-500"
+              }`}
+            >
+              {isHumanBatterTurn
+                ? "① スタート"
+                : isVersusPitchLockMode
+                ? "🔒 球種ロック"
+                : "⚾ 守備投球"}
+            </span>
+            <span className="text-sm font-black leading-tight mt-1 tracking-tight">
+              ⚾ {isVersusPitchLockMode ? "セット" : "投球"}
+            </span>
+            <span
+              className={`text-[9px] font-bold leading-none mt-0.5 truncate max-w-full ${
+                canPitchNow ? "text-blue-100" : "text-slate-500"
+              }`}
+            >
+              {speedBadgeText}
+            </span>
+          </button>
+        )}
+
+        {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            🏏 ボード右下：本物の野球盤風「🏏 打つ！（スイング）」大型赤ボタン
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+        {!isGameOver && (
+          <button
+            type="button"
+            id="btn-board-corner-swing"
+            disabled={!isHumanBatterTurn}
+            onPointerDown={handleCornerSwingPointerDown}
+            className={`absolute bottom-2.5 right-2.5 w-[26.5%] min-w-[84px] max-w-[110px] h-[20%] min-h-[66px] max-h-[86px] rounded-2xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
+              !isHumanBatterTurn
+                ? "bg-slate-800/95 text-slate-400 border-slate-600 cursor-not-allowed"
+                : isPitchingLive
+                ? "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-[#fde047] border-b-4 border-b-[#7f1d1d] scale-105 active:scale-97 shadow-lg cursor-pointer"
+                : "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-white border-b-4 border-b-[#7f1d1d] active:translate-y-0.5 shadow-md cursor-pointer"
+            }`}
+          >
+            <span
+              className={`text-[9px] font-black leading-none px-1.5 py-0.5 rounded ${
+                !isHumanBatterTurn
+                  ? "bg-slate-900 text-slate-500"
+                  : isPitchingLive
+                  ? "bg-[#fde047] text-[#0f172a]"
+                  : "bg-[#0f172a] text-amber-300"
+              }`}
+            >
+              {!isHumanBatterTurn
+                ? "守備中"
+                : isPitchingLive
+                ? "🔥 今だ！押す"
+                : "② スイング"}
+            </span>
+            <span className="text-base font-black leading-tight mt-1 tracking-tight">
+              {isHumanBatterTurn ? "🏏 打つ！" : "🛡️ 守備"}
+            </span>
+            <span
+              className={`text-[9px] font-bold leading-none mt-0.5 ${
+                !isHumanBatterTurn
+                  ? "text-slate-500"
+                  : isPitchingLive
+                  ? "text-yellow-200"
+                  : "text-red-100"
+              }`}
+            >
+              {!isHumanBatterTurn
+                ? "左下で投球"
+                : isPitchingLive
+                ? "SWING!!"
+                : "押して素振り可"}
+            </span>
+          </button>
+        )}
+      </div>
     </div>
   );
 });

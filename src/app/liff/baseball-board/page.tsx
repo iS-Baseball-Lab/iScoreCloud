@@ -31,6 +31,7 @@ import {
   X,
   Trash2,
   Loader2,
+  Gauge,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -52,6 +53,7 @@ import {
 import {
   DERBY_TOTAL_PITCHES,
   MAX_VANISH_PITCHES_PER_GAME,
+  PITCH_SPEED_PRESETS,
   PITCH_TYPE_META,
   applyPlayOutcome,
   buildBaseballBoardShareText,
@@ -62,6 +64,7 @@ import {
   formatRunnerSituationLabel,
   loadBaseballBoardLocalStats,
   recordFinishedGameToLocalStats,
+  recordMaxExitVelocityToLocalStats,
   resetBaseballBoardLocalStats,
   type BaseballBoardLocalStats,
   type BaseballBoardMatchState,
@@ -71,6 +74,7 @@ import {
   type GameMode,
   type PitchCourse,
   type PitchSpec,
+  type PitchSpeedPreset,
   type PitchType,
   type RawRosterPlayerCandidate,
 } from "@/lib/liff/baseball-board-engine";
@@ -123,14 +127,12 @@ const DIFFICULTY_OPTIONS: ReadonlyArray<{
   { id: "hard", label: "つよい" },
 ];
 
-const COURSE_OPTIONS: ReadonlyArray<{
-  id: PitchCourse;
-  label: string;
-}> = [
-  { id: "inside", label: "内角" },
-  { id: "middle", label: "真ん中" },
-  { id: "outside", label: "外角" },
-];
+const COURSE_CYCLE: readonly PitchCourse[] = ["inside", "middle", "outside"];
+const COURSE_LABELS: Readonly<Record<PitchCourse, string>> = {
+  inside: "内角",
+  middle: "真ん中",
+  outside: "外角",
+};
 
 const STANDARD_PITCH_TYPES: readonly PitchType[] = [
   "straight",
@@ -160,30 +162,33 @@ export default function LiffBaseballBoardPage() {
   const [mode, setMode] = useState<GameMode>("cpu");
   const [totalInnings, setTotalInnings] = useState<number>(3);
   const [difficulty, setDifficulty] = useState<CpuDifficulty>("normal");
+  // 初期状態で迷わずすぐバッティングできるよう「先攻（1回表＝自分の攻撃）」をデフォルト化！
+  const [playerBatsFirst, setPlayerBatsFirst] = useState<boolean>(true);
+  const [speedPreset, setSpeedPreset] = useState<PitchSpeedPreset>("normal");
   const [useTeamRoster, setUseTeamRoster] = useState<boolean>(true);
   const [autoPitchEnabled, setAutoPitchEnabled] = useState<boolean>(false);
   const [isPageSharing, setIsPageSharing] = useState<boolean>(false);
 
   // チーム選手名鑑（読取専用キャッシュ連携）
-  const [rosterPlayers, setRosterPlayers] = useState<RawRosterPlayerCandidate[]>(
-    () => {
-      if (typeof window === "undefined") return [];
-      const uid =
-        localStorage.getItem("iscore_user_id") ||
-        localStorage.getItem("iscore_userId") ||
-        "";
-      const uName = localStorage.getItem("iscore_user_name") || "";
-      const qs = new URLSearchParams({ teamId: activeTeamId });
-      if (uid && uid !== "cached-user") qs.set("userId", uid);
-      if (uName) qs.set("userName", uName);
-      const cached = peekLiffApiCache<PlayersApiMinimalResponse>(
-        `/api/liff/players?${qs.toString()}`
-      );
-      return cached?.success && Array.isArray(cached.players)
-        ? cached.players
-        : [];
-    }
-  );
+  const [rosterPlayers, setRosterPlayers] = useState<
+    RawRosterPlayerCandidate[]
+  >(() => {
+    if (typeof window === "undefined") return [];
+    const uid =
+      localStorage.getItem("iscore_user_id") ||
+      localStorage.getItem("iscore_userId") ||
+      "";
+    const uName = localStorage.getItem("iscore_user_name") || "";
+    const qs = new URLSearchParams({ teamId: activeTeamId });
+    if (uid && uid !== "cached-user") qs.set("userId", uid);
+    if (uName) qs.set("userName", uName);
+    const cached = peekLiffApiCache<PlayersApiMinimalResponse>(
+      `/api/liff/players?${qs.toString()}`
+    );
+    return cached?.success && Array.isArray(cached.players)
+      ? cached.players
+      : [];
+  });
 
   const effectiveMyLineup: BoardPlayer[] = useMemo(() => {
     if (useTeamRoster && rosterPlayers.length > 0) {
@@ -199,14 +204,15 @@ export default function LiffBaseballBoardPage() {
       difficulty: "normal",
       myTeamName: scoreTeamName,
       myLineup: effectiveMyLineup,
-      playerIsHome: true,
+      playerIsHome: false, // 先攻＝最初からバッティング！
     })
   );
 
   const [boardPhase, setBoardPhase] = useState<BoardActionPhase>("idle");
   const [stance, setStance] = useState<BatterStance>("contact");
   const [selectedCourse, setSelectedCourse] = useState<PitchCourse>("middle");
-  // 2P 1台対戦用：投手が球種をセット完了した状態（打者に球種を見せないためのロック）
+  const [selectedPitchType, setSelectedPitchType] =
+    useState<PitchType>("straight");
   const [lockedVersusPitch, setLockedVersusPitch] = useState<PitchSpec | null>(
     null
   );
@@ -221,7 +227,7 @@ export default function LiffBaseballBoardPage() {
     loadBaseballBoardLocalStats(activeTeamId)
   );
 
-  // モーダル開閉ステート（1画面コックピットのため設定・成績・遊び方はすべてPortalモーダル化）
+  // モーダル開閉ステート
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBoxScoreOpen, setIsBoxScoreOpen] = useState(false);
@@ -294,7 +300,7 @@ export default function LiffBaseballBoardPage() {
           setRosterPlayers(data.players);
         }
       } catch {
-        // オフライン時も標準メンバーで問題なくプレイ可能
+        // オフライン時も標準メンバーでプレイ可能
       }
     };
 
@@ -304,7 +310,7 @@ export default function LiffBaseballBoardPage() {
     };
   }, [activeTeamId, profile?.displayName, profile?.userId]);
 
-  // チーム切替時の状態・モーダル完全リセット（マルチチーム分離規約）
+  // チーム切替時の状態・モーダル完全リセット
   const prevTeamIdRef = useRef<string>(activeTeamId);
   useEffect(() => {
     if (prevTeamIdRef.current !== activeTeamId) {
@@ -321,18 +327,20 @@ export default function LiffBaseballBoardPage() {
     }
   }, [activeTeamId, clearTimers]);
 
-  // 新規試合開始・設定反映関数
+  // 新規試合開始
   const startNewGame = useCallback(
     (overrides?: {
       nextMode?: GameMode;
       nextInnings?: number;
       nextDifficulty?: CpuDifficulty;
+      nextBatsFirst?: boolean;
       nextUseRoster?: boolean;
     }) => {
       clearTimers();
       const targetMode = overrides?.nextMode ?? mode;
       const targetInnings = overrides?.nextInnings ?? totalInnings;
       const targetDiff = overrides?.nextDifficulty ?? difficulty;
+      const targetBatsFirst = overrides?.nextBatsFirst ?? playerBatsFirst;
       const targetUseRoster = overrides?.nextUseRoster ?? useTeamRoster;
 
       const lineup =
@@ -350,7 +358,7 @@ export default function LiffBaseballBoardPage() {
           difficulty: targetDiff,
           myTeamName: scoreTeamName,
           myLineup: lineup,
-          playerIsHome: true,
+          playerIsHome: targetMode === "derby" ? true : !targetBatsFirst,
         })
       );
     },
@@ -358,6 +366,7 @@ export default function LiffBaseballBoardPage() {
       clearTimers,
       difficulty,
       mode,
+      playerBatsFirst,
       rosterPlayers,
       scoreTeamName,
       totalInnings,
@@ -388,7 +397,7 @@ export default function LiffBaseballBoardPage() {
         difficulty,
         myTeamName: scoreTeamName,
         myLineup: effectiveMyLineup,
-        playerIsHome: true,
+        playerIsHome: mode === "derby" ? true : !playerBatsFirst,
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -400,7 +409,6 @@ export default function LiffBaseballBoardPage() {
     };
   }, [clearTimers]);
 
-  // 現在の打者・守備側の魔球残数
   const currentBatter: BoardPlayer = useMemo(() => {
     if (matchState.mode === "derby") {
       return (
@@ -424,10 +432,21 @@ export default function LiffBaseballBoardPage() {
       ? matchState.homeVanishLeft
       : matchState.awayVanishLeft;
 
+  const isCpuModePlayerBatting =
+    (matchState.isTop && matchState.playerSide === "away") ||
+    (!matchState.isTop && matchState.playerSide === "home");
+
   const isHumanBatterTurn =
     matchState.mode === "derby" ||
-    (matchState.mode === "cpu" && !matchState.isTop) ||
+    (matchState.mode === "cpu" && isCpuModePlayerBatting) ||
     (matchState.mode === "versus" && lockedVersusPitch !== null);
+
+  const currentSpeedMeta = useMemo(
+    () =>
+      PITCH_SPEED_PRESETS.find((p) => p.id === speedPreset) ??
+      PITCH_SPEED_PRESETS[1]!,
+    [speedPreset]
+  );
 
   const handleBackClick = () => {
     if (canGoBackInLiff()) {
@@ -450,7 +469,7 @@ export default function LiffBaseballBoardPage() {
     try {
       const outcome = await shareLiffPageViaLine({
         title: "野球盤ゲーム｜iScoreCloud",
-        text: "懐かしの野球盤ミニゲームで対決しよう！（消える魔球・柵越えHR対応）",
+        text: "懐かしの野球盤ミニゲームで対決しよう！（球速ギア・消える魔球・柵越えHR対応）",
         pathname,
         teamId: currentTeam?.id || null,
         teamName: currentTeam?.orgName || currentTeam?.name || null,
@@ -464,7 +483,7 @@ export default function LiffBaseballBoardPage() {
     }
   };
 
-  // CPU投手（裏イニング / HR競争）または 2Pロック済み球種での投球開始
+  // 打者ターンでの投球開始（左下「⚾ 投球」ボタン or 自動投球）
   const handleStartPitchForBatter = useCallback(() => {
     if (boardPhase !== "idle" || matchState.isGameOver) return;
     if (autoPitchTimerRef.current) {
@@ -473,9 +492,11 @@ export default function LiffBaseballBoardPage() {
     }
 
     let pitchToThrow: PitchSpec;
+    let effectivePreset: PitchSpeedPreset = speedPreset;
     if (matchState.mode === "versus") {
       if (!lockedVersusPitch) return;
       pitchToThrow = lockedVersusPitch;
+      effectivePreset = lockedVersusPitch.speedPreset ?? speedPreset;
     } else {
       pitchToThrow = chooseCpuPitch({
         difficulty: matchState.difficulty,
@@ -488,6 +509,7 @@ export default function LiffBaseballBoardPage() {
 
     canvasRef.current?.launchPitch({
       pitch: pitchToThrow,
+      speedPreset: effectivePreset,
       batterBats: currentBatter.bats,
       batterIsCpu: false,
       cpuDifficulty: matchState.difficulty,
@@ -507,51 +529,113 @@ export default function LiffBaseballBoardPage() {
     matchState.outs,
     matchState.strikes,
     pitcherVanishLeft,
+    speedPreset,
   ]);
 
-  // 1P vs CPU の表イニング：プレイヤーが球種を選んでCPU打者へ投げる
-  const handleHumanPitchToCpu = (pitchType: PitchType) => {
-    if (boardPhase !== "idle" || matchState.isGameOver) return;
-    if (pitchType === "vanish" && pitcherVanishLeft <= 0) {
-      toast.error("消える魔球の残り回数がありません");
-      return;
-    }
-    canvasRef.current?.launchPitch({
-      pitch: { type: pitchType, course: selectedCourse },
-      batterBats: currentBatter.bats,
-      batterIsCpu: true,
-      cpuDifficulty: matchState.difficulty,
-      strikes: matchState.strikes,
-      outs: matchState.outs,
-      bases: matchState.bases,
-    });
-  };
+  // 守備ターン（プレイヤーがCPUへ投球）
+  const handleHumanPitchToCpu = useCallback(
+    (pitchTypeOverride?: PitchType) => {
+      if (boardPhase !== "idle" || matchState.isGameOver) return;
+      const chosenType = pitchTypeOverride ?? selectedPitchType;
+      if (chosenType === "vanish" && pitcherVanishLeft <= 0) {
+        toast.error("消える魔球の残り回数がありません");
+        return;
+      }
+      setSelectedPitchType(chosenType);
+      canvasRef.current?.launchPitch({
+        pitch: {
+          type: chosenType,
+          course: selectedCourse,
+          speedPreset,
+        },
+        speedPreset,
+        batterBats: currentBatter.bats,
+        batterIsCpu: true,
+        cpuDifficulty: matchState.difficulty,
+        strikes: matchState.strikes,
+        outs: matchState.outs,
+        bases: matchState.bases,
+      });
+    },
+    [
+      boardPhase,
+      currentBatter.bats,
+      matchState.bases,
+      matchState.difficulty,
+      matchState.isGameOver,
+      matchState.outs,
+      matchState.strikes,
+      pitcherVanishLeft,
+      selectedCourse,
+      selectedPitchType,
+      speedPreset,
+    ]
+  );
 
-  // 2P 1台対戦：投手が球種＆コースを秘密ロックして打者へ渡す
-  const handleLockVersusPitch = (pitchType: PitchType) => {
-    if (boardPhase !== "idle" || matchState.isGameOver) return;
-    if (pitchType === "vanish" && pitcherVanishLeft <= 0) {
-      toast.error("消える魔球の残り回数がありません");
-      return;
-    }
-    setLockedVersusPitch({
-      type: pitchType,
-      course: selectedCourse,
-    });
-  };
+  // 2P 1台対戦：投手が球種・コース・球速を秘密ロックして打者へ渡す
+  const handleLockVersusPitch = useCallback(
+    (pitchTypeOverride?: PitchType) => {
+      if (boardPhase !== "idle" || matchState.isGameOver) return;
+      const chosenType = pitchTypeOverride ?? selectedPitchType;
+      if (chosenType === "vanish" && pitcherVanishLeft <= 0) {
+        toast.error("消える魔球の残り回数がありません");
+        return;
+      }
+      setLockedVersusPitch({
+        type: chosenType,
+        course: selectedCourse,
+        speedPreset,
+      });
+    },
+    [
+      boardPhase,
+      matchState.isGameOver,
+      pitcherVanishLeft,
+      selectedCourse,
+      selectedPitchType,
+      speedPreset,
+    ]
+  );
 
-  // スイング実行（0ms レスポンスのため onPointerDown から発火）
-  const handleSwingPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    if (boardPhase === "pitching" && isHumanBatterTurn) {
-      canvasRef.current?.triggerSwing(stance);
+  // ボード左下「⚾ 投球」ボタンからの統一ハンドラ
+  const handleBoardCornerPitch = useCallback(() => {
+    if (isHumanBatterTurn) {
+      handleStartPitchForBatter();
+    } else if (matchState.mode === "versus") {
+      handleLockVersusPitch();
+    } else {
+      handleHumanPitchToCpu();
     }
-  };
+  }, [
+    handleHumanPitchToCpu,
+    handleLockVersusPitch,
+    handleStartPitchForBatter,
+    isHumanBatterTurn,
+    matchState.mode,
+  ]);
 
-  // 1プレイ決着時のスコア・カウント更新コールバック
+  // 投球前に右下「🏏 打つ！」を押して素振りした時の親切ガイド
+  const handlePracticeSwing = useCallback(() => {
+    setMatchState((prev) => ({
+      ...prev,
+      lastCallout:
+        "🏏 ナイス素振り！左下の青い「⚾ 投球」を押すとボールが来ます！",
+    }));
+  }, []);
+
+  // 1プレイ決着時のスコア・カウント・最高打球速度更新
   const handlePlayResolved = useCallback(
     (play: ResolvedBoardPlay) => {
       setLockedVersusPitch(null);
+
+      if (play.exitVelocityKmh > 0 && play.outcome !== "foul") {
+        const updatedVelStats = recordMaxExitVelocityToLocalStats(
+          activeTeamId,
+          play.exitVelocityKmh
+        );
+        setLocalStats(updatedVelStats);
+      }
+
       setMatchState((prev) => {
         const applied = applyPlayOutcome(
           prev,
@@ -570,7 +654,7 @@ export default function LiffBaseballBoardPage() {
           const didWin =
             applied.nextState.mode === "derby"
               ? applied.nextState.derbyHomeRuns >= 3
-              : applied.nextState.winner === "home";
+              : applied.nextState.winner === applied.nextState.playerSide;
           playGameSetFanfare(soundEnabled, didWin);
           const updatedStats = recordFinishedGameToLocalStats(
             activeTeamId,
@@ -581,13 +665,20 @@ export default function LiffBaseballBoardPage() {
           playPocketResult(soundEnabled, applied.soundKind);
         }
 
+        const nextDefVanish = applied.nextState.isTop
+          ? applied.nextState.homeVanishLeft
+          : applied.nextState.awayVanishLeft;
+        if (nextDefVanish <= 0) {
+          setSelectedPitchType((cur) => (cur === "vanish" ? "straight" : cur));
+        }
+
         return applied.nextState;
       });
     },
     [activeTeamId, showTemporaryBanner, soundEnabled]
   );
 
-  // 自動投球モード ON 時：モーダル非表示・打者待機中のみ自動投球
+  // 自動投球モード ON 時
   useEffect(() => {
     if (autoPitchTimerRef.current) {
       clearTimeout(autoPitchTimerRef.current);
@@ -605,7 +696,7 @@ export default function LiffBaseballBoardPage() {
       boardPhase === "idle" &&
       !matchState.isGameOver &&
       (matchState.mode === "derby" ||
-        (matchState.mode === "cpu" && !matchState.isTop)) &&
+        (matchState.mode === "cpu" && isCpuModePlayerBatting)) &&
       !anyModalOpen;
 
     if (!canAutoPitch) return;
@@ -627,10 +718,10 @@ export default function LiffBaseballBoardPage() {
     handleStartPitchForBatter,
     isBoxScoreOpen,
     isConfirmResetStatsOpen,
+    isCpuModePlayerBatting,
     isGuideOpen,
     isSettingsOpen,
     matchState.isGameOver,
-    matchState.isTop,
     matchState.mode,
   ]);
 
@@ -652,6 +743,12 @@ export default function LiffBaseballBoardPage() {
     }
   };
 
+  const handleCycleCourse = () => {
+    const idx = COURSE_CYCLE.indexOf(selectedCourse);
+    const next = COURSE_CYCLE[(idx + 1) % COURSE_CYCLE.length] ?? "middle";
+    setSelectedCourse(next);
+  };
+
   const activeRosterCount = useMemo(
     () =>
       rosterPlayers.filter(
@@ -663,10 +760,9 @@ export default function LiffBaseballBoardPage() {
   return (
     <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden overscroll-none bg-background select-none">
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ① 上部固定：コンパクト操作バー ＆ 電光スコアボード（A-3 Dark Cap・ヘッダーなし専用）
+          ① 上部固定：コンパクトナビ ＆ 電光スコアボード（A-3 Dark Cap）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <header className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary pt-[max(env(safe-area-inset-top),8px)] px-2.5 pb-2 space-y-1.5">
-        {/* 最上段ナビバー：戻る ＋ タイトル・回表示 ＋ 設定/成績/音/遊び方/共有 */}
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-1.5 min-w-0">
             <button
@@ -693,6 +789,17 @@ export default function LiffBaseballBoardPage() {
                       matchState.inning > matchState.totalInnings ? "延" : ""
                     }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
               </span>
+              {!matchState.isGameOver && matchState.mode === "cpu" && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
+                    isHumanBatterTurn
+                      ? "bg-[#dc2626] text-white"
+                      : "bg-sky-600 text-white"
+                  }`}
+                >
+                  {isHumanBatterTurn ? "攻撃" : "守備"}
+                </span>
+              )}
             </div>
           </div>
 
@@ -768,7 +875,7 @@ export default function LiffBaseballBoardPage() {
           </div>
         </div>
 
-        {/* 電光スコアボード行 */}
+        {/* 電光スコアボード */}
         {matchState.mode === "derby" ? (
           <div className="grid grid-cols-3 gap-1.5">
             <div className="rounded-lg bg-slate-900 border border-slate-800 px-2 py-1 flex items-center justify-between">
@@ -797,7 +904,7 @@ export default function LiffBaseballBoardPage() {
                 <thead>
                   <tr className="border-b border-slate-800 text-[9px] font-bold text-slate-400">
                     <th className="py-0.5 px-1.5 text-left font-bold">
-                      {matchState.mode === "versus" ? "2P対戦" : "1P対戦"}
+                      {matchState.mode === "versus" ? "2P対戦" : "チーム"}
                     </th>
                     {matchState.innings.map((_, idx) => (
                       <th key={idx} className="py-0.5 px-1 min-w-[16px]">
@@ -1010,13 +1117,6 @@ export default function LiffBaseballBoardPage() {
               </button>
             )}
 
-          {matchState.mode !== "derby" && !isHumanBatterTurn && (
-            <span className="px-2 py-1 rounded-full bg-[#0f172a] text-amber-300 text-[10px] font-black flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-400" />
-              <span>魔球あと{pitcherVanishLeft}</span>
-            </span>
-          )}
-
           <button
             type="button"
             id="btn-baseball-board-restart"
@@ -1031,7 +1131,7 @@ export default function LiffBaseballBoardPage() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ③ 中央伸縮：野球盤メインステージ（flex-1 min-h-0 で画面縦幅に100%自動フィット）
+          ③ 中央伸縮：野球盤メインステージ（左下「⚾投球」＆右下「🏏打つ！」ボタン内蔵！）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className="flex-1 min-h-0 w-full px-2 py-1.5 bg-background flex items-center justify-center overflow-hidden">
         <BaseballBoardCanvas
@@ -1041,28 +1141,28 @@ export default function LiffBaseballBoardPage() {
           strikes={matchState.strikes}
           batterBats={currentBatter.bats}
           stance={stance}
+          speedBadgeText={currentSpeedMeta.kmhBadge}
           soundEnabled={soundEnabled}
-          canTapToSwing={isHumanBatterTurn && !matchState.isGameOver}
-          canTapToPitch={
-            isHumanBatterTurn &&
-            boardPhase === "idle" &&
-            !matchState.isGameOver
+          isHumanBatterTurn={isHumanBatterTurn}
+          isGameOver={matchState.isGameOver}
+          isVersusPitchLockMode={
+            matchState.mode === "versus" && !isHumanBatterTurn
           }
           bannerText={bannerText}
           bannerTone={bannerTone}
           onPhaseChange={setBoardPhase}
           onPlayResolved={handlePlayResolved}
-          onRequestQuickPitch={handleStartPitchForBatter}
+          onPressBoardPitch={handleBoardCornerPitch}
+          onPracticeSwing={handlePracticeSwing}
         />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ④ 最下部固定：親指ワンハンド操作ドック（shrink-0・ボトムナビ非表示のためSafe Area直置き）
+          ④ 最下部固定：球速セレクター ＆ 打撃/投球スタイルドック（shrink-0）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      <footer className="shrink-0 px-3 pt-2 pb-[max(env(safe-area-inset-bottom),12px)] bg-card border-t border-border">
+      <footer className="shrink-0 px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] bg-card border-t border-border">
         {matchState.isGameOver ? (
-          /* 🏁 試合終了ドック */
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="px-3 py-1.5 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
               <span className="text-xs font-black text-primary truncate">
                 {matchState.mode === "derby"
@@ -1085,7 +1185,7 @@ export default function LiffBaseballBoardPage() {
                 type="button"
                 id="btn-baseball-board-play-again"
                 onClick={() => startNewGame()}
-                className="col-span-6 h-11 rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
+                className="col-span-6 h-10 rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>もう1試合！</span>
@@ -1094,7 +1194,7 @@ export default function LiffBaseballBoardPage() {
                 type="button"
                 id="btn-baseball-board-copy-result"
                 onClick={() => void handleCopyResultText()}
-                className="col-span-3 h-11 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                className="col-span-3 h-10 rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5 text-primary" />
                 <span>コピー</span>
@@ -1103,172 +1203,174 @@ export default function LiffBaseballBoardPage() {
                 type="button"
                 id="btn-baseball-board-share-line"
                 onClick={() => void handleShareResultLine()}
-                className="col-span-3 h-11 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                className="col-span-3 h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>LINE</span>
               </button>
             </div>
           </div>
-        ) : isHumanBatterTurn ? (
-          /* 🏏 打者ターンドック（狙い3択 ＋ 大型スイングボタン） */
+        ) : (
           <div className="space-y-1.5">
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: "contact" as const, label: "⚡ ミート", sub: "広角安打" },
-                  { id: "power" as const, label: "🔥 強振", sub: "柵越えHR" },
-                  { id: "bunt" as const, label: "🎯 バント", sub: "進塁・内安" },
-                ] as const
-              ).map((opt) => {
-                const active = stance === opt.id;
+            {/* 上段：選べる球速5段階セレクター（打撃中も守備中もいつでも1タップ変更可能！） */}
+            <div className="grid grid-cols-5 gap-1">
+              {PITCH_SPEED_PRESETS.map((sp) => {
+                const active = speedPreset === sp.id;
+                const isMonster = sp.id === "monster";
                 return (
                   <button
-                    key={opt.id}
+                    key={sp.id}
                     type="button"
-                    onClick={() => setStance(opt.id)}
-                    className={`h-9 px-1.5 rounded-xl border flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer ${
+                    disabled={boardPhase !== "idle"}
+                    onClick={() => setSpeedPreset(sp.id)}
+                    className={`h-8 px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
                       active
-                        ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
+                        ? isMonster
+                          ? "bg-[#dc2626] text-white border-[#991b1b]"
+                          : "bg-[#0f172a] text-amber-300 border-primary"
                         : "bg-muted/60 text-foreground border-border hover:bg-muted"
                     }`}
+                    title={sp.description}
                   >
-                    <span className="text-xs font-black">{opt.label}</span>
-                    <span
-                      className={`text-[9.5px] font-bold hidden xs:inline ${
-                        active ? "text-slate-300" : "text-muted-foreground"
+                    {sp.shortLabel}
+                  </button>
+                );
+              })}
+            </div>
+
+            {isHumanBatterTurn ? (
+              /* 下段（打者ターン）：狙い3択（実際の投球・スイングはボード左下・右下の大型ボタンで直感操作！） */
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    {
+                      id: "contact" as const,
+                      label: "⚡ ミート",
+                      sub: "広角ヒット",
+                    },
+                    {
+                      id: "power" as const,
+                      label: "🔥 強振",
+                      sub: "柵越えHR",
+                    },
+                    {
+                      id: "bunt" as const,
+                      label: "🎯 バント",
+                      sub: "進塁・内安",
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const active = stance === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setStance(opt.id)}
+                      className={`h-10 px-1.5 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                        active
+                          ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
+                          : "bg-card text-foreground border-border hover:bg-muted"
                       }`}
                     >
-                      ({opt.sub})
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {boardPhase === "pitching" ? (
-              <button
-                type="button"
-                id="btn-baseball-board-swing"
-                onPointerDown={handleSwingPointerDown}
-                className="w-full h-12 rounded-2xl bg-[#dc2626] hover:bg-[#b91c1c] text-white font-black text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
-              >
-                <span>🏏 スイング！！（盤面タップ可）</span>
-              </button>
-            ) : boardPhase === "idle" ? (
-              <button
-                type="button"
-                id="btn-baseball-board-pitch-start"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  handleStartPitchForBatter();
-                }}
-                className="w-full h-12 rounded-2xl bg-primary hover:brightness-105 text-primary-foreground font-black text-sm sm:text-base tracking-wide shadow-sm active:scale-97 transition-transform flex items-center justify-center gap-2 cursor-pointer touch-manipulation"
-              >
-                <span>
-                  ⚾{" "}
-                  {matchState.mode === "versus"
-                    ? `${
-                        matchState.isTop
-                          ? matchState.awayTeamName
-                          : matchState.homeTeamName
-                      }：投球スタート！`
-                    : autoPitchEnabled
-                    ? "すぐ投球する（自動投球ON）"
-                    : "ピッチャー投球スタート！"}
-                </span>
-              </button>
+                      <span className="text-xs font-black leading-none">
+                        {opt.label}
+                      </span>
+                      <span
+                        className={`text-[9px] font-bold mt-0.5 leading-none ${
+                          active ? "text-slate-300" : "text-muted-foreground"
+                        }`}
+                      >
+                        {opt.sub}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
-              <button
-                type="button"
-                disabled
-                className="w-full h-12 rounded-2xl bg-muted border border-border text-muted-foreground font-black text-xs flex items-center justify-center cursor-not-allowed"
-              >
-                <span>打球の行方を見守り中…！</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          /* ⚾ 投手ターンドック（コース3択 ＋ 5球種アーケードデッキ：打者ターンと同高に揃えて盤面サイズ変動ゼロ！） */
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-3 gap-1.5">
-              {COURSE_OPTIONS.map((c) => {
-                const active = selectedCourse === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    disabled={boardPhase !== "idle"}
-                    onClick={() => setSelectedCourse(c.id)}
-                    className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
-                      active
-                        ? "bg-[#0f172a] text-white border-primary"
-                        : "bg-muted/60 text-foreground border-border hover:bg-muted"
-                    }`}
-                  >
-                    コース：{c.label}
-                  </button>
-                );
-              })}
-            </div>
+              /* 下段（投手ターン）：コース切替 ＋ 球種選択（タップで即投球 / ボード左下でも投球可） */
+              <div className="grid grid-cols-6 gap-1">
+                <button
+                  type="button"
+                  disabled={boardPhase !== "idle"}
+                  onClick={handleCycleCourse}
+                  className="h-10 px-1 rounded-xl bg-[#0f172a] text-sky-300 border border-slate-700 flex flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50"
+                  title="タップでコース切り替え"
+                >
+                  <span className="text-[8.5px] font-bold text-slate-300 leading-none">
+                    コース
+                  </span>
+                  <span className="text-[11px] font-black text-white leading-tight mt-0.5">
+                    {COURSE_LABELS[selectedCourse]}
+                  </span>
+                </button>
 
-            <div className="grid grid-cols-5 gap-1.5">
-              {STANDARD_PITCH_TYPES.map((pType) => {
-                const meta = PITCH_TYPE_META[pType];
-                return (
-                  <button
-                    key={pType}
-                    type="button"
-                    disabled={boardPhase !== "idle"}
-                    onClick={() =>
-                      matchState.mode === "versus"
-                        ? handleLockVersusPitch(pType)
-                        : handleHumanPitchToCpu(pType)
+                {STANDARD_PITCH_TYPES.map((pType) => {
+                  const meta = PITCH_TYPE_META[pType];
+                  const isSelected = selectedPitchType === pType;
+                  return (
+                    <button
+                      key={pType}
+                      type="button"
+                      disabled={boardPhase !== "idle"}
+                      onClick={() => {
+                        setSelectedPitchType(pType);
+                        if (matchState.mode === "versus") {
+                          handleLockVersusPitch(pType);
+                        } else {
+                          handleHumanPitchToCpu(pType);
+                        }
+                      }}
+                      className={`h-10 px-1 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
+                        isSelected
+                          ? "bg-primary/12 border-primary text-foreground"
+                          : "bg-card hover:bg-muted border-border text-foreground"
+                      }`}
+                    >
+                      <span className="text-[10.5px] font-black leading-none truncate max-w-full">
+                        {meta.shortLabel}
+                      </span>
+                      <span className="text-[8.5px] font-bold text-muted-foreground mt-0.5 leading-none flex items-center gap-0.5">
+                        {matchState.mode === "versus" ? (
+                          <>
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>セット</span>
+                          </>
+                        ) : (
+                          <span>投球</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                {/* 消える魔球 */}
+                <button
+                  type="button"
+                  id="btn-baseball-board-vanish-pitch"
+                  disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
+                  onClick={() => {
+                    if (matchState.mode === "versus") {
+                      handleLockVersusPitch("vanish");
+                    } else {
+                      handleHumanPitchToCpu("vanish");
                     }
-                    className="h-12 px-1 rounded-xl bg-card hover:bg-muted border border-border hover:border-primary/50 flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50"
-                  >
-                    <span className="text-[11px] font-black text-foreground leading-tight truncate max-w-full">
-                      {meta.shortLabel}
-                    </span>
-                    <span className="text-[9px] font-bold text-muted-foreground mt-0.5 flex items-center gap-0.5">
-                      {matchState.mode === "versus" ? (
-                        <>
-                          <Lock className="w-2.5 h-2.5" />
-                          <span>セット</span>
-                        </>
-                      ) : (
-                        <span>投球</span>
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
-
-              {/* 5枠目：必殺「消える魔球」ボタン */}
-              <button
-                type="button"
-                id="btn-baseball-board-vanish-pitch"
-                disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
-                onClick={() =>
-                  matchState.mode === "versus"
-                    ? handleLockVersusPitch("vanish")
-                    : handleHumanPitchToCpu("vanish")
-                }
-                className={`h-12 px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
-                  pitcherVanishLeft > 0 && boardPhase === "idle"
-                    ? "bg-[#0f172a] hover:bg-slate-800 text-amber-300 border-amber-500 cursor-pointer"
-                    : "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
-                }`}
-              >
-                <span className="text-[11px] font-black leading-tight flex items-center gap-0.5">
-                  <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-                  <span>魔球</span>
-                </span>
-                <span className="text-[9px] font-bold mt-0.5">
-                  残{pitcherVanishLeft}/{MAX_VANISH_PITCHES_PER_GAME}
-                </span>
-              </button>
-            </div>
+                  }}
+                  className={`h-10 px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
+                    pitcherVanishLeft > 0 && boardPhase === "idle"
+                      ? "bg-[#0f172a] hover:bg-slate-800 text-amber-300 border-amber-500 cursor-pointer"
+                      : "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
+                  }`}
+                >
+                  <span className="text-[10.5px] font-black leading-none flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                    <span>魔球</span>
+                  </span>
+                  <span className="text-[8.5px] font-bold mt-0.5 leading-none">
+                    残{pitcherVanishLeft}/{MAX_VANISH_PITCHES_PER_GAME}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </footer>
@@ -1371,35 +1473,74 @@ export default function LiffBaseballBoardPage() {
                       </div>
                     </div>
 
-                    {/* 3. CPU強さ */}
                     {mode === "cpu" && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-black text-foreground">
-                          3. CPUの強さ
-                        </p>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {DIFFICULTY_OPTIONS.map((diff) => {
-                            const active = difficulty === diff.id;
-                            return (
-                              <button
-                                key={diff.id}
-                                type="button"
-                                onClick={() => {
-                                  setDifficulty(diff.id);
-                                  startNewGame({ nextDifficulty: diff.id });
-                                }}
-                                className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
-                                  active
-                                    ? "bg-[#0f172a] text-white border-primary"
-                                    : "bg-card text-foreground border-border hover:bg-muted"
-                                }`}
-                              >
-                                {diff.label}
-                              </button>
-                            );
-                          })}
+                      <>
+                        {/* 3. 先攻・後攻 */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-black text-foreground">
+                            3. 先攻・後攻（1P vs CPU）
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPlayerBatsFirst(true);
+                                startNewGame({ nextBatsFirst: true });
+                              }}
+                              className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                playerBatsFirst
+                                  ? "bg-[#0f172a] text-white border-primary"
+                                  : "bg-card text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              🏏 先攻（最初から打撃）
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPlayerBatsFirst(false);
+                                startNewGame({ nextBatsFirst: false });
+                              }}
+                              className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                !playerBatsFirst
+                                  ? "bg-[#0f172a] text-white border-primary"
+                                  : "bg-card text-foreground border-border hover:bg-muted"
+                              }`}
+                            >
+                              ⚾ 後攻（裏にサヨナラ狙い）
+                            </button>
+                          </div>
                         </div>
-                      </div>
+
+                        {/* 4. CPU強さ */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-black text-foreground">
+                            4. CPUの強さ
+                          </p>
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {DIFFICULTY_OPTIONS.map((diff) => {
+                              const active = difficulty === diff.id;
+                              return (
+                                <button
+                                  key={diff.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setDifficulty(diff.id);
+                                    startNewGame({ nextDifficulty: diff.id });
+                                  }}
+                                  className={`h-9 rounded-xl border text-xs font-black transition-all active:scale-95 cursor-pointer ${
+                                    active
+                                      ? "bg-[#0f172a] text-white border-primary"
+                                      : "bg-card text-foreground border-border hover:bg-muted"
+                                  }`}
+                                >
+                                  {diff.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
                     )}
                   </>
                 )}
@@ -1522,7 +1663,6 @@ export default function LiffBaseballBoardPage() {
                 </button>
               </div>
 
-              {/* モーダル内2タブ */}
               <div className="px-4 pt-3 pb-2 bg-card border-b border-border shrink-0">
                 <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-muted border border-border">
                   <button
@@ -1556,14 +1696,6 @@ export default function LiffBaseballBoardPage() {
                 {statsModalTab === "match" ? (
                   <>
                     {[
-                      {
-                        title: matchState.homeTeamName,
-                        lineup: matchState.homeLineup,
-                        activeIdx:
-                          !matchState.isTop || matchState.mode === "derby"
-                            ? matchState.homeBatterIdx
-                            : -1,
-                      },
                       ...(matchState.mode !== "derby"
                         ? [
                             {
@@ -1575,6 +1707,14 @@ export default function LiffBaseballBoardPage() {
                             },
                           ]
                         : []),
+                      {
+                        title: matchState.homeTeamName,
+                        lineup: matchState.homeLineup,
+                        activeIdx:
+                          !matchState.isTop || matchState.mode === "derby"
+                            ? matchState.homeBatterIdx
+                            : -1,
+                      },
                     ].map((side) => (
                       <div
                         key={side.title}
@@ -1670,10 +1810,22 @@ export default function LiffBaseballBoardPage() {
                           {localStats.derbyBestHr}本)
                         </p>
                       </div>
+                      <div className="col-span-2 p-3 rounded-xl bg-muted border border-border flex items-center justify-between">
+                        <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                          <Gauge className="w-4 h-4 text-primary" />
+                          <span>自己最速打球速度</span>
+                        </span>
+                        <span className="text-sm font-black text-[#dc2626] tabular-nums">
+                          {localStats.maxExitVelocityKmh > 0
+                            ? `${localStats.maxExitVelocityKmh} km/h`
+                            : "--- km/h"}
+                        </span>
+                      </div>
                     </div>
 
                     {(localStats.gamesPlayed > 0 ||
-                      localStats.derbyHighScore > 0) && (
+                      localStats.derbyHighScore > 0 ||
+                      localStats.maxExitVelocityKmh > 0) && (
                       <button
                         type="button"
                         onClick={() => setIsConfirmResetStatsOpen(true)}
@@ -1746,43 +1898,30 @@ export default function LiffBaseballBoardPage() {
               <div className="p-4 space-y-3 overflow-y-auto text-xs leading-relaxed">
                 <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
                   <p className="font-black text-foreground">
-                    1. スイングのタイミングと打球方向
+                    1. バッティングは「左下① ➔ 右下②」の2ステップ！
                   </p>
                   <p className="text-muted-foreground font-bold">
-                    ホームベース手前の白枠にボールが重なる瞬間がベストタイミング！「強振」で真芯にとらえると野手の頭を越えてスタンドイン（柵越えHOME RUN）になります。早振りは引っ張り、遅振りは流し打ちになります。
+                    ① ボード左下の青い「⚾ 投球」ボタンを押すとピッチャーが投げます（「自動投球ON」も可）。
+                    <br />
+                    ② ホームベースの枠が黄色く「今だ！」と光る瞬間に、ボード右下の赤い「🏏 打つ！」ボタンを押して打ち返しましょう！（投球前に押すと素振りもできます）
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
                   <p className="font-black text-foreground">
-                    2. 必殺「消える魔球」（1試合2球まで）
+                    2. 選べる5段階の球速ギア ＆ 看板直撃ボーナス！
                   </p>
                   <p className="text-muted-foreground font-bold">
-                    本塁手前のトラップドアが開いてボールが床下へ消えます！振ってしまうと空振りストライクですが、じっと我慢して見送れば「ボール」になります。ここぞの2ストライク勝負で使いましょう！
+                    画面下部のバーから「🐢80km」「⚾115km」「⚡145km」「🔥165km（怪物級）」「🛸緩急MIX」をいつでも切り替え可能！165kmの剛速球を真芯で弾き返すと打球速度180km超えの特大アーチになり、センターの「🎯看板直撃」に当たればボーナス演出（HR競争では+150pt）が発動します！
                   </p>
                 </div>
 
                 <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
                   <p className="font-black text-foreground">
-                    3. 本格野球ルールも再現！
+                    3. 必殺「消える魔球」（1試合2球まで）
                   </p>
                   <p className="text-muted-foreground font-bold">
-                    ・一塁走者あり（無死/一死）で二塁・遊撃ポケットに入ると「6-4-3 ダブルプレー」！
-                    <br />
-                    ・三塁走者あり（無死/一死）で外野フライ捕球になると「タッチアップ犠牲フライ」で1点！
-                    <br />
-                    ・2ストライク後のバントファウルは「スリーバント失敗」で三振アウト！
-                    <br />
-                    ・同点時は無死一・二塁からの「延長タイブレーク」に突入します。
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
-                  <p className="font-black text-foreground">
-                    4. モード切替・出場選手変更
-                  </p>
-                  <p className="text-muted-foreground font-bold">
-                    右上の「設定」ボタンから、1P vs CPU・2P 1台交互対戦・10球ホームラン競争の切り替えや、チーム登録選手／標準メンバーの切り替えが行えます。
+                    本塁手前のトラップドアが開いてボールが床下へ消えます！振ると空振りストライク、見送れば「ボール」になります。
                   </p>
                 </div>
               </div>
@@ -1825,7 +1964,7 @@ export default function LiffBaseballBoardPage() {
               </div>
               <div className="p-4 space-y-3">
                 <p className="text-xs font-bold text-muted-foreground leading-relaxed">
-                  この端末に保存されている野球盤の通算勝敗・ホームラン数・ハイスコアをリセットしますか？
+                  この端末に保存されている野球盤の通算勝敗・ホームラン数・ハイスコア・最速打球記録をリセットしますか？
                 </p>
                 <div className="grid grid-cols-2 gap-2 pb-[max(env(safe-area-inset-bottom),12px)] sm:pb-0">
                   <button
