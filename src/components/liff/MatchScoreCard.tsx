@@ -590,9 +590,38 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           </div>
         </div>
 
-        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス */}
-        <div className="p-3.5 sm:p-4">
-          <div className="flex items-center justify-between gap-3">
+        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス（予定時は上部スコアブック背景フォト染み込み表現） */}
+        <div className="relative bg-card overflow-hidden">
+          {isScheduledMatch && (
+            <div
+              aria-hidden="true"
+              className="absolute inset-x-0 top-0 h-50 sm:h-54 pointer-events-none select-none overflow-hidden"
+            >
+              <img
+                src="/feature-bg-scorebook.webp"
+                alt=""
+                width={960}
+                height={640}
+                loading={initialExpanded ? "eager" : "lazy"}
+                decoding="async"
+                style={{
+                  WebkitMaskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
+                  maskImage:
+                    "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
+                }}
+                className="w-full h-full object-cover object-[center_82%] transition-transform duration-500 ease-out sm:group-hover:scale-[1.03]"
+              />
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "relative z-10 p-3.5 sm:p-4",
+              isScheduledMatch && "pt-34 sm:pt-38"
+            )}
+          >
+            <div className="flex items-center justify-between gap-3">
             {/* 左側：対戦相手・日時球場 */}
             <div className="flex-1 min-w-0">
               <h3 className="text-base sm:text-lg font-black truncate text-foreground tracking-tight">
@@ -1210,6 +1239,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>
