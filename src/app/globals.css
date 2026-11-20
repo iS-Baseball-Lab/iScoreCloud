@@ -411,3 +411,23 @@
     }
   }
 }
+
+/* =======================================================
+   ⚾️ 12. MODAL BACKGROUND SCROLL & OVERSCROLL CONTAINMENT
+   ======================================================= */
+html[data-iscore-modal-open="true"],
+body[data-iscore-modal-open="true"] {
+  overscroll-behavior: none;
+}
+
+body[data-iscore-modal-open="true"] > div,
+body[data-iscore-modal-open="true"] > div [class*="overflow-y-auto"],
+body[data-iscore-modal-open="true"] > div [class*="overflow-auto"],
+body[data-iscore-modal-open="true"] > div [class*="overflow-x-auto"],
+body[data-iscore-modal-open="true"] > div textarea {
+  overscroll-behavior: contain;
+}
+
+body[data-iscore-modal-open="true"] input[type="range"] {
+  touch-action: pan-x;
+}

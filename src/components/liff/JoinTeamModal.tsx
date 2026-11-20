@@ -299,7 +299,7 @@ export function JoinTeamModal({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
       <div className="w-full max-w-md bg-card rounded-t-2xl sm:rounded-2xl border border-border shadow-xl overflow-hidden sm:my-auto max-h-[90dvh] flex flex-col animate-in zoom-in-95 duration-200">
         {/* ヘッダー (A-3 Dark Solid Header Cap + LINEミニアプリアイコン) */}
         <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between shrink-0">

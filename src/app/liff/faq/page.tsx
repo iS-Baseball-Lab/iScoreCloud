@@ -527,8 +527,8 @@ export default function LiffFaqPage() {
       {isCreateModalOpen &&
         mounted &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[90dvh] flex flex-col animate-in zoom-in-95 duration-200">
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">
@@ -675,8 +675,8 @@ export default function LiffFaqPage() {
       {editingFaq &&
         mounted &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 overflow-y-auto animate-in fade-in duration-200">
-            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[92vh] flex flex-col animate-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/60 animate-in fade-in duration-200">
+            <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xs overflow-hidden my-auto max-h-[90dvh] flex flex-col animate-in zoom-in-95 duration-200">
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-400/30 flex items-center justify-center font-black">

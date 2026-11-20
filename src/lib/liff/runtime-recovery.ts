@@ -1,6 +1,8 @@
 // filepath: src/lib/liff/runtime-recovery.ts
 "use client";
 
+import { syncModalScrollLockState } from "@/lib/liff/modal-scroll-lock";
+
 /**
  * 🛡️ LIFF WebView 自己修復ランタイムガード
  * 1. デプロイ更新直後に LINE の WebView メモリキャッシュ上に古い HTML シェルが残っていた場合、
@@ -171,6 +173,8 @@ export function releaseOrphanedBodyLocks(): void {
       }
     }
   }
+
+  syncModalScrollLockState();
 }
 
 function notifyWebViewResumed(): void {

@@ -33,6 +33,7 @@ import {
   releaseOrphanedBodyLocks,
 } from "@/lib/liff/runtime-recovery";
 import { installGlobalExternalLinkInterceptor } from "@/lib/liff/external-link";
+import { installGlobalModalScrollLock } from "@/lib/liff/modal-scroll-lock";
 import {
   LIFF_SCORE_SETTINGS_CHANGE_EVENT,
   loadTeamPracticeMatchLabel,
@@ -366,6 +367,7 @@ export function LiffProvider({
     installLiffHistoryTracker();
     installLiffRuntimeRecovery();
     installGlobalExternalLinkInterceptor();
+    installGlobalModalScrollLock();
   }
   const router = useRouter();
   const pathname = usePathname();
