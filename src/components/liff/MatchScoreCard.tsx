@@ -51,6 +51,7 @@ import {
   type LiffMatchScheduleSyncInfo,
   type LiffMyMatchIdentity,
 } from "@/lib/liff/match-day-ops";
+import { resolveMatchCardPhotoMelt } from "@/lib/liff/match-card-bg";
 
 export interface MatchCardData {
   id: string;
@@ -324,6 +325,12 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
   const isWin = match.status === "finished" && match.myScore > match.opponentScore;
   const isLoss = match.status === "finished" && match.myScore < match.opponentScore;
   const isDraw = match.status === "finished" && match.myScore === match.opponentScore;
+  const photoMeltAsset = resolveMatchCardPhotoMelt({
+    matchId: match.id,
+    isScheduledMatch,
+    isRainout,
+    hasYoutubeVideo: Boolean(youtubeVideoId),
+  });
 
   let effectiveRawOps: unknown = match.matchDayOps ?? null;
   if (isDemoMatchId(match.id) && typeof window !== "undefined") {
@@ -590,15 +597,15 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           </div>
         </div>
 
-        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス（予定時は上部スコアブック背景フォト染み込み表現） */}
+        {/* 純白ボディ：対戦相手・日時球場・中継スコアボックス（動画なしの予定・試合中・終了時は上部背景フォト染み込み表現） */}
         <div className="relative bg-card overflow-hidden">
-          {isScheduledMatch && (
+          {photoMeltAsset && (
             <div
               aria-hidden="true"
               className="absolute inset-x-0 top-0 h-50 sm:h-54 pointer-events-none select-none overflow-hidden"
             >
               <img
-                src="/feature-bg-scorebook.webp"
+                src={photoMeltAsset.src}
                 alt=""
                 width={960}
                 height={640}
@@ -610,7 +617,10 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                   maskImage:
                     "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
                 }}
-                className="w-full h-full object-cover object-[center_82%] transition-transform duration-500 ease-out sm:group-hover:scale-[1.03]"
+                className={cn(
+                  "w-full h-full object-cover transition-transform duration-500 ease-out sm:group-hover:scale-[1.03]",
+                  photoMeltAsset.objectPosition
+                )}
               />
             </div>
           )}
@@ -618,7 +628,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
           <div
             className={cn(
               "relative z-10 p-3.5 sm:p-4",
-              isScheduledMatch && "pt-34 sm:pt-38"
+              photoMeltAsset && "pt-34 sm:pt-38"
             )}
           >
             <div className="flex items-center justify-between gap-3">
