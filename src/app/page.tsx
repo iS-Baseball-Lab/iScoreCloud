@@ -33,6 +33,9 @@ import { cn } from "@/lib/utils";
 interface FeatureDomainItem {
   number: string;
   accentClass: string;
+  checkColorClass: string;
+  bgImageSrc: string;
+  bgObjectPosition: string;
   badgeText: string;
   title: string;
   lead: string;
@@ -51,6 +54,9 @@ const FEATURE_DOMAINS: FeatureDomainItem[] = [
   {
     number: "01",
     accentClass: "border-primary",
+    checkColorClass: "text-primary",
+    bgImageSrc: "/feature-bg-scorebook.webp",
+    bgObjectPosition: "object-[center_82%]",
     badgeText: "SCOREBOOK, LIVE & AI",
     title: "試合・スコア記録 ＆ AI解析",
     lead: "ベンチでの片手入力から伝統的な早稲田式清書シート出力、1球ごとの速報共有まで一気通貫で連携します。",
@@ -64,6 +70,9 @@ const FEATURE_DOMAINS: FeatureDomainItem[] = [
   {
     number: "02",
     accentClass: "border-amber-500",
+    checkColorClass: "text-amber-500",
+    bgImageSrc: "/feature-bg-team.webp",
+    bgObjectPosition: "object-[center_64%]",
     badgeText: "TEAM, PLAYERS, STATS & GALLERY",
     title: "チーム情報・選手名鑑・成績 ＆ 写真共有",
     lead: "クラブの方針や戦績、選手一人ひとりの成長推移、試合の思い出までチーム専用空間に美しく蓄積します。",
@@ -77,6 +86,9 @@ const FEATURE_DOMAINS: FeatureDomainItem[] = [
   {
     number: "03",
     accentClass: "border-teal-500",
+    checkColorClass: "text-teal-600 dark:text-teal-400",
+    bgImageSrc: "/feature-bg-ground.webp",
+    bgObjectPosition: "object-[center_58%]",
     badgeText: "SCHEDULE, CARPOOL & GROUNDS",
     title: "予定・出欠・遠征配車 ＆ 当日運営",
     lead: "週末の連絡調整や遠征移動、グラウンド注意事項の共有など保護者・スタッフの負担を大幅に軽減します。",
@@ -90,6 +102,9 @@ const FEATURE_DOMAINS: FeatureDomainItem[] = [
   {
     number: "04",
     accentClass: "border-[#06C755]",
+    checkColorClass: "text-[#06C755]",
+    bgImageSrc: "/feature-bg-admin.webp",
+    bgObjectPosition: "object-center",
     badgeText: "TEAM ADMIN & SECURITY",
     title: "チーム管理・資料共有 ＆ 安心設計",
     lead: "学童野球から中学・部活・草野球まで、クラブの規模や体制に合わせたきめ細かな権限・資産管理を備えています。",
@@ -330,7 +345,7 @@ export default function LandingPage() {
             {FEATURE_DOMAINS.map((item) => (
               <article
                 key={item.number}
-                className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col"
+                className="group rounded-2xl border border-border bg-card shadow-xs overflow-hidden flex flex-col"
               >
                 <div
                   className={cn(
@@ -349,27 +364,59 @@ export default function LandingPage() {
                   </span>
                 </div>
 
-                <div className="p-5 sm:p-6 space-y-3.5 flex-1 flex flex-col">
-                  <div className="space-y-1.5">
-                    <h3 className="text-base sm:text-lg font-black tracking-tight text-foreground">
-                      {item.title}
-                    </h3>
-                    <p className="text-xs sm:text-sm font-bold leading-relaxed text-muted-foreground">
-                      {item.lead}
-                    </p>
+                <div className="relative flex-1 flex flex-col bg-card overflow-hidden">
+                  {/* 上部から背景（bg-card）へ段々に染み込むフォトレイヤー */}
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-x-0 top-0 h-50 sm:h-54 pointer-events-none select-none overflow-hidden"
+                  >
+                    <img
+                      src={item.bgImageSrc}
+                      alt=""
+                      width={960}
+                      height={640}
+                      loading="lazy"
+                      decoding="async"
+                      style={{
+                        WebkitMaskImage:
+                          "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
+                        maskImage:
+                          "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.28) 66%, rgba(0,0,0,0.05) 85%, rgba(0,0,0,0) 100%)",
+                      }}
+                      className={cn(
+                        "w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]",
+                        item.bgObjectPosition
+                      )}
+                    />
                   </div>
 
-                  <ul className="space-y-2 pt-2 border-t border-border">
-                    {item.highlights.map((point) => (
-                      <li
-                        key={point}
-                        className="flex items-start gap-2 text-xs leading-relaxed font-medium text-foreground/90"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <div className="relative z-10 px-5 pb-5 pt-34 sm:px-6 sm:pb-6 sm:pt-38 space-y-3.5 flex-1 flex flex-col">
+                    <div className="space-y-1.5">
+                      <h3 className="text-base sm:text-lg font-black tracking-tight text-foreground">
+                        {item.title}
+                      </h3>
+                      <p className="text-xs sm:text-sm font-bold leading-relaxed text-muted-foreground">
+                        {item.lead}
+                      </p>
+                    </div>
+
+                    <ul className="space-y-2 pt-2.5 border-t border-border">
+                      {item.highlights.map((point) => (
+                        <li
+                          key={point}
+                          className="flex items-start gap-2 text-xs leading-relaxed font-medium text-foreground/90"
+                        >
+                          <CheckCircle2
+                            className={cn(
+                              "w-3.5 h-3.5 shrink-0 mt-0.5",
+                              item.checkColorClass
+                            )}
+                          />
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </article>
             ))}
