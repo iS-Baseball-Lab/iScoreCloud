@@ -37,20 +37,20 @@
 ## 開発コマンド
 
 ```bash
-# 依存パッケージのインストール
-npm install
+# 依存パッケージのインストール（Corepack 有効化環境）
+pnpm install
 
 # フロントエンド開発サーバー起動 (http://localhost:3000)
-npm run dev
+pnpm run dev
 
 # ユニットテストの実行 (Vitest)
-npm test
+pnpm test
 
 # 品質ゲート一括検証（Vitest + Next.js 本番ビルド + TypeScript 型チェック）
-npm run check
+pnpm run check
 
 # Cloudflare Workers ローカルプレビュー
-npm run preview
+pnpm run preview
 ```
 
 ---
@@ -61,10 +61,10 @@ npm run preview
 
 ```bash
 # ローカル D1 へのマイグレーション適用
-npm run db:mig:local
+pnpm run db:mig:local
 
 # 本番リモート D1 へのマイグレーション適用
-npm run db:mig:remote
+pnpm run db:mig:remote
 ```
 
 ---
@@ -72,7 +72,7 @@ npm run db:mig:remote
 ## デプロイフロー
 
 `main` ブランチへの Push により以下が自動実行されます：
-1. **GitHub Actions CI**（`.github/workflows/ci.yml`）：`npm ci` ➔ `npm run check`（自動テスト・厳格型検査・静的エクスポート検証）
-2. **Cloudflare Workers Builds**：`npm run build` ➔ `npx wrangler deploy` によるエッジ本番デプロイ
+1. **GitHub Actions CI**（`.github/workflows/ci.yml`）：`pnpm install --frozen-lockfile` ➔ `pnpm run check`（自動テスト・厳格型検査・静的エクスポート検証）
+2. **Cloudflare Workers Builds**：`pnpm run build` ➔ `pnpm exec wrangler deploy` によるエッジ本番デプロイ
 
 UI/UX 規約・マルチチーム分離認可規約・野球規則エンジンの詳細は [`.agent/skills/i-score-dev/SKILL.md`](.agent/skills/i-score-dev/SKILL.md) を参照してください。

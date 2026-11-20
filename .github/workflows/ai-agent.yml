@@ -26,15 +26,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm' # ⚡ 2回目以降のビルドを高速化
+          node-version: 24
+          cache: 'pnpm' # ⚡ 2回目以降のビルドを高速化
 
       # 🏗️ 【超重要】AIが書いたコードを実際にテストするため、事前に依存関係をインストール
       - name: Install Dependencies
-        run: npm install --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
 
       - name: Gemini Self-Healing Loop
         id: ai
@@ -101,13 +104,13 @@ jobs:
               // 💾 ファイルに一旦書き込み
               fs.writeFileSync(filePath, rawText, 'utf8');
               
-              // 🏗️ 本物のコンパイラ（npm run build）をぶち当てて実力テスト！（子プロセスからはシークレットを除外）
+              // 🏗️ 本物のコンパイラ（pnpm run build）をぶち当てて実力テスト！（子プロセスからはシークレットを除外）
               try {
-                console.log("⚙️  コンパイルテストを実行中... (npm run build)");
+                console.log("⚙️  コンパイルテストを実行中... (pnpm run build)");
                 const safeBuildEnv = { ...process.env };
                 delete safeBuildEnv.GEMINI_API_KEY;
                 delete safeBuildEnv.GITHUB_TOKEN;
-                execSync('npm run build', { stdio: 'pipe', env: safeBuildEnv });
+                execSync('pnpm run build', { stdio: 'pipe', env: safeBuildEnv });
                 
                 console.log("✅【コンパイル成功】エラーなし！完璧なコードが完成しました！");
                 success = true;

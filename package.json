@@ -1,6 +1,7 @@
 {
   "name": "iscore",
   "description": "Build a full-stack web application with Next.js.",
+  "packageManager": "pnpm@12.21.0",
   "cloudflare": {
     "label": "Next.js Framework Starter",
     "products": [
@@ -18,6 +19,7 @@
     "@radix-ui/react-checkbox": "^1.4.1",
     "@radix-ui/react-label": "^2.1.17",
     "@radix-ui/react-separator": "^1.2.0",
+    "@radix-ui/react-slot": "^1.5.0",
     "better-auth": "^1.7.18",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -64,10 +66,10 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "check": "npm run test && npm run build && node node_modules/.bin/tsc",
+    "check": "pnpm run test && pnpm run build && pnpm exec tsc",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv env.d.ts",
-    "deploy": "npm run build && npm run db:mig:remote && npx wrangler deploy",
-    "preview": "npm run build && npx wrangler dev",
+    "deploy": "pnpm run build && pnpm run db:mig:remote && pnpm exec wrangler deploy",
+    "preview": "pnpm run build && pnpm exec wrangler dev",
     "db:exec": "wrangler d1 execute i-score-db",
     "db:mig:remote": "wrangler d1 migrations apply i-score-db --remote",
     "db:mig:local": "wrangler d1 migrations apply i-score-db --local"
