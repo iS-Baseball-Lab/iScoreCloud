@@ -448,10 +448,21 @@ export function LiffBottomNav() {
   const [isMenuClosing, setIsMenuClosing] = useState(false);
   const closeMenuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const menuScrollBodyRef = useRef<HTMLDivElement | null>(null);
+  const swipeViewportRef = useRef<HTMLDivElement | null>(null);
+  const swipeTrackRef = useRef<HTMLDivElement | null>(null);
+  const tabPillRef = useRef<HTMLDivElement | null>(null);
+  const suppressLinkClickUntilRef = useRef<number>(0);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule_match");
   const [navConfig, setNavConfig] = useState<BottomNavConfig>(
     () => hydratedBottomNavConfig ?? getDefaultBottomNavConfig()
   );
+
+  const activeTabIndex = useMemo(
+    () => Math.max(0, MENU_TABS.findIndex((t) => t.id === selectedCategory)),
+    [selectedCategory]
+  );
+  const activeTabIndexRef = useRef(activeTabIndex);
+  activeTabIndexRef.current = activeTabIndex;
 
   const clearCloseMenuTimer = useCallback(() => {
     if (closeMenuTimerRef.current !== null) {
@@ -465,6 +476,18 @@ export function LiffBottomNav() {
     setIsOtherMenuOpen(false);
     setIsMenuClosing(false);
   }, [clearCloseMenuTimer]);
+
+  const handleMenuItemLinkClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (performance.now() < suppressLinkClickUntilRef.current) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      closeMenuImmediate();
+    },
+    [closeMenuImmediate]
+  );
 
   const openMenu = useCallback(() => {
     clearCloseMenuTimer();
@@ -491,11 +514,179 @@ export function LiffBottomNav() {
   }, [closeMenuAnimated, isOtherMenuOpen, openMenu]);
 
   const handleSelectCategory = useCallback((category: MenuCategory) => {
+    if (swipeTrackRef.current) {
+      swipeTrackRef.current.style.transitionDuration = "";
+    }
+    if (tabPillRef.current) {
+      tabPillRef.current.style.transitionDuration = "";
+    }
     setSelectedCategory(category);
-    if (menuScrollBodyRef.current) {
-      menuScrollBodyRef.current.scrollTop = 0;
+    if (menuScrollBodyRef.current && menuScrollBodyRef.current.scrollTop > 0) {
+      menuScrollBodyRef.current.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, []);
+
+  const isMenuPortalVisible = isOtherMenuOpen || isMenuClosing;
+
+  useEffect(() => {
+    if (!isMenuPortalVisible) return;
+    const scrollBody = menuScrollBodyRef.current;
+    if (!scrollBody) return;
+
+    const gesture = {
+      active: false,
+      axis: "undecided" as "undecided" | "horizontal" | "vertical",
+      startX: 0,
+      startY: 0,
+      lastX: 0,
+      startTime: 0,
+      width: 360,
+      startIndex: 0,
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) {
+        gesture.active = false;
+        return;
+      }
+      const touch = e.touches[0];
+      gesture.active = true;
+      gesture.axis = "undecided";
+      gesture.startX = touch.clientX;
+      gesture.startY = touch.clientY;
+      gesture.lastX = touch.clientX;
+      gesture.startTime = performance.now();
+      gesture.width = Math.max(
+        1,
+        swipeViewportRef.current?.clientWidth || scrollBody.clientWidth || 360
+      );
+      gesture.startIndex = activeTabIndexRef.current;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!gesture.active || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - gesture.startX;
+      const dy = touch.clientY - gesture.startY;
+
+      if (gesture.axis === "undecided") {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dx) > Math.abs(dy) * 1.1) {
+          gesture.axis = "horizontal";
+          if (swipeTrackRef.current) {
+            swipeTrackRef.current.style.transitionDuration = "0ms";
+          }
+          if (tabPillRef.current) {
+            tabPillRef.current.style.transitionDuration = "0ms";
+          }
+        } else {
+          gesture.axis = "vertical";
+          return;
+        }
+      }
+
+      if (gesture.axis !== "horizontal") return;
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+
+      gesture.lastX = touch.clientX;
+      const maxIndex = MENU_TABS.length - 1;
+      const isAtEdge =
+        (gesture.startIndex === 0 && dx > 0) ||
+        (gesture.startIndex === maxIndex && dx < 0);
+      const clampedDx = Math.max(-gesture.width, Math.min(gesture.width, dx));
+      const effectiveDx = isAtEdge ? clampedDx * 0.26 : clampedDx;
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transform = `translate3d(calc(${
+          -gesture.startIndex * 100
+        }% + ${effectiveDx}px), 0, 0)`;
+      }
+      if (tabPillRef.current) {
+        const pillProgress = Math.max(
+          -0.26,
+          Math.min(
+            maxIndex + 0.26,
+            gesture.startIndex - effectiveDx / gesture.width
+          )
+        );
+        tabPillRef.current.style.transform = `translate3d(${
+          pillProgress * 100
+        }%, 0, 0)`;
+      }
+    };
+
+    const finishGesture = () => {
+      if (!gesture.active) return;
+      const wasHorizontal = gesture.axis === "horizontal";
+      const totalDx = gesture.lastX - gesture.startX;
+      const elapsed = Math.max(1, performance.now() - gesture.startTime);
+      const velocity = Math.abs(totalDx) / elapsed;
+      const startIndex = gesture.startIndex;
+      const width = gesture.width;
+
+      gesture.active = false;
+      gesture.axis = "undecided";
+
+      if (!wasHorizontal) return;
+
+      suppressLinkClickUntilRef.current = performance.now() + 320;
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transitionDuration = "";
+      }
+      if (tabPillRef.current) {
+        tabPillRef.current.style.transitionDuration = "";
+      }
+
+      const maxIndex = MENU_TABS.length - 1;
+      const threshold = Math.min(60, width * 0.16);
+      const isFastFlick = Math.abs(totalDx) >= 22 && velocity >= 0.32;
+
+      let nextIndex = startIndex;
+      if (
+        (totalDx <= -threshold || (totalDx < 0 && isFastFlick)) &&
+        startIndex < maxIndex
+      ) {
+        nextIndex = startIndex + 1;
+      } else if (
+        (totalDx >= threshold || (totalDx > 0 && isFastFlick)) &&
+        startIndex > 0
+      ) {
+        nextIndex = startIndex - 1;
+      }
+
+      if (swipeTrackRef.current) {
+        swipeTrackRef.current.style.transform = `translate3d(${
+          -nextIndex * 100
+        }%, 0, 0)`;
+      }
+      if (tabPillRef.current) {
+        tabPillRef.current.style.transform = `translate3d(${
+          nextIndex * 100
+        }%, 0, 0)`;
+      }
+
+      if (nextIndex !== startIndex) {
+        handleSelectCategory(MENU_TABS[nextIndex].id);
+      }
+    };
+
+    scrollBody.addEventListener("touchstart", onTouchStart, { passive: true });
+    scrollBody.addEventListener("touchmove", onTouchMove, { passive: false });
+    scrollBody.addEventListener("touchend", finishGesture, { passive: true });
+    scrollBody.addEventListener("touchcancel", finishGesture, {
+      passive: true,
+    });
+
+    return () => {
+      scrollBody.removeEventListener("touchstart", onTouchStart);
+      scrollBody.removeEventListener("touchmove", onTouchMove);
+      scrollBody.removeEventListener("touchend", finishGesture);
+      scrollBody.removeEventListener("touchcancel", finishGesture);
+    };
+  }, [isMenuPortalVisible, handleSelectCategory]);
 
   useEffect(() => {
     return () => {
@@ -923,9 +1114,17 @@ export function LiffBottomNav() {
                   </button>
                 </div>
 
-                {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
+                {/* 🏷️ 均等3分割セグメントタブ（スライドピル連動・チラつきゼロ） */}
                 <div className="px-5 py-3 bg-card">
-                  <div className="grid grid-cols-3 gap-1 p-1 bg-muted rounded-2xl border border-border">
+                  <div className="relative grid grid-cols-3 p-1 bg-muted rounded-2xl border border-border overflow-hidden">
+                    <div
+                      ref={tabPillRef}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-card border border-border shadow-xs transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                      style={{
+                        transform: `translate3d(${activeTabIndex * 100}%, 0, 0)`,
+                      }}
+                    />
                     {MENU_TABS.map((tab) => {
                       const isSelected = selectedCategory === tab.id;
                       const TabIcon = tab.icon;
@@ -936,19 +1135,23 @@ export function LiffBottomNav() {
                           key={tab.id}
                           type="button"
                           onClick={() => handleSelectCategory(tab.id)}
-                          className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 cursor-pointer ${
+                          className={`relative z-10 flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-black transition-colors duration-150 cursor-pointer select-none ${
                             isSelected
-                              ? "bg-card text-foreground border-border shadow-xs font-black"
-                              : "border-transparent text-muted-foreground hover:text-foreground font-bold"
+                              ? "text-foreground"
+                              : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
-                          <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
+                          <TabIcon
+                            className={`w-3.5 h-3.5 shrink-0 transition-colors duration-150 ${
+                              isSelected ? "text-primary" : ""
+                            }`}
+                          />
                           <span className="truncate">{tab.label}</span>
                           <span
-                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full border font-black transition-colors duration-150 ${
                               isSelected
-                                ? "bg-primary/12 text-primary font-black"
-                                : "bg-card text-muted-foreground border border-border"
+                                ? "bg-primary/12 text-primary border-transparent"
+                                : "bg-card text-muted-foreground border-border"
                             }`}
                           >
                             {count}
@@ -960,164 +1163,172 @@ export function LiffBottomNav() {
                 </div>
               </div>
 
-              {/* 🌟 スクロール領域（1×1グリッド重ね配置により全3タブのモーダル高さを1pxの狂いなく完全統一） */}
+              {/* 🌟 スクロール＆左右スワイプ領域（横並び3ペイントラックにより全3タブ高さ完全統一＆チラつきゼロ） */}
               <div
                 ref={menuScrollBodyRef}
-                className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-4 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col touch-pan-y"
               >
-                <div className="grid grid-cols-1">
-                  {MENU_TABS.map((tab) => {
-                    const isTabSelected = selectedCategory === tab.id;
-                    const tabItems = MENU_ITEMS.filter((item) => item.category === tab.id);
-                    const sections = CATEGORY_SECTIONS[tab.id];
+                <div ref={swipeViewportRef} className="w-full overflow-hidden">
+                  <div
+                    ref={swipeTrackRef}
+                    className="flex w-full items-start transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
+                    style={{
+                      transform: `translate3d(${-activeTabIndex * 100}%, 0, 0)`,
+                    }}
+                  >
+                    {MENU_TABS.map((tab) => {
+                      const isTabSelected = selectedCategory === tab.id;
+                      const tabItems = MENU_ITEMS.filter((item) => item.category === tab.id);
+                      const sections = CATEGORY_SECTIONS[tab.id];
 
-                    return (
-                      <div
-                        key={tab.id}
-                        inert={!isTabSelected}
-                        aria-hidden={!isTabSelected}
-                        className={`col-start-1 row-start-1 self-start space-y-4 ${
-                          isTabSelected
-                            ? "visible z-10"
-                            : "invisible pointer-events-none select-none"
-                        }`}
-                      >
-                        {sections ? (
-                          sections.map((section) => {
-                            const SectionIcon = section.icon;
-                            const sectionItems = tabItems.filter(
-                              (item) => item.subGroup === section.key
-                            );
-                            return (
-                              <div key={section.key} className="space-y-2">
-                                <div className="flex items-center justify-between gap-2 px-1 min-h-[22px]">
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <SectionIcon
-                                      className={`w-3.5 h-3.5 shrink-0 ${section.iconTextClass}`}
-                                    />
-                                    <span className="text-[11px] font-black tracking-tight text-muted-foreground">
-                                      {section.label}
-                                    </span>
-                                  </div>
-                                  {section.badgeLabel && (
-                                    <span
-                                      className={
-                                        section.badgeAdmin
-                                          ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0"
-                                          : "inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-[9.5px] font-bold shrink-0"
-                                      }
-                                    >
-                                      {section.badgeAdmin && (
-                                        <Lock className="w-2.5 h-2.5 shrink-0" />
-                                      )}
-                                      <span>{section.badgeLabel}</span>
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-2 gap-2.5">
-                                  {sectionItems.map((item) => {
-                                    const ItemIcon = item.icon;
-                                    const isFullWidth = item.fullWidth;
-
-                                    return (
-                                      <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onPointerDown={() => handlePointerWarmup(item.href)}
-                                        onClick={closeMenuImmediate}
-                                        className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${
-                                          item.hoverBorderClass ?? "hover:border-primary/40"
-                                        } transition-all group active:scale-95 ${
-                                          isFullWidth ? "col-span-2" : ""
-                                        }`}
-                                      >
-                                        <span
-                                          className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}
-                                        >
-                                          <ItemIcon className="w-5 h-5" />
-                                          {item.adminOnly && (
-                                            <span
-                                              aria-label="管理者専用"
-                                              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
-                                            >
-                                              <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
-                                            </span>
-                                          )}
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-xs font-black text-foreground truncate">
-                                            {item.title}
-                                          </p>
-                                          <p className="text-[10px] text-muted-foreground font-bold truncate">
-                                            {item.subtitle}
-                                          </p>
-                                        </div>
-                                        {isFullWidth && (
-                                          <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
-                                        )}
-                                      </Link>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="grid grid-cols-2 gap-2.5">
-                            {tabItems.map((item) => {
-                              const ItemIcon = item.icon;
-                              const isFullWidth = item.fullWidth;
-
+                      return (
+                        <div
+                          key={tab.id}
+                          aria-hidden={!isTabSelected}
+                          className="w-full shrink-0 px-5 self-start space-y-4 select-none"
+                        >
+                          {sections ? (
+                            sections.map((section) => {
+                              const SectionIcon = section.icon;
+                              const sectionItems = tabItems.filter(
+                                (item) => item.subGroup === section.key
+                              );
                               return (
-                                <Link
-                                  key={item.href}
-                                  href={item.href}
-                                  onPointerDown={() => handlePointerWarmup(item.href)}
-                                  onClick={closeMenuImmediate}
-                                  className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
-                                    isFullWidth ? "col-span-2" : ""
-                                  }`}
-                                >
-                                  <span
-                                    className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}
-                                  >
-                                    <ItemIcon className="w-5 h-5" />
-                                    {item.adminOnly && (
+                                <div key={section.key} className="space-y-2">
+                                  <div className="flex items-center justify-between gap-2 px-1 min-h-[22px]">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <SectionIcon
+                                        className={`w-3.5 h-3.5 shrink-0 ${section.iconTextClass}`}
+                                      />
+                                      <span className="text-[11px] font-black tracking-tight text-muted-foreground">
+                                        {section.label}
+                                      </span>
+                                    </div>
+                                    {section.badgeLabel && (
                                       <span
-                                        aria-label="管理者専用"
-                                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                        className={
+                                          section.badgeAdmin
+                                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0"
+                                            : "inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-[9.5px] font-bold shrink-0"
+                                        }
                                       >
-                                        <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                                        {section.badgeAdmin && (
+                                          <Lock className="w-2.5 h-2.5 shrink-0" />
+                                        )}
+                                        <span>{section.badgeLabel}</span>
                                       </span>
                                     )}
-                                  </span>
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-xs font-black text-foreground truncate">
-                                      {item.title}
-                                    </p>
-                                    <p className="text-[10px] text-muted-foreground font-bold truncate">
-                                      {item.subtitle}
-                                    </p>
                                   </div>
-                                  {isFullWidth && (
-                                    <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
-                                  )}
-                                </Link>
+                                  <div className="grid grid-cols-2 gap-2.5">
+                                    {sectionItems.map((item) => {
+                                      const ItemIcon = item.icon;
+                                      const isFullWidth = item.fullWidth;
+
+                                      return (
+                                        <Link
+                                          key={item.href}
+                                          href={item.href}
+                                          draggable={false}
+                                          tabIndex={isTabSelected ? undefined : -1}
+                                          onPointerDown={() => handlePointerWarmup(item.href)}
+                                          onClick={handleMenuItemLinkClick}
+                                          className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${
+                                            item.hoverBorderClass ?? "hover:border-primary/40"
+                                          } transition-[transform,border-color] duration-150 group active:scale-[0.98] ${
+                                            isFullWidth ? "col-span-2" : ""
+                                          }`}
+                                        >
+                                          <span
+                                            className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
+                                          >
+                                            <ItemIcon className="w-5 h-5" />
+                                            {item.adminOnly && (
+                                              <span
+                                                aria-label="管理者専用"
+                                                className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                              >
+                                                <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                                              </span>
+                                            )}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-black text-foreground truncate">
+                                              {item.title}
+                                            </p>
+                                            <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                              {item.subtitle}
+                                            </p>
+                                          </div>
+                                          {isFullWidth && (
+                                            <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
+                                          )}
+                                        </Link>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                            })
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2.5">
+                              {tabItems.map((item) => {
+                                const ItemIcon = item.icon;
+                                const isFullWidth = item.fullWidth;
+
+                                return (
+                                  <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    draggable={false}
+                                    tabIndex={isTabSelected ? undefined : -1}
+                                    onPointerDown={() => handlePointerWarmup(item.href)}
+                                    onClick={handleMenuItemLinkClick}
+                                    className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-[transform,border-color] duration-150 group active:scale-[0.98] ${
+                                      isFullWidth ? "col-span-2" : ""
+                                    }`}
+                                  >
+                                    <span
+                                      className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-105 transition-transform duration-150 shadow-2xs ${item.colorClass}`}
+                                    >
+                                      <ItemIcon className="w-5 h-5" />
+                                      {item.adminOnly && (
+                                        <span
+                                          aria-label="管理者専用"
+                                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                        >
+                                          <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                                        </span>
+                                      )}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-xs font-black text-foreground truncate">
+                                        {item.title}
+                                      </p>
+                                      <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                        {item.subtitle}
+                                      </p>
+                                    </div>
+                                    {isFullWidth && (
+                                      <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
+                                    )}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 📜 法務・規約リンク */}
-                <div className="mt-4 pt-3 border-t border-border flex items-center justify-center gap-3 shrink-0">
+                <div className="mt-4 mx-5 pt-3 border-t border-border flex items-center justify-center gap-3 shrink-0">
                   <Link
                     href="/liff/terms"
-                    onClick={closeMenuImmediate}
-                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                    draggable={false}
+                    onClick={handleMenuItemLinkClick}
+                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
                   >
                     <FileText className="w-3.5 h-3.5 text-primary" />
                     <span>利用規約</span>
@@ -1125,8 +1336,9 @@ export function LiffBottomNav() {
 
                   <Link
                     href="/liff/privacy"
-                    onClick={closeMenuImmediate}
-                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                    draggable={false}
+                    onClick={handleMenuItemLinkClick}
+                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-[transform,background-color,color] duration-150 flex items-center gap-1.5"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-primary" />
                     <span>プライバシーポリシー</span>
