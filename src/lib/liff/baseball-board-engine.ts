@@ -802,7 +802,7 @@ export function getCourseTargetX(course: PitchCourse, batterBats: BatterHand): n
 }
 
 /**
- * CPU投手の球種・コース選択AI
+ * CPU投手の球種・コース・球速ギア選択AI（打者は何キロが来るか分からないリアルな駆け引き！）
  */
 export function chooseCpuPitch(params: {
   difficulty: CpuDifficulty;
@@ -812,12 +812,42 @@ export function chooseCpuPitch(params: {
   isDerby?: boolean;
 }): PitchSpec {
   const { difficulty, balls, strikes, vanishLeft, isDerby } = params;
+
+  const pickCpuSpeedPreset = (): PitchSpeedPreset => {
+    const sr = Math.random();
+    if (isDerby) {
+      if (sr < 0.2) return "slow";
+      if (sr < 0.6) return "normal";
+      if (sr < 0.85) return "fast";
+      return "monster";
+    }
+    if (difficulty === "easy") {
+      if (sr < 0.56) return "slow";
+      if (sr < 0.94) return "normal";
+      return "fast";
+    }
+    if (difficulty === "normal") {
+      if (sr < 0.18) return "slow";
+      if (sr < 0.64) return "normal";
+      if (sr < 0.91) return "fast";
+      return "monster";
+    }
+    // hard: 剛速球と超スロー緩急の本格派エース
+    if (sr < 0.18) return "slow";
+    if (sr < 0.38) return "normal";
+    if (sr < 0.72) return "fast";
+    return "monster";
+  };
+
+  const speedPreset = pickCpuSpeedPreset();
+
   if (isDerby) {
     const courses: PitchCourse[] = ["middle", "middle", "inside", "outside"];
     const c = courses[Math.floor(Math.random() * courses.length)] ?? "middle";
     return {
       type: Math.random() < 0.75 ? "straight" : "curve",
       course: c,
+      speedPreset,
     };
   }
 
@@ -829,7 +859,7 @@ export function chooseCpuPitch(params: {
     ((difficulty === "hard" && Math.random() < 0.45) ||
       (difficulty === "normal" && Math.random() < 0.25))
   ) {
-    return { type: "vanish", course: "middle" };
+    return { type: "vanish", course: "middle", speedPreset: "normal" };
   }
 
   const courses: PitchCourse[] =
@@ -840,21 +870,21 @@ export function chooseCpuPitch(params: {
 
   const r = Math.random();
   if (difficulty === "easy") {
-    if (r < 0.68) return { type: "straight", course };
-    if (r < 0.88) return { type: "curve", course };
-    return { type: "changeup", course };
+    if (r < 0.68) return { type: "straight", course, speedPreset };
+    if (r < 0.88) return { type: "curve", course, speedPreset };
+    return { type: "changeup", course, speedPreset };
   }
   if (difficulty === "normal") {
-    if (r < 0.42) return { type: "straight", course };
-    if (r < 0.65) return { type: "curve", course };
-    if (r < 0.84) return { type: "shoot", course };
-    return { type: "changeup", course };
+    if (r < 0.42) return { type: "straight", course, speedPreset };
+    if (r < 0.65) return { type: "curve", course, speedPreset };
+    if (r < 0.84) return { type: "shoot", course, speedPreset };
+    return { type: "changeup", course, speedPreset };
   }
   // hard
-  if (r < 0.34) return { type: "straight", course };
-  if (r < 0.58) return { type: "curve", course };
-  if (r < 0.8) return { type: "shoot", course };
-  return { type: "changeup", course };
+  if (r < 0.34) return { type: "straight", course, speedPreset };
+  if (r < 0.58) return { type: "curve", course, speedPreset };
+  if (r < 0.8) return { type: "shoot", course, speedPreset };
+  return { type: "changeup", course, speedPreset };
 }
 
 /**

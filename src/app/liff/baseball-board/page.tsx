@@ -483,7 +483,7 @@ export default function LiffBaseballBoardPage() {
     }
   };
 
-  // 打者ターンでの投球開始（左下「⚾ 投球」ボタン or 自動投球）
+  // 打者ターンでの投球開始（左下「⚾ 投球」ボタン or 自動投球：CPU投手が球速・球種を自動で投げ分ける）
   const handleStartPitchForBatter = useCallback(() => {
     if (boardPhase !== "idle" || matchState.isGameOver) return;
     if (autoPitchTimerRef.current) {
@@ -492,11 +492,9 @@ export default function LiffBaseballBoardPage() {
     }
 
     let pitchToThrow: PitchSpec;
-    let effectivePreset: PitchSpeedPreset = speedPreset;
     if (matchState.mode === "versus") {
       if (!lockedVersusPitch) return;
       pitchToThrow = lockedVersusPitch;
-      effectivePreset = lockedVersusPitch.speedPreset ?? speedPreset;
     } else {
       pitchToThrow = chooseCpuPitch({
         difficulty: matchState.difficulty,
@@ -506,6 +504,9 @@ export default function LiffBaseballBoardPage() {
         isDerby: matchState.mode === "derby",
       });
     }
+
+    const effectivePreset: PitchSpeedPreset =
+      pitchToThrow.speedPreset ?? "normal";
 
     canvasRef.current?.launchPitch({
       pitch: pitchToThrow,
@@ -529,7 +530,6 @@ export default function LiffBaseballBoardPage() {
     matchState.outs,
     matchState.strikes,
     pitcherVanishLeft,
-    speedPreset,
   ]);
 
   // 守備ターン（プレイヤーがCPUへ投球）
@@ -1210,85 +1210,85 @@ export default function LiffBaseballBoardPage() {
               </button>
             </div>
           </div>
-        ) : (
-          <div className="space-y-1.5">
-            {/* 上段：選べる球速5段階セレクター（打撃中も守備中もいつでも1タップ変更可能！） */}
-            <div className="grid grid-cols-5 gap-1">
-              {PITCH_SPEED_PRESETS.map((sp) => {
-                const active = speedPreset === sp.id;
-                const isMonster = sp.id === "monster";
-                return (
-                  <button
-                    key={sp.id}
-                    type="button"
-                    disabled={boardPhase !== "idle"}
-                    onClick={() => setSpeedPreset(sp.id)}
-                    className={`h-8 px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
-                      active
-                        ? isMonster
-                          ? "bg-[#dc2626] text-white border-[#991b1b]"
-                          : "bg-[#0f172a] text-amber-300 border-primary"
-                        : "bg-muted/60 text-foreground border-border hover:bg-muted"
+        ) : isHumanBatterTurn ? (
+          /* 打者ターン：相手投手の球速は選べず、バッターの打撃スタイル3択のみをシンプル表示！ */
+          <div className="grid grid-cols-3 gap-1.5">
+            {(
+              [
+                {
+                  id: "contact" as const,
+                  label: "⚡ ミート",
+                  sub: "広角ヒット",
+                },
+                {
+                  id: "power" as const,
+                  label: "🔥 強振",
+                  sub: "柵越えHR",
+                },
+                {
+                  id: "bunt" as const,
+                  label: "🎯 バント",
+                  sub: "進塁・内安",
+                },
+              ] as const
+            ).map((opt) => {
+              const active = stance === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setStance(opt.id)}
+                  className={`h-11 px-1.5 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                    active
+                      ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
+                      : "bg-card text-foreground border-border hover:bg-muted"
+                  }`}
+                >
+                  <span className="text-xs font-black leading-none">
+                    {opt.label}
+                  </span>
+                  <span
+                    className={`text-[9px] font-bold mt-1 leading-none ${
+                      active ? "text-slate-300" : "text-muted-foreground"
                     }`}
-                    title={sp.description}
                   >
-                    {sp.shortLabel}
-                  </button>
-                );
-              })}
-            </div>
-
-            {isHumanBatterTurn ? (
-              /* 下段（打者ターン）：狙い3択（実際の投球・スイングはボード左下・右下の大型ボタンで直感操作！） */
-              <div className="grid grid-cols-3 gap-1.5">
-                {(
-                  [
-                    {
-                      id: "contact" as const,
-                      label: "⚡ ミート",
-                      sub: "広角ヒット",
-                    },
-                    {
-                      id: "power" as const,
-                      label: "🔥 強振",
-                      sub: "柵越えHR",
-                    },
-                    {
-                      id: "bunt" as const,
-                      label: "🎯 バント",
-                      sub: "進塁・内安",
-                    },
-                  ] as const
-                ).map((opt) => {
-                  const active = stance === opt.id;
+                    {opt.sub}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          /* 投手ターン（1P守備 ／ 2P投手）：ピッチャーだけが球速ギア4段階＋コース・球種を自在に選べる！ */
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
+              {PITCH_SPEED_PRESETS.filter((sp) => sp.id !== "chaos").map(
+                (sp) => {
+                  const active = speedPreset === sp.id;
+                  const isMonster = sp.id === "monster";
                   return (
                     <button
-                      key={opt.id}
+                      key={sp.id}
                       type="button"
-                      onClick={() => setStance(opt.id)}
-                      className={`h-10 px-1.5 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer ${
+                      disabled={boardPhase !== "idle"}
+                      onClick={() => setSpeedPreset(sp.id)}
+                      className={`h-8 px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
                         active
-                          ? "bg-[#0f172a] text-white border-primary ring-2 ring-primary/25"
-                          : "bg-card text-foreground border-border hover:bg-muted"
+                          ? isMonster
+                            ? "bg-[#dc2626] text-white border-[#991b1b]"
+                            : "bg-[#0f172a] text-amber-300 border-primary"
+                          : "bg-muted/60 text-foreground border-border hover:bg-muted"
                       }`}
+                      title={sp.description}
                     >
-                      <span className="text-xs font-black leading-none">
-                        {opt.label}
-                      </span>
-                      <span
-                        className={`text-[9px] font-bold mt-0.5 leading-none ${
-                          active ? "text-slate-300" : "text-muted-foreground"
-                        }`}
-                      >
-                        {opt.sub}
-                      </span>
+                      {sp.shortLabel}
                     </button>
                   );
-                })}
-              </div>
-            ) : (
-              /* 下段（投手ターン）：コース切替 ＋ 球種選択（タップで即投球 / ボード左下でも投球可） */
-              <div className="grid grid-cols-6 gap-1">
+                }
+              )}
+            </div>
+
+            <div className="grid grid-cols-6 gap-1">
                 <button
                   type="button"
                   disabled={boardPhase !== "idle"}
@@ -1370,7 +1370,6 @@ export default function LiffBaseballBoardPage() {
                   </span>
                 </button>
               </div>
-            )}
           </div>
         )}
       </footer>
@@ -1909,10 +1908,14 @@ export default function LiffBaseballBoardPage() {
 
                 <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
                   <p className="font-black text-foreground">
-                    2. 選べる5段階の球速ギア ＆ 看板直撃ボーナス！
+                    2. 守備（投球）時の球速ギア選択 ＆ 看板直撃ボーナス！
                   </p>
                   <p className="text-muted-foreground font-bold">
-                    画面下部のバーから「🐢80km」「⚾115km」「⚡145km」「🔥165km（怪物級）」「🛸緩急MIX」をいつでも切り替え可能！165kmの剛速球を真芯で弾き返すと打球速度180km超えの特大アーチになり、センターの「🎯看板直撃」に当たればボーナス演出（HR競争では+150pt）が発動します！
+                    ・攻撃（打撃）時は相手ピッチャーが緩急（スロー〜165km剛速球）を織り交ぜて投げてきます！
+                    <br />
+                    ・守備（投球）時はピッチャーとして「🐢80km」「⚾115km」「⚡145km」「🔥165km」の4段階ギアと球種を自在に選んで相手打者を翻弄できます！
+                    <br />
+                    ・センター最上部の「🎯看板直撃」に空中アーチが当たればボーナス演出（HR競争では+150pt）が発動します！
                   </p>
                 </div>
 

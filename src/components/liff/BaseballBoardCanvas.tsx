@@ -240,6 +240,7 @@ export const BaseballBoardCanvas = forwardRef<
     stance,
     soundEnabled,
     isHumanBatterTurn,
+    isGameOver,
     bannerText,
     bannerTone,
     onPhaseChange,
@@ -254,6 +255,7 @@ export const BaseballBoardCanvas = forwardRef<
     stance,
     soundEnabled,
     isHumanBatterTurn,
+    isGameOver,
     bannerText,
     bannerTone,
     onPhaseChange,
@@ -400,6 +402,18 @@ export const BaseballBoardCanvas = forwardRef<
 
     ctx.fillStyle = "#14532d";
     ctx.fillRect(10, 46, BOARD_WIDTH - 20, BOARD_HEIGHT - 56);
+
+    // 左右ファウルコーナーのボタン台座くぼみ（外枠から十分内側に配置）
+    if (!propsRef.current.isGameOver) {
+      ctx.fillStyle = "#0d3b20";
+      ctx.strokeStyle = "#166534";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.roundRect(17, 340, 94, 71, 13);
+      ctx.roundRect(289, 340, 94, 71, 13);
+      ctx.fill();
+      ctx.stroke();
+    }
 
     // フェアグラウンド扇形（芝生刈り込みストライプ：単色2トーン交互）
     ctx.save();
@@ -1666,12 +1680,12 @@ export const BaseballBoardCanvas = forwardRef<
           ref={canvasRef}
           id="baseball-board-canvas"
           onPointerDown={handleCanvasPointerDown}
-          className="w-full h-full rounded-2xl border-2 border-[#0f172a] shadow-sm touch-manipulation block bg-[#0f172a]"
+          className="w-full h-full rounded-2xl shadow-sm touch-manipulation block bg-[#0f172a]"
           aria-label="野球盤ゲーム盤面"
         />
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🕹️ ボード左下：本物の野球盤風「⚾ 投球」プッシュボタン
+            🕹️ ボード左下（外枠の内側芝生台座にぴったり収まる）：「⚾ 投球」ボタン
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {!isGameOver && (
           <button
@@ -1679,14 +1693,20 @@ export const BaseballBoardCanvas = forwardRef<
             id="btn-board-corner-pitch"
             disabled={!canPitchNow}
             onPointerDown={handleCornerPitchPointerDown}
-            className={`absolute bottom-2.5 left-2.5 w-[25%] min-w-[78px] max-w-[104px] h-[18.5%] min-h-[60px] max-h-[80px] rounded-2xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
+            style={{
+              left: "5%",
+              bottom: "5.55%",
+              width: "22%",
+              height: "15.05%",
+            }}
+            className={`absolute rounded-xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
               canPitchNow
-                ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-white border-b-4 border-b-[#1e3a8a] active:translate-y-0.5 shadow-md cursor-pointer"
+                ? "bg-[#2563eb] hover:bg-[#1d4ed8] text-white border-white border-b-[3px] border-b-[#1e3a8a] active:translate-y-0.5 shadow-sm cursor-pointer"
                 : "bg-slate-800/95 text-slate-400 border-slate-600 cursor-not-allowed"
             }`}
           >
             <span
-              className={`text-[9px] font-black leading-none px-1.5 py-0.5 rounded ${
+              className={`text-[8.5px] font-black leading-none px-1.5 py-0.5 rounded ${
                 canPitchNow
                   ? "bg-[#0f172a] text-sky-300"
                   : "bg-slate-900 text-slate-500"
@@ -1695,24 +1715,24 @@ export const BaseballBoardCanvas = forwardRef<
               {isHumanBatterTurn
                 ? "① スタート"
                 : isVersusPitchLockMode
-                ? "🔒 球種ロック"
-                : "⚾ 守備投球"}
+                ? "🔒 ロック"
+                : "⚾ 守備"}
             </span>
-            <span className="text-sm font-black leading-tight mt-1 tracking-tight">
+            <span className="text-xs sm:text-sm font-black leading-tight mt-0.5 tracking-tight">
               ⚾ {isVersusPitchLockMode ? "セット" : "投球"}
             </span>
             <span
-              className={`text-[9px] font-bold leading-none mt-0.5 truncate max-w-full ${
+              className={`text-[8.5px] font-bold leading-none mt-0.5 truncate max-w-full ${
                 canPitchNow ? "text-blue-100" : "text-slate-500"
               }`}
             >
-              {speedBadgeText}
+              {isHumanBatterTurn ? "押して開始" : speedBadgeText}
             </span>
           </button>
         )}
 
         {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            🏏 ボード右下：本物の野球盤風「🏏 打つ！（スイング）」大型赤ボタン
+            🏏 ボード右下（外枠の内側芝生台座にぴったり収まる）：「🏏 打つ！」ボタン
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
         {!isGameOver && (
           <button
@@ -1720,16 +1740,22 @@ export const BaseballBoardCanvas = forwardRef<
             id="btn-board-corner-swing"
             disabled={!isHumanBatterTurn}
             onPointerDown={handleCornerSwingPointerDown}
-            className={`absolute bottom-2.5 right-2.5 w-[26.5%] min-w-[84px] max-w-[110px] h-[20%] min-h-[66px] max-h-[86px] rounded-2xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
+            style={{
+              right: "5%",
+              bottom: "5.55%",
+              width: "22%",
+              height: "15.05%",
+            }}
+            className={`absolute rounded-xl border-2 flex flex-col items-center justify-center px-1 touch-manipulation select-none transition-transform ${
               !isHumanBatterTurn
                 ? "bg-slate-800/95 text-slate-400 border-slate-600 cursor-not-allowed"
                 : isPitchingLive
-                ? "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-[#fde047] border-b-4 border-b-[#7f1d1d] scale-105 active:scale-97 shadow-lg cursor-pointer"
-                : "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-white border-b-4 border-b-[#7f1d1d] active:translate-y-0.5 shadow-md cursor-pointer"
+                ? "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-[#fde047] border-b-[3px] border-b-[#7f1d1d] active:translate-y-0.5 shadow-md cursor-pointer"
+                : "bg-[#dc2626] hover:bg-[#b91c1c] text-white border-white border-b-[3px] border-b-[#7f1d1d] active:translate-y-0.5 shadow-sm cursor-pointer"
             }`}
           >
             <span
-              className={`text-[9px] font-black leading-none px-1.5 py-0.5 rounded ${
+              className={`text-[8.5px] font-black leading-none px-1.5 py-0.5 rounded ${
                 !isHumanBatterTurn
                   ? "bg-slate-900 text-slate-500"
                   : isPitchingLive
@@ -1740,14 +1766,14 @@ export const BaseballBoardCanvas = forwardRef<
               {!isHumanBatterTurn
                 ? "守備中"
                 : isPitchingLive
-                ? "🔥 今だ！押す"
+                ? "🔥 今だ！"
                 : "② スイング"}
             </span>
-            <span className="text-base font-black leading-tight mt-1 tracking-tight">
+            <span className="text-xs sm:text-sm font-black leading-tight mt-0.5 tracking-tight">
               {isHumanBatterTurn ? "🏏 打つ！" : "🛡️ 守備"}
             </span>
             <span
-              className={`text-[9px] font-bold leading-none mt-0.5 ${
+              className={`text-[8.5px] font-bold leading-none mt-0.5 truncate max-w-full ${
                 !isHumanBatterTurn
                   ? "text-slate-500"
                   : isPitchingLive
@@ -1759,7 +1785,7 @@ export const BaseballBoardCanvas = forwardRef<
                 ? "左下で投球"
                 : isPitchingLive
                 ? "SWING!!"
-                : "押して素振り可"}
+                : "素振りOK"}
             </span>
           </button>
         )}
