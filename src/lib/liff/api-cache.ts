@@ -571,7 +571,8 @@ function shouldCacheApiPath(pathname: string): boolean {
     (pathname.startsWith("/api/liff/gallery/") &&
       (pathname.endsWith("/photos") || pathname.endsWith("/original"))) ||
     pathname.startsWith("/api/seed") ||
-    pathname.startsWith("/api/liff/carpool-convoy")
+    pathname.startsWith("/api/liff/carpool-convoy") ||
+    pathname.startsWith("/api/liff/baseball-board")
   ) {
     return false;
   }

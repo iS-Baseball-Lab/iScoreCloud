@@ -6,11 +6,13 @@ import {
   MAX_VANISH_PITCHES_PER_GAME,
   applyPlayOutcome,
   buildBaseballBoardShareText,
+  buildRotatedTeamLineupFromRoster,
   buildTeamLineupFromRoster,
   createGenericLineup,
   createInitialMatchState,
   decideCpuBatterPlan,
   isFairTerritory,
+  recordFinishedGameToLocalStats,
   resolveFencePocketAtAngle,
   resolveLaunchSpeedMetrics,
 } from "@/lib/liff/baseball-board-engine";
@@ -292,4 +294,61 @@ describe("baseball-board-engine", () => {
     expect(boardIdx).toBe(relatedIdx + 1);
     expect(QUICK_MENU_CATALOG[boardIdx]?.href).toBe("/liff/baseball-board");
   });
+
+  it("supports Team Online match state, rotated intra-squad lineups, and side-aware stats/share text", () => {
+    const roster = Array.from({ length: 6 }, (_, idx) => ({
+      id: `pl-${idx + 1}`,
+      name: `メンバー${idx + 1}`,
+      uniformNumber: String(idx + 1),
+      bats: idx % 2 === 0 ? "R" : "L",
+      conditionStatus: "active",
+      isActive: true,
+    }));
+
+    const hostLineup = buildTeamLineupFromRoster(roster);
+    const guestLineup = buildRotatedTeamLineupFromRoster(roster, 3);
+    expect(hostLineup[0]?.name).toBe("メンバー1");
+    expect(guestLineup[0]?.name).toBe("メンバー4");
+
+    let onlineMatch = createInitialMatchState({
+      mode: "online",
+      totalInnings: 1,
+      difficulty: "normal",
+      myTeamName: "ホストナイン",
+      myLineup: hostLineup,
+      oppTeamName: "ゲストナイン",
+      oppLineup: guestLineup,
+      playerIsHome: false,
+    });
+
+    expect(onlineMatch.mode).toBe("online");
+    expect(onlineMatch.awayTeamName).toBe("ホストナイン");
+    expect(onlineMatch.homeTeamName).toBe("ゲストナイン");
+    expect(onlineMatch.homeLineup[0]?.name).toBe("メンバー4");
+
+    // 1回表3アウト ➔ 1回裏サヨナラHRでゲスト(home)勝利
+    onlineMatch.outs = 2;
+    onlineMatch = applyPlayOutcome(onlineMatch, "ground_out", "投ゴロ").nextState;
+    onlineMatch = applyPlayOutcome(
+      onlineMatch,
+      "homerun",
+      "バックスクリーン本塁打"
+    ).nextState;
+
+    expect(onlineMatch.isGameOver).toBe(true);
+    expect(onlineMatch.winner).toBe("home");
+
+    const guestStats = recordFinishedGameToLocalStats(
+      "test-online-team",
+      onlineMatch,
+      "home"
+    );
+    expect(guestStats.wins).toBe(1);
+    expect(guestStats.losses).toBe(0);
+
+    const share = buildBaseballBoardShareText(onlineMatch);
+    expect(share).toContain("チーム内オンライン対戦");
+    expect(share).toContain("ホストナイン 0 - 1x ゲストナイン");
+  });
 });
+

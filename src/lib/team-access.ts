@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { eq, inArray, or } from "drizzle-orm";
 import {
   account,
+  baseballBoardRooms,
   events,
   eventCarpools,
   galleryAlbums,
@@ -1621,6 +1622,51 @@ export function createLiffTeamIsolationMiddleware(options?: {
       }
     }
 
+    if (segs[2] === "baseball-board") {
+      if (explicitTeamId === "demo-team") {
+        return c.json(
+          {
+            success: false,
+            error:
+              "チーム内オンライン対戦は承認済みの所属チームに参加しているメンバー同士でご利用いただけます",
+            isForbidden: true,
+          },
+          403
+        );
+      }
+      if (!access.isSystemAdmin && access.activeTeamIds.size === 0) {
+        return c.json(
+          {
+            success: false,
+            error: "承認済みの所属チームがないためオンライン対戦は利用できません",
+            isForbidden: true,
+          },
+          403
+        );
+      }
+      if (segs[3] === "rooms" && segs[4] && segs[4] !== "join") {
+        const roomRow = await db
+          .select({ teamId: baseballBoardRooms.teamId })
+          .from(baseballBoardRooms)
+          .where(eq(baseballBoardRooms.id, segs[4]))
+          .get();
+        if (
+          roomRow &&
+          (!isTeamAlignedWithExplicit(roomRow.teamId, explicitTeamId) ||
+            !access.canAccessTeam(roomRow.teamId))
+        ) {
+          return c.json(
+            {
+              success: false,
+              error: "別チームの対戦ルームには参加できません",
+              isForbidden: true,
+            },
+            403
+          );
+        }
+      }
+    }
+
     // 個別ID更新・削除ルート (/documents/:id, /faqs/:id, /rules/:id, /links/:id, /profile/family/:relationId, /profile/cars/:carId, /admin/mgmt/*/:id)
     if (method !== "GET") {
       if (segs[2] === "profile" && segs[3] === "family" && segs[4]) {
@@ -1708,6 +1754,7 @@ export function createLiffTeamIsolationMiddleware(options?: {
       if (
         method !== "GET" &&
         segs[2] !== "profile" &&
+        segs[2] !== "baseball-board" &&
         !access.canMutateTeamData(explicitTeamId)
       ) {
         return c.json(
@@ -1728,7 +1775,11 @@ export function createLiffTeamIsolationMiddleware(options?: {
       if (segs[2] === "grounds" && segs[3] && isDemoEntityId(segs[3])) {
         return next();
       }
-      if (!access.isSystemAdmin && access.mutableTeamIds.size === 0) {
+      const lacksTeamPermission =
+        segs[2] === "baseball-board"
+          ? access.activeTeamIds.size === 0
+          : access.mutableTeamIds.size === 0;
+      if (!access.isSystemAdmin && lacksTeamPermission) {
         return c.json(
           {
             success: false,

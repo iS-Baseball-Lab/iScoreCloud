@@ -309,6 +309,31 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "baseball_board_rooms",
+    ddl: `CREATE TABLE IF NOT EXISTS baseball_board_rooms (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      room_code text NOT NULL,
+      status text NOT NULL DEFAULT 'waiting',
+      total_innings integer NOT NULL DEFAULT 3,
+      host_user_id text NOT NULL,
+      host_name text NOT NULL,
+      host_side text NOT NULL DEFAULT 'away',
+      guest_user_id text,
+      guest_name text,
+      turn_seq integer NOT NULL DEFAULT 1,
+      pitch_seq integer NOT NULL DEFAULT 0,
+      current_pitch_json text,
+      last_play_json text,
+      match_state_json text NOT NULL,
+      rematch_requested_by text,
+      host_last_seen_at integer NOT NULL,
+      guest_last_seen_at integer,
+      created_at integer NOT NULL,
+      updated_at integer NOT NULL
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -336,6 +361,8 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_tournaments_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_tournaments_team_id ON tournaments (team_id)" },
   { name: "idx_teams_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_org_id ON teams (organization_id)" },
   { name: "idx_teams_created_by", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams (created_by)" },
+  { name: "idx_baseball_board_rooms_team_status", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_status ON baseball_board_rooms (team_id, status, updated_at)" },
+  { name: "idx_baseball_board_rooms_team_code", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_code ON baseball_board_rooms (team_id, room_code)" },
 ];
 
 export async function ensureAllSchemasOnce(d1?: D1Database | null): Promise<void> {

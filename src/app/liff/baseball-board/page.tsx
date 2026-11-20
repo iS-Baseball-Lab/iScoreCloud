@@ -23,6 +23,7 @@ import {
   Flame,
   Users,
   Bot,
+  Wifi,
   ShieldCheck,
   Copy,
   Share2,
@@ -40,6 +41,8 @@ import {
 } from "@/components/liff/LiffProvider";
 import { peekLiffApiCache } from "@/lib/liff/api-cache";
 import {
+  buildShareableLiffPageUrl,
+  getClientQueryParam,
   shareLiffPageViaLine,
   sharePlainTextViaLine,
 } from "@/lib/liff/liff-client";
@@ -48,8 +51,10 @@ import {
   BaseballBoardCanvas,
   type BaseballBoardCanvasHandle,
   type BoardActionPhase,
+  type OnlinePitchButtonMode,
   type ResolvedBoardPlay,
 } from "@/components/liff/BaseballBoardCanvas";
+import { BaseballBoardOnlineModal } from "@/components/liff/BaseballBoardOnlineModal";
 import {
   DERBY_TOTAL_PITCHES,
   MAX_VANISH_PITCHES_PER_GAME,
@@ -84,10 +89,37 @@ import {
   playPocketResult,
   saveBaseballBoardSoundEnabled,
 } from "@/lib/liff/baseball-board-audio";
+import type {
+  OnlinePlayReplayData,
+  OnlineResolvedPlayPayload,
+  OnlineRoomActionResponse,
+  OnlineRoomDetail,
+  OnlineRoomSummary,
+  OnlineRoomsListResponse,
+} from "@/types/baseball-board-online";
 
 interface PlayersApiMinimalResponse {
   success: boolean;
   players?: RawRosterPlayerCandidate[];
+}
+
+function extractOnlineRoomIdFromQuery(): string | null {
+  const direct = getClientQueryParam("room")?.trim() || "";
+  if (direct) return direct;
+  const liffState = getClientQueryParam("liff.state") || "";
+  if (liffState) {
+    const qIdx = liffState.indexOf("?");
+    if (qIdx >= 0) {
+      try {
+        const sp = new URLSearchParams(liffState.slice(qIdx));
+        const nested = sp.get("room")?.trim() || "";
+        if (nested) return nested;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 const MODE_OPTIONS: ReadonlyArray<{
@@ -101,6 +133,12 @@ const MODE_OPTIONS: ReadonlyArray<{
     label: "1P vs CPU",
     shortDesc: "投打でCPUと真剣勝負",
     icon: Bot,
+  },
+  {
+    id: "online",
+    label: "通信対戦 (チーム内)",
+    shortDesc: "仲間とリアルタイム対決",
+    icon: Wifi,
   },
   {
     id: "versus",
@@ -229,12 +267,43 @@ export default function LiffBaseballBoardPage() {
 
   // モーダル開閉ステート
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isOnlineModalOpen, setIsOnlineModalOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBoxScoreOpen, setIsBoxScoreOpen] = useState(false);
   const [statsModalTab, setStatsModalTab] = useState<"match" | "records">(
     "match"
   );
   const [isConfirmResetStatsOpen, setIsConfirmResetStatsOpen] = useState(false);
+
+  // 🌐 チーム内オンライン通信対戦ステート＆同期Ref
+  const [onlineRooms, setOnlineRooms] = useState<OnlineRoomSummary[]>([]);
+  const [onlineMyDefaultName, setOnlineMyDefaultName] = useState<string>(
+    () => profile?.displayName?.trim().slice(0, 16) || ""
+  );
+  const [onlineRoom, setOnlineRoom] = useState<OnlineRoomDetail | null>(null);
+  const [isLoadingOnlineRooms, setIsLoadingOnlineRooms] = useState(false);
+  const [isSubmittingOnline, setIsSubmittingOnline] = useState(false);
+  const [isOnlineReplayRunning, setIsOnlineReplayRunning] = useState(false);
+
+  const onlineRoomRef = useRef<OnlineRoomDetail | null>(null);
+  onlineRoomRef.current = onlineRoom;
+  const lastLaunchedOnlinePitchSeqRef = useRef<number>(0);
+  const lastReplayedOnlinePlaySeqRef = useRef<number>(0);
+  const isOnlineReplayRunningRef = useRef<boolean>(false);
+  const recordedOnlineGameFinishKeyRef = useRef<string>("");
+  const handledDeepLinkRoomIdRef = useRef<string>("");
+  const pendingOnlineResolveRef = useRef<{
+    roomId: string;
+    turnSeq: number;
+    resolvedPlay: OnlineResolvedPlayPayload;
+    replayData: OnlinePlayReplayData;
+  } | null>(null);
+
+  useEffect(() => {
+    if (profile?.displayName && !onlineMyDefaultName) {
+      setOnlineMyDefaultName(profile.displayName.trim().slice(0, 16));
+    }
+  }, [onlineMyDefaultName, profile?.displayName]);
 
   const clearTimers = useCallback(() => {
     if (autoPitchTimerRef.current) {
@@ -317,17 +386,23 @@ export default function LiffBaseballBoardPage() {
       prevTeamIdRef.current = activeTeamId;
       clearTimers();
       setIsSettingsOpen(false);
+      setIsOnlineModalOpen(false);
       setIsGuideOpen(false);
       setIsBoxScoreOpen(false);
       setIsConfirmResetStatsOpen(false);
       setLockedVersusPitch(null);
+      setOnlineRoom(null);
+      setOnlineRooms([]);
+      isOnlineReplayRunningRef.current = false;
+      setIsOnlineReplayRunning(false);
+      pendingOnlineResolveRef.current = null;
       setBannerText(null);
       setLocalStats(loadBaseballBoardLocalStats(activeTeamId));
       canvasRef.current?.resetBoardIdle();
     }
   }, [activeTeamId, clearTimers]);
 
-  // 新規試合開始
+  // 新規オフライン試合開始
   const startNewGame = useCallback(
     (overrides?: {
       nextMode?: GameMode;
@@ -338,6 +413,16 @@ export default function LiffBaseballBoardPage() {
     }) => {
       clearTimers();
       const targetMode = overrides?.nextMode ?? mode;
+      if (targetMode === "online") {
+        setIsOnlineModalOpen(true);
+        return;
+      }
+
+      setOnlineRoom(null);
+      isOnlineReplayRunningRef.current = false;
+      setIsOnlineReplayRunning(false);
+      pendingOnlineResolveRef.current = null;
+
       const targetInnings = overrides?.nextInnings ?? totalInnings;
       const targetDiff = overrides?.nextDifficulty ?? difficulty;
       const targetBatsFirst = overrides?.nextBatsFirst ?? playerBatsFirst;
@@ -374,8 +459,9 @@ export default function LiffBaseballBoardPage() {
     ]
   );
 
-  // 初回名鑑ロード完了時（まだ1球も進んでいない初期状態の場合のみ）チーム名・選手名を自動同期
+  // 初回名鑑ロード完了時（まだ1球も進んでいない初期状態かつオフラインモードの場合のみ）チーム名・選手名を自動同期
   const isFreshUntouchedGame =
+    mode !== "online" &&
     !matchState.isGameOver &&
     matchState.inning === 1 &&
     matchState.balls === 0 &&
@@ -436,10 +522,41 @@ export default function LiffBaseballBoardPage() {
     (matchState.isTop && matchState.playerSide === "away") ||
     (!matchState.isTop && matchState.playerSide === "home");
 
+  const isMyOnlineBattingHalf =
+    mode === "online" &&
+    onlineRoom !== null &&
+    onlineRoom.status === "playing" &&
+    onlineRoom.mySide !== null &&
+    ((matchState.isTop && onlineRoom.mySide === "away") ||
+      (!matchState.isTop && onlineRoom.mySide === "home"));
+
   const isHumanBatterTurn =
     matchState.mode === "derby" ||
     (matchState.mode === "cpu" && isCpuModePlayerBatting) ||
-    (matchState.mode === "versus" && lockedVersusPitch !== null);
+    (matchState.mode === "versus" && lockedVersusPitch !== null) ||
+    (mode === "online" && isMyOnlineBattingHalf && !isOnlineReplayRunning);
+
+  const onlinePitchButtonMode: OnlinePitchButtonMode = useMemo(() => {
+    if (mode !== "online") return "normal";
+    if (
+      !onlineRoom ||
+      onlineRoom.status !== "playing" ||
+      onlineRoom.myRole === "spectator" ||
+      !onlineRoom.mySide
+    ) {
+      return "spectator";
+    }
+    if (isMyOnlineBattingHalf) {
+      return "wait_opponent_pitch";
+    }
+    if (
+      onlineRoom.pitchSeq >= onlineRoom.turnSeq &&
+      !onlineRoom.canRetryStuckPitch
+    ) {
+      return "pitch_sent";
+    }
+    return "normal";
+  }, [isMyOnlineBattingHalf, mode, onlineRoom]);
 
   const currentSpeedMeta = useMemo(
     () =>
@@ -447,6 +564,554 @@ export default function LiffBaseballBoardPage() {
       PITCH_SPEED_PRESETS[1]!,
     [speedPreset]
   );
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 🌐 チーム内オンライン対戦：同期・ルーム操作ハンドラ群
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const recordOnlineFinishOnce = useCallback(
+    (room: OnlineRoomDetail) => {
+      if (!room.matchState.isGameOver) return;
+      const finishKey = `${room.id}:${room.turnSeq}`;
+      if (recordedOnlineGameFinishKeyRef.current === finishKey) return;
+      recordedOnlineGameFinishKeyRef.current = finishKey;
+
+      if (room.mySide) {
+        const didWin = room.matchState.winner === room.mySide;
+        playGameSetFanfare(soundEnabled, didWin);
+        const updated = recordFinishedGameToLocalStats(
+          activeTeamId,
+          room.matchState,
+          room.mySide
+        );
+        setLocalStats(updated);
+      }
+    },
+    [activeTeamId, soundEnabled]
+  );
+
+  const syncOnlineRoomFromServer = useCallback(
+    (nextRoom: OnlineRoomDetail, isInitialJoin = false) => {
+      const prevRoom = onlineRoomRef.current;
+      onlineRoomRef.current = nextRoom;
+      setOnlineRoom(nextRoom);
+
+      if (isInitialJoin) {
+        lastLaunchedOnlinePitchSeqRef.current =
+          nextRoom.mySide &&
+          ((nextRoom.matchState.isTop && nextRoom.mySide === "away") ||
+            (!nextRoom.matchState.isTop && nextRoom.mySide === "home"))
+            ? 0
+            : nextRoom.pitchSeq;
+        lastReplayedOnlinePlaySeqRef.current = nextRoom.lastPlay?.seq ?? 0;
+        isOnlineReplayRunningRef.current = false;
+        setIsOnlineReplayRunning(false);
+        canvasRef.current?.resetBoardIdle();
+        setMatchState(nextRoom.matchState);
+        if (nextRoom.matchState.isGameOver) {
+          recordedOnlineGameFinishKeyRef.current = `${nextRoom.id}:${nextRoom.turnSeq}`;
+        }
+        return;
+      }
+
+      // 1) 待機中だったルームに相手が入室して試合開始！
+      if (prevRoom?.status === "waiting" && nextRoom.status === "playing") {
+        lastLaunchedOnlinePitchSeqRef.current = 0;
+        lastReplayedOnlinePlaySeqRef.current = 0;
+        canvasRef.current?.resetBoardIdle();
+        setMatchState(nextRoom.matchState);
+        showTemporaryBanner("🔥 プレイボール！！", "hit", 1800);
+        toast.success(
+          `⚾ ${nextRoom.guestName || "チームメイト"}さんが参加しました！`
+        );
+        return;
+      }
+
+      // 2) 試合終了状態から再戦が成立して第2戦開始！
+      if (prevRoom?.status === "finished" && nextRoom.status === "playing") {
+        lastLaunchedOnlinePitchSeqRef.current = 0;
+        lastReplayedOnlinePlaySeqRef.current = 0;
+        isOnlineReplayRunningRef.current = false;
+        setIsOnlineReplayRunning(false);
+        canvasRef.current?.resetBoardIdle();
+        setMatchState(nextRoom.matchState);
+        showTemporaryBanner("🔥 再戦プレイボール！！", "hit", 1800);
+        toast.success("🔥 先攻・後攻を入れ替えて再戦スタート！");
+        return;
+      }
+
+      // 3) 相手打者の打席結果が確定した瞬間 ➔ 投手（または観戦者）の盤面でリアル軌道リプレイ！
+      if (
+        nextRoom.lastPlay &&
+        nextRoom.lastPlay.seq > lastReplayedOnlinePlaySeqRef.current
+      ) {
+        const lp = nextRoom.lastPlay;
+        lastReplayedOnlinePlaySeqRef.current = lp.seq;
+        isOnlineReplayRunningRef.current = true;
+        setIsOnlineReplayRunning(true);
+
+        const prePlayBatterBats = currentBatter.bats;
+        canvasRef.current?.playOnlineReplay({
+          pitch: lp.pitch,
+          speedPreset: lp.speedPreset,
+          batterBats: prePlayBatterBats,
+          replayData: lp.replayData,
+          authoritativeResult: lp.resolvedPlay,
+          onArriveResult: () => {
+            setMatchState(nextRoom.matchState);
+            showTemporaryBanner(
+              lp.bannerTitle,
+              lp.bannerTone,
+              nextRoom.matchState.isGameOver ? 2500 : 1450
+            );
+            if (nextRoom.matchState.isGameOver) {
+              recordOnlineFinishOnce(nextRoom);
+            } else if (lp.soundKind) {
+              playPocketResult(soundEnabled, lp.soundKind);
+            }
+            const nextDefVanish = nextRoom.matchState.isTop
+              ? nextRoom.matchState.homeVanishLeft
+              : nextRoom.matchState.awayVanishLeft;
+            if (nextDefVanish <= 0) {
+              setSelectedPitchType((cur) =>
+                cur === "vanish" ? "straight" : cur
+              );
+            }
+          },
+          onReplayFinished: () => {
+            isOnlineReplayRunningRef.current = false;
+            setIsOnlineReplayRunning(false);
+            if (onlineRoomRef.current) {
+              setMatchState(onlineRoomRef.current.matchState);
+            }
+          },
+        });
+        return;
+      }
+
+      // 4) リプレイ中でなければ最新スコア・状態を同期（途中退出による決着等も反映）
+      if (!isOnlineReplayRunningRef.current) {
+        setMatchState(nextRoom.matchState);
+        if (
+          nextRoom.matchState.isGameOver &&
+          prevRoom &&
+          !prevRoom.matchState.isGameOver
+        ) {
+          recordOnlineFinishOnce(nextRoom);
+          showTemporaryBanner(nextRoom.matchState.lastCallout, "neutral", 2400);
+        }
+      }
+    },
+    [
+      currentBatter.bats,
+      recordOnlineFinishOnce,
+      showTemporaryBanner,
+      soundEnabled,
+    ]
+  );
+
+  const fetchOnlineLobbyRooms = useCallback(async () => {
+    if (!activeTeamId || activeTeamId === "demo-team") return;
+    setIsLoadingOnlineRooms(true);
+    try {
+      const res = await fetch(
+        `/api/liff/baseball-board/rooms?teamId=${encodeURIComponent(
+          activeTeamId
+        )}`
+      );
+      const data = (await res.json()) as OnlineRoomsListResponse;
+      if (res.ok && data.success) {
+        if (data.myDefaultName) {
+          setOnlineMyDefaultName(data.myDefaultName);
+        }
+        setOnlineRooms(Array.isArray(data.rooms) ? data.rooms : []);
+      }
+    } catch {
+      // ネットワーク一時エラー時は既存リストを維持
+    } finally {
+      setIsLoadingOnlineRooms(false);
+    }
+  }, [activeTeamId]);
+
+  const handleOpenOnlineLobby = useCallback(() => {
+    setIsSettingsOpen(false);
+    setIsOnlineModalOpen(true);
+    if (activeTeamId && activeTeamId !== "demo-team") {
+      void fetchOnlineLobbyRooms();
+    }
+  }, [activeTeamId, fetchOnlineLobbyRooms]);
+
+  const handleCreateOnlineRoom = useCallback(
+    async (params: {
+      totalInnings: number;
+      hostBatsFirst: boolean;
+      displayName: string;
+    }) => {
+      if (isSubmittingOnline || activeTeamId === "demo-team") return;
+      setIsSubmittingOnline(true);
+      try {
+        const res = await fetch("/api/liff/baseball-board/rooms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: activeTeamId,
+            totalInnings: params.totalInnings,
+            hostBatsFirst: params.hostBatsFirst,
+            hostDisplayName: params.displayName,
+          }),
+        });
+        const data = (await res.json()) as OnlineRoomActionResponse;
+        if (!res.ok || !data.success || !data.room) {
+          toast.error(data.error || "ルームの作成に失敗しました");
+          return;
+        }
+        setMode("online");
+        syncOnlineRoomFromServer(data.room, true);
+        setIsOnlineModalOpen(false);
+        toast.success(
+          `ルーム #${data.room.roomCode} を作成しました！LINEで相手を招待できます`
+        );
+      } catch {
+        toast.error("通信エラーが発生しました");
+      } finally {
+        setIsSubmittingOnline(false);
+      }
+    },
+    [activeTeamId, isSubmittingOnline, syncOnlineRoomFromServer]
+  );
+
+  const handleJoinOnlineByRoomId = useCallback(
+    async (roomId: string, displayName?: string) => {
+      if (!roomId) return;
+      setIsSubmittingOnline(true);
+      try {
+        const res = await fetch("/api/liff/baseball-board/rooms/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: activeTeamId !== "demo-team" ? activeTeamId : undefined,
+            roomId,
+            guestDisplayName: displayName || onlineMyDefaultName || undefined,
+          }),
+        });
+        const data = (await res.json()) as OnlineRoomActionResponse;
+        if (!res.ok || !data.success || !data.room) {
+          toast.error(data.error || "対戦ルームに参加できませんでした");
+          return;
+        }
+        setMode("online");
+        syncOnlineRoomFromServer(data.room, true);
+        setIsOnlineModalOpen(false);
+        if (data.room.status === "playing") {
+          showTemporaryBanner("🔥 プレイボール！！", "hit", 1800);
+          toast.success(
+            data.room.myRole === "spectator"
+              ? "ライブ観戦モードで入室しました！"
+              : `🔥 ${data.room.hostName} vs ${
+                  data.room.guestName || ""
+                } 対戦開始！`
+          );
+        }
+      } catch {
+        toast.error("対戦ルームへの接続に失敗しました");
+      } finally {
+        setIsSubmittingOnline(false);
+      }
+    },
+    [
+      activeTeamId,
+      onlineMyDefaultName,
+      showTemporaryBanner,
+      syncOnlineRoomFromServer,
+    ]
+  );
+
+  const handleJoinOnlineByCode = useCallback(
+    async (roomCode: string, displayName: string) => {
+      if (!roomCode || activeTeamId === "demo-team") return;
+      setIsSubmittingOnline(true);
+      try {
+        const res = await fetch("/api/liff/baseball-board/rooms/join", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: activeTeamId,
+            roomCode,
+            guestDisplayName: displayName,
+          }),
+        });
+        const data = (await res.json()) as OnlineRoomActionResponse;
+        if (!res.ok || !data.success || !data.room) {
+          toast.error(data.error || "該当番号のルームが見つかりません");
+          return;
+        }
+        setMode("online");
+        syncOnlineRoomFromServer(data.room, true);
+        setIsOnlineModalOpen(false);
+        showTemporaryBanner("🔥 プレイボール！！", "hit", 1800);
+        toast.success("ルームに参加しました！プレイボール！");
+      } catch {
+        toast.error("ルーム参加中に通信エラーが発生しました");
+      } finally {
+        setIsSubmittingOnline(false);
+      }
+    },
+    [activeTeamId, showTemporaryBanner, syncOnlineRoomFromServer]
+  );
+
+  const handleShareOnlineRoomLine = useCallback(
+    async (room: OnlineRoomDetail) => {
+      const inviteUrl = buildShareableLiffPageUrl({
+        pathname: "/liff/baseball-board",
+        teamId: room.teamId,
+        queryParams: { room: room.id },
+        inheritCurrentSearch: false,
+      });
+      const outcome = await shareLiffPageViaLine({
+        title: `⚾ ${room.hostName}さんから野球盤の対戦招待！（#${room.roomCode}）`,
+        text: `${scoreTeamName}のチーム内オンライン野球盤（${room.totalInnings}回制）で今すぐ真剣勝負しよう！\nルーム番号: #${room.roomCode}`,
+        url: inviteUrl,
+        teamId: room.teamId,
+        teamName: scoreTeamName,
+        liff,
+      });
+      if (outcome === "shared") {
+        toast.success("LINEで対戦招待を送りました！");
+      }
+    },
+    [liff, scoreTeamName]
+  );
+
+  const handleCopyRoomCode = useCallback(async (roomCode: string) => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      toast.success(`ルーム番号「${roomCode}」をコピーしました！`);
+    } catch {
+      toast.error("コピーに失敗しました");
+    }
+  }, []);
+
+  const handleLeaveOnlineRoom = useCallback(
+    async (roomId: string) => {
+      setIsSubmittingOnline(true);
+      try {
+        await fetch(`/api/liff/baseball-board/rooms/${roomId}/leave`, {
+          method: "POST",
+        });
+      } catch {
+        // ignore network error on leave
+      } finally {
+        setIsSubmittingOnline(false);
+        setOnlineRoom(null);
+        onlineRoomRef.current = null;
+        pendingOnlineResolveRef.current = null;
+        setMode("cpu");
+        startNewGame({ nextMode: "cpu" });
+        setIsOnlineModalOpen(false);
+        toast.success("オンラインルームから退出しました");
+      }
+    },
+    [startNewGame]
+  );
+
+  const handleRequestOnlineRematch = useCallback(async () => {
+    if (!onlineRoom || isSubmittingOnline) return;
+    setIsSubmittingOnline(true);
+    try {
+      const res = await fetch(
+        `/api/liff/baseball-board/rooms/${onlineRoom.id}/rematch`,
+        { method: "POST" }
+      );
+      const data = (await res.json()) as OnlineRoomActionResponse;
+      if (res.ok && data.success && data.room) {
+        syncOnlineRoomFromServer(data.room);
+        if (data.room.status === "finished") {
+          toast.success("対戦相手に再戦リクエストを送りました！");
+        }
+      } else {
+        toast.error(data.error || "再戦リクエストに失敗しました");
+      }
+    } catch {
+      toast.error("通信エラーが発生しました");
+    } finally {
+      setIsSubmittingOnline(false);
+    }
+  }, [isSubmittingOnline, onlineRoom, syncOnlineRoomFromServer]);
+
+  // LINE招待カードのディープリンク (`?room=...`) 自動参加
+  useEffect(() => {
+    const queryRoomId = extractOnlineRoomIdFromQuery();
+    if (!queryRoomId || handledDeepLinkRoomIdRef.current === queryRoomId) {
+      return;
+    }
+    if (activeTeamId === "demo-team" && !profile?.userId) {
+      return;
+    }
+    handledDeepLinkRoomIdRef.current = queryRoomId;
+    void handleJoinOnlineByRoomId(queryRoomId);
+  }, [activeTeamId, handleJoinOnlineByRoomId, profile?.userId]);
+
+  // 省電力・可視状態連動のオンラインルームポーリング（モバイル無線モデム保護対応）
+  useEffect(() => {
+    const activeRoomId =
+      mode === "online" && onlineRoom && onlineRoom.status !== "closed"
+        ? onlineRoom.id
+        : null;
+    const shouldPollLobby = isOnlineModalOpen && activeTeamId !== "demo-team";
+
+    if (!activeRoomId && !shouldPollLobby) return;
+
+    let stopped = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const computeNextIntervalMs = (): number => {
+      const rm = onlineRoomRef.current;
+      if (!activeRoomId || !rm) return 4000;
+      if (rm.status === "waiting") return 2000;
+      if (rm.status === "finished") return 2500;
+      const idleAge = Date.now() - rm.updatedAt;
+      if (idleAge > 180_000) return 7500;
+      if (idleAge > 60_000) return 3500;
+      return 1200;
+    };
+
+    const pollOnce = async () => {
+      if (stopped) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        timerId = setTimeout(() => void pollOnce(), 4000);
+        return;
+      }
+
+      // 未送信の打席確定データがあれば優先再送（冪等保護済み）
+      const pending = pendingOnlineResolveRef.current;
+      if (pending && activeRoomId === pending.roomId) {
+        try {
+          const retryRes = await fetch(
+            `/api/liff/baseball-board/rooms/${pending.roomId}/resolve`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                turnSeq: pending.turnSeq,
+                resolvedPlay: pending.resolvedPlay,
+                replayData: pending.replayData,
+              }),
+            }
+          );
+          const retryData = (await retryRes.json()) as OnlineRoomActionResponse;
+          if (retryRes.ok && retryData.success) {
+            pendingOnlineResolveRef.current = null;
+            if (retryData.room) {
+              syncOnlineRoomFromServer(retryData.room);
+            }
+          }
+        } catch {
+          // 次のポーリング周期で再試行
+        }
+      }
+
+      if (activeRoomId) {
+        try {
+          const res = await fetch(
+            `/api/liff/baseball-board/rooms/${activeRoomId}`
+          );
+          if (res.status === 404) {
+            toast.error("対戦ルームが終了しました");
+            setOnlineRoom(null);
+            setMode("cpu");
+            return;
+          }
+          const data = (await res.json()) as OnlineRoomActionResponse;
+          if (!stopped && res.ok && data.success && data.room) {
+            syncOnlineRoomFromServer(data.room);
+          }
+        } catch {
+          // 一時通信断時は次サイクルで自動復帰
+        }
+      }
+
+      if (shouldPollLobby && !stopped) {
+        await fetchOnlineLobbyRooms();
+      }
+
+      if (!stopped) {
+        timerId = setTimeout(() => void pollOnce(), computeNextIntervalMs());
+      }
+    };
+
+    timerId = setTimeout(() => void pollOnce(), computeNextIntervalMs());
+
+    const handleResume = () => {
+      if (typeof document !== "undefined" && !document.hidden && !stopped) {
+        if (timerId) clearTimeout(timerId);
+        void pollOnce();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleResume);
+    window.addEventListener("online", handleResume);
+
+    return () => {
+      stopped = true;
+      if (timerId) clearTimeout(timerId);
+      document.removeEventListener("visibilitychange", handleResume);
+      window.removeEventListener("online", handleResume);
+    };
+  }, [
+    activeTeamId,
+    fetchOnlineLobbyRooms,
+    isOnlineModalOpen,
+    mode,
+    onlineRoom?.id,
+    onlineRoom?.status,
+    syncOnlineRoomFromServer,
+  ]);
+
+  // オンライン打者ターン：相手ピッチャーが投げたボールを受信したら即座に盤面発射！
+  useEffect(() => {
+    if (
+      mode !== "online" ||
+      !onlineRoom ||
+      onlineRoom.status !== "playing" ||
+      !isMyOnlineBattingHalf ||
+      isOnlineReplayRunning ||
+      boardPhase !== "idle"
+    ) {
+      return;
+    }
+
+    const incomingPitch = onlineRoom.currentPitch;
+    if (
+      onlineRoom.pitchSeq === onlineRoom.turnSeq &&
+      incomingPitch &&
+      incomingPitch.seq > lastLaunchedOnlinePitchSeqRef.current
+    ) {
+      lastLaunchedOnlinePitchSeqRef.current = incomingPitch.seq;
+      canvasRef.current?.launchPitch({
+        pitch: incomingPitch.pitch,
+        speedPreset: incomingPitch.speedPreset,
+        batterBats: currentBatter.bats,
+        batterIsCpu: false,
+        cpuDifficulty: "normal",
+        strikes: onlineRoom.matchState.strikes,
+        outs: onlineRoom.matchState.outs,
+        bases: onlineRoom.matchState.bases,
+      });
+    }
+  }, [
+    boardPhase,
+    currentBatter.bats,
+    isMyOnlineBattingHalf,
+    isOnlineReplayRunning,
+    mode,
+    onlineRoom,
+  ]);
+
+  const handleVisibilityAbort = useCallback(() => {
+    if (mode === "online") {
+      lastLaunchedOnlinePitchSeqRef.current = 0;
+    }
+  }, [mode]);
 
   const handleBackClick = () => {
     if (canGoBackInLiff()) {
@@ -467,9 +1132,13 @@ export default function LiffBaseballBoardPage() {
     if (isPageSharing) return;
     setIsPageSharing(true);
     try {
+      if (mode === "online" && onlineRoom && onlineRoom.status === "waiting") {
+        await handleShareOnlineRoomLine(onlineRoom);
+        return;
+      }
       const outcome = await shareLiffPageViaLine({
         title: "野球盤ゲーム｜iScoreCloud",
-        text: "懐かしの野球盤ミニゲームで対決しよう！（球速ギア・消える魔球・柵越えHR対応）",
+        text: "懐かしの野球盤ミニゲームで対決しよう！（チーム内オンライン対戦・球速ギア・消える魔球対応）",
         pathname,
         teamId: currentTeam?.id || null,
         teamName: currentTeam?.orgName || currentTeam?.name || null,
@@ -485,7 +1154,9 @@ export default function LiffBaseballBoardPage() {
 
   // 打者ターンでの投球開始（左下「⚾ 投球」ボタン or 自動投球：CPU投手が球速・球種を自動で投げ分ける）
   const handleStartPitchForBatter = useCallback(() => {
-    if (boardPhase !== "idle" || matchState.isGameOver) return;
+    if (boardPhase !== "idle" || matchState.isGameOver || mode === "online") {
+      return;
+    }
     if (autoPitchTimerRef.current) {
       clearTimeout(autoPitchTimerRef.current);
       autoPitchTimerRef.current = null;
@@ -529,6 +1200,7 @@ export default function LiffBaseballBoardPage() {
     matchState.mode,
     matchState.outs,
     matchState.strikes,
+    mode,
     pitcherVanishLeft,
   ]);
 
@@ -572,6 +1244,64 @@ export default function LiffBaseballBoardPage() {
     ]
   );
 
+  // オンライン守備ターン：チームメイトへ投球送信！
+  const handleOnlinePitchToTeammate = useCallback(async () => {
+    const rm = onlineRoomRef.current;
+    if (
+      !rm ||
+      rm.status !== "playing" ||
+      boardPhase !== "idle" ||
+      isSubmittingOnline
+    ) {
+      return;
+    }
+    if (selectedPitchType === "vanish" && pitcherVanishLeft <= 0) {
+      toast.error("消える魔球の残り回数がありません");
+      return;
+    }
+    setIsSubmittingOnline(true);
+    try {
+      const res = await fetch(
+        `/api/liff/baseball-board/rooms/${rm.id}/pitch`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            turnSeq: rm.turnSeq,
+            pitch: {
+              type: selectedPitchType,
+              course: selectedCourse,
+              speedPreset,
+            },
+          }),
+        }
+      );
+      const data = (await res.json()) as OnlineRoomActionResponse;
+      if (!res.ok || !data.success || !data.room) {
+        toast.error(data.error || "投球の送信に失敗しました");
+        return;
+      }
+      syncOnlineRoomFromServer(data.room);
+      setMatchState((prev) => ({
+        ...prev,
+        lastCallout: `⚾ ${PITCH_TYPE_META[selectedPitchType].label}（${currentSpeedMeta.baseKmh}km/h）を投げ込みました！相手の打撃待ち…`,
+      }));
+    } catch {
+      toast.error("投球送信中に通信エラーが発生しました");
+    } finally {
+      setIsSubmittingOnline(false);
+    }
+  }, [
+    boardPhase,
+    currentSpeedMeta.baseKmh,
+    isSubmittingOnline,
+    pitcherVanishLeft,
+    selectedCourse,
+    selectedPitchType,
+    speedPreset,
+    syncOnlineRoomFromServer,
+  ]);
+
   // 2P 1台対戦：投手が球種・コース・球速を秘密ロックして打者へ渡す
   const handleLockVersusPitch = useCallback(
     (pitchTypeOverride?: PitchType) => {
@@ -599,6 +1329,10 @@ export default function LiffBaseballBoardPage() {
 
   // ボード左下「⚾ 投球」ボタンからの統一ハンドラ
   const handleBoardCornerPitch = useCallback(() => {
+    if (mode === "online") {
+      void handleOnlinePitchToTeammate();
+      return;
+    }
     if (isHumanBatterTurn) {
       handleStartPitchForBatter();
     } else if (matchState.mode === "versus") {
@@ -609,9 +1343,11 @@ export default function LiffBaseballBoardPage() {
   }, [
     handleHumanPitchToCpu,
     handleLockVersusPitch,
+    handleOnlinePitchToTeammate,
     handleStartPitchForBatter,
     isHumanBatterTurn,
     matchState.mode,
+    mode,
   ]);
 
   // 投球前に右下「🏏 打つ！」を押して素振りした時の親切ガイド
@@ -619,9 +1355,11 @@ export default function LiffBaseballBoardPage() {
     setMatchState((prev) => ({
       ...prev,
       lastCallout:
-        "🏏 ナイス素振り！左下の青い「⚾ 投球」を押すとボールが来ます！",
+        mode === "online"
+          ? "🏏 ナイス素振り！相手ピッチャーの投球が来たら「打つ！」で打ち返そう！"
+          : "🏏 ナイス素振り！左下の青い「⚾ 投球」を押すとボールが来ます！",
     }));
-  }, []);
+  }, [mode]);
 
   // 1プレイ決着時のスコア・カウント・最高打球速度更新
   const handlePlayResolved = useCallback(
@@ -634,6 +1372,91 @@ export default function LiffBaseballBoardPage() {
           play.exitVelocityKmh
         );
         setLocalStats(updatedVelStats);
+      }
+
+      // 🌐 オンライン通信対戦の打者側確定処理（即時ローカル演出 ＋ サーバー権威確定）
+      if (mode === "online" && onlineRoomRef.current) {
+        const rm = onlineRoomRef.current;
+        const activeSeq = rm.turnSeq;
+        lastReplayedOnlinePlaySeqRef.current = activeSeq;
+
+        const resolvedPayload: OnlineResolvedPlayPayload = {
+          outcome: play.outcome,
+          detailLabel: play.detailLabel,
+          usedVanishPitch: play.usedVanishPitch,
+          pitchKmh: play.pitchKmh,
+          exitVelocityKmh: play.exitVelocityKmh,
+        };
+        const replayPayload: OnlinePlayReplayData = play.replayData ?? {
+          didSwing: false,
+          swingTriggerY: 382,
+          stance,
+          contact: null,
+        };
+
+        setMatchState((prev) => {
+          const applied = applyPlayOutcome(
+            prev,
+            play.outcome,
+            play.detailLabel,
+            play.usedVanishPitch
+          );
+          showTemporaryBanner(
+            applied.bannerTitle,
+            applied.bannerTone,
+            applied.nextState.isGameOver ? 2500 : 1450
+          );
+          if (applied.nextState.isGameOver && !prev.isGameOver && rm.mySide) {
+            const finishKey = `${rm.id}:${activeSeq + 1}`;
+            recordedOnlineGameFinishKeyRef.current = finishKey;
+            const didWin = applied.nextState.winner === rm.mySide;
+            playGameSetFanfare(soundEnabled, didWin);
+            const updatedStats = recordFinishedGameToLocalStats(
+              activeTeamId,
+              applied.nextState,
+              rm.mySide
+            );
+            setLocalStats(updatedStats);
+          } else if (applied.soundKind) {
+            playPocketResult(soundEnabled, applied.soundKind);
+          }
+          return applied.nextState;
+        });
+
+        pendingOnlineResolveRef.current = {
+          roomId: rm.id,
+          turnSeq: activeSeq,
+          resolvedPlay: resolvedPayload,
+          replayData: replayPayload,
+        };
+
+        void (async () => {
+          try {
+            const res = await fetch(
+              `/api/liff/baseball-board/rooms/${rm.id}/resolve`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  turnSeq: activeSeq,
+                  resolvedPlay: resolvedPayload,
+                  replayData: replayPayload,
+                }),
+              }
+            );
+            const data = (await res.json()) as OnlineRoomActionResponse;
+            if (res.ok && data.success) {
+              pendingOnlineResolveRef.current = null;
+              if (data.room) {
+                syncOnlineRoomFromServer(data.room);
+              }
+            }
+          } catch {
+            // 次回ポーリング時に pendingOnlineResolveRef から自動再送される
+          }
+        })();
+
+        return;
       }
 
       setMatchState((prev) => {
@@ -675,10 +1498,17 @@ export default function LiffBaseballBoardPage() {
         return applied.nextState;
       });
     },
-    [activeTeamId, showTemporaryBanner, soundEnabled]
+    [
+      activeTeamId,
+      mode,
+      showTemporaryBanner,
+      soundEnabled,
+      stance,
+      syncOnlineRoomFromServer,
+    ]
   );
 
-  // 自動投球モード ON 時
+  // 自動投球モード ON 時（1P vs CPU / HR競争のみ）
   useEffect(() => {
     if (autoPitchTimerRef.current) {
       clearTimeout(autoPitchTimerRef.current);
@@ -687,11 +1517,13 @@ export default function LiffBaseballBoardPage() {
 
     const anyModalOpen =
       isSettingsOpen ||
+      isOnlineModalOpen ||
       isGuideOpen ||
       isBoxScoreOpen ||
       isConfirmResetStatsOpen;
 
     const canAutoPitch =
+      mode !== "online" &&
       autoPitchEnabled &&
       boardPhase === "idle" &&
       !matchState.isGameOver &&
@@ -720,9 +1552,11 @@ export default function LiffBaseballBoardPage() {
     isConfirmResetStatsOpen,
     isCpuModePlayerBatting,
     isGuideOpen,
+    isOnlineModalOpen,
     isSettingsOpen,
     matchState.isGameOver,
     matchState.mode,
+    mode,
   ]);
 
   const handleCopyResultText = async () => {
@@ -763,25 +1597,27 @@ export default function LiffBaseballBoardPage() {
           ① 上部固定：コンパクトナビ ＆ 電光スコアボード（A-3 Dark Cap）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <header className="shrink-0 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary pt-[max(env(safe-area-inset-top),8px)] px-2.5 pb-2 space-y-1.5">
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1.5 min-w-0">
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1 min-w-0">
             <button
               type="button"
               id="btn-baseball-board-back"
               onClick={handleBackClick}
-              className="h-8 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
+              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-black flex items-center gap-0.5 active:scale-95 transition-all shrink-0 cursor-pointer"
               aria-label="前の画面へ戻る"
             >
               <ChevronLeft className="w-4 h-4 -ml-0.5" />
               <span>戻る</span>
             </button>
 
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-xs font-black text-white truncate">
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="hidden min-[380px]:inline text-xs font-black text-white truncate">
                 野球盤
               </span>
               <span className="px-1.5 py-0.5 rounded bg-primary text-primary-foreground text-[10px] font-black shrink-0">
-                {matchState.isGameOver
+                {mode === "online" && onlineRoom?.status === "waiting"
+                  ? "相手待ち"
+                  : matchState.isGameOver
                   ? "試合終了"
                   : matchState.mode === "derby"
                   ? `${matchState.derbyPitchNumber}/${DERBY_TOTAL_PITCHES}球`
@@ -789,21 +1625,44 @@ export default function LiffBaseballBoardPage() {
                       matchState.inning > matchState.totalInnings ? "延" : ""
                     }${matchState.inning}回${matchState.isTop ? "表" : "裏"}`}
               </span>
-              {!matchState.isGameOver && matchState.mode === "cpu" && (
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
-                    isHumanBatterTurn
-                      ? "bg-[#dc2626] text-white"
-                      : "bg-sky-600 text-white"
-                  }`}
-                >
-                  {isHumanBatterTurn ? "攻撃" : "守備"}
-                </span>
-              )}
+              {!matchState.isGameOver &&
+                (matchState.mode === "cpu" ||
+                  (mode === "online" && onlineRoom?.status === "playing")) && (
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-black shrink-0 ${
+                      mode === "online" && onlineRoom?.myRole === "spectator"
+                        ? "bg-slate-700 text-slate-200"
+                        : isHumanBatterTurn
+                        ? "bg-[#dc2626] text-white"
+                        : "bg-sky-600 text-white"
+                    }`}
+                  >
+                    {mode === "online" && onlineRoom?.myRole === "spectator"
+                      ? "観戦"
+                      : isHumanBatterTurn
+                      ? "攻撃"
+                      : "守備"}
+                  </span>
+                )}
             </div>
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              id="btn-baseball-board-online"
+              onClick={handleOpenOnlineLobby}
+              className={`h-8 px-2 rounded-xl border text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer ${
+                mode === "online"
+                  ? "bg-primary border-primary text-primary-foreground"
+                  : "bg-slate-800 hover:bg-slate-700 border-slate-700 text-sky-300"
+              }`}
+              title="チーム内オンライン対戦ロビー"
+            >
+              <Wifi className="w-3.5 h-3.5" />
+              <span>通信</span>
+            </button>
+
             <button
               type="button"
               id="btn-baseball-board-settings"
@@ -821,10 +1680,12 @@ export default function LiffBaseballBoardPage() {
                 setStatsModalTab("match");
                 setIsBoxScoreOpen(true);
               }}
-              className="h-8 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+              className="h-8 w-8 sm:w-auto sm:px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-[11px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+              aria-label="打順成績・マイ戦績"
+              title="打順成績・マイ戦績"
             >
               <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>成績</span>
+              <span className="hidden sm:inline">成績</span>
             </button>
 
             <button
@@ -904,7 +1765,11 @@ export default function LiffBaseballBoardPage() {
                 <thead>
                   <tr className="border-b border-slate-800 text-[9px] font-bold text-slate-400">
                     <th className="py-0.5 px-1.5 text-left font-bold">
-                      {matchState.mode === "versus" ? "2P対戦" : "チーム"}
+                      {mode === "online"
+                        ? "通信対戦"
+                        : matchState.mode === "versus"
+                        ? "2P対戦"
+                        : "チーム"}
                     </th>
                     {matchState.innings.map((_, idx) => (
                       <th key={idx} className="py-0.5 px-1 min-w-[16px]">
@@ -1100,33 +1965,75 @@ export default function LiffBaseballBoardPage() {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {isHumanBatterTurn &&
-            matchState.mode !== "versus" &&
-            !matchState.isGameOver && (
+          {mode === "online" ? (
+            <>
+              {onlineRoom && (
+                <span
+                  className={`h-7 px-2 rounded-full border text-[10px] font-black flex items-center gap-1 max-w-[116px] truncate ${
+                    onlineRoom.status === "waiting"
+                      ? "bg-muted text-muted-foreground border-border"
+                      : onlineRoom.opponentOnline
+                      ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700"
+                      : "bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700"
+                  }`}
+                  title="オンライン接続ステータス"
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      onlineRoom.status === "waiting"
+                        ? "bg-slate-400"
+                        : onlineRoom.opponentOnline
+                        ? "bg-[#22c55e]"
+                        : "bg-[#f59e0b]"
+                    }`}
+                  />
+                  <span className="truncate">
+                    {onlineRoom.status === "waiting"
+                      ? `#${onlineRoom.roomCode} 募集`
+                      : onlineRoom.opponentName || `#${onlineRoom.roomCode}`}
+                  </span>
+                </span>
+              )}
               <button
                 type="button"
-                id="btn-baseball-board-autopitch"
-                onClick={() => setAutoPitchEnabled((prev) => !prev)}
-                className={`h-7 px-2 rounded-full border text-[10px] font-black transition-all cursor-pointer ${
-                  autoPitchEnabled
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted text-muted-foreground border-border hover:text-foreground"
-                }`}
+                onClick={handleOpenOnlineLobby}
+                className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
               >
-                自動投球 {autoPitchEnabled ? "ON" : "OFF"}
+                <Wifi className="w-3 h-3 text-primary" />
+                <span>部屋</span>
               </button>
-            )}
+            </>
+          ) : (
+            <>
+              {isHumanBatterTurn &&
+                matchState.mode !== "versus" &&
+                !matchState.isGameOver && (
+                  <button
+                    type="button"
+                    id="btn-baseball-board-autopitch"
+                    onClick={() => setAutoPitchEnabled((prev) => !prev)}
+                    className={`h-7 px-2 rounded-full border text-[10px] font-black transition-all cursor-pointer ${
+                      autoPitchEnabled
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                    }`}
+                  >
+                    自動投球 {autoPitchEnabled ? "ON" : "OFF"}
+                  </button>
+                )}
 
-          <button
-            type="button"
-            id="btn-baseball-board-restart"
-            onClick={() => startNewGame()}
-            className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
-            title="最初からやり直す"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>最初</span>
-          </button>
+              <button
+                type="button"
+                id="btn-baseball-board-restart"
+                onClick={() => startNewGame()}
+                className="h-7 px-2 rounded-lg bg-muted hover:bg-accent border border-border text-[10px] font-black text-foreground flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                title="最初からやり直す"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>最初</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1148,25 +2055,84 @@ export default function LiffBaseballBoardPage() {
           isVersusPitchLockMode={
             matchState.mode === "versus" && !isHumanBatterTurn
           }
+          onlinePitchButtonMode={onlinePitchButtonMode}
           bannerText={bannerText}
           bannerTone={bannerTone}
           onPhaseChange={setBoardPhase}
           onPlayResolved={handlePlayResolved}
           onPressBoardPitch={handleBoardCornerPitch}
           onPracticeSwing={handlePracticeSwing}
+          onVisibilityAbort={handleVisibilityAbort}
         />
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ④ 最下部固定ドック（内部 h-[78px] 完全固定により攻守交代・試合終了時も盤面位置が1pxもズレない！）
+          ④ 最下部固定ドック（内部 h-[78px] 完全固定により攻守交代・試合終了・通信待機時も盤面位置が1pxもズレない！）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <footer className="shrink-0 px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] bg-card border-t border-border">
         <div className="h-[78px] flex flex-col justify-between">
-          {matchState.isGameOver ? (
+          {mode === "online" &&
+          (!onlineRoom || onlineRoom.status === "waiting") ? (
+            <>
+              <div className="h-[32px] px-3 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-foreground truncate">
+                  {onlineRoom
+                    ? `⏳ ルーム #${onlineRoom.roomCode} 相手メンバー参加待ち…`
+                    : "🌐 チーム内オンライン対戦（ルーム未接続）"}
+                </span>
+                {onlineRoom && (
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyRoomCode(onlineRoom.roomCode)}
+                    className="h-6 px-2 rounded-lg bg-card border border-border text-[10px] font-black text-primary flex items-center gap-1 shrink-0 cursor-pointer"
+                  >
+                    <Copy className="w-3 h-3" />
+                    <span>#{onlineRoom.roomCode}</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-12 gap-1.5 h-[40px]">
+                {onlineRoom ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleShareOnlineRoomLine(onlineRoom)}
+                      className="col-span-8 h-full rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-97 transition-all cursor-pointer"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>LINEで対戦相手を招待</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOpenOnlineLobby}
+                      className="col-span-4 h-full rounded-xl bg-muted hover:bg-accent border border-border text-foreground font-black text-xs flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+                    >
+                      <Wifi className="w-3.5 h-3.5 text-primary" />
+                      <span>ロビー</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleOpenOnlineLobby}
+                    className="col-span-12 h-full rounded-xl bg-primary text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer"
+                  >
+                    <Wifi className="w-4 h-4" />
+                    <span>チーム内オンライン対戦ロビーを開く</span>
+                  </button>
+                )}
+              </div>
+            </>
+          ) : matchState.isGameOver ? (
             <>
               <div className="h-[32px] px-3 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
                 <span className="text-xs font-black text-primary truncate">
-                  {matchState.mode === "derby"
+                  {mode === "online" &&
+                  onlineRoom?.rematchRequestedBy &&
+                  onlineRoom.rematchRequestedBy !== onlineRoom.myRole
+                    ? "🔥 相手が再戦を希望しています！"
+                    : matchState.mode === "derby"
                     ? "🌈 ホームラン競争 終了！"
                     : matchState.winner === "home"
                     ? `🏆 ${matchState.homeTeamName} 勝利！`
@@ -1182,15 +2148,39 @@ export default function LiffBaseballBoardPage() {
               </div>
 
               <div className="grid grid-cols-12 gap-1.5 h-[40px]">
-                <button
-                  type="button"
-                  id="btn-baseball-board-play-again"
-                  onClick={() => startNewGame()}
-                  className="col-span-6 h-full rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>もう1試合！</span>
-                </button>
+                {mode === "online" &&
+                onlineRoom &&
+                onlineRoom.myRole !== "spectator" ? (
+                  <button
+                    type="button"
+                    id="btn-baseball-board-online-rematch"
+                    disabled={
+                      isSubmittingOnline ||
+                      onlineRoom.rematchRequestedBy === onlineRoom.myRole
+                    }
+                    onClick={() => void handleRequestOnlineRematch()}
+                    className="col-span-6 h-full rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer disabled:opacity-65"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>
+                      {onlineRoom.rematchRequestedBy === onlineRoom.myRole
+                        ? "相手の応答待ち…"
+                        : onlineRoom.rematchRequestedBy !== null
+                        ? "🔥 再戦を受ける！"
+                        : "この相手と再戦！"}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-baseball-board-play-again"
+                    onClick={() => startNewGame()}
+                    className="col-span-6 h-full rounded-xl bg-primary hover:brightness-105 text-primary-foreground font-black text-xs flex items-center justify-center gap-1.5 shadow-xs active:scale-97 transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>もう1試合！</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   id="btn-baseball-board-copy-result"
@@ -1211,6 +2201,25 @@ export default function LiffBaseballBoardPage() {
                 </button>
               </div>
             </>
+          ) : mode === "online" && onlineRoom?.myRole === "spectator" ? (
+            <>
+              <div className="h-[32px] px-3 rounded-xl bg-muted border border-border flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-foreground truncate">
+                  👀 チーム内オンライン試合をライブ観戦中
+                </span>
+                <span className="text-[10.5px] font-bold text-muted-foreground shrink-0">
+                  #{onlineRoom.roomCode}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleOpenOnlineLobby}
+                className="h-[40px] w-full rounded-xl bg-[#0f172a] text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Wifi className="w-3.5 h-3.5 text-sky-300" />
+                <span>ロビーを開いて自分の対戦ルームを作る</span>
+              </button>
+            </>
           ) : isHumanBatterTurn ? (
             /* 打者ターン（h-[78px] 内にガイド行20px ＋ 打撃スタイル52px を配置） */
             <>
@@ -1219,7 +2228,9 @@ export default function LiffBaseballBoardPage() {
                   🏏 打撃スタイルを選択
                 </span>
                 <span className="font-bold text-muted-foreground truncate">
-                  ①左下「投球」➔ ②右下「打つ！」
+                  {mode === "online"
+                    ? "相手投球が来たら右下「打つ！」"
+                    : "①左下「投球」➔ ②右下「打つ！」"}
                 </span>
               </div>
 
@@ -1273,37 +2284,54 @@ export default function LiffBaseballBoardPage() {
           ) : (
             /* 投手ターン（h-[78px] 内に球速32px ＋ コース・球種40px を配置。投球発射はボード左下の丸い「投球」ボタンのみ！） */
             <>
-              <div className="grid grid-cols-4 gap-1.5 h-[32px]">
-                {PITCH_SPEED_PRESETS.filter((sp) => sp.id !== "chaos").map(
-                  (sp) => {
-                    const active = speedPreset === sp.id;
-                    const isMonster = sp.id === "monster";
-                    return (
-                      <button
-                        key={sp.id}
-                        type="button"
-                        disabled={boardPhase !== "idle"}
-                        onClick={() => setSpeedPreset(sp.id)}
-                        className={`h-full px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
-                          active
-                            ? isMonster
-                              ? "bg-[#dc2626] text-white border-[#991b1b]"
-                              : "bg-[#0f172a] text-amber-300 border-primary"
-                            : "bg-muted/60 text-foreground border-border hover:bg-muted"
-                        }`}
-                        title={sp.description}
-                      >
-                        {sp.shortLabel}
-                      </button>
-                    );
-                  }
-                )}
-              </div>
+              {mode === "online" && onlineRoom?.canRetryStuckPitch ? (
+                <button
+                  type="button"
+                  onClick={() => void handleOnlinePitchToTeammate()}
+                  className="h-[32px] w-full rounded-xl bg-amber-500 text-[#0f172a] font-black text-xs flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>相手が未応答のため同じ配球を再送する</span>
+                </button>
+              ) : (
+                <div className="grid grid-cols-4 gap-1.5 h-[32px]">
+                  {PITCH_SPEED_PRESETS.filter((sp) => sp.id !== "chaos").map(
+                    (sp) => {
+                      const active = speedPreset === sp.id;
+                      const isMonster = sp.id === "monster";
+                      const pitchLocked =
+                        boardPhase !== "idle" ||
+                        onlinePitchButtonMode === "pitch_sent";
+                      return (
+                        <button
+                          key={sp.id}
+                          type="button"
+                          disabled={pitchLocked}
+                          onClick={() => setSpeedPreset(sp.id)}
+                          className={`h-full px-1 rounded-xl border text-[10.5px] font-black tracking-tight transition-all active:scale-95 cursor-pointer disabled:opacity-60 truncate ${
+                            active
+                              ? isMonster
+                                ? "bg-[#dc2626] text-white border-[#991b1b]"
+                                : "bg-[#0f172a] text-amber-300 border-primary"
+                              : "bg-muted/60 text-foreground border-border hover:bg-muted"
+                          }`}
+                          title={sp.description}
+                        >
+                          {sp.shortLabel}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-6 gap-1 h-[40px]">
                 <button
                   type="button"
-                  disabled={boardPhase !== "idle"}
+                  disabled={
+                    boardPhase !== "idle" ||
+                    onlinePitchButtonMode === "pitch_sent"
+                  }
                   onClick={handleCycleCourse}
                   className="h-full px-1 rounded-xl bg-[#0f172a] text-sky-300 border border-slate-700 flex flex-col items-center justify-center active:scale-95 cursor-pointer disabled:opacity-50"
                   title="タップでコース切り替え"
@@ -1323,7 +2351,10 @@ export default function LiffBaseballBoardPage() {
                     <button
                       key={pType}
                       type="button"
-                      disabled={boardPhase !== "idle"}
+                      disabled={
+                        boardPhase !== "idle" ||
+                        onlinePitchButtonMode === "pitch_sent"
+                      }
                       onClick={() => setSelectedPitchType(pType)}
                       className={`h-full px-1 rounded-xl border flex flex-col items-center justify-center transition-all active:scale-95 cursor-pointer disabled:opacity-50 ${
                         isSelected
@@ -1349,10 +2380,16 @@ export default function LiffBaseballBoardPage() {
                 <button
                   type="button"
                   id="btn-baseball-board-vanish-pitch"
-                  disabled={boardPhase !== "idle" || pitcherVanishLeft <= 0}
+                  disabled={
+                    boardPhase !== "idle" ||
+                    onlinePitchButtonMode === "pitch_sent" ||
+                    pitcherVanishLeft <= 0
+                  }
                   onClick={() => setSelectedPitchType("vanish")}
                   className={`h-full px-1 rounded-xl border-2 flex flex-col items-center justify-center transition-all active:scale-95 ${
-                    pitcherVanishLeft <= 0 || boardPhase !== "idle"
+                    pitcherVanishLeft <= 0 ||
+                    boardPhase !== "idle" ||
+                    onlinePitchButtonMode === "pitch_sent"
                       ? "bg-muted text-muted-foreground border-border cursor-not-allowed opacity-55"
                       : selectedPitchType === "vanish"
                       ? "bg-[#0f172a] text-amber-300 border-amber-400 ring-2 ring-amber-400/35 cursor-pointer"
@@ -1413,7 +2450,7 @@ export default function LiffBaseballBoardPage() {
                   <p className="text-xs font-black text-foreground">
                     1. 遊び方モード（切替で新規開始）
                   </p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {MODE_OPTIONS.map((opt) => {
                       const Icon = opt.icon;
                       const active = mode === opt.id;
@@ -1422,6 +2459,10 @@ export default function LiffBaseballBoardPage() {
                           key={opt.id}
                           type="button"
                           onClick={() => {
+                            if (opt.id === "online") {
+                              handleOpenOnlineLobby();
+                              return;
+                            }
                             setMode(opt.id);
                             startNewGame({ nextMode: opt.id });
                           }}
@@ -1448,7 +2489,7 @@ export default function LiffBaseballBoardPage() {
                   </div>
                 </div>
 
-                {mode !== "derby" && (
+                {mode !== "derby" && mode !== "online" && (
                   <>
                     {/* 2. イニング数 */}
                     <div className="space-y-1.5">
@@ -1934,6 +2975,15 @@ export default function LiffBaseballBoardPage() {
                     本塁手前のトラップドアが開いてボールが床下へ消えます！振ると空振りストライク、見送れば「ボール」になります。
                   </p>
                 </div>
+
+                <div className="p-3 rounded-xl bg-muted border border-border space-y-1">
+                  <p className="font-black text-foreground">
+                    4. 🌐 チーム内オンライン対戦（メンバー限定）
+                  </p>
+                  <p className="text-muted-foreground font-bold">
+                    上部「通信」ボタンから同じチームの仲間とリアルタイム対戦できます！ロビーからの1タップ参加、LINE招待カード送信、4桁ルーム番号入力のすべてに対応し、終了後は先攻・後攻を入れ替えて即座に再戦できます。
+                  </p>
+                </div>
               </div>
 
               <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card shrink-0">
@@ -1949,6 +2999,28 @@ export default function LiffBaseballBoardPage() {
           </div>,
           document.body
         )}
+
+      {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          🌐 チーム内オンライン対戦ロビー＆ルームモーダル（createPortal & z-[9999]）
+          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
+      <BaseballBoardOnlineModal
+        isOpen={isOnlineModalOpen}
+        onClose={() => setIsOnlineModalOpen(false)}
+        isDemoTeam={activeTeamId === "demo-team"}
+        teamDisplayName={scoreTeamName}
+        myDefaultName={onlineMyDefaultName}
+        rooms={onlineRooms}
+        activeRoom={onlineRoom}
+        isLoadingRooms={isLoadingOnlineRooms}
+        isSubmitting={isSubmittingOnline}
+        onRefreshRooms={() => void fetchOnlineLobbyRooms()}
+        onCreateRoom={handleCreateOnlineRoom}
+        onJoinByRoomId={(rId, name) => handleJoinOnlineByRoomId(rId, name)}
+        onJoinByCode={handleJoinOnlineByCode}
+        onShareRoomLine={handleShareOnlineRoomLine}
+        onCopyRoomCode={handleCopyRoomCode}
+        onLeaveRoom={handleLeaveOnlineRoom}
+      />
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           🗑️ 戦績リセット確認モーダル（createPortal & z-[10010]）

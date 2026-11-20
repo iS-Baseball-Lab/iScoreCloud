@@ -1,6 +1,6 @@
 // filepath: src/lib/liff/baseball-board-engine.ts
 
-export type GameMode = "cpu" | "versus" | "derby";
+export type GameMode = "cpu" | "versus" | "derby" | "online";
 export type CpuDifficulty = "easy" | "normal" | "hard";
 export type PitchType = "straight" | "curve" | "shoot" | "changeup" | "vanish";
 export type PitchCourse = "inside" | "middle" | "outside";
@@ -606,7 +606,7 @@ export interface RawRosterPlayerCandidate {
   bats?: string | null;
   primaryPosition?: string | null;
   conditionStatus?: string | null;
-  isActive?: boolean;
+  isActive?: boolean | null;
 }
 
 function parseBatterHand(bats: string | null | undefined): BatterHand {
@@ -669,12 +669,34 @@ export function buildTeamLineupFromRoster(
   return result;
 }
 
+export function buildRotatedTeamLineupFromRoster(
+  candidates: readonly RawRosterPlayerCandidate[],
+  offset = 4
+): BoardPlayer[] {
+  const active = candidates.filter(
+    (p) =>
+      p.isActive !== false &&
+      p.conditionStatus !== "on_leave" &&
+      Boolean(p.name && p.name.trim())
+  );
+  if (active.length <= 1) {
+    return active.length === 1
+      ? buildTeamLineupFromRoster(active)
+      : createGenericLineup("opp");
+  }
+  const shift = ((offset % active.length) + active.length) % active.length;
+  const rotated = [...active.slice(shift), ...active.slice(0, shift)];
+  return buildTeamLineupFromRoster(rotated);
+}
+
 export function createInitialMatchState(params: {
   mode: GameMode;
   totalInnings: number;
   difficulty: CpuDifficulty;
   myTeamName: string;
   myLineup: BoardPlayer[];
+  oppTeamName?: string;
+  oppLineup?: BoardPlayer[];
   playerIsHome?: boolean;
 }): BaseballBoardMatchState {
   const {
@@ -683,21 +705,33 @@ export function createInitialMatchState(params: {
     difficulty,
     myTeamName,
     myLineup,
+    oppTeamName,
+    oppLineup,
     playerIsHome = true,
   } = params;
 
   const cleanMyName = myTeamName.trim() || "自チーム";
-  const oppName = mode === "versus" ? "2P チャレンジャーズ" : "CPU ライバルズ";
+  const oppName =
+    oppTeamName?.trim() ||
+    (mode === "versus"
+      ? "2P チャレンジャーズ"
+      : mode === "online"
+      ? "対戦相手待ち"
+      : "CPU ライバルズ");
 
   const resetStats = (list: BoardPlayer[]): BoardPlayer[] =>
     list.map((p) => ({ ...p, atBats: 0, hits: 0, homeRuns: 0, rbi: 0 }));
 
+  const effectiveOppLineup = oppLineup
+    ? resetStats(oppLineup)
+    : createGenericLineup("opp");
+
   const awayLineup = playerIsHome
-    ? createGenericLineup("opp")
+    ? effectiveOppLineup
     : resetStats(myLineup);
   const homeLineup = playerIsHome
     ? resetStats(myLineup)
-    : createGenericLineup("opp");
+    : effectiveOppLineup;
 
   const awayTeamName =
     mode === "versus"
@@ -749,6 +783,8 @@ export function createInitialMatchState(params: {
     lastCallout:
       mode === "derby"
         ? "①左下「投球」➔ ②右下「打つ！」で柵越え連発を狙おう！"
+        : mode === "online"
+        ? "プレイボール！チーム内オンライン真剣勝負スタート！"
         : !playerIsHome
         ? "プレイボール！①左下「投球」➔ ②右下「打つ！」で攻撃開始！"
         : "プレイボール！球速・球種を選んで左下「投球」で勝負！",
@@ -1738,7 +1774,8 @@ export function recordMaxExitVelocityToLocalStats(
 
 export function recordFinishedGameToLocalStats(
   teamId: string,
-  state: BaseballBoardMatchState
+  state: BaseballBoardMatchState,
+  mySideOverride?: "away" | "home"
 ): BaseballBoardLocalStats {
   const current = loadBaseballBoardLocalStats(teamId);
   const next = { ...current };
@@ -1749,7 +1786,8 @@ export function recordFinishedGameToLocalStats(
     next.derbyBestHr = Math.max(next.derbyBestHr, state.derbyHomeRuns);
   } else {
     next.gamesPlayed += 1;
-    const isMyHome = state.playerSide === "home";
+    const effectiveSide = mySideOverride ?? state.playerSide;
+    const isMyHome = effectiveSide === "home";
     const myRuns = isMyHome ? state.homeScore : state.awayScore;
     const myLineup = isMyHome ? state.homeLineup : state.awayLineup;
     const myHrs = myLineup.reduce((acc, p) => acc + p.homeRuns, 0);
@@ -1770,7 +1808,7 @@ export function recordFinishedGameToLocalStats(
     } else if (
       state.mode === "versus"
         ? state.winner === "away"
-        : state.winner === state.playerSide
+        : state.winner === effectiveSide
     ) {
       next.wins += 1;
     } else {
@@ -1830,8 +1868,13 @@ export function buildBaseballBoardShareText(state: BaseballBoardMatchState): str
     .filter((p) => p.homeRuns > 0)
     .map((p) => `#${p.uniformNumber} ${p.name}(${p.homeRuns}本)`);
 
+  const titleHeader =
+    state.mode === "online"
+      ? "【🌐 iScore 野球盤｜チーム内オンライン対戦 結果】"
+      : "【⚾ iScore 野球盤ミニゲーム 結果】";
+
   const lines = [
-    "【⚾ iScore 野球盤ミニゲーム 結果】",
+    titleHeader,
     `${state.awayTeamName} ${state.awayScore} - ${state.homeScore}${
       state.innings.some((c) => typeof c.bottomWalkOffRuns === "number")
         ? "x"

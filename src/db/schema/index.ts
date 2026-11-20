@@ -7,5 +7,7 @@ export * from "./team";
 export * from "./carpool";
 export * from "./equipment";
 export * from "./gallery";
+export * from "./baseball-board";
+
 
 

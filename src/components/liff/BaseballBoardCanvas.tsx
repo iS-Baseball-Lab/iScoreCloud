@@ -45,8 +45,19 @@ import {
   playSwingWhoosh,
   playVanishTrap,
 } from "@/lib/liff/baseball-board-audio";
+import type {
+  OnlineBatterReplayContact,
+  OnlinePlayReplayData,
+  OnlineResolvedPlayPayload,
+} from "@/types/baseball-board-online";
 
 export type BoardActionPhase = "idle" | "pitching" | "batted" | "resolving";
+
+export type OnlinePitchButtonMode =
+  | "normal"
+  | "wait_opponent_pitch"
+  | "pitch_sent"
+  | "spectator";
 
 export interface ResolvedBoardPlay {
   outcome: PlayOutcomeCode;
@@ -54,6 +65,7 @@ export interface ResolvedBoardPlay {
   usedVanishPitch: boolean;
   pitchKmh: number;
   exitVelocityKmh: number;
+  replayData?: OnlinePlayReplayData;
 }
 
 export interface BaseballBoardCanvasHandle {
@@ -66,6 +78,15 @@ export interface BaseballBoardCanvasHandle {
     strikes: number;
     outs: number;
     bases: RunnerBases;
+  }) => void;
+  playOnlineReplay: (params: {
+    pitch: PitchSpec;
+    speedPreset: PitchSpeedPreset;
+    batterBats: BatterHand;
+    replayData: OnlinePlayReplayData;
+    authoritativeResult: OnlineResolvedPlayPayload;
+    onArriveResult?: () => void;
+    onReplayFinished?: () => void;
   }) => void;
   triggerSwing: (stance?: BatterStance) => boolean;
   resetBoardIdle: () => void;
@@ -82,12 +103,14 @@ interface BaseballBoardCanvasProps {
   isHumanBatterTurn: boolean;
   isGameOver: boolean;
   isVersusPitchLockMode?: boolean;
+  onlinePitchButtonMode?: OnlinePitchButtonMode;
   bannerText: string | null;
   bannerTone: "hr" | "hit" | "out" | "walk" | "magic" | "neutral";
   onPhaseChange: (phase: BoardActionPhase) => void;
   onPlayResolved: (play: ResolvedBoardPlay) => void;
   onPressBoardPitch: () => void;
   onPracticeSwing?: () => void;
+  onVisibilityAbort?: () => void;
 }
 
 interface TrailPoint {
@@ -146,6 +169,16 @@ interface InternalSimState {
     stance: BatterStance;
     targetHitY: number;
   };
+  // オンライン通信対戦用の打球記録＆リプレイ制御
+  recordedSwingTriggerY: number;
+  recordedContact: OnlineBatterReplayContact | null;
+  onlineReplay: {
+    enabled: boolean;
+    replayData: OnlinePlayReplayData | null;
+    authoritativeResult: OnlineResolvedPlayPayload | null;
+    onArriveResult: (() => void) | null;
+    onReplayFinished: (() => void) | null;
+  };
   // エフェクト（アニメーション中のみ稼働、待機時完全停止）
   trail: TrailPoint[];
   flashedPinIdx: number;
@@ -198,6 +231,15 @@ function createInitialSimState(
       stance: "contact",
       targetHitY: HOME_Y - 6,
     },
+    recordedSwingTriggerY: HOME_Y - 6,
+    recordedContact: null,
+    onlineReplay: {
+      enabled: false,
+      replayData: null,
+      authoritativeResult: null,
+      onArriveResult: null,
+      onReplayFinished: null,
+    },
     trail: [],
     flashedPinIdx: -1,
     flashedPinUntilMs: 0,
@@ -222,12 +264,14 @@ export const BaseballBoardCanvas = forwardRef<
     isHumanBatterTurn,
     isGameOver,
     isVersusPitchLockMode = false,
+    onlinePitchButtonMode = "normal",
     bannerText,
     bannerTone,
     onPhaseChange,
     onPlayResolved,
     onPressBoardPitch,
     onPracticeSwing,
+    onVisibilityAbort,
   },
   ref
 ) {
@@ -250,6 +294,7 @@ export const BaseballBoardCanvas = forwardRef<
     onPhaseChange,
     onPlayResolved,
     onPracticeSwing,
+    onVisibilityAbort,
   });
   propsRef.current = {
     bases,
@@ -265,6 +310,7 @@ export const BaseballBoardCanvas = forwardRef<
     onPhaseChange,
     onPlayResolved,
     onPracticeSwing,
+    onVisibilityAbort,
   };
 
   const simRef = useRef<InternalSimState>(
@@ -916,10 +962,44 @@ export const BaseballBoardCanvas = forwardRef<
     ) => {
       const sim = simRef.current;
       if (sim.phase === "resolving") return;
+
+      if (sim.onlineReplay.enabled && sim.onlineReplay.authoritativeResult) {
+        const auth = sim.onlineReplay.authoritativeResult;
+        const isHr = auth.outcome === "homerun";
+        sim.lastExitVelocityKmh = auth.exitVelocityKmh;
+        sim.pendingResult = {
+          outcome: auth.outcome,
+          detailLabel: auth.detailLabel,
+          usedVanishPitch: auth.usedVanishPitch,
+          pitchKmh: auth.pitchKmh,
+          exitVelocityKmh: auth.exitVelocityKmh,
+        };
+        sim.resolveTimerSec = isHr ? 0.98 : 0.52;
+        if (isHr) {
+          spawnCelebrationConfetti(
+            auth.detailLabel.includes("看板直撃") ? 42 : 26
+          );
+        }
+        syncPhase("resolving");
+        const onArrive = sim.onlineReplay.onArriveResult;
+        sim.onlineReplay.onArriveResult = null;
+        onArrive?.();
+        return;
+      }
+
+      const replayData: OnlinePlayReplayData = {
+        didSwing: sim.hasSwung,
+        swingTriggerY: sim.recordedSwingTriggerY,
+        stance: sim.activeStance,
+        whiffDetail: sim.whiffDetail || undefined,
+        contact: sim.recordedContact,
+      };
+
       const fullResult: ResolvedBoardPlay = {
         ...partial,
         pitchKmh: sim.lastPitchKmh,
         exitVelocityKmh: sim.lastExitVelocityKmh,
+        replayData,
       };
       sim.pendingResult = fullResult;
       sim.resolveTimerSec = celebrateHr ? 0.98 : 0.52;
@@ -937,7 +1017,7 @@ export const BaseballBoardCanvas = forwardRef<
   const executeSwingOnCurrentPitch = useCallback(
     (overrideStance?: BatterStance): boolean => {
       const sim = simRef.current;
-      if (sim.phase !== "pitching" || sim.hasSwung) {
+      if (sim.phase !== "pitching" || sim.hasSwung || sim.onlineReplay.enabled) {
         return false;
       }
 
@@ -946,6 +1026,8 @@ export const BaseballBoardCanvas = forwardRef<
       sim.hasSwung = true;
       sim.isPracticeSwinging = false;
       sim.swingAnimProgress = 0.05;
+      sim.recordedSwingTriggerY = sim.ballY;
+      sim.recordedContact = null;
 
       // 消える魔球で既に消えている・または直前で消えた場合は空振り！
       if (sim.pitchSpec.type === "vanish" && sim.ballY >= TRAPDOOR_Y - 10) {
@@ -1013,6 +1095,15 @@ export const BaseballBoardCanvas = forwardRef<
         sim.isBuntBall = true;
         sim.isSweetHit = false;
         sim.lastExitVelocityKmh = Math.round(58 + Math.random() * 20);
+        sim.recordedContact = {
+          ballX: sim.ballX,
+          ballY: sim.ballY,
+          vx: sim.vx,
+          vy: sim.vy,
+          vz: sim.vz,
+          peakZ: 0,
+          exitVelocityKmh: sim.lastExitVelocityKmh,
+        };
         playBatContact(propsRef.current.soundEnabled, "bunt");
         return true;
       }
@@ -1051,6 +1142,15 @@ export const BaseballBoardCanvas = forwardRef<
         sim.vx = Math.cos(launchAngleRad) * foulSpeed;
         sim.vy = Math.sin(launchAngleRad) * foulSpeed;
         sim.vz = 35;
+        sim.recordedContact = {
+          ballX: sim.ballX,
+          ballY: sim.ballY,
+          vx: sim.vx,
+          vy: sim.vy,
+          vz: sim.vz,
+          peakZ: 0,
+          exitVelocityKmh: sim.lastExitVelocityKmh,
+        };
         playBatContact(propsRef.current.soundEnabled, "foul");
         return true;
       }
@@ -1080,6 +1180,16 @@ export const BaseballBoardCanvas = forwardRef<
             ? 44 + Math.random() * 28
             : 12;
       }
+
+      sim.recordedContact = {
+        ballX: sim.ballX,
+        ballY: sim.ballY,
+        vx: sim.vx,
+        vy: sim.vy,
+        vz: sim.vz,
+        peakZ: 0,
+        exitVelocityKmh: sim.lastExitVelocityKmh,
+      };
 
       playBatContact(
         propsRef.current.soundEnabled,
@@ -1120,6 +1230,14 @@ export const BaseballBoardCanvas = forwardRef<
       if (sim.phase === "resolving") {
         sim.resolveTimerSec -= dt;
         if (sim.resolveTimerSec <= 0) {
+          const finishCallback = sim.onlineReplay.onReplayFinished;
+          sim.onlineReplay = {
+            enabled: false,
+            replayData: null,
+            authoritativeResult: null,
+            onArriveResult: null,
+            onReplayFinished: null,
+          };
           sim.confetti = [];
           sim.trail = [];
           sim.trapdoorOpen = false;
@@ -1131,6 +1249,7 @@ export const BaseballBoardCanvas = forwardRef<
           sim.hasSwung = false;
           sim.swingAnimProgress = 0;
           syncPhase("idle");
+          finishCallback?.();
         }
         return;
       }
@@ -1170,8 +1289,58 @@ export const BaseballBoardCanvas = forwardRef<
           if (sim.trail.length > 6) sim.trail.shift();
         }
 
+        // オンライン通信リプレイ時の相手打者スイング再現
+        if (
+          sim.onlineReplay.enabled &&
+          sim.onlineReplay.replayData &&
+          sim.onlineReplay.replayData.didSwing &&
+          !sim.hasSwung &&
+          sim.ballY >= sim.onlineReplay.replayData.swingTriggerY
+        ) {
+          const rep = sim.onlineReplay.replayData;
+          sim.hasSwung = true;
+          sim.isPracticeSwinging = false;
+          sim.swingAnimProgress = 0.05;
+          sim.activeStance = rep.stance;
+
+          if (rep.contact) {
+            sim.ballX = rep.contact.ballX;
+            sim.ballY = rep.contact.ballY;
+            sim.vx = rep.contact.vx;
+            sim.vy = rep.contact.vy;
+            sim.vz = rep.contact.vz;
+            sim.ballZ = 0;
+            sim.isBuntBall = rep.stance === "bunt";
+            sim.isSweetHit = rep.contact.exitVelocityKmh >= 135;
+            sim.lastExitVelocityKmh = rep.contact.exitVelocityKmh;
+            sim.elapsedSec = 0;
+            sim.trail = [];
+            const authOutcome = sim.onlineReplay.authoritativeResult?.outcome;
+            playBatContact(
+              propsRef.current.soundEnabled,
+              sim.isBuntBall
+                ? "bunt"
+                : authOutcome === "foul"
+                ? "foul"
+                : sim.isSweetHit
+                ? "sweet"
+                : "normal"
+            );
+            syncPhase("batted");
+            return;
+          } else {
+            if (sim.pitchSpec.type === "vanish" && sim.ballY >= TRAPDOOR_Y - 10) {
+              sim.trapdoorOpen = true;
+              sim.ballVanished = true;
+            }
+            sim.whiffDetail = rep.whiffDetail || "空振りストライク！";
+            playSwingWhoosh(propsRef.current.soundEnabled);
+          }
+        }
+
         // CPU打者の自動スイング判定
         if (
+          !sim.onlineReplay.enabled &&
           sim.cpuPlan.enabled &&
           sim.cpuPlan.willSwing &&
           !sim.hasSwung &&
@@ -1472,11 +1641,19 @@ export const BaseballBoardCanvas = forwardRef<
     const tick = (nowMs: number) => {
       if (typeof document !== "undefined" && document.hidden) {
         rafIdRef.current = null;
+        const prevReplay = simRef.current.onlineReplay;
+        const wasActive = simRef.current.phase !== "idle";
         simRef.current = createInitialSimState(
           propsRef.current.batterBats,
           propsRef.current.stance
         );
         syncPhase("idle");
+        if (prevReplay.enabled) {
+          prevReplay.onArriveResult?.();
+          prevReplay.onReplayFinished?.();
+        } else if (wasActive) {
+          propsRef.current.onVisibilityAbort?.();
+        }
         return;
       }
 
@@ -1561,6 +1738,15 @@ export const BaseballBoardCanvas = forwardRef<
         sim.hasSwung = false;
         sim.isPracticeSwinging = false;
         sim.swingAnimProgress = 0;
+        sim.recordedSwingTriggerY = HOME_Y - 6;
+        sim.recordedContact = null;
+        sim.onlineReplay = {
+          enabled: false,
+          replayData: null,
+          authoritativeResult: null,
+          onArriveResult: null,
+          onReplayFinished: null,
+        };
         sim.trail = [];
         sim.confetti = [];
         sim.pendingResult = null;
@@ -1587,6 +1773,71 @@ export const BaseballBoardCanvas = forwardRef<
             targetHitY: HOME_Y - 6,
           };
         }
+
+        playPitchSpring(propsRef.current.soundEnabled);
+        syncPhase("pitching");
+        startAnimationLoop();
+      },
+      playOnlineReplay: ({
+        pitch,
+        speedPreset,
+        batterBats: targetBats,
+        replayData,
+        authoritativeResult,
+        onArriveResult,
+        onReplayFinished,
+      }) => {
+        const sim = simRef.current;
+        if (sim.phase !== "idle") {
+          stopLoop();
+        }
+        const speedMetrics = resolveLaunchSpeedMetrics(pitch.type, speedPreset);
+        const targetX = getCourseTargetX(pitch.course, targetBats);
+
+        sim.ballVisible = true;
+        sim.ballX = MOUND_X;
+        sim.ballY = MOUND_Y + 8;
+        sim.ballZ = 0;
+        sim.vx = 0;
+        sim.vy = 0;
+        sim.vz = 0;
+        sim.isSweetHit = false;
+        sim.isBuntBall = false;
+        sim.elapsedSec = 0;
+        sim.pitchSpec = { ...pitch, speedPreset };
+        sim.pitchSpeedPxPerSec = speedMetrics.effectiveSpeedPxPerSec;
+        sim.carryMultiplier = speedMetrics.carryMultiplier;
+        sim.isFireball = speedMetrics.isFireball;
+        sim.prevPitchKmh = sim.lastPitchKmh;
+        sim.lastPitchKmh = authoritativeResult.pitchKmh || speedMetrics.displayKmh;
+        sim.lastExitVelocityKmh = 0;
+        sim.whiffDetail = replayData.whiffDetail || "";
+        sim.pitchStartX = MOUND_X;
+        sim.pitchTargetX = targetX;
+        sim.pitchProgress = 0;
+        sim.trapdoorOpen = false;
+        sim.ballVanished = false;
+        sim.batterBats = targetBats;
+        sim.activeStance = replayData.stance;
+        sim.hasSwung = false;
+        sim.isPracticeSwinging = false;
+        sim.swingAnimProgress = 0;
+        sim.cpuPlan = {
+          enabled: false,
+          willSwing: false,
+          stance: "contact",
+          targetHitY: HOME_Y - 6,
+        };
+        sim.onlineReplay = {
+          enabled: true,
+          replayData,
+          authoritativeResult,
+          onArriveResult: onArriveResult ?? null,
+          onReplayFinished: onReplayFinished ?? null,
+        };
+        sim.trail = [];
+        sim.confetti = [];
+        sim.pendingResult = null;
 
         playPitchSpring(propsRef.current.soundEnabled);
         syncPhase("pitching");
@@ -1695,11 +1946,18 @@ export const BaseballBoardCanvas = forwardRef<
   ) => {
     e.preventDefault();
     e.stopPropagation();
-    if (isGameOver || simRef.current.phase !== "idle") return;
+    if (
+      isGameOver ||
+      simRef.current.phase !== "idle" ||
+      onlinePitchButtonMode !== "normal"
+    ) {
+      return;
+    }
     onPressBoardPitch();
   };
 
-  const canPitchNow = !isGameOver && livePhaseUi === "idle";
+  const canPitchNow =
+    !isGameOver && livePhaseUi === "idle" && onlinePitchButtonMode === "normal";
   const isPitchingLive = !isGameOver && livePhaseUi === "pitching";
 
   return (
@@ -1751,21 +2009,43 @@ export const BaseballBoardCanvas = forwardRef<
                   : "bg-slate-900 text-slate-500"
               }`}
             >
-              {isHumanBatterTurn
+              {onlinePitchButtonMode === "wait_opponent_pitch"
+                ? "相手投手"
+                : onlinePitchButtonMode === "pitch_sent"
+                ? "⚾ 送信済"
+                : onlinePitchButtonMode === "spectator"
+                ? "観戦中"
+                : isHumanBatterTurn
                 ? "① 投げる"
                 : isVersusPitchLockMode
                 ? "🔒 ロック"
                 : "⚾ 守備"}
             </span>
             <span className="text-xs sm:text-[13px] font-black leading-tight mt-0.5 tracking-tight">
-              {isVersusPitchLockMode ? "セット" : "投球"}
+              {onlinePitchButtonMode === "wait_opponent_pitch"
+                ? "待機中"
+                : onlinePitchButtonMode === "pitch_sent"
+                ? "投球中"
+                : onlinePitchButtonMode === "spectator"
+                ? "観戦"
+                : isVersusPitchLockMode
+                ? "セット"
+                : "投球"}
             </span>
             <span
               className={`text-[7.5px] font-bold leading-none mt-0.5 truncate max-w-[90%] ${
                 canPitchNow ? "text-blue-100" : "text-slate-500"
               }`}
             >
-              {isHumanBatterTurn ? "スタート" : speedBadgeText}
+              {onlinePitchButtonMode === "wait_opponent_pitch"
+                ? "右下で準備"
+                : onlinePitchButtonMode === "pitch_sent"
+                ? "打撃待ち"
+                : onlinePitchButtonMode === "spectator"
+                ? "ライブ"
+                : isHumanBatterTurn
+                ? "スタート"
+                : speedBadgeText}
             </span>
           </button>
         )}
