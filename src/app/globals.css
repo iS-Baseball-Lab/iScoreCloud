@@ -307,7 +307,7 @@
 }
 
 /* =======================================================
-   ⚾️ 9. CUSTOM UTILITY ANIMATIONS (PLAYLOG SLIDE-IN)
+   ⚾️ 9. CUSTOM UTILITY ANIMATIONS (PLAYLOG & BOTTOM SHEET)
    ======================================================= */
 @keyframes playlog-slide-in-top {
   from {
@@ -322,6 +322,58 @@
 
 .animate-playlog-slide-in {
   animation: playlog-slide-in-top 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes liff-sheet-slide-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes liff-sheet-slide-down {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
+@keyframes liff-backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes liff-backdrop-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-liff-sheet-up {
+  animation: liff-sheet-slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.animate-liff-sheet-down {
+  animation: liff-sheet-slide-down 0.2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.animate-liff-backdrop-in {
+  animation: liff-backdrop-fade-in 0.22s ease-out;
+}
+
+.animate-liff-backdrop-out {
+  animation: liff-backdrop-fade-out 0.2s ease-in forwards;
 }
 
 /* =======================================================

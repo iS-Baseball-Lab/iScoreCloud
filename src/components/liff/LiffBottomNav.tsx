@@ -1,7 +1,7 @@
 // filepath: src/components/liff/LiffBottomNav.tsx
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -445,10 +445,63 @@ export function LiffBottomNav() {
   const pathname = usePathname();
   const { currentTeam } = useLiff();
   const [isOtherMenuOpen, setIsOtherMenuOpen] = useState(false);
+  const [isMenuClosing, setIsMenuClosing] = useState(false);
+  const closeMenuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuScrollBodyRef = useRef<HTMLDivElement | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory>("schedule_match");
   const [navConfig, setNavConfig] = useState<BottomNavConfig>(
     () => hydratedBottomNavConfig ?? getDefaultBottomNavConfig()
   );
+
+  const clearCloseMenuTimer = useCallback(() => {
+    if (closeMenuTimerRef.current !== null) {
+      clearTimeout(closeMenuTimerRef.current);
+      closeMenuTimerRef.current = null;
+    }
+  }, []);
+
+  const closeMenuImmediate = useCallback(() => {
+    clearCloseMenuTimer();
+    setIsOtherMenuOpen(false);
+    setIsMenuClosing(false);
+  }, [clearCloseMenuTimer]);
+
+  const openMenu = useCallback(() => {
+    clearCloseMenuTimer();
+    setIsMenuClosing(false);
+    setIsOtherMenuOpen(true);
+  }, [clearCloseMenuTimer]);
+
+  const closeMenuAnimated = useCallback(() => {
+    clearCloseMenuTimer();
+    setIsOtherMenuOpen(false);
+    setIsMenuClosing(true);
+    closeMenuTimerRef.current = setTimeout(() => {
+      setIsMenuClosing(false);
+      closeMenuTimerRef.current = null;
+    }, 200);
+  }, [clearCloseMenuTimer]);
+
+  const toggleOtherMenu = useCallback(() => {
+    if (isOtherMenuOpen) {
+      closeMenuAnimated();
+    } else {
+      openMenu();
+    }
+  }, [closeMenuAnimated, isOtherMenuOpen, openMenu]);
+
+  const handleSelectCategory = useCallback((category: MenuCategory) => {
+    setSelectedCategory(category);
+    if (menuScrollBodyRef.current) {
+      menuScrollBodyRef.current.scrollTop = 0;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearCloseMenuTimer();
+    };
+  }, [clearCloseMenuTimer]);
 
   const handlePointerWarmup = useCallback(
     (href: string) => {
@@ -481,7 +534,7 @@ export function LiffBottomNav() {
   }, []);
 
   useEffect(() => {
-    setIsOtherMenuOpen(false);
+    closeMenuImmediate();
     if (
       pathname?.startsWith("/liff/profile") ||
       pathname?.startsWith("/liff/settings") ||
@@ -504,11 +557,7 @@ export function LiffBottomNav() {
     } else {
       setSelectedCategory("schedule_match");
     }
-  }, [pathname, currentTeam?.id]);
-
-  const filteredItems = useMemo(() => {
-    return MENU_ITEMS.filter((item) => item.category === selectedCategory);
-  }, [selectedCategory]);
+  }, [pathname, currentTeam?.id, closeMenuImmediate]);
 
   const leftSlotItem = useMemo(
     () =>
@@ -600,7 +649,7 @@ export function LiffBottomNav() {
                 <Link
                   href={centerSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(centerSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`w-[68px] h-[68px] rounded-full flex flex-col items-center justify-center px-1 shadow-lg active:scale-95 transition-all text-primary-foreground bg-primary shadow-primary/35 ${
                     isCenterActive && !isOtherMenuOpen
                       ? "ring-3 ring-primary/30 scale-105"
@@ -622,9 +671,7 @@ export function LiffBottomNav() {
                   href="/liff"
                   onPointerDown={() => handlePointerWarmup("/liff")}
                   onClick={(e) =>
-                    handleLiffRootLinkClick(e, router, pathname, () =>
-                      setIsOtherMenuOpen(false)
-                    )
+                    handleLiffRootLinkClick(e, router, pathname, closeMenuImmediate)
                   }
                   className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 ${
                     isHome && !isOtherMenuOpen
@@ -646,7 +693,7 @@ export function LiffBottomNav() {
                 <Link
                   href={leftSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(leftSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
                     isLeftActive && !isOtherMenuOpen
                       ? "text-primary font-black"
@@ -670,7 +717,7 @@ export function LiffBottomNav() {
                 <Link
                   href={rightSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(rightSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`flex flex-col items-center justify-center gap-1 px-0.5 transition-all select-none active:scale-90 ${
                     isRightActive && !isOtherMenuOpen
                       ? "text-primary font-black"
@@ -690,7 +737,7 @@ export function LiffBottomNav() {
                 {/* ⑤ ⋯ メニュー（固定） */}
                 <button
                   type="button"
-                  onClick={() => setIsOtherMenuOpen((prev) => !prev)}
+                  onClick={toggleOtherMenu}
                   className={`flex flex-col items-center justify-center gap-1 transition-all select-none active:scale-90 cursor-pointer ${
                     isOtherMenuOpen || isOther
                       ? "text-primary font-black"
@@ -717,9 +764,7 @@ export function LiffBottomNav() {
                   href="/liff"
                   onPointerDown={() => handlePointerWarmup("/liff")}
                   onClick={(e) =>
-                    handleLiffRootLinkClick(e, router, pathname, () =>
-                      setIsOtherMenuOpen(false)
-                    )
+                    handleLiffRootLinkClick(e, router, pathname, closeMenuImmediate)
                   }
                   className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 ${
                     isHome && !isOtherMenuOpen
@@ -741,7 +786,7 @@ export function LiffBottomNav() {
                 <Link
                   href={leftSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(leftSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isLeftActive && !isOtherMenuOpen
                       ? "text-primary font-black"
@@ -762,7 +807,7 @@ export function LiffBottomNav() {
                 <Link
                   href={centerSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(centerSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`relative flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isCenterActive && !isOtherMenuOpen
                       ? "text-primary font-black"
@@ -787,7 +832,7 @@ export function LiffBottomNav() {
                 <Link
                   href={rightSlotItem.href}
                   onPointerDown={() => handlePointerWarmup(rightSlotItem.href)}
-                  onClick={() => setIsOtherMenuOpen(false)}
+                  onClick={closeMenuImmediate}
                   className={`flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition-all select-none active:scale-90 ${
                     isRightActive && !isOtherMenuOpen
                       ? "text-primary font-black"
@@ -807,7 +852,7 @@ export function LiffBottomNav() {
                 {/* ⑤ ⋯ メニュー（固定） */}
                 <button
                   type="button"
-                  onClick={() => setIsOtherMenuOpen((prev) => !prev)}
+                  onClick={toggleOtherMenu}
                   className={`flex flex-col items-center justify-center gap-1 py-1 transition-all select-none active:scale-90 cursor-pointer ${
                     isOtherMenuOpen || isOther
                       ? "text-primary font-black"
@@ -834,214 +879,264 @@ export function LiffBottomNav() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          📑 「その他」タップ時の全メニュー一覧ボトムシート（Portal化してDOM階層を分離）
+          📑 「メニュー」タップ時の全メニュー一覧ボトムシート（Portal化・全3タブ高さ完全統一・下からスライド表示）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-      {isOtherMenuOpen &&
+      {(isOtherMenuOpen || isMenuClosing) &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9990] flex justify-center items-end bg-slate-950/60">
-            <div 
-              className="absolute inset-0"
-              onClick={() => setIsOtherMenuOpen(false)}
+          <div
+            className={`fixed inset-0 z-[9990] flex justify-center items-end overflow-hidden ${
+              !isOtherMenuOpen && isMenuClosing ? "pointer-events-none" : ""
+            }`}
+          >
+            <div
+              className={`absolute inset-0 bg-slate-950/60 ${
+                !isOtherMenuOpen && isMenuClosing
+                  ? "animate-liff-backdrop-out"
+                  : "animate-liff-backdrop-in"
+              }`}
+              onClick={closeMenuAnimated}
             />
 
-            <div className="w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl px-5 pb-[max(env(safe-area-inset-bottom),24px)] pt-0 space-y-4 relative z-10 max-h-[88dvh] overflow-y-auto">
-            {/* 🏷️ スティッキーヘッダー (A-3 Dark Solid Header Cap) & 3分割カテゴリタブ */}
-            <div className="sticky top-0 -mx-5 bg-background z-10 border-b border-border">
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 rounded-t-2xl flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
-                    <LayoutGrid className="w-4 h-4" />
-                  </span>
-                  <h4 className="text-sm font-black text-white">メニュー</h4>
+            <div
+              className={`w-full max-w-lg bg-background rounded-t-2xl border-t border-x border-border shadow-2xl relative z-10 max-h-[88dvh] flex flex-col overflow-hidden ${
+                !isOtherMenuOpen && isMenuClosing
+                  ? "animate-liff-sheet-down"
+                  : "animate-liff-sheet-up"
+              }`}
+            >
+              {/* 🏷️ 固定ヘッダー (A-3 Dark Solid Header Cap) & 3分割カテゴリタブ */}
+              <div className="shrink-0 bg-background border-b border-border">
+                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-5 py-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-xl bg-primary/20 text-blue-300 border border-primary/40 flex items-center justify-center">
+                      <LayoutGrid className="w-4 h-4" />
+                    </span>
+                    <h4 className="text-sm font-black text-white">メニュー</h4>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeMenuAnimated}
+                    className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsOtherMenuOpen(false)}
-                  className="p-1.5 rounded-full text-slate-300 hover:text-white hover:bg-slate-800 active:scale-90 transition-all cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
-              <div className="px-5 py-3 bg-card">
-                <div className="grid grid-cols-3 gap-1 p-1 bg-muted rounded-2xl border border-border">
-                  {MENU_TABS.map((tab) => {
-                    const isSelected = selectedCategory === tab.id;
-                    const TabIcon = tab.icon;
-                    const count = MENU_ITEMS.filter((i) => i.category === tab.id).length;
+                {/* 🏷️ 均等3分割セグメントタブ（横スクロール一切なし・全画面幅フィット） */}
+                <div className="px-5 py-3 bg-card">
+                  <div className="grid grid-cols-3 gap-1 p-1 bg-muted rounded-2xl border border-border">
+                    {MENU_TABS.map((tab) => {
+                      const isSelected = selectedCategory === tab.id;
+                      const TabIcon = tab.icon;
+                      const count = MENU_ITEMS.filter((i) => i.category === tab.id).length;
 
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setSelectedCategory(tab.id)}
-                        className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 ${
-                          isSelected
-                            ? "bg-card text-foreground border-border shadow-xs font-black"
-                            : "border-transparent text-muted-foreground hover:text-foreground font-bold"
-                        }`}
-                      >
-                        <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
-                        <span className="truncate">{tab.label}</span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                            isSelected 
-                              ? "bg-primary/12 text-primary font-black" 
-                              : "bg-card text-muted-foreground border border-border"
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => handleSelectCategory(tab.id)}
+                          className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl border text-xs transition-all active:scale-95 cursor-pointer ${
+                            isSelected
+                              ? "bg-card text-foreground border-border shadow-xs font-black"
+                              : "border-transparent text-muted-foreground hover:text-foreground font-bold"
                           }`}
                         >
-                          {count}
-                        </span>
-                      </button>
+                          <TabIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? "text-primary" : ""}`} />
+                          <span className="truncate">{tab.label}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                              isSelected
+                                ? "bg-primary/12 text-primary font-black"
+                                : "bg-card text-muted-foreground border border-border"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 🌟 スクロール領域（1×1グリッド重ね配置により全3タブのモーダル高さを1pxの狂いなく完全統一） */}
+              <div
+                ref={menuScrollBodyRef}
+                className="flex-1 min-h-0 overflow-y-auto px-5 pt-4 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col"
+              >
+                <div className="grid grid-cols-1">
+                  {MENU_TABS.map((tab) => {
+                    const isTabSelected = selectedCategory === tab.id;
+                    const tabItems = MENU_ITEMS.filter((item) => item.category === tab.id);
+                    const sections = CATEGORY_SECTIONS[tab.id];
+
+                    return (
+                      <div
+                        key={tab.id}
+                        inert={!isTabSelected}
+                        aria-hidden={!isTabSelected}
+                        className={`col-start-1 row-start-1 self-start space-y-4 ${
+                          isTabSelected
+                            ? "visible z-10"
+                            : "invisible pointer-events-none select-none"
+                        }`}
+                      >
+                        {sections ? (
+                          sections.map((section) => {
+                            const SectionIcon = section.icon;
+                            const sectionItems = tabItems.filter(
+                              (item) => item.subGroup === section.key
+                            );
+                            return (
+                              <div key={section.key} className="space-y-2">
+                                <div className="flex items-center justify-between gap-2 px-1 min-h-[22px]">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <SectionIcon
+                                      className={`w-3.5 h-3.5 shrink-0 ${section.iconTextClass}`}
+                                    />
+                                    <span className="text-[11px] font-black tracking-tight text-muted-foreground">
+                                      {section.label}
+                                    </span>
+                                  </div>
+                                  {section.badgeLabel && (
+                                    <span
+                                      className={
+                                        section.badgeAdmin
+                                          ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0"
+                                          : "inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-[9.5px] font-bold shrink-0"
+                                      }
+                                    >
+                                      {section.badgeAdmin && (
+                                        <Lock className="w-2.5 h-2.5 shrink-0" />
+                                      )}
+                                      <span>{section.badgeLabel}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2.5">
+                                  {sectionItems.map((item) => {
+                                    const ItemIcon = item.icon;
+                                    const isFullWidth = item.fullWidth;
+
+                                    return (
+                                      <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onPointerDown={() => handlePointerWarmup(item.href)}
+                                        onClick={closeMenuImmediate}
+                                        className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${
+                                          item.hoverBorderClass ?? "hover:border-primary/40"
+                                        } transition-all group active:scale-95 ${
+                                          isFullWidth ? "col-span-2" : ""
+                                        }`}
+                                      >
+                                        <span
+                                          className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}
+                                        >
+                                          <ItemIcon className="w-5 h-5" />
+                                          {item.adminOnly && (
+                                            <span
+                                              aria-label="管理者専用"
+                                              className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                            >
+                                              <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                                            </span>
+                                          )}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-xs font-black text-foreground truncate">
+                                            {item.title}
+                                          </p>
+                                          <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                            {item.subtitle}
+                                          </p>
+                                        </div>
+                                        {isFullWidth && (
+                                          <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
+                                        )}
+                                      </Link>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="grid grid-cols-2 gap-2.5">
+                            {tabItems.map((item) => {
+                              const ItemIcon = item.icon;
+                              const isFullWidth = item.fullWidth;
+
+                              return (
+                                <Link
+                                  key={item.href}
+                                  href={item.href}
+                                  onPointerDown={() => handlePointerWarmup(item.href)}
+                                  onClick={closeMenuImmediate}
+                                  className={`min-h-[62px] flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
+                                    isFullWidth ? "col-span-2" : ""
+                                  }`}
+                                >
+                                  <span
+                                    className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}
+                                  >
+                                    <ItemIcon className="w-5 h-5" />
+                                    {item.adminOnly && (
+                                      <span
+                                        aria-label="管理者専用"
+                                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
+                                      >
+                                        <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
+                                      </span>
+                                    )}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-black text-foreground truncate">
+                                      {item.title}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground font-bold truncate">
+                                      {item.subtitle}
+                                    </p>
+                                  </div>
+                                  {isFullWidth && (
+                                    <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
+                                  )}
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
+
+                {/* 📜 法務・規約リンク */}
+                <div className="mt-4 pt-3 border-t border-border flex items-center justify-center gap-3 shrink-0">
+                  <Link
+                    href="/liff/terms"
+                    onClick={closeMenuImmediate}
+                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-primary" />
+                    <span>利用規約</span>
+                  </Link>
+
+                  <Link
+                    href="/liff/privacy"
+                    onClick={closeMenuImmediate}
+                    className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                    <span>プライバシーポリシー</span>
+                  </Link>
+                </div>
               </div>
             </div>
-
-            {/* 🌟 フィルタリングされたメニュー項目グリッド */}
-            {CATEGORY_SECTIONS[selectedCategory] ? (
-              <div className="space-y-4">
-                {CATEGORY_SECTIONS[selectedCategory]?.map((section) => {
-                  const SectionIcon = section.icon;
-                  const sectionItems = filteredItems.filter((item) => item.subGroup === section.key);
-                  return (
-                    <div key={section.key} className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 px-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <SectionIcon className={`w-3.5 h-3.5 shrink-0 ${section.iconTextClass}`} />
-                          <span className="text-[11px] font-black tracking-tight text-muted-foreground">
-                            {section.label}
-                          </span>
-                        </div>
-                        {section.badgeLabel && (
-                          <span
-                            className={
-                              section.badgeAdmin
-                                ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0"
-                                : "inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border text-[9.5px] font-bold shrink-0"
-                            }
-                          >
-                            {section.badgeAdmin && <Lock className="w-2.5 h-2.5 shrink-0" />}
-                            <span>{section.badgeLabel}</span>
-                          </span>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        {sectionItems.map((item) => {
-                          const ItemIcon = item.icon;
-                          const isFullWidth = item.fullWidth;
-
-                          return (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              onPointerDown={() => handlePointerWarmup(item.href)}
-                              onClick={() => setIsOtherMenuOpen(false)}
-                              className={`flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs ${item.hoverBorderClass ?? "hover:border-primary/40"} transition-all group active:scale-95 ${
-                                isFullWidth ? "col-span-2" : ""
-                              }`}
-                            >
-                              <span className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
-                                <ItemIcon className="w-5 h-5" />
-                                {item.adminOnly && (
-                                  <span
-                                    aria-label="管理者専用"
-                                    className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
-                                  >
-                                    <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
-                                  </span>
-                                )}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-xs font-black text-foreground truncate">
-                                  {item.title}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground font-bold truncate">
-                                  {item.subtitle}
-                                </p>
-                              </div>
-                              {isFullWidth && (
-                                <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
-                              )}
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2.5">
-                {filteredItems.map((item) => {
-                  const ItemIcon = item.icon;
-                  const isFullWidth = item.fullWidth;
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onPointerDown={() => handlePointerWarmup(item.href)}
-                      onClick={() => setIsOtherMenuOpen(false)}
-                      className={`flex items-center gap-2.5 p-3 rounded-2xl border border-border bg-card shadow-xs hover:border-primary/40 transition-all group active:scale-95 ${
-                        isFullWidth ? "col-span-2" : ""
-                      }`}
-                    >
-                      <span className={`relative w-9 h-9 rounded-xl flex items-center justify-center font-black shrink-0 group-hover:scale-110 transition-transform shadow-2xs ${item.colorClass}`}>
-                        <ItemIcon className="w-5 h-5" />
-                        {item.adminOnly && (
-                          <span
-                            aria-label="管理者専用"
-                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#0f172a] text-amber-300 border border-card flex items-center justify-center shadow-2xs"
-                          >
-                            <Lock className="w-2.5 h-2.5 stroke-[2.5]" />
-                          </span>
-                        )}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-black text-foreground truncate">
-                          {item.title}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground font-bold truncate">
-                          {item.subtitle}
-                        </p>
-                      </div>
-                      {isFullWidth && (
-                        <ChevronRight className="w-4 h-4 text-muted-foreground mr-1 shrink-0" />
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 📜 法務・規約リンク */}
-            <div className="pt-3 border-t border-border flex items-center justify-center gap-3">
-              <Link
-                href="/liff/terms"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
-              >
-                <FileText className="w-3.5 h-3.5 text-primary" />
-                <span>利用規約</span>
-              </Link>
-
-              <Link
-                href="/liff/privacy"
-                onClick={() => setIsOtherMenuOpen(false)}
-                className="py-1.5 px-3 rounded-full bg-card hover:bg-muted active:scale-95 border border-border text-[11px] font-bold text-muted-foreground hover:text-foreground shadow-xs transition-all flex items-center gap-1.5"
-              >
-                <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-                <span>プライバシーポリシー</span>
-              </Link>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+          </div>,
+          document.body
+        )}
     </>
   );
 }
