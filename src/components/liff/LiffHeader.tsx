@@ -192,8 +192,7 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
   return (
     <header
       className={cn(
-        "sticky top-0 z-40 w-full bg-card border-b border-border shadow-xs transition-colors duration-200",
-        compact && "shrink-0"
+        "sticky top-0 z-40 w-full shrink-0 bg-card border-b border-border shadow-xs transition-colors duration-200"
       )}
     >
       <div

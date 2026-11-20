@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LiffHeader } from "@/components/liff/LiffHeader";
 import { AttendanceSummaryShareModal } from "@/components/liff/AttendanceSummaryShareModal";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
@@ -1970,9 +1971,17 @@ function AttendanceMatrixBoardContent() {
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
+    <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-background">
+      {/* 共通ヘッダー（チーム切替・プロフィール・トップ導線） */}
+      <LiffHeader
+        shareData={{
+          title: `【出欠一覧表】${currentTeam?.orgName || currentTeam?.name || "チーム"} 出欠・当番状況`,
+          text: "月別の活動予定と出欠一覧・当番集計はこちらから確認できます",
+        }}
+      />
+
       {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          ① 上部フル領域：出欠マトリクス表（余白ゼロ・ページ最上部から直配置・縦横2軸固定スクロール）
+          ① 上部フル領域：出欠マトリクス表（ヘッダー直下から余白ゼロで配置・縦横2軸固定スクロール）
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
       <div className="flex-1 min-h-0 w-full flex flex-col overflow-hidden bg-card">
         {isLoading ? (
@@ -4258,9 +4267,12 @@ export default function AttendanceMatrixBoardPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col flex-1 min-h-0 h-full w-full items-center justify-center bg-card text-muted-foreground space-y-2">
-          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="text-xs font-bold">出欠一覧表を読み込み中...</span>
+        <div className="flex flex-col flex-1 min-h-0 h-full w-full overflow-hidden bg-background">
+          <LiffHeader />
+          <div className="flex-1 flex flex-col items-center justify-center bg-card text-muted-foreground space-y-2">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <span className="text-xs font-bold">出欠一覧表を読み込み中...</span>
+          </div>
         </div>
       }
     >
