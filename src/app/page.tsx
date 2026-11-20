@@ -457,7 +457,10 @@ export default function LandingPage() {
       </section>
 
       {/* 3. ご利用開始までの3ステップ */}
-      <section className="border-t border-border bg-background py-12 sm:py-16">
+      <section
+        id="onboarding"
+        className="border-t border-border bg-background py-12 sm:py-16"
+      >
         <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8">
           <div className="text-center space-y-2">
             <p className="text-xs font-black tracking-[0.2em] uppercase text-primary">
