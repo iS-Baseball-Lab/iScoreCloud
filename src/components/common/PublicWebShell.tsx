@@ -39,6 +39,45 @@ export function PublicBrandLogoImg({
   );
 }
 
+const LINE_MINI_APP_LOGO_ASPECT_RATIO = 811.55 / 121.89;
+
+const LINE_MINI_APP_LOGO_SRC: Record<"green" | "white" | "black", string> = {
+  green: "/line-mini-app-logo-green-jp.svg",
+  white: "/line-mini-app-logo-white-jp.svg",
+  black: "/line-mini-app-logo-black-jp.svg",
+};
+
+/**
+ * LINEヤフー公式配布「LINE ミニアプリ」日本語ワードマーク（Version 2.2 正規SVG無加工表示）
+ * - 縦横比（811.55 : 121.89）固定、最小サイズ規定（PC 15px以上）および周囲クリアスペース（「プ」1文字分以上）を遵守して配置すること
+ */
+export function LineMiniAppWordmarkImg({
+  variant = "green",
+  heightPx = 18,
+  alt = "LINE ミニアプリ",
+  className,
+}: {
+  variant?: "green" | "white" | "black";
+  heightPx?: number;
+  alt?: string;
+  className?: string;
+}) {
+  const safeHeight = Math.max(15, Math.round(heightPx));
+  const safeWidth = Math.round(safeHeight * LINE_MINI_APP_LOGO_ASPECT_RATIO);
+
+  return (
+    <img
+      src={LINE_MINI_APP_LOGO_SRC[variant]}
+      alt={alt}
+      aria-hidden={alt === "" ? true : undefined}
+      width={safeWidth}
+      height={safeHeight}
+      style={{ width: `${safeWidth}px`, height: `${safeHeight}px` }}
+      className={cn("object-contain shrink-0 select-none", className)}
+    />
+  );
+}
+
 /**
  * 公開Webページ共通ヘッダー（`/`・`/terms`・`/privacy` 共通）
  * - ロゴ ＋ ブランド名 ＋ 外観テーマ切替（Light / System / Dark）のみのシンプルな構成
@@ -185,6 +224,11 @@ export function PublicWebFooter() {
             プライバシーポリシー
           </Link>
         </nav>
+      </div>
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-6 -mt-2 text-center sm:text-left">
+        <p className="text-[11px] font-medium text-muted-foreground leading-relaxed">
+          ※LINEおよびLINEミニアプリ、各種ロゴは、LINEヤフー株式会社の登録商標または商標です。
+        </p>
       </div>
     </footer>
   );

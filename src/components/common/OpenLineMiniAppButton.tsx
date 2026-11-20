@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SiLine } from "react-icons/si";
 import {
   ArrowUpRight,
   Check,
@@ -17,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { LineMiniAppWordmarkImg } from "@/components/common/PublicWebShell";
 import { cn } from "@/lib/utils";
 import {
   buildLineMiniAppTargets,
@@ -161,25 +161,9 @@ export function OpenLineMiniAppButton({
               className="w-full sm:max-w-md max-h-[88dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card text-foreground shadow-2xl overflow-hidden flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* A-3 上帯ダークキャップ × 公式LINEグリーン下線 */}
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-4 py-3.5 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img
-                    src="/liff-logo.webp?v=3"
-                    alt="iScoreCloud LINEミニアプリ"
-                    width={36}
-                    height={36}
-                    className="w-9 h-9 rounded-[22%] bg-white object-contain shrink-0 shadow-xs"
-                  />
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-black tracking-tight truncate">
-                      iScoreCloud LINEミニアプリ
-                    </h3>
-                    <p className="text-[10px] font-bold text-slate-300 tracking-wider uppercase">
-                      OPEN IN LINE MINI APP
-                    </p>
-                  </div>
-                </div>
+              {/* A-3 上帯ダークキャップ × 公式ワードマーク準拠（周囲クリアスペース確保） */}
+              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-5 py-4 flex items-center justify-between gap-4 shrink-0">
+                <LineMiniAppWordmarkImg variant="white" heightPx={18} />
                 <button
                   type="button"
                   onClick={() => setIsQrOpen(false)}
@@ -244,7 +228,6 @@ export function OpenLineMiniAppButton({
                       }}
                       className="w-full h-12 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-sm flex items-center justify-center gap-2 shadow-xs transition-colors"
                     >
-                      <SiLine className="w-5 h-5" />
                       <span>LINEアプリで起動する</span>
                       <ArrowUpRight className="w-4 h-4" />
                     </a>
@@ -254,7 +237,6 @@ export function OpenLineMiniAppButton({
                       onClick={handlePrepareHandoff}
                       className="w-full h-11 rounded-xl border border-[#06C755] bg-card hover:bg-muted text-[#06C755] font-black text-xs flex items-center justify-center gap-2 transition-colors"
                     >
-                      <SiLine className="w-4 h-4" />
                       <span>LINEアプリを起動する</span>
                       <ArrowUpRight className="w-3.5 h-3.5" />
                     </a>
@@ -309,26 +291,14 @@ export function OpenLineMiniAppButton({
             className
           )}
         >
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-4 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-7 h-7 rounded-lg bg-[#06C755] text-white flex items-center justify-center shrink-0">
-                <SiLine className="w-4 h-4" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs sm:text-sm font-black tracking-tight truncate">
-                    LINEミニアプリ版で開く
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-[#06C755] text-white text-[9px] font-black tracking-wider uppercase shrink-0">
-                    推奨
-                  </span>
-                </div>
-                {!compact && (
-                  <p className="text-[10px] font-bold text-slate-300 truncate mt-0.5">
-                    清書スコアブック・出欠一覧表・配車隊列マップ・AI球場取得に完全対応
-                  </p>
-                )}
-              </div>
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-5 py-3.5 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4 min-w-0">
+              <LineMiniAppWordmarkImg variant="white" heightPx={16} />
+              {!compact && (
+                <span className="px-1.5 py-0.5 rounded bg-[#06C755] text-white text-[9px] font-black tracking-wider uppercase shrink-0">
+                  推奨
+                </span>
+              )}
             </div>
 
             {compact && (
@@ -339,8 +309,8 @@ export function OpenLineMiniAppButton({
                     onClick={handlePrepareHandoff}
                     className="h-9 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center gap-1.5 transition-colors shadow-xs"
                   >
-                    <SiLine className="w-3.5 h-3.5" />
                     <span>ミニアプリ起動</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
                   </a>
                 ) : (
                   <Link
@@ -349,8 +319,8 @@ export function OpenLineMiniAppButton({
                     onClick={handlePrepareHandoff}
                     className="h-9 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center gap-1.5 transition-colors shadow-xs"
                   >
-                    <SiLine className="w-3.5 h-3.5" />
                     <span>ミニアプリを開く</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
                   </Link>
                 )}
                 <button
@@ -378,7 +348,6 @@ export function OpenLineMiniAppButton({
                     onClick={handlePrepareHandoff}
                     className="flex-1 sm:flex-initial h-11 px-4 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-xs"
                   >
-                    <SiLine className="w-4 h-4" />
                     <span>LINEミニアプリを開く</span>
                     <ArrowUpRight className="w-4 h-4" />
                   </a>
@@ -389,7 +358,6 @@ export function OpenLineMiniAppButton({
                     onClick={handlePrepareHandoff}
                     className="flex-1 sm:flex-initial h-11 px-4 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors shadow-xs"
                   >
-                    <SiLine className="w-4 h-4" />
                     <span>LINEミニアプリを開く</span>
                     <ChevronRight className="w-4 h-4" />
                   </Link>
@@ -421,12 +389,9 @@ export function OpenLineMiniAppButton({
             <a
               href={targets.externalLineUrl}
               onClick={handlePrepareHandoff}
-              className="flex-1 h-11 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-sm flex items-center justify-between transition-colors shadow-xs"
+              className="flex-1 h-11 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-sm flex items-center justify-between transition-colors shadow-xs"
             >
-              <span className="flex items-center gap-2.5">
-                <SiLine className="w-4 h-4" />
-                <span>LINEミニアプリを開く</span>
-              </span>
+              <span>LINEミニアプリを開く</span>
               <ArrowUpRight className="w-4 h-4" />
             </a>
           ) : (
@@ -434,12 +399,9 @@ export function OpenLineMiniAppButton({
               href={targets.internalHref}
               onPointerDown={handlePrefetch}
               onClick={handlePrepareHandoff}
-              className="flex-1 h-11 px-3 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-sm flex items-center justify-between transition-colors shadow-xs"
+              className="flex-1 h-11 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-sm flex items-center justify-between transition-colors shadow-xs"
             >
-              <span className="flex items-center gap-2.5">
-                <SiLine className="w-4 h-4" />
-                <span>LINEミニアプリを開く</span>
-              </span>
+              <span>LINEミニアプリを開く</span>
               <ChevronRight className="w-4 h-4" />
             </Link>
           )}
@@ -470,9 +432,8 @@ export function OpenLineMiniAppButton({
             <a
               href={targets.externalLineUrl}
               onClick={handlePrepareHandoff}
-              className="h-14 px-7 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2.5 shadow-md active:scale-[0.98] transition-all"
+              className="h-14 px-7 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all"
             >
-              <SiLine className="w-5 h-5" />
               <span>LINEミニアプリを開く</span>
               <ArrowUpRight className="w-4 h-4" />
             </a>
@@ -481,9 +442,8 @@ export function OpenLineMiniAppButton({
               href={targets.internalHref}
               onPointerDown={handlePrefetch}
               onClick={handlePrepareHandoff}
-              className="h-14 px-7 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2.5 shadow-md active:scale-[0.98] transition-all"
+              className="h-14 px-7 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2 shadow-md active:scale-[0.98] transition-all"
             >
-              <SiLine className="w-5 h-5" />
               <span>LINEミニアプリを開く</span>
               <ChevronRight className="w-4 h-4" />
             </Link>
@@ -514,24 +474,24 @@ export function OpenLineMiniAppButton({
           <a
             href={targets.externalLineUrl}
             onClick={handlePrepareHandoff}
-            className="h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] sm:text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all shrink-0"
+            className="h-9 sm:h-10 px-3 sm:px-3.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] sm:text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all shrink-0"
             title="LINEミニアプリを起動"
           >
-            <SiLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span className="sm:hidden">ミニアプリ</span>
             <span className="hidden sm:inline">LINEミニアプリ</span>
+            <ArrowUpRight className="w-3.5 h-3.5 shrink-0" />
           </a>
         ) : (
           <Link
             href={targets.internalHref}
             onPointerDown={handlePrefetch}
             onClick={handlePrepareHandoff}
-            className="h-9 sm:h-10 px-2.5 sm:px-3.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] sm:text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all shrink-0"
+            className="h-9 sm:h-10 px-3 sm:px-3.5 rounded-full bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-[11px] sm:text-xs flex items-center gap-1.5 shadow-xs active:scale-95 transition-all shrink-0"
             title="LINEミニアプリを開く"
           >
-            <SiLine className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span className="sm:hidden">ミニアプリ</span>
             <span className="hidden sm:inline">LINEミニアプリ</span>
+            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
           </Link>
         )}
 

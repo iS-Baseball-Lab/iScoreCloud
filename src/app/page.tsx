@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { SiLine } from "react-icons/si";
 import {
   ArrowUpRight,
   BarChart3,
@@ -24,6 +23,7 @@ import {
   type LineMiniAppConfig,
 } from "@/lib/line-miniapp";
 import {
+  LineMiniAppWordmarkImg,
   PublicBrandLogoImg,
   PublicWebLayoutShell,
 } from "@/components/common/PublicWebShell";
@@ -213,18 +213,11 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* 中央メインカード：LINEミニアプリ起動ボタン ＋ 2次元コード（A-3 ソリッド規格） */}
+        {/* 中央メインカード：LINEミニアプリ起動ボタン ＋ 2次元コード（A-3 ソリッド規格 × 公式ワードマーク準拠） */}
         <div className="max-w-md mx-auto rounded-2xl border border-border bg-card shadow-sm overflow-hidden text-left">
-          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-5 py-3.5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <span className="w-7 h-7 rounded-lg bg-[#06C755] text-white flex items-center justify-center shrink-0">
-                <SiLine className="w-4 h-4" />
-              </span>
-              <span className="text-sm font-black tracking-tight truncate">
-                iScoreCloud LINEミニアプリ
-              </span>
-            </div>
-            <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] font-black text-slate-200 shrink-0">
+          <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-[#06C755] px-6 py-4 flex items-center justify-between gap-5">
+            <LineMiniAppWordmarkImg variant="white" heightPx={18} />
+            <span className="px-2.5 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] font-black text-slate-200 shrink-0">
               無料・DL不要
             </span>
           </div>
@@ -235,9 +228,8 @@ export default function LandingPage() {
               <a
                 href={lineLaunchUrl}
                 id="launch-line-miniapp-btn"
-                className="w-full h-14 px-6 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2.5 shadow-sm active:scale-[0.98] transition-all"
+                className="w-full h-14 px-6 rounded-2xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-base flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-all"
               >
-                <SiLine className="w-5 h-5 shrink-0" />
                 <span>LINEミニアプリを開く</span>
                 <ArrowUpRight className="w-4 h-4 shrink-0" />
               </a>
