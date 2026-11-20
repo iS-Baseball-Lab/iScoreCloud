@@ -23,7 +23,10 @@ import {
   resolveLineMiniAppConfig,
   type LineMiniAppConfig,
 } from "@/lib/line-miniapp";
-import { PublicWebLayoutShell } from "@/components/common/PublicWebShell";
+import {
+  PublicBrandLogoImg,
+  PublicWebLayoutShell,
+} from "@/components/common/PublicWebShell";
 import { cn } from "@/lib/utils";
 
 interface FeatureDomainItem {
@@ -308,12 +311,22 @@ export default function LandingPage() {
         className="border-t border-border bg-background py-12 sm:py-20"
       >
         <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-8 sm:space-y-10">
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-2.5">
             <p className="text-xs font-black tracking-[0.2em] uppercase text-primary">
               ALL-IN-ONE PLATFORM
             </p>
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground">
-              iScoreCloud の主な機能
+            <h2 className="flex flex-wrap items-center justify-center gap-x-1.5 sm:gap-x-2 gap-y-1.5 text-2xl sm:text-3xl font-black tracking-tight text-foreground">
+              <span className="inline-flex items-center gap-2 sm:gap-2.5">
+                <PublicBrandLogoImg
+                  size={40}
+                  alt=""
+                  className="w-9 h-9 sm:w-10 sm:h-10 border border-border/80 shadow-2xs"
+                />
+                <span className="inline-block pr-1 sm:pr-1.5 font-black italic tracking-tighter leading-none text-foreground">
+                  iScore<span className="text-primary">Cloud</span>
+                </span>
+              </span>
+              <span className="leading-none">の主な機能</span>
             </h2>
             <p className="text-xs sm:text-sm font-bold text-muted-foreground max-w-2xl mx-auto">
               監督・コーチ・スコアラー・保護者・選手それぞれの現場目線で磨き上げた機能が、すべてLINEミニアプリ内で連動します。

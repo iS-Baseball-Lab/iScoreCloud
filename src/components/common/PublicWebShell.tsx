@@ -11,15 +11,18 @@ import { cn } from "@/lib/utils";
 
 export function PublicBrandLogoImg({
   size = 40,
+  alt = "iScoreCloud",
   className,
 }: {
   size?: number;
+  alt?: string;
   className?: string;
 }) {
   return (
     <img
       src="/liff-logo.webp?v=3"
-      alt="iScoreCloud"
+      alt={alt}
+      aria-hidden={alt === "" ? true : undefined}
       width={size}
       height={size}
       onError={(e) => {
