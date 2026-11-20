@@ -218,14 +218,14 @@ export function LiffHeader({ shareData, compact = false }: LiffHeaderProps) {
           <div className="flex flex-col justify-center">
             <h1
               className={cn(
-                "pr-1 font-black italic tracking-tighter text-foreground leading-none group-hover:text-primary transition-colors",
+                "pr-1 font-black italic tracking-tighter text-foreground leading-[0.95] group-hover:text-primary transition-colors",
                 compact ? "text-[13.5px]" : "text-[15px] sm:text-lg"
               )}
             >
               iScore<span className="text-primary">Cloud</span>
             </h1>
             {!compact && (
-              <span className="text-[9px] sm:text-[9.5px] font-bold text-muted-foreground tracking-tight leading-none mt-0.5 select-none">
+              <span className="text-[10.5px] sm:text-[11px] font-bold text-muted-foreground tracking-tight leading-none -mt-px select-none whitespace-nowrap">
                 LINEミニアプリ
               </span>
             )}
