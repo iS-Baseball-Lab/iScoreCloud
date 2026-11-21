@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
+import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 
 export interface HubCalendarEventInput {
   id: string;
@@ -276,10 +277,14 @@ export function HubCalendarSection({
           </div>
         </div>
 
-        <div className="relative bg-card overflow-hidden">
+        <CalendarSwipeSurface
+          monthSerial={currentYear * 12 + currentMonth}
+          onPrevMonth={handlePrevMonth}
+          onNextMonth={handleNextMonth}
+        >
           <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" />
 
-          <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2.5">
+          <div className="relative z-10 px-3.5 pb-2.5 pt-[47.5%] space-y-2.5">
         {/* ━━ 2. 曜日ヘッダー ━━ */}
         <div className="grid grid-cols-7 text-center text-[10px] font-black text-foreground uppercase pb-0.5 border-b border-border/60">
           {weekDays.map((day, idx) => (
@@ -341,8 +346,11 @@ export function HubCalendarSection({
             );
           })}
         </div>
+          </div>
+        </CalendarSwipeSurface>
 
         {/* ━━ 4. 予定一覧（当日の予定 ＆ 直近の予定） ━━ */}
+        <div className="px-3.5 pb-3.5 bg-card">
         <div className="pt-2 border-t border-border/60 space-y-3">
           
           {/* 🔴 【当日の活動予定】 */}
@@ -599,7 +607,6 @@ export function HubCalendarSection({
             </div>
           </div>
         </div>
-          </div>
         </div>
       </div>
     </div>

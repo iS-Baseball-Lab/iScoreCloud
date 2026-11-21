@@ -27,6 +27,7 @@ import {
 } from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
+import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
   Calendar as CalendarIcon,
@@ -1316,7 +1317,11 @@ export default function LiffSchedulePage() {
             </div>
           </div>
 
-          <div className="relative bg-card overflow-hidden">
+          <CalendarSwipeSurface
+            monthSerial={currentYear * 12 + currentMonth}
+            onPrevMonth={handlePrevMonth}
+            onNextMonth={handleNextMonth}
+          >
             <CalendarMonthPhotoMelt month={currentMonth + 1} variant="compact" eager />
 
             <div className="relative z-10 px-2.5 pb-2.5 pt-[47%] sm:px-3 sm:pb-3 sm:pt-[47%] space-y-1.5">
@@ -1424,7 +1429,7 @@ export default function LiffSchedulePage() {
             })}
           </div>
             </div>
-          </div>
+          </CalendarSwipeSurface>
         </div>
 
         {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}

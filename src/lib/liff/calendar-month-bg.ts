@@ -127,3 +127,57 @@ export function getAdjacentCalendarMonthPhotoMelts(
     resolveCalendarMonthPhotoMelt(normalized + 1),
   ] as const;
 }
+
+export type CalendarSwipeAxis = "undecided" | "horizontal" | "vertical";
+export type CalendarSwipeDirection = "prev" | "next" | "none";
+
+/**
+ * スマート・スワイプ制御：縦スクロールと横フリックを厳格に分離判定する
+ * - 8px 未満の微細移動は未確定（タップ操作を阻害しない）
+ * - 横移動量が縦移動量の 1.15 倍を超える明確な横操作のみ horizontal と判定し、それ以外は縦スクロール優先とする
+ */
+export function detectCalendarSwipeAxis(
+  dx: number,
+  dy: number
+): CalendarSwipeAxis {
+  if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+    return "undecided";
+  }
+  if (Math.abs(dx) > Math.abs(dy) * 1.15) {
+    return "horizontal";
+  }
+  return "vertical";
+}
+
+export interface ResolveCalendarFlickDirectionParams {
+  totalDx: number;
+  elapsedMs: number;
+  containerWidth: number;
+}
+
+/**
+ * 横スワイプ／フリック完了時の月切替方向を判定する
+ * - 左方向（totalDx < 0）: 翌月（"next"）
+ * - 右方向（totalDx > 0）: 前月（"prev"）
+ * - 閾値未満の微小ドラッグは "none"（元の月へスプリング復帰）
+ */
+export function resolveCalendarFlickDirection({
+  totalDx,
+  elapsedMs,
+  containerWidth,
+}: ResolveCalendarFlickDirectionParams): CalendarSwipeDirection {
+  const safeWidth = Math.max(180, containerWidth || 360);
+  const distanceThreshold = Math.min(54, safeWidth * 0.15);
+  const safeElapsed = Math.max(1, elapsedMs);
+  const velocity = Math.abs(totalDx) / safeElapsed;
+  const isFastFlick = Math.abs(totalDx) >= 24 && velocity >= 0.28;
+
+  if (totalDx <= -distanceThreshold || (totalDx < 0 && isFastFlick)) {
+    return "next";
+  }
+  if (totalDx >= distanceThreshold || (totalDx > 0 && isFastFlick)) {
+    return "prev";
+  }
+  return "none";
+}
+

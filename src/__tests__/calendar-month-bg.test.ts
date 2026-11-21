@@ -4,12 +4,14 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CALENDAR_MONTH_PHOTO_MELT_ASSETS,
+  detectCalendarSwipeAxis,
   getAdjacentCalendarMonthPhotoMelts,
   normalizeCalendarMonthNumber,
+  resolveCalendarFlickDirection,
   resolveCalendarMonthPhotoMelt,
 } from "@/lib/liff/calendar-month-bg";
 
-describe("Calendar monthly seasonal photo-melt resolver", () => {
+describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physics", () => {
   it("defines 12 distinct monthly assets for January through December", () => {
     expect(CALENDAR_MONTH_PHOTO_MELT_ASSETS).toHaveLength(12);
 
@@ -54,5 +56,61 @@ describe("Calendar monthly seasonal photo-melt resolver", () => {
       expect(existsSync(filePath), `Missing asset: ${filePath}`).toBe(true);
       expect(statSync(filePath).size).toBeGreaterThan(1024);
     }
+  });
+
+  it("strictly separates vertical scrolling from horizontal calendar swipes", () => {
+    // Sub-8px tap jitter stays undecided
+    expect(detectCalendarSwipeAxis(4, 3)).toBe("undecided");
+    // Vertical or diagonal-vertical movement prioritizes native page scrolling
+    expect(detectCalendarSwipeAxis(12, 24)).toBe("vertical");
+    expect(detectCalendarSwipeAxis(-18, 18)).toBe("vertical");
+    // Clear horizontal flick locks horizontal
+    expect(detectCalendarSwipeAxis(-28, 6)).toBe("horizontal");
+    expect(detectCalendarSwipeAxis(32, -8)).toBe("horizontal");
+  });
+
+  it("resolves left flick to next month, right flick to previous month, and tiny drags to none", () => {
+    // Left swipe beyond distance threshold -> next month
+    expect(
+      resolveCalendarFlickDirection({
+        totalDx: -64,
+        elapsedMs: 320,
+        containerWidth: 380,
+      })
+    ).toBe("next");
+
+    // Right swipe beyond distance threshold -> prev month
+    expect(
+      resolveCalendarFlickDirection({
+        totalDx: 64,
+        elapsedMs: 320,
+        containerWidth: 380,
+      })
+    ).toBe("prev");
+
+    // Quick short thumb flick -> triggers month switch even below full drag threshold
+    expect(
+      resolveCalendarFlickDirection({
+        totalDx: -30,
+        elapsedMs: 75,
+        containerWidth: 380,
+      })
+    ).toBe("next");
+    expect(
+      resolveCalendarFlickDirection({
+        totalDx: 28,
+        elapsedMs: 70,
+        containerWidth: 380,
+      })
+    ).toBe("prev");
+
+    // Slow short drag -> cancels cleanly without switching month
+    expect(
+      resolveCalendarFlickDirection({
+        totalDx: -20,
+        elapsedMs: 260,
+        containerWidth: 380,
+      })
+    ).toBe("none");
   });
 });

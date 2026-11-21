@@ -20,6 +20,7 @@ import {
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
+import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import {
   fetchLiffJsonSWR,
   invalidateLiffApiCache,
@@ -896,7 +897,11 @@ export function MonthlySchedulePlanner({
           </div>
         </div>
 
-        <div className="relative bg-card overflow-hidden">
+        <CalendarSwipeSurface
+          monthSerial={currentYear * 12 + currentMonth}
+          onPrevMonth={handlePrevMonth}
+          onNextMonth={handleNextMonth}
+        >
           <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" eager />
 
           <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2">
@@ -978,7 +983,7 @@ export function MonthlySchedulePlanner({
             })}
           </div>
           </div>
-        </div>
+        </CalendarSwipeSurface>
       </div>
 
       {/* 🌟 3. 現在表示中の月の活動日一覧リスト */}
