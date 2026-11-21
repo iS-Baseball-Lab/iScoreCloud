@@ -18,6 +18,7 @@ const AttendanceSummaryShareModal = dynamic(
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
 import { canGoBackInLiff, navigateToLiffRoot } from "@/lib/liff/navigation";
+import { getJapaneseHolidayNameFromDateStr } from "@/lib/liff/japanese-holidays";
 import {
   PLAYER_CONDITION_META,
   comparePlayersByConditionAndUniform,
@@ -2186,8 +2187,10 @@ function AttendanceMatrixBoardContent() {
               {/* 📌 ボディ行 (イベントごと) */}
               <tbody>
                 {filteredEvents.map((ev) => {
-                  const isSaturday = ev.dayOfWeek === "土";
+                  const holidayName = getJapaneseHolidayNameFromDateStr(ev.dateStr);
                   const isSunday = ev.dayOfWeek === "日";
+                  const isRedDay = isSunday || Boolean(holidayName);
+                  const isBlueDay = !isRedDay && ev.dayOfWeek === "土";
 
                   // 🌟 表示中メンバー(currentMembers)に基づいた動的集計を算出
                   let duty = 0;
@@ -2221,10 +2224,11 @@ function AttendanceMatrixBoardContent() {
                           <div className="flex items-center gap-1 min-w-0">
                             {/* 統一幅の日付バッジ (幅52px固定) */}
                             <span
+                              title={holidayName || undefined}
                               className={`w-[52px] min-w-[52px] max-w-[52px] text-center inline-block tabular-nums font-bold text-[10px] py-0.5 px-0.5 rounded shrink-0 ${
-                                isSunday
+                                isRedDay
                                   ? "bg-red-500/10 text-red-500"
-                                  : isSaturday
+                                  : isBlueDay
                                   ? "bg-blue-500/10 text-blue-500"
                                   : "bg-muted text-foreground"
                               }`}

@@ -1,4 +1,5 @@
 // filepath: src/lib/liff/calendar-month-bg.ts
+import { getJapaneseHolidayName } from "@/lib/liff/japanese-holidays";
 
 export interface CalendarMonthPhotoMeltAsset {
   /** 1〜12 の月番号 */
@@ -210,6 +211,10 @@ export interface CalendarGridDayCell {
   /** YYYY-MM-DD */
   dateStr: string;
   isCurrentMonth: boolean;
+  /** 日本の祝日名（平日・通常土日の場合は null） */
+  holidayName: string | null;
+  /** 日本の祝日（振替休日・国民の休日を含む）フラグ */
+  isHoliday: boolean;
 }
 
 function toYmdString(date: Date): string {
@@ -217,6 +222,20 @@ function toYmdString(date: Date): string {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function createCalendarGridCell(
+  date: Date,
+  isCurrentMonth: boolean
+): CalendarGridDayCell {
+  const holidayName = getJapaneseHolidayName(date);
+  return {
+    date,
+    dateStr: toYmdString(date),
+    isCurrentMonth,
+    holidayName,
+    isHoliday: holidayName !== null,
+  };
 }
 
 /**
@@ -233,31 +252,19 @@ export function buildCalendarMonthGridDays(
 
   for (let i = startDayOfWeek - 1; i >= 0; i--) {
     const d = new Date(year, monthIndex - 1, prevMonthLastDate - i);
-    days.push({
-      date: d,
-      dateStr: toYmdString(d),
-      isCurrentMonth: false,
-    });
+    days.push(createCalendarGridCell(d, false));
   }
 
   const currentMonthLastDate = new Date(year, monthIndex + 1, 0).getDate();
   for (let i = 1; i <= currentMonthLastDate; i++) {
     const d = new Date(year, monthIndex, i);
-    days.push({
-      date: d,
-      dateStr: toYmdString(d),
-      isCurrentMonth: true,
-    });
+    days.push(createCalendarGridCell(d, true));
   }
 
   const remainingDays = 42 - days.length;
   for (let i = 1; i <= remainingDays; i++) {
     const d = new Date(year, monthIndex + 1, i);
-    days.push({
-      date: d,
-      dateStr: toYmdString(d),
-      isCurrentMonth: false,
-    });
+    days.push(createCalendarGridCell(d, false));
   }
 
   return days;

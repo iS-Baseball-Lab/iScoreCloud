@@ -27,6 +27,7 @@ import {
 } from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
 import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
+import { getJapaneseHolidayNameFromDateStr } from "@/lib/liff/japanese-holidays";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
@@ -1364,8 +1365,8 @@ export default function LiffSchedulePage() {
                         const dayEvents = eventsByDate.get(d.dateStr) || [];
                         const isSelected = selectedDateStr === d.dateStr;
                         const isToday = d.dateStr === todayStr;
-                        const isSun = d.date.getDay() === 0;
-                        const isSat = d.date.getDay() === 6;
+                        const isRedDay = d.date.getDay() === 0 || d.isHoliday;
+                        const isBlueDay = !isRedDay && d.date.getDay() === 6;
 
                         const hasMatch = dayEvents.some(
                           (e) =>
@@ -1387,6 +1388,7 @@ export default function LiffSchedulePage() {
                           <button
                             key={idx}
                             type="button"
+                            title={d.holidayName || undefined}
                             onClick={() => {
                               if (isSelected) {
                                 setSelectedDateStr(null);
@@ -1408,9 +1410,15 @@ export default function LiffSchedulePage() {
                               className={`text-[11px] leading-tight ${
                                 isSelected
                                   ? "text-primary-foreground font-black"
-                                  : isSun
-                                  ? "text-red-500"
-                                  : isSat
+                                  : !d.isCurrentMonth
+                                  ? isRedDay
+                                    ? "text-red-500/40"
+                                    : isBlueDay
+                                    ? "text-blue-500/40"
+                                    : ""
+                                  : isRedDay
+                                  ? "text-red-500 font-black"
+                                  : isBlueDay
                                   ? "text-blue-500"
                                   : ""
                               }`}
@@ -1692,12 +1700,15 @@ export default function LiffSchedulePage() {
               const displayCarInfo = (hasActivityGroups && currentGroup?.carInfo) ? currentGroup.carInfo : ev.carInfo;
               const displayTargetGroup = (hasActivityGroups && currentGroup?.targetGroup) ? currentGroup.targetGroup : ev.targetGroup;
 
-              // 🗓️ 日付の曜日パース（土=青、日=赤の明確なカレンダー色分け）
+              // 🗓️ 日付の曜日・日本の祝日パース（土=青、日・祝=赤の明確な色分け）
               const dateMatch = ev.date?.match(/^(.*?)(?:\((.)\))?$/);
               const dateText = dateMatch ? dateMatch[1] : ev.date;
               const dayOfWeek = dateMatch ? dateMatch[2] : "";
-              const isSat = dayOfWeek === "土";
+              const holidayName = getJapaneseHolidayNameFromDateStr(ev.dateStr);
+              const isHoliday = Boolean(holidayName);
               const isSun = dayOfWeek === "日";
+              const isRedDay = isSun || isHoliday;
+              const isBlueDay = !isRedDay && dayOfWeek === "土";
 
               const totalResponses =
                 (ev.attendCount?.present || 0) +
@@ -1726,14 +1737,17 @@ export default function LiffSchedulePage() {
                             {dateText}
                           </span>
                           {dayOfWeek && (
-                            <span className={`px-1.5 py-0.5 rounded text-xs font-black ${
-                              isSat
-                                ? "bg-sky-500 text-slate-950"
-                                : isSun
-                                ? "bg-rose-500 text-white"
-                                : "bg-slate-700 text-slate-100"
-                            }`}>
-                              {dayOfWeek}
+                            <span
+                              title={holidayName || undefined}
+                              className={`px-1.5 py-0.5 rounded text-xs font-black ${
+                                isRedDay
+                                  ? "bg-rose-500 text-white"
+                                  : isBlueDay
+                                  ? "bg-sky-500 text-slate-950"
+                                  : "bg-slate-700 text-slate-100"
+                              }`}
+                            >
+                              {isHoliday && !isSun ? `${dayOfWeek}・祝` : dayOfWeek}
                             </span>
                           )}
                         </div>

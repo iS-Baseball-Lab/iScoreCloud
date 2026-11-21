@@ -20,76 +20,8 @@ import type {
 // 1. 日付・祝日フォーマット（iOS Safari安全パース ＆ 日本の祝日自動判定）
 // =========================================================
 
-function nthMondayOfMonth(year: number, month1Based: number, nth: number): number {
-  const firstDay = new Date(year, month1Based - 1, 1).getDay();
-  const firstMonday = firstDay <= 1 ? 2 - firstDay : 9 - firstDay;
-  return firstMonday + (nth - 1) * 7;
-}
-
-function calcVernalEquinoxDay(year: number): number {
-  return Math.floor(
-    20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4)
-  );
-}
-
-function calcAutumnalEquinoxDay(year: number): number {
-  return Math.floor(
-    23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4)
-  );
-}
-
-function isBaseJapaneseHoliday(year: number, month: number, day: number): boolean {
-  if (month === 1 && day === 1) return true; // 元日
-  if (month === 1 && day === nthMondayOfMonth(year, 1, 2)) return true; // 成人の日
-  if (month === 2 && day === 11) return true; // 建国記念の日
-  if (month === 2 && day === 23 && year >= 2020) return true; // 天皇誕生日
-  if (month === 3 && day === calcVernalEquinoxDay(year)) return true; // 春分の日
-  if (month === 4 && day === 29) return true; // 昭和の日
-  if (month === 5 && (day === 3 || day === 4 || day === 5)) return true; // 憲法・みどり・こども
-  if (month === 7 && day === nthMondayOfMonth(year, 7, 3)) return true; // 海の日
-  if (month === 8 && day === 11 && year >= 2016) return true; // 山の日
-  if (month === 9 && day === nthMondayOfMonth(year, 9, 3)) return true; // 敬老の日
-  if (month === 9 && day === calcAutumnalEquinoxDay(year)) return true; // 秋分の日
-  if (month === 10 && day === nthMondayOfMonth(year, 10, 2)) return true; // スポーツの日
-  if (month === 11 && day === 3) return true; // 文化の日
-  if (month === 11 && day === 23) return true; // 勤労感謝の日
-  return false;
-}
-
-export function isJapaneseHoliday(date: Date): boolean {
-  const y = date.getFullYear();
-  const m = date.getMonth() + 1;
-  const d = date.getDate();
-  if (isBaseJapaneseHoliday(y, m, d)) return true;
-
-  // 振替休日判定（日曜が祝日の場合、以降の最初の平日が振替休日）
-  const dow = date.getDay();
-  if (dow !== 0) {
-    const cursor = new Date(y, m - 1, d);
-    while (true) {
-      cursor.setDate(cursor.getDate() - 1);
-      const cy = cursor.getFullYear();
-      const cm = cursor.getMonth() + 1;
-      const cd = cursor.getDate();
-      if (!isBaseJapaneseHoliday(cy, cm, cd)) break;
-      if (cursor.getDay() === 0) return true;
-    }
-  }
-
-  // 国民の休日（前日と翌日がともに祝日の平日）
-  if (dow !== 0) {
-    const prev = new Date(y, m - 1, d - 1);
-    const next = new Date(y, m - 1, d + 1);
-    if (
-      isBaseJapaneseHoliday(prev.getFullYear(), prev.getMonth() + 1, prev.getDate()) &&
-      isBaseJapaneseHoliday(next.getFullYear(), next.getMonth() + 1, next.getDate())
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
+import { isJapaneseHoliday } from "@/lib/liff/japanese-holidays";
+export { isJapaneseHoliday };
 
 export function parseSafeJstDate(rawDate: string | null | undefined): Date | null {
   if (!rawDate) return null;

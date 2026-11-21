@@ -20,6 +20,7 @@ import {
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
 import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
+import { getJapaneseHolidayName } from "@/lib/liff/japanese-holidays";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import {
@@ -909,13 +910,14 @@ export function MonthlySchedulePlanner({
                         (it) => it.dateStr === dateStr
                       );
                       const isToday = dateStr === todayDateStr;
-                      const isSun = d.date.getDay() === 0;
-                      const isSat = d.date.getDay() === 6;
+                      const isRedDay = d.date.getDay() === 0 || d.isHoliday;
+                      const isBlueDay = !isRedDay && d.date.getDay() === 6;
 
                       return (
                         <button
                           key={idx}
                           type="button"
+                          title={d.holidayName || undefined}
                           onClick={() => handleToggleDate(d.date)}
                           className={cn(
                             "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
@@ -932,9 +934,15 @@ export function MonthlySchedulePlanner({
                           <span
                             className={cn(
                               "text-sm",
-                              isSun
+                              !d.isCurrentMonth
+                                ? isRedDay
+                                  ? "text-red-500/35 font-bold"
+                                  : isBlueDay
+                                  ? "text-blue-500/35 font-bold"
+                                  : "font-bold"
+                                : isRedDay
                                 ? "text-red-500 font-black"
-                                : isSat
+                                : isBlueDay
                                 ? "text-blue-500 font-black"
                                 : isSelected
                                 ? "text-primary font-black"
@@ -944,19 +952,21 @@ export function MonthlySchedulePlanner({
                             {d.date.getDate()}
                           </span>
 
-                          {/* 選択状態ラベル */}
+                          {/* 選択状態ラベル / 今日 / 祝日名 */}
                           {isSelected ? (
                             <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
                               <Check className="w-2.5 h-2.5" />
                               <span>活動日</span>
                             </span>
-                          ) : (
-                            isToday && (
-                              <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
-                                今日
-                              </span>
-                            )
-                          )}
+                          ) : isToday ? (
+                            <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
+                              今日
+                            </span>
+                          ) : d.isCurrentMonth && d.holidayName ? (
+                            <span className="mt-1 text-[8.5px] font-black text-red-500/85 leading-none max-w-full truncate">
+                              {d.holidayName}
+                            </span>
+                          ) : null}
                         </button>
                       );
                     })}
@@ -1041,8 +1051,10 @@ export function MonthlySchedulePlanner({
                   {currentMonthItems.map((it) => {
                     const [y, m, d] = it.dateStr.split("-").map(Number);
                     const dObj = new Date(y, m - 1, d);
+                    const holidayName = getJapaneseHolidayName(dObj);
                     const isSun = dObj.getDay() === 0;
-                    const isSat = dObj.getDay() === 6;
+                    const isRedDay = isSun || Boolean(holidayName);
+                    const isBlueDay = !isRedDay && dObj.getDay() === 6;
                     const resolvedGroup = it.targetGroup || "全体";
                     const rowGroupOptions = effectiveTargetGroups.includes(resolvedGroup)
                       ? targetGroupSelectOptions
@@ -1069,17 +1081,22 @@ export function MonthlySchedulePlanner({
                         <div className="flex items-center gap-2.5 min-w-0">
                           {/* 日付バッジ */}
                           <div
+                            title={holidayName || undefined}
                             className={cn(
                               "w-12 h-12 rounded-xl flex flex-col items-center justify-center shrink-0 font-black leading-tight border",
-                              isSun
+                              isRedDay
                                 ? "bg-red-500/10 text-red-500 border-red-500/20"
-                                : isSat
+                                : isBlueDay
                                 ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
                                 : "bg-card text-foreground border-border"
                             )}
                           >
                             <span className="text-[10px] opacity-75">{m}/{d}</span>
-                            <span className="text-xs font-black">{weekDays[dObj.getDay()]}</span>
+                            <span className="text-xs font-black">
+                              {holidayName && !isSun
+                                ? `${weekDays[dObj.getDay()]}祝`
+                                : weekDays[dObj.getDay()]}
+                            </span>
                           </div>
 
                           {/* 予定詳細 */}

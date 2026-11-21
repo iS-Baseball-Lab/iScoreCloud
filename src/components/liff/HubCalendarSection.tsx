@@ -373,23 +373,31 @@ export function HubCalendarSection({
                       const flags = getDateFlags(dayStr);
 
                       const dayOfWeek = day.date.getDay();
-                      const isSunday = dayOfWeek === 0;
-                      const isSaturday = dayOfWeek === 6;
+                      const isRedDay = dayOfWeek === 0 || day.isHoliday;
+                      const isBlueDay = !isRedDay && dayOfWeek === 6;
 
                       return (
                         <button
                           key={idx}
                           type="button"
+                          title={day.holidayName || undefined}
                           onClick={() => setSelectedDate(day.date)}
                           className={cn(
                             "relative h-7 sm:h-8 flex flex-col items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer border border-transparent select-none py-0.5",
                             !day.isCurrentMonth && "text-muted-foreground/30",
                             day.isCurrentMonth && "hover:bg-muted/60",
-                            day.isCurrentMonth && isSunday && "text-red-500",
-                            day.isCurrentMonth && isSaturday && "text-blue-500",
+                            day.isCurrentMonth && isRedDay && "text-red-500",
+                            day.isCurrentMonth && isBlueDay && "text-blue-500",
                             isToday &&
                               !isSelected &&
-                              "bg-primary/10 border-primary/30 text-primary font-black",
+                              cn(
+                                "bg-primary/10 border-primary/30 font-black",
+                                isRedDay
+                                  ? "text-red-500"
+                                  : isBlueDay
+                                  ? "text-blue-500"
+                                  : "text-primary"
+                              ),
                             isSelected &&
                               "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
                           )}
