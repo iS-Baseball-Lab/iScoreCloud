@@ -21,8 +21,8 @@ import {
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-const CENTER_TRANSFORM = "translate3d(-33.333333%, 0, 0)";
-const NEXT_PANE_TRANSFORM = "translate3d(-66.666667%, 0, 0)";
+const CENTER_TRANSFORM = "translate3d(-100%, 0, 0)";
+const NEXT_PANE_TRANSFORM = "translate3d(-200%, 0, 0)";
 const PREV_PANE_TRANSFORM = "translate3d(0%, 0, 0)";
 const GLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
@@ -51,10 +51,9 @@ export interface CalendarSwipeSurfaceProps {
 
 /**
  * 月間カレンダー共通の 3ペイン GPU カルーセル型・横フリック月切替サーフェス
- * - `[前月 | 当月 | 翌月]` の3ペインを `key={serial}` で常時横並び保持することで、
- *   指追従ドラッグ中から隣月の季節背景画像と日付表が切れ目なく1:1でスライドインする
- * - 月確定後も該当月の DOM とデコード済み `<img>` ノードが破棄・再読込されないため、
- *   画像の白フラッシュ・再デコードちらつきが一切発生しない
+ * - `[前月(0%) | 当月(-100%) | 翌月(-200%)]` の `w-full shrink-0` 3ペインを `key={serial}` で常時保持
+ * - Tailwind v4 の個別 `translate` プロパティ（`-translate-x-*`）は `style.transform` と二重加算されて1ペイン分ズレるため使用せず、
+ *   CSS `transform` のみ（初期クラス `[transform:translate3d(-100%,0,0)]` ＆ `style.transform`）で統一制御する
  */
 export function CalendarSwipeSurface({
   year,
@@ -91,7 +90,7 @@ export function CalendarSwipeSurface({
     }
   }, []);
 
-  // baseSerial 更新時、ブラウザ描画前に 0ms でトラックを中央ペイン（-33.3333%）へ無振動リセット
+  // baseSerial 更新時、ブラウザ描画前に 0ms でトラックを中央ペイン（-100%）へ無振動リセット
   useIsomorphicLayoutEffect(() => {
     baseSerialRef.current = baseSerial;
     const track = trackRef.current;
@@ -242,7 +241,7 @@ export function CalendarSwipeSurface({
         Math.min(gesture.width, dx)
       );
       if (trackRef.current) {
-        trackRef.current.style.transform = `translate3d(calc(-33.333333% + ${clampedDx.toFixed(1)}px), 0, 0)`;
+        trackRef.current.style.transform = `translate3d(calc(-100% + ${clampedDx.toFixed(1)}px), 0, 0)`;
       }
     };
 
@@ -358,8 +357,7 @@ export function CalendarSwipeSurface({
     >
       <div
         ref={trackRef}
-        style={{ width: "300%" }}
-        className="flex items-start -translate-x-1/3 will-change-transform"
+        className="flex w-full items-start [transform:translate3d(-100%,0,0)] will-change-transform"
       >
         {paneSerials.map((serial) => {
           const info = fromCalendarMonthSerial(serial);
@@ -370,7 +368,7 @@ export function CalendarSwipeSurface({
               aria-hidden={!isActivePane || undefined}
               inert={!isActivePane}
               className={cn(
-                "relative w-1/3 shrink-0 bg-card overflow-hidden",
+                "relative w-full shrink-0 bg-card overflow-hidden",
                 className
               )}
             >
