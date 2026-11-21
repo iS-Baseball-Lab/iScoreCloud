@@ -93,6 +93,7 @@ export const BOTTOM_NAV_PRESETS: readonly BottomNavPreset[] = [
 export const BOTTOM_NAV_SHORT_LABELS: Readonly<Record<QuickMenuItemId, string>> = {
   schedule: "活動予定",
   board: "出欠一覧表",
+  special_events: "行事・調査",
   carpool: "配車表",
   grounds: "球場マップ",
   matches: "試合・スコア",

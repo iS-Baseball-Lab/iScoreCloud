@@ -80,6 +80,7 @@ const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/faqs",
   "/api/liff/links",
   "/api/liff/related-teams",
+  "/api/liff/special-events",
   "/api/liff/attendance-matrix",
   "/api/liff/my-family",
   "/api/liff/admin",
@@ -1459,6 +1460,12 @@ export function warmupLiffEndpointForHref(
     const qs = new URLSearchParams({ teamId: tid, userId: uid, userName: rawName });
     if (cachedMemberId) qs.set("memberId", cachedMemberId);
     triggerWarmupUrl(`/api/liff/attendance-matrix?${qs.toString()}`);
+    return;
+  }
+  if (cleanPath === "/liff/events") {
+    const qs = new URLSearchParams({ teamId: tid });
+    if (rawName) qs.set("userName", rawName);
+    triggerWarmupUrl(`/api/liff/special-events?${qs.toString()}`);
     return;
   }
   if (cleanPath === "/liff/matches") {

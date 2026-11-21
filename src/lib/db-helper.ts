@@ -334,6 +334,52 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL
     )`,
   },
+  {
+    name: "team_special_events",
+    ddl: `CREATE TABLE IF NOT EXISTS team_special_events (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      title text NOT NULL,
+      category text NOT NULL DEFAULT 'party',
+      mode text NOT NULL DEFAULT 'rsvp',
+      status text NOT NULL DEFAULT 'open',
+      event_date text,
+      start_time text,
+      end_time text,
+      location text,
+      location_url text,
+      deadline_date text,
+      description text,
+      allow_companions integer NOT NULL DEFAULT 1,
+      use_fee_calculation integer NOT NULL DEFAULT 1,
+      fee_tiers_json text,
+      candidate_dates_json text,
+      questions_json text,
+      created_by_user_id text,
+      created_by_name text,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
+  {
+    name: "team_special_event_responses",
+    ddl: `CREATE TABLE IF NOT EXISTS team_special_event_responses (
+      id text PRIMARY KEY NOT NULL,
+      special_event_id text NOT NULL,
+      team_id text NOT NULL,
+      household_key text NOT NULL,
+      household_label text NOT NULL,
+      member_entries_json text NOT NULL DEFAULT '[]',
+      companions_json text NOT NULL DEFAULT '[]',
+      date_votes_json text NOT NULL DEFAULT '[]',
+      survey_answers_json text NOT NULL DEFAULT '{}',
+      comment text,
+      fee_paid integer NOT NULL DEFAULT 0,
+      updated_by_user_id text,
+      updated_by_name text,
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
@@ -363,6 +409,9 @@ const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
   { name: "idx_teams_created_by", ddl: "CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams (created_by)" },
   { name: "idx_baseball_board_rooms_team_status", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_status ON baseball_board_rooms (team_id, status, updated_at)" },
   { name: "idx_baseball_board_rooms_team_code", ddl: "CREATE INDEX IF NOT EXISTS idx_baseball_board_rooms_team_code ON baseball_board_rooms (team_id, room_code)" },
+  { name: "idx_special_events_team_status_date", ddl: "CREATE INDEX IF NOT EXISTS idx_special_events_team_status_date ON team_special_events (team_id, status, event_date)" },
+  { name: "idx_special_event_resp_uniq", ddl: "CREATE UNIQUE INDEX IF NOT EXISTS idx_special_event_resp_uniq ON team_special_event_responses (special_event_id, household_key)" },
+  { name: "idx_special_event_resp_team_ev", ddl: "CREATE INDEX IF NOT EXISTS idx_special_event_resp_team_ev ON team_special_event_responses (team_id, special_event_id)" },
   { name: "idx_session_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_session_user_id ON session (user_id)" },
   { name: "idx_account_user_id", ddl: "CREATE INDEX IF NOT EXISTS idx_account_user_id ON account (user_id)" },
   { name: "idx_account_account_id", ddl: "CREATE INDEX IF NOT EXISTS idx_account_account_id ON account (account_id)" },

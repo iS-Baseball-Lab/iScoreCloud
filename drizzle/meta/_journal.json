@@ -393,6 +393,13 @@
       "when": 1795300000000,
       "tag": "0055_auth_player_match_perf_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1795350000000,
+      "tag": "0056_team_special_events",
+      "breakpoints": true
     }
   ]
 }

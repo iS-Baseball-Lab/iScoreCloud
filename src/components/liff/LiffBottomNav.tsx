@@ -52,6 +52,7 @@ import {
   Bus,
   KeyRound,
   Package,
+  PartyPopper,
   Lock,
   Handshake,
   Gamepad2,
@@ -155,6 +156,17 @@ const MENU_ITEMS: MenuItem[] = [
     hoverBorderClass: "hover:border-teal-500/40",
     category: "schedule_match" as const,
     subGroup: "schedule_access",
+  },
+  {
+    title: "行事・アンケート",
+    subtitle: "忘年会・卒団式・同伴家族・日程調整",
+    href: "/liff/events",
+    icon: PartyPopper,
+    colorClass: "bg-teal-500/12 text-teal-600 dark:text-teal-400",
+    hoverBorderClass: "hover:border-teal-500/40",
+    category: "schedule_match" as const,
+    subGroup: "schedule_access",
+    fullWidth: true,
   },
 
   // 🗓️ タブ1: 予定・試合（② 試合・記録 — 事前準備 ➔ 試合中 ➔ 試合後）

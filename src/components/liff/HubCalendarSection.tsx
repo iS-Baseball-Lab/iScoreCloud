@@ -15,6 +15,10 @@ import { cn } from "@/lib/utils";
 import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
+import {
+  getSpecialEventCategoryMeta,
+  type HubSpecialEventSummary,
+} from "@/lib/liff/special-events-schema";
 
 export interface HubCalendarEventInput {
   id: string;
@@ -42,11 +46,35 @@ export interface HubCalendarEventInput {
 
 interface HubCalendarSectionProps {
   eventsList?: HubCalendarEventInput[];
+  specialEvents?: HubSpecialEventSummary[];
   isDemo?: boolean;
+}
+
+interface ParsedCalendarItem {
+  id: string;
+  title: string;
+  date: string;
+  dateStr: string;
+  type: "match" | "practice" | "special";
+  specialBadgeLabel?: string;
+  href: string;
+  targetGroup: string | null;
+  amTime: string;
+  amLocation: string;
+  pmTime: string;
+  pmLocation: string;
+  hasPm: boolean;
+  duty?: string;
+  needsLunch?: boolean;
+  needsSnack?: boolean;
+  memo?: string;
+  carInfo?: string;
+  specialHeadcount?: number;
 }
 
 export function HubCalendarSection({
   eventsList = [],
+  specialEvents = [],
   isDemo = false,
 }: HubCalendarSectionProps) {
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
@@ -81,109 +109,165 @@ export function HubCalendarSection({
 
   const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
 
-  // チームの全予定リスト（午前・午後データ含む）
-  const allParsedEvents = useMemo(() => {
-    if (eventsList && eventsList.length > 0) {
-      return eventsList.map(ev => {
-        const d = new Date(ev.startAt || ev.dateStr || "");
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        const dateStr = ev.dateStr || `${y}-${m}-${day}`;
-        const wStr = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
-        const dateLabel = `${d.getMonth() + 1}/${d.getDate()}(${wStr})`;
+  // チームの全予定リスト（午前・午後データ＋確定済みの特別行事含む）
+  const allParsedEvents = useMemo<ParsedCalendarItem[]>(() => {
+    const baseEvents: ParsedCalendarItem[] =
+      eventsList && eventsList.length > 0
+        ? eventsList.map((ev) => {
+            const d = new Date(ev.startAt || ev.dateStr || "");
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const dateStr = ev.dateStr || `${y}-${m}-${day}`;
+            const wStr = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+            const dateLabel = `${d.getMonth() + 1}/${d.getDate()}(${wStr})`;
 
-        const hasPm = ev.hasPm !== undefined ? ev.hasPm : (!!ev.pmStartAt || !!ev.pmLocation || !!ev.pmTime);
-        const isMatch = ev.eventType === "match" || ev.amType === "match" || ev.pmType === "match";
-        const targetGroup = ev.targetGroup || (ev.title?.match(/\[(.*?)\]/)?.[1] || null);
+            const hasPm =
+              ev.hasPm !== undefined
+                ? ev.hasPm
+                : Boolean(ev.pmStartAt || ev.pmLocation || ev.pmTime);
+            const isMatch =
+              ev.eventType === "match" ||
+              ev.amType === "match" ||
+              ev.pmType === "match";
+            const targetGroup =
+              ev.targetGroup || ev.title?.match(/\[(.*?)\]/)?.[1] || null;
 
+            return {
+              id: ev.id,
+              title: ev.title || (isMatch ? "公式戦・練習試合" : "通常練習"),
+              date: dateLabel,
+              dateStr,
+              type: isMatch ? "match" : "practice",
+              href: "/liff/schedule",
+              targetGroup,
+              amTime: ev.amTime || "08:00〜12:00",
+              amLocation: ev.amLocation || ev.location || "グラウンド",
+              pmTime: hasPm ? ev.pmTime || "13:00〜17:00" : "",
+              pmLocation: hasPm
+                ? ev.pmLocation || ev.amLocation || ev.location || ""
+                : "",
+              hasPm,
+              duty: ev.dutyGroup && ev.dutyGroup !== "なし" ? ev.dutyGroup : "",
+              needsLunch:
+                ev.needsLunch === true ||
+                ev.needsLunch === 1 ||
+                ev.needsLunch === "1" ||
+                ev.needsLunch === "true",
+              needsSnack:
+                ev.needsSnack === true ||
+                ev.needsSnack === 1 ||
+                ev.needsSnack === "1" ||
+                ev.needsSnack === "true",
+              memo: ev.description || ev.memo || "",
+              carInfo: ev.carInfo,
+            };
+          })
+        : isDemo
+        ? [
+            {
+              id: "demo-today",
+              title: "秋季大会 2回戦 vs レッドソックス",
+              date: "8/29(土)",
+              dateStr: "2026-08-29",
+              type: "match",
+              href: "/liff/schedule",
+              targetGroup: "Aチーム",
+              amTime: "08:00〜12:00",
+              amLocation: "市民第1球場",
+              pmTime: "",
+              pmLocation: "",
+              hasPm: false,
+              duty: "1班",
+              needsLunch: true,
+              needsSnack: true,
+              memo: "公式戦ユニフォーム持参、8:00グラウンド集合",
+              carInfo: "7:30 集合・配車調整済",
+            },
+            {
+              id: "demo-next",
+              title: "全日通常練習 & 守備連携強化",
+              date: "8/30(日)",
+              dateStr: "2026-08-30",
+              type: "practice",
+              href: "/liff/schedule",
+              targetGroup: "全体",
+              amTime: "08:00〜12:00",
+              amLocation: "大師河原第3G",
+              pmTime: "13:00〜17:00",
+              pmLocation: "大師河原第3G",
+              hasPm: true,
+              duty: "2班",
+              needsLunch: true,
+              needsSnack: false,
+              memo: "終日練習のためお弁当持参。水分多めに持参してください。",
+              carInfo: undefined,
+            },
+            {
+              id: "demo-future",
+              title: "練習試合 vs ブルースターズ",
+              date: "9/5(土)",
+              dateStr: "2026-09-05",
+              type: "match",
+              href: "/liff/schedule",
+              targetGroup: "Aチーム",
+              amTime: "09:00〜13:00",
+              amLocation: "等々力球場",
+              pmTime: "14:00〜17:00",
+              pmLocation: "等々力第2G",
+              hasPm: true,
+              duty: "3班",
+            },
+          ]
+        : [];
+
+    const specialParsed: ParsedCalendarItem[] = (specialEvents || [])
+      .filter((sp) => sp.mode === "rsvp" && sp.eventDate && sp.status !== "archived")
+      .map((sp) => {
+        const cat = getSpecialEventCategoryMeta(sp.category);
         return {
-          id: ev.id,
-          title: ev.title || (isMatch ? "公式戦・練習試合" : "通常練習"),
-          date: dateLabel,
-          dateStr,
-          type: isMatch ? "match" : "practice",
-          targetGroup,
-          amTime: ev.amTime || "08:00〜12:00",
-          amLocation: ev.amLocation || ev.location || "グラウンド",
-          pmTime: hasPm ? (ev.pmTime || "13:00〜17:00") : "",
-          pmLocation: hasPm ? (ev.pmLocation || ev.amLocation || ev.location || "") : "",
-          hasPm,
-          duty: ev.dutyGroup && ev.dutyGroup !== "なし" ? ev.dutyGroup : "",
-          needsLunch: ev.needsLunch === true || ev.needsLunch === 1 || ev.needsLunch === "1" || ev.needsLunch === "true",
-          needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
-          memo: ev.description || ev.memo || "",
-          carInfo: ev.carInfo,
+          id: `spev_${sp.id}`,
+          title: sp.title,
+          date: sp.eventDateLabel || sp.eventDate!,
+          dateStr: sp.eventDate!,
+          type: "special" as const,
+          specialBadgeLabel: `${cat.icon} ${cat.shortLabel}`,
+          href: `/liff/events?id=${encodeURIComponent(sp.id)}`,
+          targetGroup: null,
+          amTime: sp.timeRangeLabel,
+          amLocation: sp.location || "会場調整中",
+          pmTime: "",
+          pmLocation: "",
+          hasPm: false,
+          specialHeadcount: sp.totalHeadcount,
         };
       });
-    }
 
-    if (!isDemo) {
-      return [];
-    }
-
-    return [
-      {
-        id: "demo-today",
-        title: "秋季大会 2回戦 vs レッドソックス",
-        date: "8/29(土)",
-        dateStr: "2026-08-29",
-        type: "match",
-        targetGroup: "Aチーム",
-        amTime: "08:00〜12:00",
-        amLocation: "市民第1球場",
-        pmTime: "",
-        pmLocation: "",
-        hasPm: false,
-        duty: "1班",
-        needsLunch: true,
-        needsSnack: true,
-        memo: "公式戦ユニフォーム持参、8:00グラウンド集合",
-        carInfo: "7:30 集合・配車調整済",
-      },
-      {
-        id: "demo-next",
-        title: "全日通常練習 & 守備連携強化",
-        date: "8/30(日)",
-        dateStr: "2026-08-30",
-        type: "practice",
-        targetGroup: "全体",
-        amTime: "08:00〜12:00",
-        amLocation: "大師河原第3G",
-        pmTime: "13:00〜17:00",
-        pmLocation: "大師河原第3G",
-        hasPm: true,
-        duty: "2班",
-        needsLunch: true,
-        needsSnack: false,
-        memo: "終日練習のためお弁当持参。水分多めに持参してください。",
-        carInfo: undefined,
-      },
-      {
-        id: "demo-future",
-        title: "練習試合 vs ブルースターズ",
-        date: "9/5(土)",
-        dateStr: "2026-09-05",
-        type: "match",
-        targetGroup: "Aチーム",
-        amTime: "09:00〜13:00",
-        amLocation: "等々力球場",
-        pmTime: "14:00〜17:00",
-        pmLocation: "等々力第2G",
-        hasPm: true,
-        duty: "3班",
-      },
-    ];
-  }, [eventsList, isDemo]);
+    return [...baseEvents, ...specialParsed].sort((a, b) =>
+      a.dateStr.localeCompare(b.dateStr)
+    );
+  }, [eventsList, specialEvents, isDemo]);
 
   // 当日予定と選択日予定・今後の予定の切り分け
-  const todayCalendarEvents = allParsedEvents.filter(e => e.dateStr === todayStr);
-  const selectedDateEvents = selectedDateStr !== todayStr ? allParsedEvents.filter(e => e.dateStr === selectedDateStr) : [];
-  const futureCalendarEvents = allParsedEvents.filter(e => e.dateStr !== todayStr && e.dateStr >= todayStr).slice(0, 5);
-  const upcomingEvents = futureCalendarEvents.length > 0 ? futureCalendarEvents : allParsedEvents.slice(0, 5);
+  const todayCalendarEvents = allParsedEvents.filter((e) => e.dateStr === todayStr);
+  const selectedDateEvents =
+    selectedDateStr !== todayStr
+      ? allParsedEvents.filter((e) => e.dateStr === selectedDateStr)
+      : [];
+  const futureCalendarEvents = allParsedEvents
+    .filter((e) => e.dateStr !== todayStr && e.dateStr >= todayStr)
+    .slice(0, 5);
+  const upcomingEvents =
+    futureCalendarEvents.length > 0
+      ? futureCalendarEvents
+      : allParsedEvents.slice(0, 5);
 
-  const getDateEvent = (dStr: string) => {
-    return allParsedEvents.find(e => e.dateStr === dStr);
+  const getDateFlags = (dStr: string) => {
+    const items = allParsedEvents.filter((e) => e.dateStr === dStr);
+    return {
+      hasRegular: items.some((i) => i.type !== "special"),
+      hasSpecial: items.some((i) => i.type === "special"),
+    };
   };
 
   return (
@@ -286,7 +370,7 @@ export function HubCalendarSection({
                       const dayStr = day.dateStr;
                       const isSelected = selectedDateStr === dayStr;
                       const isToday = todayStr === dayStr;
-                      const hasEvent = getDateEvent(dayStr);
+                      const flags = getDateFlags(dayStr);
 
                       const dayOfWeek = day.date.getDay();
                       const isSunday = dayOfWeek === 0;
@@ -314,17 +398,29 @@ export function HubCalendarSection({
                             {day.date.getDate()}
                           </span>
 
-                          {/* 試合・練習有無のインジケータードット */}
-                          {hasEvent && (
-                            <span className="absolute bottom-0.5 flex h-1 w-1 justify-center">
-                              <span
-                                className={cn(
-                                  "h-1 w-1 rounded-full",
-                                  isSelected
-                                    ? "bg-primary-foreground"
-                                    : "bg-primary"
-                                )}
-                              />
+                          {/* 試合・練習・特別行事のインジケータードット */}
+                          {(flags.hasRegular || flags.hasSpecial) && (
+                            <span className="absolute bottom-0.5 flex items-center gap-0.5 justify-center">
+                              {flags.hasRegular && (
+                                <span
+                                  className={cn(
+                                    "h-1 w-1 rounded-full",
+                                    isSelected
+                                      ? "bg-primary-foreground"
+                                      : "bg-primary"
+                                  )}
+                                />
+                              )}
+                              {flags.hasSpecial && (
+                                <span
+                                  className={cn(
+                                    "h-1.5 w-1.5 rounded-full",
+                                    isSelected
+                                      ? "bg-amber-300"
+                                      : "bg-amber-500"
+                                  )}
+                                />
+                              )}
                             </span>
                           )}
                         </button>
@@ -355,18 +451,32 @@ export function HubCalendarSection({
                 {todayCalendarEvents.map((ev) => (
                   <Link
                     key={ev.id}
-                    href="/liff/schedule"
-                    className="block p-2.5 rounded-2xl bg-primary/5 border border-primary/25 border-l-4 border-l-primary hover:border-primary/40 transition-all group"
+                    href={ev.href}
+                    className={cn(
+                      "block p-2.5 rounded-2xl border border-l-4 transition-all group",
+                      ev.type === "special"
+                        ? "bg-amber-500/5 border-amber-500/30 border-l-amber-500 hover:border-amber-500/50"
+                        : "bg-primary/5 border-primary/25 border-l-primary hover:border-primary/40"
+                    )}
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className={`w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border ${
-                        ev.type === "match"
-                          ? "bg-primary/12 text-primary border-primary/25"
-                          : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                      }`}>
+                      <div
+                        className={cn(
+                          "w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border",
+                          ev.type === "special"
+                            ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                            : ev.type === "match"
+                            ? "bg-primary/12 text-primary border-primary/25"
+                            : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                        )}
+                      >
                         <span className="text-[11px] font-black leading-tight">本日</span>
-                        <span className="text-[9px] font-bold mt-0.5 opacity-90">
-                          {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
+                        <span className="text-[9px] font-bold mt-0.5 opacity-90 truncate max-w-full">
+                          {ev.type === "special"
+                            ? ev.specialBadgeLabel || "🎉 行事"
+                            : ev.type === "match"
+                            ? "⚾ 試合"
+                            : "🏃 練習"}
                         </span>
                       </div>
 
@@ -384,8 +494,15 @@ export function HubCalendarSection({
 
                         <div className="space-y-1 text-[10.5px]">
                           <div className="flex items-center gap-2 font-bold text-foreground/90">
-                            <span className="w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded bg-sky-500/12 text-sky-700 dark:text-sky-300 text-[9.5px] font-black shrink-0 border border-sky-500/25 flex items-center justify-center">
-                              ☀️ 午前
+                            <span
+                              className={cn(
+                                "w-[48px] min-w-[48px] max-w-[48px] py-0.5 rounded text-[9.5px] font-black shrink-0 border flex items-center justify-center",
+                                ev.type === "special"
+                                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                  : "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
+                              )}
+                            >
+                              {ev.type === "special" ? "🎉 行事" : "☀️ 午前"}
                             </span>
                             <span className="w-[88px] min-w-[88px] max-w-[88px] flex items-center gap-1 shrink-0 text-muted-foreground tabular-nums text-[10px]">
                               <Clock className="w-3 h-3 text-sky-600 dark:text-sky-400 shrink-0" />
@@ -434,18 +551,32 @@ export function HubCalendarSection({
                 {selectedDateEvents.map((ev) => (
                   <Link
                     key={ev.id}
-                    href="/liff/schedule"
-                    className="block p-2.5 rounded-2xl bg-primary/5 border border-primary/25 border-l-4 border-l-primary hover:border-primary/40 transition-all group"
+                    href={ev.href}
+                    className={cn(
+                      "block p-2.5 rounded-2xl border border-l-4 transition-all group",
+                      ev.type === "special"
+                        ? "bg-amber-500/5 border-amber-500/30 border-l-amber-500 hover:border-amber-500/50"
+                        : "bg-primary/5 border-primary/25 border-l-primary hover:border-primary/40"
+                    )}
                   >
                     <div className="flex items-start gap-2.5">
-                      <div className={`w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border ${
-                        ev.type === "match"
-                          ? "bg-primary/12 text-primary border-primary/25"
-                          : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                      }`}>
+                      <div
+                        className={cn(
+                          "w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border",
+                          ev.type === "special"
+                            ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                            : ev.type === "match"
+                            ? "bg-primary/12 text-primary border-primary/25"
+                            : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                        )}
+                      >
                         <span className="text-[11px] font-black leading-tight">{ev.date}</span>
-                        <span className="text-[9px] font-bold mt-0.5 opacity-90">
-                          {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
+                        <span className="text-[9px] font-bold mt-0.5 opacity-90 truncate max-w-full">
+                          {ev.type === "special"
+                            ? ev.specialBadgeLabel || "🎉 行事"
+                            : ev.type === "match"
+                            ? "⚾ 試合"
+                            : "🏃 練習"}
                         </span>
                       </div>
 
@@ -463,8 +594,15 @@ export function HubCalendarSection({
 
                         <div className="space-y-0.5 text-[10px]">
                           <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                            <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-sky-500/12 text-sky-700 dark:text-sky-300 text-[9px] font-black shrink-0 border border-sky-500/25 flex items-center justify-center">
-                              ☀️ 午前
+                            <span
+                              className={cn(
+                                "w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded text-[9px] font-black shrink-0 border flex items-center justify-center",
+                                ev.type === "special"
+                                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                  : "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
+                              )}
+                            >
+                              {ev.type === "special" ? "🎉 行事" : "☀️ 午前"}
                             </span>
                             <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
                               <Clock className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400 shrink-0" />
@@ -523,19 +661,33 @@ export function HubCalendarSection({
               {upcomingEvents.map((ev) => (
                 <Link
                   key={ev.id}
-                  href="/liff/schedule"
-                  className="block p-2.5 rounded-2xl bg-muted/35 hover:bg-muted/60 border border-border/60 hover:border-primary/40 transition-all group"
+                  href={ev.href}
+                  className={cn(
+                    "block p-2.5 rounded-2xl border transition-all group",
+                    ev.type === "special"
+                      ? "bg-amber-500/5 hover:bg-amber-500/10 border-amber-500/30 hover:border-amber-500/50"
+                      : "bg-muted/35 hover:bg-muted/60 border-border/60 hover:border-primary/40"
+                  )}
                 >
                   <div className="flex items-start gap-2.5">
                     {/* 均一幅（58px固定）の日付・種別バッジ */}
-                    <div className={`w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border ${
-                      ev.type === "match" 
-                        ? "bg-primary/12 text-primary border-primary/25 shadow-2xs" 
-                        : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
-                    }`}>
+                    <div
+                      className={cn(
+                        "w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border",
+                        ev.type === "special"
+                          ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                          : ev.type === "match"
+                          ? "bg-primary/12 text-primary border-primary/25 shadow-2xs"
+                          : "bg-teal-500/12 text-teal-700 dark:text-teal-300 border-teal-500/25"
+                      )}
+                    >
                       <span className="text-[11px] font-black leading-tight tracking-tight">{ev.date}</span>
-                      <span className="text-[9px] font-bold mt-0.5 opacity-90">
-                        {ev.type === "match" ? "⚾ 試合" : "🏃 練習"}
+                      <span className="text-[9px] font-bold mt-0.5 opacity-90 truncate max-w-full">
+                        {ev.type === "special"
+                          ? ev.specialBadgeLabel || "🎉 行事"
+                          : ev.type === "match"
+                          ? "⚾ 試合"
+                          : "🏃 練習"}
                       </span>
                     </div>
 
@@ -554,10 +706,17 @@ export function HubCalendarSection({
 
                       {/* 午前・午後の時間と場所の表示 */}
                       <div className="space-y-0.5 text-[10px]">
-                        {/* 午前 */}
+                        {/* 午前 / 特別行事 */}
                         <div className="flex items-center gap-1.5 font-bold text-foreground/90">
-                          <span className="w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded bg-sky-500/12 text-sky-700 dark:text-sky-300 text-[9px] font-black shrink-0 border border-sky-500/25 flex items-center justify-center">
-                            ☀️ 午前
+                          <span
+                            className={cn(
+                              "w-[46px] min-w-[46px] max-w-[46px] py-0.2 rounded text-[9px] font-black shrink-0 border flex items-center justify-center",
+                              ev.type === "special"
+                                ? "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                : "bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/25"
+                            )}
+                          >
+                            {ev.type === "special" ? "🎉 行事" : "☀️ 午前"}
                           </span>
                           <span className="w-[84px] min-w-[84px] max-w-[84px] flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
                             <Clock className="w-2.5 h-2.5 text-sky-600 dark:text-sky-400 shrink-0" />

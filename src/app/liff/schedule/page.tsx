@@ -31,6 +31,10 @@ import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
+  getSpecialEventCategoryMeta,
+  type HubSpecialEventSummary,
+} from "@/lib/liff/special-events-schema";
+import {
   Calendar as CalendarIcon,
   Clock,
   MapPin,
@@ -58,6 +62,7 @@ import {
   Layers,
   Check,
   Flame,
+  PartyPopper,
   Plus,
   ArrowRightLeft,
   Settings2,
@@ -341,12 +346,14 @@ export default function LiffSchedulePage() {
     const hit = peekLiffApiCache<{
       success: boolean;
       events?: ScheduleEvent[];
+      specialEvents?: HubSpecialEventSummary[];
       attendanceStatusConfig?: GroupStatusConfigSummary;
       scheduleDefaultTimes?: TeamScheduleDefaultTimes;
     }>(`/api/liff/schedule?${schedParams.toString()}`);
     if (!hit?.events) return null;
     return {
       events: hit.events.map(normalizeScheduleEventRecord),
+      specialEvents: Array.isArray(hit.specialEvents) ? hit.specialEvents : [],
       attendanceStatusConfig: normalizeGroupStatusSummaryConfig(hit.attendanceStatusConfig),
       scheduleDefaultTimes: hit.scheduleDefaultTimes
         ? normalizeTeamScheduleDefaultTimes(hit.scheduleDefaultTimes)
@@ -356,6 +363,9 @@ export default function LiffSchedulePage() {
 
   const [events, setEvents] = useState<ScheduleEvent[]>(
     () => initialCachedSchedule?.events ?? []
+  );
+  const [specialEvents, setSpecialEvents] = useState<HubSpecialEventSummary[]>(
+    () => initialCachedSchedule?.specialEvents ?? []
   );
   const [attendanceStatusConfig, setAttendanceStatusConfig] = useState<GroupStatusConfigSummary>(
     () => initialCachedSchedule?.attendanceStatusConfig ?? DEFAULT_GROUP_STATUS_SUMMARY_CONFIG
@@ -814,12 +824,16 @@ export default function LiffSchedulePage() {
         const data = (await res.json()) as {
           success?: boolean;
           events?: ScheduleEvent[];
+          specialEvents?: HubSpecialEventSummary[];
           attendanceStatusConfig?: GroupStatusConfigSummary;
           scheduleDefaultTimes?: TeamScheduleDefaultTimes;
         };
         if (data.success === false) {
           setLoadError(true);
           return;
+        }
+        if (Array.isArray(data.specialEvents)) {
+          setSpecialEvents(data.specialEvents);
         }
         if (data.attendanceStatusConfig) {
           setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
@@ -1155,6 +1169,32 @@ export default function LiffSchedulePage() {
     });
   }, [eventsInCurrentMonth, filter, selectedDateStr, sortOrder, showPastDates, currentMonthPrefix, todayStr]);
 
+  const specialEventsByDate = useMemo(() => {
+    const map = new Map<string, HubSpecialEventSummary[]>();
+    for (const sp of specialEvents) {
+      if (sp.mode !== "rsvp" || !sp.eventDate || sp.status === "archived") {
+        continue;
+      }
+      const list = map.get(sp.eventDate) || [];
+      list.push(sp);
+      map.set(sp.eventDate, list);
+    }
+    return map;
+  }, [specialEvents]);
+
+  const visibleSpecialEvents = useMemo(() => {
+    const confirmedInView = specialEvents.filter((sp) => {
+      if (sp.mode !== "rsvp" || !sp.eventDate || sp.status === "archived") {
+        return false;
+      }
+      if (selectedDateStr) {
+        return sp.eventDate === selectedDateStr;
+      }
+      return sp.eventDate.startsWith(currentMonthPrefix);
+    });
+    return confirmedInView;
+  }, [currentMonthPrefix, selectedDateStr, specialEvents]);
+
   return (
     <div className="flex flex-col flex-1">
       <LiffHeader />
@@ -1170,6 +1210,15 @@ export default function LiffSchedulePage() {
             </span>
           }
           showBack
+          rightElement={
+            <Link
+              href="/liff/events"
+              className="px-2.5 py-2 rounded-2xl bg-card border border-border hover:bg-muted text-foreground text-[11px] font-black inline-flex items-center gap-1 shadow-xs"
+            >
+              <PartyPopper className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>行事・調査</span>
+            </Link>
+          }
           shareData={{
             title: `【活動予定】${currentTeam?.name || "チーム"} 活動スケジュール`,
             text: `今月の活動予定・球場・集合時間・当番班はこちらから確認できます`,
@@ -1311,6 +1360,7 @@ export default function LiffSchedulePage() {
                     <div className="grid grid-cols-7 gap-0.5">
                       {paneDays.map((d, idx) => {
                         const hasEvents = eventsByDate.has(d.dateStr);
+                        const hasSpecial = specialEventsByDate.has(d.dateStr);
                         const dayEvents = eventsByDate.get(d.dateStr) || [];
                         const isSelected = selectedDateStr === d.dateStr;
                         const isToday = d.dateStr === todayStr;
@@ -1368,18 +1418,20 @@ export default function LiffSchedulePage() {
                               {d.date.getDate()}
                             </span>
 
-                            {/* 予定マーカー */}
-                            {hasEvents && (
+                            {/* 予定マーカー（通常活動 ＋ 特別行事） */}
+                            {(hasEvents || hasSpecial) && (
                               <div className="flex items-center gap-0.5 mt-0.5">
-                                <span
-                                  className={`w-1.5 h-1.5 rounded-full ${
-                                    isSelected
-                                      ? "bg-primary-foreground"
-                                      : hasMatch
-                                      ? "bg-primary"
-                                      : "bg-primary/60"
-                                  }`}
-                                />
+                                {hasEvents && (
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isSelected
+                                        ? "bg-primary-foreground"
+                                        : hasMatch
+                                        ? "bg-primary"
+                                        : "bg-primary/60"
+                                    }`}
+                                  />
+                                )}
                                 {hasGroups && (
                                   <span
                                     className={`w-1 h-1 rounded-full ${
@@ -1388,6 +1440,16 @@ export default function LiffSchedulePage() {
                                         : "bg-primary/40"
                                     }`}
                                     title="複数グループ活動あり"
+                                  />
+                                )}
+                                {hasSpecial && (
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full ${
+                                      isSelected
+                                        ? "bg-amber-300"
+                                        : "bg-amber-500"
+                                    }`}
+                                    title="チーム行事・特別イベントあり"
                                   />
                                 )}
                               </div>
@@ -1402,6 +1464,56 @@ export default function LiffSchedulePage() {
             }}
           </CalendarSwipeSurface>
         </div>
+
+        {/* 🎉 同月・選択日に確定済みの特別行事がある場合、通常出欠と混ざらない別枠カードとして連動表示 */}
+        {visibleSpecialEvents.length > 0 && (
+          <div className="rounded-2xl border border-amber-500/35 bg-card shadow-xs overflow-hidden">
+            <div className="px-3.5 py-2 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between gap-2">
+              <span className="text-xs font-black flex items-center gap-1.5">
+                <PartyPopper className="w-3.5 h-3.5 text-amber-400" />
+                <span>
+                  {selectedDateStr ? "選択日のチーム行事" : "今月のチーム行事（別枠集計）"}
+                </span>
+              </span>
+              <Link
+                href="/liff/events"
+                className="text-[10.5px] font-black text-amber-300 hover:text-white inline-flex items-center gap-0.5"
+              >
+                <span>行事ページへ</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+            <div className="p-3 space-y-2">
+              {visibleSpecialEvents.map((sp) => {
+                const cat = getSpecialEventCategoryMeta(sp.category);
+                return (
+                  <Link
+                    key={sp.id}
+                    href={`/liff/events?id=${encodeURIComponent(sp.id)}`}
+                    className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-all"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[10px] font-black shrink-0">
+                          {cat.icon} {sp.eventDateLabel || sp.eventDate}
+                        </span>
+                        <span className="text-xs font-black text-foreground truncate">
+                          {sp.title}
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] font-bold text-muted-foreground truncate">
+                        {sp.timeRangeLabel}
+                        {sp.location ? ` ・ ${sp.location}` : ""} ・ 現在 計
+                        {sp.totalHeadcount}名
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-amber-700 dark:text-amber-300 shrink-0" />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* フィルター切り替え ＆ 過去日トグル ＆ 昇順/降順ソート */}
         <div className="flex flex-wrap items-center justify-between gap-2">

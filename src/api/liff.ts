@@ -34,7 +34,11 @@ import {
   teamGroups,
   teamGroupMembers,
   teamRoleSettings,
+  teamSpecialEvents,
+  teamSpecialEventResponses,
 } from "@/db/schema";
+import { buildDemoSpecialEventsBundle } from "@/lib/liff/special-events-schema";
+import { buildHubSpecialEventSummariesFromRaw } from "@/api/liff/special-events";
 import type {
   OfficialPitcherDecision,
   ScorebookSheetStructure,
@@ -1552,6 +1556,7 @@ app.get("/hub", async (c) => {
         teams: teamList,
         pendingTeams,
         nextEvent: DEMO_NEXT_EVENT,
+        specialEvents: buildDemoSpecialEventsBundle().hubSummaries,
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
@@ -1584,6 +1589,7 @@ app.get("/hub", async (c) => {
         teams: teamList,
         pendingTeams,
         nextEvent: DEMO_NEXT_EVENT,
+        specialEvents: buildDemoSpecialEventsBundle().hubSummaries,
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
@@ -1596,9 +1602,17 @@ app.get("/hub", async (c) => {
         ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
         : targetTeam.name;
 
-    // ⚡ 単一テーブル5クエリを db.batch()、JOIN を含む直近10試合取得を .all()（D1 batch の同名カラム衝突による列ずれを完全排除）で完全並列実行
+    // ⚡ 単一テーブル7クエリを db.batch()、JOIN を含む直近10試合取得を .all()（D1 batch の同名カラム衝突による列ずれを完全排除）で完全並列実行
     const [
-      [allEventsList, teamMemberList, teamPlayerRows, teamRelationsRows, teamVenues],
+      [
+        allEventsList,
+        teamMemberList,
+        teamPlayerRows,
+        teamRelationsRows,
+        teamVenues,
+        hubSpecialEventRows,
+        hubSpecialEventResponseRows,
+      ],
       matchesList,
     ] = await Promise.all([
       db.batch([
@@ -1645,6 +1659,14 @@ app.get("/hub", async (c) => {
               teamId
             )
           ),
+        db
+          .select()
+          .from(teamSpecialEvents)
+          .where(eq(teamSpecialEvents.teamId, teamId)),
+        db
+          .select()
+          .from(teamSpecialEventResponses)
+          .where(eq(teamSpecialEventResponses.teamId, teamId)),
       ]),
       db
         .select({
@@ -1945,6 +1967,18 @@ app.get("/hub", async (c) => {
       };
     });
 
+    const hubSpecialEvents = buildHubSpecialEventSummariesFromRaw({
+      eventRows: hubSpecialEventRows,
+      responseRows: hubSpecialEventResponseRows,
+      players: hubRosterPlayerInputs,
+      teamMembers: teamMemberList,
+      relations: teamRelationsRows,
+      candidateUserIds: candidateIdsArray,
+      callerUserName: cleanName,
+      canManagePlayers: access.canManagePlayersForTeam(teamId),
+      todayKey: hubTodayKey,
+    });
+
     return c.json({
       success: true,
       authVerified: access.isAuthenticated,
@@ -1972,6 +2006,7 @@ app.get("/hub", async (c) => {
       pendingTeams,
       nextEvent,
       events: formattedEventsList,
+      specialEvents: hubSpecialEvents,
       attendanceStatusConfig: hubStatusConfig,
       scheduleDefaultTimes: hubTeamScheduleDefaults,
       matches: formattedMatches,
@@ -1981,7 +2016,10 @@ app.get("/hub", async (c) => {
           (m) => !m.status || m.status === "active"
         ).length,
         venueCount: teamVenues.length,
-        hasActivity: allEventsList.length > 0 || matchesList.length > 0,
+        hasActivity:
+          allEventsList.length > 0 ||
+          matchesList.length > 0 ||
+          hubSpecialEventRows.length > 0,
       },
     });
   } catch (error: unknown) {
@@ -2150,6 +2188,7 @@ app.get("/schedule", async (c) => {
         isDemo: true,
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
+        specialEvents: buildDemoSpecialEventsBundle().hubSummaries,
         events: [
           {
             id: "demo-ev-1",
@@ -2265,6 +2304,8 @@ app.get("/schedule", async (c) => {
         teamPlayerRows,
         teamRelationsRows,
         teamConfigRows,
+        schedSpecialEventRows,
+        schedSpecialEventResponseRows,
       ],
       sessionUser,
     ] = await Promise.all([
@@ -2320,6 +2361,14 @@ app.get("/schedule", async (c) => {
           .from(teams)
           .where(eq(teams.id, teamId))
           .limit(1),
+        db
+          .select()
+          .from(teamSpecialEvents)
+          .where(eq(teamSpecialEvents.teamId, teamId)),
+        db
+          .select()
+          .from(teamSpecialEventResponses)
+          .where(eq(teamSpecialEventResponses.teamId, teamId)),
       ]),
       sessionPromise,
     ]);
@@ -2597,11 +2646,24 @@ app.get("/schedule", async (c) => {
       };
     });
 
+    const schedSpecialEvents = buildHubSpecialEventSummariesFromRaw({
+      eventRows: schedSpecialEventRows,
+      responseRows: schedSpecialEventResponseRows,
+      players: schedRosterPlayerInputs,
+      teamMembers: teamMemberList,
+      relations: teamRelationsRows,
+      candidateUserIds: schedCandidateIds,
+      callerUserName: (userName || authUserName || "").trim(),
+      canManagePlayers: false,
+      todayKey: schedTodayKey,
+    });
+
     return c.json({
       success: true,
       isDemo: false,
       attendanceStatusConfig: schedStatusConfig,
       scheduleDefaultTimes: schedDefaultTimes,
+      specialEvents: schedSpecialEvents,
       events: formattedEvents,
     });
   } catch (error: unknown) {

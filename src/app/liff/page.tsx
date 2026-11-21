@@ -19,12 +19,17 @@ import {
   fetchLiffJsonSWR,
   getLastLiffCacheInvalidatedAt,
   peekLiffApiCache,
+  warmupLiffEndpointForHref,
 } from "@/lib/liff/api-cache";
 import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 import {
   normalizeGroupStatusSummaryConfig,
   type GroupStatusConfigSummary,
 } from "@/lib/liff/group-attendance";
+import {
+  getSpecialEventCategoryMeta,
+  type HubSpecialEventSummary,
+} from "@/lib/liff/special-events-schema";
 import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -33,6 +38,7 @@ import {
   ShieldCheck,
   Check,
   ChevronRight,
+  PartyPopper,
   Sparkles,
   X,
 } from "lucide-react";
@@ -61,6 +67,7 @@ interface HubDataResponse {
   };
   nextEvent?: unknown;
   events?: HubEventInputItem[];
+  specialEvents?: HubSpecialEventSummary[];
   matches?: MatchCardData[];
   attendanceStatusConfig?: unknown;
   onboardingSummary?: HubOnboardingSummary | null;
@@ -107,6 +114,11 @@ export default function LiffHubPage() {
   const [nextEvent, setNextEvent] = useState<unknown>(initialCached?.nextEvent ?? null);
   const [events, setEvents] = useState<HubEventInputItem[]>(
     Array.isArray(initialCached?.events) ? initialCached!.events! : []
+  );
+  const [specialEvents, setSpecialEvents] = useState<HubSpecialEventSummary[]>(
+    Array.isArray(initialCached?.specialEvents)
+      ? initialCached!.specialEvents!
+      : []
   );
   const [matches, setMatches] = useState<MatchCardData[]>(
     Array.isArray(initialCached?.matches) ? initialCached!.matches! : []
@@ -175,6 +187,7 @@ export default function LiffHubPage() {
     setLoadError(false);
     setNextEvent(data.nextEvent ?? null);
     setEvents(Array.isArray(data.events) ? data.events : []);
+    setSpecialEvents(Array.isArray(data.specialEvents) ? data.specialEvents : []);
     setMatches(Array.isArray(data.matches) ? data.matches : []);
     setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
     setOnboardingSummary(data.onboardingSummary ?? null);
@@ -251,6 +264,7 @@ export default function LiffHubPage() {
       );
       if (!nextCached) {
         setEvents([]);
+        setSpecialEvents([]);
         setMatches([]);
         setNextEvent(null);
         setOnboardingSummary(null);
@@ -553,6 +567,96 @@ export default function LiffHubPage() {
 
       {/* 🚀 メインコンテンツエリア */}
       <div className="p-4 pt-1 space-y-6">
+        {/* 🎉 受付中のチーム行事・アンケート（忘年会・卒団式・日程調整等） */}
+        {specialEvents.some((sp) => sp.status === "open") && (
+          <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+            <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-6 h-6 rounded-lg bg-teal-500 text-slate-950 flex items-center justify-center shrink-0">
+                  <PartyPopper className="w-3.5 h-3.5" />
+                </span>
+                <h3 className="text-xs font-black text-white truncate">
+                  受付中の行事・アンケート
+                </h3>
+              </div>
+              <Link
+                href="/liff/events"
+                onPointerDown={() => warmupLiffEndpointForHref("/liff/events")}
+                className="text-[10.5px] font-black text-teal-300 hover:text-white inline-flex items-center gap-0.5 shrink-0"
+              >
+                <span>一覧・作成</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            <div className="p-3 space-y-2 bg-card">
+              {specialEvents
+                .filter((sp) => sp.status === "open")
+                .slice(0, 3)
+                .map((sp) => {
+                  const cat = getSpecialEventCategoryMeta(sp.category);
+                  return (
+                    <Link
+                      key={sp.id}
+                      href={`/liff/events?id=${encodeURIComponent(sp.id)}`}
+                      onPointerDown={() =>
+                        warmupLiffEndpointForHref("/liff/events")
+                      }
+                      className="block p-2.5 rounded-xl border border-border hover:border-teal-500/50 bg-muted/25 hover:bg-muted/45 transition-all active:scale-[0.99]"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="px-1.5 py-0.5 rounded bg-card border border-border text-[10px] font-black text-foreground shrink-0">
+                            {cat.icon}{" "}
+                            {sp.mode === "date_poll"
+                              ? "日程調整"
+                              : sp.eventDateLabel || cat.shortLabel}
+                          </span>
+                          <span className="text-xs font-black text-foreground truncate">
+                            {sp.title}
+                          </span>
+                        </div>
+
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 border ${
+                            !sp.myResponded
+                              ? "bg-amber-500 text-slate-950 border-amber-400"
+                              : sp.myOverallState === "attending"
+                              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35"
+                              : "bg-muted text-muted-foreground border-border"
+                          }`}
+                        >
+                          {!sp.myResponded
+                            ? "未回答"
+                            : sp.myOverallState === "attending"
+                            ? sp.mode === "date_poll"
+                              ? "回答済"
+                              : `出席 ${sp.myHeadcount}名`
+                            : "欠席"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 mt-1 text-[10.5px] font-bold text-muted-foreground">
+                        <span className="truncate">
+                          {sp.mode === "date_poll"
+                            ? `回答 ${sp.respondedHouseholdCount}/${sp.activeTargetHouseholdCount} 世帯`
+                            : `参加計 ${sp.totalHeadcount}名${
+                                sp.location ? ` ・ ${sp.location}` : ""
+                              }`}
+                        </span>
+                        {sp.deadlineDateLabel && (
+                          <span className="text-amber-700 dark:text-amber-300 font-black shrink-0">
+                            〆 {sp.deadlineDateLabel}
+                          </span>
+                        )}
+                      </div>
+                    </Link>
+                  );
+                })}
+            </div>
+          </section>
+        )}
+
         {/* 🚀 クイックメニュー（配車・動画・予定・MAP・書類・Q&A） */}
         <section>
           <HubQuickNav />
@@ -560,7 +664,11 @@ export default function LiffHubPage() {
 
         {/* 📅 チームカレンダー（月間カレンダー ＆ 直近スケジュール一覧） */}
         <section>
-          <HubCalendarSection eventsList={events} isDemo={isDemo} />
+          <HubCalendarSection
+            eventsList={events}
+            specialEvents={specialEvents}
+            isDemo={isDemo}
+          />
         </section>
 
         <div

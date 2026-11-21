@@ -17,6 +17,7 @@ import {
   MapPin,
   Megaphone,
   Music,
+  PartyPopper,
   ScanLine,
   Settings,
   Shield,
@@ -31,6 +32,7 @@ import {
 export type QuickMenuItemId =
   | "schedule"
   | "board"
+  | "special_events"
   | "carpool"
   | "grounds"
   | "matches"
@@ -129,6 +131,7 @@ export const QUICK_MENU_TONE_STYLES: Record<QuickMenuTone, QuickMenuToneStyle> =
 const TEAL_SCHEDULE_ITEM_IDS: ReadonlySet<QuickMenuItemId> = new Set([
   "schedule",
   "board",
+  "special_events",
   "carpool",
   "grounds",
 ]);
@@ -155,7 +158,9 @@ export function getQuickMenuItemToneStyle(
     return TEAL_QUICK_MENU_TONE_STYLE;
   }
   if (AMBER_DOCS_ITEM_IDS.has(item.id)) {
-    return AMBER_QUICK_MENU_TONE_STYLE;
+    return AMBER_DOCS_ITEM_IDS.has(item.id)
+      ? AMBER_QUICK_MENU_TONE_STYLE
+      : PRIMARY_QUICK_MENU_TONE_STYLE;
   }
   if (item.category === "settings_admin" || SLATE_SETTINGS_ITEM_IDS.has(item.id)) {
     return SLATE_QUICK_MENU_TONE_STYLE;
@@ -234,6 +239,17 @@ export const QUICK_MENU_CATALOG: readonly QuickMenuItemDef[] = [
     category: "schedule_match",
     tone: "teal",
     icon: ClipboardCheck,
+  },
+  {
+    id: "special_events",
+    label: "行事・アンケート",
+    shortLabel: "行事・調査",
+    description: "忘年会・卒団式・同伴家族・日程調整",
+    badge: "行事",
+    href: "/liff/events",
+    category: "schedule_match",
+    tone: "teal",
+    icon: PartyPopper,
   },
   {
     id: "carpool",

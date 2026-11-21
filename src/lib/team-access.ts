@@ -23,6 +23,7 @@ import {
   teamLinks,
   teamMembers,
   teamRules,
+  teamSpecialEvents,
   teams,
   user,
 } from "@/db/schema";
@@ -1735,6 +1736,35 @@ export function createLiffTeamIsolationMiddleware(options?: {
             {
               success: false,
               error: "別チームの対戦ルームには参加できません",
+              isForbidden: true,
+            },
+            403
+          );
+        }
+      }
+    }
+
+    if (segs[2] === "special-events") {
+      const specialEventId =
+        (segs[3] && segs[3].trim()) ||
+        (c.req.query("specialEventId") || "").trim() ||
+        pickStringField(bodyFields, "specialEventId");
+      if (specialEventId && !isDemoEntityId(specialEventId)) {
+        const specRow = await db
+          .select({ teamId: teamSpecialEvents.teamId })
+          .from(teamSpecialEvents)
+          .where(eq(teamSpecialEvents.id, specialEventId))
+          .get();
+        if (
+          !specRow ||
+          !isTeamAlignedWithExplicit(specRow.teamId, explicitTeamId) ||
+          !access.canAccessTeam(specRow.teamId) ||
+          (method !== "GET" && !access.canMutateTeamData(specRow.teamId))
+        ) {
+          return c.json(
+            {
+              success: false,
+              error: "この行事・アンケートへのアクセス権限がありません",
               isForbidden: true,
             },
             403

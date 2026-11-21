@@ -39,6 +39,7 @@ import liffPhase3TeamToolsRoute from './api/liff/phase3-team-tools'
 import liffTeamInfoRoute from './api/liff/team-info'
 import liffRelatedTeamsRoute from './api/liff/related-teams'
 import liffBaseballBoardRoute from './api/liff/baseball-board'
+import liffSpecialEventsRoute from './api/liff/special-events'
 import documentsRoute from './api/documents'
 import { ensureAllSchemasOnce } from './lib/db-helper'
 import {
@@ -187,6 +188,7 @@ app.route('/api/liff/admin/mgmt', liffAdminMgmtRoute)
 app.route('/api/liff/team-info', liffTeamInfoRoute)
 app.route('/api/liff/related-teams', liffRelatedTeamsRoute)
 app.route('/api/liff/baseball-board', liffBaseballBoardRoute)
+app.route('/api/liff/special-events', liffSpecialEventsRoute)
 app.route('/api/liff', liffPhase3TeamToolsRoute)
 app.route('/api/liff', liffRoute)
 app.route('/api/documents', documentsRoute)
