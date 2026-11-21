@@ -961,6 +961,8 @@ const DEMO_MATCHES = [
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
         { roleKey: "buzzer", roleLabel: "ブザー", assignees: ["山田 母"], note: "放送室ブザー操作" },
         { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
+        { roleKey: "announcer_whisper", roleLabel: "アナウンス・ささやき", assignees: ["鈴木 ママ"], note: "放送室アナウンス・補助" },
+        { roleKey: "pitch_count", roleLabel: "投球カウント", assignees: ["渡辺 パパ"], note: "学童70球規定・毎回の球数確認" },
       ],
     },
     scheduleSync: DEMO_SCHEDULED_MATCH_CARPOOL_SYNC,
@@ -4777,6 +4779,7 @@ app.get("/match-ops-context", async (c) => {
       { id: "demo-m-8", name: "山本 父", memberType: "guardian", role: "member", isFatherOrStaff: true },
       { id: "demo-m-9", name: "佐藤 ママ", memberType: "guardian", role: "member", isFatherOrStaff: false },
       { id: "demo-m-10", name: "山田 母", memberType: "guardian", role: "member", isFatherOrStaff: false },
+      { id: "demo-m-11", name: "鈴木 ママ", memberType: "guardian", role: "member", isFatherOrStaff: false },
     ];
 
     const targetDateKey = extractDateKey(matchDate);

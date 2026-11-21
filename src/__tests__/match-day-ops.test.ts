@@ -15,7 +15,20 @@ import {
 } from "@/lib/liff/match-day-ops";
 import type { MatchDayOps } from "@/types/match";
 
-describe("match-day-ops role 'none' (なし) handling", () => {
+describe("match-day-ops role 'none' (なし) & preset roles handling", () => {
+  it("defines 8 preset match staff roles including アナウンス・ささやき and 投球カウント", () => {
+    expect(DEFAULT_MATCH_STAFF_ROLES.map((r) => r.roleLabel)).toEqual([
+      "審判",
+      "スコアラー",
+      "BSO・得点板",
+      "LINE速報",
+      "ブザー",
+      "動画撮影",
+      "アナウンス・ささやき",
+      "投球カウント",
+    ]);
+  });
+
   it("recognizes none tokens accurately", () => {
     expect(isNoneAssigneeToken("なし")).toBe(true);
     expect(isNoneAssigneeToken(" 不要 ")).toBe(true);
@@ -23,19 +36,20 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     expect(isNoneAssigneeToken("山田 父")).toBe(false);
   });
 
-  it("preserves explicit isNone on preset roles and converts free-text 'なし' to isNone", () => {
+  it("preserves explicit isNone on preset roles, converts free-text 'なし' to isNone, and normalizes legacy announcer_duty to announcer_whisper", () => {
     const json = JSON.stringify({
       staffRoles: [
         { roleKey: "umpire", roleLabel: "審判", assignees: ["山田 父"] },
         { roleKey: "buzzer", roleLabel: "ブザー", assignees: [], isNone: true },
         { roleKey: "announcer_duty", roleLabel: "アナウンス・当番", assignees: ["不要"] },
+        { roleKey: "pitch_count", roleLabel: "投球カウント", assignees: ["高橋 父"], note: "70球規定" },
         // 未入力かつ isNone でない固定枠は保存対象から除外される
         { roleKey: "video_camera", roleLabel: "動画撮影", assignees: [] },
       ],
     });
 
     const parsed = parseMatchDayOpsJson(json);
-    expect(parsed.staffRoles).toHaveLength(3);
+    expect(parsed.staffRoles).toHaveLength(4);
 
     const umpire = parsed.staffRoles?.find((r) => r.roleKey === "umpire");
     expect(umpire).toEqual({
@@ -56,14 +70,25 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     });
 
     const announcer = parsed.staffRoles?.find(
-      (r) => r.roleKey === "announcer_duty"
+      (r) => r.roleKey === "announcer_whisper"
     );
     expect(announcer).toEqual({
-      roleKey: "announcer_duty",
-      roleLabel: "アナウンス・当番",
+      roleKey: "announcer_whisper",
+      roleLabel: "アナウンス・ささやき",
       assignees: [],
       note: undefined,
       isNone: true,
+    });
+
+    const pitchCount = parsed.staffRoles?.find(
+      (r) => r.roleKey === "pitch_count"
+    );
+    expect(pitchCount).toEqual({
+      roleKey: "pitch_count",
+      roleLabel: "投球カウント",
+      assignees: ["高橋 父"],
+      note: "70球規定",
+      isNone: undefined,
     });
   });
 
@@ -86,6 +111,12 @@ describe("match-day-ops role 'none' (なし) handling", () => {
         roleLabel: "塁審",
         assignees: ["鈴木 父"],
       },
+      {
+        roleKey: "announcer_duty",
+        roleLabel: "アナウンス・当番",
+        assignees: ["山田 母"],
+        note: "放送室",
+      },
     ]);
 
     const scorer = normalized.find((r) => r.roleKey === "scorer");
@@ -95,6 +126,15 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     const umpire = normalized.find((r) => r.roleKey === "umpire");
     expect(umpire?.assignees).toEqual(["鈴木 父"]);
     expect(umpire?.isNone).toBeUndefined();
+
+    const announcer = normalized.find((r) => r.roleKey === "announcer_whisper");
+    expect(announcer).toEqual({
+      roleKey: "announcer_whisper",
+      roleLabel: "アナウンス・ささやき",
+      assignees: ["山田 母"],
+      note: "放送室",
+      isNone: undefined,
+    });
   });
 
   it("computes activePresetCount, nonePresetCount, and isAllRolesNone accurately", () => {
@@ -104,8 +144,8 @@ describe("match-day-ops role 'none' (なし) handling", () => {
         { roleKey: "scorer", roleLabel: "スコアラー", assignees: ["佐藤 母"] },
         { roleKey: "buzzer", roleLabel: "ブザー", assignees: [], isNone: true },
         {
-          roleKey: "announcer_duty",
-          roleLabel: "アナウンス・当番",
+          roleKey: "announcer_whisper",
+          roleLabel: "アナウンス・ささやき",
           assignees: [],
           isNone: true,
         },
@@ -121,7 +161,7 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     const partialSplit = splitPresetAndCustomStaffRoles(partialOps);
     expect(partialSplit.assignedPresetCount).toBe(2);
     expect(partialSplit.nonePresetCount).toBe(3);
-    expect(partialSplit.activePresetCount).toBe(4);
+    expect(partialSplit.activePresetCount).toBe(5);
     expect(partialSplit.isAllRolesNone).toBe(false);
 
     const allNoneOps: MatchDayOps = {
@@ -177,7 +217,7 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     expect(myRoles.map((r) => r.roleKey)).toEqual(["umpire"]);
   });
 
-  it("formats LINE pre-match announcement share text for both partial none and all-roles-none", () => {
+  it("formats LINE pre-match announcement share text for partial none, new roles, and all-roles-none", () => {
     const partialText = buildPreMatchAnnouncementShareText({
       opponent: "〇〇クラブ",
       dateText: "2026/11/22(日) 10:00",
@@ -200,6 +240,12 @@ describe("match-day-ops role 'none' (なし) handling", () => {
             note: "本部運営",
             isNone: true,
           },
+          {
+            roleKey: "pitch_count",
+            roleLabel: "投球カウント",
+            assignees: ["高橋 父"],
+            note: "70球制限",
+          },
         ],
       },
     });
@@ -207,7 +253,8 @@ describe("match-day-ops role 'none' (なし) handling", () => {
     expect(partialText).toContain("━━ 当日の役割担当 ━━");
     expect(partialText).toContain("・審判: 山田 父");
     expect(partialText).toContain("・ブザー: なし");
-    expect(partialText).toContain("・アナウンス・当番: なし（本部運営）");
+    expect(partialText).toContain("・アナウンス・ささやき: なし（本部運営）");
+    expect(partialText).toContain("・投球カウント: 高橋 父（70球制限）");
 
     const allNoneText = buildPreMatchAnnouncementShareText({
       opponent: "〇〇クラブ",

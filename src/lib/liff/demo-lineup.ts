@@ -483,6 +483,8 @@ export const DEMO_MATCH_MAP: Record<string, Match> = {
         { roleKey: "line_live", roleLabel: "LINE速報", assignees: ["鈴木 パパ"], note: "グループLINE実況" },
         { roleKey: "buzzer", roleLabel: "ブザー", assignees: ["山田 母"], note: "放送室ブザー操作" },
         { roleKey: "video_camera", roleLabel: "動画撮影", assignees: ["山本 父"], note: "バックネット裏三脚" },
+        { roleKey: "announcer_whisper", roleLabel: "アナウンス・ささやき", assignees: ["鈴木 ママ"], note: "放送室アナウンス・補助" },
+        { roleKey: "pitch_count", roleLabel: "投球カウント", assignees: ["渡辺 パパ"], note: "学童70球規定・毎回の球数確認" },
       ],
     },
     innings: 7,

@@ -52,10 +52,16 @@ export const DEFAULT_MATCH_STAFF_ROLES: readonly MatchStaffRolePreset[] = [
     notePlaceholder: "例: バックネット裏三脚・モバイルバッテリー",
   },
   {
-    roleKey: "announcer_duty",
-    roleLabel: "アナウンス・当番",
-    shortHint: "放送・お茶/救護当番",
-    notePlaceholder: "例: 放送室・氷/ジャグ準備",
+    roleKey: "announcer_whisper",
+    roleLabel: "アナウンス・ささやき",
+    shortHint: "場内放送・横付き補助",
+    notePlaceholder: "例: 放送室（アナウンス1名・ささやき1名）",
+  },
+  {
+    roleKey: "pitch_count",
+    roleLabel: "投球カウント",
+    shortHint: "球数計測・本部照合",
+    notePlaceholder: "例: 数取器・投球数記録表（毎回の球数確認）",
   },
 ] as const;
 
@@ -209,15 +215,26 @@ const LEGACY_UMPIRE_ROLE_KEYS = new Set([
 ]);
 const LEGACY_UMPIRE_ROLE_LABELS = new Set(["審判", "球審", "塁審"]);
 
+const LEGACY_ANNOUNCER_ROLE_KEYS = new Set([
+  "announcer_whisper",
+  "announcer_duty",
+]);
+const LEGACY_ANNOUNCER_ROLE_LABELS = new Set([
+  "アナウンス・ささやき",
+  "アナウンス・当番",
+]);
+
 const PRESET_ROLE_KEY_SET = new Set<string>([
   ...DEFAULT_MATCH_STAFF_ROLES.map((r) => r.roleKey),
   "plate_umpire",
   "base_umpire",
+  "announcer_duty",
 ]);
 const PRESET_ROLE_LABEL_SET = new Set<string>([
   ...DEFAULT_MATCH_STAFF_ROLES.map((r) => r.roleLabel),
   "球審",
   "塁審",
+  "アナウンス・当番",
 ]);
 
 function isUmpireStaffRole(roleKey: string, roleLabel: string): boolean {
@@ -225,6 +242,14 @@ function isUmpireStaffRole(roleKey: string, roleLabel: string): boolean {
     !roleKey.startsWith("custom_") &&
     (LEGACY_UMPIRE_ROLE_KEYS.has(roleKey) ||
       LEGACY_UMPIRE_ROLE_LABELS.has(roleLabel.trim()))
+  );
+}
+
+function isAnnouncerStaffRole(roleKey: string, roleLabel: string): boolean {
+  return (
+    !roleKey.startsWith("custom_") &&
+    (LEGACY_ANNOUNCER_ROLE_KEYS.has(roleKey) ||
+      LEGACY_ANNOUNCER_ROLE_LABELS.has(roleLabel.trim()))
   );
 }
 
@@ -249,7 +274,8 @@ export function isNoneAssigneeToken(raw: string): boolean {
 }
 
 /**
- * 既存の「球審」「塁審」個別データを「審判（umpire）」1枠へ自動統合する（後方互換対応）
+ * 既存の「球審」「塁審」個別データを「審判（umpire）」1枠へ、
+ * 旧「アナウンス・当番（announcer_duty）」を「アナウンス・ささやき（announcer_whisper）」へ自動統合する（後方互換対応）
  * ※固定プリセット枠は担当者・メモ・「なし（isNone）」指定のいずれかがある場合のみ保持し、手動追加されたカスタム枠は未割当でも枠自体を保持する
  */
 export function normalizeUnifiedStaffRoles(
@@ -264,6 +290,13 @@ export function normalizeUnifiedStaffRoles(
   const umpireAssigneeSet = new Set<string>();
   const umpireNotes: string[] = [];
   const umpireNoteSet = new Set<string>();
+
+  let mergedAnnouncerIndex = -1;
+  let announcerExplicitNone = false;
+  const announcerAssignees: string[] = [];
+  const announcerAssigneeSet = new Set<string>();
+  const announcerNotes: string[] = [];
+  const announcerNoteSet = new Set<string>();
 
   for (const item of rawRoles) {
     const cleanKey = (item.roleKey || "").trim();
@@ -313,6 +346,28 @@ export function normalizeUnifiedStaffRoles(
         umpireNoteSet.add(cleanNote);
         umpireNotes.push(cleanNote);
       }
+    } else if (isAnnouncerStaffRole(cleanKey, cleanLabel)) {
+      if (mergedAnnouncerIndex === -1) {
+        mergedAnnouncerIndex = result.length;
+        result.push({
+          roleKey: "announcer_whisper",
+          roleLabel: "アナウンス・ささやき",
+          assignees: [],
+        });
+      }
+      if (effectiveIsNone) {
+        announcerExplicitNone = true;
+      }
+      for (const person of cleanAssignees) {
+        if (!announcerAssigneeSet.has(person)) {
+          announcerAssigneeSet.add(person);
+          announcerAssignees.push(person);
+        }
+      }
+      if (cleanNote && !announcerNoteSet.has(cleanNote)) {
+        announcerNoteSet.add(cleanNote);
+        announcerNotes.push(cleanNote);
+      }
     } else {
       result.push({
         roleKey: cleanKey || `custom_${result.length + 1}`,
@@ -333,6 +388,18 @@ export function normalizeUnifiedStaffRoles(
       assignees: umpireAssignees,
       note: umpireNotes.length > 0 ? umpireNotes.join(" / ") : undefined,
       isNone: finalUmpireIsNone || undefined,
+    };
+  }
+
+  if (mergedAnnouncerIndex !== -1) {
+    const finalAnnouncerIsNone =
+      announcerAssignees.length === 0 && announcerExplicitNone;
+    result[mergedAnnouncerIndex] = {
+      roleKey: "announcer_whisper",
+      roleLabel: "アナウンス・ささやき",
+      assignees: announcerAssignees,
+      note: announcerNotes.length > 0 ? announcerNotes.join(" / ") : undefined,
+      isNone: finalAnnouncerIsNone || undefined,
     };
   }
 
@@ -463,7 +530,7 @@ export interface SplitMatchStaffRolesResult {
 }
 
 /**
- * 固定プリセット役割（全7枠常時）と、手動追加されたカスタム役割を分離して返す
+ * 固定プリセット役割（全8枠常時）と、手動追加されたカスタム役割を分離して返す
  */
 export function splitPresetAndCustomStaffRoles(
   ops: MatchDayOps | null | undefined

@@ -290,7 +290,7 @@ export function MatchDayGuideAndRolesSection({
               <EmptyState
                 icon={ClipboardList}
                 title="当日の集合・審判/スコア担当が未設定です"
-                description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当（または「なし」）を1タップで共有できます"
+                description="集合時刻・ユニフォーム・弁当や、審判・スコアラー・BSO・LINE速報・ブザー・動画撮影・アナウンス/ささやき・投球カウントの担当（または「なし」）を1タップで共有できます"
               />
               {canEdit && (
                 <div className="grid grid-cols-2 gap-2">
@@ -442,7 +442,7 @@ export function MatchDayGuideAndRolesSection({
                       className="w-full rounded-xl bg-muted/40 hover:bg-muted/70 border border-dashed border-border p-3 text-center transition-colors cursor-pointer"
                     >
                       <p className="text-xs font-black text-foreground">
-                        審判・スコアラー・BSO・LINE速報・ブザー・動画撮影の担当を登録
+                        審判・スコアラー・BSO・アナウンス・投球カウント等の担当を登録
                       </p>
                       <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
                         タップして保護者メンバー選択・不要な枠は「なし」に設定できます
@@ -939,7 +939,10 @@ export function MatchDayOpsEditorModal({
       (preset) => {
         const saved =
           existingByKey.get(preset.roleKey) ||
-          existingList.find((x) => x.roleLabel === preset.roleLabel);
+          existingList.find(
+            (x) =>
+              !x.roleKey.startsWith("custom_") && x.roleLabel === preset.roleLabel
+          );
         if (saved) {
           existingByKey.delete(saved.roleKey);
         }
@@ -1411,7 +1414,7 @@ export function MatchDayOpsEditorModal({
                         >
                           <span
                             className={cn(
-                              "px-2 py-0.5 rounded-md text-[11px] font-black shrink-0 max-w-[140px] truncate",
+                              "px-2 py-0.5 rounded-md text-[11px] font-black shrink-0 max-w-[165px] truncate",
                               row.isNone
                                 ? "bg-muted text-muted-foreground border border-border"
                                 : "bg-slate-900 text-white"

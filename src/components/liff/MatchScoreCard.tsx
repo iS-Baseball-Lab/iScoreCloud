@@ -718,7 +718,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                       )}
                     </div>
 
-                    {/* ① 固定の役割（全枠「なし」設定時は1行サマリー、通常は全7枠表示） */}
+                    {/* ① 固定の役割（全枠「なし」設定時は1行サマリー、通常は全8枠表示） */}
                     {isAllRolesNone && presetRoles.every((r) => !r.note) ? (
                       <div className="px-3 py-2.5 flex items-center justify-between gap-2 bg-card text-xs">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10.5px] font-black shrink-0">
