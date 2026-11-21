@@ -279,7 +279,7 @@ export function HubCalendarSection({
         <div className="relative bg-card overflow-hidden">
           <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" />
 
-          <div className="relative z-10 px-3.5 pb-3.5 pt-36 sm:pt-41 space-y-2.5">
+          <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2.5">
         {/* ━━ 2. 曜日ヘッダー ━━ */}
         <div className="grid grid-cols-7 text-center text-[10px] font-black text-foreground uppercase pb-0.5 border-b border-border/60">
           {weekDays.map((day, idx) => (

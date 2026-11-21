@@ -899,7 +899,7 @@ export function MonthlySchedulePlanner({
         <div className="relative bg-card overflow-hidden">
           <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" eager />
 
-          <div className="relative z-10 px-3.5 pb-3.5 pt-36 sm:pt-41 space-y-2">
+          <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2">
           {/* 曜日ヘッダー */}
           <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
             {weekDays.map((w, idx) => (

@@ -1319,7 +1319,7 @@ export default function LiffSchedulePage() {
           <div className="relative bg-card overflow-hidden">
             <CalendarMonthPhotoMelt month={currentMonth + 1} variant="compact" eager />
 
-            <div className="relative z-10 px-2.5 pb-2.5 pt-32 sm:px-3 sm:pb-3 sm:pt-38 space-y-1.5">
+            <div className="relative z-10 px-2.5 pb-2.5 pt-[47%] sm:px-3 sm:pb-3 sm:pt-[47%] space-y-1.5">
           {/* 曜日ヘッダー */}
           <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5 border-b border-border/60">
             {weekDays.map((w, idx) => (

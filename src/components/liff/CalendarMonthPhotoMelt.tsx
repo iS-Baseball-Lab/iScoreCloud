@@ -9,19 +9,19 @@ import {
 } from "@/lib/liff/calendar-month-bg";
 
 const preloadedCalendarSources = new Set<string>();
-const CALENDAR_PHOTO_ASSET_REVISION = "2";
+const CALENDAR_PHOTO_ASSET_REVISION = "3";
 
 function withCalendarAssetRevision(src: string): string {
   return `${src}?v=${CALENDAR_PHOTO_ASSET_REVISION}`;
 }
 
 const CALENDAR_PHOTO_MELT_MASK =
-  "linear-gradient(to bottom, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.90) 58%, rgba(0,0,0,0.36) 70%, rgba(0,0,0,0.11) 83%, rgba(0,0,0,0.02) 93%, rgba(0,0,0,0) 100%)";
+  "linear-gradient(to bottom, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.90) 60%, rgba(0,0,0,0.30) 71%, rgba(0,0,0,0.09) 83%, rgba(0,0,0,0.02) 93%, rgba(0,0,0,0) 100%)";
 
 export interface CalendarMonthPhotoMeltProps {
   /** 表示中の月（1〜12） */
   month: number;
-  /** カレンダー種別に応じた高さバリアント */
+  /** カレンダー種別に応じたバリアント（互換保持） */
   variant?: "default" | "compact";
   /** 初回ファーストビュー表示時は eager 指定可 */
   eager?: boolean;
@@ -30,12 +30,12 @@ export interface CalendarMonthPhotoMeltProps {
 
 /**
  * 月間カレンダーの A-3 上帯ダークキャップ直下に配置する季節フォト背景染み込みレイヤー
- * - 上部で季節風景＋野球グラウンド（外野芝・黒土ダイヤモンド・白線）までくっきり見せ、曜日〜日付グリッド上部へ mask-image で段階透過して bg-card へ溶け込ませる
+ * - 元画像と完全同一の `aspect-[3/2]` で描画することで、上空・木々・入道雲の頭切れゼロ（0pxトリミング）と
+ *   外野芝・黒土ダイヤモンド全体の鮮明表示を両立し、下端 71%〜100% で曜日・日付グリッドへ自然に溶け込ませる
  * - 前月・翌月のWebPをバックグラウンドで先読みし、月切り替え時の空白チラつきをゼロにする
  */
 export function CalendarMonthPhotoMelt({
   month,
-  variant = "default",
   eager = false,
   className,
 }: CalendarMonthPhotoMeltProps) {
@@ -59,8 +59,7 @@ export function CalendarMonthPhotoMelt({
     <div
       aria-hidden="true"
       className={cn(
-        "absolute inset-x-0 top-0 pointer-events-none select-none overflow-hidden",
-        variant === "compact" ? "h-48 sm:h-56" : "h-53 sm:h-60",
+        "absolute inset-x-0 top-0 w-full aspect-[3/2] pointer-events-none select-none overflow-hidden",
         className
       )}
     >
@@ -68,7 +67,7 @@ export function CalendarMonthPhotoMelt({
         src={versionedSrc}
         alt=""
         width={960}
-        height={600}
+        height={640}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
         style={{
