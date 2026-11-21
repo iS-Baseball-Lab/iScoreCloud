@@ -85,6 +85,7 @@ interface MatchScoreCardProps {
   match?: MatchCardData | null;
   teamName?: string;
   initialExpanded?: boolean;
+  priorityPhoto?: boolean;
   isLoading?: boolean;
 }
 
@@ -255,7 +256,13 @@ function MatchCountdown({ date }: { date: string }) {
   );
 }
 
-export function MatchScoreCard({ match, teamName = "自チーム", initialExpanded = false, isLoading = false }: MatchScoreCardProps) {
+export function MatchScoreCard({
+  match,
+  teamName = "自チーム",
+  initialExpanded = false,
+  priorityPhoto = false,
+  isLoading = false,
+}: MatchScoreCardProps) {
   const router = useRouter();
   const { profile, currentTeam } = useLiff();
   const { canMutate } = useLiffPermissions();
@@ -538,7 +545,7 @@ export function MatchScoreCard({ match, teamName = "自チーム", initialExpand
                 alt=""
                 width={960}
                 height={640}
-                loading={initialExpanded ? "eager" : "lazy"}
+                loading={priorityPhoto ? "eager" : "lazy"}
                 decoding="async"
                 style={{
                   WebkitMaskImage:

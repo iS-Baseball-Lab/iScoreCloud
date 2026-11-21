@@ -794,7 +794,12 @@ export function HubHeroSection({
           {isLoading ? (
             <MatchScoreCardSkeleton hasVideo={true} />
           ) : recentMatch ? (
-            <MatchScoreCard match={recentMatch as MatchCardData} teamName={teamName} initialExpanded={true} />
+            <MatchScoreCard
+              match={recentMatch as MatchCardData}
+              teamName={teamName}
+              initialExpanded={true}
+              priorityPhoto={true}
+            />
           ) : (
             <div className="p-8 rounded-2xl border border-border/60 bg-card shadow-xs text-center space-y-2">
               <Trophy className="w-8 h-8 text-muted-foreground/40 mx-auto" />

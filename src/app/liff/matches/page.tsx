@@ -4024,14 +4024,15 @@ function MatchesContent() {
                 key={m.id}
                 className={
                   idx >= 4
-                    ? "[content-visibility:auto] [contain-intrinsic-size:auto_240px]"
+                    ? "[content-visibility:auto] [contain-intrinsic-size:auto_380px]"
                     : undefined
                 }
               >
                 <MatchScoreCard
                   match={m}
                   teamName={scoreTeamName}
-                  initialExpanded={m.status === "scheduled" || m.status === "live"}
+                  initialExpanded={m.status !== "rainout"}
+                  priorityPhoto={idx < 2}
                 />
               </div>
             ))}
