@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -12,6 +13,7 @@ import {
   UserPlus,
   Flag,
   SlidersHorizontal,
+  Trash2,
   X,
   Footprints,
   Sparkles,
@@ -33,21 +35,25 @@ import {
 } from "./FlickPadButton";
 import {
   POSITION_OPTIONS,
+  applyFinalStateToPlayEntry,
   buildBattedPlayCandidates,
   computeHalfInningSituation,
   computeScoreboardSummary,
   findActiveDefenderByDirection,
-  formatLiveReportText,
   formatPlayerReportName,
   formatRunnersLabel,
   formatSinglePlayEntryLine,
   getCurrentHmText,
+  getEffectiveEntryFinalState,
   isMyTeamBattingHalf,
   normalizeReportPositionCode,
   normalizeRunnersList,
+  reconcileHalfInningManualRuns,
   resolveActiveLineupAtInning,
+  resolveDisplayedLiveReportText,
   simulateDirectOutcome,
   simulateQuickBaserunningPlay,
+  sumHalfInningEntryRuns,
   type BattedOutcomeCode,
   type BattedPlayVariant,
   type DirectOutcomeCode,
@@ -128,6 +134,8 @@ interface LiveAtBatPadCardProps {
   ) => void;
   onRequestTakeover?: () => void;
   onOpenScorebookImport?: () => void;
+  /** タブ切替時もパッド状態を維持しつつ非表示時はモーダルを安全クローズするためのフラグ */
+  isActiveTab?: boolean;
 }
 
 const INFIELD_DIRECTIONS = ["投", "捕", "一", "二", "三", "遊"] as const;
@@ -790,17 +798,12 @@ export function LiveAtBatPadCard({
   onChangeViewerHalfOverride,
   onRequestTakeover,
   onOpenScorebookImport,
+  isActiveTab = true,
 }: LiveAtBatPadCardProps) {
   const [mounted, setMounted] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"inning" | "full">("inning");
   const monitorScrollRef = useRef<HTMLDivElement | null>(null);
   const [quickBrFeedback, setQuickBrFeedback] = useState<string | null>(null);
-
-  // 状況の手動一時変更（タイブレーク無死1・2塁など）
-  const [manualStartOuts, setManualStartOuts] = useState<number | null>(null);
-  const [manualStartRunners, setManualStartRunners] = useState<
-    LiveReportBaseNum[] | null
-  >(null);
 
   // 打席選択状態（通常タップ＋長押しフリック詳細バリエーション）
   const [selectedDirect, setSelectedDirect] =
@@ -823,14 +826,30 @@ export function LiveAtBatPadCard({
   const [selectedCandidateIdx, setSelectedCandidateIdx] = useState<number>(0);
   const [reactionText, setReactionText] = useState<string>("");
 
-  // 詳細手動微調整モーダル
+  // 詳細手動微調整モーダル（① 記録済み行の修正 / ② 今回の打席記録 / ③ 現在のアウト・走者・イニング得点調整）
   const [showCustomOverride, setShowCustomOverride] = useState(false);
-  const [customPlayText, setCustomPlayText] = useState("");
+  const [fineTuneTab, setFineTuneTab] = useState<
+    "edit_recorded" | "new_atbat" | "situation"
+  >("new_atbat");
+  const [customPlayText, setCustomPlayText] = useState<string | null>(null);
   const [customOutsAfter, setCustomOutsAfter] = useState<number | null>(null);
   const [customRunnersAfter, setCustomRunnersAfter] = useState<
     LiveReportBaseNum[] | null
   >(null);
   const [customRunsScored, setCustomRunsScored] = useState<number | null>(null);
+
+  const [editingRecordedEntry, setEditingRecordedEntry] =
+    useState<LiveReportPlayEntry | null>(null);
+  const [clearManualRunsOnEditSave, setClearManualRunsOnEditSave] =
+    useState<boolean>(false);
+
+  const [situDraftOuts, setSituDraftOuts] = useState<number>(0);
+  const [situDraftRunners, setSituDraftRunners] = useState<LiveReportBaseNum[]>(
+    []
+  );
+  const [situDraftRuns, setSituDraftRuns] = useState<number>(0);
+  const [situClearManualRuns, setSituClearManualRuns] =
+    useState<boolean>(false);
 
   // 選手交代・イベントモーダル
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
@@ -878,7 +897,7 @@ export function LiveAtBatPadCard({
     setSelectedBattedActiveChip(null);
     setSelectedCandidateIdx(0);
     setReactionText("");
-    setCustomPlayText("");
+    setCustomPlayText(null);
     setCustomOutsAfter(null);
     setCustomRunnersAfter(null);
     setCustomRunsScored(null);
@@ -889,13 +908,23 @@ export function LiveAtBatPadCard({
     setIsSubModalOpen(false);
     setIsFollowUpModalOpen(false);
     setShowCustomOverride(false);
+    setEditingRecordedEntry(null);
     setIsGameSetPanelOpen(false);
     setIsBatterQuickModalOpen(false);
-    setManualStartOuts(null);
-    setManualStartRunners(null);
     setQuickBrFeedback(null);
     resetPadSelection();
   }, [activeContextKey, doc.activeInning, doc.activeIsBottom, readOnly]);
+
+  // タブ非表示時は開いていたモーダルのみ安全クローズし、選択中のパッド状態は保持する
+  useEffect(() => {
+    if (!isActiveTab) {
+      setIsSubModalOpen(false);
+      setIsFollowUpModalOpen(false);
+      setShowCustomOverride(false);
+      setIsGameSetPanelOpen(false);
+      setIsBatterQuickModalOpen(false);
+    }
+  }, [isActiveTab]);
 
   const viewedInning =
     readOnly && viewerHalfOverride ? viewerHalfOverride.inning : doc.activeInning;
@@ -917,10 +946,65 @@ export function LiveAtBatPadCard({
     [currentHalf]
   );
 
-  const effectiveOutsBefore =
-    manualStartOuts !== null ? manualStartOuts : autoSituation.outs;
-  const effectiveRunnersBefore =
-    manualStartRunners !== null ? manualStartRunners : autoSituation.runners;
+  const effectiveOutsBefore = autoSituation.outs;
+  const effectiveRunnersBefore = autoSituation.runners;
+
+  const updateCurrentHalfSituation = (patch: {
+    outs?: number | null;
+    runners?: LiveReportBaseNum[] | null;
+    manualRunsOverride?: number | null;
+  }) => {
+    if (readOnly) return;
+    onChangeDoc((prev) => {
+      const halves = [...prev.halfInnings];
+      const idx = halves.findIndex(
+        (h) =>
+          h.inning === prev.activeInning && h.isBottom === prev.activeIsBottom
+      );
+      const baseHalf: LiveReportHalfInning =
+        idx >= 0
+          ? halves[idx]!
+          : {
+              inning: prev.activeInning,
+              isBottom: prev.activeIsBottom,
+              entries: [],
+              manualRunsOverride: null,
+            };
+
+      const nextOutsOverride =
+        patch.outs !== undefined
+          ? patch.outs === null
+            ? null
+            : Math.max(0, Math.min(3, Math.round(patch.outs)))
+          : baseHalf.manualOutsOverride ?? null;
+      const nextRunnersOverride =
+        nextOutsOverride !== null && nextOutsOverride >= 3
+          ? []
+          : patch.runners !== undefined
+          ? patch.runners === null
+            ? null
+            : normalizeRunnersList(patch.runners)
+          : baseHalf.manualRunnersOverride ?? null;
+      const nextManualRuns =
+        patch.manualRunsOverride !== undefined
+          ? patch.manualRunsOverride
+          : baseHalf.manualRunsOverride;
+
+      const updatedHalf: LiveReportHalfInning = {
+        ...baseHalf,
+        manualRunsOverride: nextManualRuns,
+        manualOutsOverride: nextOutsOverride,
+        manualRunnersOverride: nextRunnersOverride,
+      };
+
+      if (idx >= 0) {
+        halves[idx] = updatedHalf;
+      } else {
+        halves.push(updatedHalf);
+      }
+      return { ...prev, halfInnings: halves };
+    });
+  };
 
   const isMyAttack = isMyTeamBattingHalf(doc.battingOrder, viewedIsBottom);
   const activeLineup = useMemo(
@@ -990,13 +1074,17 @@ export function LiveAtBatPadCard({
     ] || null;
 
   const hasCustomOverride =
-    customPlayText.trim().length > 0 ||
+    (customPlayText !== null && customPlayText.trim().length > 0) ||
     customOutsAfter !== null ||
     customRunnersAfter !== null ||
     customRunsScored !== null;
 
+  const resolvedCustomInputText =
+    customPlayText !== null ? customPlayText : activeCandidate?.playText || "";
   const finalPlayText =
-    customPlayText.trim() || activeCandidate?.playText || "";
+    customPlayText !== null
+      ? customPlayText.trim()
+      : activeCandidate?.playText || "";
   const finalOutsAfter =
     customOutsAfter !== null
       ? customOutsAfter
@@ -1034,6 +1122,159 @@ export function LiveAtBatPadCard({
     : "";
 
   const scoreboardSummary = useMemo(() => computeScoreboardSummary(doc), [doc]);
+
+  const cloneEntryForEdit = (
+    entry: LiveReportPlayEntry
+  ): LiveReportPlayEntry => ({
+    ...entry,
+    runnersAfter: [...entry.runnersAfter],
+    chainedPlays: entry.chainedPlays.map((cp) => ({
+      ...cp,
+      runnersAfter: [...cp.runnersAfter],
+    })),
+  });
+
+  const openFineTuneModal = (targetEntryId?: string) => {
+    if (readOnly) return;
+    const halfEntries = currentHalf?.entries ?? [];
+    const matchedEntry = targetEntryId
+      ? halfEntries.find((e) => e.id === targetEntryId) || null
+      : halfEntries.length > 0
+      ? halfEntries[halfEntries.length - 1] || null
+      : null;
+
+    setEditingRecordedEntry(
+      matchedEntry ? cloneEntryForEdit(matchedEntry) : null
+    );
+    setClearManualRunsOnEditSave(false);
+    setSituDraftOuts(effectiveOutsBefore);
+    setSituDraftRunners([...effectiveRunnersBefore]);
+    setSituDraftRuns(autoSituation.runs);
+    setSituClearManualRuns(false);
+
+    if (targetEntryId && matchedEntry) {
+      setFineTuneTab("edit_recorded");
+    } else if (
+      selectedDirect !== null ||
+      selectedBatted !== null ||
+      hasCustomOverride
+    ) {
+      setFineTuneTab("new_atbat");
+    } else if (matchedEntry) {
+      setFineTuneTab("edit_recorded");
+    } else {
+      setFineTuneTab("situation");
+    }
+    setShowCustomOverride(true);
+  };
+
+  const handleSaveFineTunedRecordedEntry = () => {
+    if (readOnly || !editingRecordedEntry) return;
+    const targetEntry = editingRecordedEntry;
+    const shouldClearRunsOverride = clearManualRunsOnEditSave;
+
+    onChangeDoc((prev) => ({
+      ...prev,
+      halfInnings: prev.halfInnings.map((h) => {
+        if (
+          h.inning !== prev.activeInning ||
+          h.isBottom !== prev.activeIsBottom
+        ) {
+          return h;
+        }
+        const nextEntries = h.entries.map((e) =>
+          e.id === targetEntry.id ? targetEntry : e
+        );
+        const isLastEntry =
+          h.entries.length > 0 &&
+          h.entries[h.entries.length - 1]?.id === targetEntry.id;
+        return {
+          ...h,
+          entries: nextEntries,
+          manualRunsOverride: shouldClearRunsOverride
+            ? null
+            : reconcileHalfInningManualRuns(h, nextEntries, "edit_entry"),
+          ...(isLastEntry
+            ? { manualOutsOverride: null, manualRunnersOverride: null }
+            : {}),
+        };
+      }),
+    }));
+
+    setShowCustomOverride(false);
+    setEditingRecordedEntry(null);
+    toast.success("記録の微調整を反映しました");
+  };
+
+  const handleDeleteFineTunedRecordedEntry = () => {
+    if (readOnly || !editingRecordedEntry) return;
+    const targetId = editingRecordedEntry.id;
+    const wasLastBatter =
+      currentHalf &&
+      currentHalf.entries.length > 0 &&
+      currentHalf.entries[currentHalf.entries.length - 1]?.id === targetId &&
+      editingRecordedEntry.entryType === "batter";
+    const restoreOrder = editingRecordedEntry.battingOrder;
+
+    onChangeDoc((prev) => ({
+      ...prev,
+      halfInnings: prev.halfInnings
+        .map((h) => {
+          if (
+            h.inning !== prev.activeInning ||
+            h.isBottom !== prev.activeIsBottom
+          ) {
+            return h;
+          }
+          const nextEntries = h.entries.filter((e) => e.id !== targetId);
+          return {
+            ...h,
+            entries: nextEntries,
+            manualRunsOverride: reconcileHalfInningManualRuns(
+              h,
+              nextEntries,
+              "append_or_remove"
+            ),
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
+          };
+        })
+        .filter((h) => h.entries.length > 0 || h.manualRunsOverride !== null),
+      ...(wasLastBatter
+        ? {
+            nextMyOrder: isMyAttack ? restoreOrder : prev.nextMyOrder,
+            nextOpponentOrder: !isMyAttack
+              ? restoreOrder
+              : prev.nextOpponentOrder,
+          }
+        : {}),
+    }));
+
+    setShowCustomOverride(false);
+    setEditingRecordedEntry(null);
+    toast.success("記録行を削除しました");
+  };
+
+  const handleApplySituationFineTune = () => {
+    if (readOnly) return;
+    const entryRunsSum = sumHalfInningEntryRuns(currentHalf?.entries ?? []);
+    const hasEntries = (currentHalf?.entries.length ?? 0) > 0;
+    const resolvedManualRuns = situClearManualRuns
+      ? null
+      : hasEntries && situDraftRuns === entryRunsSum
+      ? null
+      : !hasEntries && situDraftRuns === 0 && currentHalf?.manualRunsOverride == null
+      ? null
+      : Math.max(0, Math.round(situDraftRuns));
+
+    updateCurrentHalfSituation({
+      outs: situDraftOuts,
+      runners: situDraftOuts >= 3 ? [] : situDraftRunners,
+      manualRunsOverride: resolvedManualRuns,
+    });
+    setShowCustomOverride(false);
+    toast.success("状況・得点の微調整を反映しました");
+  };
 
   const handleStepHalfInning = (delta: -1 | 1) => {
     if (readOnly) {
@@ -1275,9 +1516,18 @@ export function LiveAtBatPadCard({
           h.inning === prev.activeInning && h.isBottom === prev.activeIsBottom
       );
       if (idx >= 0) {
+        const prevHalf = halves[idx]!;
+        const nextEntries = [...prevHalf.entries, newEntry];
         halves[idx] = {
-          ...halves[idx],
-          entries: [...halves[idx].entries, newEntry],
+          ...prevHalf,
+          entries: nextEntries,
+          manualRunsOverride: reconcileHalfInningManualRuns(
+            prevHalf,
+            nextEntries,
+            "append_or_remove"
+          ),
+          manualOutsOverride: null,
+          manualRunnersOverride: null,
         };
       } else {
         const created: LiveReportHalfInning = {
@@ -1305,8 +1555,6 @@ export function LiveAtBatPadCard({
 
     onChangePendingPitches([]);
     setShowCustomOverride(false);
-    setManualStartOuts(null);
-    setManualStartRunners(null);
     resetPadSelection();
   };
 
@@ -1320,9 +1568,17 @@ export function LiveAtBatPadCard({
           h.inning === prev.activeInning &&
           h.isBottom === prev.activeIsBottom
         ) {
+          const nextEntries = h.entries.slice(0, -1);
           return {
             ...h,
-            entries: h.entries.slice(0, -1),
+            entries: nextEntries,
+            manualRunsOverride: reconcileHalfInningManualRuns(
+              h,
+              nextEntries,
+              "append_or_remove"
+            ),
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
           };
         }
         return h;
@@ -1531,12 +1787,20 @@ export function LiveAtBatPadCard({
               ],
             };
           });
-          return { ...h, entries };
+          return {
+            ...h,
+            entries,
+            manualRunsOverride: reconcileHalfInningManualRuns(
+              h,
+              entries,
+              "append_or_remove"
+            ),
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
+          };
         });
         return { ...prev, halfInnings: halves };
       });
-      setManualStartOuts(null);
-      setManualStartRunners(null);
     } else {
       // タイブレーク開始直後などイニング初球前に走塁が起きた場合
       const situStr = formatRunnersLabel(sim.runnersAfter, sim.outsAfter);
@@ -1551,7 +1815,7 @@ export function LiveAtBatPadCard({
         playText: "",
         reactionText: "",
         outsAfter: sim.outsAfter,
-        runnersAfter: sim.runnersAfter,
+        runnersAfter: sim.outsAfter >= 3 ? [] : sim.runnersAfter,
         runsScored: sim.runsScored,
         chainedPlays: [],
         eventText: noteText,
@@ -1563,9 +1827,18 @@ export function LiveAtBatPadCard({
             h.inning === prev.activeInning && h.isBottom === prev.activeIsBottom
         );
         if (idx >= 0) {
+          const prevHalf = halves[idx]!;
+          const nextEntries = [...prevHalf.entries, noteEntry];
           halves[idx] = {
-            ...halves[idx],
-            entries: [...halves[idx].entries, noteEntry],
+            ...prevHalf,
+            entries: nextEntries,
+            manualRunsOverride: reconcileHalfInningManualRuns(
+              prevHalf,
+              nextEntries,
+              "append_or_remove"
+            ),
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
           };
         } else {
           halves.push({
@@ -1577,8 +1850,6 @@ export function LiveAtBatPadCard({
         }
         return { ...prev, halfInnings: halves };
       });
-      setManualStartOuts(sim.outsAfter);
-      setManualStartRunners(sim.outsAfter >= 3 ? [] : sim.runnersAfter);
     }
 
     setQuickBrFeedback(`🏃‍♂️「${sim.playText}」を記録しました`);
@@ -1745,7 +2016,17 @@ export function LiveAtBatPadCard({
             ],
           };
         });
-        return { ...h, entries };
+        return {
+          ...h,
+          entries,
+          manualRunsOverride: reconcileHalfInningManualRuns(
+            h,
+            entries,
+            "append_or_remove"
+          ),
+          manualOutsOverride: null,
+          manualRunnersOverride: null,
+        };
       });
       return { ...prev, halfInnings: halves };
     });
@@ -1961,23 +2242,25 @@ export function LiveAtBatPadCard({
   }, [currentHalf, isMyAttack, doc.showSurnameOnly]);
 
   const fullFormattedText = useMemo(
-    () => formatLiveReportText(doc, outputMode),
+    () => resolveDisplayedLiveReportText(doc, outputMode),
     [doc, outputMode]
   );
 
+  const pendingScoreDelta = !readOnly && previewLine ? finalRunsScored : 0;
   const liveFirstTotal =
     scoreboardSummary.firstTotal +
-    (!readOnly && !doc.activeIsBottom ? finalRunsScored : 0);
+    (!doc.activeIsBottom ? pendingScoreDelta : 0);
   const liveSecondTotal =
     scoreboardSummary.secondTotal +
-    (!readOnly && doc.activeIsBottom ? finalRunsScored : 0);
+    (doc.activeIsBottom ? pendingScoreDelta : 0);
 
   useEffect(() => {
-    if (monitorMode === "inning" && monitorScrollRef.current) {
+    if (isActiveTab && monitorMode === "inning" && monitorScrollRef.current) {
       monitorScrollRef.current.scrollTop =
         monitorScrollRef.current.scrollHeight;
     }
   }, [
+    isActiveTab,
     monitorMode,
     currentInningLines.length,
     previewLine,
@@ -2006,6 +2289,7 @@ export function LiveAtBatPadCard({
     activeChip: string | null = null,
     forceSelect = false
   ) => {
+    const hadPriorOutcome = Boolean(selectedBatted || selectedDirect);
     if (
       !forceSelect &&
       selectedBatted === code &&
@@ -2024,10 +2308,14 @@ export function LiveAtBatPadCard({
     setSelectedDirectVariant(null);
     setSelectedDirectActiveChip(null);
     setSelectedCandidateIdx(0);
-    setCustomPlayText("");
-    setCustomOutsAfter(null);
-    setCustomRunnersAfter(null);
-    setCustomRunsScored(null);
+    if (hadPriorOutcome) {
+      setCustomPlayText(null);
+      setCustomOutsAfter(null);
+      setCustomRunnersAfter(null);
+      setCustomRunsScored(null);
+    } else if (customPlayText !== null && customPlayText.trim().length === 0) {
+      setCustomPlayText(null);
+    }
   };
 
   const selectDirectOutcome = (
@@ -2036,6 +2324,7 @@ export function LiveAtBatPadCard({
     activeChip: string | null = null,
     forceSelect = false
   ) => {
+    const hadPriorOutcome = Boolean(selectedBatted || selectedDirect);
     if (
       !forceSelect &&
       selectedDirect === code &&
@@ -2054,10 +2343,14 @@ export function LiveAtBatPadCard({
     setSelectedBattedVariant(null);
     setSelectedBattedActiveChip(null);
     setSelectedCandidateIdx(0);
-    setCustomPlayText("");
-    setCustomOutsAfter(null);
-    setCustomRunnersAfter(null);
-    setCustomRunsScored(null);
+    if (hadPriorOutcome) {
+      setCustomPlayText(null);
+      setCustomOutsAfter(null);
+      setCustomRunnersAfter(null);
+      setCustomRunsScored(null);
+    } else if (customPlayText !== null && customPlayText.trim().length === 0) {
+      setCustomPlayText(null);
+    }
   };
 
   const padContextKey = `${activeContextKey}-${doc.activeInning}-${
@@ -2541,6 +2834,7 @@ export function LiveAtBatPadCard({
                   <span>
                     {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}（
                     {isMyAttack ? "自チーム攻撃" : "相手攻撃"}）
+                    {currentInningLines.length > 0 && " ｜ 行タップで微調整"}
                   </span>
                   {doc.isGameFinished && (
                     <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9.5px] font-black">
@@ -2555,12 +2849,18 @@ export function LiveAtBatPadCard({
                   </p>
                 ) : (
                   currentInningLines.map((line) => (
-                    <p
+                    <button
                       key={line.id}
-                      className="text-[11.5px] font-bold text-slate-100 break-all"
+                      type="button"
+                      onClick={() => openFineTuneModal(line.id)}
+                      title="タップしてこの記録行を修正・微調整"
+                      className="w-full text-left py-0.5 px-1.5 -mx-1.5 rounded-md hover:bg-slate-800/80 active:bg-slate-800 flex items-center justify-between gap-1.5 transition-colors cursor-pointer group"
                     >
-                      {line.text}
-                    </p>
+                      <span className="text-[11.5px] font-bold text-slate-100 break-all">
+                        {line.text}
+                      </span>
+                      <Pencil className="w-3 h-3 text-slate-500 group-hover:text-amber-300 shrink-0" />
+                    </button>
                   ))
                 )}
 
@@ -2589,7 +2889,7 @@ export function LiveAtBatPadCard({
           </div>
 
           {/* 3アウト到達時のワンタップ次イニング誘導バー */}
-          {autoSituation.outs >= 3 && manualStartOuts === null && (
+          {autoSituation.outs >= 3 && (
             <div className="shrink-0 px-2.5 py-1.5 bg-slate-950 border-t border-slate-800">
               <button
                 type="button"
@@ -2634,7 +2934,7 @@ export function LiveAtBatPadCard({
                 </button>
               </div>
 
-              {/* アウト数（タップ切替） */}
+              {/* アウト数（タップ切替・そのままドキュメントにも保存） */}
               <div className="inline-flex items-center gap-1 bg-card border border-border rounded-lg px-1.5 h-6 shrink-0">
                 {[0, 1, 2].map((o) => {
                   const active =
@@ -2646,7 +2946,7 @@ export function LiveAtBatPadCard({
                       onClick={() => {
                         const target =
                           o + 1 === effectiveOutsBefore ? o : o + 1;
-                        setManualStartOuts(target);
+                        updateCurrentHalfSituation({ outs: target });
                       }}
                       className={cn(
                         "w-3.5 h-3.5 rounded-full border transition-all cursor-pointer",
@@ -2663,7 +2963,7 @@ export function LiveAtBatPadCard({
                 </span>
               </div>
 
-              {/* 走者ピル（タップで手動ON/OFF可） */}
+              {/* 走者ピル（タップで手動ON/OFF可・そのままドキュメントにも保存） */}
               <div className="inline-flex items-center gap-0.5 shrink-0">
                 {([1, 2, 3] as const).map((b) => {
                   const onBase = effectiveRunnersBefore.includes(b);
@@ -2678,7 +2978,10 @@ export function LiveAtBatPadCard({
                               ...effectiveRunnersBefore,
                               b,
                             ]);
-                        setManualStartRunners(next);
+                        updateCurrentHalfSituation({
+                          outs: effectiveOutsBefore >= 3 ? 2 : undefined,
+                          runners: next,
+                        });
                       }}
                       className={cn(
                         "px-1.5 h-6 rounded-lg text-[10px] font-black border transition-all cursor-pointer",
@@ -2805,7 +3108,7 @@ export function LiveAtBatPadCard({
 
                 <button
                   type="button"
-                  onClick={() => setShowCustomOverride(true)}
+                  onClick={() => openFineTuneModal()}
                   className={cn(
                     "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
                     hasCustomOverride
@@ -2982,7 +3285,7 @@ export function LiveAtBatPadCard({
                       type="button"
                       onClick={() => {
                         setSelectedCandidateIdx(idx);
-                        setCustomPlayText("");
+                        setCustomPlayText(null);
                         setCustomOutsAfter(null);
                         setCustomRunnersAfter(null);
                         setCustomRunsScored(null);
@@ -3453,7 +3756,7 @@ export function LiveAtBatPadCard({
           document.body
         )}
 
-      {/* モーダル2: 打席結果の手動微調整モーダル（createPortal + z-[9999]） */}
+      {/* モーダル2: 打席結果・記録行・状況の微調整モーダル（createPortal + z-[9999]） */}
       {mounted &&
         showCustomOverride &&
         createPortal(
@@ -3483,148 +3786,735 @@ export function LiveAtBatPadCard({
                 </button>
               </div>
 
-              <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
-                {previewLine && (
-                  <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground">
-                    プレビュー: {previewLine}
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <label className="block text-xs font-black text-muted-foreground">
-                    プレー結果テキスト（自由入力・上書き可）
-                  </label>
-                  <input
-                    type="text"
-                    value={customPlayText || activeCandidate?.playText || ""}
-                    onChange={(e) => setCustomPlayText(e.target.value)}
-                    placeholder="例: 中前ヒット中暴投 / 振り逃げセーフ"
-                    className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
-                  />
+              {/* モード切替タブ */}
+              <div className="px-4 pt-3 pb-1 bg-card shrink-0">
+                <div className="grid grid-cols-3 gap-1 bg-muted p-1 rounded-xl border border-border">
+                  <button
+                    type="button"
+                    disabled={(currentHalf?.entries.length || 0) === 0}
+                    onClick={() => {
+                      const entries = currentHalf?.entries || [];
+                      if (!editingRecordedEntry && entries.length > 0) {
+                        const latest = entries[entries.length - 1];
+                        if (latest) {
+                          setEditingRecordedEntry(cloneEntryForEdit(latest));
+                        }
+                      }
+                      setClearManualRunsOnEditSave(false);
+                      setFineTuneTab("edit_recorded");
+                    }}
+                    className={cn(
+                      "py-2 px-1.5 rounded-lg text-[11px] font-black transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
+                      fineTuneTab === "edit_recorded"
+                        ? "bg-[#0f172a] text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    記録行を修正
+                    {(currentHalf?.entries.length || 0) > 0
+                      ? ` (${currentHalf!.entries.length})`
+                      : ""}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFineTuneTab("new_atbat")}
+                    className={cn(
+                      "py-2 px-1.5 rounded-lg text-[11px] font-black transition-colors cursor-pointer",
+                      fineTuneTab === "new_atbat"
+                        ? "bg-[#0f172a] text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    今回の打席
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSituDraftOuts(effectiveOutsBefore);
+                      setSituDraftRunners([...effectiveRunnersBefore]);
+                      setSituDraftRuns(autoSituation.runs);
+                      setSituClearManualRuns(false);
+                      setFineTuneTab("situation");
+                    }}
+                    className={cn(
+                      "py-2 px-1.5 rounded-lg text-[11px] font-black transition-colors cursor-pointer",
+                      fineTuneTab === "situation"
+                        ? "bg-[#0f172a] text-white shadow-xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    状況・得点
+                  </button>
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="block text-xs font-black text-muted-foreground">
-                    一言コメント・リアクション（自由入力）
-                  </label>
-                  <input
-                    type="text"
-                    value={reactionText}
-                    onChange={(e) => setReactionText(e.target.value)}
-                    placeholder="例: ナイスラン❗️"
-                    className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
-                  />
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-black text-muted-foreground">
-                      後アウト:
-                    </span>
-                    {[0, 1, 2, 3].map((o) => (
-                      <button
-                        key={o}
-                        type="button"
-                        onClick={() => setCustomOutsAfter(o)}
-                        className={cn(
-                          "w-8 h-8 rounded-lg border text-xs font-black cursor-pointer",
-                          finalOutsAfter === o
-                            ? "bg-slate-900 text-white border-slate-900"
-                            : "bg-card text-foreground border-border"
+              {fineTuneTab === "edit_recorded" && editingRecordedEntry ? (
+                (() => {
+                  const recFinal = getEffectiveEntryFinalState(
+                    editingRecordedEntry
+                  );
+                  const halfEntries = currentHalf?.entries || [];
+                  return (
+                    <>
+                      <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
+                        {halfEntries.length > 1 && (
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-black text-muted-foreground">
+                              修正する記録行（{doc.activeInning}回
+                              {doc.activeIsBottom ? "裏" : "表"}）
+                            </label>
+                            <LiffSelect
+                              value={editingRecordedEntry.id}
+                              onChange={(val) => {
+                                const found = halfEntries.find(
+                                  (ent) => ent.id === val
+                                );
+                                if (found) {
+                                  setEditingRecordedEntry(
+                                    cloneEntryForEdit(found)
+                                  );
+                                  setClearManualRunsOnEditSave(false);
+                                }
+                              }}
+                              options={halfEntries.map((ent, idx) => ({
+                                value: ent.id,
+                                label: `${idx + 1}行目: ${formatSinglePlayEntryLine(
+                                  ent,
+                                  isMyAttack,
+                                  doc.showSurnameOnly
+                                )}`,
+                              }))}
+                              size="sm"
+                              searchable={false}
+                              title="修正する記録行を選択"
+                            />
+                          </div>
                         )}
-                      >
-                        {o}
-                      </button>
-                    ))}
-                  </div>
 
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-black text-muted-foreground">
-                      後走者:
-                    </span>
-                    {([1, 2, 3] as const).map((b) => {
-                      const onB = finalRunnersAfter.includes(b);
-                      return (
+                        <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground">
+                          プレビュー:{" "}
+                          {formatSinglePlayEntryLine(
+                            editingRecordedEntry,
+                            isMyAttack,
+                            doc.showSurnameOnly
+                          )}
+                        </div>
+
+                        {editingRecordedEntry.entryType !== "batter" ? (
+                          <div className="space-y-1">
+                            <label className="block text-xs font-black text-muted-foreground">
+                              イベント・交代テキスト
+                            </label>
+                            <input
+                              type="text"
+                              value={editingRecordedEntry.eventText}
+                              onChange={(e) =>
+                                setEditingRecordedEntry({
+                                  ...editingRecordedEntry,
+                                  eventText: e.target.value,
+                                })
+                              }
+                              className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                            />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="grid grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-[11px] font-black text-muted-foreground mb-1">
+                                  打順
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={20}
+                                  value={editingRecordedEntry.battingOrder}
+                                  onChange={(e) =>
+                                    setEditingRecordedEntry({
+                                      ...editingRecordedEntry,
+                                      battingOrder: Math.max(
+                                        1,
+                                        Number(e.target.value) || 1
+                                      ),
+                                    })
+                                  }
+                                  className="w-full h-10 rounded-xl border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                                />
+                              </div>
+                              <div className="col-span-2">
+                                <label className="block text-[11px] font-black text-muted-foreground mb-1">
+                                  選手名（自チーム攻撃時）
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingRecordedEntry.batterName}
+                                  onChange={(e) =>
+                                    setEditingRecordedEntry({
+                                      ...editingRecordedEntry,
+                                      batterName: e.target.value,
+                                    })
+                                  }
+                                  placeholder="例: 山田 太郎"
+                                  className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-xs font-black text-muted-foreground">
+                                プレー結果テキスト
+                              </label>
+                              <input
+                                type="text"
+                                value={editingRecordedEntry.playText}
+                                onChange={(e) =>
+                                  setEditingRecordedEntry({
+                                    ...editingRecordedEntry,
+                                    playText: e.target.value,
+                                  })
+                                }
+                                className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="block text-xs font-black text-muted-foreground">
+                                一言コメント・リアクション
+                              </label>
+                              <input
+                                type="text"
+                                value={editingRecordedEntry.reactionText}
+                                onChange={(e) =>
+                                  setEditingRecordedEntry({
+                                    ...editingRecordedEntry,
+                                    reactionText: e.target.value,
+                                  })
+                                }
+                                placeholder="例: ナイスバッティング❗️"
+                                className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                              />
+                            </div>
+
+                            {editingRecordedEntry.chainedPlays.length > 0 && (
+                              <div className="space-y-1.5 rounded-xl border border-border bg-muted/35 p-2.5">
+                                <span className="block text-[11px] font-black text-muted-foreground">
+                                  続行プレー（盗塁・進塁など）
+                                </span>
+                                {editingRecordedEntry.chainedPlays.map(
+                                  (cp, cpIdx) => (
+                                    <div
+                                      key={cp.id || cpIdx}
+                                      className="flex items-center gap-1.5"
+                                    >
+                                      <input
+                                        type="text"
+                                        value={cp.playText}
+                                        onChange={(e) => {
+                                          const nextChains =
+                                            editingRecordedEntry.chainedPlays.map(
+                                              (item, i) =>
+                                                i === cpIdx
+                                                  ? {
+                                                      ...item,
+                                                      playText: e.target.value,
+                                                    }
+                                                  : item
+                                            );
+                                          setEditingRecordedEntry({
+                                            ...editingRecordedEntry,
+                                            chainedPlays: nextChains,
+                                          });
+                                        }}
+                                        className="flex-1 h-9 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const nextChains =
+                                            editingRecordedEntry.chainedPlays.filter(
+                                              (_, i) => i !== cpIdx
+                                            );
+                                          setEditingRecordedEntry({
+                                            ...editingRecordedEntry,
+                                            chainedPlays: nextChains,
+                                          });
+                                        }}
+                                        className="w-9 h-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-red-600 flex items-center justify-center cursor-pointer"
+                                        aria-label="続行プレーを削除"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  )
+                                )}
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-black text-muted-foreground">
+                                  後アウト:
+                                </span>
+                                {[0, 1, 2, 3].map((o) => (
+                                  <button
+                                    key={o}
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingRecordedEntry(
+                                        applyFinalStateToPlayEntry(
+                                          editingRecordedEntry,
+                                          { outsAfter: o }
+                                        )
+                                      )
+                                    }
+                                    className={cn(
+                                      "w-8 h-8 rounded-lg border text-xs font-black cursor-pointer",
+                                      recFinal.outsAfter === o
+                                        ? "bg-slate-900 text-white border-slate-900"
+                                        : "bg-card text-foreground border-border"
+                                    )}
+                                  >
+                                    {o}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-black text-muted-foreground">
+                                  後走者:
+                                </span>
+                                {([1, 2, 3] as const).map((b) => {
+                                  const onB = recFinal.runnersAfter.includes(b);
+                                  return (
+                                    <button
+                                      key={b}
+                                      type="button"
+                                      disabled={recFinal.outsAfter >= 3}
+                                      onClick={() => {
+                                        const nextRunners = onB
+                                          ? recFinal.runnersAfter.filter(
+                                              (x) => x !== b
+                                            )
+                                          : normalizeRunnersList([
+                                              ...recFinal.runnersAfter,
+                                              b,
+                                            ]);
+                                        setEditingRecordedEntry(
+                                          applyFinalStateToPlayEntry(
+                                            editingRecordedEntry,
+                                            { runnersAfter: nextRunners }
+                                          )
+                                        );
+                                      }}
+                                      className={cn(
+                                        "px-2.5 h-8 rounded-lg border text-xs font-black cursor-pointer disabled:opacity-40",
+                                        onB
+                                          ? "bg-amber-400 text-slate-950 border-amber-500"
+                                          : "bg-card text-foreground border-border"
+                                      )}
+                                    >
+                                      {b}塁
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs font-black text-muted-foreground">
+                                  得点:
+                                </span>
+                                {[0, 1, 2, 3, 4].map((r) => (
+                                  <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingRecordedEntry(
+                                        applyFinalStateToPlayEntry(
+                                          editingRecordedEntry,
+                                          { runsScored: r }
+                                        )
+                                      )
+                                    }
+                                    className={cn(
+                                      "w-7 h-8 rounded-lg border text-xs font-black cursor-pointer",
+                                      editingRecordedEntry.runsScored === r
+                                        ? "bg-primary text-primary-foreground border-primary"
+                                        : "bg-card text-foreground border-border"
+                                    )}
+                                  >
+                                    {r}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {currentHalf?.manualRunsOverride != null && (
+                              <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-amber-950">
+                                  イニング手動得点（
+                                  {currentHalf.manualRunsOverride}点）が設定中
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setClearManualRunsOnEditSave((v) => !v)
+                                  }
+                                  className={cn(
+                                    "px-2.5 py-1 rounded-lg border text-[10.5px] font-black shrink-0 cursor-pointer",
+                                    clearManualRunsOnEditSave
+                                      ? "bg-primary text-primary-foreground border-primary"
+                                      : "bg-white text-amber-950 border-amber-400"
+                                  )}
+                                >
+                                  {clearManualRunsOnEditSave
+                                    ? "打席合計に連動ON"
+                                    : "打席合計に連動"}
+                                </button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex items-center justify-between gap-2 shrink-0">
                         <button
-                          key={b}
                           type="button"
-                          disabled={finalOutsAfter >= 3}
-                          onClick={() => {
-                            const next = onB
-                              ? finalRunnersAfter.filter((x) => x !== b)
-                              : normalizeRunnersList([...finalRunnersAfter, b]);
-                            setCustomRunnersAfter(next);
-                          }}
+                          onClick={handleDeleteFineTunedRecordedEntry}
+                          className="inline-flex items-center gap-1 px-3 py-2.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>削除</span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowCustomOverride(false)}
+                            className="px-3.5 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveFineTunedRecordedEntry}
+                            className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>更新を適用</span>
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()
+              ) : fineTuneTab === "situation" ? (
+                <>
+                  <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                    <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-[11px] font-bold text-muted-foreground">
+                      {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}
+                      の現在のアウト・塁上走者・イニング得点を直接調整して即座に反映します。
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black text-muted-foreground">
+                        現在のアウトカウント
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[0, 1, 2, 3].map((o) => (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => {
+                              setSituDraftOuts(o);
+                              if (o >= 3) {
+                                setSituDraftRunners([]);
+                              }
+                            }}
+                            className={cn(
+                              "h-10 rounded-xl border text-xs font-black cursor-pointer",
+                              situDraftOuts === o
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-card text-foreground border-border"
+                            )}
+                          >
+                            {o}死
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-black text-muted-foreground">
+                        現在の塁上走者
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        <button
+                          type="button"
+                          disabled={situDraftOuts >= 3}
+                          onClick={() => setSituDraftRunners([])}
                           className={cn(
-                            "px-2.5 h-8 rounded-lg border text-xs font-black cursor-pointer disabled:opacity-40",
-                            onB
-                              ? "bg-amber-400 text-slate-950 border-amber-500"
+                            "h-10 rounded-xl border text-xs font-black cursor-pointer disabled:opacity-40",
+                            situDraftRunners.length === 0
+                              ? "bg-slate-900 text-white border-slate-900"
                               : "bg-card text-foreground border-border"
                           )}
                         >
-                          {b}塁
+                          なし
                         </button>
-                      );
-                    })}
-                  </div>
+                        {([1, 2, 3] as const).map((b) => {
+                          const onB = situDraftRunners.includes(b);
+                          return (
+                            <button
+                              key={b}
+                              type="button"
+                              disabled={situDraftOuts >= 3}
+                              onClick={() => {
+                                const next = onB
+                                  ? situDraftRunners.filter((x) => x !== b)
+                                  : normalizeRunnersList([
+                                      ...situDraftRunners,
+                                      b,
+                                    ]);
+                                setSituDraftRunners(next);
+                              }}
+                              className={cn(
+                                "h-10 rounded-xl border text-xs font-black cursor-pointer disabled:opacity-40",
+                                onB
+                                  ? "bg-amber-400 text-slate-950 border-amber-500"
+                                  : "bg-card text-foreground border-border"
+                              )}
+                            >
+                              {b}塁
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-black text-muted-foreground">
-                      得点:
-                    </span>
-                    {[0, 1, 2, 3, 4].map((r) => (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setCustomRunsScored(r)}
-                        className={cn(
-                          "w-7 h-8 rounded-lg border text-xs font-black cursor-pointer",
-                          finalRunsScored === r
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-card text-foreground border-border"
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-xs font-black text-muted-foreground">
+                          この回（{doc.activeInning}回
+                          {doc.activeIsBottom ? "裏" : "表"}）の得点
+                        </label>
+                        {(currentHalf?.entries.length || 0) > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSituDraftRuns(
+                                sumHalfInningEntryRuns(
+                                  currentHalf?.entries || []
+                                )
+                              );
+                              setSituClearManualRuns(true);
+                            }}
+                            className="px-2.5 py-1 rounded-lg border border-border bg-muted text-[10.5px] font-black text-foreground cursor-pointer"
+                          >
+                            打席合計（
+                            {sumHalfInningEntryRuns(currentHalf?.entries || [])}
+                            点）に連動
+                          </button>
                         )}
-                      >
-                        {r}
-                      </button>
-                    ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSituDraftRuns((r) => Math.max(0, r - 1));
+                            setSituClearManualRuns(false);
+                          }}
+                          className="w-11 h-10 rounded-xl border border-border bg-card text-base font-black text-foreground cursor-pointer"
+                        >
+                          −
+                        </button>
+                        <div className="flex-1 h-10 rounded-xl border border-border bg-muted/40 flex items-center justify-center text-sm font-black text-foreground tabular-nums">
+                          {situDraftRuns} 点
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSituDraftRuns((r) => r + 1);
+                            setSituClearManualRuns(false);
+                          }}
+                          className="w-11 h-10 rounded-xl border border-border bg-card text-base font-black text-foreground cursor-pointer"
+                        >
+                          ＋
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
 
-              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex items-center justify-between gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCustomPlayText("");
-                    setCustomOutsAfter(null);
-                    setCustomRunnersAfter(null);
-                    setCustomRunsScored(null);
-                  }}
-                  className="inline-flex items-center gap-1 px-3 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>リセット</span>
-                </button>
+                  <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex items-center justify-end gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomOverride(false)}
+                      className="px-4 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleApplySituationFineTune}
+                      className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>状況を適用する</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-4 overflow-y-auto space-y-3.5 flex-1">
+                    {previewLine ? (
+                      <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground">
+                        プレビュー: {previewLine}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-border bg-muted/45 px-3 py-2 text-[11px] font-bold text-muted-foreground">
+                        新しい打席結果を自由入力して「記録確定」で追加できます（記録済みの行を直す場合は「記録行を修正」、現在の走者・得点のみ直す場合は「状況・得点」タブを選択してください）。
+                      </div>
+                    )}
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomOverride(false)}
-                    className="px-4 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
-                  >
-                    適用して戻る
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!finalPlayText}
-                    onClick={handleRecordAtBat}
-                    className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 text-xs font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>記録確定</span>
-                  </button>
-                </div>
-              </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-black text-muted-foreground">
+                        プレー結果テキスト（自由入力・上書き可）
+                      </label>
+                      <input
+                        type="text"
+                        value={resolvedCustomInputText}
+                        onChange={(e) => setCustomPlayText(e.target.value)}
+                        placeholder="例: 中前ヒット中暴投 / 振り逃げセーフ"
+                        className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-black text-muted-foreground">
+                        一言コメント・リアクション（自由入力）
+                      </label>
+                      <input
+                        type="text"
+                        value={reactionText}
+                        onChange={(e) => setReactionText(e.target.value)}
+                        placeholder="例: ナイスラン❗️"
+                        className="w-full h-10 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-black text-muted-foreground">
+                          後アウト:
+                        </span>
+                        {[0, 1, 2, 3].map((o) => (
+                          <button
+                            key={o}
+                            type="button"
+                            onClick={() => setCustomOutsAfter(o)}
+                            className={cn(
+                              "w-8 h-8 rounded-lg border text-xs font-black cursor-pointer",
+                              finalOutsAfter === o
+                                ? "bg-slate-900 text-white border-slate-900"
+                                : "bg-card text-foreground border-border"
+                            )}
+                          >
+                            {o}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-black text-muted-foreground">
+                          後走者:
+                        </span>
+                        {([1, 2, 3] as const).map((b) => {
+                          const onB = finalRunnersAfter.includes(b);
+                          return (
+                            <button
+                              key={b}
+                              type="button"
+                              disabled={finalOutsAfter >= 3}
+                              onClick={() => {
+                                const next = onB
+                                  ? finalRunnersAfter.filter((x) => x !== b)
+                                  : normalizeRunnersList([
+                                      ...finalRunnersAfter,
+                                      b,
+                                    ]);
+                                setCustomRunnersAfter(next);
+                              }}
+                              className={cn(
+                                "px-2.5 h-8 rounded-lg border text-xs font-black cursor-pointer disabled:opacity-40",
+                                onB
+                                  ? "bg-amber-400 text-slate-950 border-amber-500"
+                                  : "bg-card text-foreground border-border"
+                              )}
+                            >
+                              {b}塁
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-black text-muted-foreground">
+                          得点:
+                        </span>
+                        {[0, 1, 2, 3, 4].map((r) => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setCustomRunsScored(r)}
+                            className={cn(
+                              "w-7 h-8 rounded-lg border text-xs font-black cursor-pointer",
+                              finalRunsScored === r
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "bg-card text-foreground border-border"
+                            )}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex items-center justify-between gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomPlayText(null);
+                        setCustomOutsAfter(null);
+                        setCustomRunnersAfter(null);
+                        setCustomRunsScored(null);
+                      }}
+                      className="inline-flex items-center gap-1 px-3 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>リセット</span>
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomOverride(false)}
+                        className="px-3.5 py-2.5 rounded-xl border border-border bg-card text-xs font-black text-foreground cursor-pointer"
+                      >
+                        パッドへ反映
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!finalPlayText}
+                        onClick={handleRecordAtBat}
+                        className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground disabled:opacity-40 text-xs font-black inline-flex items-center gap-1 cursor-pointer active:scale-95"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>記録確定</span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body

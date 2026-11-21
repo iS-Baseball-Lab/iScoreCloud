@@ -92,6 +92,10 @@ export interface LiveReportHalfInning {
   entries: LiveReportPlayEntry[];
   /** null の場合は entries の runsScored 合計を自動採用。数値指定時はその得点を優先 */
   manualRunsOverride: number | null;
+  /** 現在のアウトカウント手動補正（0〜3、次プレー記録時に自動で null リセット） */
+  manualOutsOverride?: number | null;
+  /** 現在の塁上走者手動補正（[1,2,3] 部分集合、次プレー記録時に自動で null リセット） */
+  manualRunnersOverride?: LiveReportBaseNum[] | null;
 }
 
 export interface LiveReportV2Document {
@@ -129,6 +133,8 @@ export interface LiveReportV2Document {
   pitcherPitchAdjustments?: Record<string, number>;
   /** この試合の球数制限手動上書き（70 / 85 / 100 / "none" / null=大会規定・チーム設定に従う） */
   pitchLimitOverride?: number | "none" | null;
+  /** 出力単位ごとの全文直接手直しテキスト（構造化データ更新時は最新生成を優先するため自動クリア） */
+  manualTextOverrides?: Partial<Record<LiveReportOutputMode, string>>;
 }
 
 export interface LiveReportMatchOption {

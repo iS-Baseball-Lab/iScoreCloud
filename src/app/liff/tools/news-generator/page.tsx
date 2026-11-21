@@ -79,6 +79,7 @@ import {
   hydrateLiveReportFromScorebookSnapshot,
   isMyTeamBattingHalf,
   normalizeReportPositionCode,
+  resolveDisplayedLiveReportText,
   sanitizeLiveReportDocument,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
@@ -275,6 +276,65 @@ function getDraftIdForMode(
 
 function getLocalDraftStorageKey(teamId: string, draftId: string): string {
   return `iscore_liff_news_v2_doc_${teamId}_${draftId}`;
+}
+
+interface LocalUnsentDraftMarker {
+  updatedAt: number;
+  ownerKey: string;
+}
+
+function getLocalUnsentMarkerKey(teamId: string, draftId: string): string {
+  return `iscore_liff_news_v2_unsent_${teamId}_${draftId}`;
+}
+
+function writeLocalUnsentMarker(
+  teamId: string,
+  draftId: string,
+  ownerKey: string,
+  updatedAt: number
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: LocalUnsentDraftMarker = { updatedAt, ownerKey };
+    localStorage.setItem(
+      getLocalUnsentMarkerKey(teamId, draftId),
+      JSON.stringify(payload)
+    );
+  } catch {
+    // ignore quota error
+  }
+}
+
+function readLocalUnsentMarker(
+  teamId: string,
+  draftId: string
+): LocalUnsentDraftMarker | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(getLocalUnsentMarkerKey(teamId, draftId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.updatedAt === "number" &&
+      typeof parsed.ownerKey === "string"
+    ) {
+      return { updatedAt: parsed.updatedAt, ownerKey: parsed.ownerKey };
+    }
+  } catch {
+    // ignore parse error
+  }
+  return null;
+}
+
+function clearLocalUnsentMarker(teamId: string, draftId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(getLocalUnsentMarkerKey(teamId, draftId));
+  } catch {
+    // ignore
+  }
 }
 
 function getLocalModeStorageKey(teamId: string): string {
@@ -561,7 +621,6 @@ function LiffNewsGeneratorContent() {
   >(null);
 
   const [outputMode, setOutputMode] = useState<LiveReportOutputMode>("full");
-  const [manualEditedText, setManualEditedText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const [isLoadingContext, setIsLoadingContext] = useState(true);
@@ -590,6 +649,16 @@ function LiffNewsGeneratorContent() {
   const queuedPushRef = useRef<boolean>(false);
   const isPollingRef = useRef<boolean>(false);
   const lastSyncActivityAtRef = useRef<number>(Date.now());
+  const pushDraftRef = useRef<
+    ((options?: {
+      silent?: boolean;
+      takeoverEditor?: boolean;
+      preferKeepalive?: boolean;
+    }) => Promise<void>) | null
+  >(null);
+  const flushOnUnmountRef = useRef<(preferKeepalive?: boolean) => void>(
+    () => {}
+  );
 
   const selectedMatch = useMemo(
     () =>
@@ -777,13 +846,18 @@ function LiffNewsGeneratorContent() {
           personalOwnerKey,
           selectedFreeIdRef.current
         );
-        if (json.cloudDraft && activeDraftIdRef.current === expectedDraftId) {
+        if (
+          json.cloudDraft &&
+          activeDraftIdRef.current === expectedDraftId &&
+          (takeover || !hasPendingLocalSaveRef.current)
+        ) {
           baseDocRef.current = json.cloudDraft.report;
           baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
           docRef.current = json.cloudDraft.report;
           setDoc(json.cloudDraft.report);
           setLastSyncedAt(json.cloudDraft.updatedAt);
           setLastSyncedBy(json.cloudDraft.updatedByName);
+          clearLocalUnsentMarker(resolvedTeamId, expectedDraftId);
           if (typeof window !== "undefined") {
             localStorage.setItem(
               getLocalDraftStorageKey(resolvedTeamId, expectedDraftId),
@@ -977,7 +1051,6 @@ function LiffNewsGeneratorContent() {
     let cancelled = false;
     isHydratingRef.current = true;
     setIsLoadingContext(true);
-    setManualEditedText(null);
     setShowResetConfirm(false);
     setShowTakeoverConfirmModal(false);
     setViewerHalfOverride(null);
@@ -1373,13 +1446,36 @@ function LiffNewsGeneratorContent() {
               )
             : null;
 
-          if (cloudDraft) {
+          const unsentMarker = readLocalUnsentMarker(resolvedTeamId, draftId);
+          const preferLocalUnsent =
+            initialAccess === "edit" &&
+            Boolean(localParsed) &&
+            Boolean(unsentMarker) &&
+            unsentMarker!.ownerKey === personalOwnerKey &&
+            (!draftOwnerKey || draftOwnerKey === personalOwnerKey) &&
+            unsentMarker!.updatedAt > (cloudDraft?.updatedAt ?? 0);
+
+          if (preferLocalUnsent && localParsed) {
+            baseDocRef.current = cloudDraft?.report ?? null;
+            baseUpdatedAtRef.current = cloudDraft?.updatedAt ?? null;
+            docRef.current = localParsed;
+            setDoc(localParsed);
+            setLastSyncedAt(cloudDraft?.updatedAt ?? null);
+            setLastSyncedBy(cloudDraft?.updatedByName ?? null);
+            hasPendingLocalSaveRef.current = true;
+            setTimeout(() => {
+              if (!cancelled && activeDraftIdRef.current === draftId) {
+                void pushDraftRef.current?.({ silent: true });
+              }
+            }, 150);
+          } else if (cloudDraft) {
             baseDocRef.current = cloudDraft.report;
             baseUpdatedAtRef.current = cloudDraft.updatedAt;
             docRef.current = cloudDraft.report;
             setDoc(cloudDraft.report);
             setLastSyncedAt(cloudDraft.updatedAt);
             setLastSyncedBy(cloudDraft.updatedByName);
+            clearLocalUnsentMarker(resolvedTeamId, draftId);
             if (initialAccess === "edit" && typeof window !== "undefined") {
               localStorage.setItem(
                 getLocalDraftStorageKey(resolvedTeamId, draftId),
@@ -1449,10 +1545,7 @@ function LiffNewsGeneratorContent() {
   // 2A. モード切替ハンドラ（⚾ 試合連動 ⇔ ✏️ フリー作成）
   const handleSwitchMode = async (nextMode: ReportSourceMode) => {
     if (nextMode === reportMode) return;
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    flushPendingSaveNow(false);
 
     isHydratingRef.current = true;
     hasPendingLocalSaveRef.current = false;
@@ -1462,7 +1555,6 @@ function LiffNewsGeneratorContent() {
 
     setReportMode(nextMode);
     reportModeRef.current = nextMode;
-    setManualEditedText(null);
     setShowResetConfirm(false);
     setShowTakeoverConfirmModal(false);
     setViewerHalfOverride(null);
@@ -1620,13 +1712,37 @@ function LiffNewsGeneratorContent() {
       matchAccessModeRef.current = resolvedAccess;
       setMatchAccessMode(resolvedAccess);
 
-      if (bundle?.cloudDraft) {
+      const unsentMarker = readLocalUnsentMarker(resolvedTeamId, draftId);
+      const preferLocalUnsent =
+        !options?.takeover &&
+        resolvedAccess === "edit" &&
+        Boolean(localParsed) &&
+        Boolean(unsentMarker) &&
+        unsentMarker!.ownerKey === personalOwnerKey &&
+        (!draftOwnerKey || draftOwnerKey === personalOwnerKey) &&
+        unsentMarker!.updatedAt > (bundle?.cloudDraft?.updatedAt ?? 0);
+
+      if (preferLocalUnsent && localParsed) {
+        baseDocRef.current = bundle?.cloudDraft?.report ?? null;
+        baseUpdatedAtRef.current = bundle?.cloudDraft?.updatedAt ?? null;
+        docRef.current = localParsed;
+        setDoc(localParsed);
+        setLastSyncedAt(bundle?.cloudDraft?.updatedAt ?? null);
+        setLastSyncedBy(bundle?.cloudDraft?.updatedByName ?? null);
+        hasPendingLocalSaveRef.current = true;
+        setTimeout(() => {
+          if (activeDraftIdRef.current === draftId) {
+            void pushDraftRef.current?.({ silent: true });
+          }
+        }, 150);
+      } else if (bundle?.cloudDraft) {
         baseDocRef.current = bundle.cloudDraft.report;
         baseUpdatedAtRef.current = bundle.cloudDraft.updatedAt;
         docRef.current = bundle.cloudDraft.report;
         setDoc(bundle.cloudDraft.report);
         setLastSyncedAt(bundle.cloudDraft.updatedAt);
         setLastSyncedBy(bundle.cloudDraft.updatedByName);
+        clearLocalUnsentMarker(resolvedTeamId, draftId);
         if (resolvedAccess === "edit" && typeof window !== "undefined") {
           localStorage.setItem(
             getLocalDraftStorageKey(resolvedTeamId, draftId),
@@ -1663,10 +1779,7 @@ function LiffNewsGeneratorContent() {
     if (!nextKey || (reportMode === "match" && nextKey === selectedMatchKey)) {
       return;
     }
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    flushPendingSaveNow(false);
 
     isHydratingRef.current = true;
     hasPendingLocalSaveRef.current = false;
@@ -1675,7 +1788,6 @@ function LiffNewsGeneratorContent() {
     baseUpdatedAtRef.current = null;
 
     setSelectedMatchKey(nextKey);
-    setManualEditedText(null);
     setShowResetConfirm(false);
     setShowTakeoverConfirmModal(false);
     setViewerHalfOverride(null);
@@ -1693,10 +1805,7 @@ function LiffNewsGeneratorContent() {
     const found = freeEntries.find((f) => f.id === nextFreeId);
     if (!found) return;
 
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    flushPendingSaveNow(false);
 
     isHydratingRef.current = true;
     hasPendingLocalSaveRef.current = false;
@@ -1712,7 +1821,6 @@ function LiffNewsGeneratorContent() {
     activeDraftIdRef.current = draftId;
     selectedFreeIdRef.current = found.id;
     setSelectedFreeId(found.id);
-    setManualEditedText(null);
     setShowResetConfirm(false);
 
     if (typeof window !== "undefined") {
@@ -1732,10 +1840,7 @@ function LiffNewsGeneratorContent() {
   };
 
   const handleCreateNewFreeEntry = () => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    flushPendingSaveNow(false);
 
     const savedReporter =
       typeof window !== "undefined"
@@ -1772,7 +1877,6 @@ function LiffNewsGeneratorContent() {
     activeDraftIdRef.current = draftId;
     selectedFreeIdRef.current = newId;
     setSelectedFreeId(newId);
-    setManualEditedText(null);
     setShowResetConfirm(false);
 
     if (typeof window !== "undefined") {
@@ -1814,6 +1918,7 @@ function LiffNewsGeneratorContent() {
       ).catch(() => null);
     }
 
+    clearLocalUnsentMarker(resolvedTeamId, targetDraftId);
     if (typeof window !== "undefined") {
       localStorage.removeItem(
         getLocalDraftStorageKey(resolvedTeamId, targetDraftId)
@@ -1866,7 +1971,6 @@ function LiffNewsGeneratorContent() {
 
     docRef.current = nextActive.doc;
     setDoc(nextActive.doc);
-    setManualEditedText(null);
     setShowResetConfirm(false);
     toast.success(
       remaining.length > 0
@@ -1957,11 +2061,17 @@ function LiffNewsGeneratorContent() {
         });
         const json = (await res.json()) as DraftApiResponse;
         if (activeDraftIdRef.current !== requestDraftId) {
+          if (res.ok && json.success) {
+            clearLocalUnsentMarker(resolvedTeamId, requestDraftId);
+          } else if (res.status === 409 || res.status === 403) {
+            clearLocalUnsentMarker(resolvedTeamId, requestDraftId);
+          }
           return;
         }
 
         // 他メンバーが入力担当保持中(409) または 担当外(403) の場合は上書きせず閲覧モードへ安全降格
         if (res.status === 409 || res.status === 403) {
+          clearLocalUnsentMarker(resolvedTeamId, requestDraftId);
           hasPendingLocalSaveRef.current = false;
           queuedPushRef.current = false;
           retryAttemptRef.current = 0;
@@ -2043,6 +2153,7 @@ function LiffNewsGeneratorContent() {
           }
 
           if (docRef.current === snapshotSent) {
+            clearLocalUnsentMarker(resolvedTeamId, requestDraftId);
             hasPendingLocalSaveRef.current = false;
           } else {
             hasPendingLocalSaveRef.current = true;
@@ -2125,6 +2236,7 @@ function LiffNewsGeneratorContent() {
       syncMatchLockMetaInList,
     ]
   );
+  pushDraftRef.current = pushDraftToCloud;
 
   const flushPendingSaveNow = useCallback(
     (preferKeepalive = false) => {
@@ -2148,6 +2260,7 @@ function LiffNewsGeneratorContent() {
     },
     [pushDraftToCloud]
   );
+  flushOnUnmountRef.current = flushPendingSaveNow;
 
   // 担当入力モードから閲覧モードへ自主的に切り替え（ロック解放）
   const releaseMatchEditorLockAndSwitchToView = useCallback(async () => {
@@ -2193,7 +2306,10 @@ function LiffNewsGeneratorContent() {
   ]);
 
   const handleUpdateDoc = useCallback(
-    (updater: (prev: LiveReportV2Document) => LiveReportV2Document) => {
+    (
+      updater: (prev: LiveReportV2Document) => LiveReportV2Document,
+      options?: { preserveManualText?: boolean }
+    ) => {
       // 閲覧モード中は一切ドキュメントを更新しない
       if (
         reportModeRef.current === "match" &&
@@ -2202,71 +2318,84 @@ function LiffNewsGeneratorContent() {
         return;
       }
 
-      setDoc((prev) => {
-        const next = updater(prev);
-        docRef.current = next;
-        const now = Date.now();
+      let next = updater(docRef.current);
+      if (!options?.preserveManualText && next.manualTextOverrides) {
+        const { manualTextOverrides: _dropped, ...rest } = next;
+        next = rest;
+      }
 
-        if (typeof window !== "undefined") {
+      docRef.current = next;
+      const now = Date.now();
+      const targetDraftId = activeDraftIdRef.current || activeDraftId;
+
+      if (typeof window !== "undefined") {
+        localStorage.setItem(
+          getLocalDraftStorageKey(resolvedTeamId, targetDraftId),
+          JSON.stringify(next)
+        );
+        if (next.reporterNames.trim()) {
           localStorage.setItem(
-            getLocalDraftStorageKey(resolvedTeamId, activeDraftId),
-            JSON.stringify(next)
+            getLocalReporterStorageKey(resolvedTeamId),
+            next.reporterNames.trim()
           );
-          if (next.reporterNames.trim()) {
-            localStorage.setItem(
-              getLocalReporterStorageKey(resolvedTeamId),
-              next.reporterNames.trim()
-            );
-          }
         }
+      }
 
-        // フリー作成モード時は個人の個別登録リストもリアルタイム更新
-        if (reportModeRef.current === "free") {
-          const activeFreeId = selectedFreeIdRef.current;
-          setFreeEntries((prevList) => {
-            const exists = prevList.some((f) => f.id === activeFreeId);
-            const updatedList = exists
-              ? prevList.map((f) =>
-                  f.id === activeFreeId
-                    ? { ...f, updatedAt: now, doc: next }
-                    : f
-                )
-              : [
-                  {
-                    id: activeFreeId || `f_${now.toString(36)}`,
-                    createdAt: now,
-                    updatedAt: now,
-                    doc: next,
-                  },
-                  ...prevList,
-                ];
-            savePersonalFreeEntriesToLocal(
-              resolvedTeamId,
-              personalOwnerKey,
-              updatedList
-            );
-            return updatedList;
-          });
-        }
+      // フリー作成モード時は個人の個別登録リストもリアルタイム更新
+      if (reportModeRef.current === "free") {
+        const activeFreeId = selectedFreeIdRef.current;
+        setFreeEntries((prevList) => {
+          const exists = prevList.some((f) => f.id === activeFreeId);
+          const updatedList = exists
+            ? prevList.map((f) =>
+                f.id === activeFreeId
+                  ? { ...f, updatedAt: now, doc: next }
+                  : f
+              )
+            : [
+                {
+                  id: activeFreeId || `f_${now.toString(36)}`,
+                  createdAt: now,
+                  updatedAt: now,
+                  doc: next,
+                },
+                ...prevList,
+              ];
+          savePersonalFreeEntriesToLocal(
+            resolvedTeamId,
+            personalOwnerKey,
+            updatedList
+          );
+          return updatedList;
+        });
+      }
 
-        if (!isHydratingRef.current) {
-          lastSyncActivityAtRef.current = now;
-          hasPendingLocalSaveRef.current = true;
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
-            saveTimerRef.current = null;
-            void pushDraftToCloud({ silent: true });
-          }, 650);
+      if (!isHydratingRef.current) {
+        lastSyncActivityAtRef.current = now;
+        hasPendingLocalSaveRef.current = true;
+        if (resolvedTeamId !== "demo-team" && effectiveCanMutateRef.current) {
+          writeLocalUnsentMarker(
+            resolvedTeamId,
+            targetDraftId,
+            personalOwnerKey,
+            now
+          );
         }
-        return next;
-      });
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+          saveTimerRef.current = null;
+          void pushDraftToCloud({ silent: true });
+        }, 650);
+      }
+
+      setDoc(next);
     },
     [resolvedTeamId, personalOwnerKey, activeDraftId, pushDraftToCloud]
   );
 
   useEffect(() => {
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      flushOnUnmountRef.current(true);
     };
   }, []);
 
@@ -2427,9 +2556,6 @@ function LiffNewsGeneratorContent() {
           baseUpdatedAtRef.current = json.cloudDraft.updatedAt;
           docRef.current = remoteDoc;
           setDoc(remoteDoc);
-          if (!silent) {
-            setManualEditedText(null);
-          }
           setLastSyncedAt(json.cloudDraft.updatedAt);
           setLastSyncedBy(remoteName);
 
@@ -2750,37 +2876,44 @@ function LiffNewsGeneratorContent() {
       saveTimerRef.current = null;
     }
 
-    setDoc((prev) => {
-      const imported = activeBundle.scorebookSnapshot
-        ? hydrateLiveReportFromScorebookSnapshot({
-            baseDoc: prev,
-            topStructure: activeBundle.scorebookSnapshot.topStructure,
-            bottomStructure: activeBundle.scorebookSnapshot.bottomStructure,
-            topAtBats: activeBundle.scorebookSnapshot.topAtBats,
-            bottomAtBats: activeBundle.scorebookSnapshot.bottomAtBats,
-            matchStatus: selectedMatch?.status,
-          })
-        : hydrateLiveReportFromLegacyLogsAndScores({
-            baseDoc: prev,
-            playLogs: activeBundle.playLogs,
-            myInningScores: selectedMatch?.myInningScores || [],
-            opponentInningScores: selectedMatch?.opponentInningScores || [],
-            matchStatus: selectedMatch?.status,
-          });
+    const base = docRef.current;
+    const imported = activeBundle.scorebookSnapshot
+      ? hydrateLiveReportFromScorebookSnapshot({
+          baseDoc: base,
+          topStructure: activeBundle.scorebookSnapshot.topStructure,
+          bottomStructure: activeBundle.scorebookSnapshot.bottomStructure,
+          topAtBats: activeBundle.scorebookSnapshot.topAtBats,
+          bottomAtBats: activeBundle.scorebookSnapshot.bottomAtBats,
+          matchStatus: selectedMatch?.status,
+        })
+      : hydrateLiveReportFromLegacyLogsAndScores({
+          baseDoc: base,
+          playLogs: activeBundle.playLogs,
+          myInningScores: selectedMatch?.myInningScores || [],
+          opponentInningScores: selectedMatch?.opponentInningScores || [],
+          matchStatus: selectedMatch?.status,
+        });
 
-      docRef.current = imported;
-      hasPendingLocalSaveRef.current = true;
-      if (typeof window !== "undefined") {
-        localStorage.setItem(
-          getLocalDraftStorageKey(resolvedTeamId, activeDraftId),
-          JSON.stringify(imported)
+    const targetDraftId = activeDraftIdRef.current || activeDraftId;
+    docRef.current = imported;
+    hasPendingLocalSaveRef.current = true;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        getLocalDraftStorageKey(resolvedTeamId, targetDraftId),
+        JSON.stringify(imported)
+      );
+      if (resolvedTeamId !== "demo-team" && effectiveCanMutateRef.current) {
+        writeLocalUnsentMarker(
+          resolvedTeamId,
+          targetDraftId,
+          personalOwnerKey,
+          Date.now()
         );
       }
-      return imported;
-    });
+    }
+    setDoc(imported);
 
     void pushDraftToCloud({ silent: true });
-    setManualEditedText(null);
     toast.success("記録済みスコアデータから全イニング経過を生成しました！");
   };
 
@@ -2824,6 +2957,7 @@ function LiffNewsGeneratorContent() {
       }
     }
 
+    clearLocalUnsentMarker(resolvedTeamId, activeDraftId);
     if (typeof window !== "undefined") {
       localStorage.removeItem(
         getLocalDraftStorageKey(resolvedTeamId, activeDraftId)
@@ -2893,7 +3027,6 @@ function LiffNewsGeneratorContent() {
     docRef.current = freshDoc;
     setDoc(freshDoc);
     setPendingPitches([]);
-    setManualEditedText(null);
     setLastSyncedAt(null);
     setLastSyncedBy(null);
     setShowResetConfirm(false);
@@ -2906,8 +3039,30 @@ function LiffNewsGeneratorContent() {
     [doc, outputMode]
   );
 
-  const displayedText =
-    manualEditedText !== null ? manualEditedText : autoGeneratedText;
+  const hasManualTextOverride =
+    typeof doc.manualTextOverrides?.[outputMode] === "string";
+
+  const displayedText = useMemo(
+    () => resolveDisplayedLiveReportText(doc, outputMode),
+    [doc, outputMode]
+  );
+
+  const handleResetCurrentOutputManualText = useCallback(() => {
+    handleUpdateDoc(
+      (prev) => {
+        const nextMap = { ...(prev.manualTextOverrides || {}) };
+        delete nextMap[outputMode];
+        const copy: LiveReportV2Document = { ...prev };
+        if (Object.keys(nextMap).length > 0) {
+          copy.manualTextOverrides = nextMap;
+        } else {
+          delete copy.manualTextOverrides;
+        }
+        return copy;
+      },
+      { preserveManualText: true }
+    );
+  }, [handleUpdateDoc, outputMode]);
 
   const handleCopyText = async () => {
     flushPendingSaveNow(true);
@@ -3297,7 +3452,6 @@ function LiffNewsGeneratorContent() {
         setReportMode("match");
         reportModeRef.current = "match";
         setSelectedMatchKey(targetKey);
-        setManualEditedText(null);
         setShowResetConfirm(false);
         await loadMatchSelection(targetKey, { desiredMode, takeover });
       }
@@ -3338,10 +3492,7 @@ function LiffNewsGeneratorContent() {
   }, [matches, takeoverTargetMatchId, selectedMatchKey, entryMatchId]);
 
   const handleConfirmEntryFree = () => {
-    if (saveTimerRef.current) {
-      clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
+    flushPendingSaveNow(false);
 
     if (typeof window !== "undefined") {
       localStorage.setItem(getLocalModeStorageKey(resolvedTeamId), "free");
@@ -3360,7 +3511,6 @@ function LiffNewsGeneratorContent() {
     setReportMode("free");
     reportModeRef.current = "free";
     setActiveBundle(null);
-    setManualEditedText(null);
     setShowResetConfirm(false);
 
     if (found) {
@@ -3853,7 +4003,12 @@ function LiffNewsGeneratorContent() {
         {/* ════════════════════════════════════════════════════════════════
             TAB 1 (デフォルト): ゼロスクロール・中央ライブモニター ＋ 下部固定入力パッド / 閲覧ビュー
            ════════════════════════════════════════════════════════════════ */}
-        {activeTab === "pad" && (
+        <div
+          className={cn(
+            "flex-1 min-h-0 flex flex-col overflow-hidden",
+            activeTab !== "pad" && "hidden"
+          )}
+        >
           <LiveAtBatPadCard
             doc={doc}
             onChangeDoc={handleUpdateDoc}
@@ -3868,7 +4023,6 @@ function LiffNewsGeneratorContent() {
             outputMode={outputMode}
             onChangeOutputMode={(m) => {
               setOutputMode(m);
-              setManualEditedText(null);
             }}
             onCopyText={() => void handleCopyText()}
             onShareLine={handleShareLine}
@@ -3880,6 +4034,7 @@ function LiffNewsGeneratorContent() {
                 : undefined
             }
             readOnly={isReadOnlyViewer}
+            isActiveTab={activeTab === "pad"}
             editorDisplayName={effectiveEditorDisplayName}
             viewerHalfOverride={viewerHalfOverride}
             onChangeViewerHalfOverride={setViewerHalfOverride}
@@ -3889,7 +4044,7 @@ function LiffNewsGeneratorContent() {
                 : undefined
             }
           />
-        )}
+        </div>
 
         {/* ════════════════════════════════════════════════════════════════
             TAB 2: LINE速報イメージ全文確認・出力形式切替 ＋ 下部固定送信バー
@@ -3903,10 +4058,10 @@ function LiffNewsGeneratorContent() {
                     ? "LINE速報テキスト確認・コピー（閲覧モード）"
                     : "LINE速報テキスト確認・直接手直し"}
                 </span>
-                {manualEditedText !== null ? (
+                {hasManualTextOverride && !isReadOnlyViewer ? (
                   <button
                     type="button"
-                    onClick={() => setManualEditedText(null)}
+                    onClick={handleResetCurrentOutputManualText}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10.5px] font-black cursor-pointer active:scale-95 shrink-0"
                   >
                     <RotateCcw className="w-3 h-3" />
@@ -3914,7 +4069,7 @@ function LiffNewsGeneratorContent() {
                   </button>
                 ) : (
                   <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-bold shrink-0">
-                    リアルタイム反映中
+                    {hasManualTextOverride ? "手直し反映済" : "リアルタイム反映中"}
                   </span>
                 )}
               </div>
@@ -3936,7 +4091,6 @@ function LiffNewsGeneratorContent() {
                       type="button"
                       onClick={() => {
                         setOutputMode(tab.id);
-                        setManualEditedText(null);
                       }}
                       className={cn(
                         "py-1.5 px-1 rounded-lg text-[11px] transition-all cursor-pointer",
@@ -3957,7 +4111,25 @@ function LiffNewsGeneratorContent() {
                 readOnly={isReadOnlyViewer}
                 onChange={(e) => {
                   if (!isReadOnlyViewer) {
-                    setManualEditedText(e.target.value);
+                    const val = e.target.value;
+                    handleUpdateDoc(
+                      (prev) => {
+                        const nextMap = { ...(prev.manualTextOverrides || {}) };
+                        if (val === autoGeneratedText) {
+                          delete nextMap[outputMode];
+                        } else {
+                          nextMap[outputMode] = val;
+                        }
+                        const copy: LiveReportV2Document = { ...prev };
+                        if (Object.keys(nextMap).length > 0) {
+                          copy.manualTextOverrides = nextMap;
+                        } else {
+                          delete copy.manualTextOverrides;
+                        }
+                        return copy;
+                      },
+                      { preserveManualText: true }
+                    );
                   }
                 }}
                 className="flex-1 min-h-0 w-full rounded-xl border border-border bg-card focus:border-primary p-3 text-base sm:text-sm font-bold text-foreground leading-relaxed outline-none resize-none font-sans"

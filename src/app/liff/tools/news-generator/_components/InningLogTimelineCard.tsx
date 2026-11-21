@@ -3,19 +3,25 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "sonner";
 import {
   ListOrdered,
   Edit3,
   Trash2,
   Zap,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  applyFinalStateToPlayEntry,
   formatSinglePlayEntryLine,
+  getEffectiveEntryFinalState,
   getHalfInningRuns,
   isMyTeamBattingHalf,
   normalizeRunnersList,
+  reconcileHalfInningManualRuns,
+  sumHalfInningEntryRuns,
 } from "@/lib/liff/live-report-v2";
 import type {
   LiveReportBaseNum,
@@ -39,6 +45,7 @@ interface EditingEntryTarget {
   inning: number;
   isBottom: boolean;
   entry: LiveReportPlayEntry;
+  clearManualRunsOnSave?: boolean;
 }
 
 export function InningLogTimelineCard({
@@ -116,18 +123,31 @@ export function InningLogTimelineCard({
 
   const handleSaveEntryEdit = () => {
     if (readOnly || !editingTarget) return;
-    const { inning, isBottom, entry } = editingTarget;
+    const { inning, isBottom, entry, clearManualRunsOnSave } = editingTarget;
     onChangeDoc((prev) => ({
       ...prev,
       halfInnings: prev.halfInnings.map((h) => {
         if (h.inning !== inning || h.isBottom !== isBottom) return h;
+        const nextEntries = h.entries.map((e) =>
+          e.id === entry.id ? entry : e
+        );
+        const isLastEntry =
+          h.entries.length > 0 &&
+          h.entries[h.entries.length - 1]?.id === entry.id;
         return {
           ...h,
-          entries: h.entries.map((e) => (e.id === entry.id ? entry : e)),
+          entries: nextEntries,
+          manualRunsOverride: clearManualRunsOnSave
+            ? null
+            : reconcileHalfInningManualRuns(h, nextEntries, "edit_entry"),
+          ...(isLastEntry
+            ? { manualOutsOverride: null, manualRunnersOverride: null }
+            : {}),
         };
       }),
     }));
     setEditingTarget(null);
+    toast.success("記録の微調整を反映しました");
   };
 
   const handleDeleteEntry = (
@@ -141,18 +161,45 @@ export function InningLogTimelineCard({
       halfInnings: prev.halfInnings
         .map((h) => {
           if (h.inning !== inning || h.isBottom !== isBottom) return h;
+          const nextEntries = h.entries.filter((e) => e.id !== entryId);
           return {
             ...h,
-            entries: h.entries.filter((e) => e.id !== entryId),
+            entries: nextEntries,
+            manualRunsOverride: reconcileHalfInningManualRuns(
+              h,
+              nextEntries,
+              "append_or_remove"
+            ),
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
           };
         })
         .filter((h) => h.entries.length > 0 || h.manualRunsOverride !== null),
     }));
     setEditingTarget(null);
+    toast.success("記録行を削除しました");
   };
 
   let runningFirst = 0;
   let runningSecond = 0;
+
+  const editingHalf = editingTarget
+    ? doc.halfInnings.find(
+        (h) =>
+          h.inning === editingTarget.inning &&
+          h.isBottom === editingTarget.isBottom
+      )
+    : undefined;
+  const editingPreviewLine = editingTarget
+    ? formatSinglePlayEntryLine(
+        editingTarget.entry,
+        isMyTeamBattingHalf(doc.battingOrder, editingTarget.isBottom),
+        doc.showSurnameOnly
+      )
+    : "";
+  const editingFinalState = editingTarget
+    ? getEffectiveEntryFinalState(editingTarget.entry)
+    : { outsAfter: 0, runnersAfter: [] as LiveReportBaseNum[] };
 
   return (
     <>
@@ -174,6 +221,11 @@ export function InningLogTimelineCard({
         <div className="divide-y divide-border">
           {sortedHalves.map((half) => {
             const runs = getHalfInningRuns(half);
+            const autoEntryRuns = sumHalfInningEntryRuns(half.entries);
+            const hasManualRunsDiff =
+              half.manualRunsOverride !== null &&
+              half.manualRunsOverride !== autoEntryRuns &&
+              half.entries.length > 0;
             if (!half.isBottom) runningFirst += runs;
             else runningSecond += runs;
 
@@ -193,7 +245,7 @@ export function InningLogTimelineCard({
                   isActiveHalf && "bg-primary/[0.04]"
                 )}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => {
@@ -226,6 +278,27 @@ export function InningLogTimelineCard({
 
                   {/* イニング得点の確認・手動補正（閲覧モード時は参照のみ） */}
                   <div className="flex items-center gap-1.5">
+                    {!readOnly && hasManualRunsDiff && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onChangeDoc((p) => ({
+                            ...p,
+                            halfInnings: p.halfInnings.map((h) =>
+                              h.inning === half.inning &&
+                              h.isBottom === half.isBottom
+                                ? { ...h, manualRunsOverride: null }
+                                : h
+                            ),
+                          }))
+                        }
+                        title={`手動固定を解除して打席合計（${autoEntryRuns}点）に戻す`}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black cursor-pointer active:scale-95"
+                      >
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        <span>自動({autoEntryRuns})へ</span>
+                      </button>
+                    )}
                     <span className="text-[10.5px] font-black text-muted-foreground">
                       得点
                     </span>
@@ -235,15 +308,23 @@ export function InningLogTimelineCard({
                         onClick={() =>
                           onChangeDoc((p) => ({
                             ...p,
-                            halfInnings: p.halfInnings.map((h) =>
-                              h.inning === half.inning &&
-                              h.isBottom === half.isBottom
-                                ? {
-                                    ...h,
-                                    manualRunsOverride: Math.max(0, runs - 1),
-                                  }
-                                : h
-                            ),
+                            halfInnings: p.halfInnings.map((h) => {
+                              if (
+                                h.inning !== half.inning ||
+                                h.isBottom !== half.isBottom
+                              ) {
+                                return h;
+                              }
+                              const nextVal = Math.max(0, runs - 1);
+                              const entrySum = sumHalfInningEntryRuns(h.entries);
+                              return {
+                                ...h,
+                                manualRunsOverride:
+                                  h.entries.length > 0 && nextVal === entrySum
+                                    ? null
+                                    : nextVal,
+                              };
+                            }),
                           }))
                         }
                         className="w-5 h-5 rounded bg-muted border border-border text-[10px] font-black cursor-pointer"
@@ -260,12 +341,23 @@ export function InningLogTimelineCard({
                         onClick={() =>
                           onChangeDoc((p) => ({
                             ...p,
-                            halfInnings: p.halfInnings.map((h) =>
-                              h.inning === half.inning &&
-                              h.isBottom === half.isBottom
-                                ? { ...h, manualRunsOverride: runs + 1 }
-                                : h
-                            ),
+                            halfInnings: p.halfInnings.map((h) => {
+                              if (
+                                h.inning !== half.inning ||
+                                h.isBottom !== half.isBottom
+                              ) {
+                                return h;
+                              }
+                              const nextVal = runs + 1;
+                              const entrySum = sumHalfInningEntryRuns(h.entries);
+                              return {
+                                ...h,
+                                manualRunsOverride:
+                                  h.entries.length > 0 && nextVal === entrySum
+                                    ? null
+                                    : nextVal,
+                              };
+                            }),
                           }))
                         }
                         className="w-5 h-5 rounded bg-muted border border-border text-[10px] font-black cursor-pointer"
@@ -309,8 +401,12 @@ export function InningLogTimelineCard({
                             entry: {
                               ...entry,
                               runnersAfter: [...entry.runnersAfter],
-                              chainedPlays: [...entry.chainedPlays],
+                              chainedPlays: entry.chainedPlays.map((cp) => ({
+                                ...cp,
+                                runnersAfter: [...cp.runnersAfter],
+                              })),
                             },
+                            clearManualRunsOnSave: false,
                           })
                         }
                         className="w-full text-left px-2.5 py-1.5 rounded-lg border border-border/70 bg-card hover:bg-muted/60 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
@@ -359,6 +455,12 @@ export function InningLogTimelineCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                {editingPreviewLine && (
+                  <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground break-all">
+                    プレビュー: {editingPreviewLine}
+                  </div>
+                )}
+
                 {editingTarget.entry.entryType !== "batter" ? (
                   <div className="space-y-1">
                     <label className="block text-xs font-black text-muted-foreground">
@@ -393,7 +495,7 @@ export function InningLogTimelineCard({
                         <input
                           type="number"
                           min={1}
-                          max={20}
+                          max={25}
                           value={editingTarget.entry.battingOrder}
                           onChange={(e) =>
                             setEditingTarget((prev) =>
@@ -458,7 +560,7 @@ export function InningLogTimelineCard({
                               : null
                           )
                         }
-                        className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-black text-foreground outline-none focus:border-primary"
+                        className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                       />
                     </div>
 
@@ -482,8 +584,8 @@ export function InningLogTimelineCard({
                               : null
                           )
                         }
-                        placeholder="例: 赤羽ナイスキャッチ❗️ / 惜しい❗️"
-                        className="w-full h-9 rounded-xl border border-border bg-card px-3 text-xs font-black text-foreground outline-none focus:border-primary"
+                        placeholder="例: ナイスキャッチ❗️ / 惜しい❗️"
+                        className="w-full h-9 rounded-xl border border-border bg-card px-3 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
                       />
                     </div>
 
@@ -501,19 +603,17 @@ export function InningLogTimelineCard({
                                 prev
                                   ? {
                                       ...prev,
-                                      entry: {
-                                        ...prev.entry,
-                                        outsAfter: o,
-                                        runnersAfter:
-                                          o >= 3 ? [] : prev.entry.runnersAfter,
-                                      },
+                                      entry: applyFinalStateToPlayEntry(
+                                        prev.entry,
+                                        { outsAfter: o }
+                                      ),
                                     }
                                   : null
                               )
                             }
                             className={cn(
                               "w-7 h-7 rounded-lg border text-xs font-black cursor-pointer",
-                              editingTarget.entry.outsAfter === o
+                              editingFinalState.outsAfter === o
                                 ? "bg-slate-900 text-white border-slate-900"
                                 : "bg-card text-foreground border-border"
                             )}
@@ -528,29 +628,32 @@ export function InningLogTimelineCard({
                           残塁:
                         </span>
                         {([1, 2, 3] as const).map((b) => {
-                          const onB = editingTarget.entry.runnersAfter.includes(b);
+                          const onB =
+                            editingFinalState.runnersAfter.includes(b);
                           return (
                             <button
                               key={b}
                               type="button"
-                              disabled={editingTarget.entry.outsAfter >= 3}
+                              disabled={editingFinalState.outsAfter >= 3}
                               onClick={() =>
                                 setEditingTarget((prev) => {
                                   if (!prev) return null;
-                                  const nextR: LiveReportBaseNum[] = onB
-                                    ? prev.entry.runnersAfter.filter(
-                                        (x) => x !== b
-                                      )
-                                    : normalizeRunnersList([
-                                        ...prev.entry.runnersAfter,
-                                        b,
-                                      ]);
+                                  const cur = getEffectiveEntryFinalState(
+                                    prev.entry
+                                  );
+                                  const nextR: LiveReportBaseNum[] =
+                                    cur.runnersAfter.includes(b)
+                                      ? cur.runnersAfter.filter((x) => x !== b)
+                                      : normalizeRunnersList([
+                                          ...cur.runnersAfter,
+                                          b,
+                                        ]);
                                   return {
                                     ...prev,
-                                    entry: {
-                                      ...prev.entry,
-                                      runnersAfter: nextR,
-                                    },
+                                    entry: applyFinalStateToPlayEntry(
+                                      prev.entry,
+                                      { runnersAfter: nextR }
+                                    ),
                                   };
                                 })
                               }
@@ -580,7 +683,10 @@ export function InningLogTimelineCard({
                                 prev
                                   ? {
                                       ...prev,
-                                      entry: { ...prev.entry, runsScored: r },
+                                      entry: applyFinalStateToPlayEntry(
+                                        prev.entry,
+                                        { runsScored: r }
+                                      ),
                                     }
                                   : null
                               )
@@ -598,31 +704,90 @@ export function InningLogTimelineCard({
                       </div>
                     </div>
 
+                    {editingHalf &&
+                      editingHalf.manualRunsOverride !== null &&
+                      !editingTarget.clearManualRunsOnSave && (
+                        <div className="rounded-xl border border-amber-500/45 bg-amber-500/12 px-3 py-2 flex items-center justify-between gap-2">
+                          <span className="text-[10.5px] font-bold text-amber-950 dark:text-amber-200">
+                            この回はイニング得点が手動指定（
+                            {editingHalf.manualRunsOverride}点）されています
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingTarget((prev) =>
+                                prev
+                                  ? { ...prev, clearManualRunsOnSave: true }
+                                  : null
+                              )
+                            }
+                            className="px-2 py-1 rounded-lg bg-amber-400 text-slate-950 text-[10px] font-black shrink-0 cursor-pointer"
+                          >
+                            打席合計に連動
+                          </button>
+                        </div>
+                      )}
+
                     {editingTarget.entry.chainedPlays.length > 0 && (
-                      <div className="rounded-xl border border-border bg-muted/40 p-2.5 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-foreground">
-                          連結走塁プレー（
-                          {editingTarget.entry.chainedPlays
-                            .map((c) => c.playText)
-                            .join("・")}
-                          ）
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditingTarget((prev) =>
-                              prev
-                                ? {
-                                    ...prev,
-                                    entry: { ...prev.entry, chainedPlays: [] },
-                                  }
-                                : null
-                            )
-                          }
-                          className="text-[10.5px] font-black text-rose-600 cursor-pointer"
-                        >
-                          連結を解除
-                        </button>
+                      <div className="rounded-xl border border-border bg-muted/40 p-2.5 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-black text-foreground">
+                            連結走塁プレー
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingTarget((prev) => {
+                                if (!prev) return null;
+                                const curFinal = getEffectiveEntryFinalState(
+                                  prev.entry
+                                );
+                                return {
+                                  ...prev,
+                                  entry: {
+                                    ...prev.entry,
+                                    outsAfter: curFinal.outsAfter,
+                                    runnersAfter: curFinal.runnersAfter,
+                                    chainedPlays: [],
+                                  },
+                                };
+                              })
+                            }
+                            className="text-[10.5px] font-black text-rose-600 cursor-pointer"
+                          >
+                            連結を解除
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          {editingTarget.entry.chainedPlays.map((cp, cpIdx) => (
+                            <input
+                              key={cp.id}
+                              type="text"
+                              value={cp.playText}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setEditingTarget((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        entry: {
+                                          ...prev.entry,
+                                          chainedPlays:
+                                            prev.entry.chainedPlays.map(
+                                              (item, idx) =>
+                                                idx === cpIdx
+                                                  ? { ...item, playText: val }
+                                                  : item
+                                            ),
+                                        },
+                                      }
+                                    : null
+                                );
+                              }}
+                              className="w-full h-8 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-bold text-foreground outline-none focus:border-primary"
+                            />
+                          ))}
+                        </div>
                       </div>
                     )}
                   </>

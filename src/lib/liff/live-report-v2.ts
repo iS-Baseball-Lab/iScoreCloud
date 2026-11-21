@@ -418,12 +418,142 @@ export function formatOutsAndRunnersSuffix(
   return `${dots}${baseStr}`;
 }
 
+export function sumHalfInningEntryRuns(
+  entries: ReadonlyArray<LiveReportPlayEntry>
+): number {
+  return entries.reduce((sum, e) => sum + (e.runsScored || 0), 0);
+}
+
 export function getHalfInningRuns(half: LiveReportHalfInning | undefined): number {
   if (!half) return 0;
   if (typeof half.manualRunsOverride === "number") {
     return Math.max(0, half.manualRunsOverride);
   }
-  return half.entries.reduce((sum, e) => sum + (e.runsScored || 0), 0);
+  return sumHalfInningEntryRuns(half.entries);
+}
+
+/**
+ * 打席追加・取消・行編集・削除時に manualRunsOverride が古い値（初期0点固定等）のまま残って
+ * 新しい得点更新を無効化してしまう不整合を防ぐ自動調停ヘルパー。
+ */
+export function reconcileHalfInningManualRuns(
+  prevHalf: LiveReportHalfInning | undefined,
+  nextEntries: ReadonlyArray<LiveReportPlayEntry>,
+  mode: "append_or_remove" | "edit_entry"
+): number | null {
+  const prevOverride = prevHalf?.manualRunsOverride ?? null;
+  if (prevOverride === null) return null;
+
+  const prevEntries = prevHalf?.entries ?? [];
+  const prevAuto = sumHalfInningEntryRuns(prevEntries);
+  const nextAuto = sumHalfInningEntryRuns(nextEntries);
+  const runsDelta = nextAuto - prevAuto;
+
+  // 空イニングの初期値 0 オーバーライドに打席記録が入った場合は自動計算へ移行
+  if (prevEntries.length === 0 && prevOverride === 0 && nextEntries.length > 0) {
+    return null;
+  }
+
+  if (mode === "edit_entry") {
+    if (runsDelta === 0) {
+      // 既に打席側で得点が入っておりオーバーライドが 0 のまま残っていた場合は解除
+      if (prevOverride === 0 && nextAuto > 0) return null;
+      return prevOverride === nextAuto ? null : prevOverride;
+    }
+    if (prevOverride === 0) {
+      return null;
+    }
+    // 打席側の得点が全て0でイニング合計のみ手動入力（または旧ログ取込）されていたケースでは二重計上を防ぐ
+    if (prevAuto === 0 && prevOverride > 0) {
+      return nextAuto >= prevOverride ? null : prevOverride;
+    }
+    const adjusted = Math.max(0, prevOverride + runsDelta);
+    return adjusted === nextAuto ? null : adjusted;
+  }
+
+  // append_or_remove
+  const adjusted = Math.max(0, prevOverride + runsDelta);
+  return adjusted === nextAuto ? null : adjusted;
+}
+
+/**
+ * 連結走塁（chainedPlays）を含む1行の最終アウト数・最終残塁を取得する。
+ */
+export function getEffectiveEntryFinalState(entry: LiveReportPlayEntry): {
+  outsAfter: number;
+  runnersAfter: LiveReportBaseNum[];
+} {
+  const lastChain =
+    entry.chainedPlays && entry.chainedPlays.length > 0
+      ? entry.chainedPlays[entry.chainedPlays.length - 1]
+      : null;
+  const rawOuts = lastChain ? lastChain.outsAfter : entry.outsAfter;
+  const clampedOuts = Math.max(0, Math.min(3, rawOuts));
+  const rawRunners = lastChain ? lastChain.runnersAfter : entry.runnersAfter;
+  return {
+    outsAfter: clampedOuts,
+    runnersAfter: clampedOuts >= 3 ? [] : normalizeRunnersList(rawRunners),
+  };
+}
+
+/**
+ * 記録済み行の最終アウト数・最終残塁・得点を更新する（連結走塁がある場合は末尾の連結プレーへ確実に反映し、RBIも整合させる）。
+ */
+export function applyFinalStateToPlayEntry(
+  entry: LiveReportPlayEntry,
+  patch: {
+    outsAfter?: number;
+    runnersAfter?: ReadonlyArray<LiveReportBaseNum>;
+    runsScored?: number;
+  }
+): LiveReportPlayEntry {
+  const curFinal = getEffectiveEntryFinalState(entry);
+  const nextOuts =
+    patch.outsAfter !== undefined
+      ? Math.max(0, Math.min(3, patch.outsAfter))
+      : curFinal.outsAfter;
+  const nextRunners =
+    nextOuts >= 3
+      ? []
+      : patch.runnersAfter !== undefined
+      ? normalizeRunnersList(patch.runnersAfter)
+      : curFinal.runnersAfter;
+  const nextRuns =
+    patch.runsScored !== undefined
+      ? Math.max(0, Math.round(patch.runsScored))
+      : entry.runsScored;
+
+  const chainedRunsSum = (entry.chainedPlays || []).reduce(
+    (s, cp) => s + (cp.runsScored || 0),
+    0
+  );
+  const resolvedBatterRbi = Math.max(0, nextRuns - chainedRunsSum);
+
+  if (entry.chainedPlays && entry.chainedPlays.length > 0) {
+    const nextChains = entry.chainedPlays.map((cp, idx) =>
+      idx === entry.chainedPlays.length - 1
+        ? {
+            ...cp,
+            outsAfter: nextOuts,
+            runnersAfter: nextRunners,
+          }
+        : cp
+    );
+    return {
+      ...entry,
+      runsScored: nextRuns,
+      rbi: resolvedBatterRbi > 0 ? resolvedBatterRbi : undefined,
+      chainedPlays: nextChains,
+    };
+  }
+
+  return {
+    ...entry,
+    outsAfter: nextOuts,
+    runnersAfter: nextRunners,
+    runsScored: nextRuns,
+    rbi: resolvedBatterRbi > 0 ? resolvedBatterRbi : undefined,
+  };
 }
 
 export interface HalfInningLiveSituation {
@@ -436,11 +566,11 @@ export interface HalfInningLiveSituation {
 export function computeHalfInningSituation(
   half: LiveReportHalfInning | undefined
 ): HalfInningLiveSituation {
-  if (!half || half.entries.length === 0) {
+  if (!half) {
     return {
       outs: 0,
       runners: [],
-      runs: half?.manualRunsOverride ?? 0,
+      runs: 0,
       runnerNames: {},
     };
   }
@@ -473,22 +603,29 @@ export function computeHalfInningSituation(
       }
       continue;
     }
+
+    // イニング先頭打席前の走塁記録行（id: "br-..."）はアウト・残塁状況を前進させる
+    if (entry.entryType === "note") {
+      if (entry.id.startsWith("br-")) {
+        const brOuts = Math.max(0, Math.min(3, entry.outsAfter));
+        if (brOuts >= 3) {
+          outs = 3;
+          runners = [];
+          runnerNames = {};
+        } else {
+          outs = brOuts;
+          runners = normalizeRunnersList(entry.runnersAfter);
+        }
+      }
+      continue;
+    }
+
     if (entry.entryType !== "batter") continue;
 
     const prevRunners = [...runners];
     const prevNames = { ...runnerNames };
-    const finalOuts =
-      entry.chainedPlays && entry.chainedPlays.length > 0
-        ? entry.chainedPlays[entry.chainedPlays.length - 1]!.outsAfter
-        : entry.outsAfter;
-    const finalRunners =
-      finalOuts >= 3
-        ? []
-        : normalizeRunnersList(
-            entry.chainedPlays && entry.chainedPlays.length > 0
-              ? entry.chainedPlays[entry.chainedPlays.length - 1]!.runnersAfter
-              : entry.runnersAfter
-          );
+    const { outsAfter: finalOuts, runnersAfter: finalRunners } =
+      getEffectiveEntryFinalState(entry);
 
     if (finalOuts >= 3) {
       outs = 3;
@@ -537,11 +674,22 @@ export function computeHalfInningSituation(
     runnerNames = nextNames;
   }
 
+  const resolvedOuts =
+    typeof half.manualOutsOverride === "number"
+      ? Math.max(0, Math.min(3, Math.round(half.manualOutsOverride)))
+      : outs;
+  const resolvedRunners =
+    resolvedOuts >= 3
+      ? []
+      : Array.isArray(half.manualRunnersOverride)
+      ? normalizeRunnersList(half.manualRunnersOverride)
+      : runners;
+
   return {
-    outs,
-    runners,
+    outs: resolvedOuts,
+    runners: resolvedRunners,
     runs: getHalfInningRuns(half),
-    runnerNames,
+    runnerNames: resolvedOuts >= 3 ? {} : runnerNames,
   };
 }
 
@@ -2820,6 +2968,17 @@ export function formatLiveReportText(
     .trim();
 }
 
+export function resolveDisplayedLiveReportText(
+  doc: LiveReportV2Document,
+  mode: LiveReportOutputMode
+): string {
+  const manual = doc.manualTextOverrides?.[mode];
+  if (typeof manual === "string") {
+    return manual;
+  }
+  return formatLiveReportText(doc, mode);
+}
+
 // =========================================================
 // 8. 安全なJSON復元 ＆ 既存プレイログ・イニング得点からの補完
 // =========================================================
@@ -3170,12 +3329,23 @@ export function sanitizeLiveReportDocument(
       };
     });
 
+    const manualOutsOverride =
+      typeof h.manualOutsOverride === "number" &&
+      Number.isFinite(h.manualOutsOverride)
+        ? Math.max(0, Math.min(3, Math.round(h.manualOutsOverride)))
+        : null;
+    const manualRunnersOverride = Array.isArray(h.manualRunnersOverride)
+      ? normalizeRunnersList(h.manualRunnersOverride as number[])
+      : null;
+
     return {
       inning: typeof h.inning === "number" ? h.inning : 1,
       isBottom: Boolean(h.isBottom),
       entries,
       manualRunsOverride:
         typeof h.manualRunsOverride === "number" ? h.manualRunsOverride : null,
+      ...(manualOutsOverride !== null ? { manualOutsOverride } : {}),
+      ...(manualRunnersOverride !== null ? { manualRunnersOverride } : {}),
     };
   });
 
@@ -3220,6 +3390,34 @@ export function sanitizeLiveReportDocument(
     pitchLimitOverride = Math.round(obj.pitchLimitOverride);
   }
 
+  let manualTextOverrides:
+    | Partial<Record<LiveReportOutputMode, string>>
+    | undefined = undefined;
+  if (
+    obj.manualTextOverrides &&
+    typeof obj.manualTextOverrides === "object" &&
+    !Array.isArray(obj.manualTextOverrides)
+  ) {
+    const rawOverrides = obj.manualTextOverrides as Record<string, unknown>;
+    const cleanedTextOverrides: Partial<Record<LiveReportOutputMode, string>> =
+      {};
+    const validModes: readonly LiveReportOutputMode[] = [
+      "full",
+      "latest_inning",
+      "lineup",
+      "game_set",
+    ];
+    for (const m of validModes) {
+      const val = rawOverrides[m];
+      if (typeof val === "string") {
+        cleanedTextOverrides[m] = val;
+      }
+    }
+    if (Object.keys(cleanedTextOverrides).length > 0) {
+      manualTextOverrides = cleanedTextOverrides;
+    }
+  }
+
   return {
     version: 2,
     matchId: typeof obj.matchId === "string" ? obj.matchId : null,
@@ -3262,6 +3460,7 @@ export function sanitizeLiveReportDocument(
       typeof obj.reporterNames === "string" ? obj.reporterNames : "",
     ...(pitcherPitchAdjustments ? { pitcherPitchAdjustments } : {}),
     ...(pitchLimitOverride !== undefined ? { pitchLimitOverride } : {}),
+    ...(manualTextOverrides ? { manualTextOverrides } : {}),
   };
 }
 

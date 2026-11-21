@@ -1335,7 +1335,9 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
         matchRow &&
         matchRow.status !== "rainout" &&
         !hasScorebook &&
-        (hasRecordedScoringOrPlay || sanitized.isGameFinished)
+        (hasRecordedScoringOrPlay ||
+          sanitized.isGameFinished ||
+          matchRow.status === "live")
       ) {
         const summary = computeScoreboardSummary(sanitized);
         const isMyFirst = sanitized.battingOrder === "first";
