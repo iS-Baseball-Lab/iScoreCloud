@@ -9,9 +9,14 @@ import {
 } from "@/lib/liff/calendar-month-bg";
 
 const preloadedCalendarSources = new Set<string>();
+const CALENDAR_PHOTO_ASSET_REVISION = "2";
+
+function withCalendarAssetRevision(src: string): string {
+  return `${src}?v=${CALENDAR_PHOTO_ASSET_REVISION}`;
+}
 
 const CALENDAR_PHOTO_MELT_MASK =
-  "linear-gradient(to bottom, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.88) 36%, rgba(0,0,0,0.22) 60%, rgba(0,0,0,0.05) 82%, rgba(0,0,0,0) 100%)";
+  "linear-gradient(to bottom, rgba(0,0,0,0.98) 0%, rgba(0,0,0,0.90) 58%, rgba(0,0,0,0.36) 70%, rgba(0,0,0,0.11) 83%, rgba(0,0,0,0.02) 93%, rgba(0,0,0,0) 100%)";
 
 export interface CalendarMonthPhotoMeltProps {
   /** 表示中の月（1〜12） */
@@ -25,7 +30,7 @@ export interface CalendarMonthPhotoMeltProps {
 
 /**
  * 月間カレンダーの A-3 上帯ダークキャップ直下に配置する季節フォト背景染み込みレイヤー
- * - 上部で月別の野球場×季節風景を見せ、曜日〜日付グリッド上部へ mask-image で段階透過して bg-card へ溶け込ませる
+ * - 上部で季節風景＋野球グラウンド（外野芝・黒土ダイヤモンド・白線）までくっきり見せ、曜日〜日付グリッド上部へ mask-image で段階透過して bg-card へ溶け込ませる
  * - 前月・翌月のWebPをバックグラウンドで先読みし、月切り替え時の空白チラつきをゼロにする
  */
 export function CalendarMonthPhotoMelt({
@@ -35,16 +40,18 @@ export function CalendarMonthPhotoMelt({
   className,
 }: CalendarMonthPhotoMeltProps) {
   const asset = resolveCalendarMonthPhotoMelt(month);
+  const versionedSrc = withCalendarAssetRevision(asset.src);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const neighbors = getAdjacentCalendarMonthPhotoMelts(month);
     for (const item of neighbors) {
-      if (preloadedCalendarSources.has(item.src)) continue;
-      preloadedCalendarSources.add(item.src);
+      const neighborUrl = withCalendarAssetRevision(item.src);
+      if (preloadedCalendarSources.has(neighborUrl)) continue;
+      preloadedCalendarSources.add(neighborUrl);
       const img = new window.Image();
       img.decoding = "async";
-      img.src = item.src;
+      img.src = neighborUrl;
     }
   }, [month]);
 
@@ -53,15 +60,15 @@ export function CalendarMonthPhotoMelt({
       aria-hidden="true"
       className={cn(
         "absolute inset-x-0 top-0 pointer-events-none select-none overflow-hidden",
-        variant === "compact" ? "h-42 sm:h-48" : "h-46 sm:h-52",
+        variant === "compact" ? "h-48 sm:h-56" : "h-53 sm:h-60",
         className
       )}
     >
       <img
-        src={asset.src}
+        src={versionedSrc}
         alt=""
         width={960}
-        height={640}
+        height={600}
         loading={eager ? "eager" : "lazy"}
         decoding="async"
         style={{
