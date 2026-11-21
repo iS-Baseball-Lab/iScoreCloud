@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
+import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import {
   fetchLiffJsonSWR,
   invalidateLiffApiCache,
@@ -895,7 +896,10 @@ export function MonthlySchedulePlanner({
           </div>
         </div>
 
-        <div className="p-3.5 space-y-2">
+        <div className="relative bg-card overflow-hidden">
+          <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" eager />
+
+          <div className="relative z-10 px-3.5 pb-3.5 pt-28 sm:pt-32 space-y-2">
           {/* 曜日ヘッダー */}
           <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
             {weekDays.map((w, idx) => (
@@ -903,7 +907,11 @@ export function MonthlySchedulePlanner({
                 key={w}
                 className={cn(
                   "py-1.5 rounded-lg",
-                  idx === 0 ? "text-red-500 bg-red-500/5" : idx === 6 ? "text-blue-500 bg-blue-500/5" : "text-muted-foreground"
+                  idx === 0
+                    ? "text-red-600 dark:text-red-400 bg-red-500/8"
+                    : idx === 6
+                    ? "text-blue-600 dark:text-blue-400 bg-blue-500/8"
+                    : "text-foreground/80"
                 )}
               >
                 {w}
@@ -928,11 +936,11 @@ export function MonthlySchedulePlanner({
                   className={cn(
                     "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
                     isSelected
-                      ? "bg-primary/12 text-foreground font-black shadow-2xs border border-primary/40"
+                      ? "bg-primary/14 text-foreground font-black shadow-2xs border border-primary/45"
                       : isToday
                       ? "bg-primary/10 border border-primary/40 text-foreground font-black"
                       : d.isCurrentMonth
-                      ? "bg-muted/35 hover:bg-muted/60 text-foreground border border-border"
+                      ? "bg-card/85 hover:bg-muted/65 text-foreground border border-border"
                       : "bg-muted/15 text-muted-foreground/30 border border-transparent"
                   )}
                 >
@@ -968,6 +976,7 @@ export function MonthlySchedulePlanner({
                 </button>
               );
             })}
+          </div>
           </div>
         </div>
       </div>

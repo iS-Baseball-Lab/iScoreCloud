@@ -26,6 +26,7 @@ import {
   type TeamScheduleDefaultTimes,
 } from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
+import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
 import {
   Calendar as CalendarIcon,
@@ -1315,13 +1316,22 @@ export default function LiffSchedulePage() {
             </div>
           </div>
 
-          <div className="p-2.5 sm:p-3 space-y-1.5">
+          <div className="relative bg-card overflow-hidden">
+            <CalendarMonthPhotoMelt month={currentMonth + 1} variant="compact" eager />
+
+            <div className="relative z-10 px-2.5 pb-2.5 pt-24 sm:px-3 sm:pb-3 sm:pt-28 space-y-1.5">
           {/* 曜日ヘッダー */}
-          <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5">
+          <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5 border-b border-border/60">
             {weekDays.map((w, idx) => (
               <span
                 key={w}
-                className={idx === 0 ? "text-red-500" : idx === 6 ? "text-blue-500" : "text-muted-foreground"}
+                className={
+                  idx === 0
+                    ? "text-red-600 dark:text-red-400"
+                    : idx === 6
+                    ? "text-blue-600 dark:text-blue-400"
+                    : "text-foreground/80"
+                }
               >
                 {w}
               </span>
@@ -1334,7 +1344,7 @@ export default function LiffSchedulePage() {
               const hasEvents = eventsByDate.has(d.dateStr);
               const dayEvents = eventsByDate.get(d.dateStr) || [];
               const isSelected = selectedDateStr === d.dateStr;
-              const isToday = d.dateStr === new Date().toISOString().split("T")[0];
+              const isToday = d.dateStr === todayStr;
               const isSun = d.date.getDay() === 0;
               const isSat = d.date.getDay() === 6;
 
@@ -1413,6 +1423,7 @@ export default function LiffSchedulePage() {
               );
             })}
           </div>
+            </div>
           </div>
         </div>
 

@@ -12,6 +12,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 
 export interface HubCalendarEventInput {
   id: string;
@@ -275,11 +276,20 @@ export function HubCalendarSection({
           </div>
         </div>
 
-        <div className="p-3.5 space-y-2.5">
+        <div className="relative bg-card overflow-hidden">
+          <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" />
+
+          <div className="relative z-10 px-3.5 pb-3.5 pt-28 sm:pt-32 space-y-2.5">
         {/* ━━ 2. 曜日ヘッダー ━━ */}
-        <div className="grid grid-cols-7 text-center text-[10px] font-black text-muted-foreground uppercase pb-0.5 border-b border-border/60">
+        <div className="grid grid-cols-7 text-center text-[10px] font-black text-foreground/80 uppercase pb-0.5 border-b border-border/60">
           {weekDays.map((day, idx) => (
-            <span key={day} className={cn(idx === 0 && "text-red-500", idx === 6 && "text-blue-500")}>
+            <span
+              key={day}
+              className={cn(
+                idx === 0 && "text-red-600 dark:text-red-400",
+                idx === 6 && "text-blue-600 dark:text-blue-400"
+              )}
+            >
               {day}
             </span>
           ))}
@@ -589,6 +599,7 @@ export function HubCalendarSection({
             </div>
           </div>
         </div>
+          </div>
         </div>
       </div>
     </div>
