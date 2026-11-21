@@ -181,3 +181,87 @@ export function resolveCalendarFlickDirection({
   return "none";
 }
 
+/**
+ * 年と月インデックス（0〜11）から通算月シリアル値を算出する
+ */
+export function toCalendarMonthSerial(year: number, monthIndex: number): number {
+  return year * 12 + monthIndex;
+}
+
+/**
+ * 通算月シリアル値から年・月インデックス（0〜11）・月番号（1〜12）を復元する
+ */
+export function fromCalendarMonthSerial(serial: number): {
+  year: number;
+  monthIndex: number;
+  monthNumber: number;
+} {
+  const year = Math.floor(serial / 12);
+  const monthIndex = ((serial % 12) + 12) % 12;
+  return {
+    year,
+    monthIndex,
+    monthNumber: monthIndex + 1,
+  };
+}
+
+export interface CalendarGridDayCell {
+  date: Date;
+  /** YYYY-MM-DD */
+  dateStr: string;
+  isCurrentMonth: boolean;
+}
+
+function toYmdString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * 指定された年・月インデックス（0〜11）の42マス（日曜始まり6週分）日付配列を生成する
+ */
+export function buildCalendarMonthGridDays(
+  year: number,
+  monthIndex: number
+): CalendarGridDayCell[] {
+  const days: CalendarGridDayCell[] = [];
+  const firstDayOfMonth = new Date(year, monthIndex, 1);
+  const startDayOfWeek = firstDayOfMonth.getDay();
+  const prevMonthLastDate = new Date(year, monthIndex, 0).getDate();
+
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const d = new Date(year, monthIndex - 1, prevMonthLastDate - i);
+    days.push({
+      date: d,
+      dateStr: toYmdString(d),
+      isCurrentMonth: false,
+    });
+  }
+
+  const currentMonthLastDate = new Date(year, monthIndex + 1, 0).getDate();
+  for (let i = 1; i <= currentMonthLastDate; i++) {
+    const d = new Date(year, monthIndex, i);
+    days.push({
+      date: d,
+      dateStr: toYmdString(d),
+      isCurrentMonth: true,
+    });
+  }
+
+  const remainingDays = 42 - days.length;
+  for (let i = 1; i <= remainingDays; i++) {
+    const d = new Date(year, monthIndex + 1, i);
+    days.push({
+      date: d,
+      dateStr: toYmdString(d),
+      isCurrentMonth: false,
+    });
+  }
+
+  return days;
+}
+
+
+

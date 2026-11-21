@@ -12,6 +12,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 
@@ -77,39 +78,6 @@ export function HubCalendarSection({
 
   const selectedDateStr = formatDateString(selectedDate);
   const todayStr = formatDateString(new Date());
-
-  // 42マスのカレンダーグリッド日付算出
-  const calendarDays = useMemo(() => {
-    const days = [];
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
-    const startDayOfWeek = firstDayOfMonth.getDay(); // 0(日) - 6(土)
-
-    const prevMonthLastDate = new Date(currentYear, currentMonth, 0).getDate();
-    for (let i = startDayOfWeek - 1; i >= 0; i--) {
-      days.push({
-        date: new Date(currentYear, currentMonth - 1, prevMonthLastDate - i),
-        isCurrentMonth: false,
-      });
-    }
-
-    const currentMonthLastDate = new Date(currentYear, currentMonth + 1, 0).getDate();
-    for (let i = 1; i <= currentMonthLastDate; i++) {
-      days.push({
-        date: new Date(currentYear, currentMonth, i),
-        isCurrentMonth: true,
-      });
-    }
-
-    const remainingDays = 42 - days.length;
-    for (let i = 1; i <= remainingDays; i++) {
-      days.push({
-        date: new Date(currentYear, currentMonth + 1, i),
-        isCurrentMonth: false,
-      });
-    }
-
-    return days;
-  }, [currentYear, currentMonth]);
 
   const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -278,75 +246,95 @@ export function HubCalendarSection({
         </div>
 
         <CalendarSwipeSurface
-          monthSerial={currentYear * 12 + currentMonth}
+          year={currentYear}
+          monthIndex={currentMonth}
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
         >
-          <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" />
-
-          <div className="relative z-10 px-3.5 pb-2.5 pt-[47.5%] space-y-2.5">
-        {/* ━━ 2. 曜日ヘッダー ━━ */}
-        <div className="grid grid-cols-7 text-center text-[10px] font-black text-foreground uppercase pb-0.5 border-b border-border/60">
-          {weekDays.map((day, idx) => (
-            <span
-              key={day}
-              className={cn(
-                idx === 0 && "text-red-600 dark:text-red-400",
-                idx === 6 && "text-blue-600 dark:text-blue-400"
-              )}
-            >
-              {day}
-            </span>
-          ))}
-        </div>
-
-        {/* ━━ 3. 日付グリッド (42マス) ━━ */}
-        <div className="grid grid-cols-7 gap-0.5">
-          {calendarDays.map((day, idx) => {
-            const dayStr = formatDateString(day.date);
-            const isSelected = selectedDateStr === dayStr;
-            const isToday = todayStr === dayStr;
-            const hasEvent = getDateEvent(dayStr);
-            
-            const dayOfWeek = day.date.getDay();
-            const isSunday = dayOfWeek === 0;
-            const isSaturday = dayOfWeek === 6;
-
-            return (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setSelectedDate(day.date)}
-                className={cn(
-                  "relative h-7 sm:h-8 flex flex-col items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer border border-transparent select-none py-0.5",
-                  !day.isCurrentMonth && "text-muted-foreground/30",
-                  day.isCurrentMonth && "hover:bg-muted/60",
-                  day.isCurrentMonth && isSunday && "text-red-500",
-                  day.isCurrentMonth && isSaturday && "text-blue-500",
-                  isToday && !isSelected && "bg-primary/10 border-primary/30 text-primary font-black",
-                  isSelected && "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
-                )}
-              >
-                <span className="text-[11px] font-black tabular-nums leading-none">
-                  {day.date.getDate()}
-                </span>
-
-                {/* 試合・練習有無のインジケータードット */}
-                {hasEvent && (
-                  <span className="absolute bottom-0.5 flex h-1 w-1 justify-center">
-                    <span
-                      className={cn(
-                        "h-1 w-1 rounded-full",
-                        isSelected ? "bg-primary-foreground" : "bg-primary"
-                      )}
-                    />
-                  </span>
-                )}
-              </button>
+          {(pane) => {
+            const paneDays = buildCalendarMonthGridDays(
+              pane.year,
+              pane.monthIndex
             );
-          })}
-        </div>
-          </div>
+            return (
+              <>
+                <CalendarMonthPhotoMelt
+                  month={pane.monthNumber}
+                  variant="default"
+                  eager
+                />
+
+                <div className="relative z-10 px-3.5 pb-2.5 pt-[47.5%] space-y-2.5">
+                  {/* ━━ 2. 曜日ヘッダー ━━ */}
+                  <div className="grid grid-cols-7 text-center text-[10px] font-black text-foreground uppercase pb-0.5 border-b border-border/60">
+                    {weekDays.map((day, idx) => (
+                      <span
+                        key={day}
+                        className={cn(
+                          idx === 0 && "text-red-600 dark:text-red-400",
+                          idx === 6 && "text-blue-600 dark:text-blue-400"
+                        )}
+                      >
+                        {day}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* ━━ 3. 日付グリッド (42マス) ━━ */}
+                  <div className="grid grid-cols-7 gap-0.5">
+                    {paneDays.map((day, idx) => {
+                      const dayStr = day.dateStr;
+                      const isSelected = selectedDateStr === dayStr;
+                      const isToday = todayStr === dayStr;
+                      const hasEvent = getDateEvent(dayStr);
+
+                      const dayOfWeek = day.date.getDay();
+                      const isSunday = dayOfWeek === 0;
+                      const isSaturday = dayOfWeek === 6;
+
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedDate(day.date)}
+                          className={cn(
+                            "relative h-7 sm:h-8 flex flex-col items-center justify-center rounded-lg transition-all active:scale-95 cursor-pointer border border-transparent select-none py-0.5",
+                            !day.isCurrentMonth && "text-muted-foreground/30",
+                            day.isCurrentMonth && "hover:bg-muted/60",
+                            day.isCurrentMonth && isSunday && "text-red-500",
+                            day.isCurrentMonth && isSaturday && "text-blue-500",
+                            isToday &&
+                              !isSelected &&
+                              "bg-primary/10 border-primary/30 text-primary font-black",
+                            isSelected &&
+                              "bg-primary text-primary-foreground hover:bg-primary border-primary font-black shadow-xs"
+                          )}
+                        >
+                          <span className="text-[11px] font-black tabular-nums leading-none">
+                            {day.date.getDate()}
+                          </span>
+
+                          {/* 試合・練習有無のインジケータードット */}
+                          {hasEvent && (
+                            <span className="absolute bottom-0.5 flex h-1 w-1 justify-center">
+                              <span
+                                className={cn(
+                                  "h-1 w-1 rounded-full",
+                                  isSelected
+                                    ? "bg-primary-foreground"
+                                    : "bg-primary"
+                                )}
+                              />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            );
+          }}
         </CalendarSwipeSurface>
 
         {/* ━━ 4. 予定一覧（当日の予定 ＆ 直近の予定） ━━ */}

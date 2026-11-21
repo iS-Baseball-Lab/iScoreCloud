@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { LiffSelect, type LiffSelectOption } from "@/components/liff/LiffSelect";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
+import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import {
@@ -428,43 +429,6 @@ export function MonthlySchedulePlanner({
       cancelled = true;
     };
   }, [teamId, fetchEvents]);
-
-  // カレンダーグリッド用日付配列（42マス）
-  const getCalendarDays = () => {
-    const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
-    const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0);
-    const startDayOfWeek = firstDayOfMonth.getDay();
-    const totalDays = lastDayOfMonth.getDate();
-
-    const days: { date: Date; isCurrentMonth: boolean }[] = [];
-
-    const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-    for (let i = startDayOfWeek - 1; i >= 0; i--) {
-      days.push({
-        date: new Date(currentYear, currentMonth - 1, prevMonthLastDay - i),
-        isCurrentMonth: false,
-      });
-    }
-
-    for (let i = 1; i <= totalDays; i++) {
-      days.push({
-        date: new Date(currentYear, currentMonth, i),
-        isCurrentMonth: true,
-      });
-    }
-
-    const remainingDays = 42 - days.length;
-    for (let i = 1; i <= remainingDays; i++) {
-      days.push({
-        date: new Date(currentYear, currentMonth + 1, i),
-        isCurrentMonth: false,
-      });
-    }
-
-    return days;
-  };
-
-  const calendarDays = getCalendarDays();
 
   // 月切り替え
   const handlePrevMonth = () => {
@@ -898,91 +862,109 @@ export function MonthlySchedulePlanner({
         </div>
 
         <CalendarSwipeSurface
-          monthSerial={currentYear * 12 + currentMonth}
+          year={currentYear}
+          monthIndex={currentMonth}
           onPrevMonth={handlePrevMonth}
           onNextMonth={handleNextMonth}
         >
-          <CalendarMonthPhotoMelt month={currentMonth + 1} variant="default" eager />
+          {(pane) => {
+            const paneDays = buildCalendarMonthGridDays(
+              pane.year,
+              pane.monthIndex
+            );
+            const todayDateStr = formatDateString(new Date());
+            return (
+              <>
+                <CalendarMonthPhotoMelt
+                  month={pane.monthNumber}
+                  variant="default"
+                  eager
+                />
 
-          <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2">
-          {/* 曜日ヘッダー */}
-          <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
-            {weekDays.map((w, idx) => (
-              <div
-                key={w}
-                className={cn(
-                  "py-1.5 rounded-lg",
-                  idx === 0
-                    ? "text-red-600 dark:text-red-400 bg-red-500/8"
-                    : idx === 6
-                    ? "text-blue-600 dark:text-blue-400 bg-blue-500/8"
-                    : "text-foreground"
-                )}
-              >
-                {w}
-              </div>
-            ))}
-          </div>
+                <div className="relative z-10 px-3.5 pb-3.5 pt-[47.5%] space-y-2">
+                  {/* 曜日ヘッダー */}
+                  <div className="grid grid-cols-7 gap-1 text-center text-xs font-black">
+                    {weekDays.map((w, idx) => (
+                      <div
+                        key={w}
+                        className={cn(
+                          "py-1.5 rounded-lg",
+                          idx === 0
+                            ? "text-red-600 dark:text-red-400 bg-red-500/8"
+                            : idx === 6
+                            ? "text-blue-600 dark:text-blue-400 bg-blue-500/8"
+                            : "text-foreground"
+                        )}
+                      >
+                        {w}
+                      </div>
+                    ))}
+                  </div>
 
-          {/* 日付セル一覧 */}
-          <div className="grid grid-cols-7 gap-1">
-            {calendarDays.map((d, idx) => {
-              const dateStr = formatDateString(d.date);
-              const isSelected = selectedDayItems.some(it => it.dateStr === dateStr);
-              const isToday = dateStr === formatDateString(new Date());
-              const isSun = d.date.getDay() === 0;
-              const isSat = d.date.getDay() === 6;
+                  {/* 日付セル一覧 */}
+                  <div className="grid grid-cols-7 gap-1">
+                    {paneDays.map((d, idx) => {
+                      const dateStr = d.dateStr;
+                      const isSelected = selectedDayItems.some(
+                        (it) => it.dateStr === dateStr
+                      );
+                      const isToday = dateStr === todayDateStr;
+                      const isSun = d.date.getDay() === 0;
+                      const isSat = d.date.getDay() === 6;
 
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleToggleDate(d.date)}
-                  className={cn(
-                    "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
-                    isSelected
-                      ? "bg-primary/14 text-foreground font-black shadow-2xs border border-primary/45"
-                      : isToday
-                      ? "bg-primary/10 border border-primary/40 text-foreground font-black"
-                      : d.isCurrentMonth
-                      ? "bg-card/85 hover:bg-muted/65 text-foreground border border-border"
-                      : "bg-muted/15 text-muted-foreground/30 border border-transparent"
-                  )}
-                >
-                  {/* 日付数字 */}
-                  <span
-                    className={cn(
-                      "text-sm",
-                      isSun
-                        ? "text-red-500 font-black"
-                        : isSat
-                        ? "text-blue-500 font-black"
-                        : isSelected
-                        ? "text-primary font-black"
-                        : "font-bold"
-                    )}
-                  >
-                    {d.date.getDate()}
-                  </span>
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleToggleDate(d.date)}
+                          className={cn(
+                            "flex flex-col items-center justify-center p-2 rounded-2xl min-h-[58px] sm:min-h-[64px] transition-all relative cursor-pointer active:scale-95",
+                            isSelected
+                              ? "bg-primary/14 text-foreground font-black shadow-2xs border border-primary/45"
+                              : isToday
+                              ? "bg-primary/10 border border-primary/40 text-foreground font-black"
+                              : d.isCurrentMonth
+                              ? "bg-card/85 hover:bg-muted/65 text-foreground border border-border"
+                              : "bg-muted/15 text-muted-foreground/30 border border-transparent"
+                          )}
+                        >
+                          {/* 日付数字 */}
+                          <span
+                            className={cn(
+                              "text-sm",
+                              isSun
+                                ? "text-red-500 font-black"
+                                : isSat
+                                ? "text-blue-500 font-black"
+                                : isSelected
+                                ? "text-primary font-black"
+                                : "font-bold"
+                            )}
+                          >
+                            {d.date.getDate()}
+                          </span>
 
-                  {/* 選択状態ラベル */}
-                  {isSelected ? (
-                    <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
-                      <Check className="w-2.5 h-2.5" />
-                      <span>活動日</span>
-                    </span>
-                  ) : (
-                    isToday && (
-                      <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
-                        今日
-                      </span>
-                    )
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          </div>
+                          {/* 選択状態ラベル */}
+                          {isSelected ? (
+                            <span className="mt-1 px-1.5 py-0.2 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-[9.5px] font-black tracking-tight leading-none flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" />
+                              <span>活動日</span>
+                            </span>
+                          ) : (
+                            isToday && (
+                              <span className="mt-1 text-[9px] font-bold text-primary opacity-80 leading-none">
+                                今日
+                              </span>
+                            )
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            );
+          }}
         </CalendarSwipeSurface>
       </div>
 

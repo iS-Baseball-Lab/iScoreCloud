@@ -4,14 +4,17 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CALENDAR_MONTH_PHOTO_MELT_ASSETS,
+  buildCalendarMonthGridDays,
   detectCalendarSwipeAxis,
+  fromCalendarMonthSerial,
   getAdjacentCalendarMonthPhotoMelts,
   normalizeCalendarMonthNumber,
   resolveCalendarFlickDirection,
   resolveCalendarMonthPhotoMelt,
+  toCalendarMonthSerial,
 } from "@/lib/liff/calendar-month-bg";
 
-describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physics", () => {
+describe("Calendar monthly seasonal photo-melt resolver & 3-pane carousel physics", () => {
   it("defines 12 distinct monthly assets for January through December", () => {
     expect(CALENDAR_MONTH_PHOTO_MELT_ASSETS).toHaveLength(12);
 
@@ -59,18 +62,14 @@ describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physi
   });
 
   it("strictly separates vertical scrolling from horizontal calendar swipes", () => {
-    // Sub-8px tap jitter stays undecided
     expect(detectCalendarSwipeAxis(4, 3)).toBe("undecided");
-    // Vertical or diagonal-vertical movement prioritizes native page scrolling
     expect(detectCalendarSwipeAxis(12, 24)).toBe("vertical");
     expect(detectCalendarSwipeAxis(-18, 18)).toBe("vertical");
-    // Clear horizontal flick locks horizontal
     expect(detectCalendarSwipeAxis(-28, 6)).toBe("horizontal");
     expect(detectCalendarSwipeAxis(32, -8)).toBe("horizontal");
   });
 
   it("resolves left flick to next month, right flick to previous month, and tiny drags to none", () => {
-    // Left swipe beyond distance threshold -> next month
     expect(
       resolveCalendarFlickDirection({
         totalDx: -64,
@@ -78,8 +77,6 @@ describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physi
         containerWidth: 380,
       })
     ).toBe("next");
-
-    // Right swipe beyond distance threshold -> prev month
     expect(
       resolveCalendarFlickDirection({
         totalDx: 64,
@@ -87,8 +84,6 @@ describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physi
         containerWidth: 380,
       })
     ).toBe("prev");
-
-    // Quick short thumb flick -> triggers month switch even below full drag threshold
     expect(
       resolveCalendarFlickDirection({
         totalDx: -30,
@@ -103,8 +98,6 @@ describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physi
         containerWidth: 380,
       })
     ).toBe("prev");
-
-    // Slow short drag -> cancels cleanly without switching month
     expect(
       resolveCalendarFlickDirection({
         totalDx: -20,
@@ -112,5 +105,30 @@ describe("Calendar monthly seasonal photo-melt resolver & horizontal flick physi
         containerWidth: 380,
       })
     ).toBe("none");
+  });
+
+  it("converts month serials seamlessly across December-January year boundaries and builds 42-cell grids", () => {
+    const jan2026 = toCalendarMonthSerial(2026, 0);
+    expect(fromCalendarMonthSerial(jan2026 - 1)).toEqual({
+      year: 2025,
+      monthIndex: 11,
+      monthNumber: 12,
+    });
+
+    const dec2026 = toCalendarMonthSerial(2026, 11);
+    expect(fromCalendarMonthSerial(dec2026 + 1)).toEqual({
+      year: 2027,
+      monthIndex: 0,
+      monthNumber: 1,
+    });
+
+    const nov2026Grid = buildCalendarMonthGridDays(2026, 10);
+    expect(nov2026Grid).toHaveLength(42);
+    expect(nov2026Grid[0].dateStr).toBe("2026-11-01");
+    expect(nov2026Grid[0].isCurrentMonth).toBe(true);
+    expect(nov2026Grid[29].dateStr).toBe("2026-11-30");
+    expect(nov2026Grid[29].isCurrentMonth).toBe(true);
+    expect(nov2026Grid[30].dateStr).toBe("2026-12-01");
+    expect(nov2026Grid[30].isCurrentMonth).toBe(false);
   });
 });

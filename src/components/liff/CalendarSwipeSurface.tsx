@@ -1,45 +1,83 @@
 // filepath: src/components/liff/CalendarSwipeSurface.tsx
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 import { cn } from "@/lib/utils";
 import {
   detectCalendarSwipeAxis,
+  fromCalendarMonthSerial,
   resolveCalendarFlickDirection,
+  toCalendarMonthSerial,
   type CalendarSwipeAxis,
 } from "@/lib/liff/calendar-month-bg";
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
+const CENTER_TRANSFORM = "translate3d(-33.333333%, 0, 0)";
+const NEXT_PANE_TRANSFORM = "translate3d(-66.666667%, 0, 0)";
+const PREV_PANE_TRANSFORM = "translate3d(0%, 0, 0)";
+const GLIDE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+export interface CalendarPaneRenderContext {
+  year: number;
+  /** 0〜11 */
+  monthIndex: number;
+  /** 1〜12 */
+  monthNumber: number;
+  serial: number;
+  isActivePane: boolean;
+}
+
 export interface CalendarSwipeSurfaceProps {
-  /** 通算月シリアル（currentYear * 12 + currentMonth） */
-  monthSerial: number;
+  /** 表示中の年（例: 2026） */
+  year: number;
+  /** 表示中の月インデックス（0〜11） */
+  monthIndex: number;
   /** 前月へ移動（右方向フリック時） */
   onPrevMonth: () => void;
   /** 翌月へ移動（左方向フリック時） */
   onNextMonth: () => void;
   className?: string;
-  children: React.ReactNode;
+  children: (pane: CalendarPaneRenderContext) => React.ReactNode;
 }
 
 /**
- * 月間カレンダー共通の横フリック・スワイプ月切替サーフェス
- * - 縦スクロールと横フリックを厳格に判定し、縦移動時はネイティブスクロールを一切妨げない
- * - 横フリック時は指追従のドラッグフィードバック＋月切替後のスムーズなスライドインを行い、静止時は transform を完全解除する
- * - 横スワイプ直後の誤タップ（日付選択・活動日ON/OFF暴発）を capture フェーズで確実に遮断する
+ * 月間カレンダー共通の 3ペイン GPU カルーセル型・横フリック月切替サーフェス
+ * - `[前月 | 当月 | 翌月]` の3ペインを `key={serial}` で常時横並び保持することで、
+ *   指追従ドラッグ中から隣月の季節背景画像と日付表が切れ目なく1:1でスライドインする
+ * - 月確定後も該当月の DOM とデコード済み `<img>` ノードが破棄・再読込されないため、
+ *   画像の白フラッシュ・再デコードちらつきが一切発生しない
  */
 export function CalendarSwipeSurface({
-  monthSerial,
+  year,
+  monthIndex,
   onPrevMonth,
   onNextMonth,
   className,
   children,
 }: CalendarSwipeSurfaceProps) {
-  const stageRef = useRef<HTMLDivElement | null>(null);
+  const targetSerial = toCalendarMonthSerial(year, monthIndex);
+  const [baseSerial, setBaseSerial] = useState<number>(targetSerial);
+
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickUntilRef = useRef<number>(0);
-  const prevMonthSerialRef = useRef<number>(monthSerial);
+
+  const baseSerialRef = useRef<number>(baseSerial);
+  const targetSerialRef = useRef<number>(targetSerial);
+  const animatingToSerialRef = useRef<number | null>(null);
+
+  baseSerialRef.current = baseSerial;
+  targetSerialRef.current = targetSerial;
 
   const onPrevMonthRef = useRef(onPrevMonth);
   const onNextMonthRef = useRef(onNextMonth);
@@ -53,59 +91,75 @@ export function CalendarSwipeSurface({
     }
   }, []);
 
-  const resetStageStyles = useCallback(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    el.style.transition = "";
-    el.style.transform = "";
-    el.style.opacity = "";
-  }, []);
-
-  const animateBackToRest = useCallback(() => {
-    const el = stageRef.current;
-    if (!el) return;
-    clearSettleTimer();
-    el.style.transition =
-      "transform 200ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease-out";
-    el.style.transform = "translate3d(0, 0, 0)";
-    el.style.opacity = "1";
-    settleTimerRef.current = setTimeout(() => {
-      settleTimerRef.current = null;
-      resetStageStyles();
-    }, 220);
-  }, [clearSettleTimer, resetStageStyles]);
-
-  // 月が切り替わった際（横フリック・ヘッダー＜＞ボタン双方）の方向付きスライドイン
+  // baseSerial 更新時、ブラウザ描画前に 0ms でトラックを中央ペイン（-33.3333%）へ無振動リセット
   useIsomorphicLayoutEffect(() => {
-    const prevSerial = prevMonthSerialRef.current;
-    if (prevSerial === monthSerial) return;
-    prevMonthSerialRef.current = monthSerial;
+    baseSerialRef.current = baseSerial;
+    const track = trackRef.current;
+    if (!track) return;
+    track.style.transitionProperty = "transform";
+    track.style.transitionDuration = "0ms";
+    track.style.transform = CENTER_TRANSFORM;
+  }, [baseSerial]);
 
-    const el = stageRef.current;
-    if (!el) return;
+  // ヘッダーの ＜ / ＞ / 今日 ボタン操作による外部からの月変更にも滑らかに追従
+  useIsomorphicLayoutEffect(() => {
+    if (targetSerial === baseSerial) {
+      if (
+        animatingToSerialRef.current !== null &&
+        animatingToSerialRef.current !== targetSerial
+      ) {
+        clearSettleTimer();
+        animatingToSerialRef.current = null;
+        const track = trackRef.current;
+        if (track) {
+          track.style.transitionProperty = "transform";
+          track.style.transitionDuration = "200ms";
+          track.style.transitionTimingFunction = GLIDE_EASING;
+          track.style.transform = CENTER_TRANSFORM;
+        }
+      }
+      return;
+    }
 
+    // 横フリック側で既に該当月へのスライドアニメーションを開始している場合はそのまま継続
+    if (animatingToSerialRef.current === targetSerial) {
+      return;
+    }
+
+    const delta = targetSerial - baseSerial;
+    const track = trackRef.current;
+
+    // 1ヶ月分の移動（＜ / ＞ ボタン）は隣ペインへ滑らかにスライドしてから baseSerial を確定
+    if (Math.abs(delta) === 1 && animatingToSerialRef.current === null && track) {
+      clearSettleTimer();
+      animatingToSerialRef.current = targetSerial;
+      track.style.transitionProperty = "transform";
+      track.style.transitionDuration = "0ms";
+      track.style.transform = CENTER_TRANSFORM;
+      void track.offsetWidth;
+
+      track.style.transitionDuration = "230ms";
+      track.style.transitionTimingFunction = GLIDE_EASING;
+      track.style.transform =
+        delta > 0 ? NEXT_PANE_TRANSFORM : PREV_PANE_TRANSFORM;
+
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        animatingToSerialRef.current = null;
+        setBaseSerial(targetSerial);
+      }, 240);
+      return;
+    }
+
+    // 2ヶ月以上のジャンプ（「今日」ボタンや高速連打時）は即座に同期
     clearSettleTimer();
-    const enterSign = monthSerial > prevSerial ? 1 : -1;
-    el.style.transition = "none";
-    el.style.transform = `translate3d(${enterSign * 38}px, 0, 0)`;
-    el.style.opacity = "0.78";
-
-    // 強制リフロー後に定位置へスムーズにスライド
-    void el.offsetWidth;
-    el.style.transition =
-      "transform 210ms cubic-bezier(0.22, 1, 0.36, 1), opacity 170ms ease-out";
-    el.style.transform = "translate3d(0, 0, 0)";
-    el.style.opacity = "1";
-
-    settleTimerRef.current = setTimeout(() => {
-      settleTimerRef.current = null;
-      resetStageStyles();
-    }, 230);
-  }, [monthSerial, clearSettleTimer, resetStageStyles]);
+    animatingToSerialRef.current = null;
+    setBaseSerial(targetSerial);
+  }, [targetSerial, baseSerial, clearSettleTimer]);
 
   useEffect(() => {
-    const el = stageRef.current;
-    if (!el) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
 
     const gesture = {
       active: false,
@@ -117,15 +171,35 @@ export function CalendarSwipeSurface({
       width: 360,
     };
 
+    const animateSnapToCenter = () => {
+      const track = trackRef.current;
+      if (!track) return;
+      track.style.transitionProperty = "transform";
+      track.style.transitionDuration = "200ms";
+      track.style.transitionTimingFunction = GLIDE_EASING;
+      track.style.transform = CENTER_TRANSFORM;
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) {
         if (gesture.active && gesture.axis === "horizontal") {
-          animateBackToRest();
+          animateSnapToCenter();
         }
         gesture.active = false;
         gesture.axis = "undecided";
         return;
       }
+
+      // 前回のスライド完了前に連続フリックした場合は即座に前フレームを確定して次ペインを準備
+      if (animatingToSerialRef.current !== null) {
+        const pendingSerial = animatingToSerialRef.current;
+        clearSettleTimer();
+        animatingToSerialRef.current = null;
+        flushSync(() => {
+          setBaseSerial(pendingSerial);
+        });
+      }
+
       const touch = e.touches[0];
       gesture.active = true;
       gesture.axis = "undecided";
@@ -133,7 +207,7 @@ export function CalendarSwipeSurface({
       gesture.startY = touch.clientY;
       gesture.lastX = touch.clientX;
       gesture.startTime = performance.now();
-      gesture.width = Math.max(180, el.clientWidth || 360);
+      gesture.width = Math.max(180, viewport.clientWidth || 360);
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -148,7 +222,9 @@ export function CalendarSwipeSurface({
         gesture.axis = detected;
         if (detected === "horizontal") {
           clearSettleTimer();
-          el.style.transition = "none";
+          if (trackRef.current) {
+            trackRef.current.style.transitionDuration = "0ms";
+          }
         } else {
           return;
         }
@@ -161,9 +237,13 @@ export function CalendarSwipeSurface({
       }
 
       gesture.lastX = touch.clientX;
-      const maxDrag = Math.min(140, gesture.width * 0.42);
-      const dampedDx = Math.max(-maxDrag, Math.min(maxDrag, dx * 0.62));
-      el.style.transform = `translate3d(${dampedDx.toFixed(1)}px, 0, 0)`;
+      const clampedDx = Math.max(
+        -gesture.width,
+        Math.min(gesture.width, dx)
+      );
+      if (trackRef.current) {
+        trackRef.current.style.transform = `translate3d(calc(-33.333333% + ${clampedDx.toFixed(1)}px), 0, 0)`;
+      }
     };
 
     const onTouchEnd = (e: TouchEvent) => {
@@ -196,12 +276,41 @@ export function CalendarSwipeSurface({
         containerWidth,
       });
 
+      const track = trackRef.current;
       if (direction === "next") {
+        const nextSerial = baseSerialRef.current + 1;
+        clearSettleTimer();
+        animatingToSerialRef.current = nextSerial;
+        if (track) {
+          track.style.transitionProperty = "transform";
+          track.style.transitionDuration = "220ms";
+          track.style.transitionTimingFunction = GLIDE_EASING;
+          track.style.transform = NEXT_PANE_TRANSFORM;
+        }
+        settleTimerRef.current = setTimeout(() => {
+          settleTimerRef.current = null;
+          animatingToSerialRef.current = null;
+          setBaseSerial(nextSerial);
+        }, 230);
         onNextMonthRef.current();
       } else if (direction === "prev") {
+        const prevSerial = baseSerialRef.current - 1;
+        clearSettleTimer();
+        animatingToSerialRef.current = prevSerial;
+        if (track) {
+          track.style.transitionProperty = "transform";
+          track.style.transitionDuration = "220ms";
+          track.style.transitionTimingFunction = GLIDE_EASING;
+          track.style.transform = PREV_PANE_TRANSFORM;
+        }
+        settleTimerRef.current = setTimeout(() => {
+          settleTimerRef.current = null;
+          animatingToSerialRef.current = null;
+          setBaseSerial(prevSerial);
+        }, 230);
         onPrevMonthRef.current();
       } else {
-        animateBackToRest();
+        animateSnapToCenter();
       }
     };
 
@@ -211,23 +320,23 @@ export function CalendarSwipeSurface({
       gesture.active = false;
       gesture.axis = "undecided";
       if (wasHorizontal) {
-        animateBackToRest();
+        animateSnapToCenter();
       }
     };
 
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd, { passive: true });
-    el.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    viewport.addEventListener("touchstart", onTouchStart, { passive: true });
+    viewport.addEventListener("touchmove", onTouchMove, { passive: false });
+    viewport.addEventListener("touchend", onTouchEnd, { passive: true });
+    viewport.addEventListener("touchcancel", onTouchCancel, { passive: true });
 
     return () => {
       clearSettleTimer();
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchCancel);
+      viewport.removeEventListener("touchstart", onTouchStart);
+      viewport.removeEventListener("touchmove", onTouchMove);
+      viewport.removeEventListener("touchend", onTouchEnd);
+      viewport.removeEventListener("touchcancel", onTouchCancel);
     };
-  }, [animateBackToRest, clearSettleTimer]);
+  }, [clearSettleTimer]);
 
   const handleClickCapture = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -239,14 +348,42 @@ export function CalendarSwipeSurface({
     []
   );
 
+  const paneSerials = [baseSerial - 1, baseSerial, baseSerial + 1] as const;
+
   return (
-    <div className="relative bg-card overflow-hidden touch-pan-y">
+    <div
+      ref={viewportRef}
+      onClickCapture={handleClickCapture}
+      className="w-full bg-card overflow-hidden touch-pan-y"
+    >
       <div
-        ref={stageRef}
-        onClickCapture={handleClickCapture}
-        className={cn("relative", className)}
+        ref={trackRef}
+        style={{ width: "300%" }}
+        className="flex items-start -translate-x-1/3 will-change-transform"
       >
-        {children}
+        {paneSerials.map((serial) => {
+          const info = fromCalendarMonthSerial(serial);
+          const isActivePane = serial === targetSerial;
+          return (
+            <div
+              key={serial}
+              aria-hidden={!isActivePane || undefined}
+              inert={!isActivePane}
+              className={cn(
+                "relative w-1/3 shrink-0 bg-card overflow-hidden",
+                className
+              )}
+            >
+              {children({
+                year: info.year,
+                monthIndex: info.monthIndex,
+                monthNumber: info.monthNumber,
+                serial,
+                isActivePane,
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

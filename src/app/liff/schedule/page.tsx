@@ -26,6 +26,7 @@ import {
   type TeamScheduleDefaultTimes,
 } from "@/lib/liff/schedule-default-times";
 import { cn } from "@/lib/utils";
+import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import { MonthlySchedulePlanner } from "@/components/schedule/MonthlySchedulePlanner";
@@ -1076,55 +1077,6 @@ export default function LiffSchedulePage() {
     setSelectedDateStr(null);
   };
 
-  const calendarDays = useMemo(() => {
-    const firstDay = new Date(currentYear, currentMonth, 1);
-    const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    const startingDay = firstDay.getDay();
-    const totalDays = lastDay.getDate();
-
-    const days: Array<{ date: Date; dateStr: string; isCurrentMonth: boolean }> = [];
-
-    const prevMonthLastDay = new Date(currentYear, currentMonth, 0).getDate();
-    for (let i = startingDay - 1; i >= 0; i--) {
-      const d = new Date(currentYear, currentMonth - 1, prevMonthLastDay - i);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      days.push({
-        date: d,
-        dateStr: `${y}-${m}-${day}`,
-        isCurrentMonth: false,
-      });
-    }
-
-    for (let i = 1; i <= totalDays; i++) {
-      const d = new Date(currentYear, currentMonth, i);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      days.push({
-        date: d,
-        dateStr: `${y}-${m}-${day}`,
-        isCurrentMonth: true,
-      });
-    }
-
-    const remainingDays = 42 - days.length;
-    for (let i = 1; i <= remainingDays; i++) {
-      const d = new Date(currentYear, currentMonth + 1, i);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      days.push({
-        date: d,
-        dateStr: `${y}-${m}-${day}`,
-        isCurrentMonth: false,
-      });
-    }
-
-    return days;
-  }, [currentYear, currentMonth]);
-
   const weekDays = ["日", "月", "火", "水", "木", "金", "土"];
 
   // 日付ごとのイベントマップ
@@ -1318,117 +1270,136 @@ export default function LiffSchedulePage() {
           </div>
 
           <CalendarSwipeSurface
-            monthSerial={currentYear * 12 + currentMonth}
+            year={currentYear}
+            monthIndex={currentMonth}
             onPrevMonth={handlePrevMonth}
             onNextMonth={handleNextMonth}
           >
-            <CalendarMonthPhotoMelt month={currentMonth + 1} variant="compact" eager />
-
-            <div className="relative z-10 px-2.5 pb-2.5 pt-[47%] sm:px-3 sm:pb-3 sm:pt-[47%] space-y-1.5">
-          {/* 曜日ヘッダー */}
-          <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5 border-b border-border/60">
-            {weekDays.map((w, idx) => (
-              <span
-                key={w}
-                className={
-                  idx === 0
-                    ? "text-red-600 dark:text-red-400"
-                    : idx === 6
-                    ? "text-blue-600 dark:text-blue-400"
-                    : "text-foreground"
-                }
-              >
-                {w}
-              </span>
-            ))}
-          </div>
-
-          {/* 日付グリッド */}
-          <div className="grid grid-cols-7 gap-0.5">
-            {calendarDays.map((d, idx) => {
-              const hasEvents = eventsByDate.has(d.dateStr);
-              const dayEvents = eventsByDate.get(d.dateStr) || [];
-              const isSelected = selectedDateStr === d.dateStr;
-              const isToday = d.dateStr === todayStr;
-              const isSun = d.date.getDay() === 0;
-              const isSat = d.date.getDay() === 6;
-
-              const hasMatch = dayEvents.some(
-                (e) =>
-                  e.eventType === "match" ||
-                  e.amType === "match" ||
-                  e.pmType === "match" ||
-                  e.activityGroups?.some(
-                    (g) =>
-                      g.eventType === "match" ||
-                      g.amType === "match" ||
-                      g.pmType === "match"
-                  )
+            {(pane) => {
+              const paneDays = buildCalendarMonthGridDays(
+                pane.year,
+                pane.monthIndex
               );
-              const hasGroups = dayEvents.some((e) => e.activityGroups && e.activityGroups.length > 1);
-
               return (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    if (isSelected) {
-                      setSelectedDateStr(null);
-                    } else {
-                      setSelectedDateStr(d.dateStr);
-                    }
-                  }}
-                  className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg min-h-[30px] sm:min-h-[32px] transition-all relative cursor-pointer ${
-                    isSelected
-                      ? "bg-primary text-primary-foreground font-black shadow-xs"
-                      : isToday
-                      ? "bg-primary/10 border border-primary/40 font-black text-foreground"
-                      : d.isCurrentMonth
-                      ? "hover:bg-muted/60 text-foreground font-bold"
-                      : "text-muted-foreground/35 font-normal"
-                  }`}
-                >
-                  <span
-                    className={`text-[11px] leading-tight ${
-                      isSelected
-                        ? "text-primary-foreground font-black"
-                        : isSun
-                        ? "text-red-500"
-                        : isSat
-                        ? "text-blue-500"
-                        : ""
-                    }`}
-                  >
-                    {d.date.getDate()}
-                  </span>
+                <>
+                  <CalendarMonthPhotoMelt
+                    month={pane.monthNumber}
+                    variant="compact"
+                    eager
+                  />
 
-                  {/* 予定マーカー */}
-                  {hasEvents && (
-                    <div className="flex items-center gap-0.5 mt-0.5">
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isSelected
-                            ? "bg-primary-foreground"
-                            : hasMatch
-                            ? "bg-primary"
-                            : "bg-primary/60"
-                        }`}
-                      />
-                      {hasGroups && (
+                  <div className="relative z-10 px-2.5 pb-2.5 pt-[47%] sm:px-3 sm:pb-3 sm:pt-[47%] space-y-1.5">
+                    {/* 曜日ヘッダー */}
+                    <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-black pb-0.5 border-b border-border/60">
+                      {weekDays.map((w, idx) => (
                         <span
-                          className={`w-1 h-1 rounded-full ${
-                            isSelected ? "bg-primary-foreground/80" : "bg-primary/40"
-                          }`}
-                          title="複数グループ活動あり"
-                        />
-                      )}
+                          key={w}
+                          className={
+                            idx === 0
+                              ? "text-red-600 dark:text-red-400"
+                              : idx === 6
+                              ? "text-blue-600 dark:text-blue-400"
+                              : "text-foreground"
+                          }
+                        >
+                          {w}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                </button>
+
+                    {/* 日付グリッド */}
+                    <div className="grid grid-cols-7 gap-0.5">
+                      {paneDays.map((d, idx) => {
+                        const hasEvents = eventsByDate.has(d.dateStr);
+                        const dayEvents = eventsByDate.get(d.dateStr) || [];
+                        const isSelected = selectedDateStr === d.dateStr;
+                        const isToday = d.dateStr === todayStr;
+                        const isSun = d.date.getDay() === 0;
+                        const isSat = d.date.getDay() === 6;
+
+                        const hasMatch = dayEvents.some(
+                          (e) =>
+                            e.eventType === "match" ||
+                            e.amType === "match" ||
+                            e.pmType === "match" ||
+                            e.activityGroups?.some(
+                              (g) =>
+                                g.eventType === "match" ||
+                                g.amType === "match" ||
+                                g.pmType === "match"
+                            )
+                        );
+                        const hasGroups = dayEvents.some(
+                          (e) => e.activityGroups && e.activityGroups.length > 1
+                        );
+
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedDateStr(null);
+                              } else {
+                                setSelectedDateStr(d.dateStr);
+                              }
+                            }}
+                            className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg min-h-[30px] sm:min-h-[32px] transition-all relative cursor-pointer ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground font-black shadow-xs"
+                                : isToday
+                                ? "bg-primary/10 border border-primary/40 font-black text-foreground"
+                                : d.isCurrentMonth
+                                ? "hover:bg-muted/60 text-foreground font-bold"
+                                : "text-muted-foreground/35 font-normal"
+                            }`}
+                          >
+                            <span
+                              className={`text-[11px] leading-tight ${
+                                isSelected
+                                  ? "text-primary-foreground font-black"
+                                  : isSun
+                                  ? "text-red-500"
+                                  : isSat
+                                  ? "text-blue-500"
+                                  : ""
+                              }`}
+                            >
+                              {d.date.getDate()}
+                            </span>
+
+                            {/* 予定マーカー */}
+                            {hasEvents && (
+                              <div className="flex items-center gap-0.5 mt-0.5">
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${
+                                    isSelected
+                                      ? "bg-primary-foreground"
+                                      : hasMatch
+                                      ? "bg-primary"
+                                      : "bg-primary/60"
+                                  }`}
+                                />
+                                {hasGroups && (
+                                  <span
+                                    className={`w-1 h-1 rounded-full ${
+                                      isSelected
+                                        ? "bg-primary-foreground/80"
+                                        : "bg-primary/40"
+                                    }`}
+                                    title="複数グループ活動あり"
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
               );
-            })}
-          </div>
-            </div>
+            }}
           </CalendarSwipeSurface>
         </div>
 
