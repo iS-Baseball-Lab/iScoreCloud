@@ -104,7 +104,7 @@ export interface HubTickerResolvedItem {
   text: string;
   /** 遷移先内部パス。空文字の場合はタップで全文詳細モーダルを開く */
   href: string;
-  isManual: boolean;
+  isManual?: boolean;
   manualItem?: HubManualTickerItem;
   metaText?: string;
 }
@@ -1011,7 +1011,7 @@ export function buildHubTickerFeed(
         if (diff === null || diff < 0 || diff > 10) return false;
       }
       const split = splitPresetAndCustomStaffRoles(m.matchDayOps);
-      if (split.allPresetsNone || split.activePresetCount === 0) return false;
+      if (split.isAllRolesNone || split.activePresetCount === 0) return false;
       const unfilledCount = split.presetRoles.filter(
         (r) => !r.isNone && !r.isAssigned
       ).length;

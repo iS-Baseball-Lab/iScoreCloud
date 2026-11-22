@@ -315,8 +315,8 @@ export function HubTopNewsTicker({
     setIsTouchPaused(false);
     if (!start || !end || items.length <= 1) return;
 
-    const dx = end.clientX - start.clientX;
-    const dy = end.clientY - start.clientY;
+    const dx = end.clientX - start.x;
+    const dy = end.clientY - start.y;
     if (Math.abs(dx) >= 36 && Math.abs(dx) > Math.abs(dy) * 1.3) {
       swipedDuringTouchRef.current = true;
       if (dx < 0) {
