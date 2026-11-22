@@ -10,7 +10,10 @@ import { useLiff, useLiffPermissions, usePracticeMatchLabel } from "@/components
 import { fetchLiffJsonSWR, invalidateLiffApiCache, peekLiffApiCache } from "@/lib/liff/api-cache";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import { LiffLocationPicker, useTeamGrounds } from "@/components/liff/LiffLocationPicker";
+import { shareLiffPageViaLine } from "@/lib/liff/liff-client";
+import { toast } from "sonner";
 import {
   DEFAULT_GROUP_STATUS_SUMMARY_CONFIG,
   normalizeGroupStatusSummaryConfig,
@@ -36,6 +39,7 @@ import {
   type HubSpecialEventSummary,
 } from "@/lib/liff/special-events-schema";
 import {
+  AlertTriangle,
   Calendar as CalendarIcon,
   Clock,
   MapPin,
@@ -67,6 +71,7 @@ import {
   Plus,
   ArrowRightLeft,
   Settings2,
+  Share2,
   X,
   RotateCcw,
   Eye,
@@ -139,6 +144,7 @@ export interface ScheduleEvent {
   needsLunch?: boolean;
   needsSnack?: boolean;
   memo?: string;
+  importantNotice?: string;
   carInfo?: string;
   activityGroups?: ActivityGroup[];
   groupCounts?: Record<string, number>;
@@ -316,10 +322,57 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
 };
 
 export default function LiffSchedulePage() {
-  const { currentTeam, profile } = useLiff();
+  const { currentTeam, profile, liff } = useLiff();
   const { canMutate, isDemoMode } = useLiffPermissions();
   const effectiveCanEditSchedule = canMutate || isDemoMode;
   const practiceMatchLabel = usePracticeMatchLabel();
+
+  const handleShareScheduleEvent = useCallback(
+    async (ev: ScheduleEvent) => {
+      const teamLabel = currentTeam?.orgName || currentTeam?.name || "チーム";
+      const lines: string[] = [];
+      lines.push(`📅 日時: ${ev.date} ${ev.time}`);
+      if (ev.hasAm !== false && ev.amLocation) {
+        lines.push(`☀️ 午前: ${ev.amTime || ""} ＠${ev.amLocation}`.trim());
+      } else if (ev.location) {
+        lines.push(`📍 場所: ${ev.location}`);
+      }
+      if (ev.hasPm && ev.pmTime) {
+        lines.push(`🌙 午後: ${ev.pmTime} ＠${ev.pmLocation || ev.location}`);
+      }
+      if (ev.dutyGroup && ev.dutyGroup !== "なし") {
+        lines.push(`📋 当番班: ${ev.dutyGroup}`);
+      }
+      const mealItems = [
+        ev.needsLunch ? "🍙弁当：要" : null,
+        ev.needsSnack ? "🍌補食：要" : null,
+      ].filter(Boolean);
+      if (mealItems.length > 0) {
+        lines.push(mealItems.join(" / "));
+      }
+      if (ev.importantNotice?.trim()) {
+        lines.push("");
+        lines.push(`⚠️ 注意事項・特記事項:\n${ev.importantNotice.trim()}`);
+      }
+      if (ev.memo?.trim()) {
+        lines.push("");
+        lines.push(`📝 連絡事項:\n${ev.memo.trim()}`);
+      }
+
+      const outcome = await shareLiffPageViaLine({
+        title: `【${teamLabel}】${ev.date} ${ev.title || "活動予定"}`,
+        text: lines.join("\n"),
+        pathname: "/liff/schedule",
+        teamId: currentTeam?.id || null,
+        teamName: teamLabel,
+        liff,
+      });
+      if (outcome === "shared") {
+        toast.success("LINEで予定を共有しました！");
+      }
+    },
+    [currentTeam?.id, currentTeam?.name, currentTeam?.orgName, liff]
+  );
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState<"all" | "match" | "practice">("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -1046,6 +1099,7 @@ export default function LiffSchedulePage() {
           targetGroup: finalEvent.targetGroup || "全体",
           dutyGroup: finalEvent.dutyGroup === "なし" ? null : finalEvent.dutyGroup || null,
           description: finalEvent.memo || "",
+          importantNotice: finalEvent.importantNotice || "",
           needsLunch: Boolean(finalEvent.needsLunch),
           needsSnack: Boolean(finalEvent.needsSnack),
           amType: finalEvent.hasAm ? finalEvent.amType : "off",
@@ -1790,9 +1844,20 @@ export default function LiffSchedulePage() {
                         </span>
                       </div>
 
-                      {effectiveCanEditSchedule && (
-                        <div className="flex items-center gap-2 shrink-0 ml-auto">
-                          {/* ✏️ 編集ボタン */}
+                      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                        {/* 📲 LINE共有ボタン */}
+                        <button
+                          type="button"
+                          onClick={() => void handleShareScheduleEvent(ev)}
+                          className="py-1 px-2.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black active:scale-95 transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                          title="この予定をLINEで共有"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span>共有</span>
+                        </button>
+
+                        {effectiveCanEditSchedule && (
+                          /* ✏️ 編集ボタン */
                           <button
                             type="button"
                             onClick={() => {
@@ -1870,6 +1935,7 @@ export default function LiffSchedulePage() {
                                 needsLunch: Boolean(ev.needsLunch), 
                                 needsSnack: Boolean(ev.needsSnack),
                                 memo: ev.memo || "",
+                                importantNotice: ev.importantNotice || "",
                                 hasAm: !isAmOff,
                                 amType: isAmOff
                                   ? "off"
@@ -1898,8 +1964,8 @@ export default function LiffSchedulePage() {
                             <Edit3 className="w-3.5 h-3.5 text-sky-300" />
                             <span>編集</span>
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
                     {/* ② タイトル ＆ 当番班バッジ */}
@@ -2233,6 +2299,9 @@ export default function LiffSchedulePage() {
                         </div>
                       )
                     )}
+
+                    {/* ⚠️ 注意事項・特記事項（入力時のみ折り畳まず常時強調表示） */}
+                    <ImportantNoticeBanner notice={ev.importantNotice} />
 
                     {/* ④ 📋 その他の詳細情報ブロック（上から：弁当・補食、連絡事項、配車） */}
                     <div className="p-3 rounded-2xl bg-muted/35 border border-border space-y-2.5 text-xs">
@@ -3379,6 +3448,26 @@ export default function LiffSchedulePage() {
                       onChange={(e) => setEditingEvent({ ...editingEvent, memo: e.target.value })}
                       placeholder="ユニフォーム正装、スパイク持参、雨天時は7:00連絡など"
                       className="w-full px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold text-foreground focus:outline-hidden focus:border-primary resize-none"
+                    />
+                  </div>
+
+                  {/* ⚠️ 注意事項・特記事項（任意・常時強調表示） */}
+                  <div className="space-y-1 p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5">
+                    <label className="text-[10.5px] font-black text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                        <span>注意事項・特記事項（任意）</span>
+                      </span>
+                      <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                        常時強調表示
+                      </span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={editingEvent.importantNotice || ""}
+                      onChange={(e) => setEditingEvent({ ...editingEvent, importantNotice: e.target.value })}
+                      placeholder="例: 駐車場はチーム4台まで厳守／金属スパイク禁止／周辺道路での乗降禁止など"
+                      className="w-full px-3 py-2 rounded-xl bg-card border border-rose-500/35 text-xs font-bold text-foreground focus:outline-hidden focus:border-rose-500 resize-none"
                     />
                   </div>
                 </div>

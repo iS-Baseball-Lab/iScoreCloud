@@ -72,6 +72,7 @@ import {
   type SpecialEventStatus,
   type SpecialEventSurveyAnswers,
 } from "@/lib/liff/special-events-schema";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import { cn } from "@/lib/utils";
 
 function makeLocalId(prefix: string): string {
@@ -107,6 +108,7 @@ export interface UpsertSpecialEventPayload {
   locationUrl: string;
   deadlineDate: string | null;
   description: string;
+  importantNotice: string;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: SpecialEventFeeTier[];
@@ -209,6 +211,7 @@ export function CreateOrEditSpecialEventModal({
   const [locationUrl, setLocationUrl] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [description, setDescription] = useState("");
+  const [importantNotice, setImportantNotice] = useState("");
   const [allowCompanions, setAllowCompanions] = useState(true);
   const [useFeeCalculation, setUseFeeCalculation] = useState(true);
   const [feeTiers, setFeeTiers] = useState<SpecialEventFeeTier[]>(() =>
@@ -245,6 +248,7 @@ export function CreateOrEditSpecialEventModal({
       setLocationUrl(editingEvent.locationUrl || "");
       setDeadlineDate(editingEvent.deadlineDate || "");
       setDescription(editingEvent.description || "");
+      setImportantNotice(editingEvent.importantNotice || "");
       setAllowCompanions(editingEvent.allowCompanions);
       setUseFeeCalculation(editingEvent.useFeeCalculation);
       setFeeTiers(
@@ -275,6 +279,7 @@ export function CreateOrEditSpecialEventModal({
       setLocationUrl("");
       setDeadlineDate("");
       setDescription("");
+      setImportantNotice("");
       setAllowCompanions(tpl.allowCompanions);
       setUseFeeCalculation(tpl.useFeeCalculation);
       setFeeTiers(tpl.feeTiers.map((t) => ({ ...t })));
@@ -427,6 +432,7 @@ export function CreateOrEditSpecialEventModal({
       locationUrl: locationUrl.trim(),
       deadlineDate: deadlineDate || null,
       description: description.trim(),
+      importantNotice: importantNotice.trim(),
       allowCompanions,
       useFeeCalculation,
       feeTiers,
@@ -807,6 +813,25 @@ export function CreateOrEditSpecialEventModal({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="集合時間、会費の集金方法、ビンゴ景品や服装の案内など"
                 className="w-full p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="space-y-1 p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5">
+              <label className="text-[11px] font-black text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <span>注意事項・特記事項（任意）</span>
+                </span>
+                <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                  常時強調表示
+                </span>
+              </label>
+              <textarea
+                rows={2}
+                value={importantNotice}
+                onChange={(e) => setImportantNotice(e.target.value)}
+                placeholder="例: 前日18時以降のキャンセルはコース料金100%発生／お車での飲酒厳禁／アレルギー要事前申告など"
+                className="w-full p-2.5 rounded-xl border border-rose-500/35 bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-rose-500"
               />
             </div>
           </div>
@@ -1620,6 +1645,9 @@ export function RespondSpecialEventModal({
 
         {/* Scrollable Body */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4 bg-card">
+          {/* 0. 注意事項・特記事項（入力がある場合のみ常時強調表示） */}
+          <ImportantNoticeBanner notice={event.importantNotice} />
+
           {/* 1. 回答対象の世帯セレクタ（代理入力にも対応） */}
           {householdSelectOptions.length > 1 && (
             <div className="rounded-2xl border border-border bg-muted/30 p-3 space-y-1.5">

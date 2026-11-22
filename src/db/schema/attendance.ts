@@ -14,6 +14,7 @@ export const events = sqliteTable("events", {
   amType: text("am_type"),                                 // ☀️ 午前の活動種別（match | practice | meeting | camp | off）
   pmType: text("pm_type"),                                 // 🌙 午後の活動種別（match | practice | meeting | camp | off）
   description: text("description"),
+  importantNotice: text("important_notice"),               // ⚠️ 注意事項・特記事項（任意・常時強調表示）
   location: text("location"),
   dutyGroup: text("duty_group"), // 当番班
   pmStartAt: integer("pm_start_at", { mode: "timestamp" }), // 午後の開始時間

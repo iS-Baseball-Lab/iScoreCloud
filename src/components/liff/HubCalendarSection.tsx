@@ -18,6 +18,7 @@ import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import {
   buildDemoSpecialEventsBundle,
   getSpecialEventCategoryMeta,
@@ -45,6 +46,7 @@ export interface HubCalendarEventInput {
   needsSnack?: boolean | number | string;
   description?: string;
   memo?: string;
+  importantNotice?: string;
   carInfo?: string;
 }
 
@@ -72,6 +74,7 @@ interface ParsedCalendarItem {
   needsLunch?: boolean;
   needsSnack?: boolean;
   memo?: string;
+  importantNotice?: string;
   carInfo?: string;
   specialHeadcount?: number;
 }
@@ -164,6 +167,7 @@ export function HubCalendarSection({
                 ev.needsSnack === "1" ||
                 ev.needsSnack === "true",
               memo: ev.description || ev.memo || "",
+              importantNotice: ev.importantNotice || "",
               carInfo: ev.carInfo,
             };
           })
@@ -186,6 +190,7 @@ export function HubCalendarSection({
               needsLunch: true,
               needsSnack: true,
               memo: "公式戦ユニフォーム持参、8:00グラウンド集合",
+              importantNotice: "球場駐車場は各チーム4台までの制限あり（乗り合わせ厳守・金属スパイク禁止）",
               carInfo: "7:30 集合・配車調整済",
             },
             {
@@ -250,6 +255,7 @@ export function HubCalendarSection({
           pmTime: "",
           pmLocation: "",
           hasPm: false,
+          importantNotice: sp.importantNotice || "",
           specialHeadcount: sp.totalHeadcount,
         };
       });
@@ -583,6 +589,8 @@ export function HubCalendarSection({
                             </div>
                           )}
                         </div>
+
+                        <ImportantNoticeBanner notice={ev.importantNotice} compact />
                       </div>
 
                       <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
@@ -683,6 +691,8 @@ export function HubCalendarSection({
                             </div>
                           )}
                         </div>
+
+                        <ImportantNoticeBanner notice={ev.importantNotice} compact />
                       </div>
 
                       <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
@@ -798,6 +808,8 @@ export function HubCalendarSection({
                           </div>
                         )}
                       </div>
+
+                      <ImportantNoticeBanner notice={ev.importantNotice} compact />
                     </div>
 
                     <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
@@ -930,6 +942,8 @@ export function HubCalendarSection({
                               </span>
                             )}
                           </div>
+
+                          <ImportantNoticeBanner notice={sp.importantNotice} compact />
                         </div>
 
                         <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />

@@ -59,6 +59,7 @@ export interface WeekendEventDigestItem {
   targetGroup: string | null;
   dutyGroup: string | null;
   needsLunch: boolean;
+  importantNotice?: string | null;
   presentPlayerCount: number;
   absentPlayerCount: number;
   unansweredPlayerNames: string[];
@@ -326,6 +327,10 @@ export function buildWeekendReminderMessage(
         lines.push(`🕒 ${ev.timeLabel} ＠${loc}${lunchTag}`);
       }
 
+      if (ev.importantNotice?.trim()) {
+        lines.push(`⚠️ 注意・特記：${ev.importantNotice.trim()}`);
+      }
+
       lines.push(
         `👥 選手出欠：参加 ${ev.presentPlayerCount}名 / 欠席 ${ev.absentPlayerCount}名 / 未回答 ${ev.unansweredPlayerNames.length}名`
       );
@@ -511,6 +516,7 @@ export async function loadTeamWeekendReminderDigest(
       targetGroup: ev.targetGroup || null,
       dutyGroup: ev.dutyGroup || null,
       needsLunch: Boolean(ev.needsLunch),
+      importantNotice: ev.importantNotice || null,
       presentPlayerCount,
       absentPlayerCount,
       unansweredPlayerNames,

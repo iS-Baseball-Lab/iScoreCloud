@@ -881,6 +881,7 @@ const DEMO_NEXT_EVENT = {
   dutyGroup: "B班 (鍵・救急)",
   carInfo: "配車 4台 / 18名乗車",
   needsLunch: true,
+  importantNotice: "球場駐車場は各チーム4台までの制限あり（乗り合わせ厳守・金属スパイク禁止）",
   attendCount: { present: 26, absent: 4, pending: 2 },
   groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
 };
@@ -1939,6 +1940,7 @@ app.get("/hub", async (c) => {
         needsLunch: toBoolean(ev.needsLunch, hasPm || isMatch),
         needsSnack: toBoolean(ev.needsSnack, false),
         memo: ev.description || "",
+        importantNotice: ev.importantNotice || "",
         activityGroups: parsedHubGroups.length > 0 ? parsedHubGroups : undefined,
         myStatus: (userAttendances[ev.id] as any) || "pending",
         attendCount: groupAtt.attendCount,
@@ -2201,6 +2203,7 @@ app.get("/schedule", async (c) => {
             dutyGroup: "B班 (鍵・救急)",
             needsLunch: true,
             needsSnack: true,
+            importantNotice: "多摩川緑地野球場の駐車場は各チーム4台までの制限あり（乗り合わせ厳守・金属スパイク禁止）",
             myStatus: "present",
             mySelectedGroupId: "demo-grp-1",
             activityGroups: [
@@ -2636,6 +2639,7 @@ app.get("/schedule", async (c) => {
         needsLunch: toBoolean(ev.needsLunch, isMatch || hasPm),
         needsSnack: toBoolean(ev.needsSnack, false),
         memo: ev.description || "",
+        importantNotice: ev.importantNotice || "",
         carInfo: isMatch ? "7:30 集合・配車調整済" : undefined,
         activityGroups: parsedGroups.length > 0 ? parsedGroups : undefined,
         groupCounts,
@@ -3308,6 +3312,7 @@ app.get("/attendance-matrix", async (c) => {
         id: ev.id,
         title: ev.title,
         description: ev.description || "",
+        importantNotice: ev.importantNotice || "",
         dateStr,
         date: `${st.getMonth() + 1}/${st.getDate()}`,
         dayOfWeek: day,
@@ -3638,14 +3643,24 @@ app.post("/attendance-matrix/event-note", async (c) => {
   const db = drizzle(c.env.DB);
   try {
     const body = await c.req.json();
-    const { eventId, description } = body;
+    const { eventId, description, importantNotice } = body;
     if (!eventId) {
       return c.json({ success: false, error: "eventId is required" }, 400);
     }
 
-    await db.update(events)
-      .set({ description: description || null })
-      .where(eq(events.id, eventId));
+    const patch: Partial<typeof events.$inferInsert> = {};
+    if (description !== undefined) {
+      patch.description = description || null;
+    }
+    if (importantNotice !== undefined) {
+      patch.importantNotice = typeof importantNotice === "string" && importantNotice.trim() ? importantNotice.trim() : null;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await db.update(events)
+        .set(patch)
+        .where(eq(events.id, eventId));
+    }
 
     return c.json({ success: true, message: "日別メモを保存しました" });
   } catch (err: any) {
@@ -5094,6 +5109,7 @@ app.get("/match-ops-context", async (c) => {
         gatherTime: gatherTimeRaw ? `${gatherTimeRaw}頃` : null,
         gatherLocation: targetEvent.location || null,
         destination: targetEvent.location || null,
+        importantNotice: targetEvent.importantNotice || null,
         cars,
       };
     }

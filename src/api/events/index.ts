@@ -49,7 +49,7 @@ app.post('/:teamId', async (c) => {
 
   try {
     const body = await c.req.json();
-    const { title, startAt, endAt, eventType, amType, pmType, description, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
+    const { title, startAt, endAt, eventType, amType, pmType, description, importantNotice, location, dutyGroup, pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups } = body;
 
     if (!title || !startAt) {
       return c.json({ success: false, error: "タイトルと開始日時は必須です。" }, 400);
@@ -70,6 +70,7 @@ app.post('/:teamId', async (c) => {
         amType: amType || resolvedEventType,
         pmType: pmType || (hasInitialPm ? resolvedEventType : 'off'),
         description: description || '',
+        importantNotice: typeof importantNotice === 'string' ? importantNotice.trim() : '',
         location: location || '',
         dutyGroup: dutyGroup || null,
         pmStartAt: pmStartAt ? new Date(pmStartAt) : null,
@@ -106,7 +107,7 @@ app.patch('/:teamId/:eventId', async (c) => {
   try {
     const body = await c.req.json();
     const { 
-      title, startAt, endAt, eventType, description, location, dutyGroup, 
+      title, startAt, endAt, eventType, description, importantNotice, location, dutyGroup, 
       pmStartAt, pmEndAt, pmLocation, targetGroup, needsLunch, needsSnack, status, activityGroups,
       amTime, pmTime, amLocation, amType, pmType, dateStr
     } = body;
@@ -127,6 +128,9 @@ app.patch('/:teamId/:eventId', async (c) => {
     if (title !== undefined) updateFields.title = title;
     if (eventType !== undefined) updateFields.eventType = eventType;
     if (description !== undefined) updateFields.description = description;
+    if (importantNotice !== undefined) {
+      updateFields.importantNotice = typeof importantNotice === "string" ? importantNotice.trim() : "";
+    }
     if (location !== undefined) {
       updateFields.location = location;
     } else if (amLocation !== undefined && amType !== "off") {
@@ -268,6 +272,9 @@ app.post('/:teamId/bulk', async (c) => {
             amType: item.amType || item.eventType || 'practice',
             pmType: item.pmType || (hasItemPm ? (item.eventType || 'practice') : 'off'),
             description: item.description || '',
+            importantNotice: item.importantNotice !== undefined
+              ? (typeof item.importantNotice === "string" ? item.importantNotice.trim() : "")
+              : (existingRecord.importantNotice || ''),
             location: item.location || '',
             dutyGroup: item.dutyGroup || null,
             pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,
@@ -296,6 +303,7 @@ app.post('/:teamId/bulk', async (c) => {
             amType: item.amType || item.eventType || 'practice',
             pmType: item.pmType || (hasItemPm ? (item.eventType || 'practice') : 'off'),
             description: item.description || '',
+            importantNotice: typeof item.importantNotice === "string" ? item.importantNotice.trim() : '',
             location: item.location || '',
             dutyGroup: item.dutyGroup || null,
             pmStartAt: item.pmStartAt ? new Date(item.pmStartAt) : null,

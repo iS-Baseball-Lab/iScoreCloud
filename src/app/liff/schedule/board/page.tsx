@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
 
 const AttendanceSummaryShareModal = dynamic(
@@ -31,6 +32,7 @@ import {
 } from "@/lib/liff/player-condition";
 import { buildParentToChildrenMap } from "@/lib/liff/group-attendance";
 import {
+  AlertTriangle,
   Calendar as CalendarIcon,
   ChevronLeft,
   Check,
@@ -367,6 +369,7 @@ interface EventItem {
   id: string;
   title: string;
   description?: string;
+  importantNotice?: string;
   dateStr: string;
   date: string;
   dayOfWeek: string;
@@ -803,6 +806,7 @@ function AttendanceMatrixBoardContent() {
     eventTitle: string;
     eventDate: string;
     description: string;
+    importantNotice: string;
   } | null>(null);
   const [isSavingDayNote, setIsSavingDayNote] = useState(false);
 
@@ -1936,25 +1940,33 @@ function AttendanceMatrixBoardContent() {
     return events.find((ev) => ev.id === sharingSummaryEvent.id) || sharingSummaryEvent;
   }, [events, sharingSummaryEvent]);
 
-  // 日別メモモーダルを開く
+  // 日別メモ・注意事項モーダルを開く（編集権限がない場合も登録済み内容の全文閲覧が可能）
   const handleOpenDayNoteModal = (ev: EventItem) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanMutate && !ev.description && !ev.importantNotice) return;
     setEditingDayNote({
       eventId: ev.id,
       eventTitle: ev.title,
       eventDate: `${ev.date}(${ev.dayOfWeek})`,
       description: ev.description || "",
+      importantNotice: ev.importantNotice || "",
     });
   };
 
-  // 日別メモ保存処理
-  const handleSaveDayNote = async (newDescription: string) => {
+  // 日別メモ・注意事項保存処理
+  const handleSaveDayNote = async (newDescription: string, newImportantNotice: string) => {
     if (!editingDayNote || !effectiveCanMutate) return;
     setIsSavingDayNote(true);
     const { eventId } = editingDayNote;
+    const trimmedImportant = newImportantNotice.trim();
 
     // 楽観的更新
-    setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, description: newDescription } : ev));
+    setEvents(prev =>
+      prev.map(ev =>
+        ev.id === eventId
+          ? { ...ev, description: newDescription, importantNotice: trimmedImportant }
+          : ev
+      )
+    );
 
     try {
       const teamId = currentTeam?.id || "demo-team";
@@ -1962,18 +1974,22 @@ function AttendanceMatrixBoardContent() {
         const res = await fetch("/api/liff/attendance-matrix/event-note", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventId, description: newDescription }),
+          body: JSON.stringify({
+            eventId,
+            description: newDescription,
+            importantNotice: trimmedImportant,
+          }),
         });
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
         }
       }
       invalidateLiffApiCache();
-      toast.success("日別メモを保存しました");
+      toast.success("連絡事項・注意事項を保存しました");
       setEditingDayNote(null);
     } catch (err: unknown) {
       console.error("Save day note error:", err);
-      toast.error("日別メモの保存に失敗しました");
+      toast.error("保存に失敗しました");
     } finally {
       setIsSavingDayNote(false);
     }
@@ -2260,19 +2276,31 @@ function AttendanceMatrixBoardContent() {
                           {ev.title}
                         </p>
 
+                        {/* ⚠️ 注意事項・特記事項の強調表示 */}
+                        {ev.importantNotice && (
+                          <p
+                            onClick={() => handleOpenDayNoteModal(ev)}
+                            className="text-[8.5px] text-rose-700 dark:text-rose-300 font-black truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-rose-500/12 px-1 py-0.5 rounded border border-rose-500/35 border-l-2 border-l-rose-600 cursor-pointer hover:underline"
+                            title={
+                              effectiveCanMutate
+                                ? `注意事項・特記事項: ${ev.importantNotice} (タップして確認・編集)`
+                                : `注意事項・特記事項: ${ev.importantNotice} (タップして全文確認)`
+                            }
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-rose-600 dark:text-rose-400" />
+                            <span className="truncate">{ev.importantNotice}</span>
+                          </p>
+                        )}
+
                         {/* 💬 日別メモ・備考の表示 */}
                         {ev.description && (
                           <p
-                            onClick={
-                              effectiveCanMutate ? () => handleOpenDayNoteModal(ev) : undefined
-                            }
-                            className={`text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 ${
-                              effectiveCanMutate ? "cursor-pointer hover:underline" : ""
-                            }`}
+                            onClick={() => handleOpenDayNoteModal(ev)}
+                            className="text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 cursor-pointer hover:underline"
                             title={
                               effectiveCanMutate
-                                ? `備考: ${ev.description} (タップして編集)`
-                                : `備考: ${ev.description}`
+                                ? `連絡事項: ${ev.description} (タップして編集)`
+                                : `連絡事項: ${ev.description} (タップして全文確認)`
                             }
                           >
                             <MessageSquare className="w-2 h-2 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -3135,7 +3163,9 @@ function AttendanceMatrixBoardContent() {
                     <FileText className="w-3.5 h-3.5" />
                   </span>
                   <div className="min-w-0">
-                    <h3 className="text-xs font-black text-white">日別の備考・メモ</h3>
+                    <h3 className="text-xs font-black text-white">
+                      {effectiveCanMutate ? "日別の連絡事項・注意事項" : "日別の連絡事項・注意事項（確認）"}
+                    </h3>
                     <p className="text-[10px] text-slate-300 font-bold truncate">
                       📅 {editingDayNote.eventDate} : {editingDayNote.eventTitle}
                     </p>
@@ -3152,69 +3182,117 @@ function AttendanceMatrixBoardContent() {
               </div>
 
               <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
-                {/* クイック入力タグ */}
-                <div className="space-y-1">
-                  <p className="text-[9.5px] font-bold text-muted-foreground">よく使う定型文・タグ:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {[
-                      "持ち物: 弁当・水筒多め",
-                      "雨天時は7時までにLINE連絡",
-                      "白ユニフォーム着用",
-                      "現地8:30集合",
-                      "配車3台必要",
-                      "アナウンス当番あり",
-                    ].map(tag => (
+                {!effectiveCanMutate ? (
+                  <>
+                    <ImportantNoticeBanner notice={editingDayNote.importantNotice} />
+                    {editingDayNote.description && (
+                      <div className="p-3 rounded-xl bg-muted/35 border border-border space-y-1">
+                        <span className="text-[11px] font-black text-muted-foreground flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                          <span>連絡事項・備考</span>
+                        </span>
+                        <p className="text-xs font-bold text-foreground whitespace-pre-wrap leading-relaxed">
+                          {editingDayNote.description}
+                        </p>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-end pt-2 border-t border-border">
                       <button
-                        key={tag}
                         type="button"
-                        onClick={() => setEditingDayNote(prev => prev ? {
-                          ...prev,
-                          description: prev.description ? `${prev.description} / ${tag}` : tag
-                        } : null)}
-                        className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[9.5px] font-bold text-foreground border border-border active:scale-95 transition-all"
+                        onClick={() => setEditingDayNote(null)}
+                        className="px-4 py-1.5 rounded-xl bg-card border border-border text-xs font-black text-foreground hover:bg-muted active:scale-95 transition-all"
                       >
-                        + {tag}
+                        閉じる
                       </button>
-                    ))}
-                  </div>
-                </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* クイック入力タグ */}
+                    <div className="space-y-1">
+                      <p className="text-[9.5px] font-bold text-muted-foreground">よく使う定型文・タグ（連絡事項へ追加）:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          "持ち物: 弁当・水筒多め",
+                          "雨天時は7時までにLINE連絡",
+                          "白ユニフォーム着用",
+                          "現地8:30集合",
+                          "配車3台必要",
+                          "アナウンス当番あり",
+                        ].map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setEditingDayNote(prev => prev ? {
+                              ...prev,
+                              description: prev.description ? `${prev.description} / ${tag}` : tag
+                            } : null)}
+                            className="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[9.5px] font-bold text-foreground border border-border active:scale-95 transition-all"
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                {/* メモ本文入力欄 */}
-                <div className="space-y-1">
-                  <label className="text-xs font-black text-foreground flex items-center justify-between">
-                    <span>備考・メモ内容:</span>
-                    <span className="text-[9.5px] text-muted-foreground font-normal">
-                      LINE集計コピーにも自動反映されます
-                    </span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={editingDayNote.description}
-                    onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, description: e.target.value } : null)}
-                    placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分と弁当..."
-                    className="w-full px-3 py-2 text-xs rounded-xl bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
-                  />
-                </div>
+                    {/* メモ本文入力欄 */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-black text-foreground flex items-center justify-between">
+                        <span>連絡事項・備考（任意）:</span>
+                        <span className="text-[9.5px] text-muted-foreground font-normal">
+                          LINE集計コピーにも反映
+                        </span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={editingDayNote.description}
+                        onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, description: e.target.value } : null)}
+                        placeholder="例: 雨天時は7時にLINE連絡。持ち物は多めの水分と弁当..."
+                        className="w-full px-3 py-2 text-xs font-bold rounded-xl bg-muted/35 border border-border focus:outline-none focus:ring-1 focus:ring-primary text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
+                      />
+                    </div>
 
-                {/* フッター操作ボタン */}
-                <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setEditingDayNote(null)}
-                    className="px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
-                  >
-                    キャンセル
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSavingDayNote}
-                    onClick={() => handleSaveDayNote(editingDayNote.description)}
-                    className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
-                  >
-                    {isSavingDayNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    <span>備考を保存</span>
-                  </button>
-                </div>
+                    {/* ⚠️ 注意事項・特記事項入力欄 */}
+                    <div className="space-y-1 p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5">
+                      <label className="text-xs font-black text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
+                          <span>注意事項・特記事項（任意）</span>
+                        </span>
+                        <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                          常時強調表示
+                        </span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={editingDayNote.importantNotice}
+                        onChange={(e) => setEditingDayNote(prev => prev ? { ...prev, importantNotice: e.target.value } : null)}
+                        placeholder="例: 駐車場はチーム4台まで厳守／金属スパイク禁止／周辺道路での乗降禁止など"
+                        className="w-full px-3 py-2 text-xs font-bold rounded-xl bg-card border border-rose-500/35 focus:outline-none focus:border-rose-500 text-foreground placeholder:text-muted-foreground resize-none leading-relaxed"
+                      />
+                    </div>
+
+                    {/* フッター操作ボタン */}
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+                      <button
+                        type="button"
+                        onClick={() => setEditingDayNote(null)}
+                        className="px-3 py-1.5 rounded-xl bg-card border border-border text-xs font-bold text-foreground hover:bg-muted active:scale-95 transition-all"
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSavingDayNote}
+                        onClick={() => handleSaveDayNote(editingDayNote.description, editingDayNote.importantNotice)}
+                        className="px-4 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-black hover:bg-primary/90 active:scale-95 transition-all flex items-center gap-1"
+                      >
+                        {isSavingDayNote ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        <span>保存する</span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>

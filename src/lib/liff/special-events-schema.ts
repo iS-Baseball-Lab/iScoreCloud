@@ -621,6 +621,7 @@ export interface SpecialEventDetailItem {
   deadlineDate: string | null;
   deadlineDateLabel: string | null;
   description: string;
+  importantNotice: string;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: SpecialEventFeeTier[];
@@ -646,6 +647,7 @@ export interface HubSpecialEventSummary {
   location: string;
   deadlineDate: string | null;
   deadlineDateLabel: string | null;
+  importantNotice: string;
   totalHeadcount: number;
   respondedHouseholdCount: number;
   activeTargetHouseholdCount: number;
@@ -1997,9 +1999,14 @@ export function buildSpecialEventAnnouncementLineText(params: {
     );
   }
 
+  if (event.importantNotice?.trim()) {
+    lines.push("");
+    lines.push(`⚠️ 注意事項・特記事項:\n${event.importantNotice.trim()}`);
+  }
+
   if (event.description) {
     lines.push("");
-    lines.push(`📝 ご案内:\n${event.description}`);
+    lines.push(`📝 ご案内・連絡事項:\n${event.description}`);
   }
 
   if (includeUnansweredList) {
@@ -2085,6 +2092,11 @@ export function buildSpecialEventSummaryLineText(params: {
         `💰 会費合計予定額: ${summary.expectedFeeTotal.toLocaleString()}円（集金済: ${summary.paidFeeTotal.toLocaleString()}円）`
       );
     }
+  }
+
+  if (event.importantNotice?.trim()) {
+    lines.push("");
+    lines.push(`⚠️ 注意事項・特記事項:\n${event.importantNotice.trim()}`);
   }
 
   if (summary.questionSummaries.length > 0) {
@@ -2533,6 +2545,8 @@ export function buildDemoSpecialEventsBundle(): {
     deadlineDateLabel: formatDateKeyToJaLabel("2026-12-06"),
     description:
       "1年間の振り返りムービー上映＆ビンゴ大会を予定しています！ご兄弟や小さいお子様もぜひご一緒にご参加ください。服装は自由（私服）です。",
+    importantNotice:
+      "前日18時以降のキャンセルはお店規定によりコース料金100%が発生します。お車でお越しの方のアルコール飲酒は固くお断りいたします。",
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: partyTiers,
@@ -2650,6 +2664,7 @@ export function buildDemoSpecialEventsBundle(): {
     deadlineDateLabel: formatDateKeyToJaLabel("2026-12-15"),
     description:
       "卒団式・謝恩会の日程を決めるため、候補日のご都合をお知らせください。日程確定後、この画面からそのまま本出欠へ切り替えられます。",
+    importantNotice: "",
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: SPECIAL_EVENT_TEMPLATES[1].feeTiers.map((t) => ({ ...t })),
@@ -2691,6 +2706,7 @@ export function toHubSpecialEventSummary(
     location: ev.location,
     deadlineDate: ev.deadlineDate,
     deadlineDateLabel: ev.deadlineDateLabel,
+    importantNotice: ev.importantNotice || "",
     totalHeadcount: ev.summary.totalHeadcount,
     respondedHouseholdCount: ev.summary.respondedHouseholdCount,
     activeTargetHouseholdCount: ev.summary.activeTargetHouseholdCount,

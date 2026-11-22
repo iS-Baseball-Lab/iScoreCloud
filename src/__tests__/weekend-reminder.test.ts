@@ -142,6 +142,7 @@ describe("weekend-reminder settings & scheduling", () => {
           targetGroup: "Aチーム",
           dutyGroup: "1班",
           needsLunch: true,
+          importantNotice: "球場駐車場は各チーム4台厳守（金属スパイク禁止）",
           presentPlayerCount: 15,
           absentPlayerCount: 1,
           unansweredPlayerNames: ["山田 太郎", "佐藤 次郎"],
@@ -159,6 +160,7 @@ describe("weekend-reminder settings & scheduling", () => {
     expect(fullMsg).toContain("🧪【テスト配信】【週末予定＆出欠リマインド】");
     expect(fullMsg).toContain("📅 11/21(土) 秋季大会 準決勝 [Aチーム]");
     expect(fullMsg).toContain("🕒 09:00〜16:00 ＠市民球場 / 🍙弁当あり");
+    expect(fullMsg).toContain("⚠️ 注意・特記：球場駐車場は各チーム4台厳守（金属スパイク禁止）");
     expect(fullMsg).toContain("🚗 当番:1班 / 配車確定:4台");
     expect(fullMsg).toContain("⏳ 未回答：山田 太郎・佐藤 次郎");
     expect(fullMsg).toContain("https://iscorecloud.com/liff/schedule");

@@ -25,6 +25,7 @@ export const teamSpecialEvents = sqliteTable(
     locationUrl: text("location_url"),
     deadlineDate: text("deadline_date"), // 'YYYY-MM-DD'
     description: text("description"),
+    importantNotice: text("important_notice"), // ⚠️ 注意事項・特記事項（任意・常時強調表示）
     allowCompanions: integer("allow_companions", { mode: "boolean" })
       .notNull()
       .default(true),

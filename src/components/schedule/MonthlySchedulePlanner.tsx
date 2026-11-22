@@ -61,6 +61,7 @@ export interface ScheduleDayItem {
   needsLunch: boolean;
   needsSnack?: boolean;
   memo: string;
+  importantNotice?: string;
   activityGroups?: unknown;
 }
 
@@ -81,6 +82,7 @@ interface RawEventRecord {
   needsLunch?: boolean | number | string | null;
   needsSnack?: boolean | number | string | null;
   description?: string | null;
+  importantNotice?: string | null;
   activityGroups?: unknown;
 }
 
@@ -378,6 +380,7 @@ export function MonthlySchedulePlanner({
                 ev.needsSnack === "1" ||
                 ev.needsSnack === "true",
               memo: ev.description || "",
+              importantNotice: ev.importantNotice || "",
               activityGroups: ev.activityGroups,
             };
           });
@@ -699,6 +702,7 @@ export function MonthlySchedulePlanner({
             needsLunch: Boolean(item.needsLunch),
             needsSnack: Boolean(item.needsSnack),
             description: item.memo || "",
+            importantNotice: item.importantNotice !== undefined ? item.importantNotice : undefined,
             activityGroups: item.activityGroups,
             status: "scheduled",
           };

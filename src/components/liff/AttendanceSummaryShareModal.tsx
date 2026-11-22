@@ -67,6 +67,7 @@ export interface AttendanceSummaryEventItem {
   id: string;
   title: string;
   description?: string;
+  importantNotice?: string;
   dateStr: string;
   date: string;
   dayOfWeek: string;
@@ -310,8 +311,16 @@ export function AttendanceSummaryShareModal({
       ? `${dateStr} ${ev.title}`
       : dateStr;
 
+    const headerLines: string[] = [line1];
+    const cleanImportant = ev.importantNotice?.trim() || "";
+    if (cleanImportant) {
+      headerLines.push(`⚠️ 注意事項・特記事項:\n${cleanImportant}`);
+    }
     const cleanNote = ev.description?.trim() || "";
-    return cleanNote ? `${line1}\n📝 ${cleanNote}` : line1;
+    if (cleanNote) {
+      headerLines.push(`📝 ${cleanNote}`);
+    }
+    return headerLines.join("\n");
   }, []);
 
   const buildGroupBlock = useCallback(

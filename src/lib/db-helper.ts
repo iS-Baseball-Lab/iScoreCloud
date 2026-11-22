@@ -61,6 +61,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "activity_groups", ddl: "ALTER TABLE events ADD COLUMN activity_groups text" },
     { name: "am_type", ddl: "ALTER TABLE events ADD COLUMN am_type text" },
     { name: "pm_type", ddl: "ALTER TABLE events ADD COLUMN pm_type text" },
+    { name: "important_notice", ddl: "ALTER TABLE events ADD COLUMN important_notice text" },
   ],
   attendances: [
     { name: "selected_group_id", ddl: "ALTER TABLE attendances ADD COLUMN selected_group_id text" },
@@ -139,6 +140,9 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   team_equipments: [
     { name: "default_car_id", ddl: "ALTER TABLE team_equipments ADD COLUMN default_car_id text" },
     { name: "default_member_id", ddl: "ALTER TABLE team_equipments ADD COLUMN default_member_id text" },
+  ],
+  team_special_events: [
+    { name: "important_notice", ddl: "ALTER TABLE team_special_events ADD COLUMN important_notice text" },
   ],
 };
 
@@ -350,6 +354,7 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       location_url text,
       deadline_date text,
       description text,
+      important_notice text,
       allow_companions integer NOT NULL DEFAULT 1,
       use_fee_calculation integer NOT NULL DEFAULT 1,
       fee_tiers_json text,

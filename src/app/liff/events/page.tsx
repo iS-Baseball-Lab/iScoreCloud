@@ -24,6 +24,7 @@ import {
   Crown,
   Edit3,
   ExternalLink,
+  FileText,
   Loader2,
   MapPin,
   PartyPopper,
@@ -34,6 +35,7 @@ import {
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import { useTeamGrounds } from "@/components/liff/LiffLocationPicker";
 import { EmptyState } from "@/components/layout/EmptyState";
 import {
@@ -1181,10 +1183,19 @@ function LiffSpecialEventsContent() {
                       </div>
                     )}
 
-                    {/* 案内メモ */}
+                    {/* ⚠️ 注意事項・特記事項（入力時のみ常時強調表示） */}
+                    <ImportantNoticeBanner notice={ev.importantNotice} />
+
+                    {/* 📝 ご案内・連絡事項 */}
                     {ev.description && (
-                      <div className="p-3 rounded-xl bg-muted/30 border border-border text-xs font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                        {ev.description}
+                      <div className="p-3 rounded-xl bg-muted/30 border border-border space-y-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-muted-foreground">
+                          <FileText className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span>ご案内・連絡事項</span>
+                        </div>
+                        <p className="text-xs font-bold text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                          {ev.description}
+                        </p>
                       </div>
                     )}
 

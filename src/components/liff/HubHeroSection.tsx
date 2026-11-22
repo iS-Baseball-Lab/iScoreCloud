@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { MatchScoreCard, MatchScoreCardSkeleton } from "@/components/liff/MatchScoreCard";
 import { EventGroupAttendanceSummary } from "@/components/liff/EventGroupAttendanceSummary";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import { useLiffPermissions } from "@/components/liff/LiffProvider";
 import { invalidateLiffApiCache } from "@/lib/liff/api-cache";
 import {
@@ -84,6 +85,7 @@ export interface HubEventInputItem {
   needsSnack?: boolean | number | string;
   memo?: string;
   description?: string;
+  importantNotice?: string;
   myStatus?: "present" | "absent" | "pending" | "late";
   activityGroups?: HubActivityGroupItem[];
   attendCount?: Partial<GroupAttendanceCounts> | null;
@@ -112,6 +114,7 @@ interface HubWeeklyEventCardItem {
   needsLunch: boolean;
   needsSnack: boolean;
   memo: string;
+  importantNotice: string;
   activityGroups?: HubActivityGroupItem[];
   attendCount: Partial<GroupAttendanceCounts> | null;
   groupAttendCount: EventGroupAttendanceMap | null;
@@ -623,6 +626,7 @@ export function HubHeroSection({
           needsLunch: ev.needsLunch === true || ev.needsLunch === 1 || ev.needsLunch === "1" || ev.needsLunch === "true",
           needsSnack: ev.needsSnack === true || ev.needsSnack === 1 || ev.needsSnack === "1" || ev.needsSnack === "true",
           memo: ev.memo || ev.description || "",
+          importantNotice: ev.importantNotice || "",
           activityGroups: (ev.activityGroups && Array.isArray(ev.activityGroups)) ? ev.activityGroups : undefined,
           attendCount: ev.attendCount ?? null,
           groupAttendCount: ev.groupAttendCount ?? null,
@@ -676,6 +680,7 @@ export function HubHeroSection({
         needsLunch: false,
         needsSnack: true,
         memo: "ユニフォーム正装・スパイク着用。雨天時は7:00にLINE連絡します。",
+        importantNotice: "球場駐車場は各チーム4台までの制限あり（乗り合わせ厳守・金属スパイク禁止）",
         activityGroups: undefined,
         attendCount: { present: 15, absent: 3, pending: 0, total: 18 },
         groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[0],
@@ -702,6 +707,7 @@ export function HubHeroSection({
         needsLunch: true,
         needsSnack: false,
         memo: "水分補給のドリンク多めに持参してください。",
+        importantNotice: "",
         activityGroups: undefined,
         attendCount: { present: 13, absent: 3, pending: 2, total: 18 },
         groupAttendCount: DEMO_GROUP_ATTEND_COUNT_LIST[1],
@@ -1176,6 +1182,9 @@ export function HubHeroSection({
                             </div>
                           </div>
                         )}
+
+                        {/* ⚠️ 注意事項・特記事項（入力時のみ折り畳まず常時強調表示） */}
+                        <ImportantNoticeBanner notice={ev.importantNotice} />
 
                         {/* 📋 その他の詳細情報ブロック（上から：弁当・補食、連絡事項、配車） */}
                         <div className="p-3 rounded-2xl bg-muted/35 border border-border/60 space-y-2.5 text-xs">

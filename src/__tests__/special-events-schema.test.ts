@@ -336,6 +336,8 @@ describe("special-events-schema", () => {
       includeUnansweredList: true,
     });
     expect(announceText).toContain("2026年 チーム忘年会・納会");
+    expect(announceText).toContain("⚠️ 注意事項・特記事項:");
+    expect(announceText).toContain("コース料金100%");
     expect(announceText).toContain("鈴木 家");
 
     const summaryText = buildSpecialEventSummaryLineText({
@@ -344,6 +346,7 @@ describe("special-events-schema", () => {
     });
     expect(summaryText).toContain("参加総人数:");
     expect(summaryText).toContain("ご兄弟・同伴家族");
+    expect(summaryText).toContain("⚠️ 注意事項・特記事項:");
 
     const csv = buildSpecialEventCsvContent(partyEvent);
     expect(csv).toContain("山田 家");

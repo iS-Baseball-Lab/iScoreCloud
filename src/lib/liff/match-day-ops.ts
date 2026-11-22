@@ -129,6 +129,7 @@ export interface LiffMatchScheduleSyncInfo {
   gatherTime: string | null;
   gatherLocation: string | null;
   destination: string | null;
+  importantNotice?: string | null;
   cars: LiffMatchScheduleCarpoolCar[];
 }
 
@@ -880,6 +881,9 @@ export function buildPreMatchAnnouncementShareText(
   }
   if (ops.belongingsNote) {
     guideLines.push(`📌 連絡: ${ops.belongingsNote}`);
+  }
+  if (sync?.importantNotice?.trim()) {
+    guideLines.push(`⚠️ 注意・特記: ${sync.importantNotice.trim()}`);
   }
 
   if (guideLines.length > 0) {

@@ -33,6 +33,7 @@ import {
   type TeamHouseholdUnit,
 } from "@/lib/liff/special-events-schema";
 import type { PlayerConditionPeriod } from "@/lib/liff/player-condition";
+import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import { resolveCallerTeamAccess, type CallerTeamAccess } from "@/lib/team-access";
 import { validateSafeHttpUrl } from "@/lib/utils";
 import type { WorkerEnv } from "@/types/api";
@@ -108,6 +109,7 @@ export interface RawSpecialEventDbRow {
   locationUrl: string | null;
   deadlineDate: string | null;
   description: string | null;
+  importantNotice?: string | null;
   allowCompanions: boolean | number;
   useFeeCalculation: boolean | number;
   feeTiersJson: string | null;
@@ -238,6 +240,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       deadlineDate: row.deadlineDate || null,
       deadlineDateLabel: formatDateKeyToJaLabel(row.deadlineDate),
       description: row.description || "",
+      importantNotice: row.importantNotice || "",
       allowCompanions,
       useFeeCalculation,
       feeTiers,
@@ -329,6 +332,7 @@ liffSpecialEventsRouter.get("/", async (c) => {
       });
     }
 
+    await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
     if (!access.canAccessTeam(teamId)) {
       return c.json(
@@ -449,6 +453,7 @@ interface UpsertSpecialEventBody {
   locationUrl?: string | null;
   deadlineDate?: string | null;
   description?: string | null;
+  importantNotice?: string | null;
   allowCompanions?: boolean;
   useFeeCalculation?: boolean;
   feeTiers?: unknown;
@@ -481,6 +486,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       });
     }
 
+    await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
     if (!access.canMutateTeamData(teamId)) {
       return c.json({ success: false, error: "作成権限がありません" }, 403);
@@ -496,6 +502,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
     const location = (body.location || "").trim().slice(0, 120);
     const locationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
     const description = (body.description || "").trim().slice(0, 2000);
+    const importantNotice = (body.importantNotice || "").trim().slice(0, 2000);
     const allowCompanions = body.allowCompanions !== false;
     const useFeeCalculation = body.useFeeCalculation !== false;
     const feeTiers = normalizeSpecialEventFeeTiers(body.feeTiers);
@@ -531,6 +538,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       locationUrl,
       deadlineDate,
       description,
+      importantNotice,
       allowCompanions,
       useFeeCalculation,
       feeTiersJson: JSON.stringify(feeTiers),
@@ -572,6 +580,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
       });
     }
 
+    await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
     const existing = await db
       .select()
@@ -640,6 +649,10 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
       body.description !== undefined
         ? (body.description || "").trim().slice(0, 2000)
         : existing.description || "";
+    const importantNotice =
+      body.importantNotice !== undefined
+        ? (body.importantNotice || "").trim().slice(0, 2000)
+        : existing.importantNotice || "";
     const allowCompanions =
       body.allowCompanions !== undefined
         ? Boolean(body.allowCompanions)
@@ -685,6 +698,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         locationUrl,
         deadlineDate,
         description,
+        importantNotice,
         allowCompanions,
         useFeeCalculation,
         feeTiersJson: JSON.stringify(feeTiers),
