@@ -1132,16 +1132,28 @@ export function convertLiveReportToScorebookDraft(params: {
       );
 
   // 2. 相手チーム打順（9〜25人対応）
+  const fallbackDocOppLineup = (doc.opponentLineup || []).map((o) => ({
+    battingOrder: o.order,
+    position: o.position,
+    playerName: o.playerName,
+    uniformNumber: o.uniformNumber || "",
+    bats: null,
+  }));
+  const effectiveSavedOpp =
+    params.savedOpponentLineup && params.savedOpponentLineup.length > 0
+      ? params.savedOpponentLineup
+      : fallbackDocOppLineup;
+
   const maxRecordedOppOrder = Math.max(
     9,
     doc.opponentBatterCount || 9,
-    ...(params.savedOpponentLineup || []).map((o) => o.battingOrder || 0),
+    ...effectiveSavedOpp.map((o) => o.battingOrder || 0),
     ...doc.halfInnings
       .filter((h) => !isMyTeamBattingHalf(doc.battingOrder, h.isBottom))
       .flatMap((h) => h.entries.map((e) => e.battingOrder || 0))
   );
   const oppBatters = buildBatterSlotsFromSavedLineups(
-    (params.savedOpponentLineup || []).map((o) => ({
+    effectiveSavedOpp.map((o) => ({
       battingOrder: o.battingOrder,
       position: o.position,
       playerId: null,
@@ -1161,7 +1173,7 @@ export function convertLiveReportToScorebookDraft(params: {
     ...doc.halfInnings.map((h) => h.inning || 1)
   );
 
-  // 4. 自チーム投手継投スティント構築（先発投手 ＋ subType === "P" または守備位置 "1" への交代）
+  // 4. 自チーム投手継投スティント構築（先発投手 ＋ DH専任投手 ＋ subType === "P" または守備位置 "1" への交代）
   const myPitchers: ScorebookPitcherStint[] = [];
   const starterPitcherSlot = myBatters.find(
     (b) => normalizePosToDigitOrDh(b.position) === "1"
@@ -1173,6 +1185,24 @@ export function convertLiveReportToScorebookDraft(params: {
       name: starterPitcherSlot.name,
       uniformNumber: starterPitcherSlot.uniformNumber || "",
       playerId: starterPitcherSlot.playerId || null,
+      fromInning: 1,
+      fromBatterOrder: null,
+      toInning: maxInning,
+      manualDecision: null,
+    });
+  } else if (doc.dhStarterPitcher && doc.dhStarterPitcher.playerName.trim()) {
+    const matchedDhP = findRosterPlayer(
+      roster,
+      doc.dhStarterPitcher.playerId,
+      doc.dhStarterPitcher.playerName
+    );
+    myPitchers.push({
+      id: "my-p-1",
+      order: 1,
+      name: (matchedDhP?.name || doc.dhStarterPitcher.playerName).trim(),
+      uniformNumber:
+        doc.dhStarterPitcher.uniformNumber || matchedDhP?.uniformNumber || "",
+      playerId: doc.dhStarterPitcher.playerId || matchedDhP?.id || null,
       fromInning: 1,
       fromBatterOrder: null,
       toInning: maxInning,

@@ -1,16 +1,27 @@
 // filepath: src/lib/liff/live-report-v2.ts
 
 import type {
+  LiveReportAttendanceStatus,
   LiveReportBaseNum,
   LiveReportChainedPlay,
+  LiveReportDhStarterPitcher,
   LiveReportHalfInning,
   LiveReportLineupSlot,
   LiveReportLineupSubRecord,
+  LiveReportOpponentBenchPlayer,
+  LiveReportOpponentLineupSlot,
   LiveReportOutputMode,
   LiveReportPlayEntry,
   LiveReportSubType,
   LiveReportV2Document,
 } from "@/types/live-report-v2";
+import type {
+  MatchLineupsPayload,
+  MyLineupSlot,
+  OpponentBenchPlayer,
+  OpponentLineupSlot,
+  PlayerMatchAttendanceMap,
+} from "@/lib/liff/demo-lineup";
 import type {
   ScorebookSheetStructure,
   ScorebookV2AtBat,
@@ -165,6 +176,595 @@ export function createDefaultEmptyLineup(count = 9): LiveReportLineupSlot[] {
     playerName: "",
     substitutions: [],
   }));
+}
+
+export function toEditorLineupPosition(
+  rawPos: string | null | undefined,
+  hasPlayerIdentity: boolean
+): string {
+  if (!hasPlayerIdentity) return "";
+  const trimmed = (rawPos || "").trim().toUpperCase();
+  if (!trimmed || trimmed === "打") return "";
+  const norm = normalizeReportPositionCode(trimmed);
+  if (norm === "D") return "DH";
+  if (norm === "打") return "";
+  if (/^[1-9]$/.test(norm)) return norm;
+  return "";
+}
+
+export function toReportLineupPosition(
+  editorPos: string | null | undefined
+): string {
+  const trimmed = (editorPos || "").trim();
+  if (!trimmed) return "打";
+  return normalizeReportPositionCode(trimmed);
+}
+
+export function splitLoadedMyLineupSlots(
+  raw: ReadonlyArray<Record<string, unknown>> | ReadonlyArray<MyLineupSlot> | null | undefined
+): {
+  battingSlots: MyLineupSlot[];
+  dhPitcher: MyLineupSlot | null;
+} {
+  const createEmpty = (cnt = 9): MyLineupSlot[] =>
+    Array.from({ length: cnt }, (_, i) => ({
+      order: i + 1,
+      position: "",
+      playerId: "",
+      name: "",
+      uniformNumber: "",
+    }));
+
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { battingSlots: createEmpty(9), dhPitcher: null };
+  }
+
+  const normalizedItems = raw.map((item, idx) => {
+    const rec = (item || {}) as Record<string, unknown>;
+    const rawOrder =
+      typeof rec.order === "number"
+        ? rec.order
+        : typeof rec.battingOrder === "number"
+        ? rec.battingOrder
+        : idx + 1;
+    const playerId = typeof rec.playerId === "string" ? rec.playerId : "";
+    const name =
+      typeof rec.name === "string"
+        ? rec.name
+        : typeof rec.playerName === "string"
+        ? rec.playerName
+        : "";
+    const uniformNumber =
+      typeof rec.uniformNumber === "string" ? rec.uniformNumber : "";
+    const rawPos = typeof rec.position === "string" ? rec.position.trim() : "";
+    const hasIdentity = Boolean(playerId || name.trim());
+    const pos =
+      rawOrder === 0
+        ? "1"
+        : rawPos.toUpperCase() === "D" || rawPos.toUpperCase() === "DH"
+        ? "DH"
+        : /^[1-9]$/.test(rawPos)
+        ? rawPos
+        : hasIdentity
+        ? toEditorLineupPosition(rawPos, true)
+        : "";
+    return {
+      order: rawOrder,
+      position: pos,
+      playerId,
+      name,
+      uniformNumber,
+    };
+  });
+
+  const dhPitcherRaw = normalizedItems.find(
+    (s) =>
+      s.order === 0 &&
+      (s.position === "1" || Boolean(s.playerId || s.name.trim()))
+  );
+  const dhPitcher: MyLineupSlot | null = dhPitcherRaw
+    ? {
+        order: 0,
+        position: "1",
+        playerId: dhPitcherRaw.playerId,
+        name: dhPitcherRaw.name,
+        uniformNumber: dhPitcherRaw.uniformNumber,
+      }
+    : null;
+
+  const orderSlots = normalizedItems.filter((s) => s.order >= 1);
+  if (orderSlots.length === 0) {
+    return { battingSlots: createEmpty(9), dhPitcher };
+  }
+  const maxOrder = Math.min(25, Math.max(9, ...orderSlots.map((s) => s.order)));
+  const battingSlots: MyLineupSlot[] = Array.from(
+    { length: maxOrder },
+    (_, idx) => {
+      const found = orderSlots.find((s) => s.order === idx + 1);
+      return found
+        ? {
+            order: idx + 1,
+            position: found.position,
+            playerId: found.playerId,
+            name: found.name,
+            uniformNumber: found.uniformNumber,
+          }
+        : {
+            order: idx + 1,
+            position: "",
+            playerId: "",
+            name: "",
+            uniformNumber: "",
+          };
+    }
+  );
+  return { battingSlots, dhPitcher };
+}
+
+export interface ExtractedDocLineupState {
+  myLineup: MyLineupSlot[];
+  dhStarterPitcher: MyLineupSlot | null;
+  opponentLineup: OpponentLineupSlot[];
+  opponentBench: OpponentBenchPlayer[];
+  myAttendance: PlayerMatchAttendanceMap;
+}
+
+export function extractLineupEditorStateFromDoc(
+  doc: LiveReportV2Document
+): ExtractedDocLineupState {
+  const slotCount = Math.max(9, doc.lineup.length);
+  const myLineup: MyLineupSlot[] = Array.from(
+    { length: slotCount },
+    (_, idx) => {
+      const slot =
+        doc.lineup.find((s) => s.order === idx + 1) || doc.lineup[idx];
+      if (!slot) {
+        return {
+          order: idx + 1,
+          position: "",
+          playerId: "",
+          name: "",
+          uniformNumber: "",
+        };
+      }
+      const hasIdentity = Boolean(
+        slot.playerId || (slot.playerName && slot.playerName.trim())
+      );
+      return {
+        order: idx + 1,
+        position: toEditorLineupPosition(slot.position, hasIdentity),
+        playerId: slot.playerId || "",
+        name: slot.playerName || "",
+        uniformNumber: slot.uniformNumber || "",
+      };
+    }
+  );
+
+  const dhStarterPitcher: MyLineupSlot | null =
+    doc.dhStarterPitcher &&
+    (doc.dhStarterPitcher.playerId || doc.dhStarterPitcher.playerName.trim())
+      ? {
+          order: 0,
+          position: "1",
+          playerId: doc.dhStarterPitcher.playerId || "",
+          name: doc.dhStarterPitcher.playerName || "",
+          uniformNumber: doc.dhStarterPitcher.uniformNumber || "",
+        }
+      : null;
+
+  const oppCount = Math.max(
+    9,
+    doc.opponentBatterCount || 9,
+    doc.opponentLineup?.length || 0
+  );
+  const opponentLineup: OpponentLineupSlot[] = Array.from(
+    { length: oppCount },
+    (_, idx) => {
+      const found =
+        doc.opponentLineup?.find((o) => o.order === idx + 1) ||
+        doc.opponentLineup?.[idx];
+      const rawPos = (found?.position || "").trim();
+      const normPos =
+        rawPos.toUpperCase() === "D" || rawPos.toUpperCase() === "DH"
+          ? "DH"
+          : /^[1-9]$/.test(rawPos)
+          ? rawPos
+          : "";
+      return {
+        order: idx + 1,
+        position: normPos,
+        name: found?.playerName || "",
+        uniformNumber: found?.uniformNumber || "",
+      };
+    }
+  );
+
+  const opponentBench: OpponentBenchPlayer[] = (doc.opponentBench || []).map(
+    (b, idx) => ({
+      id: b.id || `opp-b-${idx + 1}`,
+      name: b.playerName || "",
+      uniformNumber: b.uniformNumber || "",
+      position: b.position || "",
+    })
+  );
+
+  const myAttendance: PlayerMatchAttendanceMap = {
+    ...(doc.myAttendance || {}),
+  };
+
+  return {
+    myLineup,
+    dhStarterPitcher,
+    opponentLineup,
+    opponentBench,
+    myAttendance,
+  };
+}
+
+export function applyLineupEditorStateToDoc(
+  doc: LiveReportV2Document,
+  patch: {
+    myLineup?: ReadonlyArray<MyLineupSlot>;
+    dhStarterPitcher?: MyLineupSlot | null;
+    opponentLineup?: ReadonlyArray<OpponentLineupSlot>;
+    opponentBench?: ReadonlyArray<OpponentBenchPlayer>;
+    myAttendance?: PlayerMatchAttendanceMap;
+  }
+): LiveReportV2Document {
+  const current = extractLineupEditorStateFromDoc(doc);
+  const nextMySlots = patch.myLineup ?? current.myLineup;
+  const rawNextDh =
+    patch.dhStarterPitcher !== undefined
+      ? patch.dhStarterPitcher
+      : current.dhStarterPitcher;
+  const nextOppSlots = patch.opponentLineup ?? current.opponentLineup;
+  const nextOppBench = patch.opponentBench ?? current.opponentBench;
+  const nextAttendance = patch.myAttendance ?? current.myAttendance;
+
+  const builtLineup: LiveReportLineupSlot[] = Array.from(
+    { length: Math.max(9, nextMySlots.length) },
+    (_, idx) => {
+      const src = nextMySlots[idx];
+      const prevSlot =
+        doc.lineup.find((s) => s.order === idx + 1) || doc.lineup[idx];
+      const cleanName = (src?.name || "").trim();
+      const cleanPid = (src?.playerId || "").trim() || null;
+      const cleanUni = (src?.uniformNumber || "").trim();
+      const hasIdentity = Boolean(cleanPid || cleanName);
+      return {
+        order: idx + 1,
+        position: hasIdentity
+          ? toReportLineupPosition(src?.position)
+          : src?.position
+          ? toReportLineupPosition(src.position)
+          : "打",
+        playerId: cleanPid,
+        playerName: cleanName,
+        ...(cleanUni ? { uniformNumber: cleanUni } : {}),
+        substitutions: prevSlot?.substitutions || [],
+      };
+    }
+  );
+
+  const hasDhInOrder = builtLineup.some(
+    (s) => normalizeReportPositionCode(s.position) === "D"
+  );
+  const hasPitcherInOrder = builtLineup.some(
+    (s) =>
+      Boolean(s.playerId || s.playerName.trim()) &&
+      normalizeReportPositionCode(s.position) === "1"
+  );
+  const dhHasIdentity = Boolean(
+    rawNextDh && (rawNextDh.playerId || rawNextDh.name.trim())
+  );
+  const dhDuplicateInOrder = Boolean(
+    rawNextDh?.playerId &&
+      builtLineup.some((s) => s.playerId === rawNextDh.playerId)
+  );
+
+  const resolvedDhPitcher: LiveReportDhStarterPitcher | null =
+    dhHasIdentity && hasDhInOrder && !hasPitcherInOrder && !dhDuplicateInOrder
+      ? {
+          playerId: rawNextDh!.playerId.trim() || null,
+          playerName: rawNextDh!.name.trim(),
+          ...(rawNextDh!.uniformNumber.trim()
+            ? { uniformNumber: rawNextDh!.uniformNumber.trim() }
+            : {}),
+        }
+      : null;
+
+  const builtOppLineup: LiveReportOpponentLineupSlot[] = Array.from(
+    { length: Math.max(9, nextOppSlots.length) },
+    (_, idx) => {
+      const o = nextOppSlots[idx];
+      const rawPos = (o?.position || "").trim();
+      const normPos =
+        rawPos.toUpperCase() === "D" || rawPos.toUpperCase() === "DH"
+          ? "DH"
+          : /^[1-9]$/.test(rawPos)
+          ? rawPos
+          : "";
+      const cleanUni = (o?.uniformNumber || "").trim().replace(/^#/, "");
+      return {
+        order: idx + 1,
+        position: normPos,
+        playerName: o?.name || "",
+        ...(cleanUni ? { uniformNumber: cleanUni } : {}),
+      };
+    }
+  );
+
+  const hasAnyOppInput = builtOppLineup.some(
+    (o) => Boolean(o.playerName.trim() || o.position || o.uniformNumber)
+  );
+
+  const builtOppBench: LiveReportOpponentBenchPlayer[] = nextOppBench.map(
+    (b, idx) => ({
+      id: b.id || `opp-b-${idx + 1}`,
+      playerName: b.name || "",
+      ...(b.uniformNumber?.trim()
+        ? { uniformNumber: b.uniformNumber.trim().replace(/^#/, "") }
+        : {}),
+      ...(b.position?.trim() ? { position: b.position.trim() } : {}),
+    })
+  );
+
+  const cleanedAttendance: Record<string, LiveReportAttendanceStatus> = {};
+  for (const [pid, st] of Object.entries(nextAttendance || {})) {
+    if (
+      pid &&
+      (st === "bench" || st === "absent" || st === "excluded")
+    ) {
+      cleanedAttendance[pid] = st;
+    }
+  }
+
+  const nextOppBatterCount = Math.min(25, Math.max(9, builtOppLineup.length));
+  const nextMyLimit = Math.max(9, builtLineup.length);
+
+  const updated: LiveReportV2Document = {
+    ...doc,
+    lineup: builtLineup,
+    opponentBatterCount: nextOppBatterCount,
+    nextMyOrder: Math.min(Math.max(1, doc.nextMyOrder || 1), nextMyLimit),
+    nextOpponentOrder: Math.min(
+      Math.max(1, doc.nextOpponentOrder || 1),
+      nextOppBatterCount
+    ),
+  };
+
+  if (resolvedDhPitcher) {
+    updated.dhStarterPitcher = resolvedDhPitcher;
+  } else {
+    delete updated.dhStarterPitcher;
+  }
+
+  if (hasAnyOppInput || builtOppLineup.length > 9) {
+    updated.opponentLineup = builtOppLineup;
+  } else {
+    delete updated.opponentLineup;
+  }
+
+  if (builtOppBench.length > 0) {
+    updated.opponentBench = builtOppBench;
+  } else {
+    delete updated.opponentBench;
+  }
+
+  if (Object.keys(cleanedAttendance).length > 0) {
+    updated.myAttendance = cleanedAttendance;
+  } else {
+    delete updated.myAttendance;
+  }
+
+  return updated;
+}
+
+export function hasMeaningfulDocLineupData(doc: LiveReportV2Document): boolean {
+  if (
+    doc.lineup.some((s) => Boolean(s.playerId || (s.playerName || "").trim()))
+  ) {
+    return true;
+  }
+  if (
+    doc.dhStarterPitcher &&
+    Boolean(
+      doc.dhStarterPitcher.playerId || doc.dhStarterPitcher.playerName.trim()
+    )
+  ) {
+    return true;
+  }
+  if (
+    (doc.opponentLineup || []).some((o) =>
+      Boolean((o.playerName || "").trim() || o.position || o.uniformNumber)
+    )
+  ) {
+    return true;
+  }
+  if (
+    (doc.opponentBench || []).some((b) =>
+      Boolean((b.playerName || "").trim() || b.uniformNumber)
+    )
+  ) {
+    return true;
+  }
+  if (doc.myAttendance && Object.keys(doc.myAttendance).length > 0) {
+    return true;
+  }
+  return false;
+}
+
+export function serializeDocLineupForMatchStorage(
+  doc: LiveReportV2Document
+): MatchLineupsPayload {
+  const extracted = extractLineupEditorStateFromDoc(doc);
+
+  const hasAnyOpponentStarterInput = extracted.opponentLineup.some((p) =>
+    Boolean(
+      (p.name && p.name.trim() !== "") ||
+        (p.position && p.position !== "") ||
+        (p.uniformNumber && p.uniformNumber.trim() !== "")
+    )
+  );
+
+  const filledOpponentLineup: OpponentLineupSlot[] =
+    extracted.opponentLineup.map((p) => {
+      const cleanName = (p.name || "").trim();
+      const cleanNum = (p.uniformNumber || "").trim().replace(/^#/, "");
+      const hasName = Boolean(cleanName);
+      const hasPos = Boolean(p.position && p.position !== "");
+      if (!hasAnyOpponentStarterInput) {
+        return {
+          order: p.order,
+          name: "",
+          uniformNumber: "",
+          position: "",
+        };
+      }
+      return {
+        order: p.order,
+        uniformNumber: cleanNum,
+        name: hasName
+          ? cleanName
+          : cleanNum
+          ? `相手選手 #${cleanNum}`
+          : `相手打者 ${p.order}`,
+        position: hasPos ? p.position : p.order <= 9 ? String(p.order) : "DH",
+      };
+    });
+
+  const cleanedOpponentBench: OpponentBenchPlayer[] = extracted.opponentBench
+    .map((b, idx) => ({
+      id: b.id || `opp-b-${idx + 1}`,
+      uniformNumber: (b.uniformNumber || "").trim().replace(/^#/, ""),
+      name: (b.name || "").trim(),
+      position: b.position || "",
+    }))
+    .filter((b) => Boolean(b.name || b.uniformNumber))
+    .map((b) => ({
+      ...b,
+      name: b.name || `相手控え #${b.uniformNumber}`,
+    }));
+
+  const serializedMyLineup: MyLineupSlot[] = extracted.dhStarterPitcher
+    ? [...extracted.myLineup, extracted.dhStarterPitcher]
+    : extracted.myLineup;
+
+  return {
+    myLineup: serializedMyLineup,
+    opponentLineup: filledOpponentLineup,
+    opponentBench: cleanedOpponentBench,
+    myAttendance: extracted.myAttendance,
+  };
+}
+
+export function mergeSavedMatchLineupIntoDoc(
+  doc: LiveReportV2Document,
+  saved: {
+    myLineup?: ReadonlyArray<Record<string, unknown>> | ReadonlyArray<MyLineupSlot>;
+    dhStarterPitcher?: MyLineupSlot | null;
+    opponentLineup?: ReadonlyArray<Record<string, unknown>> | ReadonlyArray<OpponentLineupSlot>;
+    opponentBench?: ReadonlyArray<Record<string, unknown>> | ReadonlyArray<OpponentBenchPlayer>;
+    myAttendance?: Record<string, unknown>;
+  },
+  options?: { overwriteFilled?: boolean }
+): LiveReportV2Document {
+  const overwriteFilled = options?.overwriteFilled ?? true;
+  const docHasMyStarters = doc.lineup.some((s) =>
+    Boolean(s.playerId || s.playerName.trim())
+  );
+
+  const splitMy = splitLoadedMyLineupSlots(saved.myLineup);
+  const incomingDh =
+    saved.dhStarterPitcher !== undefined
+      ? saved.dhStarterPitcher
+      : splitMy.dhPitcher;
+  const incomingHasMyStarters =
+    splitMy.battingSlots.some((s) => Boolean(s.playerId || s.name.trim())) ||
+    Boolean(incomingDh && (incomingDh.playerId || incomingDh.name.trim()));
+
+  const parsedOppLineup: OpponentLineupSlot[] | undefined = Array.isArray(
+    saved.opponentLineup
+  )
+    ? saved.opponentLineup.map((rawItem, idx) => {
+        const rec = (rawItem || {}) as Record<string, unknown>;
+        const order =
+          typeof rec.order === "number"
+            ? rec.order
+            : typeof rec.battingOrder === "number"
+            ? rec.battingOrder
+            : idx + 1;
+        return {
+          order,
+          position: typeof rec.position === "string" ? rec.position : "",
+          name:
+            typeof rec.name === "string"
+              ? rec.name
+              : typeof rec.playerName === "string"
+              ? rec.playerName
+              : "",
+          uniformNumber:
+            typeof rec.uniformNumber === "string" ? rec.uniformNumber : "",
+        };
+      })
+    : undefined;
+
+  const parsedOppBench: OpponentBenchPlayer[] | undefined = Array.isArray(
+    saved.opponentBench
+  )
+    ? saved.opponentBench.map((rawItem, idx) => {
+        const rec = (rawItem || {}) as Record<string, unknown>;
+        return {
+          id: typeof rec.id === "string" ? rec.id : `opp-b-${idx + 1}`,
+          name:
+            typeof rec.name === "string"
+              ? rec.name
+              : typeof rec.playerName === "string"
+              ? rec.playerName
+              : "",
+          uniformNumber:
+            typeof rec.uniformNumber === "string" ? rec.uniformNumber : "",
+          position: typeof rec.position === "string" ? rec.position : "",
+        };
+      })
+    : undefined;
+
+  let parsedAttendance: PlayerMatchAttendanceMap | undefined = undefined;
+  if (
+    saved.myAttendance &&
+    typeof saved.myAttendance === "object" &&
+    !Array.isArray(saved.myAttendance)
+  ) {
+    parsedAttendance = {};
+    for (const [k, v] of Object.entries(saved.myAttendance)) {
+      if (v === "bench" || v === "absent" || v === "excluded") {
+        parsedAttendance[k] = v;
+      }
+    }
+  }
+
+  return applyLineupEditorStateToDoc(doc, {
+    ...(incomingHasMyStarters && (overwriteFilled || !docHasMyStarters)
+      ? {
+          myLineup: splitMy.battingSlots,
+          dhStarterPitcher: incomingDh,
+        }
+      : {}),
+    ...(parsedOppLineup &&
+    parsedOppLineup.length > 0 &&
+    (overwriteFilled || !(doc.opponentLineup && doc.opponentLineup.length > 0))
+      ? { opponentLineup: parsedOppLineup }
+      : {}),
+    ...(parsedOppBench &&
+    (overwriteFilled || !(doc.opponentBench && doc.opponentBench.length > 0))
+      ? { opponentBench: parsedOppBench }
+      : {}),
+    ...(parsedAttendance &&
+    (overwriteFilled ||
+      !(doc.myAttendance && Object.keys(doc.myAttendance).length > 0))
+      ? { myAttendance: parsedAttendance }
+      : {}),
+  });
 }
 
 export function createInitialLiveReportDocument(params?: {
@@ -2665,36 +3265,48 @@ export function formatStartingLineupBlock(doc: LiveReportV2Document): string {
   const filledSlots = doc.lineup.filter(
     (s) => (s.playerName || "").trim().length > 0
   );
-  if (filledSlots.length === 0) return "";
+  const dhPitcherName = (doc.dhStarterPitcher?.playerName || "").trim();
+  if (filledSlots.length === 0 && !dhPitcherName) return "";
 
-  return doc.lineup
-    .map((slot) => {
-      const pos = normalizeReportPositionCode(slot.position);
-      const baseName = formatPlayerReportName(
-        slot.playerName,
-        doc.showSurnameOnly
-      );
-      if (!baseName) return `${slot.order}.${pos}`;
+  const lines = doc.lineup.map((slot) => {
+    const pos = normalizeReportPositionCode(slot.position);
+    const baseName = formatPlayerReportName(
+      slot.playerName,
+      doc.showSurnameOnly
+    );
+    if (!baseName) return `${slot.order}.${pos}`;
 
-      const permanentSubs = slot.substitutions.filter(
-        (s) => s.subType !== "TR" && s.newName.trim().length > 0
-      );
-      if (!doc.appendSubsToTopLineup || permanentSubs.length === 0) {
-        return `${slot.order}.${pos} ${baseName}`;
-      }
+    const permanentSubs = slot.substitutions.filter(
+      (s) => s.subType !== "TR" && s.newName.trim().length > 0
+    );
+    if (!doc.appendSubsToTopLineup || permanentSubs.length === 0) {
+      return `${slot.order}.${pos} ${baseName}`;
+    }
 
-      const subTrail = permanentSubs
-        .map(
-          (s) =>
-            `→${formatPlayerReportName(s.newName, doc.showSurnameOnly)}(${
-              s.inning
-            }${s.isBottom ? "裏" : "表"})`
-        )
-        .join("");
+    const subTrail = permanentSubs
+      .map(
+        (s) =>
+          `→${formatPlayerReportName(s.newName, doc.showSurnameOnly)}(${
+            s.inning
+          }${s.isBottom ? "裏" : "表"})`
+      )
+      .join("");
 
-      return `${slot.order}.${pos} ${baseName}${subTrail}`;
-    })
-    .join("\n");
+    return `${slot.order}.${pos} ${baseName}${subTrail}`;
+  });
+
+  const hasPitcherInOrder = doc.lineup.some(
+    (s) =>
+      (s.playerName || "").trim().length > 0 &&
+      normalizeReportPositionCode(s.position) === "1"
+  );
+  if (dhPitcherName && !hasPitcherInOrder) {
+    lines.push(
+      `先発P ${formatPlayerReportName(dhPitcherName, doc.showSurnameOnly)}`
+    );
+  }
+
+  return lines.join("\n");
 }
 
 export function formatSinglePlayEntryLine(
@@ -3117,6 +3729,8 @@ export function sanitizeLiveReportDocument(
   const lineup: LiveReportLineupSlot[] = lineupRaw.map((item, idx) => {
     const s = (item || {}) as Record<string, unknown>;
     const subsRaw = Array.isArray(s.substitutions) ? s.substitutions : [];
+    const cleanUni =
+      typeof s.uniformNumber === "string" ? s.uniformNumber.trim() : "";
     return {
       order: typeof s.order === "number" ? s.order : idx + 1,
       position:
@@ -3125,6 +3739,7 @@ export function sanitizeLiveReportDocument(
           : String(idx + 1 <= 9 ? idx + 1 : "D"),
       playerId: typeof s.playerId === "string" ? s.playerId : null,
       playerName: typeof s.playerName === "string" ? s.playerName : "",
+      ...(cleanUni ? { uniformNumber: cleanUni } : {}),
       substitutions: subsRaw.map((sr, sIdx) => {
         const sub = (sr || {}) as Record<string, unknown>;
         const st = sub.subType;
@@ -3350,6 +3965,123 @@ export function sanitizeLiveReportDocument(
     }
   }
 
+  let dhStarterPitcher: LiveReportDhStarterPitcher | undefined = undefined;
+  if (obj.dhStarterPitcher && typeof obj.dhStarterPitcher === "object") {
+    const dp = obj.dhStarterPitcher as Record<string, unknown>;
+    const dpPid = typeof dp.playerId === "string" ? dp.playerId.trim() : "";
+    const dpName =
+      typeof dp.playerName === "string"
+        ? dp.playerName.trim()
+        : typeof dp.name === "string"
+        ? dp.name.trim()
+        : "";
+    const dpUni =
+      typeof dp.uniformNumber === "string" ? dp.uniformNumber.trim() : "";
+    if (dpPid || dpName) {
+      dhStarterPitcher = {
+        playerId: dpPid || null,
+        playerName: dpName,
+        ...(dpUni ? { uniformNumber: dpUni } : {}),
+      };
+    }
+  }
+
+  let myAttendance: Record<string, LiveReportAttendanceStatus> | undefined =
+    undefined;
+  if (
+    obj.myAttendance &&
+    typeof obj.myAttendance === "object" &&
+    !Array.isArray(obj.myAttendance)
+  ) {
+    const cleanedAtt: Record<string, LiveReportAttendanceStatus> = {};
+    for (const [k, v] of Object.entries(
+      obj.myAttendance as Record<string, unknown>
+    )) {
+      const pid = k.trim();
+      if (pid && (v === "bench" || v === "absent" || v === "excluded")) {
+        cleanedAtt[pid] = v;
+      }
+    }
+    if (Object.keys(cleanedAtt).length > 0) {
+      myAttendance = cleanedAtt;
+    }
+  }
+
+  let opponentLineup: LiveReportOpponentLineupSlot[] | undefined = undefined;
+  if (Array.isArray(obj.opponentLineup) && obj.opponentLineup.length > 0) {
+    const cleanedOpp: LiveReportOpponentLineupSlot[] = obj.opponentLineup.map(
+      (item, idx) => {
+        const o = (item || {}) as Record<string, unknown>;
+        const rawPos = typeof o.position === "string" ? o.position.trim() : "";
+        const normPos =
+          rawPos.toUpperCase() === "D" || rawPos.toUpperCase() === "DH"
+            ? "DH"
+            : /^[1-9]$/.test(rawPos)
+            ? rawPos
+            : "";
+        const cleanUni =
+          typeof o.uniformNumber === "string"
+            ? o.uniformNumber.trim().replace(/^#/, "")
+            : "";
+        const cleanName =
+          typeof o.playerName === "string"
+            ? o.playerName
+            : typeof o.name === "string"
+            ? o.name
+            : "";
+        return {
+          order: typeof o.order === "number" ? o.order : idx + 1,
+          position: normPos,
+          playerName: cleanName,
+          ...(cleanUni ? { uniformNumber: cleanUni } : {}),
+        };
+      }
+    );
+    if (
+      cleanedOpp.some((o) =>
+        Boolean(o.playerName.trim() || o.position || o.uniformNumber)
+      ) ||
+      cleanedOpp.length > 9
+    ) {
+      opponentLineup = cleanedOpp;
+    }
+  }
+
+  let opponentBench: LiveReportOpponentBenchPlayer[] | undefined = undefined;
+  if (Array.isArray(obj.opponentBench) && obj.opponentBench.length > 0) {
+    const cleanedBench: LiveReportOpponentBenchPlayer[] = obj.opponentBench
+      .map((item, idx) => {
+        const b = (item || {}) as Record<string, unknown>;
+        const cleanName =
+          typeof b.playerName === "string"
+            ? b.playerName
+            : typeof b.name === "string"
+            ? b.name
+            : "";
+        const cleanUni =
+          typeof b.uniformNumber === "string"
+            ? b.uniformNumber.trim().replace(/^#/, "")
+            : "";
+        const cleanPos =
+          typeof b.position === "string" ? b.position.trim() : "";
+        return {
+          id: typeof b.id === "string" && b.id ? b.id : `opp-b-${idx + 1}`,
+          playerName: cleanName,
+          ...(cleanUni ? { uniformNumber: cleanUni } : {}),
+          ...(cleanPos ? { position: cleanPos } : {}),
+        };
+      })
+      .filter((b) => Boolean(b.playerName.trim() || b.uniformNumber));
+    if (cleanedBench.length > 0) {
+      opponentBench = cleanedBench;
+    }
+  }
+
+  const effectiveOppBatterCount = Math.max(
+    rawOppBatterCount,
+    opponentLineup ? Math.min(25, opponentLineup.length) : 9
+  );
+
   return {
     version: 2,
     matchId: typeof obj.matchId === "string" ? obj.matchId : null,
@@ -3365,7 +4097,7 @@ export function sanitizeLiveReportDocument(
     battingOrder: obj.battingOrder === "second" ? "second" : "first",
     regulationInnings:
       typeof obj.regulationInnings === "number" ? obj.regulationInnings : 7,
-    opponentBatterCount: rawOppBatterCount,
+    opponentBatterCount: effectiveOppBatterCount,
     firstTeamShortName:
       typeof obj.firstTeamShortName === "string"
         ? obj.firstTeamShortName
@@ -3379,6 +4111,10 @@ export function sanitizeLiveReportDocument(
     appendSubsToTopLineup: Boolean(obj.appendSubsToTopLineup),
     showWalkoffX: Boolean(obj.showWalkoffX),
     lineup: lineup.length > 0 ? lineup : createDefaultEmptyLineup(9),
+    ...(dhStarterPitcher ? { dhStarterPitcher } : {}),
+    ...(myAttendance ? { myAttendance } : {}),
+    ...(opponentLineup ? { opponentLineup } : {}),
+    ...(opponentBench ? { opponentBench } : {}),
     halfInnings,
     activeInning: typeof obj.activeInning === "number" ? obj.activeInning : 1,
     activeIsBottom: Boolean(obj.activeIsBottom),
@@ -4531,11 +5267,19 @@ export function resolveActiveMyPitcherAtHalfInning(
   let pitcherName = "";
 
   for (const slot of doc.lineup) {
-    if (normalizeReportPositionCode(slot.position) === "1") {
+    if (
+      Boolean(slot.playerId || (slot.playerName || "").trim()) &&
+      normalizeReportPositionCode(slot.position) === "1"
+    ) {
       pitcherId = slot.playerId || null;
       pitcherName = (slot.playerName || "").trim();
       break;
     }
+  }
+
+  if (!pitcherId && !pitcherName && doc.dhStarterPitcher) {
+    pitcherId = doc.dhStarterPitcher.playerId || null;
+    pitcherName = (doc.dhStarterPitcher.playerName || "").trim();
   }
 
   const allSubs: Array<LiveReportLineupSubRecord & { slotOrder: number }> = [];

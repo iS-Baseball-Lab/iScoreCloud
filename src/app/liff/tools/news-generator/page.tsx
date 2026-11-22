@@ -58,29 +58,43 @@ import {
   usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
+import { UnifiedLineupBenchEditor } from "@/components/liff/UnifiedLineupBenchEditor";
 import { isGenericMatchTournamentName } from "@/lib/liff/scorebook-symbol-rules";
 import {
   DEMO_LINEUP_PLAYERS,
   getHydratedDemoMatchCards,
   loadDemoMatchLineups,
   resolveLineupPlayerConditionForMatch,
+  saveDemoMatchLineups,
+  type LineupPlayer,
+  type LineupTemplateItem,
+  type MatchRosterFilterContext,
+  type MyLineupSlot,
+  type OpponentBenchPlayer,
+  type OpponentLineupSlot,
+  type PlayerMatchAttendanceMap,
 } from "@/lib/liff/demo-lineup";
 import { loadDemoPlayerConditionOverrides } from "@/lib/liff/player-condition";
 import { parseMatchDayOpsJson } from "@/lib/liff/match-day-ops";
 import { buildDemoScorebookSavedBundle } from "@/lib/liff/scorebook-renderer-model";
 import {
+  applyLineupEditorStateToDoc,
   computeLiveReportPitchCounts,
   computeScoreboardSummary,
   createDefaultEmptyLineup,
   createInitialLiveReportDocument,
+  extractLineupEditorStateFromDoc,
   formatJapaneseMatchDateLabel,
   formatLiveReportText,
+  hasMeaningfulDocLineupData,
   hydrateLiveReportFromLegacyLogsAndScores,
   hydrateLiveReportFromScorebookSnapshot,
   isMyTeamBattingHalf,
-  normalizeReportPositionCode,
+  mergeSavedMatchLineupIntoDoc,
   resolveDisplayedLiveReportText,
   sanitizeLiveReportDocument,
+  serializeDocLineupForMatchStorage,
+  splitLoadedMyLineupSlots,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
 import {
@@ -89,7 +103,6 @@ import {
   type PitchAlertEvaluation,
 } from "@/lib/liff/pitch-workload";
 import type {
-  LiveReportLineupSlot,
   LiveReportMatchOption,
   LiveReportOutputMode,
   LiveReportPitchType,
@@ -109,7 +122,7 @@ import { InningLogTimelineCard } from "./_components/InningLogTimelineCard";
 
 type ReportSourceMode = "match" | "free";
 type MatchAccessMode = "edit" | "view";
-type WorkspaceTab = "pad" | "preview" | "timeline" | "setup";
+type WorkspaceTab = "pad" | "lineup" | "preview" | "timeline" | "setup";
 
 interface CallerReporterInfo {
   memberName: string | null;
@@ -131,6 +144,9 @@ interface MatchOptionWithDraft extends LiveReportMatchOption {
 
 interface MatchBundlePayload {
   matchId: string;
+  matchDate?: string | null;
+  matchStatus?: string | null;
+  matchCreatedAt?: number | null;
   opponentBatterCount?: number;
   tournamentRules?: {
     tournamentId?: string | null;
@@ -147,7 +163,13 @@ interface MatchBundlePayload {
     position: string;
     playerId: string | null;
     playerName: string;
+    uniformNumber?: string;
   }>;
+  dhStarterPitcher?: MyLineupSlot | null;
+  opponentLineup?: OpponentLineupSlot[];
+  opponentBench?: OpponentBenchPlayer[];
+  myAttendance?: PlayerMatchAttendanceMap;
+  scheduleAbsents?: string[];
   scorebookSnapshot: {
     topStructure: ScorebookSheetStructure | null;
     bottomStructure: ScorebookSheetStructure | null;
@@ -188,6 +210,7 @@ interface ContextApiResponse {
   callerReporter?: CallerReporterInfo;
   matches?: MatchOptionWithDraft[];
   players?: LiveReportRosterPlayer[];
+  templates?: LineupTemplateItem[];
   matchBundle?: MatchBundlePayload | null;
   freeCloudDraft?: MatchBundlePayload["cloudDraft"];
   personalFreeDrafts?: PersonalFreeCloudDraftItem[];
@@ -197,6 +220,7 @@ interface MatchBundleApiResponse {
   success: boolean;
   error?: string;
   matchBundle?: MatchBundlePayload | null;
+  players?: LiveReportRosterPlayer[];
 }
 
 interface DraftApiResponse {
@@ -207,6 +231,7 @@ interface DraftApiResponse {
   conflict?: boolean;
   forbiddenViewerOnly?: boolean;
   syncedMatchScore?: boolean;
+  syncedMatchLineup?: boolean;
   editorOwnerKey?: string | null;
   report?: LiveReportV2Document | null;
   cloudDraft?: MatchBundlePayload["cloudDraft"];
@@ -512,6 +537,52 @@ function pickRecommendedMatchId(
   return list[0].id;
 }
 
+function buildDemoEnrichedRoster(
+  referenceDate: string | null
+): LiveReportRosterPlayer[] {
+  const demoCondOverrides = loadDemoPlayerConditionOverrides();
+  return DEMO_LINEUP_PLAYERS.filter((p) => {
+    const ov = demoCondOverrides[p.id];
+    const eff = resolveLineupPlayerConditionForMatch(
+      {
+        conditionStatus: ov ? ov.conditionStatus : p.conditionStatus,
+        conditionNote: ov ? ov.conditionNote : p.conditionNote,
+        conditionPeriods: ov ? ov.conditionPeriods : p.conditionPeriods,
+      },
+      referenceDate
+    );
+    return eff.status !== "on_leave";
+  }).map((p) => {
+    const ov = demoCondOverrides[p.id];
+    const periods = ov ? ov.conditionPeriods : p.conditionPeriods;
+    const eff = resolveLineupPlayerConditionForMatch(
+      {
+        conditionStatus: ov ? ov.conditionStatus : p.conditionStatus,
+        conditionNote: ov ? ov.conditionNote : p.conditionNote,
+        conditionPeriods: periods,
+      },
+      referenceDate
+    );
+    return {
+      id: p.id,
+      name: p.name,
+      uniformNumber: p.uniformNumber || "",
+      mainPosition: null,
+      isActive: p.isActive ?? 1,
+      conditionStatus: eff.status,
+      conditionNote: eff.note,
+      conditionPeriods: periods || [],
+      activeConditionPeriod: eff.period,
+      joinedAt: p.joinedAt ?? null,
+      createdAt: p.createdAt ?? null,
+      yesterdayPitches: p.yesterdayPitches ?? 0,
+      last7DaysPitches: p.last7DaysPitches ?? 0,
+      lastPitchedDate: p.lastPitchedDate ?? null,
+      lastPitchedPitches: p.lastPitchedPitches ?? null,
+    };
+  });
+}
+
 function LiffNewsGeneratorContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -525,7 +596,6 @@ function LiffNewsGeneratorContent() {
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const [mounted, setMounted] = useState(false);
-  const [openLineupSignal, setOpenLineupSignal] = useState(0);
 
   // 起動時モード選択ダイアログ（個別試合カードから ?matchId=... 指定で開いた場合のみスキップ）
   const [showEntryModeModal, setShowEntryModeModal] = useState<boolean>(
@@ -596,6 +666,9 @@ function LiffNewsGeneratorContent() {
 
   const [matches, setMatches] = useState<MatchOptionWithDraft[]>([]);
   const [rosterPlayers, setRosterPlayers] = useState<LiveReportRosterPlayer[]>(
+    []
+  );
+  const [lineupTemplates, setLineupTemplates] = useState<LineupTemplateItem[]>(
     []
   );
   const [selectedMatchKey, setSelectedMatchKey] = useState<string>("");
@@ -930,25 +1003,25 @@ function LiffNewsGeneratorContent() {
         reporterNames: effectiveReporters,
       });
 
-      // スタメン反映
-      if (bundle && bundle.lineup.length > 0) {
-        const slots: LiveReportLineupSlot[] = bundle.lineup.map((item, idx) => ({
-          order: item.order || idx + 1,
-          position: normalizeReportPositionCode(item.position),
-          playerId: item.playerId,
-          playerName: item.playerName || "",
-          substitutions: [],
-        }));
-        while (slots.length < 9) {
-          slots.push({
-            order: slots.length + 1,
-            position: "打",
-            playerId: null,
-            playerName: "",
-            substitutions: [],
-          });
-        }
-        nextDoc = { ...nextDoc, lineup: slots };
+      // スタメン・DH先発投手・相手オーダー・控え出欠を反映
+      if (bundle) {
+        nextDoc = mergeSavedMatchLineupIntoDoc(
+          nextDoc,
+          {
+            myLineup: bundle.lineup.map((item, idx) => ({
+              order: item.order || idx + 1,
+              position: item.position || "",
+              playerId: item.playerId || "",
+              name: item.playerName || "",
+              uniformNumber: item.uniformNumber || "",
+            })),
+            dhStarterPitcher: bundle.dhStarterPitcher ?? null,
+            opponentLineup: bundle.opponentLineup,
+            opponentBench: bundle.opponentBench,
+            myAttendance: bundle.myAttendance,
+          },
+          { overwriteFilled: true }
+        );
       }
 
       // 終了済み試合等でスコアブック取込データがある場合は自動展開
@@ -987,14 +1060,14 @@ function LiffNewsGeneratorContent() {
       matchOpt: MatchOptionWithDraft | null
     ): MatchBundlePayload => {
       const demoLineupData = loadDemoMatchLineups(matchId);
-      const lineup = (demoLineupData.myLineup || [])
-        .filter((s) => Boolean(s.playerId || s.name))
-        .map((s, idx) => ({
-          order: s.order || idx + 1,
-          position: s.position || "打",
-          playerId: s.playerId || null,
-          playerName: s.name || "",
-        }));
+      const splitMy = splitLoadedMyLineupSlots(demoLineupData.myLineup);
+      const lineup = splitMy.battingSlots.map((s, idx) => ({
+        order: s.order || idx + 1,
+        position: s.position || "",
+        playerId: s.playerId || null,
+        playerName: s.name || "",
+        uniformNumber: s.uniformNumber || "",
+      }));
 
       let scorebookSnapshot: MatchBundlePayload["scorebookSnapshot"] = null;
       if (matchOpt && matchOpt.status === "finished") {
@@ -1036,8 +1109,20 @@ function LiffNewsGeneratorContent() {
 
       return {
         matchId,
+        matchDate: matchOpt?.date ?? null,
+        matchStatus: matchOpt?.status ?? null,
+        matchCreatedAt: null,
+        opponentBatterCount: Math.max(
+          9,
+          demoLineupData.opponentLineup?.length || 9
+        ),
         tournamentRules,
         lineup,
+        dhStarterPitcher: splitMy.dhPitcher,
+        opponentLineup: demoLineupData.opponentLineup || [],
+        opponentBench: demoLineupData.opponentBench || [],
+        myAttendance: demoLineupData.myAttendance || {},
+        scheduleAbsents: [],
         scorebookSnapshot,
         playLogs: [],
         cloudDraft: null,
@@ -1124,28 +1209,20 @@ function LiffNewsGeneratorContent() {
           };
         });
 
-        const demoCondOverrides = loadDemoPlayerConditionOverrides();
-        const initialDemoMatch =
-          (queryMatchId ? demoMatches.find((m) => m.id === queryMatchId) : null) ||
-          demoMatches[0];
-        const demoRoster: LiveReportRosterPlayer[] = DEMO_LINEUP_PLAYERS.filter(
-          (p) => {
-            const ov = demoCondOverrides[p.id];
-            const eff = resolveLineupPlayerConditionForMatch(
-              {
-                conditionStatus: ov ? ov.conditionStatus : p.conditionStatus,
-                conditionPeriods: ov ? ov.conditionPeriods : p.conditionPeriods,
-              },
-              initialDemoMatch?.date || null
-            );
-            return eff.status !== "on_leave";
+        let demoTemplates: LineupTemplateItem[] = [];
+        if (typeof window !== "undefined") {
+          try {
+            const rawTpl = localStorage.getItem("iscore_demo_lineup_templates");
+            if (rawTpl) {
+              const parsed = JSON.parse(rawTpl) as unknown;
+              if (Array.isArray(parsed)) {
+                demoTemplates = parsed as LineupTemplateItem[];
+              }
+            }
+          } catch {
+            // ignore
           }
-        ).map((p) => ({
-          id: p.id,
-          name: p.name,
-          uniformNumber: p.uniformNumber || "",
-          mainPosition: null,
-        }));
+        }
 
         const savedModeRaw =
           typeof window !== "undefined"
@@ -1180,6 +1257,7 @@ function LiffNewsGeneratorContent() {
           initialMode === "match"
             ? demoMatches.find((m) => m.id === initialMatchKey) || null
             : null;
+        const demoRoster = buildDemoEnrichedRoster(targetMatch?.date || null);
         const bundle =
           initialMode === "match" && initialMatchKey
             ? buildDemoBundle(initialMatchKey, targetMatch)
@@ -1222,10 +1300,19 @@ function LiffNewsGeneratorContent() {
           matchAccessModeRef.current = "edit";
           setMatchAccessMode("edit");
 
+          const syncedLocalDemoDoc =
+            initialMode === "match" && localParsed && initialMatchKey
+              ? mergeSavedMatchLineupIntoDoc(
+                  localParsed,
+                  loadDemoMatchLineups(initialMatchKey),
+                  { overwriteFilled: true }
+                )
+              : localParsed;
+
           const initialDemoDoc =
             initialMode === "free"
               ? initialFreeEntry.doc
-              : localParsed ||
+              : syncedLocalDemoDoc ||
                 buildDocumentFromMatchAndBundle(
                   targetMatch,
                   bundle,
@@ -1241,6 +1328,7 @@ function LiffNewsGeneratorContent() {
           docRef.current = initialDemoDoc;
           setMatches(demoMatches);
           setRosterPlayers(demoRoster);
+          setLineupTemplates(demoTemplates);
           setFreeEntries(mergedFreeList);
           setSelectedFreeId(initialFreeEntry.id);
           setEntryFreeId(initialFreeEntry.id);
@@ -1306,9 +1394,28 @@ function LiffNewsGeneratorContent() {
         );
 
         const fetchedMatches = json.matches || [];
-        const fetchedPlayers = json.players || [];
+        let fetchedPlayers = json.players || [];
+        const serverTemplates = Array.isArray(json.templates)
+          ? json.templates
+          : [];
+        let personalTemplates: LineupTemplateItem[] = [];
+        if (typeof window !== "undefined" && fetchedCaller.canMutate === false) {
+          try {
+            const rawPersonal = localStorage.getItem(
+              `iscore_personal_lineup_templates_${resolvedTeamId}`
+            );
+            if (rawPersonal) {
+              const parsed = JSON.parse(rawPersonal) as unknown;
+              if (Array.isArray(parsed)) {
+                personalTemplates = parsed as LineupTemplateItem[];
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
         setMatches(fetchedMatches);
-        setRosterPlayers(fetchedPlayers);
+        setLineupTemplates([...personalTemplates, ...serverTemplates]);
 
         // サーバーに保存されている本人専用の個別フリー作成データがあればマージ
         if (
@@ -1383,8 +1490,12 @@ function LiffNewsGeneratorContent() {
             const bJson = (await bRes.json()) as MatchBundleApiResponse;
             if (cancelled) return;
             bundle = bJson.matchBundle || null;
+            if (Array.isArray(bJson.players)) {
+              fetchedPlayers = bJson.players;
+            }
           }
         }
+        setRosterPlayers(fetchedPlayers);
         setActiveBundle(bundle);
 
         const draftId = getDraftIdForMode(
@@ -1647,9 +1758,18 @@ function LiffNewsGeneratorContent() {
       const nextDemoAccess: MatchAccessMode = options?.desiredMode ?? "edit";
       matchAccessModeRef.current = nextDemoAccess;
       setMatchAccessMode(nextDemoAccess);
+      setRosterPlayers(buildDemoEnrichedRoster(targetMatch?.date || null));
       const bundle = buildDemoBundle(nextKey, targetMatch);
+      const syncedDemoLocal =
+        nextDemoAccess === "edit" && localParsed
+          ? mergeSavedMatchLineupIntoDoc(
+              localParsed,
+              loadDemoMatchLineups(nextKey),
+              { overwriteFilled: true }
+            )
+          : null;
       const nextDemoDoc =
-        (nextDemoAccess === "edit" ? localParsed : null) ||
+        syncedDemoLocal ||
         buildDocumentFromMatchAndBundle(targetMatch, bundle, savedReporter);
       setActiveBundle(bundle);
       docRef.current = nextDemoDoc;
@@ -1670,6 +1790,9 @@ function LiffNewsGeneratorContent() {
       if (activeDraftIdRef.current !== draftId) return;
 
       const bundle = bJson.matchBundle || null;
+      if (Array.isArray(bJson.players)) {
+        setRosterPlayers(bJson.players);
+      }
       setActiveBundle(bundle);
 
       const draftOwnerKey =
@@ -2133,9 +2256,10 @@ function LiffNewsGeneratorContent() {
           setLastSyncedAt(nextUpdatedAt);
           setLastSyncedBy(effectiveEditorName);
 
-          if (json.syncedMatchScore) {
+          if (json.syncedMatchScore || json.syncedMatchLineup) {
             invalidateLiffApiCache("/api/liff/hub");
             invalidateLiffApiCache("/api/liff/matches");
+            invalidateLiffApiCache("/api/matches");
           }
 
           if (!isFreeMode) {
@@ -2149,6 +2273,13 @@ function LiffNewsGeneratorContent() {
                 editorUpdatedAt: nextUpdatedAt,
                 hasCloudDraft: true,
               });
+              if (hasMeaningfulDocLineupData(serverDoc)) {
+                setMatches((prev) =>
+                  prev.map((m) =>
+                    m.id === requestMatchId ? { ...m, hasLineup: true } : m
+                  )
+                );
+              }
             }
           }
 
@@ -2341,7 +2472,26 @@ function LiffNewsGeneratorContent() {
         }
       }
 
-      // フリー作成モード時は個人の個別登録リストもリアルタイム更新
+      // 試合連動（デモチーム）時は試合スタメン設定ストレージとも双方向同期（※フリー作成モードでは一切紐付けない）
+      if (
+        reportModeRef.current === "match" &&
+        resolvedTeamId === "demo-team" &&
+        selectedMatchKey
+      ) {
+        saveDemoMatchLineups(
+          selectedMatchKey,
+          serializeDocLineupForMatchStorage(next)
+        );
+        if (hasMeaningfulDocLineupData(next)) {
+          setMatches((prev) =>
+            prev.map((m) =>
+              m.id === selectedMatchKey ? { ...m, hasLineup: true } : m
+            )
+          );
+        }
+      }
+
+      // フリー作成モード時は個人の個別登録リストのみ更新（試合データとは完全分離）
       if (reportModeRef.current === "free") {
         const activeFreeId = selectedFreeIdRef.current;
         setFreeEntries((prevList) => {
@@ -2390,7 +2540,13 @@ function LiffNewsGeneratorContent() {
 
       setDoc(next);
     },
-    [resolvedTeamId, personalOwnerKey, activeDraftId, pushDraftToCloud]
+    [
+      resolvedTeamId,
+      personalOwnerKey,
+      activeDraftId,
+      selectedMatchKey,
+      pushDraftToCloud,
+    ]
   );
 
   useEffect(() => {
@@ -2843,29 +2999,27 @@ function LiffNewsGeneratorContent() {
   // 5. 登録済みスタメン・記録済みスコアブックの再取込（担当入力モード限定）
   const handleReloadMatchLineup = () => {
     if (isReadOnlyViewer) return;
-    if (!activeBundle || activeBundle.lineup.length === 0) return;
-    handleUpdateDoc((prev) => {
-      const slots: LiveReportLineupSlot[] = activeBundle.lineup.map(
-        (item, idx) => ({
-          order: item.order || idx + 1,
-          position: normalizeReportPositionCode(item.position),
-          playerId: item.playerId,
-          playerName: item.playerName || "",
-          substitutions: [],
-        })
-      );
-      while (slots.length < 9) {
-        slots.push({
-          order: slots.length + 1,
-          position: "打",
-          playerId: null,
-          playerName: "",
-          substitutions: [],
-        });
-      }
-      return { ...prev, lineup: slots };
-    });
-    toast.success("登録済みスタメンを反映しました");
+    if (!activeBundle) return;
+    handleUpdateDoc((prev) =>
+      mergeSavedMatchLineupIntoDoc(
+        prev,
+        {
+          myLineup: activeBundle.lineup.map((item, idx) => ({
+            order: item.order || idx + 1,
+            position: item.position || "",
+            playerId: item.playerId || "",
+            name: item.playerName || "",
+            uniformNumber: item.uniformNumber || "",
+          })),
+          dhStarterPitcher: activeBundle.dhStarterPitcher ?? null,
+          opponentLineup: activeBundle.opponentLineup,
+          opponentBench: activeBundle.opponentBench,
+          myAttendance: activeBundle.myAttendance,
+        },
+        { overwriteFilled: true }
+      )
+    );
+    toast.success("試合に登録されているスタメン・控え編成を再読込しました");
   };
 
   const handleImportFromSavedScorebook = () => {
@@ -2964,7 +3118,7 @@ function LiffNewsGeneratorContent() {
       );
     }
 
-    const freshDoc = selectedMatch
+    let freshDoc = selectedMatch
       ? createInitialLiveReportDocument({
           matchId: selectedMatch.id,
           myTeamName: scoreTeamName,
@@ -3000,26 +3154,24 @@ function LiffNewsGeneratorContent() {
           reporterNames: docRef.current.reporterNames,
         });
 
-    if (activeBundle && activeBundle.lineup.length > 0) {
-      const slots: LiveReportLineupSlot[] = activeBundle.lineup.map(
-        (item, idx) => ({
-          order: item.order || idx + 1,
-          position: normalizeReportPositionCode(item.position),
-          playerId: item.playerId,
-          playerName: item.playerName || "",
-          substitutions: [],
-        })
+    if (activeBundle) {
+      freshDoc = mergeSavedMatchLineupIntoDoc(
+        freshDoc,
+        {
+          myLineup: activeBundle.lineup.map((item, idx) => ({
+            order: item.order || idx + 1,
+            position: item.position || "",
+            playerId: item.playerId || "",
+            name: item.playerName || "",
+            uniformNumber: item.uniformNumber || "",
+          })),
+          dhStarterPitcher: activeBundle.dhStarterPitcher ?? null,
+          opponentLineup: activeBundle.opponentLineup,
+          opponentBench: activeBundle.opponentBench,
+          myAttendance: activeBundle.myAttendance,
+        },
+        { overwriteFilled: true }
       );
-      while (slots.length < 9) {
-        slots.push({
-          order: slots.length + 1,
-          position: "打",
-          playerId: null,
-          playerName: "",
-          substitutions: [],
-        });
-      }
-      freshDoc.lineup = slots;
     } else {
       freshDoc.lineup = createDefaultEmptyLineup(9);
     }
@@ -3201,6 +3353,116 @@ function LiffNewsGeneratorContent() {
   const filledLineupCount = useMemo(
     () => doc.lineup.filter((s) => s.playerName.trim().length > 0).length,
     [doc.lineup]
+  );
+
+  const extractedLineupState = useMemo(
+    () => extractLineupEditorStateFromDoc(doc),
+    [doc]
+  );
+
+  const inGameSubsByOrder = useMemo(() => {
+    const map = new Map<number, ReadonlyArray<string>>();
+    for (const slot of doc.lineup) {
+      const names = slot.substitutions
+        .map((s) => s.newName.trim())
+        .filter(Boolean);
+      if (names.length > 0) {
+        map.set(slot.order, names);
+      }
+    }
+    return map;
+  }, [doc.lineup]);
+
+  const effectiveRosterPlayers = useMemo<LiveReportRosterPlayer[]>(() => {
+    if (reportMode === "match") {
+      return rosterPlayers;
+    }
+    const freeRefDate = doc.dateText?.trim() || null;
+    if (resolvedTeamId === "demo-team") {
+      return buildDemoEnrichedRoster(freeRefDate);
+    }
+    return rosterPlayers
+      .map((p) => {
+        const eff = resolveLineupPlayerConditionForMatch(
+          {
+            conditionStatus: p.conditionStatus,
+            conditionNote: p.conditionNote,
+            conditionPeriods: p.conditionPeriods,
+          },
+          freeRefDate
+        );
+        return {
+          ...p,
+          conditionStatus: eff.status,
+          conditionNote: eff.note,
+          activeConditionPeriod: eff.period,
+        };
+      })
+      .filter((p) => p.conditionStatus !== "on_leave");
+  }, [reportMode, rosterPlayers, doc.dateText, resolvedTeamId]);
+
+  const lineupRosterPlayers = useMemo<LineupPlayer[]>(
+    () =>
+      effectiveRosterPlayers.map((p) => ({
+        id: p.id,
+        name: p.name,
+        uniformNumber: p.uniformNumber || null,
+        isActive: p.isActive ?? 1,
+        conditionStatus: p.conditionStatus,
+        conditionNote: p.conditionNote ?? null,
+        conditionPeriods: p.conditionPeriods ?? [],
+        activeConditionPeriod: p.activeConditionPeriod ?? null,
+        joinedAt: p.joinedAt ?? null,
+        createdAt: p.createdAt ?? null,
+        yesterdayPitches: p.yesterdayPitches ?? 0,
+        last7DaysPitches: p.last7DaysPitches ?? 0,
+        lastPitchedDate: p.lastPitchedDate ?? null,
+        lastPitchedPitches: p.lastPitchedPitches ?? null,
+      })),
+    [effectiveRosterPlayers]
+  );
+
+  const lineupMatchRosterCtx = useMemo<MatchRosterFilterContext>(() => {
+    if (reportMode === "match") {
+      return {
+        matchDate:
+          activeBundle?.matchDate ??
+          selectedMatch?.date ??
+          (doc.dateText?.trim() || null),
+        matchStatus:
+          activeBundle?.matchStatus ?? selectedMatch?.status ?? "scheduled",
+        matchCreatedAt: activeBundle?.matchCreatedAt ?? null,
+      };
+    }
+    return {
+      matchDate: doc.dateText?.trim() || null,
+      matchStatus: "scheduled",
+      matchCreatedAt: null,
+    };
+  }, [
+    reportMode,
+    activeBundle?.matchDate,
+    activeBundle?.matchStatus,
+    activeBundle?.matchCreatedAt,
+    selectedMatch?.date,
+    selectedMatch?.status,
+    doc.dateText,
+  ]);
+
+  const hasSavedMatchLineupInBundle = Boolean(
+    reportMode === "match" &&
+      activeBundle &&
+      (activeBundle.lineup.some((s) =>
+        Boolean(s.playerId || s.playerName.trim())
+      ) ||
+        Boolean(
+          activeBundle.dhStarterPitcher &&
+            (activeBundle.dhStarterPitcher.playerId ||
+              activeBundle.dhStarterPitcher.name.trim())
+        ) ||
+        (activeBundle.opponentLineup || []).some((o) =>
+          Boolean(o.name.trim() || o.position)
+        ))
   );
 
   const activeContextKey =
@@ -3786,13 +4048,13 @@ function LiffNewsGeneratorContent() {
             )}
           </div>
 
-          {/* 2段目: 4ワークスペース切替タブ */}
-          <div className="grid grid-cols-4 gap-1 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+          {/* 2段目: 5ワークスペース切替タブ（入力・スタメン・全文・経過・設定を同一画面で完結） */}
+          <div className="grid grid-cols-5 gap-0.5 bg-slate-900 p-0.5 rounded-lg border border-slate-800">
             <button
               type="button"
               onClick={() => setActiveTab("pad")}
               className={cn(
-                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                "py-1 px-1 rounded-md text-[10.5px] font-black flex items-center justify-center gap-0.5 transition-all cursor-pointer",
                 activeTab === "pad"
                   ? "bg-primary text-white shadow-2xs"
                   : "text-slate-300 hover:text-white"
@@ -3801,35 +4063,49 @@ function LiffNewsGeneratorContent() {
               {isReadOnlyViewer ? (
                 <>
                   <Eye className="w-3 h-3 text-sky-300 shrink-0" />
-                  <span className="truncate">ライブ閲覧</span>
+                  <span className="truncate">閲覧</span>
                 </>
               ) : (
                 <>
                   <Zap className="w-3 h-3 text-amber-300 shrink-0" />
-                  <span className="truncate">入力・速報</span>
+                  <span className="truncate">入力</span>
                 </>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("lineup")}
+              className={cn(
+                "py-1 px-1 rounded-md text-[10.5px] font-black flex items-center justify-center gap-0.5 transition-all cursor-pointer",
+                activeTab === "lineup"
+                  ? "bg-primary text-white shadow-2xs"
+                  : "text-slate-300 hover:text-white"
+              )}
+            >
+              <Users className="w-3 h-3 text-teal-300 shrink-0" />
+              <span className="truncate">スタメン({filledLineupCount})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab("preview")}
               className={cn(
-                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                "py-1 px-1 rounded-md text-[10.5px] font-black flex items-center justify-center gap-0.5 transition-all cursor-pointer",
                 activeTab === "preview"
                   ? "bg-primary text-white shadow-2xs"
                   : "text-slate-300 hover:text-white"
               )}
             >
               <FileText className="w-3 h-3 text-sky-300 shrink-0" />
-              <span className="truncate">速報全文</span>
+              <span className="truncate">全文</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveTab("timeline")}
               className={cn(
-                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                "py-1 px-1 rounded-md text-[10.5px] font-black flex items-center justify-center gap-0.5 transition-all cursor-pointer",
                 activeTab === "timeline"
                   ? "bg-primary text-white shadow-2xs"
                   : "text-slate-300 hover:text-white"
@@ -3843,7 +4119,7 @@ function LiffNewsGeneratorContent() {
               type="button"
               onClick={() => setActiveTab("setup")}
               className={cn(
-                "py-1 px-1 rounded-md text-[11px] font-black flex items-center justify-center gap-1 transition-all cursor-pointer",
+                "py-1 px-1 rounded-md text-[10.5px] font-black flex items-center justify-center gap-0.5 transition-all cursor-pointer",
                 activeTab === "setup"
                   ? "bg-primary text-white shadow-2xs"
                   : "text-slate-300 hover:text-white"
@@ -3851,9 +4127,7 @@ function LiffNewsGeneratorContent() {
             >
               <Settings2 className="w-3 h-3 text-amber-300 shrink-0" />
               <span className="truncate">
-                {isReadOnlyViewer
-                  ? `情報(${filledLineupCount}/9)`
-                  : `設定(${filledLineupCount}/9)`}
+                {isReadOnlyViewer ? "情報" : "設定"}
               </span>
             </button>
           </div>
@@ -4012,7 +4286,7 @@ function LiffNewsGeneratorContent() {
           <LiveAtBatPadCard
             doc={doc}
             onChangeDoc={handleUpdateDoc}
-            rosterPlayers={rosterPlayers}
+            rosterPlayers={effectiveRosterPlayers}
             activeContextKey={activeContextKey}
             pendingPitches={pendingPitches}
             onChangePendingPitches={setPendingPitches}
@@ -4028,6 +4302,7 @@ function LiffNewsGeneratorContent() {
             onShareLine={handleShareLine}
             copied={copied}
             onOpenFullPreview={() => setActiveTab("preview")}
+            onOpenLineupEditor={() => setActiveTab("lineup")}
             onOpenScorebookImport={
               canBridgeToScorebookImport
                 ? () => void handleBridgeToScorebookImport()
@@ -4045,6 +4320,121 @@ function LiffNewsGeneratorContent() {
             }
           />
         </div>
+
+        {/* ════════════════════════════════════════════════════════════════
+            TAB 1.5 (統合スタメン・控え編成): 試合スタメン設定と完全共通の入力制御UI
+           ════════════════════════════════════════════════════════════════ */}
+        {activeTab === "lineup" && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-y-auto p-2.5 bg-[#eef2f6] dark:bg-slate-950">
+              <UnifiedLineupBenchEditor
+                teamId={resolvedTeamId}
+                isDemoTeam={resolvedTeamId === "demo-team"}
+                canEdit={!isReadOnlyViewer}
+                canSaveTeamTemplate={effectiveCanMutate}
+                linkageMode={reportMode}
+                showLinkageBanner={true}
+                opponentDisplayName={
+                  doc.opponentName.trim() ||
+                  selectedMatch?.opponent ||
+                  "対戦相手"
+                }
+                dateLabel={
+                  doc.dateText.trim() ||
+                  formatJapaneseMatchDateLabel(selectedMatch?.date || "")
+                }
+                matchRosterCtx={lineupMatchRosterCtx}
+                pitchLimitSpec={pitchSpec}
+                teamPlayers={lineupRosterPlayers}
+                myLineup={extractedLineupState.myLineup}
+                dhStarterPitcher={extractedLineupState.dhStarterPitcher}
+                opponentLineup={extractedLineupState.opponentLineup}
+                opponentBench={extractedLineupState.opponentBench}
+                attendance={extractedLineupState.myAttendance}
+                scheduleAbsents={
+                  reportMode === "match"
+                    ? activeBundle?.scheduleAbsents || []
+                    : []
+                }
+                templates={lineupTemplates}
+                onChangeTemplates={setLineupTemplates}
+                inGameSubstitutionsByOrder={inGameSubsByOrder}
+                onReloadFromMatch={
+                  reportMode === "match" && !isReadOnlyViewer
+                    ? handleReloadMatchLineup
+                    : undefined
+                }
+                hasSavedMatchLineup={hasSavedMatchLineupInBundle}
+                onChangeState={(patch) =>
+                  handleUpdateDoc((prev) =>
+                    applyLineupEditorStateToDoc(prev, patch)
+                  )
+                }
+                activeContextKey={activeContextKey}
+                showCopyShareButton={true}
+              />
+              <div
+                className="h-4 w-full shrink-0 pointer-events-none select-none"
+                aria-hidden="true"
+              />
+            </div>
+
+            <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab("pad")}
+                className="flex-1 h-10 px-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+              >
+                {isReadOnlyViewer ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5 text-sky-200 shrink-0" />
+                    <span>ライブ閲覧へ</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>入力パッドへ</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setOutputMode("lineup");
+                  setActiveTab("preview");
+                }}
+                className="h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground inline-flex items-center justify-center gap-1 shrink-0 cursor-pointer active:scale-95"
+              >
+                <FileText className="w-3.5 h-3.5 text-primary shrink-0" />
+                <span>発表文確認</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  flushPendingSaveNow(true);
+                  const lineupAnnouncement = resolveDisplayedLiveReportText(
+                    docRef.current,
+                    "lineup"
+                  );
+                  if (!lineupAnnouncement.trim()) return;
+                  window.open(
+                    `https://line.me/R/share?text=${encodeURIComponent(
+                      lineupAnnouncement
+                    )}`,
+                    "_blank",
+                    "noopener,noreferrer"
+                  );
+                }}
+                className="h-10 px-3.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white text-xs font-black inline-flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer shrink-0"
+              >
+                <Share2 className="w-4 h-4 shrink-0" />
+                <span>LINE発表</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* ════════════════════════════════════════════════════════════════
             TAB 2: LINE速報イメージ全文確認・出力形式切替 ＋ 下部固定送信バー
@@ -4271,7 +4661,7 @@ function LiffNewsGeneratorContent() {
         )}
 
         {/* ════════════════════════════════════════════════════════════════
-            TAB 4: 試合情報・スタメン・速報担当の設定 ＋ 下部固定アクションバー
+            TAB 4: 試合情報・出力ルール・速報担当の設定 ＋ 下部固定アクションバー
            ════════════════════════════════════════════════════════════════ */}
         {activeTab === "setup" && (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -4279,17 +4669,10 @@ function LiffNewsGeneratorContent() {
               <MatchAndHeaderSetupCard
                 doc={doc}
                 onChangeDoc={handleUpdateDoc}
-                rosterPlayers={rosterPlayers}
                 suggestedReporters={selectedMatch?.lineLiveAssignees || []}
-                hasSavedMatchLineup={Boolean(
-                  reportMode === "match" &&
-                    activeBundle &&
-                    activeBundle.lineup.length > 0
-                )}
-                onReloadMatchLineup={handleReloadMatchLineup}
+                onOpenLineupTab={() => setActiveTab("lineup")}
                 activeContextKey={activeContextKey}
                 defaultExpanded={true}
-                openLineupSignal={openLineupSignal}
                 readOnly={isReadOnlyViewer}
                 tournamentRules={activeTournamentRules}
                 resolvedPitchRuleLabel={pitchSpec.ruleLabel}
@@ -4299,14 +4682,14 @@ function LiffNewsGeneratorContent() {
             <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2.5 pt-2 pb-[max(env(safe-area-inset-bottom),10px)] flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setOpenLineupSignal((c) => c + 1)}
+                onClick={() => setActiveTab("lineup")}
                 className="flex-1 h-10 px-3 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
               >
                 <Users className="w-3.5 h-3.5 text-primary shrink-0" />
                 <span>
                   {isReadOnlyViewer
-                    ? `スタメン確認 (${filledLineupCount}/9)`
-                    : `オーダー編集 (${filledLineupCount}/9)`}
+                    ? `スタメン確認 (${filledLineupCount}/${doc.lineup.length})`
+                    : `スタメン編成 (${filledLineupCount}/${doc.lineup.length})`}
                 </span>
               </button>
 

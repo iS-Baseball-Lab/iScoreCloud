@@ -2,7 +2,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import {
   Settings2,
   ChevronDown,
@@ -11,10 +10,6 @@ import {
   ArrowLeftRight,
   Users,
   UserCheck,
-  Plus,
-  Trash2,
-  X,
-  RotateCcw,
   ExternalLink,
   Flame,
   Snowflake,
@@ -23,17 +18,12 @@ import {
 import { cn } from "@/lib/utils";
 import { LiffSelect } from "@/components/liff/LiffSelect";
 import {
-  POSITION_OPTIONS,
   deriveScoreboardShortName,
   formatPlayerReportName,
   getCurrentHmText,
   normalizeReportPositionCode,
 } from "@/lib/liff/live-report-v2";
-import type {
-  LiveReportLineupSlot,
-  LiveReportRosterPlayer,
-  LiveReportV2Document,
-} from "@/types/live-report-v2";
+import type { LiveReportV2Document } from "@/types/live-report-v2";
 
 export interface MatchSetupTournamentRules {
   tournamentName?: string | null;
@@ -48,13 +38,10 @@ export interface MatchSetupTournamentRules {
 interface MatchAndHeaderSetupCardProps {
   doc: LiveReportV2Document;
   onChangeDoc: (updater: (prev: LiveReportV2Document) => LiveReportV2Document) => void;
-  rosterPlayers: ReadonlyArray<LiveReportRosterPlayer>;
   suggestedReporters: ReadonlyArray<string>;
-  hasSavedMatchLineup: boolean;
-  onReloadMatchLineup: () => void;
+  onOpenLineupTab: () => void;
   activeContextKey: string;
   defaultExpanded?: boolean;
-  openLineupSignal?: number;
   readOnly?: boolean;
   tournamentRules?: MatchSetupTournamentRules | null;
   resolvedPitchRuleLabel?: string;
@@ -71,42 +58,26 @@ const PITCH_LIMIT_OVERRIDE_OPTIONS = [
 export function MatchAndHeaderSetupCard({
   doc,
   onChangeDoc,
-  rosterPlayers,
   suggestedReporters,
-  hasSavedMatchLineup,
-  onReloadMatchLineup,
+  onOpenLineupTab,
   activeContextKey,
   defaultExpanded = false,
-  openLineupSignal = 0,
   readOnly = false,
   tournamentRules = null,
   resolvedPitchRuleLabel,
 }: MatchAndHeaderSetupCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
-  const [isLineupModalOpen, setIsLineupModalOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
+  // SKILL.md 規約5: 対象試合切替・閲覧モード切替時に展開状態を安全にリセット
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (openLineupSignal > 0) {
-      setIsLineupModalOpen(true);
-    }
-  }, [openLineupSignal]);
-
-  // SKILL.md 規約5: 対象試合切替・閲覧モード切替時にモーダルを安全にリセット
-  useEffect(() => {
-    setIsLineupModalOpen(false);
     if (readOnly) {
       setIsExpanded(false);
     }
   }, [activeContextKey, readOnly]);
 
-  const filledLineupCount = doc.lineup.filter(
-    (s) => s.playerName.trim().length > 0
-  ).length;
+  const filledLineupCount =
+    doc.lineup.filter((s) => s.playerName.trim().length > 0).length +
+    (doc.dhStarterPitcher?.playerName.trim() ? 1 : 0);
 
   const timeRule = (tournamentRules?.timeLimit || "").trim();
   const coldRule = (tournamentRules?.coldGameRule || "").trim();
@@ -190,7 +161,7 @@ export function MatchAndHeaderSetupCard({
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
-              onClick={() => setIsLineupModalOpen(true)}
+              onClick={onOpenLineupTab}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 text-[10.5px] font-black transition-all active:scale-95 cursor-pointer"
             >
               <Users className="w-3 h-3 text-sky-400" />
@@ -496,10 +467,10 @@ export function MatchAndHeaderSetupCard({
             </div>
             <button
               type="button"
-              onClick={() => setIsLineupModalOpen(true)}
+              onClick={onOpenLineupTab}
               className="px-2.5 py-1 rounded-lg bg-card border border-border hover:bg-muted text-[11px] font-black text-primary shrink-0 cursor-pointer active:scale-95"
             >
-              {readOnly ? "オーダー確認" : "オーダー編集"}
+              {readOnly ? "オーダー確認" : "スタメン・控え編成"}
             </button>
           </div>
 
@@ -759,251 +730,6 @@ export function MatchAndHeaderSetupCard({
           )}
         </div>
       </section>
-
-      {/* スタメン編集モーダル（SKILL.md 規約62・63: createPortal + z-[9999] + Safe Area） */}
-      {mounted &&
-        isLineupModalOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/70 animate-in fade-in duration-150"
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setIsLineupModalOpen(false)}
-          >
-            <div
-              className="w-full sm:max-w-lg max-h-[88dvh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden text-foreground"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* A-3 Dark Cap */}
-              <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Users className="w-4 h-4 text-sky-400 shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-black text-white">
-                      {readOnly ? "自チーム スタメン一覧（閲覧）" : "自チーム スタメン設定"}
-                    </h3>
-                    <p className="text-[10px] font-bold text-slate-300">
-                      {readOnly
-                        ? "担当者が設定したオーダーと途中交代一覧です"
-                        : "例: 1.9 関本（打順 . 守備番号 選手名）"}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsLineupModalOpen(false)}
-                  className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
-                {!readOnly && hasSavedMatchLineup && (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/8 px-3 py-2">
-                    <span className="text-[11px] font-bold text-foreground">
-                      試合データの登録済みオーダーを再反映できます
-                    </span>
-                    <button
-                      type="button"
-                      onClick={onReloadMatchLineup}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10.5px] font-black shrink-0 cursor-pointer active:scale-95"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>再読込</span>
-                    </button>
-                  </div>
-                )}
-
-                {doc.lineup.map((slot, index) => {
-                  const posObj = POSITION_OPTIONS.find(
-                    (p) => p.code === normalizeReportPositionCode(slot.position)
-                  );
-                  if (readOnly) {
-                    return (
-                      <div
-                        key={slot.order}
-                        className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/35 px-3 py-2"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-6 h-6 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black flex items-center justify-center shrink-0">
-                            {slot.order}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-md bg-card border border-border text-[11px] font-black text-primary shrink-0">
-                            {posObj?.shortLabel ||
-                              normalizeReportPositionCode(slot.position)}
-                          </span>
-                          <span className="text-xs font-black text-foreground truncate">
-                            {slot.playerName || "（未登録）"}
-                          </span>
-                        </div>
-                        {slot.substitutions.length > 0 && (
-                          <span className="text-[10.5px] font-bold text-muted-foreground truncate">
-                            →{" "}
-                            {slot.substitutions
-                              .map((sub) => sub.newName)
-                              .join(" → ")}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={slot.order}
-                      className="flex items-center gap-2 rounded-xl border border-border bg-muted/35 p-2"
-                    >
-                      <span className="w-6 h-7 rounded-lg bg-[#0f172a] text-white font-mono text-xs font-black flex items-center justify-center shrink-0">
-                        {slot.order}
-                      </span>
-
-                      <LiffSelect
-                        value={normalizeReportPositionCode(slot.position)}
-                        onChange={(val) => {
-                          onChangeDoc((prev) => {
-                            const next = [...prev.lineup];
-                            next[index] = { ...next[index], position: val };
-                            return { ...prev, lineup: next };
-                          });
-                        }}
-                        options={[
-                          ...POSITION_OPTIONS.map((p) => ({
-                            value: p.code,
-                            label: p.shortLabel,
-                          })),
-                          { value: "打", label: "打" },
-                        ]}
-                        title={`${slot.order}番の守備位置を選択`}
-                        size="xs"
-                        searchable={false}
-                        className="h-8 w-20 shrink-0"
-                      />
-
-                      {rosterPlayers.length > 0 && (
-                        <LiffSelect
-                          value={slot.playerId || ""}
-                          onChange={(pid) => {
-                            const matched = rosterPlayers.find(
-                              (rp) => rp.id === pid
-                            );
-                            onChangeDoc((prev) => {
-                              const next = [...prev.lineup];
-                              next[index] = {
-                                ...next[index],
-                                playerId: matched ? matched.id : null,
-                                playerName: matched
-                                  ? matched.name
-                                  : next[index].playerName,
-                              };
-                              return { ...prev, lineup: next };
-                            });
-                          }}
-                          options={[
-                            {
-                              value: "",
-                              label: "名簿から選択",
-                              sublabel: "手入力のままにする場合はこちら",
-                            },
-                            ...rosterPlayers.map((rp) => ({
-                              value: rp.id,
-                              label: `${
-                                rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
-                              }${rp.name}`,
-                              badge: rp.mainPosition || undefined,
-                              badgeTone: "slate" as const,
-                              keywords: `${rp.uniformNumber || ""} ${rp.name}`,
-                            })),
-                          ]}
-                          placeholder="名簿から選択"
-                          title={`${slot.order}番の選手を名簿から選択`}
-                          size="xs"
-                          searchable={true}
-                          searchPlaceholder="選手名・背番号で検索..."
-                          className="h-8 w-28 sm:w-36 shrink-0"
-                        />
-                      )}
-
-                      <input
-                        type="text"
-                        value={slot.playerName}
-                        onChange={(e) => {
-                          const nameVal = e.target.value;
-                          onChangeDoc((prev) => {
-                            const next = [...prev.lineup];
-                            next[index] = {
-                              ...next[index],
-                              playerName: nameVal,
-                            };
-                            return { ...prev, lineup: next };
-                          });
-                        }}
-                        placeholder="選手名を入力"
-                        className="h-8 flex-1 min-w-0 rounded-lg border border-border bg-card px-2.5 text-base sm:text-xs font-black text-foreground outline-none focus:border-primary"
-                      />
-
-                      {doc.lineup.length > 9 &&
-                        index === doc.lineup.length - 1 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onChangeDoc((prev) => ({
-                                ...prev,
-                                lineup: prev.lineup.slice(0, -1),
-                              }))
-                            }
-                            className="w-7 h-7 rounded-lg bg-rose-500/12 text-rose-600 flex items-center justify-center shrink-0 cursor-pointer"
-                            title="最終打順枠を削除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                    </div>
-                  );
-                })}
-
-                {!readOnly && (
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onChangeDoc((prev) => {
-                          const nextOrder = prev.lineup.length + 1;
-                          const added: LiveReportLineupSlot = {
-                            order: nextOrder,
-                            position: "D",
-                            playerId: null,
-                            playerName: "",
-                            substitutions: [],
-                          };
-                          return { ...prev, lineup: [...prev.lineup, added] };
-                        })
-                      }
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-muted hover:bg-accent text-xs font-black text-foreground cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-primary" />
-                      <span>
-                        {doc.lineup.length + 1}番打者を追加（全員打制・DP等）
-                      </span>
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border bg-muted/40 px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 flex justify-end shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsLineupModalOpen(false)}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-black cursor-pointer active:scale-95"
-                >
-                  {readOnly ? "閉じる" : "完了して閉じる"}
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
     </>
   );
 }
-

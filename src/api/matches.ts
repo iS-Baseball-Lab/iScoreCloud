@@ -35,6 +35,10 @@ import {
   normalizeLegacyForceOutAtBat,
   repairPlayLogForceOutDescription,
 } from "@/lib/liff/scorebook-fielding";
+import {
+  mergeSavedMatchLineupIntoDoc,
+  sanitizeLiveReportDocument,
+} from "@/lib/liff/live-report-v2";
 import { simulateSheetRunners } from "@/lib/liff/scorebook-runners";
 import type { WorkerEnv } from "@/types/api";
 import type {
@@ -322,6 +326,7 @@ app.delete("/:id/reset-logs", async (c) => {
 
 app.put("/:id/lineups", async (c) => {
   try {
+    const matchId = c.req.param("id");
     const body = (await c.req.json()) as {
       myLineup?: unknown[];
       opponentLineup?: unknown[];
@@ -329,16 +334,66 @@ app.put("/:id/lineups", async (c) => {
       myAttendance?: Record<string, unknown>;
     };
     await ensureMatchLineupColumns(c.env.DB);
-    await MatchService.saveMatchLineups(
-      drizzle(c.env.DB),
-      c.req.param("id"),
-      Array.isArray(body.myLineup) ? body.myLineup : [],
-      Array.isArray(body.opponentLineup) ? body.opponentLineup : [],
-      body.myAttendance !== undefined && typeof body.myAttendance === "object" && body.myAttendance !== null
+    const db = drizzle(c.env.DB);
+    const myLineupArr = Array.isArray(body.myLineup) ? body.myLineup : [];
+    const oppLineupArr = Array.isArray(body.opponentLineup) ? body.opponentLineup : [];
+    const myAttObj =
+      body.myAttendance !== undefined &&
+      typeof body.myAttendance === "object" &&
+      body.myAttendance !== null
         ? body.myAttendance
-        : undefined,
-      Array.isArray(body.opponentBench) ? body.opponentBench : undefined
+        : undefined;
+    const oppBenchArr = Array.isArray(body.opponentBench)
+      ? body.opponentBench
+      : undefined;
+
+    await MatchService.saveMatchLineups(
+      db,
+      matchId,
+      myLineupArr,
+      oppLineupArr,
+      myAttObj,
+      oppBenchArr
     );
+
+    // LINE試合速報の下書きが既に存在する場合は、記録済み打席・途中交代を保持したままスタメン・控え・出欠を同期
+    try {
+      const draftId = `match:${matchId}`;
+      const existingDraft = await db
+        .select()
+        .from(matchLiveReports)
+        .where(eq(matchLiveReports.id, draftId))
+        .get();
+      if (existingDraft?.reportJson) {
+        const parsedRaw = JSON.parse(existingDraft.reportJson) as unknown;
+        const sanitizedDoc = sanitizeLiveReportDocument(parsedRaw);
+        if (sanitizedDoc) {
+          const mergedDoc = mergeSavedMatchLineupIntoDoc(
+            sanitizedDoc,
+            {
+              myLineup: myLineupArr as Array<Record<string, unknown>>,
+              opponentLineup: oppLineupArr as Array<Record<string, unknown>>,
+              ...(oppBenchArr !== undefined
+                ? { opponentBench: oppBenchArr as Array<Record<string, unknown>> }
+                : {}),
+              ...(myAttObj !== undefined ? { myAttendance: myAttObj } : {}),
+            },
+            { overwriteFilled: true }
+          );
+          const nextTs = Math.max(Date.now(), (existingDraft.updatedAt || 0) + 1);
+          await db
+            .update(matchLiveReports)
+            .set({
+              reportJson: JSON.stringify(mergedDoc),
+              updatedAt: nextTs,
+            })
+            .where(eq(matchLiveReports.id, draftId));
+        }
+      }
+    } catch (syncErr) {
+      console.warn("Skipped live report lineup sync on PUT /lineups:", syncErr);
+    }
+
     return c.json({ success: true });
   } catch (error) {
     console.error("Error in PUT /api/matches/:id/lineups:", error);

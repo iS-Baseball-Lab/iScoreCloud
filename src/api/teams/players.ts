@@ -50,7 +50,7 @@ async function resolveCanViewPlayerConditionNotes(
   return access.canManagePlayersForTeam(teamId);
 }
 
-async function computeRecentPitchWorkloadByPlayerId(
+export async function computeRecentPitchWorkloadByPlayerId(
   d1: D1Database,
   teamId: string,
   referenceDateKey: string,

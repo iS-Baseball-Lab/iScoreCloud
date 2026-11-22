@@ -11,6 +11,7 @@ import {
   Plus,
   Undo2,
   UserPlus,
+  Users,
   Flag,
   SlidersHorizontal,
   Trash2,
@@ -28,7 +29,8 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LiffSelect } from "@/components/liff/LiffSelect";
+import { LiffSelect, type LiffSelectBadgeTone } from "@/components/liff/LiffSelect";
+import { normalizePlayerConditionStatus } from "@/lib/liff/player-condition";
 import {
   FlickPadButton,
   type FlickSubOption,
@@ -125,6 +127,7 @@ interface LiveAtBatPadCardProps {
   onShareLine?: () => void;
   copied?: boolean;
   onOpenFullPreview?: () => void;
+  onOpenLineupEditor?: () => void;
   /** 担当外メンバーの閲覧モード（入力パッド非表示・ドキュメント変更0） */
   readOnly?: boolean;
   editorDisplayName?: string | null;
@@ -792,6 +795,7 @@ export function LiveAtBatPadCard({
   onShareLine,
   copied = false,
   onOpenFullPreview,
+  onOpenLineupEditor,
   readOnly = false,
   editorDisplayName,
   viewerHalfOverride = null,
@@ -1613,6 +1617,9 @@ export function LiveAtBatPadCard({
     if (readOnly) return;
     const trimmedName = quickBatterName.trim();
     const normPos = normalizeReportPositionCode(quickBatterPos || "打");
+    const matchedRoster = quickBatterPlayerId
+      ? rosterPlayers.find((rp) => rp.id === quickBatterPlayerId)
+      : undefined;
 
     onChangeDoc((prev) => ({
       ...prev,
@@ -1634,6 +1641,11 @@ export function LiveAtBatPadCard({
           playerName: trimmedName,
           position: normPos,
           playerId: quickBatterPlayerId || null,
+          ...(matchedRoster?.uniformNumber
+            ? { uniformNumber: matchedRoster.uniformNumber }
+            : !quickBatterPlayerId
+            ? { uniformNumber: undefined }
+            : {}),
         };
       }),
     }));
@@ -3658,6 +3670,23 @@ export function LiveAtBatPadCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                {onOpenLineupEditor && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsBatterQuickModalOpen(false);
+                      onOpenLineupEditor();
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 text-xs font-black flex items-center justify-between gap-2 cursor-pointer active:scale-95"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                      <span>スタメン・控え編成画面を開く（一括設定）</span>
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  </button>
+                )}
+
                 {rosterPlayers.length > 0 && (
                   <div className="space-y-1">
                     <label className="block text-xs font-black text-muted-foreground">
@@ -3679,15 +3708,67 @@ export function LiveAtBatPadCard({
                           value: "",
                           label: "手入力する（名簿未選択）",
                         },
-                        ...rosterPlayers.map((rp) => ({
-                          value: rp.id,
-                          label: `${
-                            rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
-                          }${rp.name}`,
-                          badge: rp.mainPosition || undefined,
-                          badgeTone: "slate" as const,
-                          keywords: `${rp.uniformNumber || ""} ${rp.name}`,
-                        })),
+                        ...rosterPlayers.map((rp) => {
+                          const otherSlot = activeLineup.find(
+                            (s) =>
+                              s.order !== currentOrder &&
+                              s.playerId === rp.id &&
+                              Boolean(s.playerName.trim() || s.playerId)
+                          );
+                          const isDhStarter =
+                            doc.dhStarterPitcher?.playerId === rp.id;
+                          const cond = normalizePlayerConditionStatus(
+                            rp.conditionStatus
+                          );
+                          const att = doc.myAttendance?.[rp.id];
+                          const isLocked = Boolean(
+                            otherSlot ||
+                              isDhStarter ||
+                              cond === "rehab" ||
+                              att === "absent" ||
+                              att === "excluded"
+                          );
+                          let badge: string | undefined =
+                            rp.mainPosition || undefined;
+                          let badgeTone: LiffSelectBadgeTone = "slate";
+                          if (otherSlot) {
+                            badge = `出場中(${otherSlot.order}番)`;
+                            badgeTone = "slate";
+                          } else if (isDhStarter) {
+                            badge = "出場中(先発P)";
+                            badgeTone = "slate";
+                          } else if (cond === "rehab") {
+                            badge = "調整中(出場不可)";
+                            badgeTone = "rose";
+                          } else if (att === "absent") {
+                            badge = "欠席";
+                            badgeTone = "rose";
+                          } else if (att === "excluded") {
+                            badge = "対象外";
+                            badgeTone = "slate";
+                          } else if (cond === "restricted") {
+                            badge = "⚠️一部制限";
+                            badgeTone = "amber";
+                          }
+                          const workloadSub =
+                            (rp.yesterdayPitches ?? 0) > 0 ||
+                            (rp.last7DaysPitches ?? 0) > 0
+                              ? `⚾ 前日${rp.yesterdayPitches ?? 0}球・7日計${
+                                  rp.last7DaysPitches ?? 0
+                                }球`
+                              : undefined;
+                          return {
+                            value: rp.id,
+                            label: `${
+                              rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
+                            }${rp.name}`,
+                            sublabel: rp.conditionNote?.trim() || workloadSub,
+                            badge,
+                            badgeTone,
+                            disabled: isLocked,
+                            keywords: `${rp.uniformNumber || ""} ${rp.name}`,
+                          };
+                        }),
                       ]}
                       title={`${currentOrder}番打者を名簿から選択`}
                       size="md"
@@ -3707,10 +3788,38 @@ export function LiveAtBatPadCard({
                       value={normalizeReportPositionCode(quickBatterPos)}
                       onChange={(val) => setQuickBatterPos(val)}
                       options={[
-                        ...POSITION_OPTIONS.map((p) => ({
-                          value: p.code,
-                          label: p.shortLabel,
-                        })),
+                        ...POSITION_OPTIONS.map((p) => {
+                          const occupiedSlot =
+                            p.code !== "D"
+                              ? activeLineup.find(
+                                  (s) =>
+                                    s.order !== currentOrder &&
+                                    Boolean(s.playerId || s.playerName.trim()) &&
+                                    normalizeReportPositionCode(s.position) ===
+                                      p.code
+                                )
+                              : undefined;
+                          const occupiedByDhPitcher =
+                            p.code === "1" &&
+                            Boolean(
+                              doc.dhStarterPitcher &&
+                                (doc.dhStarterPitcher.playerId ||
+                                  doc.dhStarterPitcher.playerName.trim())
+                            );
+                          return {
+                            value: p.code,
+                            label: p.shortLabel,
+                            badge: occupiedSlot
+                              ? `${occupiedSlot.order}番設定中`
+                              : occupiedByDhPitcher
+                              ? "DH先発P"
+                              : undefined,
+                            badgeTone: "slate" as const,
+                            disabled: Boolean(
+                              occupiedSlot || occupiedByDhPitcher
+                            ),
+                          };
+                        }),
                         { value: "打", label: "打" },
                       ]}
                       title="守備位置を選択"
@@ -4953,15 +5062,79 @@ export function LiveAtBatPadCard({
                                 label: "チーム名簿から選ぶ...",
                                 sublabel: "手入力する場合は未選択のままでOKです",
                               },
-                              ...rosterPlayers.map((rp) => ({
-                                value: rp.id,
-                                label: `${
-                                  rp.uniformNumber ? `#${rp.uniformNumber} ` : ""
-                                }${rp.name}`,
-                                badge: rp.mainPosition || undefined,
-                                badgeTone: "slate" as const,
-                                keywords: `${rp.uniformNumber || ""} ${rp.name}`,
-                              })),
+                              ...rosterPlayers.map((rp) => {
+                                const activeSlot = activeLineup.find(
+                                  (s) =>
+                                    s.playerId === rp.id &&
+                                    Boolean(s.playerName.trim() || s.playerId)
+                                );
+                                const cond = normalizePlayerConditionStatus(
+                                  rp.conditionStatus
+                                );
+                                const att = doc.myAttendance?.[rp.id];
+                                const isBlockedByActive = Boolean(
+                                  activeSlot &&
+                                    subType !== "DEF" &&
+                                    subType !== "P" &&
+                                    subType !== "TR" &&
+                                    activeSlot.order !== subSlotOrder
+                                );
+                                const isLocked = Boolean(
+                                  isBlockedByActive ||
+                                    cond === "rehab" ||
+                                    att === "absent" ||
+                                    att === "excluded"
+                                );
+                                let badge: string | undefined =
+                                  rp.mainPosition || undefined;
+                                let badgeTone: LiffSelectBadgeTone = "slate";
+                                if (activeSlot) {
+                                  badge = `出場中(${activeSlot.order}番)`;
+                                  badgeTone = isBlockedByActive
+                                    ? "slate"
+                                    : "primary";
+                                } else if (cond === "rehab") {
+                                  badge = "調整中(出場不可)";
+                                  badgeTone = "rose";
+                                } else if (att === "absent") {
+                                  badge = "欠席";
+                                  badgeTone = "rose";
+                                } else if (att === "excluded") {
+                                  badge = "対象外";
+                                  badgeTone = "slate";
+                                } else if (cond === "restricted") {
+                                  badge = "⚠️一部制限";
+                                  badgeTone = "amber";
+                                } else {
+                                  badge = rp.mainPosition
+                                    ? `控え・${rp.mainPosition}`
+                                    : "控え";
+                                  badgeTone = "teal";
+                                }
+                                const workloadSub =
+                                  (rp.yesterdayPitches ?? 0) > 0 ||
+                                  (rp.last7DaysPitches ?? 0) > 0
+                                    ? `⚾ 前日${
+                                        rp.yesterdayPitches ?? 0
+                                      }球・7日計${rp.last7DaysPitches ?? 0}球`
+                                    : undefined;
+                                return {
+                                  value: rp.id,
+                                  label: `${
+                                    rp.uniformNumber
+                                      ? `#${rp.uniformNumber} `
+                                      : ""
+                                  }${rp.name}`,
+                                  sublabel:
+                                    rp.conditionNote?.trim() || workloadSub,
+                                  badge,
+                                  badgeTone,
+                                  disabled: isLocked,
+                                  keywords: `${rp.uniformNumber || ""} ${
+                                    rp.name
+                                  }`,
+                                };
+                              }),
                             ]}
                             placeholder="チーム名簿から選ぶ..."
                             title="選手を選択"

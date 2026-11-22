@@ -1,10 +1,17 @@
 // filepath: src/types/live-report-v2.ts
 
+import type {
+  PlayerConditionPeriod,
+  PlayerConditionStatus,
+} from "@/lib/liff/player-condition";
+
 export type LiveReportOutputMode = "full" | "latest_inning" | "lineup" | "game_set";
 
 export type LiveReportBaseNum = 1 | 2 | 3;
 
 export type LiveReportSubType = "P" | "PH" | "PR" | "TR" | "DEF";
+
+export type LiveReportAttendanceStatus = "bench" | "absent" | "excluded";
 
 export interface LiveReportLineupSubRecord {
   id: string;
@@ -32,7 +39,28 @@ export interface LiveReportLineupSlot {
   position: string; // "1"〜"9", "D" (DH), "打"
   playerId: string | null;
   playerName: string;
+  uniformNumber?: string;
   substitutions: LiveReportLineupSubRecord[];
+}
+
+export interface LiveReportDhStarterPitcher {
+  playerId: string | null;
+  playerName: string;
+  uniformNumber?: string;
+}
+
+export interface LiveReportOpponentLineupSlot {
+  order: number;
+  position: string;
+  playerName: string;
+  uniformNumber?: string;
+}
+
+export interface LiveReportOpponentBenchPlayer {
+  id: string;
+  playerName: string;
+  uniformNumber?: string;
+  position?: string;
 }
 
 /**
@@ -121,6 +149,14 @@ export interface LiveReportV2Document {
   /** 最終回裏の攻撃省略時に "x" を表示するか（false=サンプル通り空白） */
   showWalkoffX: boolean;
   lineup: LiveReportLineupSlot[];
+  /** DH制使用時の打席なし先発投手（order=0, position="1" 相当） */
+  dhStarterPitcher?: LiveReportDhStarterPitcher | null;
+  /** 自チームの控え・欠席・対象外振り分け状態（フリー速報時はドキュメント内のみ保持、試合連動時は matches.myAttendance と同期） */
+  myAttendance?: Record<string, LiveReportAttendanceStatus>;
+  /** 相手チームのスターティングメンバー（フリー速報時はドキュメント内のみ保持、試合連動時は matches.opponentLineup と同期） */
+  opponentLineup?: LiveReportOpponentLineupSlot[];
+  /** 相手チームの控えメンバー */
+  opponentBench?: LiveReportOpponentBenchPlayer[];
   halfInnings: LiveReportHalfInning[];
   activeInning: number;
   activeIsBottom: boolean;
@@ -174,6 +210,15 @@ export interface LiveReportRosterPlayer {
   name: string;
   uniformNumber: string;
   mainPosition: string | null;
+  isActive?: number | boolean;
+  conditionStatus?: PlayerConditionStatus;
+  conditionNote?: string | null;
+  conditionPeriods?: PlayerConditionPeriod[];
+  activeConditionPeriod?: PlayerConditionPeriod | null;
+  joinedAt?: number | string | null;
+  createdAt?: number | string | null;
+  yesterdayPitches?: number;
+  last7DaysPitches?: number;
+  lastPitchedDate?: string | null;
+  lastPitchedPitches?: number | null;
 }
-
-

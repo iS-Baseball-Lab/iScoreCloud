@@ -3,11 +3,25 @@ import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
-import { ensureAllSchemasOnce } from "@/lib/db-helper";
-import { toMatchCalendarKey } from "@/lib/liff/demo-lineup";
+import { computeRecentPitchWorkloadByPlayerId } from "@/api/teams/players";
+import {
+  ensureAllSchemasOnce,
+  ensureMatchLineupColumns,
+} from "@/lib/db-helper";
+import {
+  toMatchCalendarKey,
+  toTimestampCalendarKey,
+  type LineupTemplateItem,
+  type MyLineupSlot,
+  type OpponentBenchPlayer,
+  type OpponentLineupSlot,
+  type PlayerMatchAttendanceMap,
+} from "@/lib/liff/demo-lineup";
 import {
   getTodayJstDateKey,
+  maskConditionPeriodsForViewer,
   resolveEffectivePlayerConditionOnDate,
+  type PlayerConditionStatus,
 } from "@/lib/liff/player-condition";
 import { loadTeamPlayerConditionPeriodsMap } from "@/lib/player-roster-cleanup";
 import {
@@ -23,7 +37,11 @@ import {
 import { parseLiffScoreSettingsJson } from "@/lib/liff/score-settings";
 import {
   computeScoreboardSummary,
+  hasMeaningfulDocLineupData,
+  mergeSavedMatchLineupIntoDoc,
   sanitizeLiveReportDocument,
+  serializeDocLineupForMatchStorage,
+  splitLoadedMyLineupSlots,
   type LegacyPlayLogRow,
 } from "@/lib/liff/live-report-v2";
 import { resolveCallerTeamAccess } from "@/lib/team-access";
@@ -46,6 +64,9 @@ const {
   teamMembers,
   user: usersTable,
   players,
+  lineupTemplates,
+  events,
+  attendances,
   matches,
   tournaments,
   venues,
@@ -256,6 +277,9 @@ function isCallerAssignedToLineLive(
 
 export interface ServerMatchBundlePayload {
   matchId: string;
+  matchDate?: string | null;
+  matchStatus?: string | null;
+  matchCreatedAt?: number | null;
   opponentBatterCount?: number;
   tournamentRules?: {
     tournamentId: string | null;
@@ -272,7 +296,13 @@ export interface ServerMatchBundlePayload {
     position: string;
     playerId: string | null;
     playerName: string;
+    uniformNumber?: string;
   }>;
+  dhStarterPitcher?: MyLineupSlot | null;
+  opponentLineup?: OpponentLineupSlot[];
+  opponentBench?: OpponentBenchPlayer[];
+  myAttendance?: PlayerMatchAttendanceMap;
+  scheduleAbsents?: string[];
   scorebookSnapshot: {
     topStructure: ScorebookSheetStructure | null;
     bottomStructure: ScorebookSheetStructure | null;
@@ -289,6 +319,106 @@ export interface ServerMatchBundlePayload {
   } | null;
 }
 
+async function loadEnrichedRosterPlayersForTeam(params: {
+  d1: D1Database;
+  db: ReturnType<typeof drizzle>;
+  teamId: string;
+  referenceDateKey: string;
+  excludeMatchId: string;
+  canViewConditionNotes: boolean;
+}): Promise<LiveReportRosterPlayer[]> {
+  const {
+    d1,
+    db,
+    teamId,
+    referenceDateKey,
+    excludeMatchId,
+    canViewConditionNotes,
+  } = params;
+  const todayKey = getTodayJstDateKey();
+
+  const [rawPlayerRows, periodsByPlayerId, workloadMap] = await Promise.all([
+    db
+      .select({
+        id: players.id,
+        name: players.name,
+        uniformNumber: players.uniformNumber,
+        mainPosition: players.primaryPosition,
+        isActive: players.isActive,
+        conditionStatus: players.conditionStatus,
+        conditionNote: players.conditionNote,
+        joinedAt: players.joinedAt,
+        createdAt: players.createdAt,
+      })
+      .from(players)
+      .where(eq(players.teamId, teamId))
+      .all(),
+    loadTeamPlayerConditionPeriodsMap(d1, teamId),
+    computeRecentPitchWorkloadByPlayerId(
+      d1,
+      teamId,
+      referenceDateKey,
+      excludeMatchId
+    ),
+  ]);
+
+  const toEpochSeconds = (val: Date | number | null | undefined): number | null => {
+    if (!val) return null;
+    if (val instanceof Date) {
+      return Number.isNaN(val.getTime()) ? null : Math.floor(val.getTime() / 1000);
+    }
+    return typeof val === "number" && Number.isFinite(val) ? val : null;
+  };
+
+  return rawPlayerRows
+    .map((p) => {
+      const rawPeriods = periodsByPlayerId.get(p.id) || [];
+      const eff = resolveEffectivePlayerConditionOnDate({
+        conditionPeriods: rawPeriods,
+        fallbackStatus: p.conditionStatus,
+        fallbackNote: p.conditionNote,
+        dateKey: referenceDateKey,
+        todayKey,
+      });
+      const resolvedNote =
+        eff.status !== "active"
+          ? eff.note ?? p.conditionNote ?? null
+          : p.conditionNote ?? null;
+      const wl = workloadMap.get(p.id);
+      return {
+        id: p.id,
+        name: p.name,
+        uniformNumber: p.uniformNumber || "",
+        mainPosition: p.mainPosition || null,
+        isActive: p.isActive !== false,
+        conditionStatus: eff.status as PlayerConditionStatus,
+        conditionNote: canViewConditionNotes ? resolvedNote : null,
+        conditionPeriods: maskConditionPeriodsForViewer(
+          rawPeriods,
+          canViewConditionNotes
+        ),
+        activeConditionPeriod: eff.period
+          ? canViewConditionNotes
+            ? eff.period
+            : { ...eff.period, privateNote: null }
+          : null,
+        joinedAt: toEpochSeconds(p.joinedAt),
+        createdAt: toEpochSeconds(p.createdAt),
+        yesterdayPitches: wl?.yesterdayPitches || 0,
+        last7DaysPitches: wl?.last7DaysPitches || 0,
+        lastPitchedDate: wl?.lastPitchedDate || null,
+        lastPitchedPitches: wl?.lastPitchedPitches || 0,
+      };
+    })
+    .filter((p) => p.isActive !== false && p.conditionStatus !== "on_leave")
+    .sort((a, b) => {
+      const na = parseInt(a.uniformNumber, 10);
+      const nb = parseInt(b.uniformNumber, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return a.uniformNumber.localeCompare(b.uniformNumber);
+    });
+}
+
 async function loadMatchBundleFromDb(
   db: ReturnType<typeof drizzle>,
   teamId: string,
@@ -298,9 +428,14 @@ async function loadMatchBundleFromDb(
     .select({
       id: matches.id,
       teamId: matches.teamId,
+      date: matches.date,
+      status: matches.status,
+      createdAt: matches.createdAt,
       tournamentId: matches.tournamentId,
       myLineup: matches.myLineup,
       opponentLineup: matches.opponentLineup,
+      opponentBench: matches.opponentBench,
+      myAttendance: matches.myAttendance,
       tournamentName: tournaments.name,
       tournamentCategory: tournaments.category,
       tournamentTimeLimit: tournaments.timeLimit,
@@ -320,81 +455,179 @@ async function loadMatchBundleFromDb(
     matchRow.opponentLineup
   );
   const draftId = `match:${matchId}`;
+  const matchDateKey = toMatchCalendarKey(matchRow.date);
 
-  const [lineupRows, snapRow, logRows, draftRow] = await Promise.all([
-    db
-      .select({
-        battingOrder: matchLineups.battingOrder,
-        position: matchLineups.position,
-        isStarting: matchLineups.isStarting,
-        playerId: matchLineups.playerId,
-        playerName: players.name,
-      })
-      .from(matchLineups)
-      .leftJoin(players, eq(matchLineups.playerId, players.id))
-      .where(eq(matchLineups.matchId, matchId))
-      .orderBy(asc(matchLineups.battingOrder))
-      .all()
-      .catch(() => []),
-    db
-      .select()
-      .from(matchScorebookSnapshots)
-      .where(eq(matchScorebookSnapshots.matchId, matchId))
-      .get()
-      .catch(() => undefined),
-    db
-      .select({
-        id: playLogs.id,
-        inningText: playLogs.inningText,
-        resultType: playLogs.resultType,
-        description: playLogs.description,
-      })
-      .from(playLogs)
-      .where(eq(playLogs.matchId, matchId))
-      .orderBy(asc(playLogs.createdAt))
-      .all()
-      .catch(() => []),
-    db
-      .select()
-      .from(matchLiveReports)
-      .where(
-        and(
-          eq(matchLiveReports.id, draftId),
-          eq(matchLiveReports.teamId, teamId)
+  const [lineupRows, snapRow, logRows, draftRow, teamEventRows] =
+    await Promise.all([
+      db
+        .select({
+          battingOrder: matchLineups.battingOrder,
+          position: matchLineups.position,
+          isStarting: matchLineups.isStarting,
+          playerId: matchLineups.playerId,
+          playerName: players.name,
+          uniformNumber: players.uniformNumber,
+        })
+        .from(matchLineups)
+        .leftJoin(players, eq(matchLineups.playerId, players.id))
+        .where(eq(matchLineups.matchId, matchId))
+        .orderBy(asc(matchLineups.battingOrder))
+        .all()
+        .catch(() => []),
+      db
+        .select()
+        .from(matchScorebookSnapshots)
+        .where(eq(matchScorebookSnapshots.matchId, matchId))
+        .get()
+        .catch(() => undefined),
+      db
+        .select({
+          id: playLogs.id,
+          inningText: playLogs.inningText,
+          resultType: playLogs.resultType,
+          description: playLogs.description,
+        })
+        .from(playLogs)
+        .where(eq(playLogs.matchId, matchId))
+        .orderBy(asc(playLogs.createdAt))
+        .all()
+        .catch(() => []),
+      db
+        .select()
+        .from(matchLiveReports)
+        .where(
+          and(
+            eq(matchLiveReports.id, draftId),
+            eq(matchLiveReports.teamId, teamId)
+          )
         )
-      )
-      .get()
-      .catch(() => undefined),
-  ]);
+        .get()
+        .catch(() => undefined),
+      matchDateKey
+        ? db
+            .select({ id: events.id, startAt: events.startAt })
+            .from(events)
+            .where(eq(events.teamId, teamId))
+            .all()
+            .catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+  let scheduleAbsents: string[] = [];
+  if (matchDateKey && teamEventRows.length > 0) {
+    const sameDayEventIds = teamEventRows
+      .filter((ev) => toTimestampCalendarKey(ev.startAt) === matchDateKey)
+      .map((ev) => ev.id);
+    if (sameDayEventIds.length > 0) {
+      const attRows = await db
+        .select({
+          playerId: attendances.playerId,
+          status: attendances.status,
+        })
+        .from(attendances)
+        .where(inArray(attendances.eventId, sameDayEventIds))
+        .all()
+        .catch(() => []);
+      const absSet = new Set<string>();
+      for (const a of attRows) {
+        if (a.playerId && a.status === "absent") {
+          absSet.add(a.playerId);
+        }
+      }
+      scheduleAbsents = Array.from(absSet);
+    }
+  }
+
+  const parsedMyJson = safeParseJson<Array<Record<string, unknown>>>(
+    matchRow.myLineup,
+    []
+  );
+  const splitMy = splitLoadedMyLineupSlots(parsedMyJson);
+  const hasJsonStarters =
+    splitMy.battingSlots.some((s) => Boolean(s.playerId || s.name.trim())) ||
+    Boolean(
+      splitMy.dhPitcher &&
+        (splitMy.dhPitcher.playerId || splitMy.dhPitcher.name.trim())
+    );
 
   const starters = lineupRows.filter((r) => r.isStarting !== false);
   let resolvedLineup: ServerMatchBundlePayload["lineup"] = [];
+  let resolvedDhStarterPitcher: MyLineupSlot | null = splitMy.dhPitcher;
 
-  if (starters.length > 0) {
+  if (hasJsonStarters) {
+    resolvedLineup = splitMy.battingSlots.map((s) => ({
+      order: s.order,
+      position: s.position || "打",
+      playerId: s.playerId || null,
+      playerName: s.name || "",
+      ...(s.uniformNumber ? { uniformNumber: s.uniformNumber } : {}),
+    }));
+  } else if (starters.length > 0) {
     resolvedLineup = starters.map((r) => ({
       order: r.battingOrder,
       position: r.position || "打",
       playerId: r.playerId || null,
       playerName: r.playerName || "",
+      ...(r.uniformNumber ? { uniformNumber: r.uniformNumber } : {}),
     }));
-  } else if (matchRow.myLineup) {
-    const parsedJson = safeParseJson<Array<Record<string, unknown>>>(
-      matchRow.myLineup,
-      []
-    );
-    if (Array.isArray(parsedJson) && parsedJson.length > 0) {
-      resolvedLineup = parsedJson.map((item, idx) => ({
+    resolvedDhStarterPitcher = null;
+  }
+
+  const rawOppJson = safeParseJson<Array<Record<string, unknown>>>(
+    matchRow.opponentLineup,
+    []
+  );
+  const resolvedOpponentLineup: OpponentLineupSlot[] = Array.isArray(rawOppJson)
+    ? rawOppJson.map((item, idx) => ({
         order:
-          typeof item.battingOrder === "number" ? item.battingOrder : idx + 1,
-        position: typeof item.position === "string" ? item.position : "打",
-        playerId: typeof item.playerId === "string" ? item.playerId : null,
-        playerName:
+          typeof item.order === "number"
+            ? item.order
+            : typeof item.battingOrder === "number"
+            ? item.battingOrder
+            : idx + 1,
+        position: typeof item.position === "string" ? item.position : "",
+        name:
           typeof item.name === "string"
             ? item.name
             : typeof item.playerName === "string"
             ? item.playerName
             : "",
-      }));
+        uniformNumber:
+          typeof item.uniformNumber === "string" ? item.uniformNumber : "",
+      }))
+    : [];
+
+  const rawOppBenchJson = safeParseJson<Array<Record<string, unknown>>>(
+    matchRow.opponentBench,
+    []
+  );
+  const resolvedOpponentBench: OpponentBenchPlayer[] = Array.isArray(
+    rawOppBenchJson
+  )
+    ? rawOppBenchJson.map((item, idx) => ({
+        id: typeof item.id === "string" ? item.id : `opp-b-${idx + 1}`,
+        name:
+          typeof item.name === "string"
+            ? item.name
+            : typeof item.playerName === "string"
+            ? item.playerName
+            : "",
+        uniformNumber:
+          typeof item.uniformNumber === "string" ? item.uniformNumber : "",
+        position: typeof item.position === "string" ? item.position : "",
+      }))
+    : [];
+
+  const rawAttJson = safeParseJson<Record<string, unknown>>(
+    matchRow.myAttendance,
+    {}
+  );
+  const resolvedMyAttendance: PlayerMatchAttendanceMap = {};
+  if (rawAttJson && typeof rawAttJson === "object" && !Array.isArray(rawAttJson)) {
+    for (const [k, v] of Object.entries(rawAttJson)) {
+      if (v === "bench" || v === "absent" || v === "excluded") {
+        resolvedMyAttendance[k] = v;
+      }
     }
   }
 
@@ -428,13 +661,30 @@ async function loadMatchBundleFromDb(
 
   let cloudDraft: ServerMatchBundlePayload["cloudDraft"] = null;
   if (draftRow && draftRow.reportJson) {
-    const parsedDoc = sanitizeLiveReportDocument(
+    let parsedDoc = sanitizeLiveReportDocument(
       safeParseJson<unknown>(draftRow.reportJson, null)
     );
     if (parsedDoc) {
       if ((parsedDoc.opponentBatterCount || 9) === 9 && opponentBatterCount > 9) {
         parsedDoc.opponentBatterCount = opponentBatterCount;
       }
+      parsedDoc = mergeSavedMatchLineupIntoDoc(
+        parsedDoc,
+        {
+          myLineup: resolvedLineup.map((s) => ({
+            order: s.order,
+            position: s.position,
+            playerId: s.playerId || "",
+            name: s.playerName,
+            uniformNumber: s.uniformNumber || "",
+          })),
+          dhStarterPitcher: resolvedDhStarterPitcher,
+          opponentLineup: resolvedOpponentLineup,
+          opponentBench: resolvedOpponentBench,
+          myAttendance: resolvedMyAttendance,
+        },
+        { overwriteFilled: false }
+      );
       cloudDraft = {
         draftId: draftRow.id,
         report: parsedDoc,
@@ -459,11 +709,26 @@ async function loadMatchBundleFromDb(
         }
       : null;
 
+  const matchCreatedAt =
+    matchRow.createdAt instanceof Date
+      ? Math.floor(matchRow.createdAt.getTime() / 1000)
+      : typeof matchRow.createdAt === "number"
+      ? matchRow.createdAt
+      : null;
+
   return {
     matchId,
+    matchDate: matchRow.date,
+    matchStatus: matchRow.status,
+    matchCreatedAt,
     opponentBatterCount,
     tournamentRules,
     lineup: resolvedLineup,
+    dhStarterPitcher: resolvedDhStarterPitcher,
+    opponentLineup: resolvedOpponentLineup,
+    opponentBench: resolvedOpponentBench,
+    myAttendance: resolvedMyAttendance,
+    scheduleAbsents,
     scorebookSnapshot,
     playLogs: logRows,
     cloudDraft,
@@ -498,6 +763,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         },
         matches: [],
         players: [],
+        templates: [],
         matchBundle: null,
         freeCloudDraft: null,
         personalFreeDrafts: [],
@@ -509,12 +775,14 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
 
     const [
       callerCtx,
+      callerAccess,
       teamRow,
       rawMatchRows,
-      rawPlayerRows,
       teamDraftRows,
+      rawTemplateRows,
     ] = await Promise.all([
       resolveCallerReporterContext(c, db, teamId),
+      resolveCallerTeamAccess(c),
       db
         .select({
           id: teams.id,
@@ -565,18 +833,6 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         .all(),
       db
         .select({
-          id: players.id,
-          name: players.name,
-          uniformNumber: players.uniformNumber,
-          mainPosition: players.primaryPosition,
-          isActive: players.isActive,
-          conditionStatus: players.conditionStatus,
-        })
-        .from(players)
-        .where(eq(players.teamId, teamId))
-        .all(),
-      db
-        .select({
           id: matchLiveReports.id,
           matchId: matchLiveReports.matchId,
           reportJson: matchLiveReports.reportJson,
@@ -586,6 +842,13 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
         })
         .from(matchLiveReports)
         .where(eq(matchLiveReports.teamId, teamId))
+        .all()
+        .catch(() => []),
+      db
+        .select()
+        .from(lineupTemplates)
+        .where(eq(lineupTemplates.teamId, teamId))
+        .orderBy(desc(lineupTemplates.createdAt))
         .all()
         .catch(() => []),
     ]);
@@ -741,44 +1004,35 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
       return b.date.localeCompare(a.date);
     });
 
-    const periodsByPlayerId = await loadTeamPlayerConditionPeriodsMap(
-      c.env.DB,
-      teamId
-    );
     const todayKey = getTodayJstDateKey();
     const targetMatchOption = matchId
       ? formattedMatches.find((m) => m.id === matchId)
       : formattedMatches[0];
     const targetMatchDateKey =
       toMatchCalendarKey(targetMatchOption?.date) || todayKey;
+    const canViewNotes = callerAccess.canManagePlayersForTeam(teamId);
 
-    const activePlayers: LiveReportRosterPlayer[] = rawPlayerRows
-      .filter((p) => {
-        if (p.isActive === false) return false;
-        const eff = resolveEffectivePlayerConditionOnDate({
-          conditionPeriods: periodsByPlayerId.get(p.id) || [],
-          fallbackStatus: p.conditionStatus,
-          dateKey: targetMatchDateKey,
-          todayKey,
-        });
-        return eff.status !== "on_leave";
-      })
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        uniformNumber: p.uniformNumber || "",
-        mainPosition: p.mainPosition || null,
-      }))
-      .sort((a, b) => {
-        const na = parseInt(a.uniformNumber, 10);
-        const nb = parseInt(b.uniformNumber, 10);
-        if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
-        return a.uniformNumber.localeCompare(b.uniformNumber);
-      });
+    const [activePlayers, matchBundle] = await Promise.all([
+      loadEnrichedRosterPlayersForTeam({
+        d1: c.env.DB,
+        db,
+        teamId,
+        referenceDateKey: targetMatchDateKey,
+        excludeMatchId: targetMatchOption?.id || "",
+        canViewConditionNotes: canViewNotes,
+      }),
+      matchId ? loadMatchBundleFromDb(db, teamId, matchId) : Promise.resolve(null),
+    ]);
 
-    const matchBundle = matchId
-      ? await loadMatchBundleFromDb(db, teamId, matchId)
-      : null;
+    const templates: LineupTemplateItem[] = rawTemplateRows.map((tpl) => ({
+      id: tpl.id,
+      name: tpl.name,
+      lineupData: (typeof tpl.lineupData === "string"
+        ? safeParseJson<MyLineupSlot[]>(tpl.lineupData, [])
+        : Array.isArray(tpl.lineupData)
+        ? tpl.lineupData
+        : []) as MyLineupSlot[],
+    }));
 
     const scoreTeamNameMode = extractScoreTeamNameModeFromJson(
       teamRow?.scorebookSymbolRules
@@ -810,6 +1064,7 @@ liffNewsGeneratorRouter.get("/context", async (c) => {
       },
       matches: formattedMatches,
       players: activePlayers,
+      templates,
       matchBundle,
       freeCloudDraft: null,
       personalFreeDrafts,
@@ -834,9 +1089,29 @@ liffNewsGeneratorRouter.get("/match-bundle", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const db = drizzle(c.env.DB);
-    const matchBundle = await loadMatchBundleFromDb(db, teamId, matchId);
+    const [callerAccess, matchBundle] = await Promise.all([
+      resolveCallerTeamAccess(c),
+      loadMatchBundleFromDb(db, teamId, matchId),
+    ]);
 
-    return c.json({ success: true, matchBundle });
+    const refDateKey =
+      toMatchCalendarKey(matchBundle?.matchDate) || getTodayJstDateKey();
+    const refreshedPlayers = matchBundle
+      ? await loadEnrichedRosterPlayersForTeam({
+          d1: c.env.DB,
+          db,
+          teamId,
+          referenceDateKey: refDateKey,
+          excludeMatchId: matchId,
+          canViewConditionNotes: callerAccess.canManagePlayersForTeam(teamId),
+        })
+      : undefined;
+
+    return c.json({
+      success: true,
+      matchBundle,
+      ...(refreshedPlayers ? { players: refreshedPlayers } : {}),
+    });
   } catch (error) {
     console.error("[GET /api/liff/news-generator/match-bundle] Error:", error);
     return c.json(
@@ -1298,14 +1573,18 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
         },
       });
 
-    // 試合連動モード時：公式スコアブック未登録かつ雨天中止でない試合なら matches のスコア・イニング・ステータスを自動同期
+    // 試合連動モード時：スタメン・ベンチ・出欠を matches と双方向同期し、公式スコアブック未登録時はスコア・ステータスも自動同期
+    // （フリー作成モード isPersonalFreeDraft === true の場合は一切試合テーブルへ紐付け・書き込みしない）
     let syncedMatchScore = false;
+    let syncedMatchLineup = false;
     if (!isPersonalFreeDraft && matchIdVal) {
+      await ensureMatchLineupColumns(c.env.DB);
       const [matchRow, snapRow, anyAbRow] = await Promise.all([
         db
           .select({
             id: matches.id,
             status: matches.status,
+            myLineup: matches.myLineup,
           })
           .from(matches)
           .where(and(eq(matches.id, matchIdVal), eq(matches.teamId, teamId)))
@@ -1327,6 +1606,29 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
       ]);
 
       const hasScorebook = Boolean(snapRow || anyAbRow);
+      const existingMyLineupHasData =
+        Boolean(matchRow?.myLineup) &&
+        matchRow?.myLineup !== "[]" &&
+        safeParseJson<unknown[]>(matchRow?.myLineup, []).length > 0;
+
+      if (
+        matchRow &&
+        !snapRow &&
+        (hasMeaningfulDocLineupData(sanitized) || existingMyLineupHasData)
+      ) {
+        const lineupPayload = serializeDocLineupForMatchStorage(sanitized);
+        await db
+          .update(matches)
+          .set({
+            myLineup: JSON.stringify(lineupPayload.myLineup),
+            opponentLineup: JSON.stringify(lineupPayload.opponentLineup),
+            opponentBench: JSON.stringify(lineupPayload.opponentBench || []),
+            myAttendance: JSON.stringify(lineupPayload.myAttendance),
+          })
+          .where(and(eq(matches.id, matchIdVal), eq(matches.teamId, teamId)));
+        syncedMatchLineup = true;
+      }
+
       const hasRecordedScoringOrPlay = sanitized.halfInnings.some(
         (h) => h.entries.length > 0 || h.manualRunsOverride !== null
       );
@@ -1381,6 +1683,7 @@ liffNewsGeneratorRouter.put("/draft", async (c) => {
       success: true,
       merged: false,
       syncedMatchScore,
+      syncedMatchLineup,
       report: sanitized,
       editorOwnerKey: nextEditorOwnerKey,
       updatedAt: now,
