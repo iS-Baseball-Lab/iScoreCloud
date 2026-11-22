@@ -1566,6 +1566,7 @@ interface AnalyzeStructurePayload {
   summaryCropMimeType?: string;
   legendBase64?: string;
   legendMimeType?: string;
+  skipModels?: string[];
 }
 
 interface SavedJsonLineupEntry {
@@ -1605,6 +1606,7 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
 
   await ensureMatchLineupColumns(c.env.DB);
   const db = drizzle(c.env.DB, { schema });
+  const cooledModels: string[] = [];
 
   try {
     const body = (await c.req.json()) as AnalyzeStructurePayload;
@@ -1844,7 +1846,12 @@ ${battingTeamContext}${scoreboardHintText}
       apiKey,
       prompt,
       imageParts,
-      "structure"
+      "structure",
+      undefined,
+      {
+        skipModels: body.skipModels,
+        cooledModelsOut: cooledModels,
+      }
     );
 
     const rawLineupRightX =
@@ -2164,10 +2171,14 @@ ${battingTeamContext}${scoreboardHintText}
     return c.json({
       success: true,
       structure,
+      cooledModels,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return c.json({ success: false, error: `骨格スキャンエラー: ${msg}` }, 500);
+    return c.json(
+      { success: false, error: `骨格スキャンエラー: ${msg}`, cooledModels },
+      500
+    );
   }
 });
 

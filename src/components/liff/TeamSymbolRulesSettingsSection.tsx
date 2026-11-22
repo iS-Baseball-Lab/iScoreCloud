@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { normalizeClientFetchErrorMessage } from "@/lib/liff/api-cache";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_TEAM_SCOREBOOK_SYMBOL_RULES,
@@ -254,11 +255,12 @@ export function TeamSymbolRulesSettingsSection({
       }
       toast.success("早見表画像からチーム記号ルールを自動設定しました！");
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "AI自動読取に失敗しました。手動で選択してください。";
-      toast.error(msg);
+      toast.error(
+        normalizeClientFetchErrorMessage(
+          err,
+          "AI自動読取に失敗しました。手動で選択してください。"
+        )
+      );
     } finally {
       setIsExtractingAi(false);
     }

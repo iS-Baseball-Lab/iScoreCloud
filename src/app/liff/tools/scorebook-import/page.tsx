@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { useLiff, useLiffPermissions } from "@/components/liff/LiffProvider";
+import { normalizeClientFetchErrorMessage } from "@/lib/liff/api-cache";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
@@ -1490,13 +1491,16 @@ export default function LiffScorebookImportPage() {
           summaryCropMimeType: focusCrops?.mimeType,
           legendBase64: legendOverride?.base64,
           legendMimeType: legendOverride?.mimeType,
+          skipModels: getActiveSkippedModels(),
         }),
       });
       const data = await parseSafeJson<{
         success: boolean;
         structure?: ScorebookSheetStructure;
+        cooledModels?: string[];
         error?: string;
       }>(res, "骨格スキャン通信エラー");
+      recordCooledModels(data.cooledModels);
       if (!data.success || !data.structure) {
         throw new Error(data.error || "骨格スキャンに失敗しました");
       }
@@ -1508,10 +1512,12 @@ export default function LiffScorebookImportPage() {
     } catch (firstErr) {
       const firstMsg =
         firstErr instanceof Error ? firstErr.message : String(firstErr);
-      // 全モデルのクォータ上限(429)到達時は即座の多重リトライで枠をさらに消費しないよう待機時間を長めに取る
+      // 全モデルのクォータ上限(429)到達時やアプリがバックグラウンドにある時は多重リトライしない
       const isQuotaError =
         firstMsg.includes("429") || firstMsg.includes("利用枠上限");
-      if (isQuotaError) {
+      const isBackgrounded =
+        typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (isQuotaError || isBackgrounded) {
         throw firstErr;
       }
       setStructureProgressLabel(
@@ -1614,8 +1620,9 @@ export default function LiffScorebookImportPage() {
       setStructureTotalMs(Date.now() - stage1Start);
       setStep(2);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "骨格スキャンに失敗しました")
+      );
     } finally {
       setIsAnalyzingStructure(false);
       setStructureProgressLabel("");
@@ -1671,8 +1678,9 @@ export default function LiffScorebookImportPage() {
         return next;
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "骨格の再スキャンに失敗しました")
+      );
     } finally {
       setIsAnalyzingStructure(false);
       setStructureProgressLabel("");
@@ -2460,10 +2468,10 @@ export default function LiffScorebookImportPage() {
                     status: "success",
                   });
                 } catch (singleErr) {
-                  const errMsg =
-                    singleErr instanceof Error
-                      ? singleErr.message
-                      : String(singleErr);
+                  const errMsg = normalizeClientFetchErrorMessage(
+                    singleErr,
+                    `${singleLabel}の解析エラー`
+                  );
                   upsertTimingEntry({
                     key: singleKey,
                     isTop,
@@ -2484,8 +2492,10 @@ export default function LiffScorebookImportPage() {
               }
             } else {
               // 1イニング単独エラー時も全体を止めず、当該イニングをエラー記録して残りイニングの解析を続行する！
-              const errMsg =
-                chunkErr instanceof Error ? chunkErr.message : String(chunkErr);
+              const errMsg = normalizeClientFetchErrorMessage(
+                chunkErr,
+                `${itemLabel}の解析エラー`
+              );
               upsertTimingEntry({
                 key: entryKey,
                 isTop,
@@ -2644,8 +2654,9 @@ export default function LiffScorebookImportPage() {
         );
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "イニング解析に失敗しました")
+      );
     } finally {
       setIsAnalyzingInnings(false);
       setAnalysisProgressLabel("");
@@ -2843,8 +2854,9 @@ export default function LiffScorebookImportPage() {
         return next;
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "イニングの再解析に失敗しました")
+      );
     } finally {
       setReanalyzingInningKey(null);
     }
@@ -2968,8 +2980,9 @@ export default function LiffScorebookImportPage() {
         }
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "AI自動補正に失敗しました")
+      );
     } finally {
       setIsRepairingOrderGaps(false);
     }
@@ -3132,8 +3145,9 @@ export default function LiffScorebookImportPage() {
       setSaveSummary(summary);
       setStep(4);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setErrorBanner(msg);
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "試合データの保存に失敗しました")
+      );
     } finally {
       setIsSaving(false);
     }

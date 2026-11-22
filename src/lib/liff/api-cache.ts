@@ -60,10 +60,101 @@ const FOREGROUND_ATTEMPT_TIMEOUT_MS = 9_500; // 初回試行の待機上限（�
 const FOREGROUND_GET_TIMEOUT_MS = 11_000; // リトライ試行の最大待機時間
 const WARMUP_GET_TIMEOUT_MS = 8_000; // 先行プリフェッチ通信の最大待機時間
 const MUTATION_JSON_TIMEOUT_MS = 22_000; // 更新系通信のハング防止タイムアウト（コネクション枠枯渇を防止）
-const MUTATION_UPLOAD_TIMEOUT_MS = 60_000; // 画像・PDFアップロード系の最大待機時間
+const MUTATION_UPLOAD_TIMEOUT_MS = 60_000; // 画像・PDF・スコアシート保存アップロード系の最大待機時間
 const AI_REQUEST_TIMEOUT_MS = 65_000; // AI調査・解析系（大規模連盟一括収集・URL実在検証を含む）の最大待機時間
+const SCOREBOOK_AI_REQUEST_TIMEOUT_MS = 95_000; // 紙スコアブック高精細AI解析（サーバー予算72秒＋複数画像アップロード余裕）の最大待機時間
+const LARGE_JSON_BODY_THRESHOLD_CHARS = 200_000; // Base64画像等を含む大容量JSONボディの閾値
 const RESUME_ZOMBIE_THRESHOLD_MS = 4_500; // バックグラウンド復帰時に強制解除する滞留通信の閾値
 const AUTO_RETRY_BACKOFF_MS = 220;
+
+export function isScorebookVisionAiUrl(rawUrl: string): boolean {
+  return (
+    rawUrl.includes("/scorebook/analyze-structure") ||
+    rawUrl.includes("/scorebook/analyze-inning") ||
+    rawUrl.includes("/scorebook/reconcile-missing-atbats") ||
+    rawUrl.includes("/scorebook/reconcile-inning-outs") ||
+    rawUrl.includes("/scorebook/extract-symbol-rules") ||
+    (rawUrl.includes("/api/matches/") && rawUrl.endsWith("/scorebook"))
+  );
+}
+
+export function isReadOnlyAiMutationUrl(rawUrl: string): boolean {
+  return (
+    rawUrl.includes("/ai-discover") ||
+    rawUrl.includes("/ai-lookup") ||
+    rawUrl.includes("/scorebook/analyze-structure") ||
+    rawUrl.includes("/scorebook/analyze-inning") ||
+    rawUrl.includes("/scorebook/reconcile-missing-atbats") ||
+    rawUrl.includes("/scorebook/reconcile-inning-outs")
+  );
+}
+
+export function resolveMutationTimeoutMs(
+  rawUrl: string,
+  init?: RequestInit
+): number {
+  if (isScorebookVisionAiUrl(rawUrl)) {
+    return SCOREBOOK_AI_REQUEST_TIMEOUT_MS;
+  }
+  const isAiRequest =
+    rawUrl.includes("/ai-discover") ||
+    rawUrl.includes("/ai-lookup") ||
+    rawUrl.includes("/analyze-inning") ||
+    rawUrl.includes("/news-generator");
+  if (isAiRequest) {
+    return AI_REQUEST_TIMEOUT_MS;
+  }
+  const isLargeJsonBody =
+    typeof init?.body === "string" &&
+    init.body.length >= LARGE_JSON_BODY_THRESHOLD_CHARS;
+  const isUploadBody =
+    isLargeJsonBody ||
+    rawUrl.includes("/scorebook/save") ||
+    rawUrl.includes("/scorebook/legend") ||
+    rawUrl.includes("/upload") ||
+    rawUrl.includes("/photos") ||
+    rawUrl.includes("/logo") ||
+    rawUrl.includes("/cover") ||
+    (typeof FormData !== "undefined" && init?.body instanceof FormData) ||
+    (typeof Blob !== "undefined" && init?.body instanceof Blob);
+  if (isUploadBody) {
+    return MUTATION_UPLOAD_TIMEOUT_MS;
+  }
+  return MUTATION_JSON_TIMEOUT_MS;
+}
+
+export function normalizeClientFetchErrorMessage(
+  err: unknown,
+  fallbackMessage = "通信エラーが発生しました。電波状況をご確認のうえもう一度お試しください"
+): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === "string"
+        ? err
+        : String(err ?? "");
+  const trimmed = raw.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    !trimmed ||
+    lower.includes("signal is aborted without reason") ||
+    lower === "aborted" ||
+    lower === "the operation was aborted." ||
+    lower === "the operation was aborted" ||
+    lower === "the user aborted a request." ||
+    lower === "request aborted"
+  ) {
+    return "通信が中断またはタイムアウトしました。解析中は画面を閉じず、電波状況をご確認のうえもう一度お試しください";
+  }
+  if (
+    lower === "failed to fetch" ||
+    lower === "load failed" ||
+    lower.includes("networkerror when attempting to fetch")
+  ) {
+    return "ネットワーク通信が途切れました。電波状況をご確認のうえもう一度お試しください";
+  }
+  return trimmed || fallbackMessage;
+}
 
 const PERSISTENT_ELIGIBLE_PREFIXES = [
   "/api/liff/hub",
@@ -114,7 +205,8 @@ export function getLastLiffCacheInvalidatedAt(): number {
 
 function createTimedSignal(
   timeoutMs: number,
-  upstreamSignal?: AbortSignal | null
+  upstreamSignal?: AbortSignal | null,
+  timeoutMessage?: string
 ): {
   controller: AbortController;
   cleanup: () => void;
@@ -122,7 +214,12 @@ function createTimedSignal(
   const controller = new AbortController();
   const timerId = setTimeout(() => {
     try {
-      controller.abort();
+      const timeoutErr = new Error(
+        timeoutMessage ||
+          `通信がタイムアウトしました（${Math.round(timeoutMs / 1000)}秒）。電波状況をご確認のうえもう一度お試しください`
+      );
+      timeoutErr.name = "TimeoutError";
+      controller.abort(timeoutErr);
     } catch {
       // ignore abort errors
     }
@@ -130,7 +227,19 @@ function createTimedSignal(
 
   const onUpstreamAbort = () => {
     try {
-      controller.abort();
+      const upstreamReason =
+        upstreamSignal && "reason" in upstreamSignal
+          ? upstreamSignal.reason
+          : undefined;
+      if (upstreamReason !== undefined) {
+        controller.abort(upstreamReason);
+      } else {
+        const abortErr = new Error(
+          "通信が中断されました。もう一度お試しください"
+        );
+        abortErr.name = "AbortError";
+        controller.abort(abortErr);
+      }
     } catch {
       // ignore abort errors
     }
@@ -160,12 +269,17 @@ function abortZombieInflightRequests(
   abortStartedBeforeTimestamp = 0
 ): void {
   const now = Date.now();
+  const makeResumeAbortError = () => {
+    const err = new Error("画面復帰に伴い通信を再接続します");
+    err.name = "AbortError";
+    return err;
+  };
   for (const [key, entry] of Array.from(inflightRequests.entries())) {
     const startedBeforeSuspend =
       abortStartedBeforeTimestamp > 0 && entry.startedAt <= abortStartedBeforeTimestamp;
     if (startedBeforeSuspend || now - entry.startedAt >= forceAllOlderThanMs) {
       try {
-        entry.controller.abort();
+        entry.controller.abort(makeResumeAbortError());
       } catch {}
       inflightRequests.delete(key);
     }
@@ -175,7 +289,7 @@ function abortZombieInflightRequests(
       abortStartedBeforeTimestamp > 0 && entry.startedAt <= abortStartedBeforeTimestamp;
     if (startedBeforeSuspend || now - entry.startedAt >= forceAllOlderThanMs) {
       try {
-        entry.controller.abort();
+        entry.controller.abort(makeResumeAbortError());
       } catch {}
       inflightRawRequests.delete(key);
     }
@@ -811,7 +925,17 @@ async function executeGetSnapshotWithRetry(params: {
 
     const onMasterAbort = () => {
       try {
-        attemptController.abort();
+        const masterReason =
+          "reason" in params.masterAbortSignal
+            ? params.masterAbortSignal.reason
+            : undefined;
+        if (masterReason !== undefined) {
+          attemptController.abort(masterReason);
+        } else {
+          const abortErr = new Error("画面復帰に伴い通信を再試行します");
+          abortErr.name = "AbortError";
+          attemptController.abort(abortErr);
+        }
       } catch {}
     };
     if (useMasterSignal && params.callerSignal && params.masterAbortSignal !== params.callerSignal) {
@@ -1221,28 +1345,15 @@ export function installLiffFastFetchCache(): void {
       const { nextInput, nextInit } = withSameOriginApiAuthHeaders(rawUrl, input, init);
       const callerMutationSignal =
         init?.signal || (input instanceof Request ? input.signal : null);
-      const isAiRequest =
-        rawUrl.includes("/ai-discover") ||
-        rawUrl.includes("/ai-lookup") ||
-        rawUrl.includes("/analyze-inning") ||
-        rawUrl.includes("/news-generator");
-      const isReadOnlyAiPost =
-        rawUrl.includes("/ai-discover") || rawUrl.includes("/ai-lookup");
-      const isUploadBody =
-        rawUrl.includes("/upload") ||
-        rawUrl.includes("/photos") ||
-        rawUrl.includes("/logo") ||
-        rawUrl.includes("/cover") ||
-        (typeof FormData !== "undefined" && init?.body instanceof FormData) ||
-        (typeof Blob !== "undefined" && init?.body instanceof Blob);
-      const mutationTimeoutMs = isAiRequest
-        ? AI_REQUEST_TIMEOUT_MS
-        : isUploadBody
-          ? MUTATION_UPLOAD_TIMEOUT_MS
-          : MUTATION_JSON_TIMEOUT_MS;
+      const isReadOnlyAiPost = isReadOnlyAiMutationUrl(rawUrl);
+      const mutationTimeoutMs = resolveMutationTimeoutMs(rawUrl, init);
+      const timeoutMsg = isScorebookVisionAiUrl(rawUrl)
+        ? `AI画像解析の待機時間上限（${Math.round(mutationTimeoutMs / 1000)}秒）に達しました。電波状況をご確認のうえ、もう一度ボタンを押してください`
+        : undefined;
       const { controller: mutController, cleanup: cleanupMut } = createTimedSignal(
         mutationTimeoutMs,
-        callerMutationSignal
+        callerMutationSignal,
+        timeoutMsg
       );
       try {
         let res = await baseFetch(nextInput, {
