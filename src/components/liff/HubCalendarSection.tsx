@@ -10,12 +10,16 @@ import {
   ChevronRight, 
   ChevronLeft,
   CalendarDays,
+  PartyPopper,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import { buildCalendarMonthGridDays } from "@/lib/liff/calendar-month-bg";
 import { CalendarMonthPhotoMelt } from "@/components/liff/CalendarMonthPhotoMelt";
 import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import {
+  buildDemoSpecialEventsBundle,
   getSpecialEventCategoryMeta,
   type HubSpecialEventSummary,
 } from "@/lib/liff/special-events-schema";
@@ -221,7 +225,14 @@ export function HubCalendarSection({
           ]
         : [];
 
-    const specialParsed: ParsedCalendarItem[] = (specialEvents || [])
+    const effectiveSpecialForDots =
+      specialEvents && specialEvents.length > 0
+        ? specialEvents
+        : isDemo
+        ? buildDemoSpecialEventsBundle().hubSummaries
+        : [];
+
+    const specialParsed: ParsedCalendarItem[] = effectiveSpecialForDots
       .filter((sp) => sp.mode === "rsvp" && sp.eventDate && sp.status !== "archived")
       .map((sp) => {
         const cat = getSpecialEventCategoryMeta(sp.category);
@@ -248,19 +259,53 @@ export function HubCalendarSection({
     );
   }, [eventsList, specialEvents, isDemo]);
 
-  // 当日予定と選択日予定・今後の予定の切り分け
+  // 当日予定と選択日予定（カレンダー日付タップ時は通常予定＋確定済行事を両方表示）
   const todayCalendarEvents = allParsedEvents.filter((e) => e.dateStr === todayStr);
   const selectedDateEvents =
     selectedDateStr !== todayStr
       ? allParsedEvents.filter((e) => e.dateStr === selectedDateStr)
       : [];
-  const futureCalendarEvents = allParsedEvents
+
+  // 📅 今後の活動予定（通常の練習・試合等のみで最大5件）
+  const regularOnlyEvents = useMemo(
+    () => allParsedEvents.filter((e) => e.type !== "special"),
+    [allParsedEvents]
+  );
+  const futureCalendarEvents = regularOnlyEvents
     .filter((e) => e.dateStr !== todayStr && e.dateStr >= todayStr)
     .slice(0, 5);
   const upcomingEvents =
     futureCalendarEvents.length > 0
       ? futureCalendarEvents
-      : allParsedEvents.slice(0, 5);
+      : regularOnlyEvents.slice(0, 5);
+
+  // 🎉 行事・アンケート（今後の活動予定とは別枠で最大5件）
+  const upcomingSpecialEvents = useMemo<HubSpecialEventSummary[]>(() => {
+    const source =
+      specialEvents && specialEvents.length > 0
+        ? specialEvents
+        : isDemo
+        ? buildDemoSpecialEventsBundle().hubSummaries
+        : [];
+
+    const active = source.filter((sp) => {
+      if (sp.status === "archived") return false;
+      if (sp.mode === "rsvp" && sp.eventDate && sp.eventDate < todayStr && sp.status !== "open") {
+        return false;
+      }
+      return true;
+    });
+
+    return [...active]
+      .sort((a, b) => {
+        const statusDiff = (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1);
+        if (statusDiff !== 0) return statusDiff;
+        const aDate = a.eventDate || a.deadlineDate || "9999-12-31";
+        const bDate = b.eventDate || b.deadlineDate || "9999-12-31";
+        return aDate.localeCompare(bDate);
+      })
+      .slice(0, 5);
+  }, [isDemo, specialEvents, todayStr]);
 
   const getDateFlags = (dStr: string) => {
     const items = allParsedEvents.filter((e) => e.dateStr === dStr);
@@ -760,6 +805,140 @@ export function HubCalendarSection({
                 </Link>
               ))}
             </div>
+          </div>
+
+          {/* 🎉 【行事・アンケート（別枠・最大5件）】 */}
+          <div className="pt-2.5 border-t border-border/60 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-foreground flex items-center gap-1.5">
+                <PartyPopper className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>行事・アンケート</span>
+              </span>
+              <Link
+                href="/liff/events"
+                onPointerDown={() => warmupLiffEndpointForHref("/liff/events")}
+                className="text-[11px] font-black text-primary hover:underline flex items-center gap-0.5"
+              >
+                <span>行事・アンケート一覧</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {upcomingSpecialEvents.length === 0 ? (
+              <Link
+                href="/liff/events"
+                onPointerDown={() => warmupLiffEndpointForHref("/liff/events")}
+                className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-muted/30 hover:bg-muted/55 border border-border/60 hover:border-amber-500/40 transition-all"
+              >
+                <span className="text-[11px] font-bold text-muted-foreground truncate">
+                  忘年会・卒団式・親子レク・日程調整の作成・確認はこちら
+                </span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+              </Link>
+            ) : (
+              <div className="space-y-2">
+                {upcomingSpecialEvents.map((sp) => {
+                  const cat = getSpecialEventCategoryMeta(sp.category);
+                  const isPoll = sp.mode === "date_poll";
+
+                  return (
+                    <Link
+                      key={sp.id}
+                      href={`/liff/events?id=${encodeURIComponent(sp.id)}`}
+                      onPointerDown={() =>
+                        warmupLiffEndpointForHref("/liff/events")
+                      }
+                      className="block p-2.5 rounded-2xl bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 transition-all group"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        {/* 均一幅（58px固定）の日付・種別バッジ */}
+                        <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35">
+                          <span className="text-[10.5px] font-black leading-tight tracking-tight truncate max-w-full">
+                            {isPoll
+                              ? "日程調整"
+                              : sp.eventDateLabel || "日程未定"}
+                          </span>
+                          <span className="text-[9px] font-bold mt-0.5 opacity-90 truncate max-w-full">
+                            {cat.icon} {isPoll ? "アンケート" : cat.shortLabel}
+                          </span>
+                        </div>
+
+                        {/* 行事・アンケート詳細 */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
+                              {sp.title}
+                            </h4>
+                            <span
+                              className={cn(
+                                "px-1.5 py-0.5 rounded-full text-[9.5px] font-black shrink-0 border",
+                                sp.status !== "open"
+                                  ? "bg-muted text-muted-foreground border-border"
+                                  : !sp.myResponded
+                                  ? "bg-amber-500 text-slate-950 border-amber-400"
+                                  : sp.myOverallState === "attending"
+                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35"
+                                  : "bg-muted text-muted-foreground border-border"
+                              )}
+                            >
+                              {sp.status !== "open"
+                                ? "締切済"
+                                : !sp.myResponded
+                                ? "未回答"
+                                : sp.myOverallState === "attending"
+                                ? isPoll
+                                  ? "回答済"
+                                  : `出席 ${sp.myHeadcount}名`
+                                : "欠席"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 font-bold text-foreground/90 text-[10px] min-w-0">
+                            {isPoll ? (
+                              <>
+                                <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-500/35">
+                                  🗳️ 候補日
+                                </span>
+                                <span className="flex items-center gap-0.5 text-muted-foreground truncate min-w-0 flex-1 tabular-nums">
+                                  <Users className="w-2.5 h-2.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">
+                                    回答 {sp.respondedHouseholdCount}/
+                                    {sp.activeTargetHouseholdCount}世帯
+                                  </span>
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="flex items-center gap-0.5 shrink-0 text-muted-foreground tabular-nums">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span>{sp.timeRangeLabel}</span>
+                                </span>
+                                <span className="flex items-center gap-0.5 truncate text-foreground min-w-0 flex-1">
+                                  <MapPin className="w-2.5 h-2.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">
+                                    {sp.location || "会場調整中"}
+                                  </span>
+                                </span>
+                                <span className="shrink-0 text-teal-700 dark:text-teal-300 font-black tabular-nums">
+                                  計{sp.totalHeadcount}名
+                                </span>
+                              </>
+                            )}
+                            {sp.deadlineDateLabel && (
+                              <span className="shrink-0 text-amber-700 dark:text-amber-300 font-black tabular-nums">
+                                〆{sp.deadlineDateLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-2" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
         </div>
