@@ -417,58 +417,92 @@ const LEGEND_PART_CACHE = new Map<
   { expiresAt: number; part: GeminiInlineDataPart | null }
 >();
 
+export interface ThinkingWatchdogPlan {
+  expired: boolean;
+  nextWaitMs: number;
+  reason: string;
+}
+
+/**
+ * 思考チャンクが連続受信されている最中でも `firstTextTimeoutMs` を厳格な絶対上限として守り、
+ * 単一モデルの長考（Overthinking）でリクエスト全体予算を食い潰すのを100%防ぐ純粋計算ヘルパー
+ */
+export function computeThinkingWatchdogPlan(
+  elapsedAttemptMs: number,
+  firstTextTimeoutMs: number,
+  idleCapMs = 15_000
+): ThinkingWatchdogPlan {
+  const remainingForText = firstTextTimeoutMs - elapsedAttemptMs;
+  if (remainingForText <= 0) {
+    return {
+      expired: true,
+      nextWaitMs: 0,
+      reason: `思考フェーズ上限到達 (${Math.round(firstTextTimeoutMs / 1000)}秒)`,
+    };
+  }
+  const nextWaitMs = Math.min(idleCapMs, Math.max(200, remainingForText));
+  return {
+    expired: false,
+    nextWaitMs,
+    reason:
+      remainingForText <= idleCapMs
+        ? "思考フェーズ上限到達"
+        : "思考ストリーム無応答",
+  };
+}
+
 /**
  * Gemini 4 Hydrogen ＋ Gemini 3 マルチプール・フェイルオーバールーティング:
  * - 無償枠（Free Tier）対応の最新主力モデル `gemini-4-hydrogen` を最優先（1番手）に配置し、
- *   単一モデルのRPM/RPD上限（429）到達時は即座に `gemini-3.8-flash` 以降の独立クォータ枠へ0ms自動切替する
+ *   単一モデルのRPM/RPD上限（429）や思考タイムアウト到達時は即座に `gemini-3.8-flash` 以降の独立クォータ枠へ0ms自動切替する
  * - 廃止・無料枠ゼロ・404のモデル（旧2.5系 / 3.5-flash / gemini-flash-latest / gemini-3.8-flash-lite）を完全排除
- * - `gemini-4-hydrogen` は既定の `HIGH`（旧 `3.8-flash` の `MEDIUM` 相当の推論深度かつ約2.5倍高速）で、
- *   手書きの「くっつき文字・にじみ」を1画ずつ論理分解する高精度推論と高速応答を両立する
+ * - 全体骨格（`structure`）は `HIGH`、既に打順・列が確定済みの1イニング拡大解析（`chunk`）は長考ループを防ぎ高速・高精度を両立する `MEDIUM` とし、
+ *   1リクエスト予算（72〜76秒）内で最低3モデルの自動フェイルオーバーが必ず完走する上限秒数に設計する
  */
-function getGeminiModelConfigs(
+export function getGeminiModelConfigs(
   mode: GeminiCallMode
 ): readonly GeminiModelAttemptConfig[] {
   const isDeepChunk = mode === "chunk";
   return [
     {
       model: "gemini-4-hydrogen",
-      firstResponseTimeoutMs: isDeepChunk ? 24_000 : 34_000,
-      firstTextTimeoutMs: isDeepChunk ? 38_000 : 50_000,
-      thinkingMode: "level_high",
+      firstResponseTimeoutMs: isDeepChunk ? 16_000 : 22_000,
+      firstTextTimeoutMs: isDeepChunk ? 24_000 : 32_000,
+      thinkingMode: isDeepChunk ? "level_medium" : "level_high",
       backoffBeforeMs: 0,
     },
     {
       model: "gemini-3.8-flash",
-      firstResponseTimeoutMs: isDeepChunk ? 24_000 : 34_000,
-      firstTextTimeoutMs: isDeepChunk ? 38_000 : 50_000,
+      firstResponseTimeoutMs: isDeepChunk ? 16_000 : 20_000,
+      firstTextTimeoutMs: isDeepChunk ? 24_000 : 28_000,
       thinkingMode: "level_medium",
       backoffBeforeMs: 120,
     },
     {
       model: "gemini-3.6-flash",
-      firstResponseTimeoutMs: isDeepChunk ? 22_000 : 32_000,
-      firstTextTimeoutMs: isDeepChunk ? 36_000 : 48_000,
+      firstResponseTimeoutMs: isDeepChunk ? 15_000 : 18_000,
+      firstTextTimeoutMs: isDeepChunk ? 22_000 : 26_000,
       thinkingMode: "level_medium",
       backoffBeforeMs: 150,
     },
     {
       model: "gemini-3.5-flash-lite",
-      firstResponseTimeoutMs: isDeepChunk ? 19_000 : 28_000,
-      firstTextTimeoutMs: isDeepChunk ? 30_000 : 42_000,
-      thinkingMode: "level_medium",
-      backoffBeforeMs: 150,
-    },
-    {
-      model: "gemini-3.1-flash-lite",
-      firstResponseTimeoutMs: isDeepChunk ? 15_000 : 26_000,
-      firstTextTimeoutMs: isDeepChunk ? 24_000 : 40_000,
+      firstResponseTimeoutMs: isDeepChunk ? 13_000 : 16_000,
+      firstTextTimeoutMs: isDeepChunk ? 18_000 : 22_000,
       thinkingMode: isDeepChunk ? "level_low" : "level_medium",
       backoffBeforeMs: 150,
     },
     {
+      model: "gemini-3.1-flash-lite",
+      firstResponseTimeoutMs: isDeepChunk ? 12_000 : 14_000,
+      firstTextTimeoutMs: isDeepChunk ? 16_000 : 20_000,
+      thinkingMode: "level_low",
+      backoffBeforeMs: 150,
+    },
+    {
       model: "gemini-flash-lite-latest",
-      firstResponseTimeoutMs: isDeepChunk ? 14_000 : 24_000,
-      firstTextTimeoutMs: isDeepChunk ? 22_000 : 36_000,
+      firstResponseTimeoutMs: isDeepChunk ? 12_000 : 14_000,
+      firstTextTimeoutMs: isDeepChunk ? 16_000 : 18_000,
       thinkingMode: "level_low",
       backoffBeforeMs: 200,
     },
@@ -1380,7 +1414,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
         [legendPart],
         "chunk",
         undefined,
-        { maxBudgetMs: 36_000 }
+        { maxBudgetMs: 56_000 }
       );
 
     const existingSymbolRules = parseScorebookSymbolRulesJson(
@@ -2533,7 +2567,7 @@ ${targetInningMetaLines.join("\n")}
         "chunk",
         validateChunkOutput,
         {
-          maxBudgetMs: 60_000,
+          maxBudgetMs: 72_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
         }
@@ -2549,9 +2583,9 @@ ${targetInningMetaLines.join("\n")}
         const primaryMsg =
           primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
         const elapsedSoFar = Date.now() - reqStartMs;
-        // 0打席の検証NGかつリクエスト開始から36秒以内の場合のみ短時間の救済再試行を行い、
-        // Cloudflareの100秒プロキシタイムアウト(HTML 503/524)到達を100%防止する
-        if (primaryMsg.includes("検証NG") && elapsedSoFar < 36_000) {
+        // 0打席の検証NGかつリクエスト開始から48秒以内の場合のみ短時間の救済再試行を行い、
+        // クライアント95秒上限・Cloudflare 100秒プロキシ上限の手前で確実にJSON応答を完結させる
+        if (primaryMsg.includes("検証NG") && elapsedSoFar < 48_000) {
           const rescuePrompt = `${prompt}\n\n⚠️【緊急再確認】前回の読取で${sortedTargets.join(
             "・"
           )}回${sideLabel}の有効打席が0件になりましたが、試合が行われたイニングで打席0件は絶対にあり得ません！${focusImgLabel}の1番〜${lineupLen}番の各マスをもう一度確認し、手書き記録がある打席マス（最低3アウト分）を必ず "i": ${exampleInn} として全て出力してください！`;
@@ -2564,7 +2598,7 @@ ${targetInningMetaLines.join("\n")}
                 "chunk",
                 validateChunkOutput,
                 {
-                  maxBudgetMs: Math.max(12_000, 68_000 - elapsedSoFar),
+                  maxBudgetMs: Math.max(14_000, 78_000 - elapsedSoFar),
                   skipModels: body.skipModels,
                   cooledModelsOut: cooledModels,
                 }
@@ -3191,7 +3225,7 @@ ${pitcherSpecLines.join("\n")}
         "chunk",
         validateReconcileOutput,
         {
-          maxBudgetMs: 48_000,
+          maxBudgetMs: 62_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
         }
@@ -3694,7 +3728,7 @@ ${batterRowsDesc.join("\n")}
         "chunk",
         validateInningOutsResp,
         {
-          maxBudgetMs: 48_000,
+          maxBudgetMs: 62_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
         }
@@ -6045,9 +6079,10 @@ async function callGeminiStructuredJson<T>(
   let demand503Count = 0;
   let timeoutCount = 0;
   const overallStart = Date.now();
-  // Cloudflare Workers / モバイルブラウザの100秒プロキシタイムアウトより十分手前で確実にJSON応答を完結させる
+  // Cloudflare Workers 100秒プロキシ上限・クライアント95秒上限より十分手前で確実にJSON応答を完結させつつ、
+  // 1リクエスト内で最大3モデルの自動フェイルオーバーが完走する予算を確保する
   const MAX_TOTAL_BUDGET_MS =
-    options?.maxBudgetMs ?? (mode === "chunk" ? 54_000 : 72_000);
+    options?.maxBudgetMs ?? (mode === "chunk" ? 72_000 : 76_000);
   const rawConfigs = getGeminiModelConfigs(mode);
   const clientSkippedSet = new Set(options?.skipModels || []);
 
@@ -6129,18 +6164,20 @@ async function callGeminiStructuredJson<T>(
     const controller = new AbortController();
     let activeTimer: ReturnType<typeof setTimeout> | undefined;
     let abortReason = "";
+    let hitTotalBudgetCap = false;
 
     const scheduleWatchdog = (ms: number, reason: string) => {
       if (activeTimer !== undefined) {
         clearTimeout(activeTimer);
       }
       const totalLeft = Math.max(
-        1_000,
+        500,
         MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart)
       );
       const boundedMs = Math.min(ms, totalLeft);
       const isTotalCap = totalLeft < ms;
       activeTimer = setTimeout(() => {
+        hitTotalBudgetCap = isTotalCap;
         abortReason = isTotalCap
           ? "全体制限時間到達"
           : `${reason} (${Math.round(boundedMs / 1000)}秒)`;
@@ -6361,43 +6398,79 @@ async function callGeminiStructuredJson<T>(
       MODEL_COOLDOWN_UNTIL.delete(cfg.model);
 
       let sawTextChunk = false;
+      let firstTextAtMs = 0;
+      const maxTextStreamingMs = mode === "chunk" ? 18_000 : 22_000;
 
-      // HTTP 200 接続完了時点で思考フェーズ上限タイマーへ移行
-      const initialLeftForText = Math.max(
-        10_000,
-        cfg.firstTextTimeoutMs - (Date.now() - attemptStart)
+      // HTTP 200 接続完了時点で思考フェーズ上限タイマーへ移行（firstTextTimeoutMs を絶対に超えない）
+      const initialPlan = computeThinkingWatchdogPlan(
+        Date.now() - attemptStart,
+        cfg.firstTextTimeoutMs
       );
-      scheduleWatchdog(initialLeftForText, "思考フェーズタイムアウト");
+      if (initialPlan.expired) {
+        hitTotalBudgetCap = false;
+        abortReason = initialPlan.reason;
+        controller.abort();
+        throw new Error(abortReason);
+      }
+      scheduleWatchdog(initialPlan.nextWaitMs, initialPlan.reason);
 
       const refreshThinkingWatchdog = () => {
-        if (sawTextChunk) return;
-        const elapsedAttempt = Date.now() - attemptStart;
-        const leftForText = Math.max(
-          6_000,
-          cfg.firstTextTimeoutMs - elapsedAttempt
+        if (sawTextChunk || controller.signal.aborted) return;
+        const plan = computeThinkingWatchdogPlan(
+          Date.now() - attemptStart,
+          cfg.firstTextTimeoutMs
         );
-        const nextWait = Math.min(22_000, leftForText);
-        const reason =
-          leftForText <= 22_000
-            ? "思考フェーズ上限到達"
-            : "思考ストリーム無応答";
-        scheduleWatchdog(nextWait, reason);
+        if (plan.expired) {
+          if (activeTimer !== undefined) {
+            clearTimeout(activeTimer);
+            activeTimer = undefined;
+          }
+          hitTotalBudgetCap = false;
+          abortReason = plan.reason;
+          controller.abort();
+          return;
+        }
+        scheduleWatchdog(plan.nextWaitMs, plan.reason);
       };
 
       const { text, finishReason } = await readGeminiSseResponse(res, {
+        signal: controller.signal,
         onCandidateChunk: refreshThinkingWatchdog,
         onThoughtChunk: refreshThinkingWatchdog,
         onTextChunk: () => {
-          sawTextChunk = true;
-          // 本文トークンが流れている間はチャンク間20秒のアイドル監視のみに切り替え、生成途中の切断を防ぐ
-          scheduleWatchdog(20_000, "ストリーム無応答");
+          if (controller.signal.aborted) return;
+          if (!sawTextChunk) {
+            sawTextChunk = true;
+            firstTextAtMs = Date.now();
+          }
+          const leftForBody = maxTextStreamingMs - (Date.now() - firstTextAtMs);
+          if (leftForBody <= 0) {
+            if (activeTimer !== undefined) {
+              clearTimeout(activeTimer);
+              activeTimer = undefined;
+            }
+            hitTotalBudgetCap = false;
+            abortReason = `本文生成上限到達 (${Math.round(maxTextStreamingMs / 1000)}秒)`;
+            controller.abort();
+            return;
+          }
+          // 本文トークンが流れている間はチャンク間14秒アイドル監視＋本文生成上限で監視
+          scheduleWatchdog(
+            Math.min(14_000, Math.max(250, leftForBody)),
+            leftForBody <= 14_000 ? "本文生成上限到達" : "ストリーム無応答"
+          );
         },
       });
+
+      if (controller.signal.aborted) {
+        throw new Error(abortReason || "応答タイムアウト");
+      }
 
       if (!text.trim()) {
         attemptErrors.push(
           `[${cfg.model}] 応答が空でした (finishReason: ${finishReason})`
         );
+        blockedInThisRequest.add(cfg.model);
         continue;
       }
 
@@ -6415,6 +6488,7 @@ async function callGeminiStructuredJson<T>(
           const validationError = validateResult(parsedObj);
           if (validationError) {
             attemptErrors.push(`[${cfg.model}] 検証NG: ${validationError}`);
+            blockedInThisRequest.add(cfg.model);
             continue;
           }
         }
@@ -6425,11 +6499,22 @@ async function callGeminiStructuredJson<T>(
         attemptErrors.push(
           `[${cfg.model}] JSON解析失敗 (${finishReason}): ${msg}`
         );
+        blockedInThisRequest.add(cfg.model);
         continue;
       }
     } catch (err) {
+      blockedInThisRequest.add(cfg.model);
       if (controller.signal.aborted) {
         timeoutCount += 1;
+        // 個別モデル側の応答遅延・思考上限超過で中断した場合は30秒クールダウンに入れ、
+        // 直後の再試行や並行イニング解析を0msで健全な次順位モデル（gemini-3.8-flash等）へ逃がす
+        if (!hitTotalBudgetCap) {
+          recordCooledOut(cfg.model);
+          MODEL_COOLDOWN_UNTIL.set(cfg.model, {
+            until: Date.now() + 30_000,
+            status: 503,
+          });
+        }
         attemptErrors.push(
           `[${cfg.model}] ${abortReason || "応答タイムアウト"}`
         );
@@ -6476,6 +6561,7 @@ async function callGeminiStructuredJson<T>(
 }
 
 interface SseStreamCallbacks {
+  signal?: AbortSignal;
   onCandidateChunk?: () => void;
   onThoughtChunk?: () => void;
   onTextChunk?: () => void;
@@ -6503,6 +6589,7 @@ async function readGeminiSseResponse(
   let finishReason = "UNKNOWN";
 
   const processLine = (rawLine: string) => {
+    if (callbacks?.signal?.aborted) return;
     const line = rawLine.trim();
     if (!line.startsWith("data:")) return;
     const payload = line.slice(5).trim();
@@ -6518,6 +6605,7 @@ async function readGeminiSseResponse(
       }
       const parts = cand?.content?.parts || [];
       for (const p of parts) {
+        if (callbacks?.signal?.aborted) break;
         if (p.thought) {
           callbacks?.onThoughtChunk?.();
         } else if (typeof p.text === "string" && p.text.length > 0) {
@@ -6531,6 +6619,10 @@ async function readGeminiSseResponse(
   };
 
   while (true) {
+    if (callbacks?.signal?.aborted) {
+      void reader.cancel().catch(() => {});
+      throw new Error("SSE_STREAM_ABORTED");
+    }
     const { value, done } = await reader.read();
     if (done) break;
     const chunkStr = decoder.decode(value, { stream: true });
@@ -6540,6 +6632,10 @@ async function readGeminiSseResponse(
     sseBuffer = lines.pop() ?? "";
     for (const ln of lines) {
       processLine(ln);
+      if (callbacks?.signal?.aborted) {
+        void reader.cancel().catch(() => {});
+        throw new Error("SSE_STREAM_ABORTED");
+      }
     }
   }
 

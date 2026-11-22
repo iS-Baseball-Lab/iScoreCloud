@@ -1,6 +1,10 @@
 // filepath: src/__tests__/scorebook-api-timeout.test.ts
 import { describe, expect, it } from "vitest";
 import {
+  computeThinkingWatchdogPlan,
+  getGeminiModelConfigs,
+} from "@/api/liff/scorebook";
+import {
   isReadOnlyAiMutationUrl,
   isScorebookVisionAiUrl,
   normalizeClientFetchErrorMessage,
@@ -126,5 +130,44 @@ describe("scorebook AI & upload mutation timeout protection", () => {
     expect(normalizeClientFetchErrorMessage(explicitErr)).toBe(
       explicitErr.message
     );
+  });
+
+  it("strictly enforces firstTextTimeoutMs ceiling without infinite +6s extension when thought chunks stream", () => {
+    // 開始5秒時点: アイドル上限15秒で監視
+    const early = computeThinkingWatchdogPlan(5_000, 24_000, 15_000);
+    expect(early.expired).toBe(false);
+    expect(early.nextWaitMs).toBe(15_000);
+    expect(early.reason).toBe("思考ストリーム無応答");
+
+    // 開始20秒時点: 残り4秒をそのまま上限としてセット（6秒に水増ししない）
+    const nearEnd = computeThinkingWatchdogPlan(20_000, 24_000, 15_000);
+    expect(nearEnd.expired).toBe(false);
+    expect(nearEnd.nextWaitMs).toBe(4_000);
+    expect(nearEnd.reason).toBe("思考フェーズ上限到達");
+
+    // 24秒到達・超過時点: 即座に expired: true となり次順位モデルへフェイルオーバーさせる
+    const atLimit = computeThinkingWatchdogPlan(24_000, 24_000, 15_000);
+    expect(atLimit.expired).toBe(true);
+    expect(atLimit.nextWaitMs).toBe(0);
+
+    const pastLimit = computeThinkingWatchdogPlan(30_000, 24_000, 15_000);
+    expect(pastLimit.expired).toBe(true);
+  });
+
+  it("configures gemini-4-hydrogen at MEDIUM for chunk scans and guarantees multi-model failover budget", () => {
+    const chunkConfigs = getGeminiModelConfigs("chunk");
+    expect(chunkConfigs[0].model).toBe("gemini-4-hydrogen");
+    expect(chunkConfigs[0].thinkingMode).toBe("level_medium");
+    // 72秒のチャンク予算内で上位2モデルが両方上限に達しても3モデル目（gemini-3.6-flash等）に20秒以上残ること
+    expect(
+      chunkConfigs[0].firstTextTimeoutMs + chunkConfigs[1].firstTextTimeoutMs
+    ).toBeLessThanOrEqual(50_000);
+
+    const structConfigs = getGeminiModelConfigs("structure");
+    expect(structConfigs[0].model).toBe("gemini-4-hydrogen");
+    expect(structConfigs[0].thinkingMode).toBe("level_high");
+    expect(
+      structConfigs[0].firstTextTimeoutMs + structConfigs[1].firstTextTimeoutMs
+    ).toBeLessThanOrEqual(62_000);
   });
 });

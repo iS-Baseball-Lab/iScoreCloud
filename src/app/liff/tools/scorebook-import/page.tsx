@@ -2613,7 +2613,7 @@ export default function LiffScorebookImportPage() {
             false,
             bottomStructure,
             bottomImage,
-            needTop && topStructure ? 350 : 0
+            needTop && topStructure ? 1200 : 0
           )
         );
       }
