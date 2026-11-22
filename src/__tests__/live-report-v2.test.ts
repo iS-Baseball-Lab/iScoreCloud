@@ -3,17 +3,23 @@ import { describe, expect, it } from "vitest";
 import {
   applyFinalStateToPlayEntry,
   applyLineupEditorStateToDoc,
+  buildAttachedPitchesForAtBat,
   computeHalfInningSituation,
   computeLiveReportPitchCounts,
   computeScoreboardSummary,
+  computeSituationBeforeEntry,
   createInitialLiveReportDocument,
+  extractEditablePendingPitches,
   extractLineupEditorStateFromDoc,
   formatLiveReportText,
   getEffectiveEntryFinalState,
+  getHalfInningRuns,
   hasMeaningfulDocLineupData,
   hydrateLiveReportFromLegacyLogsAndScores,
+  inferPadSelectionFromPlayEntry,
   mergeSavedMatchLineupIntoDoc,
   reconcileHalfInningManualRuns,
+  replaceHalfInningPlayEntry,
   resolveDisplayedLiveReportText,
   sanitizeLiveReportDocument,
   serializeDocLineupForMatchStorage,
@@ -465,4 +471,242 @@ describe("live-report-v2 unified lineup & two-way match sync", () => {
     expect(freeDoc?.myAttendance?.["p-97"]).toBe("excluded");
   });
 });
+
+describe("live-report-v2 input-pad re-entry & cascade reconciliation", () => {
+  it("computes accurate pre-entry situation including prior chained stolen bases", () => {
+    const half: LiveReportHalfInning = {
+      inning: 1,
+      isBottom: false,
+      manualRunsOverride: null,
+      manualOutsOverride: 2,
+      manualRunnersOverride: [3],
+      entries: [
+        makeBatterEntry({
+          id: "ab-1",
+          battingOrder: 1,
+          batterName: "山田 太郎",
+          playText: "四球",
+          resultCode: "walk",
+          outsAfter: 0,
+          runnersAfter: [1],
+          runsScored: 0,
+          chainedPlays: [
+            {
+              id: "cp-1",
+              playText: "二盗",
+              outsAfter: 0,
+              runnersAfter: [2],
+              runsScored: 0,
+            },
+          ],
+        }),
+        makeBatterEntry({
+          id: "ab-2",
+          battingOrder: 2,
+          batterName: "佐藤 次郎",
+          playText: "遊ゴロ二塁走者進塁",
+          resultCode: "groundout",
+          battedDirection: "遊",
+          outsAfter: 1,
+          runnersAfter: [3],
+          runsScored: 0,
+        }),
+      ],
+    };
+
+    const beforeFirst = computeSituationBeforeEntry(half, "ab-1");
+    expect(beforeFirst.outs).toBe(0);
+    expect(beforeFirst.runners).toEqual([]);
+
+    const beforeSecond = computeSituationBeforeEntry(half, "ab-2");
+    expect(beforeSecond.outs).toBe(0);
+    expect(beforeSecond.runners).toEqual([2]);
+  });
+
+  it("round-trips editable pending pitches without inflating terminal pitches", () => {
+    // 1) Batted ball: B1-S2 (3 pending) -> 4 recorded -> restores 3 pending -> re-builds 4 recorded
+    const battedAttached = buildAttachedPitchesForAtBat({
+      pendingPitches: ["ball", "strike", "foul"],
+      isPitchTrackingActive: true,
+      selectedDirect: null,
+      selectedBatted: "front_hit",
+      selectedBattedVariant: null,
+      finalPlayText: "中前ヒット",
+    });
+    expect(battedAttached).toEqual(["ball", "strike", "foul", "in_play"]);
+
+    const restoredBatted = extractEditablePendingPitches(
+      makeBatterEntry({
+        resultCode: "front_hit",
+        playText: "中前ヒット",
+        pitches: battedAttached,
+        pitchCount: battedAttached?.length,
+      })
+    );
+    expect(restoredBatted).toEqual(["ball", "strike", "foul"]);
+
+    const rebuiltBatted = buildAttachedPitchesForAtBat({
+      pendingPitches: restoredBatted,
+      isPitchTrackingActive: true,
+      selectedDirect: null,
+      selectedBatted: "double",
+      selectedBattedVariant: null,
+      finalPlayText: "左越二塁打",
+    });
+    expect(rebuiltBatted).toHaveLength(4);
+
+    // 2) Walk & Strikeout round-trip
+    const walkEntry = makeBatterEntry({
+      resultCode: "walk",
+      playText: "四球",
+      pitches: ["ball", "strike", "ball", "ball", "ball"],
+      pitchCount: 5,
+    });
+    const restoredWalk = extractEditablePendingPitches(walkEntry);
+    expect(restoredWalk).toEqual(["ball", "strike", "ball", "ball"]);
+    expect(
+      buildAttachedPitchesForAtBat({
+        pendingPitches: restoredWalk,
+        isPitchTrackingActive: true,
+        selectedDirect: "walk",
+        selectedBatted: null,
+        selectedBattedVariant: null,
+        finalPlayText: "四球",
+      })
+    ).toHaveLength(5);
+
+    const kEntry = makeBatterEntry({
+      resultCode: "strikeout_swing",
+      playText: "空三振",
+      pitches: ["strike", "foul", "strike"],
+      pitchCount: 3,
+    });
+    const restoredK = extractEditablePendingPitches(kEntry);
+    expect(restoredK).toEqual(["strike", "foul"]);
+    expect(
+      buildAttachedPitchesForAtBat({
+        pendingPitches: restoredK,
+        isPitchTrackingActive: true,
+        selectedDirect: "strikeout_look",
+        selectedBatted: null,
+        selectedBattedVariant: null,
+        finalPlayText: "見逃三振",
+      })
+    ).toHaveLength(3);
+  });
+
+  it("infers pad direction, outcome, flick variant, and runner candidate index from recorded entries", () => {
+    // Flick variant + runner advancement candidate ("1塁走者も3塁へ" on 1B runner single)
+    const aggrHit = makeBatterEntry({
+      resultCode: "front_hit",
+      battedDirection: "右",
+      playText: "右前ポテンヒット",
+      outsAfter: 0,
+      runnersAfter: [1, 3],
+      runsScored: 0,
+    });
+    const infHit = inferPadSelectionFromPlayEntry(aggrHit, 0, [1]);
+    expect(infHit.direction).toBe("右");
+    expect(infHit.directionAnchor).toBe("右");
+    expect(infHit.battedCode).toBe("front_hit");
+    expect(infHit.battedVariant).toBe("hit_poten");
+    expect(infHit.matchedCandidateId).toBe("1b_1to3");
+    expect(infHit.customPlayText).toBeNull();
+
+    // Legacy imported entry without resultCode or battedDirection
+    const legacyDouble = makeBatterEntry({
+      resultCode: undefined,
+      battedDirection: undefined,
+      playText: "左中間破る適時二塁打1点",
+      outsAfter: 1,
+      runnersAfter: [2],
+      runsScored: 1,
+    });
+    const infLegacy = inferPadSelectionFromPlayEntry(legacyDouble, 1, [2]);
+    expect(infLegacy.direction).toBe("左中間破る");
+    expect(infLegacy.directionAnchor).toBe("左中");
+    expect(infLegacy.battedCode).toBe("double");
+    expect(infLegacy.customPlayText).toBeNull();
+  });
+
+  it("replaces an earlier entry on the pad and cascades outs, runners, and runs to subsequent batters", () => {
+    const initialHalf: LiveReportHalfInning = {
+      inning: 1,
+      isBottom: false,
+      manualRunsOverride: null,
+      entries: [
+        makeBatterEntry({
+          id: "ab-1",
+          battingOrder: 1,
+          batterName: "山田",
+          resultCode: "groundout",
+          battedDirection: "遊",
+          playText: "遊ゴロ",
+          outsAfter: 1,
+          runnersAfter: [],
+          runsScored: 0,
+        }),
+        makeBatterEntry({
+          id: "ab-2",
+          battingOrder: 2,
+          batterName: "佐藤",
+          resultCode: "front_hit",
+          battedDirection: "中",
+          playText: "中前ヒット",
+          outsAfter: 1,
+          runnersAfter: [1],
+          runsScored: 0,
+        }),
+        makeBatterEntry({
+          id: "ab-3",
+          battingOrder: 3,
+          batterName: "鈴木",
+          resultCode: "double",
+          battedDirection: "左",
+          playText: "左越二塁打",
+          outsAfter: 1,
+          runnersAfter: [2, 3],
+          runsScored: 0,
+        }),
+      ],
+    };
+
+    // Re-enter 1st batter on the pad from "遊ゴロ (1死)" to "四球 (無死1塁)"
+    const updatedFirst = makeBatterEntry({
+      id: "ab-1",
+      battingOrder: 1,
+      batterName: "山田",
+      resultCode: "walk",
+      battedDirection: undefined,
+      playText: "四球",
+      outsAfter: 0,
+      runnersAfter: [1],
+      runsScored: 0,
+    });
+
+    const reconciled = replaceHalfInningPlayEntry(
+      initialHalf,
+      "ab-1",
+      updatedFirst,
+      { cascadeSubsequent: true }
+    );
+
+    expect(reconciled.entries[0]?.playText).toBe("四球");
+    expect(reconciled.entries[0]?.outsAfter).toBe(0);
+    expect(reconciled.entries[0]?.runnersAfter).toEqual([1]);
+
+    // 2nd batter (中前ヒット) automatically updates from 1死1塁 -> 無死1.2塁
+    expect(reconciled.entries[1]?.playText).toBe("中前ヒット");
+    expect(reconciled.entries[1]?.outsAfter).toBe(0);
+    expect(reconciled.entries[1]?.runnersAfter).toEqual([1, 2]);
+
+    // 3rd batter (左越二塁打) automatically updates from 1死2.3塁(0点) -> 無死2.3塁(+1点適時二塁打)
+    expect(reconciled.entries[2]?.playText).toBe("左越適時二塁打1点");
+    expect(reconciled.entries[2]?.outsAfter).toBe(0);
+    expect(reconciled.entries[2]?.runnersAfter).toEqual([2, 3]);
+    expect(reconciled.entries[2]?.runsScored).toBe(1);
+    expect(getHalfInningRuns(reconciled)).toBe(1);
+  });
+});
+
 

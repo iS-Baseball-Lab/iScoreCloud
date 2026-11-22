@@ -3470,15 +3470,57 @@ function LiffNewsGeneratorContent() {
       ? `${resolvedTeamId}:free:${selectedFreeId}`
       : `${resolvedTeamId}:match:${selectedMatchKey}`;
 
+  const [externalPadEditRequest, setExternalPadEditRequest] = useState<{
+    inning: number;
+    isBottom: boolean;
+    entryId: string;
+    signal: number;
+  } | null>(null);
+  const skipPendingPitchResetRef = useRef(false);
+
+  const handleEditEntryOnPad = useCallback(
+    (inning: number, isBottom: boolean, entryId: string) => {
+      if (isReadOnlyViewer) return;
+      if (
+        docRef.current.activeInning !== inning ||
+        docRef.current.activeIsBottom !== isBottom
+      ) {
+        skipPendingPitchResetRef.current = true;
+        handleUpdateDoc(
+          (prev) => ({
+            ...prev,
+            activeInning: inning,
+            activeIsBottom: isBottom,
+          }),
+          { preserveManualText: true }
+        );
+      }
+      setExternalPadEditRequest({
+        inning,
+        isBottom,
+        entryId,
+        signal: Date.now(),
+      });
+      setActiveTab("pad");
+    },
+    [isReadOnlyViewer, handleUpdateDoc]
+  );
+
   // SKILL.md 規約5: コンテキスト切替時にモーダル・オーバーレイ状態を安全にリセット
   useEffect(() => {
     setShowResetConfirm(false);
     setShowTakeoverConfirmModal(false);
     setViewerHalfOverride(null);
+    setExternalPadEditRequest(null);
+    skipPendingPitchResetRef.current = false;
   }, [activeContextKey, reportMode]);
 
   // イニング切替・試合切替・閲覧モード切替時は現在打席の未確定球数をリセット
   useEffect(() => {
+    if (skipPendingPitchResetRef.current) {
+      skipPendingPitchResetRef.current = false;
+      return;
+    }
     setPendingPitches([]);
   }, [
     activeContextKey,
@@ -4318,6 +4360,10 @@ function LiffNewsGeneratorContent() {
                 ? () => handleOpenTakeoverModal(selectedMatchKey)
                 : undefined
             }
+            externalPadEditRequest={externalPadEditRequest}
+            onConsumeExternalPadEditRequest={() =>
+              setExternalPadEditRequest(null)
+            }
           />
         </div>
 
@@ -4608,6 +4654,9 @@ function LiffNewsGeneratorContent() {
                   );
                   setActiveTab("pad");
                 }}
+                onEditEntryOnPad={
+                  !isReadOnlyViewer ? handleEditEntryOnPad : undefined
+                }
               />
             </div>
 

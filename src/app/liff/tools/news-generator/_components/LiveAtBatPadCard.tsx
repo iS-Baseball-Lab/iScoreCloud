@@ -27,6 +27,7 @@ import {
   Pencil,
   Eye,
   ArrowRightLeft,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LiffSelect, type LiffSelectBadgeTone } from "@/components/liff/LiffSelect";
@@ -38,21 +39,27 @@ import {
 import {
   POSITION_OPTIONS,
   applyFinalStateToPlayEntry,
+  buildAttachedPitchesForAtBat,
   buildBattedPlayCandidates,
   computeHalfInningSituation,
   computeScoreboardSummary,
+  computeSituationBeforeEntry,
+  extractEditablePendingPitches,
   findActiveDefenderByDirection,
   formatPlayerReportName,
   formatRunnersLabel,
   formatSinglePlayEntryLine,
   getCurrentHmText,
   getEffectiveEntryFinalState,
+  inferPadSelectionFromPlayEntry,
   isMyTeamBattingHalf,
   normalizeReportPositionCode,
   normalizeRunnersList,
   reconcileHalfInningManualRuns,
+  replaceHalfInningPlayEntry,
   resolveActiveLineupAtInning,
   resolveDisplayedLiveReportText,
+  sameRunnersList,
   simulateDirectOutcome,
   simulateQuickBaserunningPlay,
   sumHalfInningEntryRuns,
@@ -71,6 +78,7 @@ import type {
 } from "@/lib/liff/pitch-workload";
 import type {
   LiveReportBaseNum,
+  LiveReportChainedPlay,
   LiveReportHalfInning,
   LiveReportOutputMode,
   LiveReportPitchType,
@@ -139,6 +147,14 @@ interface LiveAtBatPadCardProps {
   onOpenScorebookImport?: () => void;
   /** タブ切替時もパッド状態を維持しつつ非表示時はモーダルを安全クローズするためのフラグ */
   isActiveTab?: boolean;
+  /** 経過タブなど外部から特定の記録行をパッド再入力モードで開くリクエスト */
+  externalPadEditRequest?: {
+    inning: number;
+    isBottom: boolean;
+    entryId: string;
+    signal: number;
+  } | null;
+  onConsumeExternalPadEditRequest?: () => void;
 }
 
 const INFIELD_DIRECTIONS = ["投", "捕", "一", "二", "三", "遊"] as const;
@@ -803,11 +819,34 @@ export function LiveAtBatPadCard({
   onRequestTakeover,
   onOpenScorebookImport,
   isActiveTab = true,
+  externalPadEditRequest = null,
+  onConsumeExternalPadEditRequest,
 }: LiveAtBatPadCardProps) {
   const [mounted, setMounted] = useState(false);
   const [monitorMode, setMonitorMode] = useState<"inning" | "full">("inning");
   const monitorScrollRef = useRef<HTMLDivElement | null>(null);
   const [quickBrFeedback, setQuickBrFeedback] = useState<string | null>(null);
+
+  // 記録済み打席行の「入力パッド再入力・修正モード」ステート
+  const [padEditingEntryId, setPadEditingEntryId] = useState<string | null>(
+    null
+  );
+  const [padEditOrder, setPadEditOrder] = useState<number>(1);
+  const [padEditBatterName, setPadEditBatterName] = useState<string>("");
+  const [padEditBatterPlayerId, setPadEditBatterPlayerId] = useState<
+    string | null
+  >(null);
+  const [padEditSituOuts, setPadEditSituOuts] = useState<number | null>(null);
+  const [padEditSituRunners, setPadEditSituRunners] = useState<
+    LiveReportBaseNum[] | null
+  >(null);
+  const [padEditChainedPlays, setPadEditChainedPlays] = useState<
+    LiveReportChainedPlay[]
+  >([]);
+  const [padEditChainsBase, setPadEditChainsBase] = useState<{
+    outs: number;
+    runners: LiveReportBaseNum[];
+  }>({ outs: 0, runners: [] });
 
   // 打席選択状態（通常タップ＋長押しフリック詳細バリエーション）
   const [selectedDirect, setSelectedDirect] =
@@ -916,6 +955,11 @@ export function LiveAtBatPadCard({
     setIsGameSetPanelOpen(false);
     setIsBatterQuickModalOpen(false);
     setQuickBrFeedback(null);
+    setPadEditingEntryId(null);
+    setPadEditSituOuts(null);
+    setPadEditSituRunners(null);
+    setPadEditChainedPlays([]);
+    setPadEditChainsBase({ outs: 0, runners: [] });
     resetPadSelection();
   }, [activeContextKey, doc.activeInning, doc.activeIsBottom, readOnly]);
 
@@ -945,13 +989,54 @@ export function LiveAtBatPadCard({
     [doc.halfInnings, viewedInning, viewedIsBottom]
   );
 
+  const padEditingEntry = useMemo(
+    () =>
+      !readOnly && padEditingEntryId
+        ? currentHalf?.entries.find(
+            (e) => e.id === padEditingEntryId && e.entryType === "batter"
+          ) ?? null
+        : null,
+    [readOnly, padEditingEntryId, currentHalf]
+  );
+
+  const isPadEditMode = padEditingEntry !== null;
+
+  useEffect(() => {
+    if (padEditingEntryId !== null && !padEditingEntry) {
+      setPadEditingEntryId(null);
+      setPadEditSituOuts(null);
+      setPadEditSituRunners(null);
+      setPadEditChainedPlays([]);
+      setPadEditChainsBase({ outs: 0, runners: [] });
+    }
+  }, [padEditingEntryId, padEditingEntry]);
+
   const autoSituation = useMemo(
     () => computeHalfInningSituation(currentHalf),
     [currentHalf]
   );
 
-  const effectiveOutsBefore = autoSituation.outs;
-  const effectiveRunnersBefore = autoSituation.runners;
+  const preEntryAutoSituation = useMemo(
+    () =>
+      padEditingEntry
+        ? computeSituationBeforeEntry(currentHalf, padEditingEntry.id)
+        : { outs: 0, runners: [] as LiveReportBaseNum[], runs: 0, runnerNames: {} },
+    [currentHalf, padEditingEntry]
+  );
+
+  const effectiveOutsBefore = isPadEditMode
+    ? padEditSituOuts !== null
+      ? padEditSituOuts
+      : preEntryAutoSituation.outs
+    : autoSituation.outs;
+
+  const effectiveRunnersBefore = isPadEditMode
+    ? effectiveOutsBefore >= 3
+      ? []
+      : padEditSituRunners !== null
+      ? padEditSituRunners
+      : preEntryAutoSituation.runners
+    : autoSituation.runners;
 
   const updateCurrentHalfSituation = (patch: {
     outs?: number | null;
@@ -1021,6 +1106,16 @@ export function LiveAtBatPadCard({
   const activeBatterSlot = isMyAttack
     ? activeLineup.find((s) => s.order === currentOrder) || activeLineup[0]
     : null;
+
+  const displayedOrder = isPadEditMode ? padEditOrder : currentOrder;
+  const displayedBatterSlot = isMyAttack
+    ? activeLineup.find((s) => s.order === displayedOrder) || activeLineup[0]
+    : null;
+  const displayedBatterName = isPadEditMode
+    ? padEditBatterName
+    : isMyAttack
+    ? activeBatterSlot?.playerName || ""
+    : "";
 
   const activeDefenderSurname = useMemo(() => {
     if (isMyAttack || !selectedDirection) return "";
@@ -1104,19 +1199,52 @@ export function LiveAtBatPadCard({
       ? customRunsScored
       : activeCandidate?.runsScored ?? 0;
 
+  const effectiveEditChains: LiveReportChainedPlay[] = useMemo(() => {
+    if (!isPadEditMode || padEditChainedPlays.length === 0) return [];
+    if (finalOutsAfter >= 3 || finalRunnersAfter.length === 0) return [];
+    if (!sameRunnersList(padEditChainsBase.runners, finalRunnersAfter)) {
+      return [];
+    }
+    const outDelta = finalOutsAfter - padEditChainsBase.outs;
+    const adjusted: LiveReportChainedPlay[] = [];
+    for (const cp of padEditChainedPlays) {
+      const cpOuts = Math.max(0, Math.min(3, cp.outsAfter + outDelta));
+      adjusted.push({
+        ...cp,
+        outsAfter: cpOuts,
+        runnersAfter:
+          cpOuts >= 3 ? [] : normalizeRunnersList(cp.runnersAfter),
+      });
+      if (cpOuts >= 3) break;
+    }
+    return adjusted;
+  }, [
+    isPadEditMode,
+    padEditChainedPlays,
+    padEditChainsBase,
+    finalOutsAfter,
+    finalRunnersAfter,
+  ]);
+
+  const chainedEditRunsSum = useMemo(
+    () => effectiveEditChains.reduce((s, cp) => s + (cp.runsScored || 0), 0),
+    [effectiveEditChains]
+  );
+  const totalPreviewRunsScored = finalRunsScored + chainedEditRunsSum;
+
   const previewEntry: LiveReportPlayEntry | null =
     !readOnly && finalPlayText
       ? {
           id: "preview",
           entryType: "batter",
-          battingOrder: currentOrder,
-          batterName: isMyAttack ? activeBatterSlot?.playerName || "" : "",
+          battingOrder: displayedOrder,
+          batterName: isMyAttack ? displayedBatterName : "",
           playText: finalPlayText,
           reactionText,
           outsAfter: finalOutsAfter,
           runnersAfter: finalRunnersAfter,
-          runsScored: finalRunsScored,
-          chainedPlays: [],
+          runsScored: totalPreviewRunsScored,
+          chainedPlays: effectiveEditChains,
           eventText: "",
         }
       : null;
@@ -1138,11 +1266,22 @@ export function LiveAtBatPadCard({
     })),
   });
 
+  const cancelPadEditEntry = () => {
+    setPadEditingEntryId(null);
+    setPadEditSituOuts(null);
+    setPadEditSituRunners(null);
+    setPadEditChainedPlays([]);
+    setPadEditChainsBase({ outs: 0, runners: [] });
+    onChangePendingPitches([]);
+    resetPadSelection();
+  };
+
   const openFineTuneModal = (targetEntryId?: string) => {
     if (readOnly) return;
+    const resolvedTargetId = targetEntryId ?? padEditingEntry?.id;
     const halfEntries = currentHalf?.entries ?? [];
-    const matchedEntry = targetEntryId
-      ? halfEntries.find((e) => e.id === targetEntryId) || null
+    const matchedEntry = resolvedTargetId
+      ? halfEntries.find((e) => e.id === resolvedTargetId) || null
       : halfEntries.length > 0
       ? halfEntries[halfEntries.length - 1] || null
       : null;
@@ -1151,12 +1290,12 @@ export function LiveAtBatPadCard({
       matchedEntry ? cloneEntryForEdit(matchedEntry) : null
     );
     setClearManualRunsOnEditSave(false);
-    setSituDraftOuts(effectiveOutsBefore);
-    setSituDraftRunners([...effectiveRunnersBefore]);
+    setSituDraftOuts(autoSituation.outs);
+    setSituDraftRunners([...autoSituation.runners]);
     setSituDraftRuns(autoSituation.runs);
     setSituClearManualRuns(false);
 
-    if (targetEntryId && matchedEntry) {
+    if (resolvedTargetId && matchedEntry) {
       setFineTuneTab("edit_recorded");
     } else if (
       selectedDirect !== null ||
@@ -1172,6 +1311,79 @@ export function LiveAtBatPadCard({
     setShowCustomOverride(true);
   };
 
+  const startPadEditEntry = (targetEntryId: string) => {
+    if (readOnly) return;
+    const target = currentHalf?.entries.find((e) => e.id === targetEntryId);
+    if (!target) return;
+
+    // 交代・メモ行はテキスト編集モーダルで開く
+    if (target.entryType !== "batter") {
+      openFineTuneModal(target.id);
+      return;
+    }
+
+    const preSitu = computeSituationBeforeEntry(currentHalf, target.id);
+    const inferred = inferPadSelectionFromPlayEntry(
+      target,
+      preSitu.outs,
+      preSitu.runners
+    );
+
+    setPadEditingEntryId(target.id);
+    setPadEditOrder(target.battingOrder || 1);
+    setPadEditBatterName(target.batterName || "");
+    setPadEditBatterPlayerId(target.batterPlayerId ?? null);
+    setPadEditSituOuts(null);
+    setPadEditSituRunners(null);
+    setPadEditChainedPlays(
+      target.chainedPlays.map((cp) => ({
+        ...cp,
+        runnersAfter: [...cp.runnersAfter],
+      }))
+    );
+    setPadEditChainsBase({
+      outs: target.outsAfter,
+      runners: [...target.runnersAfter],
+    });
+
+    setSelectedDirection(inferred.direction);
+    setSelectedDirectionAnchor(inferred.directionAnchor);
+    setSelectedDirect(inferred.directCode);
+    setSelectedDirectVariant(inferred.directVariant);
+    setSelectedDirectActiveChip(inferred.directActiveChip);
+    setSelectedBatted(inferred.battedCode);
+    setSelectedBattedVariant(inferred.battedVariant);
+    setSelectedBattedActiveChip(inferred.battedActiveChip);
+    setSelectedCandidateIdx(inferred.candidateIdx);
+    setReactionText(target.reactionText || "");
+    setCustomPlayText(inferred.customPlayText);
+    setCustomOutsAfter(inferred.customOutsAfter);
+    setCustomRunnersAfter(inferred.customRunnersAfter);
+    setCustomRunsScored(inferred.customRunsScored);
+
+    onChangePendingPitches(extractEditablePendingPitches(target));
+    setMonitorMode("inning");
+    setShowCustomOverride(false);
+  };
+
+  // 経過タブなど外部からのパッド再入力リクエストをアクティブ回一致時に起動
+  useEffect(() => {
+    if (!externalPadEditRequest || readOnly) return;
+    if (
+      doc.activeInning === externalPadEditRequest.inning &&
+      doc.activeIsBottom === externalPadEditRequest.isBottom
+    ) {
+      startPadEditEntry(externalPadEditRequest.entryId);
+      onConsumeExternalPadEditRequest?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    externalPadEditRequest,
+    doc.activeInning,
+    doc.activeIsBottom,
+    readOnly,
+  ]);
+
   const handleSaveFineTunedRecordedEntry = () => {
     if (readOnly || !editingRecordedEntry) return;
     const targetEntry = editingRecordedEntry;
@@ -1186,39 +1398,31 @@ export function LiveAtBatPadCard({
         ) {
           return h;
         }
-        const nextEntries = h.entries.map((e) =>
-          e.id === targetEntry.id ? targetEntry : e
-        );
-        const isLastEntry =
-          h.entries.length > 0 &&
-          h.entries[h.entries.length - 1]?.id === targetEntry.id;
-        return {
-          ...h,
-          entries: nextEntries,
-          manualRunsOverride: shouldClearRunsOverride
-            ? null
-            : reconcileHalfInningManualRuns(h, nextEntries, "edit_entry"),
-          ...(isLastEntry
-            ? { manualOutsOverride: null, manualRunnersOverride: null }
-            : {}),
-        };
+        return replaceHalfInningPlayEntry(h, targetEntry.id, targetEntry, {
+          clearManualRuns: shouldClearRunsOverride,
+          cascadeSubsequent: true,
+        });
       }),
     }));
 
+    if (padEditingEntryId === targetEntry.id) {
+      cancelPadEditEntry();
+    }
     setShowCustomOverride(false);
     setEditingRecordedEntry(null);
     toast.success("記録の微調整を反映しました");
   };
 
-  const handleDeleteFineTunedRecordedEntry = () => {
-    if (readOnly || !editingRecordedEntry) return;
-    const targetId = editingRecordedEntry.id;
+  const handleDeleteRecordedEntryById = (targetId: string) => {
+    if (readOnly) return;
+    const targetEntry = currentHalf?.entries.find((e) => e.id === targetId);
+    if (!targetEntry) return;
     const wasLastBatter =
       currentHalf &&
       currentHalf.entries.length > 0 &&
       currentHalf.entries[currentHalf.entries.length - 1]?.id === targetId &&
-      editingRecordedEntry.entryType === "batter";
-    const restoreOrder = editingRecordedEntry.battingOrder;
+      targetEntry.entryType === "batter";
+    const restoreOrder = targetEntry.battingOrder;
 
     onChangeDoc((prev) => ({
       ...prev,
@@ -1254,9 +1458,17 @@ export function LiveAtBatPadCard({
         : {}),
     }));
 
+    if (padEditingEntryId === targetId) {
+      cancelPadEditEntry();
+    }
     setShowCustomOverride(false);
     setEditingRecordedEntry(null);
     toast.success("記録行を削除しました");
+  };
+
+  const handleDeleteFineTunedRecordedEntry = () => {
+    if (readOnly || !editingRecordedEntry) return;
+    handleDeleteRecordedEntryById(editingRecordedEntry.id);
   };
 
   const handleApplySituationFineTune = () => {
@@ -1344,6 +1556,26 @@ export function LiveAtBatPadCard({
 
   const handleShiftOrder = (delta: -1 | 1) => {
     if (readOnly) return;
+    if (isPadEditMode) {
+      const limit = isMyAttack
+        ? Math.max(9, doc.lineup.length)
+        : Math.max(9, doc.opponentBatterCount || 9);
+      const nextOrder = ((padEditOrder - 1 + delta + limit) % limit) + 1;
+      if (isMyAttack) {
+        const prevSlot = activeLineup.find((s) => s.order === padEditOrder);
+        const nextSlot = activeLineup.find((s) => s.order === nextOrder);
+        if (
+          !padEditBatterName.trim() ||
+          padEditBatterName === (prevSlot?.playerName || "")
+        ) {
+          setPadEditBatterName(nextSlot?.playerName || "");
+          setPadEditBatterPlayerId(nextSlot?.playerId || null);
+        }
+      }
+      setPadEditOrder(nextOrder);
+      return;
+    }
+
     onChangeDoc((prev) => {
       if (isMyAttack) {
         const limit = Math.max(9, prev.lineup.length);
@@ -1372,12 +1604,75 @@ export function LiveAtBatPadCard({
     return { balls, strikes };
   }, [pendingPitches]);
 
-  const liveMyPitcherTotal =
-    pitchSummary.activeMyPitcherPitches +
-    (!isMyAttack ? pendingPitches.length : 0);
-  const liveOpponentPitchTotal =
-    pitchSummary.opponentTotalPitches +
-    (isMyAttack ? pendingPitches.length : 0);
+  const hasExistingPitchesExcludingEdit = useMemo(
+    () =>
+      doc.halfInnings.some((h) =>
+        h.entries.some(
+          (e) =>
+            e.id !== padEditingEntry?.id &&
+            ((Array.isArray(e.pitches) && e.pitches.length > 0) ||
+              (typeof e.pitchCount === "number" && e.pitchCount > 0))
+        )
+      ) ||
+      Object.values(doc.pitcherPitchAdjustments || {}).some(
+        (v) => typeof v === "number" && v !== 0
+      ),
+    [doc.halfInnings, doc.pitcherPitchAdjustments, padEditingEntry?.id]
+  );
+
+  const editingEntryRecordedPitches = padEditingEntry
+    ? typeof padEditingEntry.pitchCount === "number" &&
+      padEditingEntry.pitchCount > 0
+      ? padEditingEntry.pitchCount
+      : padEditingEntry.pitches?.length ?? 0
+    : 0;
+
+  const projectedEditPitchCount = useMemo(() => {
+    if (!isPadEditMode) return 0;
+    const isTracking =
+      pendingPitches.length > 0 ||
+      editingEntryRecordedPitches > 0 ||
+      hasExistingPitchesExcludingEdit;
+    if (!isTracking) return 0;
+    if (!finalPlayText) return pendingPitches.length;
+    const built = buildAttachedPitchesForAtBat({
+      pendingPitches,
+      isPitchTrackingActive: true,
+      selectedDirect,
+      selectedBatted,
+      selectedBattedVariant,
+      finalPlayText,
+    });
+    return built ? built.length : pendingPitches.length;
+  }, [
+    isPadEditMode,
+    pendingPitches,
+    editingEntryRecordedPitches,
+    hasExistingPitchesExcludingEdit,
+    finalPlayText,
+    selectedDirect,
+    selectedBatted,
+    selectedBattedVariant,
+  ]);
+
+  const editPitchDelta = isPadEditMode
+    ? projectedEditPitchCount - editingEntryRecordedPitches
+    : 0;
+
+  const liveMyPitcherTotal = isPadEditMode
+    ? Math.max(
+        0,
+        pitchSummary.activeMyPitcherPitches + (!isMyAttack ? editPitchDelta : 0)
+      )
+    : pitchSummary.activeMyPitcherPitches +
+      (!isMyAttack ? pendingPitches.length : 0);
+  const liveOpponentPitchTotal = isPadEditMode
+    ? Math.max(
+        0,
+        pitchSummary.opponentTotalPitches + (isMyAttack ? editPitchDelta : 0)
+      )
+    : pitchSummary.opponentTotalPitches +
+      (isMyAttack ? pendingPitches.length : 0);
 
   const handleAppendPendingPitch = (pitchType: "ball" | "strike" | "foul") => {
     if (readOnly) return;
@@ -1429,60 +1724,83 @@ export function LiveAtBatPadCard({
   const handleRecordAtBat = () => {
     if (readOnly || !finalPlayText) return;
 
-    const hasExistingPitches =
-      doc.halfInnings.some((h) =>
-        h.entries.some(
-          (e) =>
-            (Array.isArray(e.pitches) && e.pitches.length > 0) ||
-            (typeof e.pitchCount === "number" && e.pitchCount > 0)
-        )
-      ) ||
-      Object.values(doc.pitcherPitchAdjustments || {}).some(
-        (v) => typeof v === "number" && v !== 0
-      );
     const isPitchTrackingActive =
-      pendingPitches.length > 0 || hasExistingPitches;
+      pendingPitches.length > 0 ||
+      editingEntryRecordedPitches > 0 ||
+      hasExistingPitchesExcludingEdit;
 
-    let attachedPitches: LiveReportPitchType[] | undefined = undefined;
-    if (isPitchTrackingActive) {
-      const finalPitches: LiveReportPitchType[] = [...pendingPitches];
-      const balls = pendingBallStrikeCount.balls;
-      const strikes = pendingBallStrikeCount.strikes;
+    const attachedPitches = buildAttachedPitchesForAtBat({
+      pendingPitches,
+      isPitchTrackingActive,
+      selectedDirect,
+      selectedBatted,
+      selectedBattedVariant,
+      finalPlayText,
+    });
 
-      const isIntentionalWalk =
-        selectedDirect === "ibb" ||
-        (!selectedDirect && !selectedBatted && finalPlayText.includes("敬遠"));
-      const isWalk =
-        !isIntentionalWalk &&
-        (selectedDirect === "walk" ||
-          (!selectedDirect && !selectedBatted && finalPlayText.includes("四球")));
-      const isStrikeout =
-        selectedDirect === "strikeout_swing" ||
-        selectedDirect === "strikeout_look" ||
-        selectedDirect === "dropped_3rd_out" ||
-        selectedDirect === "dropped_3rd_safe" ||
-        (selectedBatted === "double_play" &&
-          selectedBattedVariant === "dp_strikeout_cs") ||
-        (!selectedDirect &&
-          !selectedBatted &&
-          (finalPlayText.includes("三振") || finalPlayText.includes("振逃")));
+    // ① 記録済み行のパッド再入力・修正モード確定
+    if (isPadEditMode && padEditingEntry) {
+      const targetId = padEditingEntry.id;
+      const updatedEntry: LiveReportPlayEntry = {
+        ...padEditingEntry,
+        entryType: "batter",
+        battingOrder: padEditOrder,
+        batterName: isMyAttack ? padEditBatterName.trim() : "",
+        batterPlayerId: isMyAttack ? padEditBatterPlayerId : null,
+        resultCode: selectedDirect || selectedBatted || undefined,
+        battedDirection: selectedDirection || undefined,
+        rbi: finalRunsScored > 0 ? finalRunsScored : undefined,
+        playText: finalPlayText,
+        reactionText: reactionText.trim(),
+        outsAfter: finalOutsAfter,
+        runnersAfter: finalRunnersAfter,
+        runsScored: totalPreviewRunsScored,
+        chainedPlays: effectiveEditChains,
+        eventText: "",
+        ...(attachedPitches !== undefined
+          ? {
+              pitches: attachedPitches,
+              pitchCount: attachedPitches.length,
+              ...(!isMyAttack
+                ? {
+                    pitcherPlayerId:
+                      padEditingEntry.pitcherPlayerId !== undefined
+                        ? padEditingEntry.pitcherPlayerId
+                        : pitchSummary.activeMyPitcherId,
+                    pitcherName:
+                      padEditingEntry.pitcherName ||
+                      pitchSummary.activeMyPitcherName,
+                  }
+                : {}),
+            }
+          : {
+              pitches: undefined,
+              pitchCount: undefined,
+            }),
+      };
 
-      if (isIntentionalWalk) {
-        // 敬遠で pendingPitches が空ならそのまま空配列
-      } else if (isWalk) {
-        if (balls < 4) {
-          finalPitches.push("ball");
-        }
-      } else if (isStrikeout) {
-        if (strikes < 3) {
-          finalPitches.push("strike");
-        }
-      } else {
-        finalPitches.push("in_play");
-      }
-      attachedPitches = finalPitches;
+      onChangeDoc((prev) => ({
+        ...prev,
+        halfInnings: prev.halfInnings.map((h) => {
+          if (
+            h.inning !== prev.activeInning ||
+            h.isBottom !== prev.activeIsBottom
+          ) {
+            return h;
+          }
+          return replaceHalfInningPlayEntry(h, targetId, updatedEntry, {
+            cascadeSubsequent: true,
+          });
+        }),
+      }));
+
+      setShowCustomOverride(false);
+      cancelPadEditEntry();
+      toast.success("記録行を更新しました");
+      return;
     }
 
+    // ② 新規打席の記録確定
     const newEntry: LiveReportPlayEntry = {
       id: `ab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       entryType: "batter",
@@ -1605,6 +1923,15 @@ export function LiveAtBatPadCard({
   // 現在打者のクイック設定モーダルを開く
   const openBatterQuickModal = () => {
     if (readOnly || !isMyAttack) return;
+    if (isPadEditMode) {
+      setQuickBatterPlayerId(padEditBatterPlayerId || "");
+      setQuickBatterName(padEditBatterName);
+      setQuickBatterPos(
+        normalizeReportPositionCode(displayedBatterSlot?.position || "打")
+      );
+      setIsBatterQuickModalOpen(true);
+      return;
+    }
     setQuickBatterPlayerId(activeBatterSlot?.playerId || "");
     setQuickBatterName(activeBatterSlot?.playerName || "");
     setQuickBatterPos(
@@ -1620,6 +1947,41 @@ export function LiveAtBatPadCard({
     const matchedRoster = quickBatterPlayerId
       ? rosterPlayers.find((rp) => rp.id === quickBatterPlayerId)
       : undefined;
+
+    if (isPadEditMode) {
+      setPadEditBatterName(trimmedName);
+      setPadEditBatterPlayerId(quickBatterPlayerId || null);
+      // 該当打順枠が未設定のときのみラインナップ枠にも初期補完する（設定済みスタメンの意図せぬ上書きを防止）
+      onChangeDoc((prev) => {
+        const targetSlot = prev.lineup.find((s) => s.order === padEditOrder);
+        if (
+          !targetSlot ||
+          targetSlot.playerId ||
+          targetSlot.playerName.trim() ||
+          targetSlot.substitutions.length > 0
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          lineup: prev.lineup.map((s) =>
+            s.order === padEditOrder
+              ? {
+                  ...s,
+                  playerName: trimmedName,
+                  position: normPos,
+                  playerId: quickBatterPlayerId || null,
+                  ...(matchedRoster?.uniformNumber
+                    ? { uniformNumber: matchedRoster.uniformNumber }
+                    : {}),
+                }
+              : s
+          ),
+        };
+      });
+      setIsBatterQuickModalOpen(false);
+      return;
+    }
 
     onChangeDoc((prev) => ({
       ...prev,
@@ -1721,25 +2083,62 @@ export function LiveAtBatPadCard({
     });
   };
 
+  const editPostPlayState = useMemo(() => {
+    if (!isPadEditMode) {
+      return {
+        outs: effectiveOutsBefore,
+        runners: effectiveRunnersBefore,
+      };
+    }
+    if (effectiveEditChains.length > 0) {
+      const lastCp = effectiveEditChains[effectiveEditChains.length - 1]!;
+      return {
+        outs: lastCp.outsAfter,
+        runners: lastCp.runnersAfter,
+      };
+    }
+    return {
+      outs: finalOutsAfter,
+      runners: finalRunnersAfter,
+    };
+  }, [
+    isPadEditMode,
+    effectiveOutsBefore,
+    effectiveRunnersBefore,
+    effectiveEditChains,
+    finalOutsAfter,
+    finalRunnersAfter,
+  ]);
+
+  const brOutsBefore = isPadEditMode
+    ? editPostPlayState.outs
+    : effectiveOutsBefore;
+  const brRunnersBefore = isPadEditMode
+    ? editPostPlayState.runners
+    : effectiveRunnersBefore;
+
   const quickBaserunningOptions = useMemo<
     ReadonlyArray<FlickSubOption<QuickBaserunningCode>>
   >(() => {
-    const noRunnersOrThreeOuts =
-      effectiveOutsBefore >= 3 || padRunnerCount === 0;
+    const bHas1 = brRunnersBefore.includes(1);
+    const bHas2 = brRunnersBefore.includes(2);
+    const bHas3 = brRunnersBefore.includes(3);
+    const bCount = brRunnersBefore.length;
+    const noRunnersOrThreeOuts = brOutsBefore >= 3 || bCount === 0;
     return QUICK_BASERUNNING_OPTIONS.map((opt) => {
       let optDisabled = noRunnersOrThreeOuts;
-      if (opt.value === "double_steal" && padRunnerCount < 2) {
+      if (opt.value === "double_steal" && bCount < 2) {
         optDisabled = true;
-      } else if (opt.value === "steal_2b" && (!padHas1 || padHas2)) {
+      } else if (opt.value === "steal_2b" && (!bHas1 || bHas2)) {
         optDisabled = true;
-      } else if (opt.value === "steal_3b" && (!padHas2 || padHas3)) {
+      } else if (opt.value === "steal_3b" && (!bHas2 || bHas3)) {
         optDisabled = true;
-      } else if (opt.value === "home_steal" && !padHas3) {
+      } else if (opt.value === "home_steal" && !bHas3) {
         optDisabled = true;
       }
       return optDisabled ? { ...opt, disabled: true } : opt;
     });
-  }, [effectiveOutsBefore, padRunnerCount, padHas1, padHas2, padHas3]);
+  }, [brOutsBefore, brRunnersBefore]);
 
   useEffect(() => {
     if (selectedBatted && isBattedOutcomeDisabled(selectedBatted)) {
@@ -1764,14 +2163,38 @@ export function LiveAtBatPadCard({
 
   const handleQuickBaserunningFlick = (code: QuickBaserunningCode) => {
     if (readOnly) return;
-    if (effectiveOutsBefore >= 3 || effectiveRunnersBefore.length === 0) return;
-    const startOuts = effectiveOutsBefore;
+    if (brOutsBefore >= 3 || brRunnersBefore.length === 0) return;
     const sim = simulateQuickBaserunningPlay(
       code,
-      startOuts,
-      effectiveRunnersBefore
+      brOutsBefore,
+      brRunnersBefore
     );
     if (!sim.playText) return;
+
+    if (isPadEditMode) {
+      const nextChains: LiveReportChainedPlay[] = [
+        ...effectiveEditChains,
+        {
+          id: `cp-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          playText: sim.playText,
+          outsAfter: sim.outsAfter,
+          runnersAfter: sim.outsAfter >= 3 ? [] : sim.runnersAfter,
+          runsScored: sim.runsScored,
+        },
+      ];
+      setPadEditChainsBase({
+        outs: finalOutsAfter,
+        runners: [...finalRunnersAfter],
+      });
+      setPadEditChainedPlays(nextChains);
+      setQuickBrFeedback(`🏃‍♂️「${sim.playText}」を修正行へ追加しました`);
+      setTimeout(() => {
+        setQuickBrFeedback((cur) =>
+          cur === `🏃‍♂️「${sim.playText}」を修正行へ追加しました` ? null : cur
+        );
+      }, 2200);
+      return;
+    }
 
     if (lastBatterEntry) {
       onChangeDoc((prev) => {
@@ -1872,7 +2295,12 @@ export function LiveAtBatPadCard({
     }, 2200);
   };
 
+  const targetFollowUpEntry = isPadEditMode ? padEditingEntry : lastBatterEntry;
+
   const followUpBaseState = useMemo(() => {
+    if (isPadEditMode) {
+      return editPostPlayState;
+    }
     if (!lastBatterEntry) {
       return { outs: 0, runners: [] as LiveReportBaseNum[] };
     }
@@ -1884,10 +2312,10 @@ export function LiveAtBatPadCard({
         ? lastChain.runnersAfter
         : lastBatterEntry.runnersAfter,
     };
-  }, [lastBatterEntry]);
+  }, [isPadEditMode, editPostPlayState, lastBatterEntry]);
 
   const openFollowUpModal = () => {
-    if (readOnly || !lastBatterEntry) return;
+    if (readOnly || !targetFollowUpEntry) return;
     setFollowUpMode("chained");
     setFollowUpText("");
     setFollowUpOuts(followUpBaseState.outs);
@@ -1911,7 +2339,7 @@ export function LiveAtBatPadCard({
       | "out_3b"
       | "out_auto";
   }) => {
-    if (!lastBatterEntry) return;
+    if (!targetFollowUpEntry) return;
     const baseOuts = followUpBaseState.outs;
     const baseRunners = followUpBaseState.runners;
 
@@ -1991,8 +2419,34 @@ export function LiveAtBatPadCard({
   };
 
   const handleCommitFollowUp = () => {
-    if (readOnly || !lastBatterEntry || !followUpText.trim()) return;
+    if (readOnly || !targetFollowUpEntry || !followUpText.trim()) return;
     const cleanText = followUpText.trim();
+
+    if (isPadEditMode) {
+      if (followUpMode === "inline") {
+        setCustomPlayText(`${finalPlayText}${cleanText}`);
+        setCustomOutsAfter(followUpOuts);
+        setCustomRunnersAfter(followUpOuts >= 3 ? [] : followUpRunners);
+        setCustomRunsScored(finalRunsScored + followUpAddRuns);
+      } else {
+        setPadEditChainsBase({
+          outs: finalOutsAfter,
+          runners: [...finalRunnersAfter],
+        });
+        setPadEditChainedPlays([
+          ...effectiveEditChains,
+          {
+            id: `cp-${Date.now()}`,
+            playText: cleanText,
+            outsAfter: followUpOuts,
+            runnersAfter: followUpOuts >= 3 ? [] : followUpRunners,
+            runsScored: followUpAddRuns,
+          },
+        ]);
+      }
+      setIsFollowUpModalOpen(false);
+      return;
+    }
 
     onChangeDoc((prev) => {
       const halves = prev.halfInnings.map((h) => {
@@ -2003,7 +2457,7 @@ export function LiveAtBatPadCard({
           return h;
         }
         const entries = h.entries.map((e) => {
-          if (e.id !== lastBatterEntry.id) return e;
+          if (e.id !== targetFollowUpEntry.id) return e;
           if (followUpMode === "inline") {
             return {
               ...e,
@@ -2050,7 +2504,7 @@ export function LiveAtBatPadCard({
   const openSubstitutionModal = () => {
     if (readOnly) return;
     const defaultRunnerBase: LiveReportBaseNum =
-      effectiveRunnersBefore[0] || 1;
+      autoSituation.runners[0] || 1;
     setSubRunnerBase(defaultRunnerBase);
     if (isMyAttack) {
       setSubType("PH");
@@ -2140,7 +2594,7 @@ export function LiveAtBatPadCard({
         : "守備交代";
     const basePrefix =
       (subType === "PR" || subType === "TR") &&
-      effectiveRunnersBefore.length > 1
+      autoSituation.runners.length > 1
         ? `(${subRunnerBase}塁)`
         : "";
     const eventText = oldDisplay
@@ -2248,6 +2702,7 @@ export function LiveAtBatPadCard({
     return currentHalf.entries
       .map((e) => ({
         id: e.id,
+        entryType: e.entryType,
         text: formatSinglePlayEntryLine(e, isMyAttack, doc.showSurnameOnly),
       }))
       .filter((item) => item.text.length > 0);
@@ -2258,7 +2713,12 @@ export function LiveAtBatPadCard({
     [doc, outputMode]
   );
 
-  const pendingScoreDelta = !readOnly && previewLine ? finalRunsScored : 0;
+  const pendingScoreDelta =
+    !readOnly && previewLine
+      ? isPadEditMode && padEditingEntry
+        ? totalPreviewRunsScored - padEditingEntry.runsScored
+        : finalRunsScored
+      : 0;
   const liveFirstTotal =
     scoreboardSummary.firstTotal +
     (!doc.activeIsBottom ? pendingScoreDelta : 0);
@@ -2267,13 +2727,19 @@ export function LiveAtBatPadCard({
     (doc.activeIsBottom ? pendingScoreDelta : 0);
 
   useEffect(() => {
-    if (isActiveTab && monitorMode === "inning" && monitorScrollRef.current) {
+    if (
+      isActiveTab &&
+      monitorMode === "inning" &&
+      !isPadEditMode &&
+      monitorScrollRef.current
+    ) {
       monitorScrollRef.current.scrollTop =
         monitorScrollRef.current.scrollHeight;
     }
   }, [
     isActiveTab,
     monitorMode,
+    isPadEditMode,
     currentInningLines.length,
     previewLine,
     viewedInning,
@@ -2293,6 +2759,12 @@ export function LiveAtBatPadCard({
     setSelectedDirectVariant(null);
     setSelectedDirectActiveChip(null);
     setSelectedCandidateIdx(0);
+    if (hasCustomOverride) {
+      setCustomPlayText(null);
+      setCustomOutsAfter(null);
+      setCustomRunnersAfter(null);
+      setCustomRunsScored(null);
+    }
   };
 
   const selectBattedOutcome = (
@@ -2301,12 +2773,15 @@ export function LiveAtBatPadCard({
     activeChip: string | null = null,
     forceSelect = false
   ) => {
-    const hadPriorOutcome = Boolean(selectedBatted || selectedDirect);
+    const hadPriorOutcome = Boolean(
+      selectedBatted || selectedDirect || hasCustomOverride
+    );
     if (
       !forceSelect &&
       selectedBatted === code &&
       selectedBattedVariant === null &&
-      variant === null
+      variant === null &&
+      !hasCustomOverride
     ) {
       setSelectedBatted(null);
       setSelectedBattedVariant(null);
@@ -2336,12 +2811,15 @@ export function LiveAtBatPadCard({
     activeChip: string | null = null,
     forceSelect = false
   ) => {
-    const hadPriorOutcome = Boolean(selectedBatted || selectedDirect);
+    const hadPriorOutcome = Boolean(
+      selectedBatted || selectedDirect || hasCustomOverride
+    );
     if (
       !forceSelect &&
       selectedDirect === code &&
       selectedDirectVariant === null &&
-      variant === null
+      variant === null &&
+      !hasCustomOverride
     ) {
       setSelectedDirect(null);
       setSelectedDirectVariant(null);
@@ -2367,7 +2845,7 @@ export function LiveAtBatPadCard({
 
   const padContextKey = `${activeContextKey}-${doc.activeInning}-${
     doc.activeIsBottom ? "b" : "t"
-  }`;
+  }-${padEditingEntryId || "new"}`;
 
   // ════════════════════════════════════════════════════════════════
   // 👀 閲覧モード（担当以外のメンバー向けライブ速報ビューア — 入力パッド完全非表示・書き込み0）
@@ -2724,8 +3202,8 @@ export function LiveAtBatPadCard({
 
               {monitorMode === "inning" ? (
                 <span className="ml-1 font-mono text-[10.5px] font-black text-amber-300 truncate">
-                  得点{autoSituation.runs + (previewLine ? finalRunsScored : 0)}{" "}
-                  ｜ {liveFirstTotal}-{liveSecondTotal}
+                  得点{Math.max(0, autoSituation.runs + pendingScoreDelta)} ｜{" "}
+                  {liveFirstTotal}-{liveSecondTotal}
                 </span>
               ) : (
                 onChangeOutputMode && (
@@ -2846,7 +3324,10 @@ export function LiveAtBatPadCard({
                   <span>
                     {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}（
                     {isMyAttack ? "自チーム攻撃" : "相手攻撃"}）
-                    {currentInningLines.length > 0 && " ｜ 行タップで微調整"}
+                    {currentInningLines.length > 0 &&
+                      (isPadEditMode
+                        ? " ｜ 選択行をパッドで再入力・修正中"
+                        : " ｜ 行タップでパッド再入力")}
                   </span>
                   {doc.isGameFinished && (
                     <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9.5px] font-black">
@@ -2860,20 +3341,85 @@ export function LiveAtBatPadCard({
                     下のボタンを選択（長押し・スライドで重盗や手前/ライン際等も選択可）➔「記録確定」
                   </p>
                 ) : (
-                  currentInningLines.map((line) => (
-                    <button
-                      key={line.id}
-                      type="button"
-                      onClick={() => openFineTuneModal(line.id)}
-                      title="タップしてこの記録行を修正・微調整"
-                      className="w-full text-left py-0.5 px-1.5 -mx-1.5 rounded-md hover:bg-slate-800/80 active:bg-slate-800 flex items-center justify-between gap-1.5 transition-colors cursor-pointer group"
-                    >
-                      <span className="text-[11.5px] font-bold text-slate-100 break-all">
-                        {line.text}
-                      </span>
-                      <Pencil className="w-3 h-3 text-slate-500 group-hover:text-amber-300 shrink-0" />
-                    </button>
-                  ))
+                  currentInningLines.map((line) => {
+                    const isEditingThisRow =
+                      isPadEditMode && padEditingEntry?.id === line.id;
+
+                    if (isEditingThisRow) {
+                      return (
+                        <div
+                          key={line.id}
+                          className="my-0.5 px-2 py-1 rounded-lg bg-slate-800 border border-amber-400 space-y-0.5"
+                        >
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9.5px] font-black shrink-0">
+                                パッド修正中
+                              </span>
+                              <span className="text-[11px] font-bold text-slate-300 break-all">
+                                {line.text}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => openFineTuneModal(line.id)}
+                                className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-700 text-slate-200 border border-slate-600 text-[9.5px] font-black cursor-pointer"
+                                title="テキスト微調整モーダルを開く"
+                              >
+                                文字編集
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelPadEditEntry}
+                                className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-700 text-amber-300 border border-slate-600 text-[9.5px] font-black cursor-pointer"
+                                title="修正モードを解除して通常入力へ戻る"
+                              >
+                                解除
+                              </button>
+                            </div>
+                          </div>
+                          {previewLine && previewLine !== line.text ? (
+                            <p className="text-[11.5px] font-black text-amber-300 break-all">
+                              ➔ 修正後: {previewLine}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] font-bold text-amber-200">
+                              下のパッドで方向・結果をタップすると再入力できます（確定で「修正を反映」）
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={line.id}
+                        type="button"
+                        onClick={() =>
+                          line.entryType === "batter"
+                            ? startPadEditEntry(line.id)
+                            : openFineTuneModal(line.id)
+                        }
+                        title={
+                          line.entryType === "batter"
+                            ? "タップしてこの打席を入力パッドで再入力・修正"
+                            : "タップしてこのイベント行を編集・削除"
+                        }
+                        className="w-full text-left py-0.5 px-1.5 -mx-1.5 rounded-md hover:bg-slate-800/80 active:bg-slate-800 flex items-center justify-between gap-1.5 transition-colors cursor-pointer group"
+                      >
+                        <span className="text-[11.5px] font-bold text-slate-100 break-all">
+                          {line.text}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 text-[9.5px] font-black text-slate-500 group-hover:text-amber-300 shrink-0">
+                          <Pencil className="w-3 h-3" />
+                          <span className="hidden sm:inline">
+                            {line.entryType === "batter" ? "再入力" : "編集"}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })
                 )}
 
                 {quickBrFeedback && (
@@ -2882,7 +3428,7 @@ export function LiveAtBatPadCard({
                   </div>
                 )}
 
-                {previewLine && (
+                {!isPadEditMode && previewLine && (
                   <div className="mt-1 px-2 py-1 rounded-md bg-amber-400/15 border border-amber-400/60 flex items-center justify-between gap-2">
                     <p className="text-[11.5px] font-black text-amber-300 break-all">
                       ➕ {previewLine}
@@ -2901,7 +3447,7 @@ export function LiveAtBatPadCard({
           </div>
 
           {/* 3アウト到達時のワンタップ次イニング誘導バー */}
-          {autoSituation.outs >= 3 && (
+          {!isPadEditMode && autoSituation.outs >= 3 && (
             <div className="shrink-0 px-2.5 py-1.5 bg-slate-950 border-t border-slate-800">
               <button
                 type="button"
@@ -2920,33 +3466,50 @@ export function LiveAtBatPadCard({
            ════════════════════════════════════════════════════════════════ */}
         <div className="shrink-0 bg-card border-t-2 border-[#0f172a] shadow-[0_-4px_12px_rgba(15,23,42,0.08)] px-2 pt-1.5 pb-[max(env(safe-area-inset-bottom),8px)] space-y-1 select-none">
           {/* ① 状況・打者・サブ操作コンパクトボックス */}
-          <div className="rounded-xl border border-border bg-muted/50 px-2 py-1 space-y-1">
-            {/* 上段: 回送り ＋ アウト ＋ 走者 ＋ 走塁追記(長押し重盗対応)/戻す */}
+          <div
+            className={cn(
+              "rounded-xl border px-2 py-1 space-y-1",
+              isPadEditMode
+                ? "border-amber-500 bg-amber-500/10"
+                : "border-border bg-muted/50"
+            )}
+          >
+            {/* 上段: 回送り(修正中は打席前ラベル) ＋ アウト ＋ 走者 ＋ 走塁追記/戻す(修正中は解除) */}
             <div className="flex items-center justify-between gap-1">
-              <div className="inline-flex items-center gap-0.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleStepHalfInning(-1)}
-                  disabled={doc.activeInning === 1 && !doc.activeIsBottom}
-                  className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-40 flex items-center justify-center text-foreground cursor-pointer"
-                  title="前の回へ"
+              {isPadEditMode ? (
+                <span
+                  className="inline-flex items-center gap-1 px-2 h-6 rounded-lg bg-[#0f172a] text-amber-300 text-[10px] font-black shrink-0"
+                  title="修正中の打席が始まる直前のアウト数・塁上走者（タップで微調整可）"
                 >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <span className="px-1.5 py-0.5 rounded-md bg-[#0f172a] text-white text-[10.5px] font-black">
-                  {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}
+                  <Pencil className="w-3 h-3 shrink-0" />
+                  <span>打席前:</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleStepHalfInning(1)}
-                  className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent flex items-center justify-center text-foreground cursor-pointer"
-                  title="次の回へ"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              ) : (
+                <div className="inline-flex items-center gap-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleStepHalfInning(-1)}
+                    disabled={doc.activeInning === 1 && !doc.activeIsBottom}
+                    className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent disabled:opacity-40 flex items-center justify-center text-foreground cursor-pointer"
+                    title="前の回へ"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="px-1.5 py-0.5 rounded-md bg-[#0f172a] text-white text-[10.5px] font-black">
+                    {doc.activeInning}回{doc.activeIsBottom ? "裏" : "表"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleStepHalfInning(1)}
+                    className="w-6 h-6 rounded-lg border border-border bg-card hover:bg-accent flex items-center justify-center text-foreground cursor-pointer"
+                    title="次の回へ"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
 
-              {/* アウト数（タップ切替・そのままドキュメントにも保存） */}
+              {/* アウト数（通常時はイニング現在状況、パッド修正中は対象打席の直前アウト） */}
               <div className="inline-flex items-center gap-1 bg-card border border-border rounded-lg px-1.5 h-6 shrink-0">
                 {[0, 1, 2].map((o) => {
                   const active =
@@ -2958,6 +3521,13 @@ export function LiveAtBatPadCard({
                       onClick={() => {
                         const target =
                           o + 1 === effectiveOutsBefore ? o : o + 1;
+                        if (isPadEditMode) {
+                          setPadEditSituOuts(target);
+                          if (target >= 3) {
+                            setPadEditSituRunners([]);
+                          }
+                          return;
+                        }
                         updateCurrentHalfSituation({ outs: target });
                       }}
                       className={cn(
@@ -2975,7 +3545,7 @@ export function LiveAtBatPadCard({
                 </span>
               </div>
 
-              {/* 走者ピル（タップで手動ON/OFF可・そのままドキュメントにも保存） */}
+              {/* 走者ピル（通常時はイニング現在走者、パッド修正中は対象打席の直前走者） */}
               <div className="inline-flex items-center gap-0.5 shrink-0">
                 {([1, 2, 3] as const).map((b) => {
                   const onBase = effectiveRunnersBefore.includes(b);
@@ -2990,6 +3560,13 @@ export function LiveAtBatPadCard({
                               ...effectiveRunnersBefore,
                               b,
                             ]);
+                        if (isPadEditMode) {
+                          if (effectiveOutsBefore >= 3) {
+                            setPadEditSituOuts(2);
+                          }
+                          setPadEditSituRunners(next);
+                          return;
+                        }
                         updateCurrentHalfSituation({
                           outs: effectiveOutsBefore >= 3 ? 2 : undefined,
                           runners: next,
@@ -3008,19 +3585,22 @@ export function LiveAtBatPadCard({
                 })}
               </div>
 
-              {/* 直前走塁追記（短押し＝モーダル / 長押しスライド＝重盗・二盗・三盗・暴投等を即記録！） ＆ 1つ戻す */}
+              {/* 直前走塁追記（短押し＝モーダル / 長押しスライド＝重盗・二盗・三盗・暴投等を即記録！） ＆ 戻す/解除 */}
               <div className="inline-flex items-center gap-1 ml-auto shrink-0">
                 <FlickPadButton
                   label="走塁"
                   disabled={
-                    (!lastBatterEntry && effectiveRunnersBefore.length === 0) ||
-                    (effectiveOutsBefore >= 3 && !lastBatterEntry)
+                    isPadEditMode
+                      ? brOutsBefore >= 3 || brRunnersBefore.length === 0
+                      : (!lastBatterEntry &&
+                          effectiveRunnersBefore.length === 0) ||
+                        (effectiveOutsBefore >= 3 && !lastBatterEntry)
                   }
                   title="タップで走塁追記モーダル / 長押しスライドで重盗・二盗・暴投などを即記録"
                   popupTitle="走塁プレー（スライドして離すと即記録）"
                   options={quickBaserunningOptions}
                   onShortTap={() => {
-                    if (lastBatterEntry) {
+                    if (targetFollowUpEntry) {
                       openFollowUpModal();
                     }
                   }}
@@ -3033,20 +3613,32 @@ export function LiveAtBatPadCard({
                   }
                   className="px-1.5 pr-2.5 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
                 />
-                <button
-                  type="button"
-                  disabled={!currentHalf || currentHalf.entries.length === 0}
-                  onClick={handleUndoLastEntry}
-                  className="px-1.5 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
-                  title="直前の1行を取り消す"
-                >
-                  <Undo2 className="w-3 h-3 text-slate-600 shrink-0" />
-                  <span>戻す</span>
-                </button>
+                {isPadEditMode ? (
+                  <button
+                    type="button"
+                    onClick={cancelPadEditEntry}
+                    className="px-2 h-6 rounded-lg border border-[#0f172a] bg-[#0f172a] hover:bg-slate-800 text-[10px] font-black text-white inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="修正モードを解除して新規入力へ戻る"
+                  >
+                    <X className="w-3 h-3 text-amber-300 shrink-0" />
+                    <span>解除</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!currentHalf || currentHalf.entries.length === 0}
+                    onClick={handleUndoLastEntry}
+                    className="px-1.5 h-6 rounded-lg border border-border bg-card hover:bg-muted disabled:opacity-40 text-[10px] font-black text-foreground inline-flex items-center gap-0.5 cursor-pointer active:scale-95"
+                    title="直前の1行を取り消す"
+                  >
+                    <Undo2 className="w-3 h-3 text-slate-600 shrink-0" />
+                    <span>戻す</span>
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* 中段: 現在の打者 ＆ 選手交代・微調整・試合終了 */}
+            {/* 中段: 現在の打者(修正中は対象行の打者) ＆ サブ操作ボタン */}
             <div className="flex items-center justify-between gap-1 pt-1 border-t border-border/70">
               <div className="flex items-center gap-1 min-w-0 flex-1">
                 <button
@@ -3056,8 +3648,15 @@ export function LiveAtBatPadCard({
                 >
                   -
                 </button>
-                <span className="px-1.5 py-0.5 rounded-lg bg-[#0f172a] text-white font-mono text-[10.5px] font-black shrink-0">
-                  {currentOrder}番
+                <span
+                  className={cn(
+                    "px-1.5 py-0.5 rounded-lg font-mono text-[10.5px] font-black shrink-0",
+                    isPadEditMode
+                      ? "bg-amber-400 text-slate-950 border border-amber-500"
+                      : "bg-[#0f172a] text-white"
+                  )}
+                >
+                  {displayedOrder}番
                 </span>
                 <button
                   type="button"
@@ -3073,34 +3672,40 @@ export function LiveAtBatPadCard({
                     onClick={openBatterQuickModal}
                     className={cn(
                       "min-w-0 ml-0.5 px-2 h-6 rounded-lg border text-left inline-flex items-center gap-1 transition-all cursor-pointer active:scale-95",
-                      activeBatterSlot?.playerName
+                      displayedBatterName
                         ? "bg-card border-border hover:border-primary/40 text-foreground"
                         : "bg-amber-500/15 border-amber-500/45 text-amber-800 dark:text-amber-300"
                     )}
                     title="タップして打者の選手名・守備位置を設定"
                   >
-                    {activeBatterSlot?.playerName ? (
+                    {displayedBatterName ? (
                       <>
                         <span className="text-xs font-black truncate">
                           {formatPlayerReportName(
-                            activeBatterSlot.playerName,
+                            displayedBatterName,
                             doc.showSurnameOnly
                           )}
                         </span>
-                        <span className="text-[9.5px] font-bold text-muted-foreground shrink-0">
-                          ({normalizeReportPositionCode(activeBatterSlot.position)})
-                        </span>
+                        {displayedBatterSlot && (
+                          <span className="text-[9.5px] font-bold text-muted-foreground shrink-0">
+                            (
+                            {normalizeReportPositionCode(
+                              displayedBatterSlot.position
+                            )}
+                            )
+                          </span>
+                        )}
                         <Pencil className="w-2.5 h-2.5 text-muted-foreground shrink-0" />
                       </>
                     ) : (
                       <span className="text-[10.5px] font-black truncate">
-                        ＋{currentOrder}番を設定
+                        ＋{displayedOrder}番を設定
                       </span>
                     )}
                   </button>
                 ) : (
                   <span className="text-[10.5px] font-bold text-muted-foreground ml-1 truncate">
-                    相手打者
+                    {isPadEditMode ? "相手打者（修正中）" : "相手打者"}
                     {(doc.opponentBatterCount || 9) > 9
                       ? `（全${doc.opponentBatterCount}人打順）`
                       : "（番号のみ）"}
@@ -3109,47 +3714,92 @@ export function LiveAtBatPadCard({
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={openSubstitutionModal}
-                  className="inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-black text-primary cursor-pointer active:scale-95"
-                >
-                  <UserPlus className="w-3 h-3" />
-                  <span>{isMyAttack ? "代打/走" : "交代"}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => openFineTuneModal()}
-                  className={cn(
-                    "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
-                    hasCustomOverride
-                      ? "bg-amber-400 text-slate-950 border-amber-500"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  )}
-                >
-                  <SlidersHorizontal className="w-3 h-3" />
-                  <span>微調整</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsGameSetPanelOpen(true)}
-                  className={cn(
-                    "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
-                    doc.isGameFinished
-                      ? "bg-emerald-600 text-white border-emerald-600"
-                      : "bg-card text-foreground border-border hover:bg-muted"
-                  )}
-                >
-                  <Flag
-                    className={cn(
-                      "w-3 h-3",
-                      doc.isGameFinished ? "text-white" : "text-amber-500"
+                {isPadEditMode && padEditingEntry ? (
+                  <>
+                    {effectiveEditChains.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setPadEditChainedPlays([])}
+                        className="inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-black text-muted-foreground hover:text-rose-600 cursor-pointer active:scale-95"
+                        title="この行に連結されている盗塁・走塁記録をクリア"
+                      >
+                        <X className="w-3 h-3" />
+                        <span>走塁解除</span>
+                      </button>
                     )}
-                  />
-                  <span>{doc.isGameFinished ? "終了ON" : "終了"}</span>
-                </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openFineTuneModal(padEditingEntry.id)}
+                      className={cn(
+                        "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
+                        hasCustomOverride
+                          ? "bg-amber-400 text-slate-950 border-amber-500"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      )}
+                      title="自由テキストやアウト・得点を直接編集"
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>文字微調整</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDeleteRecordedEntryById(padEditingEntry.id)
+                      }
+                      className="inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg bg-rose-600 hover:bg-rose-700 border border-rose-700 text-white text-[10px] font-black cursor-pointer active:scale-95"
+                      title="この記録行を削除"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>行削除</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={openSubstitutionModal}
+                      className="inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg bg-card border border-border hover:bg-muted text-[10px] font-black text-primary cursor-pointer active:scale-95"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      <span>{isMyAttack ? "代打/走" : "交代"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openFineTuneModal()}
+                      className={cn(
+                        "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
+                        hasCustomOverride
+                          ? "bg-amber-400 text-slate-950 border-amber-500"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      <SlidersHorizontal className="w-3 h-3" />
+                      <span>微調整</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsGameSetPanelOpen(true)}
+                      className={cn(
+                        "inline-flex items-center gap-0.5 px-1.5 h-6 rounded-lg border text-[10px] font-black cursor-pointer active:scale-95",
+                        doc.isGameFinished
+                          ? "bg-emerald-600 text-white border-emerald-600"
+                          : "bg-card text-foreground border-border hover:bg-muted"
+                      )}
+                    >
+                      <Flag
+                        className={cn(
+                          "w-3 h-3",
+                          doc.isGameFinished ? "text-white" : "text-amber-500"
+                        )}
+                      />
+                      <span>{doc.isGameFinished ? "終了ON" : "終了"}</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -3274,11 +3924,13 @@ export function LiveAtBatPadCard({
             </div>
           </div>
 
-          {/* ② プレビュー ＆ 記録確定バー */}
+          {/* ② プレビュー ＆ 記録確定 / 修正反映バー */}
           <div
             className={cn(
               "rounded-xl border px-2 py-1 transition-all space-y-1",
-              finalPlayText
+              isPadEditMode
+                ? "border-amber-500 bg-amber-500/12 shadow-2xs"
+                : finalPlayText
                 ? "border-primary bg-primary/8 shadow-2xs"
                 : "border-border bg-muted/40"
             )}
@@ -3286,7 +3938,14 @@ export function LiveAtBatPadCard({
             {/* 走者がいる場合の自動進塁パターン切替ピル */}
             {candidates.length > 1 && (
               <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
-                <span className="text-[10px] font-black text-primary shrink-0">
+                <span
+                  className={cn(
+                    "text-[10px] font-black shrink-0",
+                    isPadEditMode
+                      ? "text-amber-800 dark:text-amber-300"
+                      : "text-primary"
+                  )}
+                >
                   走者:
                 </span>
                 {candidates.map((cand, idx) => {
@@ -3305,7 +3964,9 @@ export function LiveAtBatPadCard({
                       className={cn(
                         "px-2 py-0.5 rounded-lg border text-[10px] font-black whitespace-nowrap transition-all cursor-pointer",
                         active
-                          ? "bg-primary text-primary-foreground border-primary shadow-2xs"
+                          ? isPadEditMode
+                            ? "bg-[#0f172a] text-white border-[#0f172a] shadow-2xs"
+                            : "bg-primary text-primary-foreground border-primary shadow-2xs"
                           : "bg-card text-foreground border-border hover:bg-muted"
                       )}
                     >
@@ -3318,11 +3979,16 @@ export function LiveAtBatPadCard({
 
             <div className="flex items-center justify-between gap-1.5">
               <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                {isPadEditMode && (
+                  <span className="px-1.5 py-0.5 rounded bg-[#0f172a] text-amber-300 text-[9.5px] font-black shrink-0">
+                    修正
+                  </span>
+                )}
                 {previewLine ? (
                   <>
-                    {finalRunsScored > 0 && (
+                    {totalPreviewRunsScored > 0 && (
                       <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black shrink-0">
-                        +{finalRunsScored}点
+                        +{totalPreviewRunsScored}点
                       </span>
                     )}
                     <p className="text-xs font-black text-foreground truncate">
@@ -3333,6 +3999,8 @@ export function LiveAtBatPadCard({
                   <p className="text-[10.5px] font-bold text-muted-foreground truncate">
                     {selectedDirection
                       ? `方向「${selectedDirection}」選択中 ➔ 結果を選択（長押しで詳細）`
+                      : isPadEditMode
+                      ? "新しい打球方向・結果をタップ ➔「修正を反映」"
                       : "ボタン選択（長押しスライドで詳細打球・重盗）➔「記録確定」"}
                   </p>
                 )}
@@ -3347,7 +4015,7 @@ export function LiveAtBatPadCard({
                     type="button"
                     onClick={resetPadSelection}
                     className="w-7 h-8 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground flex items-center justify-center cursor-pointer"
-                    title="選択をクリア"
+                    title="打球・結果の選択をクリアして選び直す"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -3356,10 +4024,24 @@ export function LiveAtBatPadCard({
                   type="button"
                   disabled={!finalPlayText}
                   onClick={handleRecordAtBat}
-                  className="h-8 px-3.5 rounded-xl bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground text-primary-foreground text-xs font-black inline-flex items-center justify-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed"
+                  className={cn(
+                    "h-8 px-3.5 rounded-xl disabled:bg-muted disabled:text-muted-foreground text-xs font-black inline-flex items-center justify-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer disabled:cursor-not-allowed",
+                    isPadEditMode
+                      ? "bg-amber-500 hover:bg-amber-600 text-slate-950"
+                      : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                  )}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>記録確定</span>
+                  {isPadEditMode ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>修正を反映</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>記録確定</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -3658,7 +4340,8 @@ export function LiveAtBatPadCard({
             >
               <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-primary px-4 py-3 flex items-center justify-between shrink-0">
                 <h3 className="text-sm font-black text-white">
-                  {currentOrder}番打者の設定
+                  {displayedOrder}番打者の設定
+                  {isPadEditMode ? "（修正中の行）" : ""}
                 </h3>
                 <button
                   type="button"
@@ -3670,7 +4353,7 @@ export function LiveAtBatPadCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-3 flex-1">
-                {onOpenLineupEditor && (
+                {onOpenLineupEditor && !isPadEditMode && (
                   <button
                     type="button"
                     onClick={() => {
@@ -3709,13 +4392,16 @@ export function LiveAtBatPadCard({
                           label: "手入力する（名簿未選択）",
                         },
                         ...rosterPlayers.map((rp) => {
-                          const otherSlot = activeLineup.find(
-                            (s) =>
-                              s.order !== currentOrder &&
-                              s.playerId === rp.id &&
-                              Boolean(s.playerName.trim() || s.playerId)
-                          );
+                          const otherSlot = !isPadEditMode
+                            ? activeLineup.find(
+                                (s) =>
+                                  s.order !== displayedOrder &&
+                                  s.playerId === rp.id &&
+                                  Boolean(s.playerName.trim() || s.playerId)
+                              )
+                            : undefined;
                           const isDhStarter =
+                            !isPadEditMode &&
                             doc.dhStarterPitcher?.playerId === rp.id;
                           const cond = normalizePlayerConditionStatus(
                             rp.conditionStatus
@@ -3770,7 +4456,7 @@ export function LiveAtBatPadCard({
                           };
                         }),
                       ]}
-                      title={`${currentOrder}番打者を名簿から選択`}
+                      title={`${displayedOrder}番打者を名簿から選択`}
                       size="md"
                       searchable={true}
                       searchPlaceholder="選手名・背番号で検索..."
@@ -3790,16 +4476,17 @@ export function LiveAtBatPadCard({
                       options={[
                         ...POSITION_OPTIONS.map((p) => {
                           const occupiedSlot =
-                            p.code !== "D"
+                            !isPadEditMode && p.code !== "D"
                               ? activeLineup.find(
                                   (s) =>
-                                    s.order !== currentOrder &&
+                                    s.order !== displayedOrder &&
                                     Boolean(s.playerId || s.playerName.trim()) &&
                                     normalizeReportPositionCode(s.position) ===
                                       p.code
                                 )
                               : undefined;
                           const occupiedByDhPitcher =
+                            !isPadEditMode &&
                             p.code === "1" &&
                             Boolean(
                               doc.dhStarterPitcher &&
@@ -3939,8 +4626,8 @@ export function LiveAtBatPadCard({
                   <button
                     type="button"
                     onClick={() => {
-                      setSituDraftOuts(effectiveOutsBefore);
-                      setSituDraftRunners([...effectiveRunnersBefore]);
+                      setSituDraftOuts(autoSituation.outs);
+                      setSituDraftRunners([...autoSituation.runners]);
                       setSituDraftRuns(autoSituation.runs);
                       setSituClearManualRuns(false);
                       setFineTuneTab("situation");
@@ -3998,6 +4685,22 @@ export function LiveAtBatPadCard({
                               title="修正する記録行を選択"
                             />
                           </div>
+                        )}
+
+                        {editingRecordedEntry.entryType === "batter" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startPadEditEntry(editingRecordedEntry.id)
+                            }
+                            className="w-full py-2.5 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 text-xs font-black flex items-center justify-between gap-2 cursor-pointer active:scale-95"
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>この行を入力パッドで再入力・修正する</span>
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                          </button>
                         )}
 
                         <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground">

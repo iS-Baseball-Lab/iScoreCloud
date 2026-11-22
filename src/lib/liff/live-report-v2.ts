@@ -11,6 +11,7 @@ import type {
   LiveReportOpponentBenchPlayer,
   LiveReportOpponentLineupSlot,
   LiveReportOutputMode,
+  LiveReportPitchType,
   LiveReportPlayEntry,
   LiveReportSubType,
   LiveReportV2Document,
@@ -5449,5 +5450,1044 @@ export function computeLiveReportPitchCounts(
     opponentTotalPitches,
   };
 }
+
+// =========================================================
+// 10. 記録済み行の入力パッド再入力・修正 ＆ 後続打席自動調停エンジン
+// =========================================================
+
+export function sameRunnersList(
+  a: ReadonlyArray<LiveReportBaseNum>,
+  b: ReadonlyArray<LiveReportBaseNum>
+): boolean {
+  const na = normalizeRunnersList(a);
+  const nb = normalizeRunnersList(b);
+  if (na.length !== nb.length) return false;
+  for (let i = 0; i < na.length; i++) {
+    if (na[i] !== nb[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * 指定した記録行（targetEntryId）の「直前時点」におけるアウト数・塁上走者・走者氏名を算出する。
+ */
+export function computeSituationBeforeEntry(
+  half: LiveReportHalfInning | undefined,
+  targetEntryId: string
+): HalfInningLiveSituation {
+  if (!half) {
+    return { outs: 0, runners: [], runs: 0, runnerNames: {} };
+  }
+  const idx = half.entries.findIndex((e) => e.id === targetEntryId);
+  if (idx <= 0) {
+    return { outs: 0, runners: [], runs: 0, runnerNames: {} };
+  }
+  return computeHalfInningSituation({
+    inning: half.inning,
+    isBottom: half.isBottom,
+    entries: half.entries.slice(0, idx),
+    manualRunsOverride: null,
+    manualOutsOverride: null,
+    manualRunnersOverride: null,
+  });
+}
+
+/**
+ * 1打席確定時に付与する最終球数配列（終端の in_play / 4球目ball / 3球目strike を含む）を組み立てる。
+ */
+export function buildAttachedPitchesForAtBat(params: {
+  pendingPitches: ReadonlyArray<LiveReportPitchType>;
+  isPitchTrackingActive: boolean;
+  selectedDirect: DirectOutcomeCode | null;
+  selectedBatted: BattedOutcomeCode | null;
+  selectedBattedVariant: BattedPlayVariant | null;
+  finalPlayText: string;
+}): LiveReportPitchType[] | undefined {
+  const {
+    pendingPitches,
+    isPitchTrackingActive,
+    selectedDirect,
+    selectedBatted,
+    selectedBattedVariant,
+    finalPlayText,
+  } = params;
+
+  if (!isPitchTrackingActive) return undefined;
+
+  const finalPitches: LiveReportPitchType[] = [...pendingPitches];
+  let balls = 0;
+  let strikes = 0;
+  for (const p of pendingPitches) {
+    if (p === "ball") {
+      balls += 1;
+    } else if (p === "strike") {
+      strikes += 1;
+    } else if (p === "foul" && strikes < 2) {
+      strikes += 1;
+    }
+  }
+
+  const isIntentionalWalk =
+    selectedDirect === "ibb" ||
+    (!selectedDirect && !selectedBatted && finalPlayText.includes("敬遠"));
+  const isWalk =
+    !isIntentionalWalk &&
+    (selectedDirect === "walk" ||
+      (!selectedDirect && !selectedBatted && finalPlayText.includes("四球")));
+  const isStrikeout =
+    selectedDirect === "strikeout_swing" ||
+    selectedDirect === "strikeout_look" ||
+    selectedDirect === "dropped_3rd_out" ||
+    selectedDirect === "dropped_3rd_safe" ||
+    (selectedBatted === "double_play" &&
+      selectedBattedVariant === "dp_strikeout_cs") ||
+    (!selectedDirect &&
+      !selectedBatted &&
+      (finalPlayText.includes("三振") || finalPlayText.includes("振逃")));
+
+  if (isIntentionalWalk) {
+    // 敬遠で pendingPitches が空ならそのまま空配列
+  } else if (isWalk) {
+    if (balls < 4) {
+      finalPitches.push("ball");
+    }
+  } else if (isStrikeout) {
+    if (strikes < 3) {
+      finalPitches.push("strike");
+    }
+  } else {
+    finalPitches.push("in_play");
+  }
+
+  return finalPitches;
+}
+
+/**
+ * 記録済み打席の pitches から自動付与された終端1球（in_play / 4球目ball / 3球目strike）を除き、
+ * パッド再編集用の pendingPitches を復元する（そのまま再確定しても球数が+1膨張しない）。
+ */
+export function extractEditablePendingPitches(
+  entry: LiveReportPlayEntry
+): LiveReportPitchType[] {
+  if (!Array.isArray(entry.pitches) || entry.pitches.length === 0) {
+    return [];
+  }
+  const copy = [...entry.pitches];
+  const last = copy[copy.length - 1];
+
+  const rawText = (entry.playText || "").trim();
+  const isIntentionalWalk =
+    entry.resultCode === "ibb" ||
+    (!entry.resultCode && rawText.includes("敬遠"));
+  const isWalk =
+    !isIntentionalWalk &&
+    (entry.resultCode === "walk" || rawText.includes("四球"));
+  const isStrikeout =
+    entry.resultCode === "strikeout_swing" ||
+    entry.resultCode === "strikeout_look" ||
+    entry.resultCode === "dropped_3rd_out" ||
+    entry.resultCode === "dropped_3rd_safe" ||
+    rawText.includes("三振") ||
+    rawText.includes("振逃");
+
+  if (last === "in_play") {
+    copy.pop();
+  } else if (last === "ball" && isWalk) {
+    const ballCount = copy.filter((p) => p === "ball").length;
+    if (ballCount <= 4) {
+      copy.pop();
+    }
+  } else if (last === "strike" && isStrikeout) {
+    let strikes = 0;
+    for (const p of copy) {
+      if (p === "strike") strikes += 1;
+      else if (p === "foul" && strikes < 2) strikes += 1;
+    }
+    if (strikes <= 3) {
+      copy.pop();
+    }
+  }
+
+  return copy.filter(
+    (p): p is LiveReportPitchType =>
+      p === "ball" || p === "strike" || p === "foul"
+  );
+}
+
+const POS_NUM_TO_PAD_DIRECTION: Record<string, string> = {
+  "1": "投",
+  "2": "捕",
+  "3": "一",
+  "4": "二",
+  "5": "三",
+  "6": "遊",
+  "7": "左",
+  "8": "中",
+  "9": "右",
+};
+
+const KNOWN_PAD_DIRECTION_PREFIXES: ReadonlyArray<string> = [
+  "左中間破る",
+  "右中間破る",
+  "左中間",
+  "右中間",
+  "左中浅",
+  "左中深",
+  "右中浅",
+  "右中深",
+  "左中",
+  "右中",
+  "三遊間",
+  "二遊間",
+  "一二間",
+  "投強襲",
+  "一強襲",
+  "二強襲",
+  "三強襲",
+  "遊強襲",
+  "投一側",
+  "投三側",
+  "二後方",
+  "遊後方",
+  "投前",
+  "捕前",
+  "捕邪",
+  "一線",
+  "一邪",
+  "三線",
+  "三前",
+  "三邪",
+  "左前",
+  "左線",
+  "左越",
+  "左浅",
+  "左深",
+  "中前",
+  "中越",
+  "中浅",
+  "中深",
+  "右前",
+  "右線",
+  "右越",
+  "右浅",
+  "右深",
+  "投",
+  "捕",
+  "一",
+  "二",
+  "三",
+  "遊",
+  "左",
+  "中",
+  "右",
+];
+
+export function resolvePadDirectionAnchor(direction: string): string {
+  const d = (direction || "").trim();
+  if (!d) return "";
+  if (d.startsWith("左中")) return "左中";
+  if (d.startsWith("右中")) return "右中";
+  if (d === "一二間") return "二";
+  if (d === "二遊間" || d === "三遊間") return "遊";
+  const single = ["投", "捕", "一", "二", "三", "遊", "左", "中", "右"].find(
+    (head) => d.startsWith(head)
+  );
+  return single || "";
+}
+
+function extractDirectionFromPlayText(playText: string): string {
+  const t = playText.trim();
+  if (!t) return "";
+  if (
+    t.startsWith("三振") ||
+    t.startsWith("三塁") ||
+    t.startsWith("二塁") ||
+    t.startsWith("一塁")
+  ) {
+    return "";
+  }
+  for (const prefix of KNOWN_PAD_DIRECTION_PREFIXES) {
+    if (t.startsWith(prefix)) {
+      if (prefix === "左中間") return "左中";
+      if (prefix === "右中間") return "右中";
+      return prefix;
+    }
+  }
+  return "";
+}
+
+const VALID_DIRECT_CODES = new Set<DirectOutcomeCode>([
+  "strikeout_swing",
+  "strikeout_look",
+  "dropped_3rd_out",
+  "dropped_3rd_safe",
+  "walk",
+  "ibb",
+  "hbp",
+]);
+
+const VALID_BATTED_CODES = new Set<BattedOutcomeCode>([
+  "groundout",
+  "hard_groundout",
+  "double_play",
+  "flyout",
+  "liner",
+  "foul_fly",
+  "sac_bunt",
+  "sac_fly",
+  "front_hit",
+  "hit",
+  "infield_hit",
+  "double",
+  "triple",
+  "homerun",
+  "rh_homerun",
+  "error",
+  "fc",
+]);
+
+export interface InferredPadSelection {
+  direction: string;
+  directionAnchor: string;
+  directCode: DirectOutcomeCode | null;
+  directVariant: DirectPlayVariant | null;
+  directActiveChip: string | null;
+  battedCode: BattedOutcomeCode | null;
+  battedVariant: BattedPlayVariant | null;
+  battedActiveChip: string | null;
+  candidateIdx: number;
+  matchedCandidateId: string | null;
+  customPlayText: string | null;
+  customOutsAfter: number | null;
+  customRunnersAfter: LiveReportBaseNum[] | null;
+  customRunsScored: number | null;
+}
+
+function inferDirectFromEntry(
+  entry: LiveReportPlayEntry,
+  outsBefore: number
+): {
+  code: DirectOutcomeCode;
+  variant: DirectPlayVariant | null;
+  activeChip: string | null;
+} | null {
+  const rc = (entry.resultCode || "").trim();
+  const rawText = (entry.playText || "").trim();
+
+  let code: DirectOutcomeCode | null = null;
+  if (VALID_DIRECT_CODES.has(rc as DirectOutcomeCode)) {
+    code = rc as DirectOutcomeCode;
+  } else if (rc === "intentional_walk") {
+    code = "ibb";
+  } else if (rc === "hit_by_pitch") {
+    code = "hbp";
+  } else if (rc === "dropped_third_strike_out") {
+    code = "dropped_3rd_out";
+  } else if (rc === "dropped_third_strike") {
+    code = "dropped_3rd_safe";
+  } else if (rc === "strikeout") {
+    code = rawText.includes("見") ? "strikeout_look" : "strikeout_swing";
+  } else if (!rc && !rawText.includes("三振併殺")) {
+    if (rawText.includes("見逃三振") || rawText.includes("見三振")) {
+      code = "strikeout_look";
+    } else if (
+      rawText.includes("ファウルチップ三振") ||
+      rawText.includes("空三振") ||
+      rawText === "三振"
+    ) {
+      code = "strikeout_swing";
+    } else if (rawText.includes("振逃") || rawText.includes("三振暴投")) {
+      code =
+        entry.outsAfter > outsBefore && !rawText.includes("暴投振逃")
+          ? "dropped_3rd_out"
+          : "dropped_3rd_safe";
+    } else if (rawText.includes("敬遠")) {
+      code = "ibb";
+    } else if (rawText.includes("死球")) {
+      code = "hbp";
+    } else if (rawText.includes("四球")) {
+      code = "walk";
+    }
+  }
+
+  if (!code) return null;
+
+  let variant: DirectPlayVariant | null = null;
+  let activeChip: string | null = null;
+  if (code === "strikeout_swing" && rawText.includes("ファウルチップ")) {
+    variant = "so_foul_tip";
+    activeChip = "チップ三振";
+  } else if (code === "walk") {
+    if (rawText.includes("ストレート四球")) {
+      variant = "walk_four_pitch";
+      activeChip = "スト四球";
+    } else if (rawText.includes("粘って四球")) {
+      variant = "walk_full_count";
+      activeChip = "粘り四球";
+    } else if (rawText.includes("四球暴投")) {
+      variant = "walk_wp_2b";
+      activeChip = "四球二進";
+    }
+  } else if (
+    code === "dropped_3rd_safe" &&
+    (rawText.includes("暴投振逃") || rawText.includes("三振暴投"))
+  ) {
+    variant = "dts_wp_safe";
+    activeChip = "暴投振逃";
+  }
+
+  return { code, variant, activeChip };
+}
+
+function inferBattedVariantAndChip(
+  code: BattedOutcomeCode,
+  rawText: string,
+  direction: string
+): { variant: BattedPlayVariant | null; activeChip: string | null } {
+  if (code === "groundout") {
+    if (rawText.includes("ボテボテゴロ")) {
+      return { variant: "ground_botebote", activeChip: "ボテゴロ" };
+    }
+    if (rawText.includes("高いバウンドゴロ")) {
+      return { variant: "ground_high_bound", activeChip: "高バウンド" };
+    }
+    if (rawText.includes("ゴロタッチアウト")) {
+      return { variant: "ground_tag_out", activeChip: "タッチ死" };
+    }
+    if (rawText.includes("ゴロ本塁封殺") || rawText.includes("ゴロ本塁憤死")) {
+      return { variant: "ground_force_home", activeChip: "本封ゴロ" };
+    }
+    if (rawText.includes("ゴロ二塁封殺")) {
+      return { variant: "ground_force_2b", activeChip: "二封ゴロ" };
+    }
+  }
+
+  if (code === "flyout") {
+    if (rawText.includes("インフィールドフライ")) {
+      return { variant: "infield_fly", activeChip: "IFフライ" };
+    }
+    if (rawText.includes("浅いフライ") && !direction.endsWith("浅")) {
+      return { variant: "fly_shallow", activeChip: "浅フライ" };
+    }
+    if (rawText.includes("深いフライ") && !direction.endsWith("深")) {
+      return { variant: "fly_deep", activeChip: "深フライ" };
+    }
+  }
+
+  if (code === "double_play") {
+    if (rawText.includes("三振併殺")) {
+      return { variant: "dp_strikeout_cs", activeChip: "三振併殺" };
+    }
+    if (rawText.includes("ライナー併殺")) {
+      return { variant: "dp_liner", activeChip: "直併殺" };
+    }
+    if (rawText.includes("フライ併殺")) {
+      return { variant: "dp_fly_tag", activeChip: "飛併殺" };
+    }
+  }
+
+  if (code === "sac_bunt") {
+    if (rawText.includes("セーフティスクイズ")) {
+      return { variant: "safety_squeeze", activeChip: "Sスクイズ" };
+    }
+    if (rawText.includes("スクイズ失敗")) {
+      return { variant: "squeeze_fail_out", activeChip: "スクイズ死" };
+    }
+    if (rawText.includes("スクイズ")) {
+      return { variant: "squeeze_score", activeChip: "スクイズ" };
+    }
+    if (rawText.includes("バント失敗封殺")) {
+      return { variant: "bunt_fc_out", activeChip: "バント封殺" };
+    }
+    if (rawText.includes("バント飛球")) {
+      return { variant: "bunt_popup_out", activeChip: "バント飛" };
+    }
+  }
+
+  if (code === "infield_hit") {
+    if (rawText.includes("セーフティバント安打")) {
+      return { variant: "safety_bunt_hit", activeChip: "セーフティ" };
+    }
+    if (rawText.includes("バント安打")) {
+      return { variant: "bunt_hit", activeChip: "バント安" };
+    }
+    if (rawText.includes("ボテボテ")) {
+      return { variant: "infield_botebote", activeChip: "ボテ安打" };
+    }
+    if (rawText.includes("強襲") && !direction.endsWith("強襲")) {
+      return { variant: "hit_hard", activeChip: "強襲内安" };
+    }
+  }
+
+  if (code === "front_hit" || code === "hit") {
+    if (rawText.includes("ポテン") && !direction.endsWith("浅")) {
+      return { variant: "hit_poten", activeChip: "ポテンH" };
+    }
+    if (rawText.includes("クリーン")) {
+      return { variant: "hit_clean", activeChip: "クリーンH" };
+    }
+    if (rawText.includes("ライナー")) {
+      return { variant: "hit_liner", activeChip: "ライナーH" };
+    }
+    if (
+      code === "hit" &&
+      (rawText.includes("ライン際") ||
+        (!direction.endsWith("線") && /^[左右一三]線/.test(rawText)))
+    ) {
+      return { variant: "hit_line", activeChip: "線ヒット" };
+    }
+    if (
+      code === "hit" &&
+      rawText.includes("強襲") &&
+      !direction.endsWith("強襲")
+    ) {
+      return { variant: "hit_hard", activeChip: "強襲H" };
+    }
+    if (
+      code === "hit" &&
+      !direction.endsWith("前") &&
+      /^[投捕一二三遊左右中]前/.test(rawText)
+    ) {
+      return { variant: "hit_front", activeChip: "前ヒット" };
+    }
+  }
+
+  if (code === "double") {
+    if (rawText.includes("エンタイトル二塁打")) {
+      return { variant: "entitle_double", activeChip: "エンタイトル" };
+    }
+    if (rawText.includes("ポテン") && !direction.endsWith("浅")) {
+      return { variant: "hit_poten", activeChip: "ポテン二" };
+    }
+    if (rawText.includes("破る") && !direction.endsWith("破る")) {
+      return { variant: "hit_gap", activeChip: "間二塁打" };
+    }
+    if (
+      rawText.includes("ライン際") ||
+      (!direction.endsWith("線") && /^[左右一三]線/.test(rawText))
+    ) {
+      return { variant: "hit_line", activeChip: "線二塁打" };
+    }
+  }
+
+  if (code === "triple") {
+    if (rawText.includes("破る") && !direction.endsWith("破る")) {
+      return { variant: "hit_gap", activeChip: "間三塁打" };
+    }
+    if (
+      rawText.includes("ライン際") ||
+      (!direction.endsWith("線") && /^[左右一三]線/.test(rawText))
+    ) {
+      return { variant: "hit_line", activeChip: "線三塁打" };
+    }
+  }
+
+  if (code === "homerun") {
+    if (rawText.includes("ランニング本塁打")) {
+      return { variant: "inside_park_hr", activeChip: "走本塁打" };
+    }
+    if (
+      rawText.includes("ポール際") ||
+      (!direction.endsWith("線") && /^[左右]線/.test(rawText))
+    ) {
+      return { variant: "hit_line", activeChip: "線本塁打" };
+    }
+  }
+
+  if (code === "error") {
+    if (rawText.includes("捕球エラー")) {
+      return { variant: "error_catch", activeChip: "捕球E" };
+    }
+    if (rawText.includes("悪送球エラー")) {
+      return { variant: "error_throw", activeChip: "悪送球E" };
+    }
+    if (rawText.includes("落球エラー")) {
+      return { variant: "error_drop", activeChip: "落球E" };
+    }
+    if (rawText.includes("後逸エラー")) {
+      return { variant: "error_pass_2b", activeChip: "後逸2塁" };
+    }
+  }
+
+  if (code === "fc") {
+    if (rawText.includes("本塁野選")) {
+      return { variant: "fc_home_safe", activeChip: "本塁野選" };
+    }
+    if (rawText.includes("バント野選")) {
+      return { variant: "fc_bunt_safe", activeChip: "バント野選" };
+    }
+  }
+
+  return { variant: null, activeChip: null };
+}
+
+function inferBattedCodeFromEntry(entry: LiveReportPlayEntry): BattedOutcomeCode | null {
+  const rc = (entry.resultCode || "").trim();
+  const rawText = (entry.playText || "").trim();
+
+  if (VALID_BATTED_CODES.has(rc as BattedOutcomeCode)) {
+    return rc as BattedOutcomeCode;
+  }
+  if (rc === "single") {
+    if (rawText.includes("内野安打") || rawText.includes("バント安打")) {
+      return "infield_hit";
+    }
+    return rawText.includes("前") ? "front_hit" : "hit";
+  }
+  if (rc === "home_run") {
+    return rawText.includes("ランニング") ? "rh_homerun" : "homerun";
+  }
+  if (rc === "lineout") return "liner";
+  if (rc === "infield_fly") return "flyout";
+
+  if (!rawText) return null;
+  if (rawText.includes("ランニング本塁打")) return "rh_homerun";
+  if (rawText.includes("本塁打")) return "homerun";
+  if (rawText.includes("三塁打")) return "triple";
+  if (rawText.includes("二塁打")) return "double";
+  if (rawText.includes("内野安打") || rawText.includes("バント安打")) {
+    return "infield_hit";
+  }
+  if (rawText.includes("ヒット") || rawText.includes("安打")) {
+    return /^[投捕一二三遊左右中]前/.test(rawText) ||
+      rawText.includes("ポテン") ||
+      rawText.includes("クリーン")
+      ? "front_hit"
+      : "hit";
+  }
+  if (
+    rawText.includes("送りバント") ||
+    rawText.includes("スクイズ") ||
+    rawText.includes("バント失敗") ||
+    rawText.includes("バント飛球") ||
+    rawText.includes("バントゴロ") ||
+    rawText.includes("犠打")
+  ) {
+    return "sac_bunt";
+  }
+  if (rawText.includes("犠飛")) return "sac_fly";
+  if (rawText.includes("併殺")) return "double_play";
+  if (rawText.includes("邪飛") || rawText.endsWith("邪飛")) return "foul_fly";
+  if (rawText.includes("ライナー")) return "liner";
+  if (rawText.includes("フライ")) return "flyout";
+  if (rawText.includes("エラー") || rawText.includes("失策")) return "error";
+  if (rawText.includes("野選")) return "fc";
+  if (rawText.includes("強襲ゴロ")) return "hard_groundout";
+  if (rawText.includes("ゴロ")) return "groundout";
+
+  return null;
+}
+
+/**
+ * 記録済み打席データから入力パッドの選択状態（方向・打撃結果・フリック詳細・進塁候補インデックス・カスタム差分）を逆推論する。
+ */
+export function inferPadSelectionFromPlayEntry(
+  entry: LiveReportPlayEntry,
+  outsBefore: number,
+  runnersBefore: ReadonlyArray<LiveReportBaseNum>
+): InferredPadSelection {
+  const startOuts = outsBefore >= 3 ? 0 : Math.max(0, Math.min(2, outsBefore));
+  const normRunnersBefore = normalizeRunnersList(runnersBefore);
+  const rawText = (entry.playText || "").trim();
+  const entryOutsAfter = Math.max(0, Math.min(3, entry.outsAfter));
+  const entryRunnersAfter =
+    entryOutsAfter >= 3 ? [] : normalizeRunnersList(entry.runnersAfter);
+  const chainedRunsSum = (entry.chainedPlays || []).reduce(
+    (s, cp) => s + (cp.runsScored || 0),
+    0
+  );
+  const atBatRuns = Math.max(0, (entry.runsScored || 0) - chainedRunsSum);
+
+  // 1. 三振・四死球系
+  const directMatch = inferDirectFromEntry(entry, startOuts);
+  if (directMatch) {
+    const sim = simulateDirectOutcome(
+      directMatch.code,
+      startOuts,
+      normRunnersBefore,
+      directMatch.variant
+    );
+    return {
+      direction: "",
+      directionAnchor: "",
+      directCode: directMatch.code,
+      directVariant: directMatch.variant,
+      directActiveChip: directMatch.activeChip,
+      battedCode: null,
+      battedVariant: null,
+      battedActiveChip: null,
+      candidateIdx: 0,
+      matchedCandidateId: sim.id,
+      customPlayText: sim.playText === rawText ? null : rawText,
+      customOutsAfter: sim.outsAfter === entryOutsAfter ? null : entryOutsAfter,
+      customRunnersAfter: sameRunnersList(sim.runnersAfter, entryRunnersAfter)
+        ? null
+        : entryRunnersAfter,
+      customRunsScored: sim.runsScored === atBatRuns ? null : atBatRuns,
+    };
+  }
+
+  // 2. 打球方向 ＋ 打撃結果系
+  let direction = (entry.battedDirection || "").trim();
+  if (POS_NUM_TO_PAD_DIRECTION[direction]) {
+    direction = POS_NUM_TO_PAD_DIRECTION[direction]!;
+  }
+  if (!direction) {
+    direction = extractDirectionFromPlayText(rawText);
+  }
+  const directionAnchor = resolvePadDirectionAnchor(direction);
+
+  const battedCode = inferBattedCodeFromEntry(entry);
+  if (battedCode) {
+    const { variant: inferredVar, activeChip: inferredChip } =
+      inferBattedVariantAndChip(battedCode, rawText, direction);
+
+    const variantTrials: Array<{
+      variant: BattedPlayVariant | null;
+      chip: string | null;
+    }> =
+      inferredVar !== null
+        ? [
+            { variant: inferredVar, chip: inferredChip },
+            { variant: null, chip: null },
+          ]
+        : [{ variant: null, chip: null }];
+
+    for (const trial of variantTrials) {
+      const cands = buildBattedPlayCandidates(
+        direction,
+        battedCode,
+        startOuts,
+        normRunnersBefore,
+        trial.variant
+      );
+      const exactIdx = cands.findIndex(
+        (c) =>
+          c.playText === rawText &&
+          c.outsAfter === entryOutsAfter &&
+          sameRunnersList(c.runnersAfter, entryRunnersAfter) &&
+          c.runsScored === atBatRuns
+      );
+      if (exactIdx >= 0) {
+        const matched = cands[exactIdx]!;
+        return {
+          direction,
+          directionAnchor,
+          directCode: null,
+          directVariant: null,
+          directActiveChip: null,
+          battedCode,
+          battedVariant: trial.variant,
+          battedActiveChip: trial.chip,
+          candidateIdx: exactIdx,
+          matchedCandidateId: matched.id,
+          customPlayText: null,
+          customOutsAfter: null,
+          customRunnersAfter: null,
+          customRunsScored: null,
+        };
+      }
+    }
+
+    // 完全一致候補がない場合（テキスト微調整済み等）は最も近い進塁候補を選びつつ差分をカスタム値で保持
+    const baseCands = buildBattedPlayCandidates(
+      direction,
+      battedCode,
+      startOuts,
+      normRunnersBefore,
+      inferredVar
+    );
+    const stateMatchIdx = baseCands.findIndex(
+      (c) =>
+        c.outsAfter === entryOutsAfter &&
+        sameRunnersList(c.runnersAfter, entryRunnersAfter) &&
+        c.runsScored === atBatRuns
+    );
+    const chosenIdx = stateMatchIdx >= 0 ? stateMatchIdx : 0;
+    const chosen = baseCands[chosenIdx] ?? null;
+
+    return {
+      direction,
+      directionAnchor,
+      directCode: null,
+      directVariant: null,
+      directActiveChip: null,
+      battedCode,
+      battedVariant: inferredVar,
+      battedActiveChip: inferredChip,
+      candidateIdx: chosenIdx,
+      matchedCandidateId: chosen?.id ?? null,
+      customPlayText:
+        chosen && chosen.playText === rawText ? null : rawText || null,
+      customOutsAfter:
+        chosen && chosen.outsAfter === entryOutsAfter ? null : entryOutsAfter,
+      customRunnersAfter:
+        chosen && sameRunnersList(chosen.runnersAfter, entryRunnersAfter)
+          ? null
+          : entryRunnersAfter,
+      customRunsScored:
+        chosen && chosen.runsScored === atBatRuns ? null : atBatRuns,
+    };
+  }
+
+  // 3. 未分類の自由入力テキスト行
+  return {
+    direction,
+    directionAnchor,
+    directCode: null,
+    directVariant: null,
+    directActiveChip: null,
+    battedCode: null,
+    battedVariant: null,
+    battedActiveChip: null,
+    candidateIdx: 0,
+    matchedCandidateId: null,
+    customPlayText: rawText || null,
+    customOutsAfter: entryOutsAfter,
+    customRunnersAfter: entryRunnersAfter,
+    customRunsScored: atBatRuns,
+  };
+}
+
+/**
+ * ハーフイニング内の指定した記録行（targetEntryId）を新しい打席記録で置換し、
+ * 前段の状況変化がある場合は後続の打席記録のアウト・走者・得点を安全に自動再計算して整合させる。
+ */
+export function replaceHalfInningPlayEntry(
+  half: LiveReportHalfInning,
+  targetEntryId: string,
+  updatedEntry: LiveReportPlayEntry,
+  options?: {
+    clearManualRuns?: boolean;
+    cascadeSubsequent?: boolean;
+  }
+): LiveReportHalfInning {
+  const targetIdx = half.entries.findIndex((e) => e.id === targetEntryId);
+  if (targetIdx < 0) return half;
+
+  const cascadeSubsequent = options?.cascadeSubsequent ?? true;
+
+  // 変更前の各行の「直前状況」を記録しておく
+  const origSituationsBefore: Array<{
+    outs: number;
+    runners: LiveReportBaseNum[];
+  }> = [];
+  for (let i = 0; i < half.entries.length; i++) {
+    const situ =
+      i === 0
+        ? { outs: 0, runners: [] as LiveReportBaseNum[] }
+        : computeHalfInningSituation({
+            inning: half.inning,
+            isBottom: half.isBottom,
+            entries: half.entries.slice(0, i),
+            manualRunsOverride: null,
+            manualOutsOverride: null,
+            manualRunnersOverride: null,
+          });
+    origSituationsBefore.push({
+      outs: situ.outs,
+      runners: situ.runners,
+    });
+  }
+
+  const clampedTargetOuts = Math.max(0, Math.min(3, updatedEntry.outsAfter));
+  const clampedTargetRunners =
+    clampedTargetOuts >= 3
+      ? []
+      : normalizeRunnersList(updatedEntry.runnersAfter);
+  const validTargetChains =
+    clampedTargetOuts >= 3 || clampedTargetRunners.length === 0
+      ? []
+      : updatedEntry.chainedPlays.map((cp) => {
+          const cpOuts = Math.max(0, Math.min(3, cp.outsAfter));
+          return {
+            ...cp,
+            outsAfter: cpOuts,
+            runnersAfter:
+              cpOuts >= 3 ? [] : normalizeRunnersList(cp.runnersAfter),
+          };
+        });
+  const targetChainedRuns = validTargetChains.reduce(
+    (s, cp) => s + (cp.runsScored || 0),
+    0
+  );
+  const baseAtBatRuns =
+    typeof updatedEntry.rbi === "number"
+      ? Math.max(0, updatedEntry.rbi)
+      : Math.max(
+          0,
+          updatedEntry.runsScored -
+            updatedEntry.chainedPlays.reduce(
+              (s, cp) => s + (cp.runsScored || 0),
+              0
+            )
+        );
+  const resolvedTargetRuns =
+    validTargetChains.length > 0
+      ? baseAtBatRuns + targetChainedRuns
+      : updatedEntry.chainedPlays.length > 0
+      ? baseAtBatRuns
+      : Math.max(0, updatedEntry.runsScored);
+
+  const normalizedTarget: LiveReportPlayEntry = {
+    ...updatedEntry,
+    outsAfter: clampedTargetOuts,
+    runnersAfter: clampedTargetRunners,
+    runsScored: resolvedTargetRuns,
+    rbi: baseAtBatRuns > 0 ? baseAtBatRuns : undefined,
+    chainedPlays: validTargetChains,
+  };
+
+  const nextEntries: LiveReportPlayEntry[] = [...half.entries];
+  nextEntries[targetIdx] = normalizedTarget;
+
+  if (cascadeSubsequent && targetIdx < nextEntries.length - 1) {
+    let curSitu = computeHalfInningSituation({
+      inning: half.inning,
+      isBottom: half.isBottom,
+      entries: nextEntries.slice(0, targetIdx + 1),
+      manualRunsOverride: null,
+      manualOutsOverride: null,
+      manualRunnersOverride: null,
+    });
+
+    for (let k = targetIdx + 1; k < nextEntries.length; k++) {
+      const ent = nextEntries[k]!;
+      const origBefore = origSituationsBefore[k]!;
+
+      if (
+        curSitu.outs === origBefore.outs &&
+        sameRunnersList(curSitu.runners, origBefore.runners)
+      ) {
+        curSitu = computeHalfInningSituation({
+          inning: half.inning,
+          isBottom: half.isBottom,
+          entries: nextEntries.slice(0, k + 1),
+          manualRunsOverride: null,
+          manualOutsOverride: null,
+          manualRunnersOverride: null,
+        });
+        continue;
+      }
+
+      if (ent.entryType === "batter") {
+        if (curSitu.outs >= 3) {
+          nextEntries[k] = {
+            ...ent,
+            outsAfter: 3,
+            runnersAfter: [],
+            chainedPlays: [],
+          };
+        } else {
+          const origInf = inferPadSelectionFromPlayEntry(
+            ent,
+            origBefore.outs,
+            origBefore.runners
+          );
+
+          if (
+            (origInf.directCode !== null || origInf.battedCode !== null) &&
+            origInf.customPlayText === null
+          ) {
+            const cands = origInf.directCode
+              ? [
+                  simulateDirectOutcome(
+                    origInf.directCode,
+                    curSitu.outs,
+                    curSitu.runners,
+                    origInf.directVariant
+                  ),
+                ]
+              : buildBattedPlayCandidates(
+                  origInf.direction,
+                  origInf.battedCode!,
+                  curSitu.outs,
+                  curSitu.runners,
+                  origInf.battedVariant
+                );
+
+            const matchedById = origInf.matchedCandidateId
+              ? cands.find((c) => c.id === origInf.matchedCandidateId)
+              : undefined;
+            const simCand = matchedById ?? cands[0];
+
+            if (simCand) {
+              let nextChains: LiveReportChainedPlay[] = [];
+              if (
+                ent.chainedPlays.length > 0 &&
+                simCand.outsAfter < 3 &&
+                sameRunnersList(ent.runnersAfter, simCand.runnersAfter)
+              ) {
+                const outDelta = simCand.outsAfter - ent.outsAfter;
+                for (const cp of ent.chainedPlays) {
+                  const cpOuts = Math.max(
+                    0,
+                    Math.min(3, cp.outsAfter + outDelta)
+                  );
+                  nextChains.push({
+                    ...cp,
+                    outsAfter: cpOuts,
+                    runnersAfter:
+                      cpOuts >= 3 ? [] : normalizeRunnersList(cp.runnersAfter),
+                  });
+                  if (cpOuts >= 3) break;
+                }
+              }
+              const chainRuns = nextChains.reduce(
+                (s, cp) => s + (cp.runsScored || 0),
+                0
+              );
+              nextEntries[k] = {
+                ...ent,
+                playText: simCand.playText,
+                outsAfter: simCand.outsAfter,
+                runnersAfter:
+                  simCand.outsAfter >= 3 ? [] : simCand.runnersAfter,
+                runsScored: simCand.runsScored + chainRuns,
+                rbi: simCand.runsScored > 0 ? simCand.runsScored : undefined,
+                chainedPlays: nextChains,
+              };
+            }
+          } else {
+            const origStartOuts =
+              origBefore.outs >= 3 ? 0 : Math.max(0, origBefore.outs);
+            const outStep = Math.max(0, ent.outsAfter - origStartOuts);
+            const nextOuts = Math.min(3, curSitu.outs + outStep);
+            nextEntries[k] = {
+              ...ent,
+              outsAfter: nextOuts,
+              runnersAfter:
+                nextOuts >= 3 ? [] : normalizeRunnersList(ent.runnersAfter),
+              chainedPlays: nextOuts >= 3 ? [] : ent.chainedPlays,
+            };
+          }
+        }
+      }
+
+      curSitu = computeHalfInningSituation({
+        inning: half.inning,
+        isBottom: half.isBottom,
+        entries: nextEntries.slice(0, k + 1),
+        manualRunsOverride: null,
+        manualOutsOverride: null,
+        manualRunnersOverride: null,
+      });
+    }
+  }
+
+  const isLastEntry = targetIdx === half.entries.length - 1;
+
+  return {
+    ...half,
+    entries: nextEntries,
+    manualRunsOverride: options?.clearManualRuns
+      ? null
+      : reconcileHalfInningManualRuns(half, nextEntries, "edit_entry"),
+    ...(isLastEntry || cascadeSubsequent
+      ? { manualOutsOverride: null, manualRunnersOverride: null }
+      : {}),
+  };
+}
+
 
 

@@ -10,6 +10,7 @@ import {
   Trash2,
   Zap,
   RotateCcw,
+  ChevronRight,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ import {
   isMyTeamBattingHalf,
   normalizeRunnersList,
   reconcileHalfInningManualRuns,
+  replaceHalfInningPlayEntry,
   sumHalfInningEntryRuns,
 } from "@/lib/liff/live-report-v2";
 import type {
@@ -39,6 +41,11 @@ interface InningLogTimelineCardProps {
   onStartRecording?: () => void;
   readOnly?: boolean;
   onSelectHalfForView?: (inning: number, isBottom: boolean) => void;
+  onEditEntryOnPad?: (
+    inning: number,
+    isBottom: boolean,
+    entryId: string
+  ) => void;
 }
 
 interface EditingEntryTarget {
@@ -55,6 +62,7 @@ export function InningLogTimelineCard({
   onStartRecording,
   readOnly = false,
   onSelectHalfForView,
+  onEditEntryOnPad,
 }: InningLogTimelineCardProps) {
   const [mounted, setMounted] = useState(false);
   const [editingTarget, setEditingTarget] = useState<EditingEntryTarget | null>(
@@ -104,7 +112,7 @@ export function InningLogTimelineCard({
           <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
             {readOnly
               ? "速報担当者が打席結果を入力すると、ここにイニングごとの経過一覧が自動で反映されます。"
-              : "「入力・速報」タブの下部キーパッドから打席結果を確定すると、ここにイニングごとの経過一覧が並び、タップで1行ずつ修正・削除できます。"}
+              : "「入力・速報」タブの下部キーパッドから打席結果を確定すると、ここにイニングごとの経過一覧が並び、タップで入力パッド再入力・修正できます。"}
           </p>
           {onStartRecording && (
             <button
@@ -128,22 +136,10 @@ export function InningLogTimelineCard({
       ...prev,
       halfInnings: prev.halfInnings.map((h) => {
         if (h.inning !== inning || h.isBottom !== isBottom) return h;
-        const nextEntries = h.entries.map((e) =>
-          e.id === entry.id ? entry : e
-        );
-        const isLastEntry =
-          h.entries.length > 0 &&
-          h.entries[h.entries.length - 1]?.id === entry.id;
-        return {
-          ...h,
-          entries: nextEntries,
-          manualRunsOverride: clearManualRunsOnSave
-            ? null
-            : reconcileHalfInningManualRuns(h, nextEntries, "edit_entry"),
-          ...(isLastEntry
-            ? { manualOutsOverride: null, manualRunnersOverride: null }
-            : {}),
-        };
+        return replaceHalfInningPlayEntry(h, entry.id, entry, {
+          clearManualRuns: clearManualRunsOnSave,
+          cascadeSubsequent: true,
+        });
       }),
     }));
     setEditingTarget(null);
@@ -390,25 +386,64 @@ export function InningLogTimelineCard({
                         </div>
                       );
                     }
+                    const openTextModal = () =>
+                      setEditingTarget({
+                        inning: half.inning,
+                        isBottom: half.isBottom,
+                        entry: {
+                          ...entry,
+                          runnersAfter: [...entry.runnersAfter],
+                          chainedPlays: entry.chainedPlays.map((cp) => ({
+                            ...cp,
+                            runnersAfter: [...cp.runnersAfter],
+                          })),
+                        },
+                        clearManualRunsOnSave: false,
+                      });
+
+                    if (entry.entryType === "batter" && onEditEntryOnPad) {
+                      return (
+                        <div
+                          key={entry.id}
+                          className="w-full rounded-lg border border-border/70 bg-card hover:bg-muted/50 flex items-center justify-between gap-1.5 px-2.5 py-1.5 transition-colors"
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onEditEntryOnPad(
+                                half.inning,
+                                half.isBottom,
+                                entry.id
+                              )
+                            }
+                            className="min-w-0 flex-1 text-left flex items-center justify-between gap-2 cursor-pointer group"
+                            title="タップして入力パッドで再入力・修正"
+                          >
+                            <span className="text-xs font-bold text-foreground break-all">
+                              {line}
+                            </span>
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#0f172a] text-amber-300 text-[10px] font-black shrink-0">
+                              <Zap className="w-2.5 h-2.5" />
+                              <span>パッド修正</span>
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={openTextModal}
+                            className="w-7 h-7 rounded-lg border border-border bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center shrink-0 cursor-pointer"
+                            title="テキスト・数値の微調整モーダルを開く"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    }
+
                     return (
                       <button
                         key={entry.id}
                         type="button"
-                        onClick={() =>
-                          setEditingTarget({
-                            inning: half.inning,
-                            isBottom: half.isBottom,
-                            entry: {
-                              ...entry,
-                              runnersAfter: [...entry.runnersAfter],
-                              chainedPlays: entry.chainedPlays.map((cp) => ({
-                                ...cp,
-                                runnersAfter: [...cp.runnersAfter],
-                              })),
-                            },
-                            clearManualRunsOnSave: false,
-                          })
-                        }
+                        onClick={openTextModal}
                         className="w-full text-left px-2.5 py-1.5 rounded-lg border border-border/70 bg-card hover:bg-muted/60 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
                       >
                         <span className="text-xs font-bold text-foreground break-all">
@@ -455,6 +490,25 @@ export function InningLogTimelineCard({
               </div>
 
               <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                {editingTarget.entry.entryType === "batter" &&
+                  onEditEntryOnPad && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const { inning, isBottom, entry } = editingTarget;
+                        setEditingTarget(null);
+                        onEditEntryOnPad(inning, isBottom, entry.id);
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white border border-slate-700 text-xs font-black flex items-center justify-between gap-2 cursor-pointer active:scale-95"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>この行を入力パッドで再入力・修正する</span>
+                      </span>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    </button>
+                  )}
+
                 {editingPreviewLine && (
                   <div className="rounded-xl border border-primary/35 bg-primary/8 px-3 py-2 text-xs font-black text-foreground break-all">
                     プレビュー: {editingPreviewLine}
