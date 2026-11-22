@@ -649,8 +649,25 @@ export interface HubSpecialEventSummary {
   deadlineDateLabel: string | null;
   importantNotice: string;
   totalHeadcount: number;
+  presentMemberCount?: number;
+  companionCount?: number;
+  attendingHouseholdCount?: number;
+  absentHouseholdCount?: number;
+  unansweredHouseholdCount?: number;
   respondedHouseholdCount: number;
   activeTargetHouseholdCount: number;
+  tierTotals?: Array<{
+    tierId: string;
+    label: string;
+    totalCount: number;
+  }>;
+  topCandidateSummary?: {
+    dateLabel: string;
+    okCount: number;
+    maybeCount: number;
+    ngCount: number;
+    estimatedHeadcount: number;
+  } | null;
   myResponded: boolean;
   myOverallState: "attending" | "absent" | "pending";
   myHeadcount: number;
@@ -2694,6 +2711,11 @@ export function toHubSpecialEventSummary(
   ev: SpecialEventDetailItem
 ): HubSpecialEventSummary {
   const my = ev.myHouseholdResponse;
+  const topCand =
+    ev.summary.candidateSummaries.find((c) => c.isTopCandidate) ||
+    ev.summary.candidateSummaries[0] ||
+    null;
+
   return {
     id: ev.id,
     title: ev.title,
@@ -2708,8 +2730,27 @@ export function toHubSpecialEventSummary(
     deadlineDateLabel: ev.deadlineDateLabel,
     importantNotice: ev.importantNotice || "",
     totalHeadcount: ev.summary.totalHeadcount,
+    presentMemberCount: ev.summary.presentMemberCount,
+    companionCount: ev.summary.companionCount,
+    attendingHouseholdCount: ev.summary.attendingHouseholdCount,
+    absentHouseholdCount: ev.summary.absentHouseholdCount,
+    unansweredHouseholdCount: ev.summary.unansweredHouseholdCount,
     respondedHouseholdCount: ev.summary.respondedHouseholdCount,
     activeTargetHouseholdCount: ev.summary.activeTargetHouseholdCount,
+    tierTotals: ev.summary.tierTotals.map((t) => ({
+      tierId: t.tierId,
+      label: t.label,
+      totalCount: t.totalCount,
+    })),
+    topCandidateSummary: topCand
+      ? {
+          dateLabel: topCand.dateLabel,
+          okCount: topCand.okCount,
+          maybeCount: topCand.maybeCount,
+          ngCount: topCand.ngCount,
+          estimatedHeadcount: topCand.estimatedHeadcount,
+        }
+      : null,
     myResponded: Boolean(my?.hasResponded),
     myOverallState: my?.overallState || "pending",
     myHeadcount: my?.totalHeadcount || 0,

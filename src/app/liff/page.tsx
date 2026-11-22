@@ -1,12 +1,13 @@
 // filepath: src/app/liff/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
+import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import {
   canManageCurrentTeam,
@@ -19,13 +20,18 @@ import {
   fetchLiffJsonSWR,
   getLastLiffCacheInvalidatedAt,
   peekLiffApiCache,
+  warmupLiffEndpointForHref,
 } from "@/lib/liff/api-cache";
 import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 import {
   normalizeGroupStatusSummaryConfig,
   type GroupStatusConfigSummary,
 } from "@/lib/liff/group-attendance";
-import type { HubSpecialEventSummary } from "@/lib/liff/special-events-schema";
+import {
+  buildDemoSpecialEventsBundle,
+  getSpecialEventCategoryMeta,
+  type HubSpecialEventSummary,
+} from "@/lib/liff/special-events-schema";
 import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -34,7 +40,11 @@ import {
   ShieldCheck,
   Check,
   ChevronRight,
+  Clock,
+  MapPin,
+  PartyPopper,
   Sparkles,
+  Users,
   X,
 } from "lucide-react";
 import { DemoBanner } from "@/components/liff/DemoBanner";
@@ -374,6 +384,54 @@ export default function LiffHubPage() {
     }
   };
 
+  const topSpecialEvents = useMemo<HubSpecialEventSummary[]>(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const source =
+      specialEvents.length > 0
+        ? specialEvents
+        : isDemo && (!isLoadingTeam || currentTeam?.id === "demo-team")
+        ? buildDemoSpecialEventsBundle().hubSummaries
+        : [];
+
+    const active = source.filter((sp) => {
+      if (sp.status === "archived") return false;
+      if (
+        sp.mode === "rsvp" &&
+        sp.eventDate &&
+        sp.eventDate < todayStr &&
+        sp.status !== "open"
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    return [...active]
+      .sort((a, b) => {
+        const aRank =
+          a.status === "open" ? (!a.myResponded ? 0 : 1) : 2;
+        const bRank =
+          b.status === "open" ? (!b.myResponded ? 0 : 1) : 2;
+        if (aRank !== bRank) return aRank - bRank;
+        const aDate = a.eventDate || a.deadlineDate || "9999-12-31";
+        const bDate = b.eventDate || b.deadlineDate || "9999-12-31";
+        return aDate.localeCompare(bDate);
+      })
+      .slice(0, 5);
+  }, [currentTeam?.id, isDemo, isLoadingTeam, specialEvents]);
+
+  const unansweredSpecialCount = useMemo(
+    () =>
+      topSpecialEvents.filter((sp) => sp.status === "open" && !sp.myResponded)
+        .length,
+    [topSpecialEvents]
+  );
+
   return (
     <div className="flex flex-col flex-1">
       {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
@@ -450,6 +508,218 @@ export default function LiffHubPage() {
               )}
             </div>
           </div>
+
+          {/* 🎉 行事・アンケート（登録がある場合のみ「こんにちは、〇〇さん」の直下に表示） */}
+          {topSpecialEvents.length > 0 && (
+            <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+              <div className="px-3.5 py-2.5 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center shrink-0">
+                    <PartyPopper className="w-3.5 h-3.5" />
+                  </span>
+                  <h3 className="text-xs font-black text-white truncate">
+                    行事・アンケート
+                  </h3>
+                  {unansweredSpecialCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black shrink-0">
+                      未回答 {unansweredSpecialCount}件
+                    </span>
+                  )}
+                </div>
+
+                <Link
+                  href="/liff/events"
+                  onPointerDown={() => warmupLiffEndpointForHref("/liff/events")}
+                  className="text-[10.5px] font-black text-amber-300 hover:text-white inline-flex items-center gap-0.5 shrink-0"
+                >
+                  <span>一覧・作成</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              <div className="p-3 space-y-2.5 bg-card">
+                {topSpecialEvents.map((sp) => {
+                  const cat = getSpecialEventCategoryMeta(sp.category);
+                  const isPoll = sp.mode === "date_poll";
+                  const nonZeroTiers = (sp.tierTotals || []).filter(
+                    (t) => t.totalCount > 0
+                  );
+                  const companionCount = sp.companionCount ?? 0;
+                  const presentMemberCount =
+                    sp.presentMemberCount ??
+                    Math.max(0, sp.totalHeadcount - companionCount);
+                  const unansweredHouseholds =
+                    sp.unansweredHouseholdCount ??
+                    Math.max(
+                      0,
+                      sp.activeTargetHouseholdCount - sp.respondedHouseholdCount
+                    );
+
+                  return (
+                    <Link
+                      key={sp.id}
+                      href={`/liff/events?id=${encodeURIComponent(sp.id)}`}
+                      onPointerDown={() =>
+                        warmupLiffEndpointForHref("/liff/events")
+                      }
+                      className="block p-3 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/30 hover:border-amber-500/50 transition-all active:scale-[0.99] space-y-2 group"
+                    >
+                      {/* 上段: 日付・種別バッジ ＋ タイトル・日時会場 ＋ 自分の回答状態 */}
+                      <div className="flex items-start gap-2.5">
+                        <div className="w-[58px] min-w-[58px] max-w-[58px] shrink-0 px-1 py-1 rounded-xl flex flex-col items-center justify-center border bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35">
+                          <span className="text-[10.5px] font-black leading-tight tracking-tight truncate max-w-full">
+                            {isPoll
+                              ? "日程調整"
+                              : sp.eventDateLabel || "日程未定"}
+                          </span>
+                          <span className="text-[9px] font-bold mt-0.5 opacity-90 truncate max-w-full">
+                            {cat.icon} {isPoll ? "アンケート" : cat.shortLabel}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="text-xs sm:text-[13px] font-black text-foreground group-hover:text-primary transition-colors truncate">
+                              {sp.title}
+                            </h4>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9.5px] font-black shrink-0 border ${
+                                sp.status !== "open"
+                                  ? "bg-muted text-muted-foreground border-border"
+                                  : !sp.myResponded
+                                  ? "bg-amber-500 text-slate-950 border-amber-400"
+                                  : sp.myOverallState === "attending"
+                                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35"
+                                  : "bg-muted text-muted-foreground border-border"
+                              }`}
+                            >
+                              {sp.status !== "open"
+                                ? "締切済"
+                                : !sp.myResponded
+                                ? "⚡ 未回答"
+                                : sp.myOverallState === "attending"
+                                ? isPoll
+                                  ? "回答済"
+                                  : `自宅 ${sp.myHeadcount}名出席`
+                                : "欠席"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 font-bold text-muted-foreground text-[10px] flex-wrap">
+                            {!isPoll && (
+                              <>
+                                <span className="inline-flex items-center gap-0.5 tabular-nums">
+                                  <Clock className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span>{sp.timeRangeLabel}</span>
+                                </span>
+                                <span className="inline-flex items-center gap-0.5 text-foreground truncate max-w-[180px]">
+                                  <MapPin className="w-2.5 h-2.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                                  <span className="truncate">
+                                    {sp.location || "会場調整中"}
+                                  </span>
+                                </span>
+                              </>
+                            )}
+                            {sp.deadlineDateLabel && (
+                              <span className="text-amber-700 dark:text-amber-300 font-black tabular-nums">
+                                〆{sp.deadlineDateLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-1.5" />
+                      </div>
+
+                      {/* 📊 中段: 人数が一目で分かるハイライト集計パネル */}
+                      {isPoll ? (
+                        <div className="rounded-xl bg-card border border-amber-500/35 px-3 py-2 flex items-center justify-between gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            <Users className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="text-[11px] font-black text-muted-foreground">
+                              回答済:
+                            </span>
+                            <span className="text-base font-black text-foreground tabular-nums leading-none">
+                              {sp.respondedHouseholdCount}
+                              <span className="text-[11px] text-muted-foreground font-bold">
+                                /{sp.activeTargetHouseholdCount}世帯
+                              </span>
+                            </span>
+                          </div>
+
+                          {sp.topCandidateSummary ? (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10.5px] font-black tabular-nums">
+                              👑 最多 {sp.topCandidateSummary.dateLabel}（◯
+                              {sp.topCandidateSummary.okCount}・予定 約
+                              {sp.topCandidateSummary.estimatedHeadcount}名）
+                            </span>
+                          ) : (
+                            <span className="text-[10.5px] font-bold text-muted-foreground">
+                              候補日の回答を受付中
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl bg-card border border-teal-500/35 px-3 py-2 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-baseline gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-black text-foreground">
+                                <Users className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 self-center" />
+                                <span>参加予定</span>
+                              </span>
+                              <span className="text-xl font-black text-teal-700 dark:text-teal-300 tabular-nums leading-none">
+                                {sp.totalHeadcount}
+                                <span className="text-xs ml-0.5">名</span>
+                              </span>
+                              {companionCount > 0 && (
+                                <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                                  （登録 {presentMemberCount}名 ＋ 兄弟・同伴{" "}
+                                  {companionCount}名）
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1 text-[10px] font-black tabular-nums shrink-0">
+                              <span className="px-1.5 py-0.5 rounded-md bg-muted text-foreground border border-border">
+                                回答 {sp.respondedHouseholdCount}/
+                                {sp.activeTargetHouseholdCount}世帯
+                              </span>
+                              {unansweredHouseholds > 0 && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                  未回答 {unansweredHouseholds}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {nonZeroTiers.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-border/60">
+                              {nonZeroTiers.map((t) => (
+                                <span
+                                  key={t.tierId}
+                                  className="px-2 py-0.5 rounded-md bg-muted/55 border border-border text-[10px] font-bold text-muted-foreground tabular-nums"
+                                >
+                                  {t.label}:{" "}
+                                  <strong className="font-black text-foreground">
+                                    {t.totalCount}名
+                                  </strong>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <ImportantNoticeBanner
+                        notice={sp.importantNotice}
+                        compact
+                      />
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* 🚀 新規立ち上げチーム向け：初期セットアップ4ステップ（A-3 ソリッド規格） */}
           {shouldShowOnboardingCard && (
