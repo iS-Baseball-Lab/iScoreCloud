@@ -65,6 +65,7 @@ export interface MatchCardData {
   venueName?: string | null;
   venueShortName?: string | null;
   venueParkingInfo?: string | null;
+  venueSpikeRule?: string | null;
   surfaceDetails?: string | null;
   tournamentName?: string | null;
   battingOrder?: "first" | "second";

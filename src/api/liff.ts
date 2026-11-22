@@ -1,7 +1,7 @@
 // filepath: src/api/liff.ts
 import { Hono, type Context } from "hono";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, desc, asc, gte, and, or, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, gte, and, or, inArray, isNotNull, sql } from "drizzle-orm";
 import {
   teams,
   organizations,
@@ -12,6 +12,7 @@ import {
   baseAdvances,
   playLogs,
   matchScorebookSnapshots,
+  matchLiveReports,
   events,
   attendances,
   venues,
@@ -23,6 +24,8 @@ import {
   eventCarpoolRiders,
   memberCars,
   eventCarpoolSettings,
+  carpoolLiveLocations,
+  galleryAlbums,
   teamDocuments,
   teamFaqs,
   teamRules,
@@ -39,6 +42,14 @@ import {
 } from "@/db/schema";
 import { buildDemoSpecialEventsBundle } from "@/lib/liff/special-events-schema";
 import { buildHubSpecialEventSummariesFromRaw } from "@/api/liff/special-events";
+import { parseOrganizationProfileDetails } from "@/lib/liff/team-profile-schema";
+import {
+  DEMO_DEFAULT_HUB_TICKER_CONFIG,
+  DEMO_HUB_TICKER_SERVER_CONTEXT,
+  parseHubTickerConfigJson,
+  type HubTickerLiveReportSummary,
+  type HubTickerServerContext,
+} from "@/lib/liff/hub-ticker";
 import type {
   OfficialPitcherDecision,
   ScorebookSheetStructure,
@@ -1429,11 +1440,14 @@ app.get("/hub", async (c) => {
         homeGround: teams.homeGround,
         year: teams.year,
         orgName: organizations.name,
+        orgDescription: organizations.description,
+        orgProfileJson: organizations.profileJson,
         logoImageUrl: organizations.logoImageUrl,
         coverImageUrl: organizations.coverImageUrl,
         scorebookSymbolRules: teams.scorebookSymbolRules,
         attendanceStatusConfig: teams.attendanceStatusConfig,
         scheduleDefaultTimes: teams.scheduleDefaultTimes,
+        hubTickerJson: teams.hubTickerJson,
       })
       .from(teams)
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -1561,6 +1575,8 @@ app.get("/hub", async (c) => {
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
+        hubTickerConfig: DEMO_DEFAULT_HUB_TICKER_CONFIG,
+        hubTickerContext: DEMO_HUB_TICKER_SERVER_CONTEXT,
       });
     }
 
@@ -1594,6 +1610,8 @@ app.get("/hub", async (c) => {
         attendanceStatusConfig: normalizeGroupStatusSummaryConfig(null),
         scheduleDefaultTimes: DEFAULT_TEAM_SCHEDULE_TIMES,
         matches: DEMO_MATCHES,
+        hubTickerConfig: DEMO_DEFAULT_HUB_TICKER_CONFIG,
+        hubTickerContext: DEMO_HUB_TICKER_SERVER_CONTEXT,
       });
     }
 
@@ -1603,7 +1621,7 @@ app.get("/hub", async (c) => {
         ? `${targetTeam.orgName} ${targetTeam.name}`.trim()
         : targetTeam.name;
 
-    // ⚡ 単一テーブル7クエリを db.batch()、JOIN を含む直近10試合取得を .all()（D1 batch の同名カラム衝突による列ずれを完全排除）で完全並列実行
+    // ⚡ 単一テーブル10クエリを db.batch()、JOIN を含む直近10試合取得を .all()（D1 batch の同名カラム衝突による列ずれを完全排除）で完全並列実行
     const [
       [
         allEventsList,
@@ -1613,6 +1631,9 @@ app.get("/hub", async (c) => {
         teamVenues,
         hubSpecialEventRows,
         hubSpecialEventResponseRows,
+        hubConvoyRows,
+        hubAlbumRows,
+        hubLiveReportRows,
       ],
       matchesList,
     ] = await Promise.all([
@@ -1668,6 +1689,46 @@ app.get("/hub", async (c) => {
           .select()
           .from(teamSpecialEventResponses)
           .where(eq(teamSpecialEventResponses.teamId, teamId)),
+        db
+          .select({
+            eventId: carpoolLiveLocations.eventId,
+            status: carpoolLiveLocations.status,
+            updatedAt: carpoolLiveLocations.updatedAt,
+          })
+          .from(carpoolLiveLocations)
+          .where(
+            and(
+              eq(carpoolLiveLocations.teamId, teamId),
+              eq(carpoolLiveLocations.isSharing, true)
+            )
+          ),
+        db
+          .select({
+            id: galleryAlbums.id,
+            title: galleryAlbums.title,
+            albumDate: galleryAlbums.albumDate,
+            photoCount: galleryAlbums.photoCount,
+            updatedAt: galleryAlbums.updatedAt,
+          })
+          .from(galleryAlbums)
+          .where(eq(galleryAlbums.teamId, teamId))
+          .orderBy(desc(galleryAlbums.updatedAt))
+          .limit(2),
+        db
+          .select({
+            matchId: matchLiveReports.matchId,
+            reportJson: matchLiveReports.reportJson,
+            updatedAt: matchLiveReports.updatedAt,
+          })
+          .from(matchLiveReports)
+          .where(
+            and(
+              eq(matchLiveReports.teamId, teamId),
+              isNotNull(matchLiveReports.matchId)
+            )
+          )
+          .orderBy(desc(matchLiveReports.updatedAt))
+          .limit(3),
       ]),
       db
         .select({
@@ -1684,6 +1745,7 @@ app.get("/hub", async (c) => {
           venueName: venues.name,
           venueShortName: venues.shortName,
           venueParkingInfo: venues.parkingInfo,
+          venueSpikeRule: venues.spikeRule,
           surfaceDetails: matches.surfaceDetails,
           battingOrder: matches.battingOrder,
           innings: matches.innings,
@@ -1981,6 +2043,128 @@ app.get("/hub", async (c) => {
       todayKey: hubTodayKey,
     });
 
+    // 📣 トップページ最上部ティッカー用コンテキスト（追加DB往復ゼロで一括算出）
+    const nowMs = Date.now();
+    const CONVOY_TTL_MS = 6 * 3600 * 1000;
+    const activeConvoyList = hubConvoyRows.filter(
+      (row) =>
+        typeof row.updatedAt === "number" &&
+        nowMs - row.updatedAt <= CONVOY_TTL_MS &&
+        row.status !== "arrived"
+    );
+    const activeConvoyEventId = activeConvoyList[0]?.eventId || null;
+    const convoyDestEvent = activeConvoyEventId
+      ? formattedEventsList.find((ev) => ev.id === activeConvoyEventId)
+      : undefined;
+
+    let liveReportSummary: HubTickerLiveReportSummary | null = null;
+    const latestReportRow = hubLiveReportRows[0];
+    if (latestReportRow && latestReportRow.matchId) {
+      try {
+        const parsedReport = JSON.parse(
+          latestReportRow.reportJson
+        ) as Record<string, unknown>;
+        const activeInning =
+          typeof parsedReport.activeInning === "number"
+            ? parsedReport.activeInning
+            : 1;
+        const activeIsBottom = Boolean(parsedReport.activeIsBottom);
+        const isGameFinished = Boolean(parsedReport.isGameFinished);
+        const rawUpdated = Number(latestReportRow.updatedAt) || 0;
+        const updatedAtSec =
+          rawUpdated > 1e11 ? Math.floor(rawUpdated / 1000) : rawUpdated;
+        liveReportSummary = {
+          matchId: latestReportRow.matchId,
+          opponentName:
+            typeof parsedReport.opponentName === "string"
+              ? parsedReport.opponentName.trim()
+              : "",
+          tournamentText:
+            typeof parsedReport.tournamentText === "string"
+              ? parsedReport.tournamentText.trim()
+              : "",
+          inningLabel: isGameFinished
+            ? "試合終了"
+            : `${activeInning}回${activeIsBottom ? "裏" : "表"}`,
+          isGameFinished,
+          updatedAtSec,
+        };
+      } catch {
+        liveReportSummary = null;
+      }
+    }
+
+    const latestNonEmptyAlbum = hubAlbumRows.find(
+      (al) => (al.photoCount || 0) > 0
+    );
+    const albumUpdatedSec = latestNonEmptyAlbum?.updatedAt
+      ? latestNonEmptyAlbum.updatedAt instanceof Date
+        ? Math.floor(latestNonEmptyAlbum.updatedAt.getTime() / 1000)
+        : Number(latestNonEmptyAlbum.updatedAt) > 1e11
+        ? Math.floor(Number(latestNonEmptyAlbum.updatedAt) / 1000)
+        : Number(latestNonEmptyAlbum.updatedAt) || 0
+      : 0;
+
+    const currentMemberRow = currentMemberId
+      ? teamMemberList.find((m) => m.id === currentMemberId)
+      : undefined;
+    const linkedChildIdSet = new Set(
+      currentMemberId
+        ? teamRelationsRows
+            .filter((r) => r.parentId === currentMemberId)
+            .map((r) => r.childId)
+        : []
+    );
+    const myChildNames: string[] = [];
+    for (const pl of teamPlayerRows) {
+      if (
+        linkedChildIdSet.has(pl.id) ||
+        (pl.userId && hubCandidateSet.has(pl.userId))
+      ) {
+        if (pl.name?.trim()) myChildNames.push(pl.name.trim());
+      }
+    }
+    const hubMyMatchIdentity: LiffMyMatchIdentity | null =
+      currentMemberId || cleanName || myChildNames.length > 0
+        ? {
+            memberId: currentMemberId,
+            memberName: currentMemberRow?.name || null,
+            displayName: cleanName || sessionUser?.name || null,
+            childNames: myChildNames,
+          }
+        : null;
+
+    const parsedOrgProfile = parseOrganizationProfileDetails(
+      targetTeam.orgProfileJson
+    );
+    const resolvedSlogan =
+      parsedOrgProfile.slogan ||
+      (targetTeam.orgDescription || "").trim().slice(0, 80) ||
+      null;
+
+    const canCallerManageTeam = access.canManageTeamId(teamId);
+    const hubTickerContext: HubTickerServerContext = {
+      activeConvoyCars: activeConvoyList.length,
+      convoyDestination: convoyDestEvent?.location || null,
+      liveReport: liveReportSummary,
+      latestAlbum: latestNonEmptyAlbum
+        ? {
+            id: latestNonEmptyAlbum.id,
+            title: latestNonEmptyAlbum.title,
+            albumDate: latestNonEmptyAlbum.albumDate,
+            photoCount: latestNonEmptyAlbum.photoCount,
+            updatedAtSec: albumUpdatedSec,
+          }
+        : null,
+      pendingMemberCount: canCallerManageTeam
+        ? teamMemberList.filter((m) => m.status === "pending").length
+        : 0,
+      slogan: resolvedSlogan,
+      myMatchIdentity: hubMyMatchIdentity,
+    };
+
+    const hubTickerConfig = parseHubTickerConfigJson(targetTeam.hubTickerJson);
+
     return c.json({
       success: true,
       authVerified: access.isAuthenticated,
@@ -2012,6 +2196,8 @@ app.get("/hub", async (c) => {
       attendanceStatusConfig: hubStatusConfig,
       scheduleDefaultTimes: hubTeamScheduleDefaults,
       matches: formattedMatches,
+      hubTickerConfig,
+      hubTickerContext,
       onboardingSummary: {
         activePlayerCount: teamPlayerRows.filter((p) => p.isActive !== false).length,
         activeMemberCount: teamMemberList.filter(

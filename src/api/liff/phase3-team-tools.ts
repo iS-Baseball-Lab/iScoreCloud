@@ -28,6 +28,12 @@ import {
   type WeekendReminderDigest,
   type WeekendReminderSettings,
 } from "@/lib/line/weekend-reminder";
+import {
+  DEMO_DEFAULT_HUB_TICKER_CONFIG,
+  parseHubTickerConfigJson,
+  serializeHubTickerConfigJson,
+  type HubTickerConfig,
+} from "@/lib/liff/hub-ticker";
 import { resolveCallerTeamAccess } from "@/lib/team-access";
 import type { WorkerEnv } from "@/types/api";
 
@@ -1650,4 +1656,140 @@ liffPhase3TeamToolsRouter.post("/line-reminder-test-push", async (c) => {
   }
 });
 
+// =========================================================
+// 📣 トップページ最上部ティッカー設定 ＆ 手動ピン留め連絡 API
+// =========================================================
+
+interface SaveHubTickerBody {
+  teamId?: string;
+  config?: Partial<HubTickerConfig>;
+}
+
+liffPhase3TeamToolsRouter.get("/hub-ticker", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const teamId = (c.req.query("teamId") || "").trim();
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        canManage: true,
+        config: DEMO_DEFAULT_HUB_TICKER_CONFIG,
+      });
+    }
+
+    if (!access.canAccessTeam(teamId)) {
+      return c.json(
+        { success: false, error: "このチームへのアクセス権限がありません" },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB, { schema });
+    const teamRow = await db
+      .select({
+        id: teams.id,
+        hubTickerJson: teams.hubTickerJson,
+      })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      canManage: access.canManageTeamId(teamId),
+      config: parseHubTickerConfigJson(teamRow.hubTickerJson),
+    });
+  } catch (err) {
+    console.error("[GET /api/liff/hub-ticker] Error:", err);
+    return c.json(
+      { success: false, error: "ティッカー設定の取得に失敗しました" },
+      500
+    );
+  }
+});
+
+liffPhase3TeamToolsRouter.post("/hub-ticker", async (c) => {
+  try {
+    await ensureAllSchemasOnce(c.env.DB);
+    const access = await resolveCallerTeamAccess(c);
+    const body = (await c.req.json()) as SaveHubTickerBody;
+    const teamId = (body.teamId || "").trim();
+
+    const normalizedInput = parseHubTickerConfigJson(body.config);
+    const updaterName = (
+      access.primaryUserName ||
+      access.headerUserName ||
+      access.sessionUser?.name ||
+      "管理者"
+    )
+      .trim()
+      .slice(0, 40);
+
+    const stampedConfig: HubTickerConfig = {
+      ...normalizedInput,
+      manualItems: normalizedInput.manualItems.map((item) => ({
+        ...item,
+        updatedBy: item.updatedBy || updaterName,
+      })),
+    };
+
+    if (!teamId || teamId === "demo-team") {
+      return c.json({
+        success: true,
+        isDemo: true,
+        config: stampedConfig,
+      });
+    }
+
+    if (!access.canManageTeamId(teamId)) {
+      return c.json(
+        {
+          success: false,
+          error: "トップ案内メッセージ・設定の編集には監督・管理者権限が必要です",
+        },
+        403
+      );
+    }
+
+    const db = drizzle(c.env.DB, { schema });
+    const teamRow = await db
+      .select({ id: teams.id })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+
+    if (!teamRow) {
+      return c.json({ success: false, error: "チームが見つかりません" }, 404);
+    }
+
+    await db
+      .update(teams)
+      .set({
+        hubTickerJson: serializeHubTickerConfigJson(stampedConfig),
+      })
+      .where(eq(teams.id, teamId));
+
+    return c.json({
+      success: true,
+      isDemo: false,
+      config: stampedConfig,
+    });
+  } catch (err) {
+    console.error("[POST /api/liff/hub-ticker] Error:", err);
+    return c.json(
+      { success: false, error: "トップ案内メッセージの保存に失敗しました" },
+      500
+    );
+  }
+});
+
 export default liffPhase3TeamToolsRouter;
+

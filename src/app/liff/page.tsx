@@ -3,6 +3,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
+import { HubTopNewsTicker } from "@/components/liff/HubTopNewsTicker";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
 import { HubQuickNav } from "@/components/liff/HubQuickNav";
 import { HubCalendarSection } from "@/components/liff/HubCalendarSection";
@@ -11,6 +12,7 @@ import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import {
   canManageCurrentTeam,
   useLiff,
+  usePracticeMatchLabel,
   useScoreTeamDisplayName,
 } from "@/components/liff/LiffProvider";
 import {
@@ -26,6 +28,14 @@ import {
   normalizeGroupStatusSummaryConfig,
   type GroupStatusConfigSummary,
 } from "@/lib/liff/group-attendance";
+import {
+  DEMO_HUB_TICKER_SERVER_CONTEXT,
+  DEFAULT_HUB_TICKER_CONFIG,
+  loadDemoHubTickerConfig,
+  parseHubTickerConfigJson,
+  type HubTickerConfig,
+  type HubTickerServerContext,
+} from "@/lib/liff/hub-ticker";
 import {
   buildDemoSpecialEventsBundle,
   getSpecialEventCategoryMeta,
@@ -59,6 +69,7 @@ interface HubOnboardingSummary {
 
 interface HubDataResponse {
   success: boolean;
+  isDemo?: boolean;
   liffId?: string;
   team?: {
     id: string | null;
@@ -71,6 +82,8 @@ interface HubDataResponse {
   specialEvents?: HubSpecialEventSummary[];
   matches?: MatchCardData[];
   attendanceStatusConfig?: unknown;
+  hubTickerConfig?: unknown;
+  hubTickerContext?: HubTickerServerContext | null;
   onboardingSummary?: HubOnboardingSummary | null;
 }
 
@@ -104,6 +117,7 @@ export default function LiffHubPage() {
     clearPendingJoinCode,
   } = useLiff();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
+  const practiceMatchLabel = usePracticeMatchLabel();
   const [userName, setUserName] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("iscore_user_name") || "メンバー";
@@ -127,6 +141,15 @@ export default function LiffHubPage() {
   const [attendanceStatusConfig, setAttendanceStatusConfig] = useState<GroupStatusConfigSummary>(() =>
     normalizeGroupStatusSummaryConfig(initialCached?.attendanceStatusConfig)
   );
+  const [hubTickerConfig, setHubTickerConfig] = useState<HubTickerConfig>(() =>
+    initialCached?.isDemo
+      ? loadDemoHubTickerConfig()
+      : parseHubTickerConfigJson(initialCached?.hubTickerConfig)
+  );
+  const [hubTickerContext, setHubTickerContext] =
+    useState<HubTickerServerContext | null>(
+      () => initialCached?.hubTickerContext ?? null
+    );
   const [onboardingSummary, setOnboardingSummary] = useState<HubOnboardingSummary | null>(
     initialCached?.onboardingSummary ?? null
   );
@@ -191,6 +214,18 @@ export default function LiffHubPage() {
     setSpecialEvents(Array.isArray(data.specialEvents) ? data.specialEvents : []);
     setMatches(Array.isArray(data.matches) ? data.matches : []);
     setAttendanceStatusConfig(normalizeGroupStatusSummaryConfig(data.attendanceStatusConfig));
+    const isDemoPayload =
+      Boolean(data.isDemo) || data.team?.id === "demo-team";
+    setHubTickerConfig(
+      isDemoPayload
+        ? loadDemoHubTickerConfig()
+        : parseHubTickerConfigJson(data.hubTickerConfig)
+    );
+    setHubTickerContext(
+      isDemoPayload
+        ? data.hubTickerContext ?? DEMO_HUB_TICKER_SERVER_CONTEXT
+        : data.hubTickerContext ?? null
+    );
     setOnboardingSummary(data.onboardingSummary ?? null);
     hasLoadedRef.current = true;
     setHasLoaded(true);
@@ -268,6 +303,14 @@ export default function LiffHubPage() {
         setSpecialEvents([]);
         setMatches([]);
         setNextEvent(null);
+        setHubTickerConfig(
+          currentId === "demo-team"
+            ? loadDemoHubTickerConfig()
+            : DEFAULT_HUB_TICKER_CONFIG
+        );
+        setHubTickerContext(
+          currentId === "demo-team" ? DEMO_HUB_TICKER_SERVER_CONTEXT : null
+        );
         setOnboardingSummary(null);
         setLoadError(false);
         hasLoadedRef.current = false;
@@ -428,6 +471,14 @@ export default function LiffHubPage() {
     [topSpecialEvents]
   );
 
+  const tickerEvents = useMemo<HubEventInputItem[]>(() => {
+    if (events.length > 0) return events;
+    if (nextEvent && typeof nextEvent === "object") {
+      return [nextEvent as HubEventInputItem];
+    }
+    return [];
+  }, [events, nextEvent]);
+
   return (
     <div className="flex flex-col flex-1">
       {/* 🌟 本家 iScoreCloud と完全統一されたヘッダー（選択チームは全画面で自動維持） */}
@@ -435,6 +486,28 @@ export default function LiffHubPage() {
         shareData={{
           title: `${teamName} チームHUB`,
           text: `出欠回答、配車表、予定確認、試合動画の閲覧はこちらから！`,
+        }}
+      />
+
+      {/* 📣 トップページ最上部：流れるチーム状況・案内ティッカー（C案ハイブリッド） */}
+      <HubTopNewsTicker
+        teamId={currentTeam?.id}
+        isDemo={isDemo}
+        canManage={canManageCurrentTeam(currentTeam, isDemo)}
+        userName={userName}
+        practiceMatchLabel={practiceMatchLabel}
+        config={hubTickerConfig}
+        serverContext={
+          isDemo && !hubTickerContext
+            ? DEMO_HUB_TICKER_SERVER_CONTEXT
+            : hubTickerContext
+        }
+        events={tickerEvents}
+        specialEvents={topSpecialEvents}
+        matches={matches}
+        onConfigSaved={(nextConfig) => {
+          setHubTickerConfig(nextConfig);
+          void loadHubData(currentTeam?.id, true);
         }}
       />
 

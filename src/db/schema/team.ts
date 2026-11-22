@@ -51,6 +51,7 @@ export const teams = sqliteTable('teams', {
   cheerSongsJson: text('cheer_songs_json'),
   weekendReminderSettings: text('weekend_reminder_settings'),
   equipmentSetsJson: text('equipment_sets_json'), // 道具セット（公式戦・硬式戦・OP戦・遠征等）の一括割当用JSON
+  hubTickerJson: text('hub_ticker_json'), // トップページ最上部ティッカー設定＆手動ピン留め連絡JSON
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(strftime('%s', 'now'))`),
 });
 

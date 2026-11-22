@@ -78,6 +78,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "cheer_songs_json", ddl: "ALTER TABLE teams ADD COLUMN cheer_songs_json text" },
     { name: "weekend_reminder_settings", ddl: "ALTER TABLE teams ADD COLUMN weekend_reminder_settings text" },
     { name: "equipment_sets_json", ddl: "ALTER TABLE teams ADD COLUMN equipment_sets_json text" },
+    { name: "hub_ticker_json", ddl: "ALTER TABLE teams ADD COLUMN hub_ticker_json text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },
@@ -385,9 +386,54 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
     )`,
   },
+  {
+    name: "gallery_albums",
+    ddl: `CREATE TABLE IF NOT EXISTS gallery_albums (
+      id text PRIMARY KEY NOT NULL,
+      team_id text NOT NULL,
+      match_id text,
+      title text NOT NULL,
+      album_date text NOT NULL,
+      category text NOT NULL DEFAULT 'match',
+      notes text,
+      photo_count integer NOT NULL DEFAULT 0,
+      web_total_bytes integer NOT NULL DEFAULT 0,
+      raw_total_bytes integer NOT NULL DEFAULT 0,
+      cover_thumb_url text,
+      created_by_user_id text,
+      created_by_name text,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now')),
+      updated_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
+  {
+    name: "gallery_photos",
+    ddl: `CREATE TABLE IF NOT EXISTS gallery_photos (
+      id text PRIMARY KEY NOT NULL,
+      album_id text NOT NULL,
+      team_id text NOT NULL,
+      file_name text NOT NULL,
+      thumb_key text NOT NULL,
+      thumb_bytes integer NOT NULL DEFAULT 0,
+      web_key text NOT NULL,
+      web_bytes integer NOT NULL DEFAULT 0,
+      width integer NOT NULL DEFAULT 0,
+      height integer NOT NULL DEFAULT 0,
+      original_key text,
+      original_bytes integer NOT NULL DEFAULT 0,
+      original_mime_type text,
+      original_expires_at integer,
+      uploaded_by_user_id text,
+      uploaded_by_name text,
+      sort_order integer NOT NULL DEFAULT 0,
+      created_at integer NOT NULL DEFAULT (strftime('%s', 'now'))
+    )`,
+  },
 ];
 
 const REQUIRED_INDEXES: Array<{ name: string; ddl: string }> = [
+  { name: "idx_gallery_albums_team_date", ddl: "CREATE INDEX IF NOT EXISTS idx_gallery_albums_team_date ON gallery_albums (team_id, album_date)" },
+  { name: "idx_gallery_albums_team_match", ddl: "CREATE INDEX IF NOT EXISTS idx_gallery_albums_team_match ON gallery_albums (team_id, match_id)" },
   { name: "idx_team_rules_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_rules_org_id ON team_rules (organization_id)" },
   { name: "idx_team_rules_team_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_rules_team_id ON team_rules (team_id)" },
   { name: "idx_team_links_org_id", ddl: "CREATE INDEX IF NOT EXISTS idx_team_links_org_id ON team_links (organization_id)" },
@@ -1096,3 +1142,8 @@ export async function ensureScheduleDefaultTimesColumn(d1?: D1Database | null): 
 export async function ensurePlayerConditionPeriodsTable(d1?: D1Database | null): Promise<void> {
   await ensureAllSchemasOnce(d1);
 }
+
+export async function ensureHubTickerColumn(d1?: D1Database | null): Promise<void> {
+  await ensureAllSchemasOnce(d1);
+}
+
