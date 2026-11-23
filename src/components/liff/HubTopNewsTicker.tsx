@@ -54,15 +54,29 @@ interface HubTopNewsTickerProps {
   onConfigSaved: (nextConfig: HubTickerConfig) => void;
 }
 
+/**
+ * プライマリーカラー帯（bg-primary）上で全7テーマ色（青・赤・緑・橙・ティール・紫・藍）× ライト/ダーク双方で
+ * 背景色と絶対に同化せず10:1級の高コントラストを保つソリッド種別ピルバッジ
+ * - ライト時（濃い primary 背景）: 純白ソリッドプレート ＋ 意味色ダーク文字
+ * - ダーク時（鮮やかな明色 primary 背景）: スタジアムネイビー（#0f172a）ソリッドプレート ＋ 意味色ブライト文字
+ */
 const BADGE_VARIANT_STYLES: Record<HubTickerBadgeVariant, string> = {
-  urgent: "bg-rose-600 text-white border-rose-500",
-  live: "bg-rose-600 text-white border-rose-400",
-  warning: "bg-amber-400 text-slate-950 border-amber-300",
-  schedule: "bg-teal-400 text-slate-950 border-teal-300",
-  result: "bg-emerald-400 text-slate-950 border-emerald-300",
-  media: "bg-[#FF0000] text-white border-red-400",
-  admin: "bg-amber-400 text-slate-950 border-amber-300",
-  info: "bg-sky-400 text-slate-950 border-sky-300",
+  urgent:
+    "bg-white text-rose-700 border-black/15 dark:bg-[#0f172a] dark:text-rose-300 dark:border-slate-800 shadow-2xs",
+  live:
+    "bg-white text-rose-600 border-black/15 dark:bg-[#0f172a] dark:text-rose-300 dark:border-slate-800 shadow-2xs",
+  warning:
+    "bg-white text-amber-800 border-black/15 dark:bg-[#0f172a] dark:text-amber-300 dark:border-slate-800 shadow-2xs",
+  schedule:
+    "bg-white text-teal-800 border-black/15 dark:bg-[#0f172a] dark:text-teal-300 dark:border-slate-800 shadow-2xs",
+  result:
+    "bg-white text-emerald-800 border-black/15 dark:bg-[#0f172a] dark:text-emerald-300 dark:border-slate-800 shadow-2xs",
+  media:
+    "bg-white text-[#CC0000] border-black/15 dark:bg-[#0f172a] dark:text-red-400 dark:border-slate-800 shadow-2xs",
+  admin:
+    "bg-white text-slate-900 border-black/15 dark:bg-[#0f172a] dark:text-amber-300 dark:border-slate-800 shadow-2xs",
+  info:
+    "bg-white text-slate-900 border-black/15 dark:bg-[#0f172a] dark:text-sky-300 dark:border-slate-800 shadow-2xs",
 };
 
 const LIST_CARD_BADGE_STYLES: Record<HubTickerBadgeVariant, string> = {
@@ -84,7 +98,7 @@ const LONG_END_HOLD_MS = 1600;
  * ⚾ トップページ最上部「ハイブリッド流れるメッセージ（C案）」コンポーネント
  * - 短〜通常文: 4.8秒ピタッと静止（ProMotion 1Hz 省電力維持）➔ 0.28秒で次の案内へ縦スライド切替
  * - 1行を超える長文: 先頭で1.4秒静止 ➔ 読みやすい速度で末尾まで横スクロール ➔ 1.6秒静止後に次へ縦スライド切替
- * - 屋外視認性抜群のソリッド・スタジアムネイビー帯（グラデーション・ブラー完全不使用）
+ * - ライト・ダーク両モードで鮮やかに映えるプライマリーカラー単色ソリッド帯（グラデーション・ブラー完全不使用）
  */
 export function HubTopNewsTicker({
   teamId,
@@ -335,10 +349,10 @@ export function HubTopNewsTicker({
         <section
           ref={rootRef}
           aria-label="チーム案内ティッカー（非表示中）"
-          className="w-full bg-[#0f172a] text-slate-300 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2"
+          className="w-full bg-primary/14 dark:bg-primary/20 text-foreground border-b border-primary/35 px-3 py-1.5 flex items-center justify-between gap-2"
         >
           <div className="flex items-center gap-1.5 min-w-0 text-[11px] font-bold truncate">
-            <Megaphone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <Megaphone className="w-3.5 h-3.5 text-primary shrink-0" />
             <span className="truncate">
               トップ最上部の流れるメッセージは現在OFFです（管理者のみ表示）
             </span>
@@ -346,7 +360,7 @@ export function HubTopNewsTicker({
           <button
             type="button"
             onClick={() => setIsEditorOpen(true)}
-            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer"
+            className="px-2.5 py-0.5 rounded-md bg-primary hover:bg-primary/90 text-primary-foreground text-[10.5px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs"
           >
             <Pencil className="w-3 h-3" />
             <span>再開・編集</span>
@@ -405,13 +419,13 @@ export function HubTopNewsTicker({
                 ? `transform ${panDurationMs}ms linear`
                 : "none",
           }}
-          className="inline-block whitespace-nowrap text-xs font-black text-white leading-snug tracking-tight will-change-transform"
+          className="inline-block whitespace-nowrap text-xs font-black text-primary-foreground leading-snug tracking-tight will-change-transform"
         >
           {activeItem.text}
         </span>
       </div>
 
-      <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-white shrink-0" />
+      <ChevronRight className="w-3.5 h-3.5 text-primary-foreground/80 group-hover:text-primary-foreground shrink-0" />
     </div>
   );
 
@@ -426,8 +440,9 @@ export function HubTopNewsTicker({
         onTouchEnd={handleTouchEnd}
         onTouchCancel={() => setIsTouchPaused(false)}
         className={cn(
-          "w-full bg-[#0f172a] text-slate-50 border-b border-slate-800 px-2.5 sm:px-3.5 py-1.5 flex items-center gap-1.5 select-none",
-          isUrgentAccent && "border-l-[4px] border-l-rose-500"
+          "w-full bg-primary text-primary-foreground border-t border-white/25 dark:border-slate-950/25 border-b border-black/15 dark:border-slate-950/60 shadow-xs px-2.5 sm:px-3.5 py-1.5 flex items-center gap-1.5 select-none",
+          isUrgentAccent &&
+            "border-l-[4px] border-l-white dark:border-l-[#0f172a]"
         )}
       >
         {/* メッセージ本体（リンク遷移 または 全文ポップアップ） */}
@@ -471,9 +486,9 @@ export function HubTopNewsTicker({
               onClick={() => setIsListOpen(true)}
               aria-label="流れている案内を一覧表示"
               title="現在の案内・チーム状況をすべて見る"
-              className="h-6 px-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[10px] font-black tabular-nums inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-transform"
+              className="h-6 px-1.5 rounded-md bg-white hover:bg-slate-100 text-slate-900 border border-black/15 dark:bg-[#0f172a] dark:hover:bg-slate-900 dark:text-slate-100 dark:border-slate-800 shadow-2xs text-[10px] font-black tabular-nums inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-transform"
             >
-              <List className="w-3 h-3 text-slate-400" />
+              <List className="w-3 h-3 text-slate-600 dark:text-slate-300" />
               <span>
                 {safeIndex + 1}/{items.length}
               </span>
@@ -485,9 +500,9 @@ export function HubTopNewsTicker({
               type="button"
               onClick={() => setIsEditorOpen(true)}
               aria-label="トップ案内メッセージを編集"
-              className="h-6 px-2 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-600 text-amber-300 hover:text-amber-200 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-transform"
+              className="h-6 px-2 rounded-md bg-white hover:bg-slate-100 text-slate-900 border border-black/15 dark:bg-[#0f172a] dark:hover:bg-slate-900 dark:text-amber-300 dark:border-slate-800 shadow-2xs text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-transform"
             >
-              <Pencil className="w-2.5 h-2.5" />
+              <Pencil className="w-2.5 h-2.5 text-primary dark:text-amber-300" />
               <span>編集</span>
             </button>
           )}
@@ -631,7 +646,7 @@ export function HubTopNewsTicker({
                 <span
                   className={cn(
                     "px-2 py-0.5 rounded-md border text-[11px] font-black",
-                    BADGE_VARIANT_STYLES[detailItem.badgeVariant]
+                    LIST_CARD_BADGE_STYLES[detailItem.badgeVariant]
                   )}
                 >
                   {detailItem.badgeText}
