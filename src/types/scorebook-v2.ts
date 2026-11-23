@@ -560,6 +560,46 @@ export interface ExcessOutInningSpec {
   batters: ExcessOutBatterItemSpec[];
 }
 
+/** 要確認マス再解析時に同時参照する塁上先行走者マス座標情報 */
+export interface FlaggedAtBatPrecedingRunnerSpec {
+  startBase: "1B" | "2B" | "3B";
+  currentBase: "1B" | "2B" | "3B" | "HP";
+  battingOrder: number;
+  runnerName: string;
+  inning: number;
+  columnIndex: number;
+}
 
+/** STEP 3「確認おすすめの箇所」または個別1マスの超拡大AI再解析仕様 */
+export interface FlaggedAtBatReconcileItemSpec {
+  slotKey: string;
+  atBatId: string;
+  inning: number;
+  columnIndex: number;
+  battingOrder: number;
+  batterName: string;
+  pitcherName: string;
+  outsBefore: number;
+  occupiedBasesSummary: string;
+  precedingRunners: FlaggedAtBatPrecedingRunnerSpec[];
+  confirmedInningRuns: number | null;
+  currentInningRunsSum: number;
+  currentInningOutsSum: number;
+  currentResultCode: CanonicalAtBatResult;
+  currentResultLabel: string;
+  currentDirection: string;
+  currentOutsInPlay: number;
+  currentRunsInPlay: number;
+  currentRbi: number;
+  currentPitches: CanonicalPitchResult[];
+  currentConfidence: ConfidenceLevel;
+  issueIds: string[];
+  issueMessages: string[];
+}
 
-
+/** 超拡大AI再解析から返却された1マス分の更新結果 */
+export interface ReconciledFlaggedAtBatItem {
+  slotKey: string;
+  atBatId: string;
+  atBat: ScorebookV2AtBat;
+}

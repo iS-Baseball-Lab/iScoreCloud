@@ -23,7 +23,10 @@ import {
   type CanonicalAtBatResult,
   type CanonicalPitchResult,
   type ExcessOutInningSpec,
+  type FlaggedAtBatPrecedingRunnerSpec,
+  type FlaggedAtBatReconcileItemSpec,
   type MissingOrderGapSpec,
+  type ReconciledFlaggedAtBatItem,
   type ResolvedMissingAtBatItem,
   type ScorebookBatterSlot,
   type ScorebookRosterPlayer,
@@ -3465,4 +3468,657 @@ export function detectExcessOutInnings(
   return specs;
 }
 
+/**
+ * 打順抜け（order-*）・3アウト超過（outs-over-*, outs-extra-*）・未取得回（empty-inning-*）以外の、
+ * 1マス単位の超拡大AI再読取（reconcile-flagged-atbats）で直接検証・補正すべき検算項目かどうかを判定する。
+ */
+export function isPinpointCellReconcilableIssue(
+  issue: ScorebookValidationIssue
+): boolean {
+  if (
+    issue.id.startsWith("empty-inning-") ||
+    issue.id.startsWith("order-") ||
+    issue.id.startsWith("outs-over-") ||
+    issue.id.startsWith("outs-extra-")
+  ) {
+    return false;
+  }
+  return true;
+}
 
+function formatBaseLabelJa(base: "1B" | "2B" | "3B"): string {
+  if (base === "1B") return "一塁";
+  if (base === "2B") return "二塁";
+  return "三塁";
+}
+
+function baseOrderRankClosestToHome(base: "1B" | "2B" | "3B"): number {
+  if (base === "3B") return 0;
+  if (base === "2B") return 1;
+  return 2;
+}
+
+export interface BuildFlaggedReconcileSpecsOptions {
+  isTop?: boolean;
+  /** 指定時はその打席IDのみを対象にする（個別1マスAI再読取モード） */
+  targetAtBatIds?: readonly string[];
+  maxItems?: number;
+}
+
+/**
+ * STEP 3 の「確認おすすめの箇所」またはユーザーが指定した個別1マスについて、
+ * 打席開始前のアウト数・塁上走者（先行走者の元打席座標を含む）・イニング確定得点・矛盾メッセージを束ねた
+ * 超拡大5パネルAI再解析仕様（FlaggedAtBatReconcileItemSpec[]）を生成する。
+ */
+export function buildFlaggedAtBatReconcileSpecs(
+  atBats: ScorebookV2AtBat[],
+  structure?: ScorebookSheetStructure | null,
+  options?: BuildFlaggedReconcileSpecsOptions
+): FlaggedAtBatReconcileItemSpec[] {
+  if (!structure || structure.batters.length === 0 || atBats.length === 0) {
+    return [];
+  }
+
+  const effectiveIsTop =
+    typeof options?.isTop === "boolean"
+      ? options.isTop
+      : atBats[0]?.isTop ?? true;
+  const maxItems = Math.max(1, options?.maxItems ?? 12);
+
+  const issues = validateScorebookSheet(atBats, structure, effectiveIsTop);
+  const runnerMap = simulateSheetRunners(atBats, structure);
+
+  const issuesByAtBatId = new Map<string, ScorebookValidationIssue[]>();
+  const inningWideIssuesMap = new Map<number, ScorebookValidationIssue[]>();
+  for (const iss of issues) {
+    if (iss.atBatId) {
+      const list = issuesByAtBatId.get(iss.atBatId) || [];
+      list.push(iss);
+      issuesByAtBatId.set(iss.atBatId, list);
+    }
+    if (
+      iss.id.startsWith("outs-under-") ||
+      iss.id.startsWith("score-mismatch-")
+    ) {
+      const list = inningWideIssuesMap.get(iss.inning) || [];
+      list.push(iss);
+      inningWideIssuesMap.set(iss.inning, list);
+    }
+  }
+
+  const inningsMap = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of atBats) {
+    const arr = inningsMap.get(ab.inning) || [];
+    arr.push(ab);
+    inningsMap.set(ab.inning, arr);
+  }
+
+  const explicitTargetSet =
+    options?.targetAtBatIds && options.targetAtBatIds.length > 0
+      ? new Set(options.targetAtBatIds)
+      : null;
+
+  const selectedIds = new Set<string>();
+  if (explicitTargetSet) {
+    for (const ab of atBats) {
+      if (explicitTargetSet.has(ab.id)) {
+        selectedIds.add(ab.id);
+      }
+    }
+  } else {
+    // 1. セル単位の要確認フラグが付いている打席を優先登録
+    for (const iss of issues) {
+      if (!iss.atBatId || !isPinpointCellReconcilableIssue(iss)) continue;
+      selectedIds.add(iss.atBatId);
+    }
+
+    // 2. イニング全体の「3アウト未満（outs-under-*）」や「得点不一致（score-mismatch-*）」では、
+    //    原因になりやすい出塁扱いマス・走者ありマスも同一バッチに加えてピンポイント再検算する
+    for (const [inn, innWideIssues] of inningWideIssuesMap.entries()) {
+      const peers = inningsMap.get(inn) || [];
+      if (peers.length === 0) continue;
+
+      // 既に3アウト超過や打順飛びがある回は専用リコンサイラが先に処理するため過剰展開しない
+      const hasStructuralConflict = issues.some(
+        (x) =>
+          x.inning === inn &&
+          (x.id.startsWith("outs-over-") ||
+            x.id.startsWith("outs-extra-") ||
+            x.id.startsWith("order-"))
+      );
+      if (hasStructuralConflict) continue;
+
+      const hasOutsUnder = innWideIssues.some((x) =>
+        x.id.startsWith("outs-under-")
+      );
+      const hasScoreMismatch = innWideIssues.some((x) =>
+        x.id.startsWith("score-mismatch-")
+      );
+      const confirmedRuns =
+        structure.innings.find((m) => m.inning === inn)?.runs ?? null;
+      const sumRuns = peers.reduce(
+        (s, x) => s + Math.max(0, x.runsInPlay),
+        0
+      );
+
+      let addedForInning = 0;
+      for (const peer of peers) {
+        if (addedForInning >= 3) break;
+        if (selectedIds.has(peer.id)) continue;
+        const snap = runnerMap.get(peer.id);
+        const hasRunnersBefore = Boolean(
+          snap && snap.precedingRunners.length > 0
+        );
+
+        if (
+          hasOutsUnder &&
+          (peer.outsInPlay === 0 || peer.confidence !== "high")
+        ) {
+          selectedIds.add(peer.id);
+          addedForInning += 1;
+          continue;
+        }
+        if (hasScoreMismatch && confirmedRuns !== null) {
+          if (confirmedRuns < sumRuns && peer.runsInPlay > 0) {
+            selectedIds.add(peer.id);
+            addedForInning += 1;
+          } else if (
+            confirmedRuns > sumRuns &&
+            (hasRunnersBefore || peer.confidence !== "high")
+          ) {
+            selectedIds.add(peer.id);
+            addedForInning += 1;
+          }
+        }
+      }
+    }
+  }
+
+  const specs: FlaggedAtBatReconcileItemSpec[] = [];
+  let seq = 1;
+
+  for (const ab of atBats) {
+    if (!selectedIds.has(ab.id)) continue;
+    if (specs.length >= maxItems) break;
+
+    const peers = inningsMap.get(ab.inning) || [];
+    const idxInInning = peers.findIndex((p) => p.id === ab.id);
+    const priorPeers = idxInInning > 0 ? peers.slice(0, idxInInning) : [];
+
+    const snap = runnerMap.get(ab.id);
+    const outsBefore = snap?.outsBefore ?? 0;
+
+    const sortedPrs = snap
+      ? [...snap.precedingRunners].sort(
+          (a, b) =>
+            baseOrderRankClosestToHome(a.startBase) -
+            baseOrderRankClosestToHome(b.startBase)
+        )
+      : [];
+
+    const precedingRunners: FlaggedAtBatPrecedingRunnerSpec[] = sortedPrs.map(
+      (pr) => {
+        let matchedPeer: ScorebookV2AtBat | undefined;
+        for (let i = priorPeers.length - 1; i >= 0; i--) {
+          const cand = priorPeers[i];
+          if (
+            pr.runner.battingOrder > 0 &&
+            cand.battingOrder === pr.runner.battingOrder
+          ) {
+            matchedPeer = cand;
+            break;
+          }
+          if (
+            pr.runner.battingOrder <= 0 &&
+            pr.runner.name &&
+            cand.batterName === pr.runner.name
+          ) {
+            matchedPeer = cand;
+            break;
+          }
+        }
+        return {
+          startBase: pr.startBase,
+          currentBase: pr.baseAtInPlay ?? pr.startBase,
+          battingOrder: matchedPeer?.battingOrder || pr.runner.battingOrder,
+          runnerName: pr.runner.name || matchedPeer?.batterName || "走者",
+          inning: matchedPeer?.inning ?? ab.inning,
+          columnIndex: matchedPeer?.columnIndex || 1,
+        };
+      }
+    );
+
+    const occupiedBasesSummary =
+      precedingRunners.length === 0
+        ? "走者なし"
+        : precedingRunners
+            .map(
+              (pr) =>
+                `${formatBaseLabelJa(pr.startBase)}:${
+                  pr.battingOrder > 0 ? `${pr.battingOrder}番 ` : ""
+                }${pr.runnerName}`
+            )
+            .join(" / ");
+
+    const confirmedMeta = structure.innings.find((m) => m.inning === ab.inning);
+    const confirmedInningRuns =
+      typeof confirmedMeta?.runs === "number" ? confirmedMeta.runs : null;
+    const currentInningRunsSum = peers.reduce(
+      (s, x) => s + Math.max(0, x.runsInPlay),
+      0
+    );
+    const initOuts = Math.min(2, Math.max(0, peers[0]?.tiebreakInitialOuts || 0));
+    const currentInningOutsSum =
+      initOuts + peers.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
+
+    const directIssues = (issuesByAtBatId.get(ab.id) || []).filter(
+      (iss) => Boolean(explicitTargetSet) || isPinpointCellReconcilableIssue(iss)
+    );
+    const innIssues = inningWideIssuesMap.get(ab.inning) || [];
+    const mergedIssueMap = new Map<string, ScorebookValidationIssue>();
+    for (const iss of [...directIssues, ...innIssues]) {
+      mergedIssueMap.set(iss.id, iss);
+    }
+    const mergedIssues = Array.from(mergedIssueMap.values());
+
+    const issueIds = mergedIssues.map((x) => x.id);
+    const issueMessages =
+      mergedIssues.length > 0
+        ? mergedIssues.map((x) => x.message)
+        : [
+            "ユーザー指定による1マス精密再読取（BSO全球・打球守備番号・進塁線・先行走者生還/アウトを再確認）",
+          ];
+
+    specs.push({
+      slotKey: `F${seq++}`,
+      atBatId: ab.id,
+      inning: ab.inning,
+      columnIndex: ab.columnIndex || 1,
+      battingOrder: ab.battingOrder,
+      batterName: ab.batterName,
+      pitcherName: ab.pitcherName,
+      outsBefore,
+      occupiedBasesSummary,
+      precedingRunners,
+      confirmedInningRuns,
+      currentInningRunsSum,
+      currentInningOutsSum,
+      currentResultCode: ab.resultCode,
+      currentResultLabel: ab.resultLabel,
+      currentDirection: ab.battedDirection,
+      currentOutsInPlay: ab.outsInPlay,
+      currentRunsInPlay: ab.runsInPlay,
+      currentRbi: ab.rbi,
+      currentPitches: [...ab.pitches],
+      currentConfidence: ab.confidence,
+      issueIds,
+      issueMessages,
+    });
+  }
+
+  return specs;
+}
+
+export interface ApplyReconciledFlaggedOptions {
+  isTop?: boolean;
+  /** true の場合（個別1マスAI再読取ボタン押下時）は件数比較ガードをスキップして最新読取値をそのまま反映する */
+  forceApplyAll?: boolean;
+}
+
+export interface ApplyReconciledFlaggedResult {
+  atBats: ScorebookV2AtBat[];
+  updatedAtBatIds: string[];
+  beforeIssueCount: number;
+  afterIssueCount: number;
+}
+
+function mergeSingleFlaggedCell(
+  existing: ScorebookV2AtBat,
+  incoming: ScorebookV2AtBat,
+  existingHasPitchIssue: boolean
+): ScorebookV2AtBat {
+  const normalizedIncoming = normalizeLegacyForceOutAtBat(incoming);
+  let nextPitches = [...normalizedIncoming.pitches];
+
+  // 元データに投球矛盾がなく有効な投球履歴を持っていたのに、再読取でインプレー終端球のみになった場合は事前カウントを保護
+  const isInPlayResult =
+    normalizedIncoming.resultCode !== "walk" &&
+    normalizedIncoming.resultCode !== "intentional_walk" &&
+    normalizedIncoming.resultCode !== "hit_by_pitch" &&
+    normalizedIncoming.resultCode !== "strikeout" &&
+    normalizedIncoming.resultCode !== "dropped_third_strike" &&
+    normalizedIncoming.resultCode !== "dropped_third_strike_out";
+  const incomingPrePitches = nextPitches.filter(
+    (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+  );
+  if (!existingHasPitchIssue && isInPlayResult && incomingPrePitches.length === 0) {
+    const existingPrePitches = existing.pitches.filter(
+      (p) => p !== "in_play" && p !== "hit" && p !== "hbp"
+    );
+    if (existingPrePitches.length > 0) {
+      const prevCnt = computeCountFromPitches(existingPrePitches);
+      if (prevCnt.balls <= 3 && prevCnt.strikes <= 2) {
+        const isHit =
+          normalizedIncoming.resultCode === "single" ||
+          normalizedIncoming.resultCode === "double" ||
+          normalizedIncoming.resultCode === "triple" ||
+          normalizedIncoming.resultCode === "home_run";
+        nextPitches = [
+          ...existingPrePitches,
+          isHit ? ("hit" as const) : ("in_play" as const),
+        ];
+      }
+    }
+  }
+
+  const syncedCnt = computeCountFromPitches(nextPitches);
+
+  return {
+    ...existing,
+    id: existing.id,
+    inning: existing.inning,
+    isTop: existing.isTop,
+    columnIndex: existing.columnIndex,
+    battingOrder: existing.battingOrder,
+    batterName: existing.batterName,
+    batterPlayerId: existing.batterPlayerId,
+    pitcherName: existing.pitcherName || normalizedIncoming.pitcherName,
+    pitcherPlayerId:
+      existing.pitcherPlayerId ?? normalizedIncoming.pitcherPlayerId,
+    pinchRunners: existing.pinchRunners,
+    tiebreakInitialOuts: existing.tiebreakInitialOuts,
+    midAtBatPriorBatter: existing.midAtBatPriorBatter,
+    midAtBatPriorPitcher: existing.midAtBatPriorPitcher,
+    cellBox: existing.cellBox || normalizedIncoming.cellBox,
+    resultCode: normalizedIncoming.resultCode,
+    resultLabel: normalizedIncoming.resultLabel,
+    battedDirection: normalizedIncoming.battedDirection,
+    rbi: normalizedIncoming.rbi,
+    outsInPlay: normalizedIncoming.outsInPlay,
+    runsInPlay: normalizedIncoming.runsInPlay,
+    balls: syncedCnt.balls,
+    strikes: syncedCnt.strikes,
+    pitches: nextPitches,
+    advances: normalizedIncoming.advances.map((a) => ({ ...a })),
+    confidence: normalizedIncoming.confidence,
+    confidenceReason: normalizedIncoming.confidenceReason,
+  };
+}
+
+function syncMonotonicOutsAndRunsWithoutStructuralDrop(
+  list: ScorebookV2AtBat[],
+  structure?: ScorebookSheetStructure | null
+): ScorebookV2AtBat[] {
+  const inningsMap = new Map<number, ScorebookV2AtBat[]>();
+  for (const ab of list) {
+    const cloned = normalizeLegacyForceOutAtBat({
+      ...ab,
+      pitches: [...ab.pitches],
+      advances: ab.advances.map((a) => ({ ...a })),
+    });
+    const arr = inningsMap.get(cloned.inning) || [];
+    arr.push(cloned);
+    inningsMap.set(cloned.inning, arr);
+  }
+
+  const sortedInnings = Array.from(inningsMap.keys()).sort((a, b) => a - b);
+  const rebuilt: ScorebookV2AtBat[] = [];
+  for (const inn of sortedInnings) {
+    const peers = inningsMap.get(inn) || [];
+    let monoOuts = Math.min(2, Math.max(0, peers[0]?.tiebreakInitialOuts || 0));
+    for (const ab of peers) {
+      monoOuts = Math.min(3, monoOuts + Math.max(0, ab.outsInPlay));
+      ab.endingOuts = monoOuts;
+      rebuilt.push(ab);
+    }
+  }
+
+  return reconcileSheetRunsAndRbi(rebuilt, structure).atBats;
+}
+
+function computeValidationPenalty(issues: ScorebookValidationIssue[]): number {
+  return issues.reduce(
+    (sum, iss) => sum + (iss.severity === "error" ? 10 : 1),
+    0
+  );
+}
+
+function isAtBatContentModified(
+  before: ScorebookV2AtBat,
+  after: ScorebookV2AtBat
+): boolean {
+  return (
+    before.resultCode !== after.resultCode ||
+    before.resultLabel !== after.resultLabel ||
+    before.battedDirection !== after.battedDirection ||
+    before.outsInPlay !== after.outsInPlay ||
+    before.runsInPlay !== after.runsInPlay ||
+    before.rbi !== after.rbi ||
+    before.confidence !== after.confidence ||
+    (before.confidenceReason || "") !== (after.confidenceReason || "") ||
+    before.pitches.join(",") !== after.pitches.join(",") ||
+    JSON.stringify(
+      before.advances.map((a) => [
+        a.from,
+        a.to,
+        a.method,
+        a.isOut,
+        a.pitchNumber ?? null,
+        a.throwChain ?? null,
+      ])
+    ) !==
+      JSON.stringify(
+        after.advances.map((a) => [
+          a.from,
+          a.to,
+          a.method,
+          a.isOut,
+          a.pitchNumber ?? null,
+          a.throwChain ?? null,
+        ])
+      )
+  );
+}
+
+/**
+ * 超拡大AI再解析で得られた1マス単位の読取結果を既存シートへマージする。
+ * - 打順・選手ID・代打/代走/継投メタデータは絶対に破壊せず対象マスの打席内容のみを更新する。
+ * - バッチ補正時（forceApplyAll !== true）は「非退行ガード（Non-Regression Guard）」により、
+ *   検算エラー・警告を解消（または悪化させずに低確信度・球数抜けを改善）した更新のみを採用し、
+ *   手書き記入省略などでハルシネーション悪化が起きた場合は安全に元データを維持する。
+ */
+export function applyReconciledFlaggedAtBats(
+  atBats: ScorebookV2AtBat[],
+  reconciledItems: readonly ReconciledFlaggedAtBatItem[],
+  structure?: ScorebookSheetStructure | null,
+  options?: ApplyReconciledFlaggedOptions
+): ApplyReconciledFlaggedResult {
+  const effectiveIsTop =
+    typeof options?.isTop === "boolean"
+      ? options.isTop
+      : atBats[0]?.isTop ?? true;
+  const beforeIssues = validateScorebookSheet(
+    atBats,
+    structure,
+    effectiveIsTop
+  );
+
+  if (atBats.length === 0 || reconciledItems.length === 0) {
+    return {
+      atBats,
+      updatedAtBatIds: [],
+      beforeIssueCount: beforeIssues.length,
+      afterIssueCount: beforeIssues.length,
+    };
+  }
+
+  const pitchIssueAtBatIds = new Set(
+    beforeIssues
+      .filter(
+        (iss) =>
+          Boolean(iss.atBatId) &&
+          (iss.id.startsWith("pitch-") || iss.id.startsWith("balk-"))
+      )
+      .map((iss) => iss.atBatId as string)
+  );
+
+  const existingMap = new Map<string, ScorebookV2AtBat>();
+  for (const ab of atBats) {
+    existingMap.set(ab.id, ab);
+  }
+
+  const mergedById = new Map<string, ScorebookV2AtBat>();
+  for (const item of reconciledItems) {
+    const existing = existingMap.get(item.atBatId);
+    if (!existing) continue;
+    mergedById.set(
+      item.atBatId,
+      mergeSingleFlaggedCell(
+        existing,
+        item.atBat,
+        pitchIssueAtBatIds.has(item.atBatId)
+      )
+    );
+  }
+
+  if (mergedById.size === 0) {
+    return {
+      atBats,
+      updatedAtBatIds: [],
+      beforeIssueCount: beforeIssues.length,
+      afterIssueCount: beforeIssues.length,
+    };
+  }
+
+  // 個別1マス再読取モード：対象1マスの最新超拡大読取をそのまま反映
+  if (options?.forceApplyAll) {
+    const replaced = atBats.map((ab) => mergedById.get(ab.id) ?? ab);
+    const synced = syncMonotonicOutsAndRunsWithoutStructuralDrop(
+      replaced,
+      structure
+    );
+    const afterIssues = validateScorebookSheet(
+      synced,
+      structure,
+      effectiveIsTop
+    );
+    const syncedMap = new Map(synced.map((ab) => [ab.id, ab]));
+    const updatedAtBatIds = Array.from(mergedById.keys()).filter((id) => {
+      const prev = existingMap.get(id);
+      const next = syncedMap.get(id);
+      return Boolean(prev && next);
+    });
+    return {
+      atBats: synced,
+      updatedAtBatIds,
+      beforeIssueCount: beforeIssues.length,
+      afterIssueCount: afterIssues.length,
+    };
+  }
+
+  // バッチ補正モード：イニング単位 ➔ 個別セル単位で非退行判定を行い、改善した変更のみを採用
+  const idsByInning = new Map<number, string[]>();
+  for (const [id, merged] of mergedById.entries()) {
+    const arr = idsByInning.get(merged.inning) || [];
+    arr.push(id);
+    idsByInning.set(merged.inning, arr);
+  }
+
+  let workingList = [...atBats];
+  let workingIssues = beforeIssues;
+
+  const tryApplyCandidateSubset = (targetIds: readonly string[]): boolean => {
+    const idSet = new Set(targetIds);
+    const prevMap = new Map(workingList.map((ab) => [ab.id, ab]));
+    const candidateRaw = workingList.map((ab) =>
+      idSet.has(ab.id) ? mergedById.get(ab.id) ?? ab : ab
+    );
+    const candidateSynced = syncMonotonicOutsAndRunsWithoutStructuralDrop(
+      candidateRaw,
+      structure
+    );
+    const nextIssues = validateScorebookSheet(
+      candidateSynced,
+      structure,
+      effectiveIsTop
+    );
+
+    const prevPenalty = computeValidationPenalty(workingIssues);
+    const nextPenalty = computeValidationPenalty(nextIssues);
+    if (nextPenalty > prevPenalty) {
+      return false;
+    }
+
+    if (nextPenalty === prevPenalty) {
+      const nextMap = new Map(candidateSynced.map((ab) => [ab.id, ab]));
+      let hasSafeRefinement = false;
+      for (const id of targetIds) {
+        const p = prevMap.get(id);
+        const n = nextMap.get(id);
+        if (!p || !n) continue;
+        if (p.confidence === "low" && n.confidence !== "low") {
+          hasSafeRefinement = true;
+          break;
+        }
+        if (
+          p.resultCode === "walk" &&
+          n.resultCode === "walk" &&
+          n.balls > p.balls &&
+          n.balls <= 4
+        ) {
+          hasSafeRefinement = true;
+          break;
+        }
+        if (
+          (p.resultCode === "strikeout" ||
+            p.resultCode === "dropped_third_strike" ||
+            p.resultCode === "dropped_third_strike_out") &&
+          n.resultCode === p.resultCode &&
+          n.strikes > p.strikes &&
+          n.strikes <= 3
+        ) {
+          hasSafeRefinement = true;
+          break;
+        }
+      }
+      if (!hasSafeRefinement) {
+        return false;
+      }
+    }
+
+    workingList = candidateSynced;
+    workingIssues = nextIssues;
+    return true;
+  };
+
+  const sortedInnings = Array.from(idsByInning.keys()).sort((a, b) => a - b);
+  for (const inn of sortedInnings) {
+    const innIds = idsByInning.get(inn) || [];
+    if (innIds.length === 0) continue;
+    if (tryApplyCandidateSubset(innIds)) {
+      continue;
+    }
+    if (innIds.length > 1) {
+      for (const singleId of innIds) {
+        tryApplyCandidateSubset([singleId]);
+      }
+    }
+  }
+
+  const finalMap = new Map(workingList.map((ab) => [ab.id, ab]));
+  const updatedAtBatIds: string[] = [];
+  for (const id of mergedById.keys()) {
+    const prev = existingMap.get(id);
+    const next = finalMap.get(id);
+    if (prev && next && isAtBatContentModified(prev, next)) {
+      updatedAtBatIds.push(id);
+    }
+  }
+
+  return {
+    atBats: workingList,
+    updatedAtBatIds,
+    beforeIssueCount: beforeIssues.length,
+    afterIssueCount: workingIssues.length,
+  };
+}

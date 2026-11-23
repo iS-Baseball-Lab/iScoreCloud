@@ -11,6 +11,7 @@ import { normalizeClientFetchErrorMessage } from "@/lib/liff/api-cache";
 import { getClientQueryParam } from "@/lib/liff/liff-client";
 import {
   buildCalibratedRulerSheetImage,
+  buildFlaggedAtBatsReconcileCrop,
   buildInningOutsReconcileCrop,
   buildMissingOrderComparisonCrop,
   extractInningChunkCompositeCrop,
@@ -19,7 +20,9 @@ import {
   type PreprocessedScorebookImage,
 } from "@/lib/liff/scorebook-image";
 import {
+  applyReconciledFlaggedAtBats,
   applyRecoveredMissingAtBats,
+  buildFlaggedAtBatReconcileSpecs,
   computeCountFromPitches,
   detectExcessOutInnings,
   detectMissingOrderGaps,
@@ -28,6 +31,7 @@ import {
   resolveActiveMatchupFromStructure,
   resolveEffectiveBattingCycleLength,
   syncSheetAtBatsWithStructure,
+  validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
 import {
   clearScorebookDraft,
@@ -57,6 +61,7 @@ import {
   formatTotalElapsedSeconds,
   type ImportScopeMode,
   type NormalizedBox,
+  type ReconciledFlaggedAtBatItem,
   type ResolvedMissingAtBatItem,
   type ScorebookAnalysisTimingSummary,
   type ScorebookGridCorners,
@@ -372,6 +377,9 @@ export default function LiffScorebookImportPage() {
     string | null
   >(null);
   const [isRepairingOrderGaps, setIsRepairingOrderGaps] = useState(false);
+  const [reanalyzingAtBatId, setReanalyzingAtBatId] = useState<string | null>(
+    null
+  );
   const [analysisProgressLabel, setAnalysisProgressLabel] = useState("");
   const [deepStartedAtMs, setDeepStartedAtMs] = useState<number | null>(null);
   const [deepTotalDurationMs, setDeepTotalDurationMs] = useState<number | null>(
@@ -1748,7 +1756,11 @@ export default function LiffScorebookImportPage() {
     durationMs: number;
   }> => {
     const startMs = Date.now();
-    if (!imgState.processed || initialSideAtBats.length === 0) {
+    const srcDataUrl =
+      imgState.processed?.dataUrl ||
+      (isTop ? savedTopImageUrl : savedBottomImageUrl) ||
+      null;
+    if (!srcDataUrl || initialSideAtBats.length === 0) {
       return { atBats: initialSideAtBats, repairedCount: 0, durationMs: 0 };
     }
 
@@ -1761,7 +1773,7 @@ export default function LiffScorebookImportPage() {
 
       const batchGaps = allGaps.slice(0, 6);
       const crop = await buildMissingOrderComparisonCrop(
-        imgState.processed.dataUrl,
+        srcDataUrl,
         structure,
         batchGaps
       );
@@ -1856,7 +1868,11 @@ export default function LiffScorebookImportPage() {
     let currentList = det.atBats;
     let totalRepaired = det.changed ? 1 : 0;
 
-    if (!imgState.processed || currentList.length === 0) {
+    const srcDataUrl =
+      imgState.processed?.dataUrl ||
+      (isTop ? savedTopImageUrl : savedBottomImageUrl) ||
+      null;
+    if (!srcDataUrl || currentList.length === 0) {
       return {
         atBats: currentList,
         repairedCount: totalRepaired,
@@ -1880,7 +1896,7 @@ export default function LiffScorebookImportPage() {
     const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
     for (const spec of specs) {
       const crop = await buildInningOutsReconcileCrop(
-        imgState.processed.dataUrl,
+        srcDataUrl,
         structure,
         spec
       );
@@ -1996,6 +2012,145 @@ export default function LiffScorebookImportPage() {
       atBats: currentList,
       repairedCount: totalRepaired,
       durationMs: Date.now() - startMs,
+    };
+  };
+
+  /**
+   * STEP 3 の「確認おすすめの箇所」または個別1マスについて、
+   * 5パネル超拡大画像（2.5倍解像度＋先行走者マス参照）と HIGH thinking でピンポイント再検証し、
+   * 他の確定済み打席を一切壊さず対象マスのみをマージする。
+   */
+  const reconcileFlaggedAtBatsForSide = async (
+    isTop: boolean,
+    structure: ScorebookSheetStructure,
+    sourceDataUrl: string | null,
+    initialSideAtBats: ScorebookV2AtBat[],
+    options?: {
+      targetAtBatIds?: readonly string[];
+      forceApplyAll?: boolean;
+      throwOnFailure?: boolean;
+    }
+  ): Promise<{
+    atBats: ScorebookV2AtBat[];
+    updatedAtBatIds: string[];
+    inspectedCount: number;
+    beforeIssueCount: number;
+    afterIssueCount: number;
+  }> => {
+    const initialIssues = validateScorebookSheet(
+      initialSideAtBats,
+      structure,
+      isTop
+    );
+    if (!sourceDataUrl || initialSideAtBats.length === 0) {
+      return {
+        atBats: initialSideAtBats,
+        updatedAtBatIds: [],
+        inspectedCount: 0,
+        beforeIssueCount: initialIssues.length,
+        afterIssueCount: initialIssues.length,
+      };
+    }
+
+    const specs = buildFlaggedAtBatReconcileSpecs(
+      initialSideAtBats,
+      structure,
+      {
+        isTop,
+        targetAtBatIds: options?.targetAtBatIds,
+        maxItems: 12,
+      }
+    );
+    if (specs.length === 0) {
+      return {
+        atBats: initialSideAtBats,
+        updatedAtBatIds: [],
+        inspectedCount: 0,
+        beforeIssueCount: initialIssues.length,
+        afterIssueCount: initialIssues.length,
+      };
+    }
+
+    const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+    const collectedItems: ReconciledFlaggedAtBatItem[] = [];
+
+    for (let offset = 0; offset < specs.length; offset += 6) {
+      const batchSpecs = specs.slice(offset, offset + 6);
+      const crop = await buildFlaggedAtBatsReconcileCrop(
+        sourceDataUrl,
+        structure,
+        batchSpecs
+      );
+      if (!crop) {
+        if (options?.throwOnFailure) {
+          throw new Error(
+            `${sideLabel}の対象マス拡大画像を生成できませんでした`
+          );
+        }
+        continue;
+      }
+
+      try {
+        const res = await fetch("/api/liff/scorebook/reconcile-flagged-atbats", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            teamId: resolvedTeamId || currentTeam?.id || "",
+            matchId: selectedMatchId,
+            isTop,
+            cropBase64: crop.base64,
+            cropMimeType: crop.mimeType,
+            structure,
+            specs: batchSpecs,
+            legendBase64: legendOverride?.base64,
+            legendMimeType: legendOverride?.mimeType,
+            skipModels: getActiveSkippedModels(),
+          }),
+        });
+
+        const data = await parseSafeJson<{
+          success: boolean;
+          items?: ReconciledFlaggedAtBatItem[];
+          cooledModels?: string[];
+          error?: string;
+        }>(res, `${sideLabel}の要確認マスAI再解析エラー`);
+
+        recordCooledModels(data.cooledModels);
+
+        if (!data.success || !data.items || data.items.length === 0) {
+          if (options?.throwOnFailure) {
+            throw new Error(
+              data.error ||
+                `${sideLabel}の要確認マス再解析結果を取得できませんでした`
+            );
+          }
+          continue;
+        }
+
+        collectedItems.push(...data.items);
+      } catch (err) {
+        if (options?.throwOnFailure) {
+          throw err;
+        }
+      }
+    }
+
+    const applied = applyReconciledFlaggedAtBats(
+      initialSideAtBats,
+      collectedItems,
+      structure,
+      {
+        isTop,
+        forceApplyAll: options?.forceApplyAll,
+      }
+    );
+
+    return {
+      atBats: applied.atBats,
+      updatedAtBatIds: applied.updatedAtBatIds,
+      inspectedCount: specs.length,
+      beforeIssueCount: applied.beforeIssueCount,
+      afterIssueCount: applied.afterIssueCount,
     };
   };
 
@@ -2883,13 +3038,14 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 5-C. Step 3 ワンタップ「打順抜け・3アウト超過 AI自動補正」（既に読込済みの下書きデータでも全回再解析なしで数秒でピンポイント復元）
+  // 5-C. Step 3 ワンタップ「要確認の箇所をピンポイントAI再解析」（打順抜け・3アウト超過・球数/守備番号/走者進塁/低確信度すべてを他の確定打席を壊さず数秒で超拡大検証）
   const handleManualRepairOrderGaps = async () => {
     if (
       !effectiveCanImport ||
       !selectedMatchId ||
       isRepairingOrderGaps ||
-      reanalyzingInningKey
+      reanalyzingInningKey ||
+      reanalyzingAtBatId
     ) {
       return;
     }
@@ -2904,7 +3060,22 @@ export default function LiffScorebookImportPage() {
         (importScope === "both" || importScope === "bottom_only") &&
         Boolean(bottomStructure);
 
+      const topSrcUrl = topImage.processed?.dataUrl || savedTopImageUrl || null;
+      const botSrcUrl =
+        bottomImage.processed?.dataUrl || savedBottomImageUrl || null;
+
+      let beforeTotalIssues = 0;
+      let afterTotalIssues = 0;
+      let totalUpdatedCells = 0;
+      let anyModified = false;
+
       if (checkTop && topStructure) {
+        beforeTotalIssues += validateScorebookSheet(
+          topAtBats,
+          topStructure,
+          true
+        ).length;
+
         const detTop = reconcileSheetExcessOutsDeterministically(
           topAtBats,
           topStructure
@@ -2912,7 +3083,7 @@ export default function LiffScorebookImportPage() {
         let nextTop = detTop.atBats;
         let topModified = detTop.changed;
 
-        if (topImage.processed) {
+        if (topSrcUrl) {
           const topGaps = detectMissingOrderGaps(nextTop, topStructure);
           if (topGaps.length > 0) {
             const topGapRes = await reconcileMissingOrderGapsForSide(
@@ -2925,6 +3096,7 @@ export default function LiffScorebookImportPage() {
             if (topGapRes.repairedCount > 0) {
               nextTop = topGapRes.atBats;
               topModified = true;
+              totalUpdatedCells += topGapRes.repairedCount;
             }
           }
 
@@ -2940,16 +3112,42 @@ export default function LiffScorebookImportPage() {
             if (topOutRes.repairedCount > 0) {
               nextTop = topOutRes.atBats;
               topModified = true;
+              totalUpdatedCells += topOutRes.repairedCount;
             }
+          }
+
+          const topFlagRes = await reconcileFlaggedAtBatsForSide(
+            true,
+            topStructure,
+            topSrcUrl,
+            nextTop,
+            { throwOnFailure: true }
+          );
+          if (topFlagRes.updatedAtBatIds.length > 0) {
+            nextTop = topFlagRes.atBats;
+            topModified = true;
+            totalUpdatedCells += topFlagRes.updatedAtBatIds.length;
           }
         }
 
         if (topModified) {
           setTopAtBats(nextTop);
+          anyModified = true;
         }
+        afterTotalIssues += validateScorebookSheet(
+          nextTop,
+          topStructure,
+          true
+        ).length;
       }
 
       if (checkBottom && bottomStructure) {
+        beforeTotalIssues += validateScorebookSheet(
+          bottomAtBats,
+          bottomStructure,
+          false
+        ).length;
+
         const detBot = reconcileSheetExcessOutsDeterministically(
           bottomAtBats,
           bottomStructure
@@ -2957,7 +3155,7 @@ export default function LiffScorebookImportPage() {
         let nextBot = detBot.atBats;
         let botModified = detBot.changed;
 
-        if (bottomImage.processed) {
+        if (botSrcUrl) {
           const botGaps = detectMissingOrderGaps(nextBot, bottomStructure);
           if (botGaps.length > 0) {
             const botGapRes = await reconcileMissingOrderGapsForSide(
@@ -2970,6 +3168,7 @@ export default function LiffScorebookImportPage() {
             if (botGapRes.repairedCount > 0) {
               nextBot = botGapRes.atBats;
               botModified = true;
+              totalUpdatedCells += botGapRes.repairedCount;
             }
           }
 
@@ -2985,20 +3184,131 @@ export default function LiffScorebookImportPage() {
             if (botOutRes.repairedCount > 0) {
               nextBot = botOutRes.atBats;
               botModified = true;
+              totalUpdatedCells += botOutRes.repairedCount;
             }
+          }
+
+          const botFlagRes = await reconcileFlaggedAtBatsForSide(
+            false,
+            bottomStructure,
+            botSrcUrl,
+            nextBot,
+            { throwOnFailure: true }
+          );
+          if (botFlagRes.updatedAtBatIds.length > 0) {
+            nextBot = botFlagRes.atBats;
+            botModified = true;
+            totalUpdatedCells += botFlagRes.updatedAtBatIds.length;
           }
         }
 
         if (botModified) {
           setBottomAtBats(nextBot);
+          anyModified = true;
         }
+        afterTotalIssues += validateScorebookSheet(
+          nextBot,
+          bottomStructure,
+          false
+        ).length;
+      }
+
+      if (anyModified && isEditingSavedMatch) {
+        setHasDirtyReEdit(true);
+      }
+
+      if (beforeTotalIssues > 0 && afterTotalIssues === 0) {
+        toast.success(
+          "要確認の箇所を超拡大AI再解析し、すべての整合性チェックをクリアしました！"
+        );
+      } else if (anyModified || afterTotalIssues < beforeTotalIssues) {
+        toast.success(
+          `ピンポイントAI再解析が完了しました（確認おすすめ ${beforeTotalIssues}件 ➔ ${afterTotalIssues}件 / ${Math.max(
+            1,
+            totalUpdatedCells
+          )}箇所更新）`
+        );
+      } else {
+        toast.info(
+          "対象マスを超拡大再照合しましたが、紙面の記入省略等のため現在の読取値を維持しました。該当マスをタップして確認できます。"
+        );
       }
     } catch (err) {
       setErrorBanner(
-        normalizeClientFetchErrorMessage(err, "AI自動補正に失敗しました")
+        normalizeClientFetchErrorMessage(err, "ピンポイントAI再解析に失敗しました")
       );
     } finally {
       setIsRepairingOrderGaps(false);
+    }
+  };
+
+  // 5-C2. Step 3 個別1マス「この1マスをAI再読取」（他の確定打席には一切触れず指定した1マスのみを超拡大再読取）
+  const handleReanalyzeSingleAtBat = async (
+    isTop: boolean,
+    atBatId: string
+  ) => {
+    if (
+      !effectiveCanImport ||
+      !selectedMatchId ||
+      isRepairingOrderGaps ||
+      reanalyzingInningKey ||
+      reanalyzingAtBatId
+    ) {
+      return;
+    }
+
+    const structure = isTop ? topStructure : bottomStructure;
+    const srcUrl = isTop
+      ? topImage.processed?.dataUrl || savedTopImageUrl || null
+      : bottomImage.processed?.dataUrl || savedBottomImageUrl || null;
+    const currentSideList = isTop ? topAtBats : bottomAtBats;
+    const targetAb = currentSideList.find((ab) => ab.id === atBatId);
+    if (!structure || !srcUrl || !targetAb) return;
+
+    setReanalyzingAtBatId(atBatId);
+    setErrorBanner(null);
+
+    try {
+      const res = await reconcileFlaggedAtBatsForSide(
+        isTop,
+        structure,
+        srcUrl,
+        currentSideList,
+        {
+          targetAtBatIds: [atBatId],
+          forceApplyAll: true,
+          throwOnFailure: true,
+        }
+      );
+
+      if (isTop) {
+        setTopAtBats(res.atBats);
+      } else {
+        setBottomAtBats(res.atBats);
+      }
+      if (isEditingSavedMatch) {
+        setHasDirtyReEdit(true);
+      }
+
+      const refreshed = res.atBats.find((ab) => ab.id === atBatId);
+      const refreshedLabel = refreshed
+        ? `${refreshed.resultLabel}${
+            refreshed.battedDirection ? ` (${refreshed.battedDirection})` : ""
+          }`
+        : "";
+      toast.success(
+        `${targetAb.inning}回${isTop ? "表" : "裏"} ${
+          targetAb.battingOrder
+        }番を超拡大AI再読取しました${
+          refreshedLabel ? `：${refreshedLabel}` : ""
+        }`
+      );
+    } catch (err) {
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(err, "1マスのAI再読取に失敗しました")
+      );
+    } finally {
+      setReanalyzingAtBatId(null);
     }
   };
 
@@ -3661,11 +3971,22 @@ export default function LiffScorebookImportPage() {
                   }
                   reanalyzingInningKey={reanalyzingInningKey}
                   onRepairOrderGaps={
-                    canUseAiScan && hasAnyLocalProcessedImage
+                    canUseAiScan &&
+                    (Boolean(effectiveTopImageUrl) ||
+                      Boolean(effectiveBottomImageUrl))
                       ? () => void handleManualRepairOrderGaps()
                       : undefined
                   }
                   isRepairingOrderGaps={isRepairingOrderGaps}
+                  onReanalyzeAtBat={
+                    canUseAiScan &&
+                    (Boolean(effectiveTopImageUrl) ||
+                      Boolean(effectiveBottomImageUrl))
+                      ? (sideIsTop, abId) =>
+                          void handleReanalyzeSingleAtBat(sideIsTop, abId)
+                      : undefined
+                  }
+                  reanalyzingAtBatId={reanalyzingAtBatId}
                   timingSummary={timingSummary}
                   errorMessage={errorBanner}
                   onDismissError={() => setErrorBanner(null)}

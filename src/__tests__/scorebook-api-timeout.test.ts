@@ -18,6 +18,7 @@ describe("scorebook AI & upload mutation timeout protection", () => {
       "/api/liff/scorebook/analyze-inning-chunk",
       "/api/liff/scorebook/reconcile-missing-atbats",
       "/api/liff/scorebook/reconcile-inning-outs",
+      "/api/liff/scorebook/reconcile-flagged-atbats",
       "/api/liff/scorebook/extract-symbol-rules",
       "/api/matches/match-123/scorebook",
     ];
@@ -93,6 +94,9 @@ describe("scorebook AI & upload mutation timeout protection", () => {
     ).toBe(true);
     expect(
       isReadOnlyAiMutationUrl("/api/liff/scorebook/reconcile-inning-outs")
+    ).toBe(true);
+    expect(
+      isReadOnlyAiMutationUrl("/api/liff/scorebook/reconcile-flagged-atbats")
     ).toBe(true);
     expect(isReadOnlyAiMutationUrl("/api/liff/related-teams/ai-discover")).toBe(
       true

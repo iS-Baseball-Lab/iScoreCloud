@@ -70,9 +70,11 @@ import {
   type CanonicalPitchResult,
   type ConfidenceLevel,
   type ExcessOutInningSpec,
+  type FlaggedAtBatReconcileItemSpec,
   type ImportScopeMode,
   type MissingOrderGapSpec,
   type NormalizedBox,
+  type ReconciledFlaggedAtBatItem,
   type ResolvedMissingAtBatItem,
   type ScorebookBatterSlot,
   type ScorebookGridCorners,
@@ -4293,6 +4295,529 @@ ${batterRowsDesc.join("\n")}
       {
         success: false,
         error: `3アウト超過自動補正エラー: ${msg}`,
+        cooledModels,
+      },
+      500
+    );
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4-C. STEP 3「確認おすすめの箇所」＆ 個別1マス 超拡大ピンポイントAI再解析
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface ReconcileFlaggedAtBatsPayload {
+  teamId?: string;
+  matchId?: string;
+  isTop: boolean;
+  cropBase64?: string;
+  cropMimeType?: string;
+  structure: ScorebookSheetStructure;
+  specs: FlaggedAtBatReconcileItemSpec[];
+  legendBase64?: string;
+  legendMimeType?: string;
+  skipModels?: string[];
+}
+
+interface RawReconciledFlaggedItem extends RawGeminiAtBat {
+  sk?: string;
+  slotKey?: string;
+}
+
+interface RawReconcileFlaggedResponse {
+  items?: RawReconciledFlaggedItem[];
+  ab?: RawReconciledFlaggedItem[];
+}
+
+liffScorebookRouter.post("/reconcile-flagged-atbats", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return c.json(
+      { success: false, error: "GEMINI_API_KEY が設定されていません" },
+      500
+    );
+  }
+
+  const db = drizzle(c.env.DB, { schema });
+  const cooledModels: string[] = [];
+
+  try {
+    const body = (await c.req.json()) as ReconcileFlaggedAtBatsPayload;
+    const aiAccess = await requireScorebookAiAccess(
+      c,
+      db,
+      body.teamId,
+      body.matchId
+    );
+    if (!aiAccess.ok) {
+      return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
+
+    if (
+      !body.cropBase64 ||
+      !body.structure ||
+      !Array.isArray(body.specs) ||
+      body.specs.length === 0
+    ) {
+      return c.json({ success: true, items: [], cooledModels });
+    }
+
+    const batchSpecs = body.specs.slice(0, 6);
+    const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
+    const hasRunnerPanel = batchSpecs.some(
+      (s) => Array.isArray(s.precedingRunners) && s.precedingRunners.length > 0
+    );
+
+    const imageParts: GeminiContentPart[] = [
+      {
+        inlineData: {
+          mimeType: body.cropMimeType || "image/jpeg",
+          data: body.cropBase64,
+        },
+      },
+    ];
+
+    const legendPart = await resolveLegendImagePart(
+      c,
+      db,
+      aiAccess.teamId,
+      body.legendBase64,
+      body.legendMimeType
+    );
+    let legendNote = "";
+    if (legendPart) {
+      imageParts.push(legendPart);
+      legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
+    }
+
+    const specLines = batchSpecs.map((s) => {
+      const pitchStr =
+        s.currentPitches.length > 0 ? s.currentPitches.join(",") : "未読取";
+      const runsNote =
+        s.confirmedInningRuns !== null
+          ? `この回の確定得点=${s.confirmedInningRuns}点(現在集計=${s.currentInningRunsSum}点)`
+          : `現在集計=${s.currentInningRunsSum}点`;
+      const issuesText = s.issueMessages.join(" ／ ");
+      return `・[${s.slotKey}] ${s.inning}回${sideLabel} ${s.battingOrder}番 ${s.batterName}（列c:${s.columnIndex}, 投手:${s.pitcherName || "相手投手"}）
+  - 打席開始前: ${s.outsBefore}死 / 塁上走者: ${s.occupiedBasesSummary} / イニングアウト合計:${s.currentInningOutsSum} / ${runsNote}
+  - 現在の仮読取: rc="${s.currentResultCode}", rl="${s.currentResultLabel}", dir="${s.currentDirection}", o:${s.currentOutsInPlay}, ru:${s.currentRunsInPlay}, rbi:${s.currentRbi}, p:[${pitchStr}]
+  - 🔍再検算ポイント: ${issuesText}`;
+    });
+
+    const firstSpec = batchSpecs[0];
+    const exPitcher =
+      firstSpec.pitcherName ||
+      body.structure.pitchers[0]?.name ||
+      "相手投手";
+
+    const prompt = `あなたは日本の4分割スコアブック（早稲田式・成美堂式・リトルシニア式）のプロ公式記録員AIです。
+初回イニング走査のあと、野球規則・球数・打球方向・得点整合の自動検算で「要確認」となった対象マス [${batchSpecs
+      .map((s) => s.slotKey)
+      .join(", ")}] を、通常の約2.5倍の高解像度で切り出して再検証します。
+添付画像1には各行ごとに **[全体マス | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下・打球番号拡大${
+      hasRunnerPanel ? " | 先行走者マス参照" : ""
+    }]** が左から順に並んでいます。${legendNote}
+
+【再検算対象マスと打席開始前の確定状況】
+${specLines.join("\n")}
+
+【🔥超拡大ピンポイント再検証の厳守ルール】
+1. **BSO超拡大パネルの1球精査（捏造厳禁！）**:
+   - 左の **[BSO超拡大]** でボール記号（ー/・）、見逃しS（○）、空振りS（●/×/／）、ファウル（△/V）、バントファウル、牽制（1塁牽制=PO1, 2塁牽制=PO2, 3塁牽制=PO3）、ボーク（BK）を1球ずつ確認してください（数字1,2,3...があればその順）。
+   - **重要（非捏造原則）**: 紙のスコアブック自体で記入者が4球目のボール記号や投球記号を書き漏らしている場合（例: 右下に『B』と本塁→1塁実線があるがBSO欄にはボールが3個しか書かれていない場合）は、**書かれていない記号を勝手に捏造してはいけません**。紙面に実在する記号だけを "p" に出力し、"cf":"h", "cr":"紙面BSOはボール3球のみ記入" のように事実を記載してください。逆に薄くて初回に見落としていた記号が **[BSO超拡大]** に実在する場合は確実に拾ってください。
+   - 無走者時の牽制・ボーク誤読（実はボール横棒『ー』）はボール "B" に修正してください。
+2. **右下・打球番号拡大パネルのにじみ分離**:
+   - **『6-3（遊ゴロ）』vs『8-3（中ゴロ誤読）』vs『4-3（二ゴロ）』vs『5-3（三ゴロ）』** の数字の輪郭・ストロークの抜けを **[右下・打球番号拡大]** で厳密に見分けてください（実際に外野手から一塁送球アウトのライトゴロ『9-3』等が明確に書かれている場合のみそのまま保持し、"cf":"h" としてください）。
+   - **封殺ゴロ（rc:"groundout", o:1）と野選オールセーフ（rc:"fc", o:0）の厳密分離**: 先行走者を二塁・三塁・本塁でフォースアウトにした『6-4』『4-6』『5-4』『6B』『5C』『2H』等は **必ず rc:"groundout", o:1** です（rc:"fc" は全員セーフ o:0 の時のみ）。
+   - **インフィールドフライ・犠打・犠飛・振り逃げの公認野球規則チェック**:
+     ・インフィールドフライ（rc:"infield_fly"）は無死/1死かつ一・二塁または満塁の内野飛球のみ（守備番号無しなら dir:"IF"、外野7/8/9は絶対不可。条件外なら通常の rc:"flyout"）。
+     ・犠打（rc:"sac_bunt"）は無死/1死かつ走者が安全に進塁したバントアウトのみ（2死や無走者、先行走者封殺時は rc:"groundout"）。
+     ・犠飛（rc:"sac_fly"）は無死/1死で捕球後に走者が本塁生還し打点がつく外野飛球/邪飛のみ（二塁→三塁タッチアップのみや2死時は rc:"flyout"）。
+     ・無死/1死で一塁走者ありの場面では振り逃げは不成立のため必ず三振アウト（rc:"strikeout", o:1）にしてください。
+3. **中央ダイヤ・進塁拡大 ＆ 先行走者マス参照のクロス照合**:
+   - 当該打者の中央『●』は本塁打（4辺実線）でない限り**後続打席での生還**なので、この打者自身は **ru:0, rbi:0** です。
+   - 逆に打席開始前に塁上走者がいる場合は **[先行走者マス参照]** を見て、この打者の打席中に先行走者が本塁生還（3塁→本塁実線＋中央●）したか、封殺・盗塁死・牽制死（Ⅰ/Ⅱ/Ⅲ）になったかを確認し、"a"（進塁配列）・"ru"（この打席で入った得点）・"rbi"（公認野球規則9.04準拠の打点：満塁以外の四死球・失策・内野ゴロ併殺・暴投捕逸ボーク生還は rbi:0）を正確に一致させてください。
+   - "o" は**この1打席で増えたアウト数（0, 1, 2, 3）**のみを出力し、累積2死・3死を "o":2, "o":3 と誤記しないでください。
+
+【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。items配列に [${batchSpecs
+      .map((s) => s.slotKey)
+      .join(", ")}] を順番通り全件出力すること）】
+{"items":[{"sk":"${firstSpec.slotKey}","c":${firstSpec.columnIndex},"bo":${firstSpec.battingOrder},"pt":"${exPitcher}","obs":"左:○,ー,●/中:Ⅰ/右下:6-3","b1":false,"p":["S","B","W","X"],"eo":${Math.min(
+      3,
+      firstSpec.outsBefore + 1
+    )},"o":1,"dir":"6-3","rc":"groundout","rl":"遊ゴロ","rbi":0,"ru":0,"a":[],"cf":"h","cr":""}]}`;
+
+    const validateFlaggedResp = (
+      parsed: RawReconcileFlaggedResponse
+    ): string | null => {
+      const arr = parsed.items || parsed.ab || [];
+      if (!Array.isArray(arr) || arr.length === 0) {
+        return "要確認マス再解析結果が0件です";
+      }
+      return null;
+    };
+
+    // 1〜6マスの超拡大精密検証のため "structure" モード（gemini-4-hydrogen thinkingLevel: HIGH）で高精度推論する
+    const rawResp =
+      await callGeminiStructuredJson<RawReconcileFlaggedResponse>(
+        apiKey,
+        prompt,
+        imageParts,
+        "structure",
+        validateFlaggedResp,
+        {
+          maxBudgetMs: 62_000,
+          skipModels: body.skipModels,
+          cooledModelsOut: cooledModels,
+        }
+      );
+
+    const rawItems = rawResp.items || rawResp.ab || [];
+    const items: ReconciledFlaggedAtBatItem[] = [];
+
+    for (let idx = 0; idx < batchSpecs.length; idx++) {
+      const spec = batchSpecs[idx];
+      const matched =
+        rawItems.find(
+          (it) =>
+            (it.sk || it.slotKey || "").trim().toUpperCase() ===
+            spec.slotKey.toUpperCase()
+        ) ||
+        (rawItems.length === batchSpecs.length ? rawItems[idx] : undefined);
+
+      if (!matched) continue;
+
+      const rlText = (matched.rl ?? matched.resultLabel ?? "").trim();
+      if (/^(?:白紙|空欄|空白|未記入|切り線|斜線のみ)$/i.test(rlText)) {
+        continue;
+      }
+
+      const activeBases: Record<"1B" | "2B" | "3B", boolean> = {
+        "1B": spec.precedingRunners.some((r) => r.startBase === "1B"),
+        "2B": spec.precedingRunners.some((r) => r.startBase === "2B"),
+        "3B": spec.precedingRunners.some((r) => r.startBase === "3B"),
+      };
+      const runningOuts = Math.min(2, Math.max(0, spec.outsBefore));
+      const activeRunnersCount =
+        (activeBases["1B"] ? 1 : 0) +
+        (activeBases["2B"] ? 1 : 0) +
+        (activeBases["3B"] ? 1 : 0);
+
+      const colIndex = Math.max(1, spec.columnIndex || 1);
+      const battingOrder = spec.battingOrder;
+      const ocrPitcherHint = (matched.pt ?? matched.pitcherName ?? "").trim();
+      const matchup = resolveActiveMatchupFromStructure(
+        body.structure,
+        spec.inning,
+        battingOrder,
+        ocrPitcherHint
+      );
+
+      const reconciled = reconcileRawAtBatEvidence(
+        matched,
+        activeBases,
+        runningOuts
+      );
+
+      let resultCode = inferCanonicalResultCode(
+        reconciled.rawResultCode,
+        reconciled.rawResultLabel || reconciled.rawDir
+      );
+
+      if (
+        resultCode === "double_play" &&
+        (activeRunnersCount === 0 || runningOuts >= 2)
+      ) {
+        resultCode = /[FL]$|飛|直|ライナー/i.test(
+          `${reconciled.rawDir || ""} ${reconciled.rawResultLabel || ""}`
+        )
+          ? "flyout"
+          : "groundout";
+      }
+
+      if (
+        (resultCode === "dropped_third_strike" ||
+          resultCode === "dropped_third_strike_out") &&
+        runningOuts < 2 &&
+        activeBases["1B"]
+      ) {
+        resultCode = "strikeout";
+      }
+
+      let harmonizedFielding = harmonizeOcrFieldingAndLabel(
+        resultCode,
+        reconciled.rawDir,
+        reconciled.rawResultLabel
+      );
+
+      const hitRelayChain = extractRelayChainFromHitDirection(
+        resultCode,
+        reconciled.rawDir
+      );
+      let advances: ScorebookV2Advance[] = reconciled.rawAdvances.map((adv) => {
+        const pnVal = adv.pn ?? adv.pitchNumber;
+        const isOutAdv = Boolean(adv.io ?? adv.isOut);
+        const normTc =
+          normalizeThrowChainToken(adv.tc ?? adv.throwChain) ||
+          (isOutAdv ? hitRelayChain : undefined);
+        return {
+          id: crypto.randomUUID(),
+          runnerName: (adv.rn ?? adv.runnerName ?? "").trim(),
+          from: normalizeFromBase(adv.f ?? adv.from),
+          to: normalizeToBase(adv.t ?? adv.to),
+          method: normalizeAdvanceMethod(adv.m ?? adv.method),
+          isOut: isOutAdv,
+          pitchNumber:
+            typeof pnVal === "number" && pnVal > 0 ? pnVal : undefined,
+          ...(normTc ? { throwChain: normTc } : {}),
+        };
+      });
+
+      const isSafeBatterReach =
+        resultCode === "single" ||
+        resultCode === "double" ||
+        resultCode === "triple" ||
+        resultCode === "home_run" ||
+        resultCode === "walk" ||
+        resultCode === "intentional_walk" ||
+        resultCode === "hit_by_pitch" ||
+        resultCode === "interference" ||
+        resultCode === "dropped_third_strike" ||
+        resultCode === "error";
+
+      if (isSafeBatterReach && advances.length > 0) {
+        advances = advances.filter((adv) => {
+          if (!adv.isOut || adv.from === "BAT") return true;
+          const occupiedBefore = activeBases[adv.from];
+          if (
+            !occupiedBefore &&
+            (adv.method === "caught_stealing" ||
+              adv.method === "pickoff_out" ||
+              adv.method === "fc" ||
+              adv.method === "appeal_out")
+          ) {
+            return false;
+          }
+          if (
+            (resultCode === "walk" ||
+              resultCode === "intentional_walk" ||
+              resultCode === "hit_by_pitch" ||
+              resultCode === "interference") &&
+            !occupiedBefore
+          ) {
+            return false;
+          }
+          return true;
+        });
+      }
+
+      const batterOverrunOut = advances.some((a) =>
+        isOcrBatterStretchOutAdvance(
+          a,
+          matchup.batterName || spec.batterName,
+          resultCode,
+          activeBases,
+          advances
+        )
+      )
+        ? 1
+        : 0;
+      const occupiedBaseRunnerOuts = Math.min(
+        activeRunnersCount,
+        advances.filter(
+          (a) =>
+            a.isOut &&
+            a.from !== "BAT" &&
+            activeBases[a.from] &&
+            !isOcrBatterStretchOutAdvance(
+              a,
+              matchup.batterName || spec.batterName,
+              resultCode,
+              activeBases,
+              advances
+            )
+        ).length
+      );
+      const rawOutsVal = Math.max(0, Math.min(3, reconciled.outsInPlay));
+
+      const isDefiniteBatterOut =
+        resultCode === "groundout" ||
+        resultCode === "flyout" ||
+        resultCode === "infield_fly" ||
+        resultCode === "strikeout" ||
+        resultCode === "dropped_third_strike_out" ||
+        resultCode === "sac_bunt" ||
+        resultCode === "sac_fly" ||
+        resultCode === "interference_out";
+
+      let outsVal = rawOutsVal;
+      if (resultCode === "triple_play") {
+        outsVal = Math.max(
+          1,
+          Math.min(3 - runningOuts, 1 + activeRunnersCount)
+        );
+      } else if (resultCode === "double_play") {
+        outsVal = Math.min(3 - runningOuts, 2);
+      } else if (isDefiniteBatterOut) {
+        if (
+          isForceOutGroundout(
+            resultCode,
+            harmonizedFielding.battedDirection,
+            harmonizedFielding.resultLabel
+          )
+        ) {
+          outsVal =
+            occupiedBaseRunnerOuts >= 2
+              ? Math.min(3 - runningOuts, occupiedBaseRunnerOuts)
+              : 1;
+        } else if (
+          occupiedBaseRunnerOuts === 0 &&
+          rawOutsVal >= 2 &&
+          activeRunnersCount >= 1 &&
+          runningOuts <= 1
+        ) {
+          outsVal = Math.min(
+            3 - runningOuts,
+            1 + activeRunnersCount,
+            rawOutsVal
+          );
+          if (
+            resultCode === "groundout" &&
+            outsVal === 2 &&
+            /^[1-9]-[1-9]-[1-9]$/.test((reconciled.rawDir || "").trim())
+          ) {
+            resultCode = "double_play";
+          }
+        } else {
+          outsVal = Math.min(3 - runningOuts, 1 + occupiedBaseRunnerOuts);
+        }
+      } else if (isSafeBatterReach) {
+        outsVal = Math.min(2, occupiedBaseRunnerOuts + batterOverrunOut);
+      } else if (resultCode === "fc") {
+        outsVal = rawOutsVal >= 1 || occupiedBaseRunnerOuts >= 1 ? 1 : 0;
+        if (outsVal >= 1) {
+          const repairedFc = normalizeLegacyForceOutAtBat({
+            resultCode,
+            battedDirection: harmonizedFielding.battedDirection,
+            resultLabel: harmonizedFielding.resultLabel,
+            outsInPlay: outsVal,
+            advances,
+          });
+          if (repairedFc.resultCode !== "fc") {
+            resultCode = repairedFc.resultCode;
+            harmonizedFielding = {
+              battedDirection: repairedFc.battedDirection,
+              resultLabel: repairedFc.resultLabel,
+            };
+          }
+        }
+      } else if (resultCode === "other") {
+        outsVal =
+          occupiedBaseRunnerOuts > 0
+            ? Math.min(2, occupiedBaseRunnerOuts)
+            : rawOutsVal > 0
+              ? 1
+              : 0;
+      }
+
+      const normalizedPitches = normalizePitchArray(
+        reconciled.rawPitches,
+        resultCode,
+        advances,
+        activeBases
+      );
+      harmonizeStrikeoutWithPitches(
+        resultCode,
+        harmonizedFielding,
+        normalizedPitches
+      );
+      const { balls, strikes } = computeCountFromPitches(normalizedPitches);
+
+      const inningMeta = body.structure.innings.find(
+        (m) => m.inning === spec.inning
+      );
+      const batterRowBox = body.structure.batters.find(
+        (b) => b.battingOrder === battingOrder
+      )?.rowBox;
+      const skewedQuad = getCellQuadInStructure(
+        body.structure,
+        spec.inning,
+        colIndex,
+        battingOrder,
+        0
+      );
+      const cellBox = skewedQuad
+        ? quadToBoundingBox(skewedQuad)
+        : computeCartesianCellBox(
+            undefined,
+            inningMeta?.columnBox,
+            inningMeta?.columnCount ?? 1,
+            colIndex,
+            batterRowBox
+          );
+
+      const hpCount = advances.filter((a) => a.to === "HP" && !a.isOut).length;
+      const isHr = resultCode === "home_run";
+      const rawRunsInPlay =
+        toFiniteInt(matched.ru ?? matched.runsInPlay, 0) || 0;
+      const maxPossibleRuns = activeRunnersCount + (isHr ? 1 : 0);
+      const effectiveRuns = Math.min(
+        maxPossibleRuns,
+        Math.max(rawRunsInPlay, hpCount, isHr ? 1 : 0)
+      );
+      const parsedRbi = toFiniteInt(matched.rbi);
+
+      const rawConf = (matched.cf ?? matched.confidence ?? "h").toLowerCase();
+      const confidence: ConfidenceLevel =
+        rawConf === "l" || rawConf === "low"
+          ? "low"
+          : rawConf === "m" || rawConf === "medium"
+            ? "medium"
+            : "high";
+
+      items.push({
+        slotKey: spec.slotKey,
+        atBatId: spec.atBatId,
+        atBat: {
+          id: spec.atBatId,
+          inning: spec.inning,
+          isTop: body.isTop,
+          columnIndex: colIndex,
+          battingOrder,
+          batterName: matchup.batterName || spec.batterName,
+          batterPlayerId: matchup.batterPlayerId,
+          pitcherName:
+            matchup.pitcherName || spec.pitcherName || ocrPitcherHint,
+          pitcherPlayerId: matchup.pitcherPlayerId,
+          resultCode,
+          resultLabel: harmonizedFielding.resultLabel,
+          battedDirection: harmonizedFielding.battedDirection,
+          rbi: Math.max(0, Math.min(effectiveRuns, parsedRbi ?? effectiveRuns)),
+          outsInPlay: outsVal,
+          endingOuts: Math.min(3, runningOuts + outsVal),
+          runsInPlay: effectiveRuns,
+          balls,
+          strikes,
+          pitches: normalizedPitches,
+          advances,
+          confidence,
+          confidenceReason:
+            (matched.cr ?? matched.confidenceReason ?? "").trim() || undefined,
+          cellBox,
+        },
+      });
+    }
+
+    return c.json({
+      success: true,
+      items,
+      cooledModels,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return c.json(
+      {
+        success: false,
+        error: `要確認マスAI再解析エラー: ${msg}`,
         cooledModels,
       },
       500

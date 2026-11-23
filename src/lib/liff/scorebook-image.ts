@@ -1,6 +1,7 @@
 // filepath: src/lib/liff/scorebook-image.ts
 import type {
   ExcessOutInningSpec,
+  FlaggedAtBatReconcileItemSpec,
   MissingOrderGapSpec,
   NormalizedBox,
   ScorebookGridCorners,
@@ -2676,3 +2677,398 @@ export async function buildInningOutsReconcileCrop(
     return null;
   }
 }
+
+/**
+ * STEP 3 の「確認おすすめの箇所」または個別1マスの超拡大AI再解析向けに、
+ * 各対象マス [F1, F2...] を最大2.5倍解像度の 4〜5パネル並列ビュー
+ * [全体マス | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下打球・守備番号分離拡大 | (走者あり時) 先行走者マス参照]
+ * として切り出す。
+ */
+export async function buildFlaggedAtBatsReconcileCrop(
+  sourceDataUrl: string,
+  structure: ScorebookSheetStructure,
+  specs: readonly FlaggedAtBatReconcileItemSpec[]
+): Promise<{ base64: string; mimeType: string } | null> {
+  if (
+    !sourceDataUrl ||
+    specs.length === 0 ||
+    structure.batters.length === 0
+  ) {
+    return null;
+  }
+
+  try {
+    const img = await loadImageFromUrl(sourceDataUrl);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (w < 120 || h < 120) return null;
+
+    const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
+    if (!cachedRgba) return null;
+    const fullSrcData = cachedRgba.data;
+
+    const batchSpecs = specs.slice(0, 6);
+    const hasAnyPrecedingRunner = batchSpecs.some(
+      (s) => s.precedingRunners.length > 0
+    );
+
+    const rowCellH = batchSpecs.length <= 3 ? 252 : 216;
+    const leftLabelW = 220;
+    const candGapW = 10;
+    const zoomGap = 4;
+    const cellW = 264;
+    const bsoW = 160;
+    const diamondW = 184;
+    const dirW = 184;
+    const runnerW = hasAnyPrecedingRunner ? 192 : 0;
+    const padX = 12;
+    const topBannerH = 38;
+    const candHeaderH = 26;
+    const rowBlockH = candHeaderH + rowCellH;
+    const rowGapH = 10;
+
+    const totalW =
+      padX * 2 +
+      leftLabelW +
+      candGapW +
+      cellW +
+      zoomGap +
+      bsoW +
+      zoomGap +
+      diamondW +
+      zoomGap +
+      dirW +
+      (hasAnyPrecedingRunner ? zoomGap + runnerW : 0);
+    const totalH =
+      topBannerH +
+      batchSpecs.length * rowBlockH +
+      (batchSpecs.length - 1) * rowGapH +
+      12;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = totalW;
+    canvas.height = totalH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      releaseCanvas(canvas);
+      return null;
+    }
+
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, totalW, totalH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    ctx.fillStyle = "#fbbf24";
+    ctx.font = "bold 13px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `【要確認マス 超拡大ピンポイントAI精密照合】各行の [全体マス | BSO超拡大 | 中央ダイヤ | 右下打球番号${
+        hasAnyPrecedingRunner ? " | 先行走者マス" : ""
+      }] を照合`,
+      padX,
+      19
+    );
+
+    const candX = padX + leftLabelW + candGapW;
+    const bsoX = candX + cellW + zoomGap;
+    const diamondX = bsoX + bsoW + zoomGap;
+    const dirX = diamondX + diamondW + zoomGap;
+    const runnerX = dirX + dirW + zoomGap;
+
+    for (let idx = 0; idx < batchSpecs.length; idx++) {
+      const s = batchSpecs[idx];
+      const blockTopY = topBannerH + idx * (rowBlockH + rowGapH);
+      const cellTopY = blockTopY + candHeaderH;
+
+      // 左側：状況・検証ポイントカード
+      ctx.fillStyle = "#1e293b";
+      ctx.fillRect(padX, blockTopY, leftLabelW, rowBlockH);
+      ctx.fillStyle = "#d97706";
+      ctx.fillRect(padX, blockTopY, leftLabelW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(
+        `[${s.slotKey}] ${s.inning}回 ${s.battingOrder}番 [c:${s.columnIndex}]`,
+        padX + 8,
+        blockTopY + 13
+      );
+
+      ctx.fillStyle = "#f8fafc";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText((s.batterName || "").slice(0, 11), padX + 8, cellTopY + 22);
+
+      ctx.fillStyle = "#93c5fd";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(
+        `前:${s.outsBefore}死 / ${(s.occupiedBasesSummary || "走者なし").slice(
+          0,
+          12
+        )}`,
+        padX + 8,
+        cellTopY + 46
+      );
+
+      ctx.fillStyle = "#cbd5e1";
+      ctx.fillText(
+        `仮:${(s.currentResultLabel || "").slice(0, 7)} (${
+          s.currentDirection || "-"
+        })`,
+        padX + 8,
+        cellTopY + 68
+      );
+
+      ctx.fillStyle = "#fcd34d";
+      ctx.font = "bold 10px sans-serif";
+      const issueLine1 = (s.issueMessages[0] || "").slice(0, 18);
+      const issueLine2 = (s.issueMessages[0] || "").slice(18, 36);
+      if (issueLine1) {
+        ctx.fillText(issueLine1, padX + 8, cellTopY + 92);
+      }
+      if (issueLine2) {
+        ctx.fillText(issueLine2, padX + 8, cellTopY + 108);
+      }
+
+      // パネル見出し
+      ctx.fillStyle = "#0284c7";
+      ctx.fillRect(candX, blockTopY, cellW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(
+        `[${s.slotKey}] ${s.inning}回 ${s.battingOrder}番 全体マス`,
+        candX + cellW / 2,
+        blockTopY + 13
+      );
+
+      ctx.fillStyle = "#0f766e";
+      ctx.fillRect(bsoX, blockTopY, bsoW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText("BSO超拡大", bsoX + bsoW / 2, blockTopY + 13);
+
+      ctx.fillStyle = "#4338ca";
+      ctx.fillRect(diamondX, blockTopY, diamondW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText(
+        "中央ダイヤ・進塁拡大",
+        diamondX + diamondW / 2,
+        blockTopY + 13
+      );
+
+      ctx.fillStyle = "#be123c";
+      ctx.fillRect(dirX, blockTopY, dirW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText("右下・打球番号拡大", dirX + dirW / 2, blockTopY + 13);
+
+      if (hasAnyPrecedingRunner) {
+        ctx.fillStyle = "#6d28d9";
+        ctx.fillRect(runnerX, blockTopY, runnerW, candHeaderH);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 10px sans-serif";
+        const pr0 = s.precedingRunners[0];
+        ctx.fillText(
+          pr0
+            ? `先行走者(${pr0.startBase}:${pr0.battingOrder}番)`
+            : "先行走者なし",
+          runnerX + runnerW / 2,
+          blockTopY + 13
+        );
+      }
+
+      const fullQuad = getCellQuadInStructure(
+        structure,
+        s.inning,
+        s.columnIndex,
+        s.battingOrder,
+        0.055
+      );
+      if (!fullQuad) continue;
+
+      // 1. 全体マス
+      const fullImgData = ctx.createImageData(cellW, rowCellH);
+      warpQuadFromRgbaBuffer(
+        fullSrcData,
+        w,
+        h,
+        normalizedQuadToPixelQuad(fullQuad, w, h),
+        fullImgData.data,
+        cellW,
+        rowCellH
+      );
+      ctx.putImageData(fullImgData, candX, cellTopY);
+      ctx.strokeStyle = "#0284c7";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(candX, cellTopY, cellW, rowCellH);
+
+      const tightQuad =
+        getCellQuadInStructure(
+          structure,
+          s.inning,
+          s.columnIndex,
+          s.battingOrder,
+          0.015
+        ) || fullQuad;
+
+      // 2. BSO超拡大
+      const bsoQuad = sliceQuadSubRegion(tightQuad, -0.03, 0.37, -0.01, 1.01);
+      const bsoImgData = ctx.createImageData(bsoW, rowCellH);
+      warpQuadFromRgbaBuffer(
+        fullSrcData,
+        w,
+        h,
+        normalizedQuadToPixelQuad(bsoQuad, w, h),
+        bsoImgData.data,
+        bsoW,
+        rowCellH
+      );
+      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
+      ctx.putImageData(bsoImgData, bsoX, cellTopY);
+      ctx.strokeStyle = "#0d9488";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(bsoX, cellTopY, bsoW, rowCellH);
+
+      // 3. 中央ダイヤモンド・上辺進塁メモ超拡大
+      const diamondQuad = sliceQuadSubRegion(tightQuad, 0.24, 0.96, 0.02, 0.86);
+      const diamondImgData = ctx.createImageData(diamondW, rowCellH);
+      warpQuadFromRgbaBuffer(
+        fullSrcData,
+        w,
+        h,
+        normalizedQuadToPixelQuad(diamondQuad, w, h),
+        diamondImgData.data,
+        diamondW,
+        rowCellH
+      );
+      applyStrokeValleySharpen(diamondImgData, diamondW, rowCellH);
+      ctx.putImageData(diamondImgData, diamondX, cellTopY);
+      ctx.strokeStyle = "#6366f1";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(diamondX, cellTopY, diamondW, rowCellH);
+
+      // 4. 右下象限（打球記号・守備番号 6-3 vs 8-3 / E6 / B / K 等）超拡大
+      const dirQuad = sliceQuadSubRegion(tightQuad, 0.42, 1.02, 0.38, 1.02);
+      const dirImgData = ctx.createImageData(dirW, rowCellH);
+      warpQuadFromRgbaBuffer(
+        fullSrcData,
+        w,
+        h,
+        normalizedQuadToPixelQuad(dirQuad, w, h),
+        dirImgData.data,
+        dirW,
+        rowCellH
+      );
+      applyStrokeValleySharpen(dirImgData, dirW, rowCellH);
+      ctx.putImageData(dirImgData, dirX, cellTopY);
+      ctx.strokeStyle = "#e11d48";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(dirX, cellTopY, dirW, rowCellH);
+
+      // 5. 先行走者マス参照（本塁に近い最大2名まで上下分割または単独拡大で表示）
+      if (hasAnyPrecedingRunner) {
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(runnerX, cellTopY, runnerW, rowCellH);
+        const prs = s.precedingRunners.slice(0, 2);
+        if (prs.length === 0) {
+          ctx.fillStyle = "#64748b";
+          ctx.font = "bold 11px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(
+            "塁上走者なし",
+            runnerX + runnerW / 2,
+            cellTopY + rowCellH / 2
+          );
+        } else if (prs.length === 1) {
+          const pr = prs[0];
+          const prQuad =
+            pr.battingOrder >= 1
+              ? getCellQuadInStructure(
+                  structure,
+                  pr.inning,
+                  pr.columnIndex || 1,
+                  pr.battingOrder,
+                  0.025
+                )
+              : null;
+          if (prQuad) {
+            const prImg = ctx.createImageData(runnerW, rowCellH);
+            warpQuadFromRgbaBuffer(
+              fullSrcData,
+              w,
+              h,
+              normalizedQuadToPixelQuad(prQuad, w, h),
+              prImg.data,
+              runnerW,
+              rowCellH
+            );
+            applyStrokeValleySharpen(prImg, runnerW, rowCellH);
+            ctx.putImageData(prImg, runnerX, cellTopY);
+          }
+        } else {
+          const subGap = 4;
+          const topH = Math.floor((rowCellH - subGap) / 2);
+          const botH = rowCellH - subGap - topH;
+          const heights = [topH, botH];
+          const yOffsets = [cellTopY, cellTopY + topH + subGap];
+          for (let rIdx = 0; rIdx < 2; rIdx++) {
+            const pr = prs[rIdx];
+            const subH = heights[rIdx];
+            const subY = yOffsets[rIdx];
+            const prQuad =
+              pr.battingOrder >= 1
+                ? getCellQuadInStructure(
+                    structure,
+                    pr.inning,
+                    pr.columnIndex || 1,
+                    pr.battingOrder,
+                    0.02
+                  )
+                : null;
+            if (!prQuad) continue;
+            const prSubQuad = sliceQuadSubRegion(prQuad, 0.18, 0.98, 0.04, 0.96);
+            const prImg = ctx.createImageData(runnerW, subH);
+            warpQuadFromRgbaBuffer(
+              fullSrcData,
+              w,
+              h,
+              normalizedQuadToPixelQuad(prSubQuad, w, h),
+              prImg.data,
+              runnerW,
+              subH
+            );
+            applyStrokeValleySharpen(prImg, runnerW, subH);
+            ctx.putImageData(prImg, runnerX, subY);
+            ctx.fillStyle = "#5b21b6";
+            ctx.fillRect(runnerX, subY, 58, 16);
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "bold 9px sans-serif";
+            ctx.textAlign = "left";
+            ctx.fillText(
+              `${pr.startBase}:${pr.battingOrder}番`,
+              runnerX + 4,
+              subY + 8
+            );
+          }
+        }
+        ctx.strokeStyle = "#7c3aed";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(runnerX, cellTopY, runnerW, rowCellH);
+      }
+    }
+
+    const mimeType = "image/jpeg";
+    const outBase64 = stripDataUrlPrefix(canvas.toDataURL(mimeType, 0.93));
+    releaseCanvas(canvas);
+    return {
+      base64: outBase64,
+      mimeType,
+    };
+  } catch {
+    return null;
+  }
+}
+

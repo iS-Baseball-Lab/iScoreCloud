@@ -73,6 +73,7 @@ export function isScorebookVisionAiUrl(rawUrl: string): boolean {
     rawUrl.includes("/scorebook/analyze-inning") ||
     rawUrl.includes("/scorebook/reconcile-missing-atbats") ||
     rawUrl.includes("/scorebook/reconcile-inning-outs") ||
+    rawUrl.includes("/scorebook/reconcile-flagged-atbats") ||
     rawUrl.includes("/scorebook/extract-symbol-rules") ||
     (rawUrl.includes("/api/matches/") && rawUrl.endsWith("/scorebook"))
   );
@@ -85,7 +86,8 @@ export function isReadOnlyAiMutationUrl(rawUrl: string): boolean {
     rawUrl.includes("/scorebook/analyze-structure") ||
     rawUrl.includes("/scorebook/analyze-inning") ||
     rawUrl.includes("/scorebook/reconcile-missing-atbats") ||
-    rawUrl.includes("/scorebook/reconcile-inning-outs")
+    rawUrl.includes("/scorebook/reconcile-inning-outs") ||
+    rawUrl.includes("/scorebook/reconcile-flagged-atbats")
   );
 }
 

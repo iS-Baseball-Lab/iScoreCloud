@@ -53,6 +53,7 @@ import {
   computeCountFromPitches,
   detectExcessOutInnings,
   detectMissingOrderGaps,
+  isPinpointCellReconcilableIssue,
   normalizeInningAtBatColumns,
   resolveActiveMatchupFromStructure,
   resolveEffectiveBattingCycleLength,
@@ -149,6 +150,8 @@ interface Step3PinpointReviewProps {
   reanalyzingInningKey?: string | null;
   onRepairOrderGaps?: () => void;
   isRepairingOrderGaps?: boolean;
+  onReanalyzeAtBat?: (isTop: boolean, atBatId: string) => void;
+  reanalyzingAtBatId?: string | null;
   timingSummary?: ScorebookAnalysisTimingSummary | null;
   errorMessage?: string | null;
   onDismissError?: () => void;
@@ -174,6 +177,8 @@ export function Step3PinpointReview({
   reanalyzingInningKey = null,
   onRepairOrderGaps,
   isRepairingOrderGaps = false,
+  onReanalyzeAtBat,
+  reanalyzingAtBatId = null,
   timingSummary = null,
   errorMessage,
   onDismissError,
@@ -266,6 +271,18 @@ export function Step3PinpointReview({
     topIssues,
     bottomIssues,
   ]);
+
+  const pinpointCellIssuesCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const iss of [...topIssues, ...bottomIssues]) {
+      if (isPinpointCellReconcilableIssue(iss)) {
+        ids.add(
+          iss.atBatId ? `${iss.isTop ? "T" : "B"}:${iss.atBatId}` : iss.id
+        );
+      }
+    }
+    return ids.size;
+  }, [topIssues, bottomIssues]);
 
   const issuesByAtBatId = useMemo(() => {
     const map = new Map<string, ScorebookValidationIssue[]>();
@@ -1518,28 +1535,50 @@ export function Step3PinpointReview({
           {onRepairOrderGaps &&
             (missingOrderGapsCount > 0 ||
               excessOutInningsCount > 0 ||
+              pinpointCellIssuesCount > 0 ||
               isRepairingOrderGaps) && (
               <div className="p-2.5 rounded-2xl bg-muted border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <p className="text-[11px] font-bold text-foreground leading-snug">
-                  野球規則整合チェックで{" "}
-                  <strong className="text-amber-700 dark:text-amber-300">
-                    {[
-                      missingOrderGapsCount > 0
-                        ? `打順抜け${missingOrderGapsCount}件`
-                        : "",
-                      excessOutInningsCount > 0
-                        ? `3アウト超過${excessOutInningsCount}回`
-                        : "",
-                    ]
-                      .filter(Boolean)
-                      .join("・") || "補正対象"}
-                  </strong>{" "}
-                  を検出しました。該当マスをピンポイント拡大照合して自動補正できます。
+                  {missingOrderGapsCount > 0 || excessOutInningsCount > 0 ? (
+                    <>
+                      野球規則整合チェックで{" "}
+                      <strong className="text-amber-700 dark:text-amber-300">
+                        {[
+                          missingOrderGapsCount > 0
+                            ? `打順抜け${missingOrderGapsCount}件`
+                            : "",
+                          excessOutInningsCount > 0
+                            ? `3アウト超過${excessOutInningsCount}回`
+                            : "",
+                          pinpointCellIssuesCount > 0
+                            ? `要確認マス${pinpointCellIssuesCount}箇所`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join("・") || "補正対象"}
+                      </strong>{" "}
+                      を検出しました。他の確定打席はそのままに、該当箇所だけを超拡大照合してAI再解析できます。
+                    </>
+                  ) : (
+                    <>
+                      確認おすすめの{" "}
+                      <strong className="text-amber-700 dark:text-amber-300">
+                        {pinpointCellIssuesCount || totalIssuesCount}箇所
+                      </strong>{" "}
+                      だけを{" "}
+                      <strong className="text-foreground">
+                        約2.5倍の超拡大＋先行走者マス参照
+                      </strong>{" "}
+                      で他の確定済み打席を壊さずピンポイントAI再解析できます。
+                    </>
+                  )}
                 </p>
                 <button
                   type="button"
                   disabled={
-                    isRepairingOrderGaps || Boolean(reanalyzingInningKey)
+                    isRepairingOrderGaps ||
+                    Boolean(reanalyzingInningKey) ||
+                    Boolean(reanalyzingAtBatId)
                   }
                   onClick={onRepairOrderGaps}
                   className="h-9 px-3 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-60 text-primary-foreground text-[11px] font-black flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
@@ -1547,54 +1586,123 @@ export function Step3PinpointReview({
                   {isRepairingOrderGaps ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>該当マスを拡大照合・補正中...</span>
+                      <span>該当マスを超拡大照合・再解析中...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>
-                        {missingOrderGapsCount > 0 && excessOutInningsCount > 0
-                          ? "打順抜け・3アウト超過をAI自動補正"
-                          : excessOutInningsCount > 0
-                          ? "3アウト超過をAI自動補正"
-                          : "打順の抜け・飛びをAI自動補正"}
-                      </span>
+                      <span>要確認の箇所をピンポイントAI再解析</span>
                     </>
                   )}
                 </button>
               </div>
             )}
 
-          <div className="max-h-32 overflow-y-auto space-y-1.5">
-            {currentIssues.map((iss) => (
-              <button
-                key={iss.id}
-                type="button"
-                onClick={() => {
-                  if (iss.atBatId) {
-                    setEditingAtBatId(iss.atBatId);
-                  } else {
-                    setSelectedInning(iss.inning);
-                  }
-                }}
-                className="w-full text-left p-2 rounded-xl bg-muted hover:bg-accent border border-border flex items-start justify-between gap-2 transition-all cursor-pointer"
-              >
-                <span className="text-[11px] font-bold text-foreground leading-snug">
-                  <strong
-                    className={
-                      iss.severity === "error"
-                        ? "text-destructive mr-1"
-                        : "text-amber-700 dark:text-amber-300 mr-1"
-                    }
+          <div className="max-h-40 overflow-y-auto space-y-1.5">
+            {currentIssues.map((iss) => {
+              const hasSideImage = iss.isTop
+                ? Boolean(topImageDataUrl)
+                : Boolean(bottomImageDataUrl);
+              const canSingleCellReanalyze = Boolean(
+                iss.atBatId &&
+                  onReanalyzeAtBat &&
+                  hasSideImage &&
+                  !iss.id.startsWith("empty-inning-")
+              );
+              const canEmptyInningReanalyze = Boolean(
+                iss.id.startsWith("empty-inning-") &&
+                  onReanalyzeInning &&
+                  hasSideImage
+              );
+              const isThisCellRunning =
+                Boolean(iss.atBatId) && reanalyzingAtBatId === iss.atBatId;
+              const inningKey = `${iss.isTop ? "top" : "bottom"}-${iss.inning}`;
+              const isThisInningRunning = reanalyzingInningKey === inningKey;
+
+              return (
+                <div
+                  key={iss.id}
+                  className="w-full p-2 rounded-xl bg-muted hover:bg-accent/70 border border-border flex items-center justify-between gap-2 transition-colors"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (iss.atBatId) {
+                        setEditingAtBatId(iss.atBatId);
+                      } else {
+                        setSelectedInning(iss.inning);
+                      }
+                    }}
+                    className="flex-1 min-w-0 text-left flex items-start justify-between gap-1.5 cursor-pointer"
                   >
-                    [{iss.inning}回{iss.isTop ? "表" : "裏"}
-                    {iss.battingOrder ? ` ${iss.battingOrder}番` : ""}]
-                  </strong>
-                  {iss.message}
-                </span>
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-              </button>
-            ))}
+                    <span className="text-[11px] font-bold text-foreground leading-snug">
+                      <strong
+                        className={
+                          iss.severity === "error"
+                            ? "text-destructive mr-1"
+                            : "text-amber-700 dark:text-amber-300 mr-1"
+                        }
+                      >
+                        [{iss.inning}回{iss.isTop ? "表" : "裏"}
+                        {iss.battingOrder ? ` ${iss.battingOrder}番` : ""}]
+                      </strong>
+                      {iss.message}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                  </button>
+
+                  {canSingleCellReanalyze && iss.atBatId && onReanalyzeAtBat && (
+                    <button
+                      type="button"
+                      disabled={
+                        isRepairingOrderGaps ||
+                        Boolean(reanalyzingInningKey) ||
+                        Boolean(reanalyzingAtBatId)
+                      }
+                      onClick={() => onReanalyzeAtBat(iss.isTop, iss.atBatId!)}
+                      className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+                    >
+                      {isThisCellRunning ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>再読取中</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3 h-3" />
+                          <span>AI再読取</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {canEmptyInningReanalyze && onReanalyzeInning && (
+                    <button
+                      type="button"
+                      disabled={
+                        isRepairingOrderGaps ||
+                        Boolean(reanalyzingInningKey) ||
+                        Boolean(reanalyzingAtBatId)
+                      }
+                      onClick={() => onReanalyzeInning(iss.isTop, iss.inning)}
+                      className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+                    >
+                      {isThisInningRunning ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>再解析中</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-3 h-3" />
+                          <span>回を再解析</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -2350,6 +2458,35 @@ export function Step3PinpointReview({
                             </button>
                           ));
                         })()}
+                        {onReanalyzeAtBat && (
+                          <button
+                            type="button"
+                            disabled={
+                              isRepairingOrderGaps ||
+                              Boolean(reanalyzingInningKey) ||
+                              Boolean(reanalyzingAtBatId)
+                            }
+                            onClick={() =>
+                              onReanalyzeAtBat(
+                                editingAtBat.isTop,
+                                editingAtBat.id
+                              )
+                            }
+                            className="px-2 py-0.5 rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-[10px] font-black flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                          >
+                            {reanalyzingAtBatId === editingAtBat.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>再読取中...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3 h-3" />
+                                <span>この1マスをAI再読取</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() =>
