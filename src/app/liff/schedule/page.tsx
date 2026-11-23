@@ -323,8 +323,9 @@ const getAttendanceBadgeInfo = (st: string | undefined) => {
 
 export default function LiffSchedulePage() {
   const { currentTeam, profile, liff } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEditSchedule = canMutate || isDemoMode;
+  const { canEditSchedule, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEditSchedule =
+    canEditSchedule || canManageTeam || isDemoMode;
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const handleShareScheduleEvent = useCallback(

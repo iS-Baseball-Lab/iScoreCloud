@@ -266,7 +266,12 @@ export function MatchScoreCard({
 }: MatchScoreCardProps) {
   const router = useRouter();
   const { profile, currentTeam } = useLiff();
-  const { canMutate } = useLiffPermissions();
+  const {
+    canManagePlayers,
+    canEditScore,
+    canEditSchedule,
+    canManageTeam,
+  } = useLiffPermissions();
   const [isExpanded, setIsExpanded] = useState(initialExpanded);
   const [isCustomRolesExpanded, setIsCustomRolesExpanded] = useState(false);
   const practiceMatchLabel = usePracticeMatchLabel();
@@ -296,7 +301,12 @@ export function MatchScoreCard({
     return <MatchScoreCardSkeleton />;
   }
 
-  const canEditMatch = canMutate || isDemoMatchId(match.id);
+  const canEditMatch =
+    canManagePlayers ||
+    canEditScore ||
+    canEditSchedule ||
+    canManageTeam ||
+    isDemoMatchId(match.id);
   const hasMatchVideo = Boolean(extractYouTubeVideoId(match.youtubeUrl));
 
   const parsedMatchDate = parseSafeMatchDate(match.date);

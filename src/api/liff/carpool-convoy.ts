@@ -1171,7 +1171,7 @@ liffCarpoolConvoyRouter.get("/maps-key", async (c) => {
       return c.json({ success: false, error: "チームが見つかりません" }, 404);
     }
 
-    const { allowed: canManageMapsKey } = await resolveMapsKeyAccess({
+    const { allowed: legacyMapsKeyAllowed } = await resolveMapsKeyAccess({
       db,
       teamRow: {
         id: teamRow.id,
@@ -1183,6 +1183,10 @@ liffCarpoolConvoyRouter.get("/maps-key", async (c) => {
       rawUserName: access.primaryUserName || rawUserName,
       sessionUser: access.sessionUser,
     });
+    const canManageMapsKey =
+      access.canManageTeamId(teamId) ||
+      access.canManageOpsForTeam(teamId) ||
+      legacyMapsKeyAllowed;
 
     const orgKey = (teamRow.orgGoogleMapsApiKey || "").trim() || null;
     const source: "env" | "org" | "none" = envKey
@@ -1211,7 +1215,7 @@ liffCarpoolConvoyRouter.get("/maps-key", async (c) => {
 
 /**
  * PUT /api/liff/carpool-convoy/maps-key
- * クラブ共通 Google Maps JavaScript API キーの保存・解除（IT管理者・監督・指導者）
+ * クラブ共通 Google Maps JavaScript API キーの保存・解除（IT管理者・監督・運用規定権限）
  */
 liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
   try {
@@ -1268,7 +1272,7 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
       return c.json({ success: false, error: "チーム組織が見つかりません" }, 404);
     }
 
-    const { allowed } = await resolveMapsKeyAccess({
+    const { allowed: legacyAllowed } = await resolveMapsKeyAccess({
       db,
       teamRow,
       allMembers,
@@ -1276,12 +1280,16 @@ liffCarpoolConvoyRouter.put("/maps-key", async (c) => {
       rawUserName: access.primaryUserName || rawUserName,
       sessionUser: access.sessionUser,
     });
+    const allowed =
+      access.canManageTeamId(teamId) ||
+      access.canManageOpsForTeam(teamId) ||
+      legacyAllowed;
 
     if (!allowed) {
       return c.json(
         {
           success: false,
-          error: "APIキーの設定にはIT管理者・監督・指導者権限が必要です",
+          error: "APIキーの設定には管理者または運用・規定の編集権限が必要です",
         },
         403
       );

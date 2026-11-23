@@ -37,6 +37,7 @@ import { parseSubLinksJson } from "@/lib/liff/team-links-schema";
 import {
   canManageSystem,
   canManageTeam,
+  parseTeamRoleDefinitions,
   resolveRoleLabel,
   ROLES,
   type CustomRoleSetting,
@@ -355,6 +356,7 @@ liffTeamInfoRouter.get("/", async (c) => {
         homeGround: teams.homeGround,
         tier: teams.tier,
         teamType: teams.teamType,
+        rolePermissionsJson: teams.rolePermissionsJson,
         orgName: organizations.name,
         orgShortName: organizations.shortName,
         orgCategory: organizations.category,
@@ -383,11 +385,12 @@ liffTeamInfoRouter.get("/", async (c) => {
     const canManage =
       access.isSystemAdmin ||
       access.canManageTeamId(rawTeamId) ||
-      canManageSystem(myRole, subRoles) ||
-      canManageTeam(myRole, subRoles);
+      canManageSystem(myRole, subRoles);
 
     const canEdit =
-      canManage || access.canManagePlayersForTeam(rawTeamId);
+      canManage ||
+      access.canManagePlayersForTeam(rawTeamId) ||
+      access.canManageOpsForTeam(rawTeamId);
 
     const orgId = currentRow.orgId || null;
     const tenantScope = { teamId: rawTeamId, organizationId: orgId };
@@ -594,17 +597,35 @@ liffTeamInfoRouter.get("/", async (c) => {
       role: r.role,
       customLabel: r.customLabel,
     }));
+    const roleDefinitions = parseTeamRoleDefinitions(
+      currentRow.rolePermissionsJson,
+      customSettings
+    );
+    const staffRoleKeySet = new Set<string>(STAFF_DISPLAY_ROLES);
+    const rolePriorityMap: Record<string, number> = { ...STAFF_ROLE_PRIORITY };
+    for (const def of roleDefinitions) {
+      if (
+        !def.isBuiltin &&
+        (def.permissions.canManageTeam ||
+          def.permissions.canManageOps ||
+          def.permissions.canManagePlayers ||
+          def.permissions.canEditScore)
+      ) {
+        staffRoleKeySet.add(def.role);
+        rolePriorityMap[def.role] = def.priority;
+      }
+    }
 
     const staffMembers: TeamStaffSummaryItem[] = [];
     for (const m of memberRows) {
       const primaryRole = (m.role || "").toLowerCase();
       const subRoleKeys = parseSubRolesList(m.subRoles);
       const matchingStaffSubRoles = subRoleKeys.filter((sr) =>
-        STAFF_DISPLAY_ROLES.has(sr)
+        staffRoleKeySet.has(sr)
       );
       const isStaffEntry =
         m.memberType === "staff" ||
-        STAFF_DISPLAY_ROLES.has(primaryRole) ||
+        staffRoleKeySet.has(primaryRole) ||
         matchingStaffSubRoles.length > 0;
 
       if (!isStaffEntry) continue;
@@ -612,17 +633,17 @@ liffTeamInfoRouter.get("/", async (c) => {
       const displayName = (m.memberName || m.userName || "").trim();
       if (!displayName) continue;
 
-      const effectivePrimaryKey = STAFF_DISPLAY_ROLES.has(primaryRole)
+      const effectivePrimaryKey = staffRoleKeySet.has(primaryRole)
         ? primaryRole
-        : matchingStaffSubRoles[0] || ROLES.STAFF;
+        : matchingStaffSubRoles[0] || primaryRole || ROLES.STAFF;
 
       const primaryLabel = resolveRoleLabel(
         effectivePrimaryKey,
-        customSettings
+        roleDefinitions
       );
       const extraKeys = subRoleKeys.filter((sr) => sr !== effectivePrimaryKey);
       const subRoleLabels = extraKeys.map((sr) =>
-        resolveRoleLabel(sr, customSettings)
+        resolveRoleLabel(sr, roleDefinitions)
       );
 
       staffMembers.push({
@@ -636,8 +657,8 @@ liffTeamInfoRouter.get("/", async (c) => {
     }
 
     staffMembers.sort((a, b) => {
-      const pa = STAFF_ROLE_PRIORITY[a.primaryRoleKey] ?? 99;
-      const pb = STAFF_ROLE_PRIORITY[b.primaryRoleKey] ?? 99;
+      const pa = rolePriorityMap[a.primaryRoleKey] ?? 99;
+      const pb = rolePriorityMap[b.primaryRoleKey] ?? 99;
       if (pa !== pb) return pa - pb;
       return a.name.localeCompare(b.name, "ja");
     });

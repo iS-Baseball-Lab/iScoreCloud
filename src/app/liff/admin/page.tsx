@@ -33,6 +33,8 @@ import {
   KeyRound,
   RotateCcw,
   Trash2,
+  Plus,
+  SlidersHorizontal,
 } from "lucide-react";
 import type { Liff } from "@line/liff";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -60,12 +62,78 @@ import {
   syncLineMiniAppConfigCache,
   type LineMiniAppConfig,
 } from "@/lib/line-miniapp";
+import {
+  BUILTIN_ROLE_MASTER_LIST,
+  CUSTOM_ROLE_PRESETS,
+  MAX_CUSTOM_ROLES_PER_TEAM,
+  PERMISSION_AXIS_METAS,
+  evaluateEffectiveRolePermissions,
+  generateCustomRoleKey,
+  isBuiltinRoleModifiedFromDefault,
+  normalizeRolePermissions,
+  parseTeamRoleDefinitions,
+  resolveRoleLabel,
+  serializeTeamRolePermissionsJson,
+  type CustomRolePresetTemplate,
+  type RoleBadgeTone,
+  type RolePermissionKey,
+  type RolePermissions,
+  type TeamRoleDefinition,
+} from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type AdminTabId = "requests" | "members" | "titles" | "invite";
+
+const DEMO_ROLE_DEFS_STORAGE_KEY = "iscore_demo_role_defs_v1";
+
+const ROLE_BADGE_TONE_OPTIONS: ReadonlyArray<{
+  value: RoleBadgeTone;
+  label: string;
+  chipClass: string;
+}> = [
+  {
+    value: "teal",
+    label: "ティール",
+    chipClass:
+      "bg-teal-500/15 text-teal-800 dark:text-teal-300 border-teal-500/35",
+  },
+  {
+    value: "primary",
+    label: "ブルー",
+    chipClass: "bg-primary/12 text-primary border-primary/30",
+  },
+  {
+    value: "amber",
+    label: "アンバー",
+    chipClass:
+      "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/35",
+  },
+  {
+    value: "emerald",
+    label: "グリーン",
+    chipClass:
+      "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/35",
+  },
+  {
+    value: "rose",
+    label: "ローズ",
+    chipClass:
+      "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/35",
+  },
+  {
+    value: "slate",
+    label: "スレート",
+    chipClass: "bg-muted text-foreground border-border",
+  },
+];
+
+function getRoleTonePillClass(tone: RoleBadgeTone): string {
+  const found = ROLE_BADGE_TONE_OPTIONS.find((o) => o.value === tone);
+  return found ? found.chipClass : "bg-muted text-foreground border-border";
+}
 
 interface PendingRequest {
   memberId: string;
@@ -122,92 +190,8 @@ interface AdminDashboardData {
   pendingRequests?: PendingRequest[];
   activeMembers?: ActiveMember[];
   roleSettings?: RoleSettingItem[];
+  roleDefinitions?: TeamRoleDefinition[];
 }
-
-interface RoleMasterDef {
-  role: string;
-  defaultLabel: string;
-  badgeTone: LiffSelectBadgeTone;
-  summary: string;
-  canAdminMenu: boolean;
-  canScoreInput: boolean;
-  canScheduleEdit: boolean;
-}
-
-const ROLE_MASTER_LIST: ReadonlyArray<RoleMasterDef> = [
-  {
-    role: "manager",
-    defaultLabel: "監督・代表",
-    badgeTone: "rose",
-    summary: "全管理メニュー・参加承認・編成・スコア・予定のすべてを操作可能",
-    canAdminMenu: true,
-    canScoreInput: true,
-    canScheduleEdit: true,
-  },
-  {
-    role: "admin",
-    defaultLabel: "IT管理者",
-    badgeTone: "amber",
-    summary: "監督と同等の全管理権限（保護者会長・事務局・システム担当向け）",
-    canAdminMenu: true,
-    canScoreInput: true,
-    canScheduleEdit: true,
-  },
-  {
-    role: "coach",
-    defaultLabel: "コーチ",
-    badgeTone: "primary",
-    summary: "オーダー作成・スコア記録・選手育成・予定の編集が可能",
-    canAdminMenu: false,
-    canScoreInput: true,
-    canScheduleEdit: true,
-  },
-  {
-    role: "scorer",
-    defaultLabel: "スコアラー",
-    badgeTone: "teal",
-    summary: "試合のライブ一球速報・スコアブック記録・成績集計を担当",
-    canAdminMenu: false,
-    canScoreInput: true,
-    canScheduleEdit: false,
-  },
-  {
-    role: "staff",
-    defaultLabel: "スタッフ",
-    badgeTone: "emerald",
-    summary: "審判・会計・配車係などのチーム運営サポート・予定連絡",
-    canAdminMenu: false,
-    canScoreInput: false,
-    canScheduleEdit: true,
-  },
-  {
-    role: "parent",
-    defaultLabel: "保護者",
-    badgeTone: "slate",
-    summary: "家族の出欠回答・車出し登録・試合速報や資料の閲覧",
-    canAdminMenu: false,
-    canScoreInput: false,
-    canScheduleEdit: false,
-  },
-  {
-    role: "player",
-    defaultLabel: "選手",
-    badgeTone: "primary",
-    summary: "自分の出欠回答・個人成績や自主練ノートの記録（中高生・草野球等）",
-    canAdminMenu: false,
-    canScoreInput: false,
-    canScheduleEdit: false,
-  },
-  {
-    role: "viewer",
-    defaultLabel: "閲覧のみ（OB・応援）",
-    badgeTone: "slate",
-    summary: "試合速報・戦績の閲覧専用（名簿編集や出欠変更は不可）",
-    canAdminMenu: false,
-    canScoreInput: false,
-    canScheduleEdit: false,
-  },
-];
 
 const PRESET_SUB_LABELS = [
   "1班",
@@ -233,11 +217,30 @@ function defaultApproveRoleForMemberType(memberType?: string | null): string {
   return "parent";
 }
 
+function readDemoStoredRoleDefinitions(
+  fallbackSettings?: RoleSettingItem[]
+): TeamRoleDefinition[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(DEMO_ROLE_DEFS_STORAGE_KEY);
+    if (!raw) return null;
+    return parseTeamRoleDefinitions(raw, fallbackSettings);
+  } catch {
+    return null;
+  }
+}
+
 function LiffAdminDashboardContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { currentTeam, profile, isDemo: providerDemo, liff } = useLiff();
+  const {
+    currentTeam,
+    profile,
+    isDemo: providerDemo,
+    liff,
+    refreshTeams,
+  } = useLiff();
 
   const teamId = useMemo(
     () =>
@@ -290,9 +293,44 @@ function LiffAdminDashboardContent() {
     "all" | "managers" | "coaches" | "parents" | "unlinked"
   >("all");
 
-  // 役職カスタム呼称マップ
-  const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
+  // 役職・権限設定（規定8役職 ＋ チーム独自カスタム役職）
+  const [roleDefinitions, setRoleDefinitions] = useState<TeamRoleDefinition[]>(
+    () =>
+      parseTeamRoleDefinitions(
+        initialCached?.roleDefinitions ?? null,
+        initialCached?.roleSettings ?? null
+      )
+  );
   const [isSavingTitles, setIsSavingTitles] = useState(false);
+
+  // 役職追加・権限編集モーダル
+  const [isRoleEditorOpen, setIsRoleEditorOpen] = useState(false);
+  const [roleEditorMode, setRoleEditorMode] = useState<"create" | "edit">(
+    "edit"
+  );
+  const [editingRoleKey, setEditingRoleKey] = useState<string>("");
+  const [editingRoleIsBuiltin, setEditingRoleIsBuiltin] = useState(true);
+  const [editingRoleDefaultLabel, setEditingRoleDefaultLabel] = useState("");
+  const [editingRoleLockManageTeam, setEditingRoleLockManageTeam] =
+    useState(false);
+  const [roleFormLabel, setRoleFormLabel] = useState("");
+  const [roleFormTone, setRoleFormTone] = useState<RoleBadgeTone>("teal");
+  const [roleFormSummary, setRoleFormSummary] = useState("");
+  const [roleFormPermissions, setRoleFormPermissions] =
+    useState<RolePermissions>({
+      canManageTeam: false,
+      canManageOps: false,
+      canManagePlayers: false,
+      canEditScore: false,
+      canEditSchedule: false,
+      canEditCarpool: false,
+      canMutate: true,
+    });
+
+  // カスタム役職削除確認モーダル
+  const [deletingRoleDef, setDeletingRoleDef] =
+    useState<TeamRoleDefinition | null>(null);
+  const [isResetRolesConfirmOpen, setIsResetRolesConfirmOpen] = useState(false);
 
   // メンバー手動追加・権限/兼務編集モーダル
   const [isMemberModalOpen, setIsMemberModalOpen] = useState(false);
@@ -327,25 +365,31 @@ function LiffAdminDashboardContent() {
   );
   const [mounted, setMounted] = useState(false);
 
-  const syncCustomLabelsFromData = useCallback(
+  const syncRoleDefinitionsFromData = useCallback(
     (res: AdminDashboardData | null) => {
       if (!res) return;
-      const nextMap: Record<string, string> = {};
-      for (const item of res.roleSettings || []) {
-        if (item.role && item.customLabel) {
-          nextMap[item.role.toLowerCase()] = item.customLabel;
+      if (res.isDemo || teamId === "demo-team") {
+        const demoStored = readDemoStoredRoleDefinitions(res.roleSettings);
+        if (demoStored) {
+          setRoleDefinitions(demoStored);
+          return;
         }
       }
-      setCustomLabels(nextMap);
+      setRoleDefinitions(
+        parseTeamRoleDefinitions(
+          res.roleDefinitions ?? null,
+          res.roleSettings ?? null
+        )
+      );
     },
-    []
+    [teamId]
   );
 
   useEffect(() => {
     if (initialCached) {
-      syncCustomLabelsFromData(initialCached);
+      syncRoleDefinitionsFromData(initialCached);
     }
-  }, [initialCached, syncCustomLabelsFromData]);
+  }, [initialCached, syncRoleDefinitionsFromData]);
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
@@ -359,6 +403,9 @@ function LiffAdminDashboardContent() {
     setApproveRoles({});
     setMemberSearch("");
     setMemberFilter("all");
+    setIsRoleEditorOpen(false);
+    setDeletingRoleDef(null);
+    setIsResetRolesConfirmOpen(false);
   }, [teamId]);
 
   useEffect(() => {
@@ -372,16 +419,62 @@ function LiffAdminDashboardContent() {
     };
   }, []);
 
+  const roleDefByKey = useMemo(() => {
+    const map = new Map<string, TeamRoleDefinition>();
+    for (const def of roleDefinitions) {
+      map.set(def.role.toLowerCase(), def);
+    }
+    return map;
+  }, [roleDefinitions]);
+
+  const builtinRoleDefs = useMemo(
+    () => roleDefinitions.filter((d) => d.isBuiltin),
+    [roleDefinitions]
+  );
+  const customRoleDefs = useMemo(
+    () => roleDefinitions.filter((d) => !d.isBuiltin),
+    [roleDefinitions]
+  );
+
+  const roleMemberCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of data?.activeMembers || []) {
+      const assigned = new Set<string>();
+      if (m.role) assigned.add(m.role.toLowerCase());
+      for (const sr of m.subRoles || []) {
+        if (sr) assigned.add(sr.toLowerCase());
+      }
+      for (const key of assigned) {
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [data?.activeMembers]);
+
+  const roleSelectOptions = useMemo(
+    () =>
+      roleDefinitions.map((rm) => ({
+        value: rm.role,
+        label: rm.isBuiltin ? rm.label : `${rm.label}`,
+        sublabel: rm.summary,
+        badge: rm.permissions.canManageTeam
+          ? "管理権限"
+          : !rm.isBuiltin
+          ? "独自役職"
+          : undefined,
+        badgeTone: rm.badgeTone as LiffSelectBadgeTone,
+      })),
+    [roleDefinitions]
+  );
+
   const getDisplayRoleLabel = useCallback(
     (roleKey: string): string => {
       const clean = (roleKey || "parent").toLowerCase();
-      if (customLabels[clean]?.trim()) {
-        return customLabels[clean].trim();
-      }
-      const found = ROLE_MASTER_LIST.find((r) => r.role === clean);
-      return found ? found.defaultLabel : roleKey;
+      const found = roleDefByKey.get(clean);
+      if (found) return found.label;
+      return resolveRoleLabel(clean, roleDefinitions);
     },
-    [customLabels]
+    [roleDefByKey, roleDefinitions]
   );
 
   // ─── ダッシュボードデータの取得 ─────────────────────
@@ -395,7 +488,7 @@ function LiffAdminDashboardContent() {
           peekLiffApiCache<AdminDashboardData>(dashboardEndpoint);
         if (syncHit) {
           setData(syncHit);
-          syncCustomLabelsFromData(syncHit);
+          syncRoleDefinitionsFromData(syncHit);
           setIsLoading(false);
         } else {
           setIsLoading(true);
@@ -412,7 +505,7 @@ function LiffAdminDashboardContent() {
         const json = (await res.json()) as AdminDashboardData;
         if (res.ok && json.success) {
           setData(json);
-          syncCustomLabelsFromData(json);
+          syncRoleDefinitionsFromData(json);
           if (json.liffId || json.miniAppUrl) {
             setMiniAppConfig(
               syncLineMiniAppConfigCache({
@@ -434,7 +527,7 @@ function LiffAdminDashboardContent() {
         setIsRefreshing(false);
       }
     },
-    [dashboardEndpoint, syncCustomLabelsFromData]
+    [dashboardEndpoint, syncRoleDefinitionsFromData]
   );
 
   useEffect(() => {
@@ -559,6 +652,7 @@ function LiffAdminDashboardContent() {
 
       setIsMemberModalOpen(false);
       invalidateLiffApiCache();
+      void refreshTeams();
       await loadDashboardData(true);
       toast.success(
         json.message ||
@@ -606,45 +700,238 @@ function LiffAdminDashboardContent() {
     }
   };
 
-  const handleSaveCustomTitles = async () => {
+  // ─── 役職追加・権限カスタマイズ保存 ─────────────────
+  const persistRoleDefinitions = async (
+    nextDefs: TeamRoleDefinition[],
+    successToastMessage: string
+  ): Promise<boolean> => {
     setIsSavingTitles(true);
     try {
-      const settingsPayload = ROLE_MASTER_LIST.map((rm) => ({
-        role: rm.role,
-        customLabel: (customLabels[rm.role] || "").trim(),
-      })).filter(
-        (item) =>
-          item.customLabel.length > 0 &&
-          item.customLabel !==
-            ROLE_MASTER_LIST.find((r) => r.role === item.role)?.defaultLabel
-      );
-
       const res = await fetch("/api/liff/admin/mgmt/roles/titles", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           teamId,
           userId: profile?.userId || undefined,
-          settings: settingsPayload,
+          roleDefinitions: nextDefs,
         }),
       });
       const json = (await res.json()) as {
         success: boolean;
+        isDemo?: boolean;
+        roleDefinitions?: TeamRoleDefinition[];
         message?: string;
         error?: string;
       };
       if (!res.ok || !json.success) {
-        toast.error(json.error || "保存に失敗しました");
-        return;
+        toast.error(json.error || "役職・権限設定の保存に失敗しました");
+        return false;
+      }
+
+      const normalized = Array.isArray(json.roleDefinitions)
+        ? parseTeamRoleDefinitions(json.roleDefinitions, null)
+        : parseTeamRoleDefinitions(nextDefs, null);
+
+      setRoleDefinitions(normalized);
+      if (
+        (json.isDemo || data?.isDemo || teamId === "demo-team") &&
+        typeof window !== "undefined"
+      ) {
+        try {
+          const serialized = serializeTeamRolePermissionsJson(normalized);
+          localStorage.setItem(DEMO_ROLE_DEFS_STORAGE_KEY, serialized.json);
+        } catch {
+          // ignore quota error
+        }
       }
 
       invalidateLiffApiCache();
+      void refreshTeams();
       await loadDashboardData(true);
-      toast.success(json.message || "役職の呼称設定を保存しました！");
+      toast.success(successToastMessage);
+      return true;
     } catch {
       toast.error("通信エラーが発生しました");
+      return false;
     } finally {
       setIsSavingTitles(false);
+    }
+  };
+
+  const openCreateCustomRoleModal = (preset?: CustomRolePresetTemplate) => {
+    if (customRoleDefs.length >= MAX_CUSTOM_ROLES_PER_TEAM) {
+      toast.error(
+        `チーム独自の役職は最大 ${MAX_CUSTOM_ROLES_PER_TEAM} 個まで登録できます`
+      );
+      return;
+    }
+    setRoleEditorMode("create");
+    setEditingRoleKey(generateCustomRoleKey());
+    setEditingRoleIsBuiltin(false);
+    setEditingRoleDefaultLabel("");
+    setEditingRoleLockManageTeam(false);
+    setRoleFormLabel(preset ? preset.label : "");
+    setRoleFormTone(preset ? preset.badgeTone : "teal");
+    setRoleFormSummary(preset ? preset.summary : "");
+    setRoleFormPermissions(
+      preset
+        ? { ...preset.permissions }
+        : {
+            canManageTeam: false,
+            canManageOps: false,
+            canManagePlayers: false,
+            canEditScore: false,
+            canEditSchedule: false,
+            canEditCarpool: false,
+            canMutate: true,
+          }
+    );
+    setIsRoleEditorOpen(true);
+  };
+
+  const openEditRoleModal = (def: TeamRoleDefinition) => {
+    setRoleEditorMode("edit");
+    setEditingRoleKey(def.role);
+    setEditingRoleIsBuiltin(def.isBuiltin);
+    setEditingRoleDefaultLabel(def.defaultLabel);
+    setEditingRoleLockManageTeam(def.lockManageTeamOn);
+    setRoleFormLabel(def.isBuiltin ? def.customLabel : def.label);
+    setRoleFormTone(def.badgeTone);
+    setRoleFormSummary(def.summary);
+    setRoleFormPermissions({ ...def.permissions });
+    setIsRoleEditorOpen(true);
+  };
+
+  const handleToggleRolePermission = (permKey: RolePermissionKey) => {
+    if (permKey === "canManageTeam" && editingRoleLockManageTeam) {
+      return;
+    }
+    setRoleFormPermissions((prev) => {
+      const nextRaw: RolePermissions = {
+        ...prev,
+        [permKey]: !prev[permKey],
+      };
+      return normalizeRolePermissions(nextRaw, prev, {
+        lockManageTeamOn: editingRoleLockManageTeam,
+      });
+    });
+  };
+
+  const handleRestoreSingleBuiltinDefault = () => {
+    if (!editingRoleIsBuiltin) return;
+    const master = BUILTIN_ROLE_MASTER_LIST.find(
+      (m) => m.role === editingRoleKey
+    );
+    if (!master) return;
+    setRoleFormLabel("");
+    setRoleFormTone(master.badgeTone);
+    setRoleFormSummary(master.summary);
+    setRoleFormPermissions({ ...master.defaultPermissions });
+  };
+
+  const handleSaveRoleEditor = async () => {
+    const trimmedLabel = roleFormLabel.trim().slice(0, 20);
+    if (!editingRoleIsBuiltin && !trimmedLabel) {
+      toast.error("チーム独自の役職名を入力してください（例: 配車係）");
+      return;
+    }
+
+    const normalizedPerms = normalizeRolePermissions(
+      roleFormPermissions,
+      roleFormPermissions,
+      { lockManageTeamOn: editingRoleLockManageTeam }
+    );
+
+    let nextDefs: TeamRoleDefinition[];
+    if (roleEditorMode === "create") {
+      const duplicate = roleDefinitions.some(
+        (d) => d.label.trim() === trimmedLabel
+      );
+      if (duplicate) {
+        toast.error(`「${trimmedLabel}」と同じ名前の役職が既に存在します`);
+        return;
+      }
+      const newDef: TeamRoleDefinition = {
+        role: editingRoleKey || generateCustomRoleKey(),
+        isBuiltin: false,
+        defaultLabel: trimmedLabel,
+        customLabel: trimmedLabel,
+        label: trimmedLabel,
+        badgeTone: roleFormTone,
+        summary: roleFormSummary.trim().slice(0, 80) || "チーム独自の役職",
+        priority: 10,
+        lockManageTeamOn: false,
+        permissions: normalizedPerms,
+      };
+      nextDefs = [...roleDefinitions, newDef];
+    } else {
+      nextDefs = roleDefinitions.map((d) => {
+        if (d.role !== editingRoleKey) return d;
+        if (d.isBuiltin) {
+          const cleanCustom =
+            trimmedLabel && trimmedLabel !== d.defaultLabel
+              ? trimmedLabel
+              : "";
+          return {
+            ...d,
+            customLabel: cleanCustom,
+            label: cleanCustom || d.defaultLabel,
+            badgeTone: roleFormTone,
+            summary: roleFormSummary.trim().slice(0, 80) || d.summary,
+            permissions: normalizedPerms,
+          };
+        }
+        return {
+          ...d,
+          defaultLabel: trimmedLabel,
+          customLabel: trimmedLabel,
+          label: trimmedLabel,
+          badgeTone: roleFormTone,
+          summary: roleFormSummary.trim().slice(0, 80) || "チーム独自の役職",
+          permissions: normalizedPerms,
+        };
+      });
+    }
+
+    const ok = await persistRoleDefinitions(
+      nextDefs,
+      roleEditorMode === "create"
+        ? `チーム役職「${trimmedLabel}」を追加しました！`
+        : `役職「${
+            editingRoleIsBuiltin
+              ? trimmedLabel || editingRoleDefaultLabel
+              : trimmedLabel
+          }」の権限設定を保存しました！`
+    );
+    if (ok) {
+      setIsRoleEditorOpen(false);
+    }
+  };
+
+  const handleConfirmDeleteCustomRole = async () => {
+    if (!deletingRoleDef || deletingRoleDef.isBuiltin) return;
+    const nextDefs = roleDefinitions.filter(
+      (d) => d.role !== deletingRoleDef.role
+    );
+    const deletedLabel = deletingRoleDef.label;
+    const ok = await persistRoleDefinitions(
+      nextDefs,
+      `役職「${deletedLabel}」を削除しました`
+    );
+    if (ok) {
+      setDeletingRoleDef(null);
+    }
+  };
+
+  const handleConfirmResetAllBuiltinRoles = async () => {
+    const resetBuiltins = parseTeamRoleDefinitions(null, null);
+    const nextDefs = [...resetBuiltins, ...customRoleDefs];
+    const ok = await persistRoleDefinitions(
+      nextDefs,
+      "規定8役職の呼称と権限を標準の初期設定に戻しました"
+    );
+    if (ok) {
+      setIsResetRolesConfirmOpen(false);
     }
   };
 
@@ -942,23 +1229,38 @@ function LiffAdminDashboardContent() {
     return list.filter((m) => {
       const subs = m.subRoles || [];
       const allRoles = [m.role, ...subs];
+      const effectivePerms = evaluateEffectiveRolePermissions(
+        m.role,
+        subs,
+        roleDefinitions
+      );
       const isLinked = m.isLineLinked ?? Boolean(m.userId);
+      const hasOpsOrStaffRole =
+        effectivePerms.canManageOps ||
+        effectivePerms.canManagePlayers ||
+        effectivePerms.canEditScore ||
+        effectivePerms.canEditSchedule ||
+        effectivePerms.canEditCarpool;
 
-      if (
-        memberFilter === "managers" &&
-        !allRoles.some((r) => r === "manager" || r === "admin")
-      ) {
+      if (memberFilter === "managers" && !effectivePerms.canManageTeam) {
         return false;
       }
       if (
         memberFilter === "coaches" &&
+        !(
+          !effectivePerms.canManageTeam &&
+          hasOpsOrStaffRole
+        ) &&
         !allRoles.some((r) => r === "coach" || r === "scorer" || r === "staff")
       ) {
         return false;
       }
       if (
         memberFilter === "parents" &&
-        !allRoles.some((r) => r === "parent" || r === "player" || r === "viewer")
+        !allRoles.some(
+          (r) => r === "parent" || r === "player" || r === "viewer"
+        ) &&
+        (effectivePerms.canManageTeam || hasOpsOrStaffRole)
       ) {
         return false;
       }
@@ -973,7 +1275,13 @@ function LiffAdminDashboardContent() {
       } ${m.phone || ""}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [data?.activeMembers, memberFilter, memberSearch, getDisplayRoleLabel]);
+  }, [
+    data?.activeMembers,
+    memberFilter,
+    memberSearch,
+    roleDefinitions,
+    getDisplayRoleLabel,
+  ]);
 
   const pendingCount = data?.pendingRequests?.length || 0;
   const activeCount =
@@ -1404,15 +1712,7 @@ function LiffAdminDashboardContent() {
                                     [req.memberId]: val,
                                   }))
                                 }
-                                options={ROLE_MASTER_LIST.map((rm) => ({
-                                  value: rm.role,
-                                  label: getDisplayRoleLabel(rm.role),
-                                  sublabel: rm.summary,
-                                  badge: rm.canAdminMenu
-                                    ? "管理権限あり"
-                                    : undefined,
-                                  badgeTone: rm.badgeTone,
-                                }))}
+                                options={roleSelectOptions}
                                 title={`${req.name} さんの役職を選択`}
                                 accent="slate"
                                 size="sm"
@@ -1572,12 +1872,17 @@ function LiffAdminDashboardContent() {
                     ) : (
                       filteredActiveMembers.map((member) => {
                         const subs = member.subRoles || [];
-                        const allRoles = [member.role, ...subs];
-                        const isManagerPower = allRoles.some(
-                          (r) => r === "manager" || r === "admin"
+                        const effectivePerms = evaluateEffectiveRolePermissions(
+                          member.role,
+                          subs,
+                          roleDefinitions
                         );
+                        const isManagerPower = effectivePerms.canManageTeam;
                         const isLinked =
                           member.isLineLinked ?? Boolean(member.userId);
+                        const primaryRoleDef = roleDefByKey.get(
+                          (member.role || "").toLowerCase()
+                        );
 
                         return (
                           <div
@@ -1609,11 +1914,17 @@ function LiffAdminDashboardContent() {
                               {/* 主ロール ＋ 兼務サブバッジ */}
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span
-                                  className={`px-2 py-0.5 rounded-md text-[10.5px] font-black ${
+                                  className={cn(
+                                    "px-2 py-0.5 rounded-md text-[10.5px] font-black border",
                                     isManagerPower
-                                      ? "bg-[#0f172a] text-amber-300"
-                                      : "bg-primary/12 text-primary border border-primary/25"
-                                  }`}
+                                      ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                      : primaryRoleDef &&
+                                        !primaryRoleDef.isBuiltin
+                                      ? getRoleTonePillClass(
+                                          primaryRoleDef.badgeTone
+                                        )
+                                      : "bg-primary/12 text-primary border-primary/25"
+                                  )}
                                 >
                                   主: {getDisplayRoleLabel(member.role)}
                                 </span>
@@ -1675,11 +1986,188 @@ function LiffAdminDashboardContent() {
             )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                🅲️ 【役職設定（呼称カスタム・権限表）】タブ
+                🅲️ 【役職設定（独自役職の追加・呼称カスタム・7権限付与）】タブ
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "titles" && (
               <div className="space-y-4 animate-in fade-in duration-200">
-                {/* 役職カスタム呼称カード */}
+                {/* 1. ➕ チーム独自の役職（カスタム役職） */}
+                <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                  <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-teal-500/20 text-teal-300 border border-teal-400/30 flex items-center justify-center shrink-0">
+                        <Plus className="w-4 h-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                          チーム独自の役職を追加・管理
+                        </h3>
+                        <p className="text-[10px] font-bold text-slate-300 truncate">
+                          配車係・行事係・審判部長など必要な権限を個別に付与
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={
+                        isSavingTitles ||
+                        customRoleDefs.length >= MAX_CUSTOM_ROLES_PER_TEAM
+                      }
+                      onClick={() => openCreateCustomRoleModal()}
+                      className="h-8 px-3 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-[11px] font-black inline-flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>役職を追加</span>
+                    </button>
+                  </div>
+
+                  <div className="p-4 space-y-3.5 text-xs">
+                    {/* 1タップおすすめプリセット */}
+                    <div className="p-3 rounded-xl border border-border bg-muted/35 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-black text-foreground">
+                          ⚡ おすすめのチーム役職テンプレート（タップで作成）
+                        </span>
+                        <span className="text-[10px] font-bold text-muted-foreground shrink-0">
+                          {customRoleDefs.length}/{MAX_CUSTOM_ROLES_PER_TEAM}枠
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CUSTOM_ROLE_PRESETS.map((preset) => {
+                          const existingDef = roleDefinitions.find(
+                            (d) => d.label.trim() === preset.label
+                          );
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              disabled={isSavingTitles}
+                              onClick={() =>
+                                existingDef
+                                  ? openEditRoleModal(existingDef)
+                                  : openCreateCustomRoleModal(preset)
+                              }
+                              className={cn(
+                                "px-2.5 py-1.5 rounded-xl border text-[11px] font-black inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer",
+                                existingDef
+                                  ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/35"
+                                  : "bg-card hover:bg-muted text-foreground border-border shadow-2xs"
+                              )}
+                            >
+                              {existingDef ? (
+                                <Check className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <Plus className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                              )}
+                              <span>{preset.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 追加済みカスタム役職リスト */}
+                    {customRoleDefs.length === 0 ? (
+                      <div className="p-4 rounded-xl border border-dashed border-border bg-muted/20 text-center space-y-2">
+                        <p className="text-xs font-black text-foreground">
+                          まだチーム独自の役職は登録されていません
+                        </p>
+                        <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                          上のテンプレートをタップするか「＋ 役職を追加」から作成すると、「メンバー」タブの主役職・兼務ロールとして誰にでも割り当てられます。
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {customRoleDefs.map((def) => {
+                          const assignedCount =
+                            roleMemberCounts[def.role.toLowerCase()] || 0;
+                          const activeAxes = PERMISSION_AXIS_METAS.filter(
+                            (ax) => def.permissions[ax.key]
+                          );
+                          return (
+                            <div
+                              key={def.role}
+                              className="p-3.5 rounded-2xl border border-border bg-background space-y-2.5 shadow-2xs"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span
+                                      className={cn(
+                                        "px-2 py-0.5 rounded-md border text-[11px] font-black",
+                                        getRoleTonePillClass(def.badgeTone)
+                                      )}
+                                    >
+                                      {def.label}
+                                    </span>
+                                    <span className="px-1.5 py-0.5 rounded bg-[#0f172a] text-teal-300 text-[9.5px] font-black">
+                                      独自役職
+                                    </span>
+                                    <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                                      割当 {assignedCount}名
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] font-bold text-muted-foreground leading-snug">
+                                    {def.summary}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    disabled={isSavingTitles}
+                                    onClick={() => openEditRoleModal(def)}
+                                    className="h-8 px-2.5 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <SlidersHorizontal className="w-3 h-3 text-teal-400" />
+                                    <span>権限編集</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSavingTitles}
+                                    onClick={() => setDeletingRoleDef(def)}
+                                    aria-label={`${def.label}を削除`}
+                                    className="h-8 w-8 rounded-xl border border-border bg-card hover:bg-rose-600 text-muted-foreground hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* ONになっている権限バッジ */}
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {activeAxes.length === 0 ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-[10px] font-bold text-muted-foreground">
+                                    閲覧専用（編集権限なし）
+                                  </span>
+                                ) : (
+                                  activeAxes.map((ax) => (
+                                    <span
+                                      key={ax.key}
+                                      className={cn(
+                                        "px-2 py-0.5 rounded-md border text-[10px] font-black",
+                                        ax.key === "canManageTeam"
+                                          ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                          : ax.key === "canEditCarpool"
+                                          ? "bg-teal-500/12 text-teal-800 dark:text-teal-300 border-teal-500/35"
+                                          : ax.key === "canManageOps"
+                                          ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                          : "bg-primary/10 text-primary border-primary/25"
+                                      )}
+                                    >
+                                      ✓ {ax.shortLabel}
+                                    </span>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                {/* 2. 🛡️ 規定8役職（呼称変更 ＆ 権限カスタマイズ） */}
                 <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
                   <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
@@ -1688,16 +2176,17 @@ function LiffAdminDashboardContent() {
                       </span>
                       <div className="min-w-0">
                         <h3 className="text-xs sm:text-sm font-black text-white truncate">
-                          チーム独自の役職名カスタマイズ
+                          規定の役職（呼称・権限のカスタマイズ）
                         </h3>
                         <p className="text-[10px] font-bold text-slate-300 truncate">
-                          普段使っている役員・係の呼び名に変更できます
+                          規定8役職の呼び名と7つの機能権限をチームに合わせて調整
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setCustomLabels({})}
+                      disabled={isSavingTitles}
+                      onClick={() => setIsResetRolesConfirmOpen(true)}
                       className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
                     >
                       <RotateCcw className="w-3 h-3" />
@@ -1705,97 +2194,170 @@ function LiffAdminDashboardContent() {
                     </button>
                   </div>
 
-                  <div className="p-4 space-y-3 text-xs">
+                  <div className="p-4 space-y-2.5 text-xs">
                     <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
-                      例:「IT管理者」→「父母会長・事務局」、「スタッフ」→「審判部」など、チーム独自の肩書に変更できます（空欄は標準名を使用）。
+                      初期状態では「保護者」「選手」は出欠回答・写真投稿などの一般操作のみ有効で、「運用・規定の設定」や「配車編成」はロックされています。必要に応じて各役職の「呼称・権限」から変更できます。
                     </p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {ROLE_MASTER_LIST.map((rm) => (
-                        <div
-                          key={rm.role}
-                          className="p-2.5 rounded-xl border border-border bg-background space-y-1"
-                        >
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="font-black text-foreground">
-                              標準: {rm.defaultLabel}
-                            </span>
-                            <span className="font-mono text-[10px] text-muted-foreground">
-                              {rm.role}
-                            </span>
-                          </div>
-                          <input
-                            type="text"
-                            value={customLabels[rm.role] || ""}
-                            onChange={(e) =>
-                              setCustomLabels((prev) => ({
-                                ...prev,
-                                [rm.role]: e.target.value,
-                              }))
-                            }
-                            placeholder={`カスタム呼称（標準: ${rm.defaultLabel}）`}
-                            maxLength={20}
-                            className="w-full h-9 px-2.5 rounded-lg border border-border bg-card text-foreground text-xs font-bold"
-                          />
-                        </div>
-                      ))}
-                    </div>
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {builtinRoleDefs.map((def) => {
+                        const assignedCount =
+                          roleMemberCounts[def.role.toLowerCase()] || 0;
+                        const isModified =
+                          isBuiltinRoleModifiedFromDefault(def);
+                        const activeAxes = PERMISSION_AXIS_METAS.filter(
+                          (ax) => def.permissions[ax.key]
+                        );
 
-                    <button
-                      type="button"
-                      disabled={isSavingTitles}
-                      onClick={() => void handleSaveCustomTitles()}
-                      className="w-full h-10 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      {isSavingTitles ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Check className="w-4 h-4" />
-                      )}
-                      <span>役職の呼称設定を保存する</span>
-                    </button>
+                        return (
+                          <div
+                            key={def.role}
+                            className="p-3 rounded-2xl border border-border bg-background space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span
+                                    className={cn(
+                                      "px-2 py-0.5 rounded-md border text-[11px] font-black",
+                                      def.permissions.canManageTeam
+                                        ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                        : getRoleTonePillClass(def.badgeTone)
+                                    )}
+                                  >
+                                    {def.label}
+                                  </span>
+                                  {def.customLabel && (
+                                    <span className="text-[10px] font-bold text-muted-foreground">
+                                      （標準: {def.defaultLabel}）
+                                    </span>
+                                  )}
+                                  {isModified && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black">
+                                      カスタム中
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-bold text-muted-foreground tabular-nums">
+                                    {assignedCount}名
+                                  </span>
+                                </div>
+                                <p className="text-[10.5px] font-bold text-muted-foreground leading-snug">
+                                  {def.summary}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isSavingTitles}
+                                onClick={() => openEditRoleModal(def)}
+                                className="h-8 px-2.5 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-black inline-flex items-center gap-1 shrink-0 active:scale-95 transition-all cursor-pointer"
+                              >
+                                <SlidersHorizontal className="w-3 h-3 text-primary" />
+                                <span>呼称・権限</span>
+                              </button>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1">
+                              {activeAxes.length === 0 ? (
+                                <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-[10px] font-bold text-muted-foreground">
+                                  閲覧専用（編集不可）
+                                </span>
+                              ) : (
+                                activeAxes.map((ax) => (
+                                  <span
+                                    key={ax.key}
+                                    className={cn(
+                                      "px-2 py-0.5 rounded-md border text-[10px] font-black",
+                                      ax.key === "canManageTeam"
+                                        ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                        : ax.key === "canEditCarpool"
+                                        ? "bg-teal-500/12 text-teal-800 dark:text-teal-300 border-teal-500/35"
+                                        : ax.key === "canManageOps"
+                                        ? "bg-amber-500/12 text-amber-800 dark:text-amber-300 border-amber-500/35"
+                                        : "bg-card text-foreground border-border"
+                                    )}
+                                  >
+                                    ✓ {ax.shortLabel}
+                                  </span>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </section>
 
-                {/* 権限マトリクス早見表 */}
+                {/* 3. 📊 役職別 7権限マトリクス早見表 */}
                 <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
-                  <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center gap-2">
-                    <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
-                    <h3 className="text-xs sm:text-sm font-black text-white">
-                      役職別 権限マトリクス早見表
-                    </h3>
+                  <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ShieldCheck className="w-4 h-4 text-teal-400 shrink-0" />
+                      <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                        役職別 7権限マトリクス早見表
+                      </h3>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-300 shrink-0">
+                      行タップで編集
+                    </span>
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse">
+                    <table className="w-full min-w-[540px] text-xs border-collapse">
                       <thead>
-                        <tr className="bg-muted border-b border-border text-[11px] font-black text-foreground">
-                          <th className="p-2.5 text-left">役職（ロール）</th>
-                          <th className="p-2 text-center">チーム管理</th>
-                          <th className="p-2 text-center">スコア記録</th>
-                          <th className="p-2 text-center">予定作成</th>
+                        <tr className="bg-muted border-b border-border text-[10.5px] font-black text-foreground">
+                          <th className="p-2.5 text-left sticky left-0 bg-muted z-10 min-w-[132px]">
+                            役職（ロール）
+                          </th>
+                          {PERMISSION_AXIS_METAS.map((ax) => (
+                            <th
+                              key={ax.key}
+                              className="p-1.5 text-center whitespace-nowrap"
+                            >
+                              {ax.shortLabel}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
-                        {ROLE_MASTER_LIST.map((rm) => (
-                          <tr key={rm.role} className="bg-card">
-                            <td className="p-2.5">
-                              <div className="font-black text-foreground">
-                                {getDisplayRoleLabel(rm.role)}
+                        {roleDefinitions.map((rm) => (
+                          <tr
+                            key={rm.role}
+                            onClick={() => openEditRoleModal(rm)}
+                            className="bg-card hover:bg-muted/50 cursor-pointer transition-colors"
+                          >
+                            <td className="p-2.5 sticky left-0 bg-card z-10 border-r border-border/60">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="font-black text-foreground">
+                                  {rm.label}
+                                </span>
+                                {!rm.isBuiltin && (
+                                  <span className="px-1 py-0.2 rounded bg-teal-500/15 text-teal-800 dark:text-teal-300 text-[9px] font-black">
+                                    独自
+                                  </span>
+                                )}
                               </div>
-                              <div className="text-[10px] font-bold text-muted-foreground">
-                                {rm.summary}
-                              </div>
                             </td>
-                            <td className="p-2 text-center font-black">
-                              {rm.canAdminMenu ? "⭕" : "—"}
-                            </td>
-                            <td className="p-2 text-center font-black">
-                              {rm.canScoreInput ? "⭕" : "—"}
-                            </td>
-                            <td className="p-2 text-center font-black">
-                              {rm.canScheduleEdit ? "⭕" : "—"}
-                            </td>
+                            {PERMISSION_AXIS_METAS.map((ax) => {
+                              const enabled = rm.permissions[ax.key];
+                              return (
+                                <td
+                                  key={ax.key}
+                                  className="p-1.5 text-center font-black"
+                                >
+                                  {enabled ? (
+                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[11px]">
+                                      ●
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground/50">
+                                      —
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
                           </tr>
                         ))}
                       </tbody>
@@ -2000,6 +2562,7 @@ function LiffAdminDashboardContent() {
                     onChange={(val) => {
                       setFormRole(val);
                       setFormSubRoles((prev) => prev.filter((x) => x !== val));
+                      const pickedDef = roleDefByKey.get(val.toLowerCase());
                       if (
                         val === "manager" ||
                         val === "coach" ||
@@ -2011,15 +2574,20 @@ function LiffAdminDashboardContent() {
                         setFormMemberType("player");
                       } else if (val === "parent") {
                         setFormMemberType("parent");
+                      } else if (
+                        pickedDef &&
+                        !pickedDef.isBuiltin &&
+                        !editingMember
+                      ) {
+                        if (
+                          pickedDef.permissions.canManageOps ||
+                          pickedDef.permissions.canEditScore
+                        ) {
+                          setFormMemberType("staff");
+                        }
                       }
                     }}
-                    options={ROLE_MASTER_LIST.map((rm) => ({
-                      value: rm.role,
-                      label: getDisplayRoleLabel(rm.role),
-                      sublabel: rm.summary,
-                      badge: rm.canAdminMenu ? "管理権限あり" : undefined,
-                      badgeTone: rm.badgeTone,
-                    }))}
+                    options={roleSelectOptions}
                     title="主となる役職を選択"
                     accent="amber"
                     size="md"
@@ -2027,14 +2595,15 @@ function LiffAdminDashboardContent() {
                   />
                 </div>
 
-                {/* 兼務ロール（複数選択可） */}
+                {/* 兼務ロール（複数選択可 — 規定役職＋チーム独自役職に対応） */}
                 <div className="space-y-1.5">
                   <label className="block text-[11px] font-black text-foreground">
-                    兼務ロール（複数選択可 — 例:「保護者」兼「スコアラー・IT管理者」）
+                    兼務ロール（複数選択可 — 例:「保護者」兼「配車係・スコアラー」）
                   </label>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {ROLE_MASTER_LIST.filter((rm) => rm.role !== formRole).map(
-                      (rm) => {
+                    {roleDefinitions
+                      .filter((rm) => rm.role !== formRole)
+                      .map((rm) => {
                         const checked = formSubRoles.includes(rm.role);
                         return (
                           <button
@@ -2047,18 +2616,62 @@ function LiffAdminDashboardContent() {
                                 : "bg-background text-foreground border-border hover:bg-muted font-bold"
                             }`}
                           >
-                            <span className="truncate">
-                              {getDisplayRoleLabel(rm.role)}
+                            <span className="truncate flex items-center gap-1 min-w-0">
+                              <span className="truncate">{rm.label}</span>
+                              {!rm.isBuiltin && !checked && (
+                                <span className="px-1 py-0.2 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 text-[9px] font-black shrink-0">
+                                  独自
+                                </span>
+                              )}
                             </span>
                             {checked && (
                               <Check className="w-3.5 h-3.5 shrink-0" />
                             )}
                           </button>
                         );
-                      }
-                    )}
+                      })}
                   </div>
                 </div>
+
+                {/* 実効権限のリアルタイム合算プレビュー */}
+                {(() => {
+                  const previewPerms = evaluateEffectiveRolePermissions(
+                    formRole,
+                    formSubRoles,
+                    roleDefinitions
+                  );
+                  const activePreviewAxes = PERMISSION_AXIS_METAS.filter(
+                    (ax) => previewPerms[ax.key]
+                  );
+                  return (
+                    <div className="p-2.5 rounded-xl bg-muted/45 border border-border space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10.5px] font-black text-foreground">
+                          付与される実効権限（主役職＋兼務の合算）
+                        </span>
+                        <span className="text-[10px] font-bold text-muted-foreground">
+                          {activePreviewAxes.length}項目有効
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {activePreviewAxes.length === 0 ? (
+                          <span className="px-2 py-0.5 rounded bg-card border border-border text-[10px] font-bold text-muted-foreground">
+                            閲覧専用（編集不可）
+                          </span>
+                        ) : (
+                          activePreviewAxes.map((ax) => (
+                            <span
+                              key={ax.key}
+                              className="px-2 py-0.5 rounded bg-card border border-border text-[10px] font-black text-foreground"
+                            >
+                              ✓ {ax.shortLabel}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* 区分 ＆ 連絡先 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -2412,6 +3025,432 @@ function LiffAdminDashboardContent() {
                     <span>アカウントを統合する</span>
                   )}
                 </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ==================== モーダル: 役職追加・呼称＆7権限スイッチ編集 ==================== */}
+      {mounted &&
+        isRoleEditorOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => {
+              if (!isSavingTitles) setIsRoleEditorOpen(false);
+            }}
+          >
+            <div
+              className="w-full sm:max-w-lg max-h-[92dvh] flex flex-col rounded-t-2xl sm:rounded-2xl border border-border bg-card text-foreground shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className={cn(
+                  "px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] flex items-center justify-between gap-2 shrink-0",
+                  editingRoleIsBuiltin ? "border-amber-500" : "border-teal-500"
+                )}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className={cn(
+                      "w-8 h-8 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0",
+                      editingRoleIsBuiltin ? "text-amber-400" : "text-teal-400"
+                    )}
+                  >
+                    {roleEditorMode === "create" ? (
+                      <Plus className="w-4 h-4" />
+                    ) : (
+                      <SlidersHorizontal className="w-4 h-4" />
+                    )}
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white truncate">
+                      {roleEditorMode === "create"
+                        ? "チーム独自の役職を追加"
+                        : editingRoleIsBuiltin
+                        ? `「${editingRoleDefaultLabel}」の呼称・権限設定`
+                        : `「${roleFormLabel || "役職"}」の編集・権限設定`}
+                    </h3>
+                    <p className="text-[10px] font-bold text-slate-300 truncate">
+                      {editingRoleIsBuiltin
+                        ? "チーム内での呼び名と7つの機能権限を設定します"
+                        : "この役職に付与する操作権限を個別にON/OFFできます"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => setIsRoleEditorOpen(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center justify-center cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4 overflow-y-auto text-xs">
+                {/* 1. 役職名 / カスタム呼称 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-black text-foreground">
+                      {editingRoleIsBuiltin
+                        ? "チーム内での表示呼称（任意）"
+                        : "役職名（必須）"}
+                    </label>
+                    {editingRoleIsBuiltin && (
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        空欄時は標準「{editingRoleDefaultLabel}」
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={20}
+                    value={roleFormLabel}
+                    onChange={(e) => setRoleFormLabel(e.target.value)}
+                    placeholder={
+                      editingRoleIsBuiltin
+                        ? `標準: ${editingRoleDefaultLabel}（例: 父母会長・事務局）`
+                        : "例: 配車係 / 行事・会計係 / 審判部長"
+                    }
+                    className="w-full h-10 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
+                  />
+                </div>
+
+                {/* 2. バッジカラー */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-black text-foreground">
+                    バッジの表示カラー
+                  </label>
+                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                    {ROLE_BADGE_TONE_OPTIONS.map((opt) => {
+                      const active = roleFormTone === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setRoleFormTone(opt.value)}
+                          className={cn(
+                            "py-1.5 px-2 rounded-xl border text-[11px] font-black transition-all cursor-pointer",
+                            active
+                              ? cn(opt.chipClass, "ring-2 ring-primary/40")
+                              : "bg-background text-muted-foreground border-border hover:text-foreground"
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. 役割の補足説明 */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-black text-foreground">
+                    担当内容・説明メモ（任意）
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={80}
+                    value={roleFormSummary}
+                    onChange={(e) => setRoleFormSummary(e.target.value)}
+                    placeholder="例: 遠征・試合の号車割り・乗車メンバー・積載道具の編成を担当"
+                    className="w-full h-9 px-3 rounded-xl border border-border bg-background text-foreground text-xs font-bold"
+                  />
+                </div>
+
+                {/* 4. 7つの機能権限スイッチ */}
+                <div className="space-y-2 pt-1 border-t border-border">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-black text-foreground">
+                      この役職に付与する権限（7カテゴリ）
+                    </label>
+                    <span className="text-[10px] font-bold text-muted-foreground">
+                      タップでON/OFF
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const hasUpperPermOn =
+                      roleFormPermissions.canManageTeam ||
+                      roleFormPermissions.canManageOps ||
+                      roleFormPermissions.canManagePlayers ||
+                      roleFormPermissions.canEditScore ||
+                      roleFormPermissions.canEditSchedule ||
+                      roleFormPermissions.canEditCarpool;
+
+                    return (
+                      <div className="space-y-2">
+                        {PERMISSION_AXIS_METAS.map((ax) => {
+                          const enabled = roleFormPermissions[ax.key];
+                          const isLockedManageTeam =
+                            ax.key === "canManageTeam" &&
+                            editingRoleLockManageTeam;
+                          const isAutoMutateLocked =
+                            ax.key === "canMutate" && hasUpperPermOn;
+                          const isLocked =
+                            isLockedManageTeam || isAutoMutateLocked;
+
+                          return (
+                            <div
+                              key={ax.key}
+                              onClick={() => {
+                                if (!isLocked) {
+                                  handleToggleRolePermission(ax.key);
+                                }
+                              }}
+                              className={cn(
+                                "p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors",
+                                !isLocked && "cursor-pointer",
+                                enabled
+                                  ? "bg-primary/[0.06] border-primary/35"
+                                  : "bg-background border-border"
+                              )}
+                            >
+                              <div className="space-y-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-black text-foreground">
+                                    {ax.label}
+                                  </span>
+                                  {ax.key === "canEditCarpool" && (
+                                    <span className="px-1.5 py-0.2 rounded bg-teal-500/15 text-teal-800 dark:text-teal-300 border border-teal-500/30 text-[9.5px] font-black">
+                                      配車独立枠
+                                    </span>
+                                  )}
+                                  {ax.key === "canManageOps" && (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[9.5px] font-black">
+                                      運用・規定
+                                    </span>
+                                  )}
+                                  {isLockedManageTeam && (
+                                    <span className="px-1.5 py-0.2 rounded bg-[#0f172a] text-amber-300 text-[9.5px] font-black inline-flex items-center gap-0.5">
+                                      <Lock className="w-2.5 h-2.5" />
+                                      <span>常時ON固定</span>
+                                    </span>
+                                  )}
+                                  {isAutoMutateLocked && (
+                                    <span className="px-1.5 py-0.2 rounded bg-muted border border-border text-muted-foreground text-[9.5px] font-bold">
+                                      上位権限ONのため自動有効
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10.5px] font-bold text-muted-foreground leading-snug">
+                                  {ax.description}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={enabled}
+                                disabled={isLocked}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!isLocked) {
+                                    handleToggleRolePermission(ax.key);
+                                  }
+                                }}
+                                className={cn(
+                                  "w-12 h-6 rounded-full transition-colors relative p-0.5 shrink-0",
+                                  isLocked
+                                    ? "opacity-75 cursor-not-allowed"
+                                    : "cursor-pointer",
+                                  enabled
+                                    ? "bg-primary"
+                                    : "bg-muted border border-border"
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "w-5 h-5 rounded-full bg-white transition-transform",
+                                    enabled
+                                      ? "translate-x-6 shadow-xs"
+                                      : "translate-x-0"
+                                  )}
+                                />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
+                <div>
+                  {editingRoleIsBuiltin && roleEditorMode === "edit" && (
+                    <button
+                      type="button"
+                      disabled={isSavingTitles}
+                      onClick={handleRestoreSingleBuiltinDefault}
+                      className="h-9 px-2.5 rounded-xl border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>標準値に戻す</span>
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingTitles}
+                    onClick={() => setIsRoleEditorOpen(false)}
+                    className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingTitles}
+                    onClick={() => void handleSaveRoleEditor()}
+                    className="h-10 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingTitles ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>
+                      {roleEditorMode === "create"
+                        ? "役職を追加する"
+                        : "設定を保存"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ==================== モーダル: チーム独自役職の削除確認 ==================== */}
+      {mounted &&
+        deletingRoleDef &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => {
+              if (!isSavingTitles) setDeletingRoleDef(null);
+            }}
+          >
+            <div
+              className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-card text-foreground shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-rose-500 flex items-center justify-between">
+                <h3 className="text-sm font-black text-white">
+                  独自役職の削除確認
+                </h3>
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => setDeletingRoleDef(null)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 text-xs">
+                <p className="font-black text-foreground">
+                  チーム独自役職「{deletingRoleDef.label}」を削除しますか？
+                </p>
+                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                  {(roleMemberCounts[deletingRoleDef.role.toLowerCase()] || 0) >
+                  0
+                    ? `現在 ${
+                        roleMemberCounts[deletingRoleDef.role.toLowerCase()]
+                      }名のメンバーに割り当てられています。削除すると兼務から外れ、主役職にしていたメンバーは自動的に標準役職（保護者／スタッフ等）へ引き継がれます。`
+                    : "現在この役職が割り当てられているメンバーはいません。安全に削除できます。"}
+                </p>
+              </div>
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => setDeletingRoleDef(null)}
+                  className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => void handleConfirmDeleteCustomRole()}
+                  className="h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingTitles ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span>削除する</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* ==================== モーダル: 規定役職の初期値リセット確認 ==================== */}
+      {mounted &&
+        isResetRolesConfirmOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
+            onClick={() => {
+              if (!isSavingTitles) setIsResetRolesConfirmOpen(false);
+            }}
+          >
+            <div
+              className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl border border-border bg-card text-foreground shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 flex items-center justify-between">
+                <h3 className="text-sm font-black text-white">
+                  規定役職を初期値に戻す
+                </h3>
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => setIsResetRolesConfirmOpen(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 text-slate-200 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 space-y-2 text-xs">
+                <p className="font-black text-foreground">
+                  規定8役職の呼称と権限設定をすべて標準の初期値に戻しますか？
+                </p>
+                <p className="text-[11px] font-bold text-muted-foreground leading-relaxed">
+                  ※ 追加済みの「チーム独自の役職」は消えずにそのまま残ります。
+                </p>
+              </div>
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => setIsResetRolesConfirmOpen(false)}
+                  className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingTitles}
+                  onClick={() => void handleConfirmResetAllBuiltinRoles()}
+                  className="h-10 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingTitles ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <RotateCcw className="w-4 h-4" />
+                  )}
+                  <span>初期値に戻す</span>
+                </button>
               </div>
             </div>
           </div>,

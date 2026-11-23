@@ -20,9 +20,13 @@ import {
 } from "lucide-react";
 
 export default function LiffCarpoolGeneratorPage() {
-  const { canMutate, canManagePlayers, isDemoMode } = useLiffPermissions();
-  const canEditCarpool = canMutate || isDemoMode;
-  const canManageMasters = canManagePlayers || isDemoMode;
+  const {
+    canEditCarpool: permCanEditCarpool,
+    canManageTeam,
+    isDemoMode,
+  } = useLiffPermissions();
+  const canEditCarpool = permCanEditCarpool || canManageTeam || isDemoMode;
+  const canManageMasters = canManageTeam || isDemoMode;
 
   return (
     <div className="flex flex-col flex-1">

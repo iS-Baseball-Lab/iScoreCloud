@@ -1310,11 +1310,15 @@ liffGroundsAiRouter.post("/", async (c) => {
   }
 
   const access = await resolveCallerTeamAccess(c);
-  if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+  if (
+    !access.isAuthenticated ||
+    (!access.canManagePlayersForTeam(teamId) &&
+      !access.canManageTeamId(teamId))
+  ) {
     return c.json(
       {
         success: false,
-        error: "グラウンドAI検索を利用するにはチームメンバーとしてログインが必要です",
+        error: "球場・施設マスタのAI検索・編集権限がありません",
       },
       403
     );

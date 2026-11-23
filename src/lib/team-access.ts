@@ -28,11 +28,13 @@ import {
   user,
 } from "@/db/schema";
 import { ensureAuthSchema, getAuth } from "@/lib/auth";
+import { ensureAllSchemasOnce } from "@/lib/db-helper";
 import {
   ROLES,
-  canEditScore,
-  canManageTeam,
-  canViewInternalData,
+  evaluateEffectiveRolePermissions,
+  parseTeamRoleDefinitions,
+  type RolePermissions,
+  type TeamRoleDefinition,
 } from "@/lib/roles";
 import type { WorkerEnv } from "@/types/api";
 
@@ -41,14 +43,6 @@ export const IGNORED_MOCK_USER_IDS = new Set([
   "mock-user-12345",
   "undefined",
   "null",
-]);
-
-const STAFF_ROSTER_ROLES = new Set<string>([
-  ROLES.ADMIN,
-  ROLES.MANAGER,
-  ROLES.COACH,
-  ROLES.SCORER,
-  ROLES.STAFF,
 ]);
 
 const LIFF_SESSION_COOKIE_NAME = "iscore_liff_session";
@@ -83,14 +77,20 @@ export interface CallerTeamAccess {
   pendingTeamIds: Set<string>;
   activeOrgIds: Set<string>;
   managedTeamIds: Set<string>;
+  opsManageableTeamIds: Set<string>;
   scoreEditableTeamIds: Set<string>;
   playerManageableTeamIds: Set<string>;
+  scheduleEditableTeamIds: Set<string>;
+  carpoolEditableTeamIds: Set<string>;
   mutableTeamIds: Set<string>;
   teamRoles: Map<string, TeamRoleGrant>;
   canAccessTeam: (teamId: string | null | undefined) => boolean;
   canManageTeamId: (teamId: string | null | undefined) => boolean;
+  canManageOpsForTeam: (teamId: string | null | undefined) => boolean;
   canEditScoreForTeam: (teamId: string | null | undefined) => boolean;
   canManagePlayersForTeam: (teamId: string | null | undefined) => boolean;
+  canEditScheduleForTeam: (teamId: string | null | undefined) => boolean;
+  canEditCarpoolForTeam: (teamId: string | null | undefined) => boolean;
   canMutateTeamData: (teamId: string | null | undefined) => boolean;
   canAccessOrganization: (orgId: string | null | undefined) => boolean;
 }
@@ -914,13 +914,37 @@ async function computeCallerTeamAccess(
   const pendingTeamIds = new Set<string>();
   const activeOrgIds = new Set<string>();
   const managedTeamIds = new Set<string>();
+  const opsManageableTeamIds = new Set<string>();
   const scoreEditableTeamIds = new Set<string>();
   const playerManageableTeamIds = new Set<string>();
+  const scheduleEditableTeamIds = new Set<string>();
+  const carpoolEditableTeamIds = new Set<string>();
   const mutableTeamIds = new Set<string>();
   const teamRoles = new Map<string, TeamRoleGrant>();
   let isSystemAdmin = sessionUser?.role === "SYSTEM_ADMIN";
 
+  const grantAllTeamPermissions = (tid: string) => {
+    managedTeamIds.add(tid);
+    opsManageableTeamIds.add(tid);
+    scoreEditableTeamIds.add(tid);
+    playerManageableTeamIds.add(tid);
+    scheduleEditableTeamIds.add(tid);
+    carpoolEditableTeamIds.add(tid);
+    mutableTeamIds.add(tid);
+  };
+
+  const applyRolePermissionsForTeam = (tid: string, perms: RolePermissions) => {
+    if (perms.canManageTeam) managedTeamIds.add(tid);
+    if (perms.canManageOps) opsManageableTeamIds.add(tid);
+    if (perms.canEditScore) scoreEditableTeamIds.add(tid);
+    if (perms.canManagePlayers) playerManageableTeamIds.add(tid);
+    if (perms.canEditSchedule) scheduleEditableTeamIds.add(tid);
+    if (perms.canEditCarpool) carpoolEditableTeamIds.add(tid);
+    if (perms.canMutate) mutableTeamIds.add(tid);
+  };
+
   if (candidateUserIds.length > 0) {
+    await ensureAllSchemasOnce(c.env.DB);
     const candidateSet = new Set(candidateUserIds);
 
     const [dbUsers, memberRows, createdTeamsRows, orgMemberRows, playerRows] =
@@ -944,6 +968,7 @@ async function computeCallerTeamAccess(
             id: teams.id,
             organizationId: teams.organizationId,
             createdBy: teams.createdBy,
+            rolePermissionsJson: teams.rolePermissionsJson,
           })
           .from(teams)
           .where(inArray(teams.createdBy, candidateUserIds)),
@@ -998,6 +1023,7 @@ async function computeCallerTeamAccess(
               id: teams.id,
               organizationId: teams.organizationId,
               createdBy: teams.createdBy,
+              rolePermissionsJson: teams.rolePermissionsJson,
             })
             .from(teams)
             .where(
@@ -1010,15 +1036,25 @@ async function computeCallerTeamAccess(
 
     const mergedTeamsMap = new Map<
       string,
-      { id: string; organizationId: string | null; createdBy: string }
+      {
+        id: string;
+        organizationId: string | null;
+        createdBy: string;
+        rolePermissionsJson: string | null;
+      }
     >();
     for (const t of createdTeamsRows) mergedTeamsMap.set(t.id, t);
     for (const t of relevantTeamsRows) mergedTeamsMap.set(t.id, t);
 
     const teamOrgById = new Map<string, string | null>();
     const teamsByOrgId = new Map<string, string[]>();
+    const roleDefsByTeamId = new Map<string, TeamRoleDefinition[]>();
     for (const t of mergedTeamsMap.values()) {
       teamOrgById.set(t.id, t.organizationId);
+      roleDefsByTeamId.set(
+        t.id,
+        parseTeamRoleDefinitions(t.rolePermissionsJson, null)
+      );
       if (t.organizationId) {
         const list = teamsByOrgId.get(t.organizationId) || [];
         list.push(t.id);
@@ -1026,16 +1062,14 @@ async function computeCallerTeamAccess(
       }
       if (t.createdBy && candidateSet.has(t.createdBy)) {
         activeTeamIds.add(t.id);
-        managedTeamIds.add(t.id);
-        scoreEditableTeamIds.add(t.id);
-        playerManageableTeamIds.add(t.id);
-        mutableTeamIds.add(t.id);
+        grantAllTeamPermissions(t.id);
         if (t.organizationId) activeOrgIds.add(t.organizationId);
       }
     }
 
     const pendingOrBlockedTeams = new Set<string>();
     const rawPendingTeamIds = new Set<string>();
+    const memberHandledTeamIds = new Set<string>();
     for (const m of memberRows) {
       if (!m.teamId) continue;
       const normalizedStatus = (m.status || "active").toLowerCase();
@@ -1049,12 +1083,16 @@ async function computeCallerTeamAccess(
       }
 
       activeTeamIds.add(m.teamId);
+      memberHandledTeamIds.add(m.teamId);
       const orgId = teamOrgById.get(m.teamId);
       if (orgId) activeOrgIds.add(orgId);
 
       const subRoles = parseSubRolesList(m.subRoles);
+      const defs = roleDefsByTeamId.get(m.teamId);
+      const perms = evaluateEffectiveRolePermissions(m.role, subRoles, defs);
+
       const existingGrant = teamRoles.get(m.teamId);
-      if (!existingGrant || canManageTeam(m.role, subRoles)) {
+      if (!existingGrant || perms.canManageTeam) {
         teamRoles.set(m.teamId, {
           memberId: m.id,
           role: m.role,
@@ -1062,23 +1100,7 @@ async function computeCallerTeamAccess(
         });
       }
 
-      if (canViewInternalData(m.role, subRoles)) {
-        mutableTeamIds.add(m.teamId);
-      }
-      if (
-        STAFF_ROSTER_ROLES.has(normalizedRole) ||
-        subRoles.some((sr) => STAFF_ROSTER_ROLES.has(sr.toLowerCase()))
-      ) {
-        playerManageableTeamIds.add(m.teamId);
-      }
-      if (canManageTeam(m.role, subRoles)) {
-        managedTeamIds.add(m.teamId);
-        scoreEditableTeamIds.add(m.teamId);
-        playerManageableTeamIds.add(m.teamId);
-        mutableTeamIds.add(m.teamId);
-      } else if (canEditScore(m.role, subRoles)) {
-        scoreEditableTeamIds.add(m.teamId);
-      }
+      applyRolePermissionsForTeam(m.teamId, perms);
     }
 
     for (const om of orgMemberRows) {
@@ -1096,10 +1118,7 @@ async function computeCallerTeamAccess(
         const orgTeams = teamsByOrgId.get(om.organizationId) || [];
         for (const tid of orgTeams) {
           activeTeamIds.add(tid);
-          managedTeamIds.add(tid);
-          scoreEditableTeamIds.add(tid);
-          playerManageableTeamIds.add(tid);
-          mutableTeamIds.add(tid);
+          grantAllTeamPermissions(tid);
         }
       }
     }
@@ -1107,7 +1126,15 @@ async function computeCallerTeamAccess(
     for (const p of playerRows) {
       if (p.teamId && !pendingOrBlockedTeams.has(p.teamId)) {
         activeTeamIds.add(p.teamId);
-        mutableTeamIds.add(p.teamId);
+        if (!memberHandledTeamIds.has(p.teamId)) {
+          const defs = roleDefsByTeamId.get(p.teamId);
+          const playerPerms = evaluateEffectiveRolePermissions(
+            ROLES.PLAYER,
+            [],
+            defs
+          );
+          applyRolePermissionsForTeam(p.teamId, playerPerms);
+        }
         const orgId = teamOrgById.get(p.teamId);
         if (orgId) activeOrgIds.add(orgId);
       }
@@ -1130,6 +1157,15 @@ async function computeCallerTeamAccess(
     return isSystemAdmin || managedTeamIds.has(teamId);
   };
 
+  const canManageOpsForTeam = (teamId: string | null | undefined): boolean => {
+    if (!teamId || teamId === "demo-team") return false;
+    return (
+      isSystemAdmin ||
+      managedTeamIds.has(teamId) ||
+      opsManageableTeamIds.has(teamId)
+    );
+  };
+
   const canEditScoreForTeam = (teamId: string | null | undefined): boolean => {
     if (!teamId || teamId === "demo-team") return false;
     return isSystemAdmin || scoreEditableTeamIds.has(teamId);
@@ -1140,6 +1176,20 @@ async function computeCallerTeamAccess(
   ): boolean => {
     if (!teamId || teamId === "demo-team") return false;
     return isSystemAdmin || playerManageableTeamIds.has(teamId);
+  };
+
+  const canEditScheduleForTeam = (
+    teamId: string | null | undefined
+  ): boolean => {
+    if (!teamId || teamId === "demo-team") return false;
+    return isSystemAdmin || scheduleEditableTeamIds.has(teamId);
+  };
+
+  const canEditCarpoolForTeam = (
+    teamId: string | null | undefined
+  ): boolean => {
+    if (!teamId || teamId === "demo-team") return false;
+    return isSystemAdmin || carpoolEditableTeamIds.has(teamId);
   };
 
   const canMutateTeamData = (teamId: string | null | undefined): boolean => {
@@ -1165,14 +1215,20 @@ async function computeCallerTeamAccess(
     pendingTeamIds,
     activeOrgIds,
     managedTeamIds,
+    opsManageableTeamIds,
     scoreEditableTeamIds,
     playerManageableTeamIds,
+    scheduleEditableTeamIds,
+    carpoolEditableTeamIds,
     mutableTeamIds,
     teamRoles,
     canAccessTeam,
     canManageTeamId,
+    canManageOpsForTeam,
     canEditScoreForTeam,
     canManagePlayersForTeam,
+    canEditScheduleForTeam,
+    canEditCarpoolForTeam,
     canMutateTeamData,
     canAccessOrganization,
   };
@@ -1837,6 +1893,51 @@ export function createLiffTeamIsolationMiddleware(options?: {
           return c.json({ success: false, error: "権限がありません" }, 403);
         }
       }
+
+      if (
+        segs[2] === "documents" ||
+        segs[2] === "faqs" ||
+        segs[2] === "rules" ||
+        segs[2] === "links"
+      ) {
+        const hasSchedulePerm =
+          explicitTeamId && explicitTeamId !== "demo-team"
+            ? access.canEditScheduleForTeam(explicitTeamId) ||
+              access.canManageTeamId(explicitTeamId)
+            : access.isSystemAdmin ||
+              access.scheduleEditableTeamIds.size > 0 ||
+              access.managedTeamIds.size > 0;
+        if (explicitTeamId !== "demo-team" && !hasSchedulePerm) {
+          return c.json(
+            {
+              success: false,
+              error: "予定・資料の編集権限がありません",
+              isForbidden: true,
+            },
+            403
+          );
+        }
+      }
+
+      if (segs[2] === "related-teams") {
+        const hasPlayerPerm =
+          explicitTeamId && explicitTeamId !== "demo-team"
+            ? access.canManagePlayersForTeam(explicitTeamId) ||
+              access.canManageTeamId(explicitTeamId)
+            : access.isSystemAdmin ||
+              access.playerManageableTeamIds.size > 0 ||
+              access.managedTeamIds.size > 0;
+        if (explicitTeamId !== "demo-team" && !hasPlayerPerm) {
+          return c.json(
+            {
+              success: false,
+              error: "関連チームの編集権限がありません",
+              isForbidden: true,
+            },
+            403
+          );
+        }
+      }
     }
 
     // 3. 明示的に demo-team が指定されたリクエスト（かつ実リソースID混入なし確認済み）
@@ -1954,8 +2055,15 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
       if (!targetTeamId || !access.canAccessTeam(targetTeamId)) {
         return c.json({ success: false, error: "権限がありません" }, 403);
       }
-      if (method !== "GET" && !access.canMutateTeamData(targetTeamId)) {
-        return c.json({ success: false, error: "権限がありません" }, 403);
+      if (
+        method !== "GET" &&
+        !access.canEditScheduleForTeam(targetTeamId) &&
+        !access.canManageTeamId(targetTeamId)
+      ) {
+        return c.json(
+          { success: false, error: "活動予定の編集権限がありません" },
+          403
+        );
       }
       return next();
     }
@@ -1975,7 +2083,9 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
           !ownerTeamId ||
           !isTeamAlignedWithExplicit(ownerTeamId, explicitTeamId) ||
           !access.canAccessTeam(ownerTeamId) ||
-          (method !== "GET" && !access.canMutateTeamData(ownerTeamId))
+          (method !== "GET" &&
+            !access.canEditScoreForTeam(ownerTeamId) &&
+            !access.canManageTeamId(ownerTeamId))
         ) {
           return c.json({ success: false, error: "権限がありません" }, 403);
         }
@@ -2004,16 +2114,38 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
           return c.json({ success: false, error: "権限がありません" }, 403);
         }
         if (method !== "GET") {
-          // 試合本体の完全削除はスタッフ・スコア編集者・管理者のみ許可
           const isMatchRootDelete = method === "DELETE" && !segs[3];
-          if (isMatchRootDelete && !access.canManagePlayersForTeam(ownerTeamId)) {
+          if (
+            isMatchRootDelete &&
+            !access.canManagePlayersForTeam(ownerTeamId) &&
+            !access.canManageTeamId(ownerTeamId)
+          ) {
             return c.json(
               { success: false, error: "試合データの削除権限がありません" },
               403
             );
           }
-          if (!access.canMutateTeamData(ownerTeamId)) {
-            return c.json({ success: false, error: "権限がありません" }, 403);
+          if (segs[3] === "lineups") {
+            if (
+              !access.canEditScoreForTeam(ownerTeamId) &&
+              !access.canManagePlayersForTeam(ownerTeamId) &&
+              !access.canManageTeamId(ownerTeamId)
+            ) {
+              return c.json(
+                { success: false, error: "スタメン編成の編集権限がありません" },
+                403
+              );
+            }
+          } else if (
+            !access.canManagePlayersForTeam(ownerTeamId) &&
+            !access.canEditScoreForTeam(ownerTeamId) &&
+            !access.canEditScheduleForTeam(ownerTeamId) &&
+            !access.canManageTeamId(ownerTeamId)
+          ) {
+            return c.json(
+              { success: false, error: "試合情報の編集権限がありません" },
+              403
+            );
           }
         }
         return next();
@@ -2025,8 +2157,16 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
         if (!access.canAccessTeam(explicitTeamId)) {
           return c.json({ success: false, error: "権限がありません" }, 403);
         }
-        if (method !== "GET" && !access.canMutateTeamData(explicitTeamId)) {
-          return c.json({ success: false, error: "権限がありません" }, 403);
+        if (
+          method !== "GET" &&
+          !access.canManagePlayersForTeam(explicitTeamId) &&
+          !access.canEditScoreForTeam(explicitTeamId) &&
+          !access.canManageTeamId(explicitTeamId)
+        ) {
+          return c.json(
+            { success: false, error: "試合作成・編集権限がありません" },
+            403
+          );
         }
         return next();
       }
@@ -2072,9 +2212,14 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
           !ownerTeamId ||
           !isTeamAlignedWithExplicit(ownerTeamId, explicitTeamId) ||
           !access.canAccessTeam(ownerTeamId) ||
-          (method !== "GET" && !access.canMutateTeamData(ownerTeamId))
+          (method !== "GET" &&
+            !access.canEditCarpoolForTeam(ownerTeamId) &&
+            !access.canManageTeamId(ownerTeamId))
         ) {
-          return c.json({ success: false, error: "権限がありません" }, 403);
+          return c.json(
+            { success: false, error: "配車編成の編集権限がありません" },
+            403
+          );
         }
         return next();
       }
@@ -2180,7 +2325,7 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
         return c.json({ success: false, error: "管理者権限がありません" }, 403);
       }
 
-      // /api/teams/:teamId/players の公式名簿追加・編集・削除はスタッフ以上を必須化（かつ :playerId の所有チーム一致も検証）
+      // /api/teams/:teamId/players の公式名簿追加・編集・削除は選手管理権限を必須化
       if (segs[3] === "players" && method !== "GET") {
         if (!access.canManagePlayersForTeam(second)) {
           return c.json(
@@ -2199,8 +2344,15 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
 
       // /api/teams/:teamId/lineup-templates/:id の所有チーム検証
       if (segs[3] === "lineup-templates" && method !== "GET") {
-        if (!access.canMutateTeamData(second)) {
-          return c.json({ success: false, error: "権限がありません" }, 403);
+        if (
+          !access.canEditScoreForTeam(second) &&
+          !access.canManagePlayersForTeam(second) &&
+          !access.canManageTeamId(second)
+        ) {
+          return c.json(
+            { success: false, error: "スタメンテンプレートの編集権限がありません" },
+            403
+          );
         }
         if (segs[4] && !isDemoEntityId(segs[4])) {
           const tpl = await db
@@ -2238,23 +2390,51 @@ export function createSharedApiTeamIsolationMiddleware(): MiddlewareHandler<{
           403
         );
       }
-      // 共通マスタ（venues / tournaments）の変更・削除はスタッフ・管理者以上のみ許可
       if (
-        (mod === "venues" || mod === "tournaments") &&
+        mod === "venues" &&
         method !== "GET" &&
         !access.isSystemAdmin &&
-        access.playerManageableTeamIds.size === 0
+        access.playerManageableTeamIds.size === 0 &&
+        access.scheduleEditableTeamIds.size === 0 &&
+        access.managedTeamIds.size === 0
       ) {
         return c.json(
           {
             success: false,
-            error: "マスタデータの変更には指導者・管理者権限が必要です",
+            error: "球場・施設マスタの変更権限がありません",
           },
           403
         );
       }
       if (
-        (mod === "documents" || mod === "images") &&
+        mod === "tournaments" &&
+        method !== "GET" &&
+        !access.isSystemAdmin &&
+        access.playerManageableTeamIds.size === 0 &&
+        access.managedTeamIds.size === 0
+      ) {
+        return c.json(
+          {
+            success: false,
+            error: "大会マスタの変更には管理者・選手管理権限が必要です",
+          },
+          403
+        );
+      }
+      if (
+        mod === "documents" &&
+        method !== "GET" &&
+        !access.isSystemAdmin &&
+        access.scheduleEditableTeamIds.size === 0 &&
+        access.managedTeamIds.size === 0
+      ) {
+        return c.json(
+          { success: false, error: "配布資料のアップロード権限がありません" },
+          403
+        );
+      }
+      if (
+        mod === "images" &&
         method !== "GET" &&
         !access.isSystemAdmin &&
         access.mutableTeamIds.size === 0

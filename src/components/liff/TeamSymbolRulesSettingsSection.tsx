@@ -623,7 +623,7 @@ export function TeamSymbolRulesSettingsSection({
           </div>
         ) : (
           <div className="p-3 rounded-xl bg-muted/45 border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
-            ※ 閲覧専用メンバーのため、チーム記号ルールの変更・保存は行えません（現在の設定と早見表のA4出力はご確認いただけます）
+            ※ 現在の役職は閲覧モードのため、チーム記号ルールの変更・保存は行えません（「運用・規定の設定」権限が必要です。現在の設定と早見表のA4出力はご確認いただけます）
           </div>
         )}
 

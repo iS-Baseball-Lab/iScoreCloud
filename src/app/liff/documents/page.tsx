@@ -94,8 +94,8 @@ function getExternalBrowserUrl(url: string | null | undefined): string {
 
 export default function LiffDocumentsPage() {
   const { currentTeam, profile } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMode;
+  const { canEditSchedule, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canEditSchedule || canManageTeam || isDemoMode;
   const initialCachedDocs = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =

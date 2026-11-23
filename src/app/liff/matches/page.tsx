@@ -356,7 +356,19 @@ function MatchesContent() {
   const matchId = searchParams.get("id") || searchParams.get("matchId");
   const focusSection = searchParams.get("section");
   const { currentTeam, isLoadingTeam, isDemo, profile } = useLiff();
-  const { canMutate, canManagePlayers, canUsePaidAi } = useLiffPermissions();
+  const {
+    canManagePlayers,
+    canEditScore,
+    canEditSchedule,
+    canManageTeam,
+    canUsePaidAi,
+  } = useLiffPermissions();
+  const canEditMatchRecords = Boolean(
+    canManagePlayers || canEditScore || canEditSchedule || canManageTeam
+  );
+  const canAccessLineupEditor = Boolean(
+    canEditScore || canManagePlayers || canManageTeam
+  );
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 
@@ -1861,8 +1873,9 @@ function MatchesContent() {
     );
 
     const isDemoCurrentMatch = isDemo || isDemoMatchId(match.id);
-    const effectiveCanMutate = canMutate || isDemoCurrentMatch;
-    const effectiveCanDeleteMatch = canManagePlayers || isDemoCurrentMatch;
+    const effectiveCanMutate = canEditMatchRecords || isDemoCurrentMatch;
+    const effectiveCanDeleteMatch =
+      canManagePlayers || canManageTeam || isDemoCurrentMatch;
 
     const sharedStatsProps = {
       matchId: match.id,
@@ -3853,7 +3866,7 @@ function MatchesContent() {
           }
           showBack
           rightElement={
-            canMutate || isDemo ? (
+            canAccessLineupEditor || isDemo ? (
               <Link
                 href="/liff/matches/lineup"
                 className="px-2.5 py-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-black flex items-center gap-1 active:scale-95 transition-all shadow-2xs"
@@ -4005,7 +4018,7 @@ function MatchesContent() {
               title="試合データがありません"
               description="該当する試合がまだ登録されていないか、フィルター条件に一致しません"
             />
-            {(canMutate || isDemo) && (
+            {(canAccessLineupEditor || isDemo) && (
               <div className="flex justify-center">
                 <Link
                   href="/liff/matches/lineup"

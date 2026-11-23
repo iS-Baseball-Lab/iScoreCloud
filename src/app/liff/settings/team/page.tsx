@@ -233,14 +233,15 @@ export default function LiffTeamSettingsPage() {
     updateCurrentTeamLogo,
     updateCurrentTeamCover,
   } = useLiff();
-  const { canManageTeam, canManagePlayers, canMutate, isDemoMode } =
+  const { canManageTeam, canManageOps, canManagePlayers, isDemoMode } =
     useLiffPermissions();
   const isDemoTeam = Boolean(
     isDemoMode || currentTeam?.id === "demo-team" || currentTeam?.isDemo
   );
   const effectiveCanManageTeam = canManageTeam || isDemoTeam;
-  const effectiveCanManageLogoCover = canManagePlayers || isDemoTeam;
-  const effectiveCanMutate = canMutate || isDemoTeam;
+  const effectiveCanManageOps = canManageOps || canManageTeam || isDemoTeam;
+  const effectiveCanManageLogoCover =
+    effectiveCanManageOps || canManagePlayers;
   const activePracticeLabel = usePracticeMatchLabel();
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -493,7 +494,7 @@ export default function LiffTeamSettingsPage() {
     rawLabel: string,
     silentToast = false
   ) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const nextLabel = sanitizePracticeMatchLabel(
       rawLabel,
       DEFAULT_PRACTICE_MATCH_LABEL
@@ -536,7 +537,7 @@ export default function LiffTeamSettingsPage() {
     nextConfig: TeamScheduleDefaultTimes,
     silentToast = false
   ) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const targetTeamId = currentTeam?.id || "demo-team";
     const normalized = normalizeTeamScheduleDefaultTimes(nextConfig);
     setScheduleTimes(normalized);
@@ -570,7 +571,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleToggleSummerMonth = (month: number) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     setScheduleTimes((prev) => {
       const set = new Set(prev.summerMonths);
       if (set.has(month)) {
@@ -586,7 +587,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleResetScheduleTimes = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const resetValue: TeamScheduleDefaultTimes = {
       ...DEFAULT_TEAM_SCHEDULE_TIMES,
       summerMonths: [...DEFAULT_TEAM_SCHEDULE_TIMES.summerMonths],
@@ -600,7 +601,7 @@ export default function LiffTeamSettingsPage() {
     nextUseDutyGroups: boolean,
     silentToast = false
   ) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const tid = currentTeam?.id || "demo-team";
     syncTargetGroupsLocalStorage(tid, nextTargetGroups);
     setIsSavingScheduleSettings(true);
@@ -641,7 +642,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleSaveAll = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const trimmedPractice = customPracticeLabelInput.trim();
     if (trimmedPractice && trimmedPractice !== activePracticeLabel) {
       void persistPracticeMatchLabel(trimmedPractice, true);
@@ -657,7 +658,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleAddGroup = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const trimmed = newGroupInput.trim();
     if (!trimmed) return;
     if (targetGroups.includes(trimmed)) {
@@ -672,7 +673,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleRemoveGroup = (name: string) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     if (name === "全体") {
       toast.error("「全体」は削除できません");
       return;
@@ -684,7 +685,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleToggleUseDutyGroups = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const nextUse = !useDutyGroups;
     const nextDuty =
       nextUse && dutyGroups.length === 0 ? [...PRESET_DUTY_GROUPS] : dutyGroups;
@@ -699,7 +700,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleAddDutyGroup = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const trimmed = newDutyGroupInput.trim();
     if (!trimmed) return;
     if (trimmed === "なし") {
@@ -719,7 +720,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleRemoveDutyGroup = (name: string) => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     const nextDuty = dutyGroups.filter((g) => g !== name);
     setDutyGroups(nextDuty);
     void persistTeamScheduleSettings(
@@ -732,7 +733,7 @@ export default function LiffTeamSettingsPage() {
   };
 
   const handleApplyDutyGroupPresets = () => {
-    if (!effectiveCanMutate) return;
+    if (!effectiveCanManageOps) return;
     setDutyGroups([...PRESET_DUTY_GROUPS]);
     setUseDutyGroups(true);
     void persistTeamScheduleSettings(
@@ -764,6 +765,22 @@ export default function LiffTeamSettingsPage() {
           }
           showBack
         />
+
+        {!effectiveCanManageOps && (
+          <div className="p-3 rounded-2xl border border-border bg-card shadow-2xs flex items-start gap-2.5">
+            <span className="w-6 h-6 rounded-lg bg-[#0f172a] text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+              <Lock className="w-3.5 h-3.5" />
+            </span>
+            <div className="min-w-0 space-y-0.5">
+              <p className="text-xs font-black text-foreground">
+                現在は閲覧モードです
+              </p>
+              <p className="text-[10.5px] font-bold text-muted-foreground leading-relaxed">
+                現在のチーム共通設定（活動グループ・当番班・初期時間など）をご確認いただけます。設定の変更・保存は「運用・規定の設定」権限を持つ役職のみ行えます。
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* チーム管理メニュー（組織・メンバー権限・車両）への直通ショートカット */}
         {effectiveCanManageTeam && (
@@ -830,7 +847,7 @@ export default function LiffTeamSettingsPage() {
               <h2 className="text-sm font-black text-white truncate">ロゴ・背景写真・表示呼称</h2>
             </div>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
-              {effectiveCanMutate ? "チーム共通" : "閲覧モード"}
+              {effectiveCanManageOps ? "チーム共通" : "閲覧モード"}
             </span>
           </div>
 
@@ -1084,7 +1101,7 @@ export default function LiffTeamSettingsPage() {
                     <button
                       key={preset}
                       type="button"
-                      disabled={!effectiveCanMutate || isSavingPracticeLabel}
+                      disabled={!effectiveCanManageOps || isSavingPracticeLabel}
                       onClick={() => void persistPracticeMatchLabel(preset)}
                       className={cn(
                         "py-2 px-2 rounded-xl border text-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed truncate",
@@ -1099,7 +1116,7 @@ export default function LiffTeamSettingsPage() {
                 })}
               </div>
 
-              {effectiveCanMutate && (
+              {effectiveCanManageOps && (
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -1152,7 +1169,7 @@ export default function LiffTeamSettingsPage() {
             <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
               {isSavingScheduleSettings
                 ? "保存中..."
-                : effectiveCanMutate
+                : effectiveCanManageOps
                 ? "チーム共通"
                 : "閲覧専用"}
             </span>
@@ -1177,7 +1194,7 @@ export default function LiffTeamSettingsPage() {
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-muted/50 border border-border text-xs font-black text-foreground"
                   >
                     <span>{group}</span>
-                    {effectiveCanMutate && group !== "全体" && (
+                    {effectiveCanManageOps && group !== "全体" && (
                       <button
                         type="button"
                         disabled={isSavingScheduleSettings}
@@ -1192,7 +1209,7 @@ export default function LiffTeamSettingsPage() {
                 ))}
               </div>
 
-              {effectiveCanMutate && (
+              {effectiveCanManageOps && (
                 <div className="flex items-center gap-2 pt-0.5">
                   <input
                     type="text"
@@ -1237,11 +1254,11 @@ export default function LiffTeamSettingsPage() {
                   type="button"
                   role="switch"
                   aria-checked={useDutyGroups}
-                  disabled={!effectiveCanMutate || isSavingScheduleSettings}
+                  disabled={!effectiveCanManageOps || isSavingScheduleSettings}
                   onClick={handleToggleUseDutyGroups}
                   className={cn(
                     "w-12 h-6 rounded-full transition-colors relative p-0.5 shrink-0 disabled:opacity-60 disabled:cursor-not-allowed",
-                    effectiveCanMutate && "cursor-pointer",
+                    effectiveCanManageOps && "cursor-pointer",
                     useDutyGroups
                       ? "bg-teal-600"
                       : "bg-muted border border-border"
@@ -1262,7 +1279,7 @@ export default function LiffTeamSettingsPage() {
                     <span className="text-[11px] font-black text-foreground">
                       当番班リスト（予定編集・自動ローテーション候補）
                     </span>
-                    {effectiveCanMutate && dutyGroups.length === 0 && (
+                    {effectiveCanManageOps && dutyGroups.length === 0 && (
                       <button
                         type="button"
                         disabled={isSavingScheduleSettings}
@@ -1285,7 +1302,7 @@ export default function LiffTeamSettingsPage() {
                             📋
                           </span>
                           <span>{dg}</span>
-                          {effectiveCanMutate && (
+                          {effectiveCanManageOps && (
                             <button
                               type="button"
                               disabled={isSavingScheduleSettings}
@@ -1308,7 +1325,7 @@ export default function LiffTeamSettingsPage() {
                     </p>
                   )}
 
-                  {effectiveCanMutate && (
+                  {effectiveCanManageOps && (
                     <div className="flex items-center gap-2 pt-0.5">
                       <input
                         type="text"
@@ -1343,7 +1360,7 @@ export default function LiffTeamSettingsPage() {
                 </div>
               )}
 
-              {!effectiveCanMutate && (
+              {!effectiveCanManageOps && (
                 <p className="text-[10.5px] font-bold text-muted-foreground">
                   ※ 閲覧専用メンバーのため、活動グループ・当番班設定の変更は行えません
                 </p>
@@ -1376,7 +1393,7 @@ export default function LiffTeamSettingsPage() {
                   </div>
                 </div>
                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-800 text-teal-300 border border-slate-700 shrink-0">
-                  {effectiveCanMutate ? "チーム共通" : "閲覧専用"}
+                  {effectiveCanManageOps ? "チーム共通" : "閲覧専用"}
                 </span>
               </div>
 
@@ -1406,7 +1423,7 @@ export default function LiffTeamSettingsPage() {
                       accent="teal"
                       size="sm"
                       searchable={false}
-                      disabled={!effectiveCanMutate}
+                      disabled={!effectiveCanManageOps}
                       className="w-full"
                     />
                     <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1420,7 +1437,7 @@ export default function LiffTeamSettingsPage() {
                       accent="teal"
                       size="sm"
                       searchable={false}
-                      disabled={!effectiveCanMutate}
+                      disabled={!effectiveCanManageOps}
                       className="w-full"
                     />
                   </div>
@@ -1473,7 +1490,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                       <span className="text-[11px] font-black text-muted-foreground">〜</span>
@@ -1496,7 +1513,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                     </div>
@@ -1510,11 +1527,11 @@ export default function LiffTeamSettingsPage() {
                           <button
                             key={m}
                             type="button"
-                            disabled={!effectiveCanMutate}
+                            disabled={!effectiveCanManageOps}
                             onClick={() => handleToggleSummerMonth(m)}
                             className={cn(
                               "py-1.5 rounded-lg text-[11px] font-black border transition-all tabular-nums disabled:opacity-70 disabled:cursor-default",
-                              effectiveCanMutate && "active:scale-95 cursor-pointer",
+                              effectiveCanManageOps && "active:scale-95 cursor-pointer",
                               isSummer
                                 ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
                                 : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-border hover:border-teal-500/40"
@@ -1565,7 +1582,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                       <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1579,7 +1596,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                     </div>
@@ -1608,7 +1625,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                       <span className="text-xs font-black text-muted-foreground">〜</span>
@@ -1622,7 +1639,7 @@ export default function LiffTeamSettingsPage() {
                         accent="teal"
                         size="sm"
                         searchable={false}
-                        disabled={!effectiveCanMutate}
+                        disabled={!effectiveCanManageOps}
                         className="w-full"
                       />
                     </div>
@@ -1630,7 +1647,7 @@ export default function LiffTeamSettingsPage() {
                 </div>
 
                 {/* セクション内アクションバー（初期値リセット ＆ 即時保存） */}
-                {effectiveCanMutate ? (
+                {effectiveCanManageOps ? (
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <button
                       type="button"
@@ -1682,7 +1699,7 @@ export default function LiffTeamSettingsPage() {
         <GoogleMapsSettingsSection
           teamId={currentTeam?.id || "demo-team"}
           isDemoTeam={isDemoTeam}
-          canManageMapsKey={effectiveCanMutate}
+          canManageMapsKey={effectiveCanManageOps}
         />
 
         {/* ━━━ セクション 6: 🏟️ 関連する規定・管理画面への移動 ━━━ */}
@@ -1767,7 +1784,7 @@ export default function LiffTeamSettingsPage() {
         </section>
 
         {/* 💾 一括保存ボタン */}
-        {effectiveCanMutate && (
+        {effectiveCanManageOps && (
           <div className="pt-2">
             <button
               type="button"

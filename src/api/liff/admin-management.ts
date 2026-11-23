@@ -39,11 +39,20 @@ import {
 } from "@/lib/liff/equipment-sets-schema";
 import { parsePlayerProfileDetails } from "@/lib/liff/player-profile-schema";
 import { deleteR2UrlsSafely } from "@/lib/r2-cleanup";
-import { canManageSystem, canManageTeam, ROLES } from "@/lib/roles";
+import {
+  canManageSystem,
+  canManageTeam,
+  evaluateEffectiveRolePermissions,
+  parseTeamRoleDefinitions,
+  ROLES,
+  serializeTeamRolePermissionsJson,
+  type TeamRoleDefinition,
+} from "@/lib/roles";
 import {
   extractHeaderUserId,
   extractHeaderUserName,
   IGNORED_MOCK_USER_IDS,
+  invalidateCallerTeamAccessBurstCache,
   parseSubRolesList,
   resolveCallerTeamAccess,
   type CallerTeamAccess,
@@ -173,6 +182,7 @@ export interface AdminRolesResponse {
   myRole: string;
   members: AdminRoleMemberItem[];
   roleSettings: AdminCustomRoleTitle[];
+  roleDefinitions?: TeamRoleDefinition[];
   error?: string;
 }
 
@@ -1624,6 +1634,10 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
         { role: "manager", customLabel: "監督・代表" },
         { role: "staff", customLabel: "事務局・役員" },
       ],
+      roleDefinitions: parseTeamRoleDefinitions(null, [
+        { role: "manager", customLabel: "監督・代表" },
+        { role: "staff", customLabel: "事務局・役員" },
+      ]),
     };
     return c.json(payload);
   }
@@ -1631,7 +1645,10 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
   const db = drizzle(c.env.DB);
   const [teamRow, memberRows, roleRows] = await Promise.all([
     db
-      .select({ memberSubLabels: teams.memberSubLabels })
+      .select({
+        memberSubLabels: teams.memberSubLabels,
+        rolePermissionsJson: teams.rolePermissionsJson,
+      })
       .from(teams)
       .where(eq(teams.id, ctx.teamId))
       .get(),
@@ -1652,24 +1669,27 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
       .catch(() => []),
   ]);
 
+  const roleDefinitions = parseTeamRoleDefinitions(
+    teamRow?.rolePermissionsJson,
+    roleRows
+  );
+  const validRoleSet = new Set<string>(
+    roleDefinitions.map((d) => d.role.toLowerCase())
+  );
+  const rolePriority: Record<string, number> = {};
+  for (const def of roleDefinitions) {
+    rolePriority[def.role.toLowerCase()] = def.priority;
+  }
+
   const subLabelsMap = parseSubLabelsMap(teamRow?.memberSubLabels);
-  const rolePriority: Record<string, number> = {
-    admin: 0,
-    manager: 1,
-    coach: 2,
-    scorer: 3,
-    staff: 4,
-    parent: 5,
-    player: 6,
-    viewer: 7,
-  };
 
   const members: AdminRoleMemberItem[] = memberRows
     .map((m) => {
       const normRole = (m.role || "parent").toLowerCase();
+      const safeRole = validRoleSet.has(normRole) ? normRole : "parent";
       const subs = parseSubRolesList(m.subRoles)
         .map((s) => s.toLowerCase())
-        .filter((s) => VALID_ROLES_SET.has(s) && s !== normRole);
+        .filter((s) => validRoleSet.has(s) && s !== safeRole);
       return {
         memberId: m.id,
         userId: ctx.canManage ? m.userId || null : null,
@@ -1678,7 +1698,7 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
         memberType: m.memberType || "parent",
         phone: ctx.canManage ? m.phone || "" : "",
         email: ctx.canManage ? m.email || "" : "",
-        role: VALID_ROLES_SET.has(normRole) ? normRole : "parent",
+        role: safeRole,
         subRoles: Array.from(new Set(subs)),
         subLabel: subLabelsMap[m.id] || "",
         status: m.status,
@@ -1698,17 +1718,20 @@ liffAdminMgmtRouter.get("/roles", async (c) => {
     canManage: ctx.canManage,
     myRole: ctx.myRole,
     members,
-    roleSettings: roleRows.map((r) => ({
-      role: r.role.toLowerCase(),
-      customLabel: r.customLabel,
-    })),
+    roleSettings: roleDefinitions
+      .filter((d) => !d.isBuiltin || Boolean(d.customLabel))
+      .map((d) => ({
+        role: d.role,
+        customLabel: d.isBuiltin ? d.customLabel : d.label,
+      })),
+    roleDefinitions,
   };
 
   return c.json(payload);
 });
 
 /**
- * メンバーの新規事前登録 または 権限・兼務ロール・基本情報の更新
+ * メンバーの新規手動追加 または 権限・兼務ロール・基本情報の更新
  */
 liffAdminMgmtRouter.post("/roles/member", async (c) => {
   const body = (await c.req.json()) as {
@@ -1743,22 +1766,49 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
     return c.json({ success: false, error: "管理者権限がありません" }, 403);
   }
 
-  const primaryRole = (body.role || "parent").toLowerCase();
-  const safePrimaryRole = VALID_ROLES_SET.has(primaryRole) ? primaryRole : "parent";
+  const db = drizzle(c.env.DB);
+  const [teamRow, roleRows] = await Promise.all([
+    db
+      .select({
+        memberSubLabels: teams.memberSubLabels,
+        rolePermissionsJson: teams.rolePermissionsJson,
+      })
+      .from(teams)
+      .where(eq(teams.id, ctx.teamId))
+      .get(),
+    db
+      .select({
+        role: teamRoleSettings.role,
+        customLabel: teamRoleSettings.customLabel,
+      })
+      .from(teamRoleSettings)
+      .where(eq(teamRoleSettings.teamId, ctx.teamId))
+      .all()
+      .catch(() => []),
+  ]);
+
+  const roleDefinitions = parseTeamRoleDefinitions(
+    teamRow?.rolePermissionsJson,
+    roleRows
+  );
+  const validRoleSet = new Set<string>(
+    roleDefinitions.map((d) => d.role.toLowerCase())
+  );
+
+  const primaryRole = (body.role || "parent").trim().toLowerCase();
+  const safePrimaryRole = validRoleSet.has(primaryRole) ? primaryRole : "parent";
   const safeSubRoles = Array.isArray(body.subRoles)
     ? Array.from(
         new Set(
           body.subRoles
             .map((s) => String(s).trim().toLowerCase())
-            .filter((s) => VALID_ROLES_SET.has(s) && s !== safePrimaryRole)
+            .filter((s) => validRoleSet.has(s) && s !== safePrimaryRole)
         )
       )
     : [];
 
-  const db = drizzle(c.env.DB);
-
   if (body.memberId) {
-    // 最後の管理者（監督・IT管理者）が全員いなくなる変更をブロック
+    // 最後のチーム管理権限メンバーが0名になる変更をブロック
     const allActive = await db
       .select()
       .from(teamMembers)
@@ -1772,14 +1822,32 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
 
     const willStillHaveManager = allActive.some((m) => {
       if (m.id === body.memberId) {
-        return canManageTeam(safePrimaryRole, safeSubRoles);
+        return (
+          Boolean(m.userId) &&
+          evaluateEffectiveRolePermissions(
+            safePrimaryRole,
+            safeSubRoles,
+            roleDefinitions
+          ).canManageTeam
+        );
       }
-      return Boolean(m.userId) && canManageTeam(m.role, parseSubRolesList(m.subRoles));
+      return (
+        Boolean(m.userId) &&
+        evaluateEffectiveRolePermissions(
+          m.role,
+          parseSubRolesList(m.subRoles),
+          roleDefinitions
+        ).canManageTeam
+      );
     });
 
     if (
       target.userId &&
-      canManageTeam(target.role, parseSubRolesList(target.subRoles)) &&
+      evaluateEffectiveRolePermissions(
+        target.role,
+        parseSubRolesList(target.subRoles),
+        roleDefinitions
+      ).canManageTeam &&
       !willStillHaveManager &&
       !ctx.access?.isSystemAdmin
     ) {
@@ -1787,7 +1855,7 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
         {
           success: false,
           error:
-            "LINE連携済みの「監督・代表」または「IT管理者」が0名になるため変更できません。先に別のメンバーへ管理権限を付与してください。",
+            "LINE連携済みの「チーム管理」権限メンバーが0名になるため変更できません。先に別のメンバーへ管理権限を付与してください。",
         },
         400
       );
@@ -1819,12 +1887,7 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
       .where(and(eq(teamMembers.id, body.memberId), eq(teamMembers.teamId, ctx.teamId)));
 
     if (body.subLabel !== undefined) {
-      const tRow = await db
-        .select({ memberSubLabels: teams.memberSubLabels })
-        .from(teams)
-        .where(eq(teams.id, ctx.teamId))
-        .get();
-      const map = parseSubLabelsMap(tRow?.memberSubLabels);
+      const map = parseSubLabelsMap(teamRow?.memberSubLabels);
       const cleanLabel = body.subLabel.trim();
       if (cleanLabel) {
         map[body.memberId] = cleanLabel;
@@ -1837,6 +1900,7 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
         .where(eq(teams.id, ctx.teamId));
     }
 
+    invalidateCallerTeamAccessBurstCache();
     return c.json({ success: true, message: "権限・メンバー情報を更新しました" });
   }
 
@@ -1862,12 +1926,7 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
   });
 
   if (body.subLabel && body.subLabel.trim()) {
-    const tRow = await db
-      .select({ memberSubLabels: teams.memberSubLabels })
-      .from(teams)
-      .where(eq(teams.id, ctx.teamId))
-      .get();
-    const map = parseSubLabelsMap(tRow?.memberSubLabels);
+    const map = parseSubLabelsMap(teamRow?.memberSubLabels);
     map[newMemberId] = body.subLabel.trim();
     await db
       .update(teams)
@@ -1875,6 +1934,7 @@ liffAdminMgmtRouter.post("/roles/member", async (c) => {
       .where(eq(teams.id, ctx.teamId));
   }
 
+  invalidateCallerTeamAccessBurstCache();
   return c.json({
     success: true,
     memberId: newMemberId,
@@ -1900,11 +1960,23 @@ liffAdminMgmtRouter.delete("/roles/member/:memberId", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
-  const allActive = await db
-    .select()
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, ctx.teamId), eq(teamMembers.status, "active")))
-    .all();
+  const [teamRow, allActive] = await Promise.all([
+    db
+      .select({ rolePermissionsJson: teams.rolePermissionsJson })
+      .from(teams)
+      .where(eq(teams.id, ctx.teamId))
+      .get(),
+    db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, ctx.teamId), eq(teamMembers.status, "active")))
+      .all(),
+  ]);
+
+  const roleDefinitions = parseTeamRoleDefinitions(
+    teamRow?.rolePermissionsJson,
+    null
+  );
 
   const target = allActive.find((m) => m.id === memberId);
   if (!target) {
@@ -1915,11 +1987,19 @@ liffAdminMgmtRouter.delete("/roles/member/:memberId", async (c) => {
     (m) =>
       m.id !== memberId &&
       Boolean(m.userId) &&
-      canManageTeam(m.role, parseSubRolesList(m.subRoles))
+      evaluateEffectiveRolePermissions(
+        m.role,
+        parseSubRolesList(m.subRoles),
+        roleDefinitions
+      ).canManageTeam
   );
   if (
     target.userId &&
-    canManageTeam(target.role, parseSubRolesList(target.subRoles)) &&
+    evaluateEffectiveRolePermissions(
+      target.role,
+      parseSubRolesList(target.subRoles),
+      roleDefinitions
+    ).canManageTeam &&
     remainingManagers.length === 0 &&
     !ctx.access?.isSystemAdmin
   ) {
@@ -1936,17 +2016,19 @@ liffAdminMgmtRouter.delete("/roles/member/:memberId", async (c) => {
     .delete(teamMembers)
     .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, ctx.teamId)));
 
+  invalidateCallerTeamAccessBurstCache();
   return c.json({ success: true, message: "メンバーを削除しました" });
 });
 
 /**
- * チーム独自の役職カスタム呼称（team_role_settings）一括保存
+ * 規定8役職（呼称・権限カスタマイズ）＋ チーム独自役職（追加・編集・削除・権限設定）の一括保存
  */
 liffAdminMgmtRouter.put("/roles/titles", async (c) => {
   const body = (await c.req.json()) as {
     teamId?: string;
     userId?: string;
     settings?: Array<{ role: string; customLabel: string }>;
+    roleDefinitions?: Array<Partial<TeamRoleDefinition>>;
   };
 
   const resolved = await resolveAdminMgmtContext(c, body.teamId || "", body.userId);
@@ -1955,10 +2037,14 @@ liffAdminMgmtRouter.put("/roles/titles", async (c) => {
   }
   const { ctx } = resolved;
   if (ctx.isDemo) {
+    const demoSerialized = Array.isArray(body.roleDefinitions)
+      ? serializeTeamRolePermissionsJson(body.roleDefinitions)
+      : null;
     return c.json({
       success: true,
       isDemo: true,
-      message: "役職のカスタム呼称を保存しました（デモ）",
+      roleDefinitions: demoSerialized?.normalizedDefinitions,
+      message: "役職・権限設定を保存しました（デモ）",
     });
   }
   if (!ctx.canManage) {
@@ -1966,23 +2052,145 @@ liffAdminMgmtRouter.put("/roles/titles", async (c) => {
   }
 
   const db = drizzle(c.env.DB);
-  await db.delete(teamRoleSettings).where(eq(teamRoleSettings.teamId, ctx.teamId));
+  const [teamRow, existingRoleRows, allActive] = await Promise.all([
+    db
+      .select({ rolePermissionsJson: teams.rolePermissionsJson })
+      .from(teams)
+      .where(eq(teams.id, ctx.teamId))
+      .get(),
+    db
+      .select({
+        role: teamRoleSettings.role,
+        customLabel: teamRoleSettings.customLabel,
+      })
+      .from(teamRoleSettings)
+      .where(eq(teamRoleSettings.teamId, ctx.teamId))
+      .all()
+      .catch(() => []),
+    db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, ctx.teamId), eq(teamMembers.status, "active")))
+      .all(),
+  ]);
 
-  const incoming = Array.isArray(body.settings) ? body.settings : [];
-  for (const item of incoming) {
-    const roleKey = String(item.role || "").trim().toLowerCase();
-    const customLabel = String(item.customLabel || "").trim();
-    if (!VALID_ROLES_SET.has(roleKey) || !customLabel) continue;
+  const prevDefinitions = parseTeamRoleDefinitions(
+    teamRow?.rolePermissionsJson,
+    existingRoleRows
+  );
 
-    await db.insert(teamRoleSettings).values({
-      id: `trs_${crypto.randomUUID().replace(/-/g, "")}`,
-      teamId: ctx.teamId,
-      role: roleKey,
-      customLabel,
+  let targetInputDefs: Array<Partial<TeamRoleDefinition>>;
+  if (Array.isArray(body.roleDefinitions)) {
+    targetInputDefs = body.roleDefinitions;
+  } else {
+    const labelMap = new Map<string, string>();
+    for (const item of Array.isArray(body.settings) ? body.settings : []) {
+      const k = String(item.role || "").trim().toLowerCase();
+      const v = String(item.customLabel || "").trim();
+      if (k) labelMap.set(k, v);
+    }
+    targetInputDefs = prevDefinitions.map((def) => {
+      if (!def.isBuiltin) return def;
+      const nextCustom = labelMap.get(def.role) ?? "";
+      return {
+        ...def,
+        customLabel: nextCustom,
+        label: nextCustom || def.defaultLabel,
+      };
     });
   }
 
-  return c.json({ success: true, message: "役職のカスタム呼称を保存しました" });
+  const serialized = serializeTeamRolePermissionsJson(targetInputDefs);
+  const nextValidKeys = new Set<string>(
+    serialized.normalizedDefinitions.map((d) => d.role.toLowerCase())
+  );
+
+  const resolveMemberNextRoles = (m: typeof allActive[number]) => {
+    const curPrimary = (m.role || "parent").trim().toLowerCase();
+    const fallbackRole =
+      m.memberType === "player"
+        ? "player"
+        : m.memberType === "staff"
+        ? "staff"
+        : "parent";
+    const nextPrimary = nextValidKeys.has(curPrimary) ? curPrimary : fallbackRole;
+    const curSubs = parseSubRolesList(m.subRoles).map((s) => s.toLowerCase());
+    const nextSubs = Array.from(
+      new Set(curSubs.filter((s) => nextValidKeys.has(s) && s !== nextPrimary))
+    );
+    const changed =
+      nextPrimary !== curPrimary || nextSubs.length !== curSubs.length;
+    return { nextPrimary, nextSubs, changed };
+  };
+
+  // LINE連携済み管理者が1名以上いた状態から0名になる設定変更を防止
+  const hadLinkedManager = allActive.some(
+    (m) =>
+      Boolean(m.userId) &&
+      evaluateEffectiveRolePermissions(
+        m.role,
+        parseSubRolesList(m.subRoles),
+        prevDefinitions
+      ).canManageTeam
+  );
+  const willHaveLinkedManager = allActive.some((m) => {
+    if (!m.userId) return false;
+    const { nextPrimary, nextSubs } = resolveMemberNextRoles(m);
+    return evaluateEffectiveRolePermissions(
+      nextPrimary,
+      nextSubs,
+      serialized.normalizedDefinitions
+    ).canManageTeam;
+  });
+
+  if (hadLinkedManager && !willHaveLinkedManager && !ctx.access?.isSystemAdmin) {
+    return c.json(
+      {
+        success: false,
+        error:
+          "この変更を行うとLINE連携済みの「チーム管理」権限メンバーが0名になってしまいます。監督・IT管理者または管理権限付きの役職に1名以上残してください。",
+      },
+      400
+    );
+  }
+
+  // 1. D1 teams.role_permissions_json 更新
+  await db
+    .update(teams)
+    .set({ rolePermissionsJson: serialized.json })
+    .where(eq(teams.id, ctx.teamId));
+
+  // 2. team_role_settings 同期（旧API・参照箇所との完全互換維持）
+  await db.delete(teamRoleSettings).where(eq(teamRoleSettings.teamId, ctx.teamId));
+  for (const row of serialized.roleSettingsRows) {
+    if (!row.role || !row.customLabel) continue;
+    await db.insert(teamRoleSettings).values({
+      id: `trs_${crypto.randomUUID().replace(/-/g, "")}`,
+      teamId: ctx.teamId,
+      role: row.role,
+      customLabel: row.customLabel,
+    });
+  }
+
+  // 3. 削除されたカスタム役職が割り当てられていたメンバーを安全にクリーンアップ
+  for (const m of allActive) {
+    const { nextPrimary, nextSubs, changed } = resolveMemberNextRoles(m);
+    if (!changed) continue;
+    await db
+      .update(teamMembers)
+      .set({
+        role: nextPrimary,
+        subRoles: nextSubs.length > 0 ? JSON.stringify(nextSubs) : null,
+      })
+      .where(and(eq(teamMembers.id, m.id), eq(teamMembers.teamId, ctx.teamId)));
+  }
+
+  invalidateCallerTeamAccessBurstCache();
+  return c.json({
+    success: true,
+    roleDefinitions: serialized.normalizedDefinitions,
+    message: "役職・権限設定を保存しました",
+  });
 });
 
 // =========================================================

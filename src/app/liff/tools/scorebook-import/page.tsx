@@ -297,7 +297,7 @@ function crossFillOppositePitchers(
 
 export default function LiffScorebookImportPage() {
   const { currentTeam, isDemo } = useLiff();
-  const { canUsePaidAi, canEditScore, canMutate, isDemoMode } =
+  const { canUsePaidAi, canEditScore, canManageTeam, isDemoMode } =
     useLiffPermissions();
 
   const [step, setStep] = useState<WizardStep>(1);
@@ -312,9 +312,9 @@ export default function LiffScorebookImportPage() {
     isDemoMode ||
     currentTeam?.id === "demo-team" ||
     resolvedTeamId === "demo-team";
-  const canUseAiScan = canUsePaidAi && !isEffectiveDemo;
-  const effectiveCanEditScore =
-    (canEditScore || canMutate || canUsePaidAi) && !isEffectiveDemo;
+  const hasScorePermission = Boolean(canEditScore || canManageTeam);
+  const canUseAiScan = canUsePaidAi && hasScorePermission && !isEffectiveDemo;
+  const effectiveCanEditScore = hasScorePermission && !isEffectiveDemo;
   const effectiveCanImport = canUseAiScan;
   const [teamLegendUrl, setTeamLegendUrl] = useState<string | null>(null);
   const [roster, setRoster] = useState<ScorebookRosterPlayer[]>([]);

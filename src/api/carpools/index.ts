@@ -491,8 +491,8 @@ app.post('/events/:eventId/save', async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canMutateTeamData(eventRow.teamId)) {
-      return c.json({ success: false, error: "このイベントの配車設定を保存する権限がありません。" }, 403);
+    if (!access.canEditCarpoolForTeam(eventRow.teamId) && !access.canManageTeamId(eventRow.teamId)) {
+      return c.json({ success: false, error: "このイベントの配車設定を保存する権限がありません（「配車編成・管理」権限が必要です）。" }, 403);
     }
 
     const body = await c.req.json<{

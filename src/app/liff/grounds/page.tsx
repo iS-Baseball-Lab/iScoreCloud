@@ -329,7 +329,8 @@ function VenueCardMapEmbed({
 
 export default function LiffGroundsPage() {
   const { currentTeam } = useLiff();
-  const { isDemoMode, canMutate, canUsePaidAi } = useLiffPermissions();
+  const { isDemoMode, canManagePlayers, canManageTeam, canUsePaidAi } =
+    useLiffPermissions();
   const initialCachedGrounds = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =
@@ -359,8 +360,11 @@ export default function LiffGroundsPage() {
         ? initialCachedGrounds.canUseAiLookup
         : null
   );
-  const canCreateGround = serverCanCreate ?? canMutate;
-  const canUseGroundAi = (serverCanUseAi ?? canUsePaidAi) && canUsePaidAi;
+  const hasGroundManagePerm =
+    canManagePlayers || canManageTeam || isDemoMode;
+  const canCreateGround = serverCanCreate ?? hasGroundManagePerm;
+  const canUseGroundAi =
+    (serverCanUseAi ?? (canManagePlayers || canManageTeam)) && canUsePaidAi;
 
   const [isLoading, setIsLoading] = useState<boolean>(
     () => !initialCachedGrounds?.venues

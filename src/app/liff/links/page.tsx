@@ -113,8 +113,8 @@ const CATEGORY_SHORT_LABELS: Record<string, string> = {
 
 export default function LiffLinksPage() {
   const { currentTeam, profile } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMode;
+  const { canEditSchedule, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canEditSchedule || canManageTeam || isDemoMode;
 
   const initialCachedLinks = React.useMemo(() => {
     if (typeof window === "undefined") return null;

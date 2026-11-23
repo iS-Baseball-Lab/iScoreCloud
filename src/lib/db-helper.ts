@@ -79,6 +79,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
     { name: "weekend_reminder_settings", ddl: "ALTER TABLE teams ADD COLUMN weekend_reminder_settings text" },
     { name: "equipment_sets_json", ddl: "ALTER TABLE teams ADD COLUMN equipment_sets_json text" },
     { name: "hub_ticker_json", ddl: "ALTER TABLE teams ADD COLUMN hub_ticker_json text" },
+    { name: "role_permissions_json", ddl: "ALTER TABLE teams ADD COLUMN role_permissions_json text" },
   ],
   matches: [
     { name: "my_lineup", ddl: "ALTER TABLE matches ADD COLUMN my_lineup text DEFAULT '[]'" },

@@ -419,7 +419,10 @@ liffSpecialEventsRouter.get("/", async (c) => {
       relations: relationRows,
       candidateUserIds: access.candidateUserIds,
       callerUserName: resolveCallerDisplayName(access, queryUserName),
-      canManagePlayers: access.canManagePlayersForTeam(teamId),
+      canManagePlayers:
+        access.canEditScheduleForTeam(teamId) ||
+        access.canManagePlayersForTeam(teamId) ||
+        access.canManageTeamId(teamId),
     });
 
     return c.json({
@@ -488,8 +491,15 @@ liffSpecialEventsRouter.post("/", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canMutateTeamData(teamId)) {
-      return c.json({ success: false, error: "作成権限がありません" }, 403);
+    if (
+      !access.canEditScheduleForTeam(teamId) &&
+      !access.canManagePlayersForTeam(teamId) &&
+      !access.canManageTeamId(teamId)
+    ) {
+      return c.json(
+        { success: false, error: "行事・アンケートの作成権限がありません" },
+        403
+      );
     }
 
     const category = normalizeSpecialEventCategory(body.category);
@@ -596,8 +606,20 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canMutateTeamData(existing.teamId)) {
-      return c.json({ success: false, error: "編集権限がありません" }, 403);
+    const isCreator = Boolean(
+      existing.createdByUserId &&
+        access.candidateUserIds.includes(existing.createdByUserId)
+    );
+    if (
+      !access.canEditScheduleForTeam(existing.teamId) &&
+      !access.canManagePlayersForTeam(existing.teamId) &&
+      !access.canManageTeamId(existing.teamId) &&
+      !isCreator
+    ) {
+      return c.json(
+        { success: false, error: "行事・アンケートの編集権限がありません" },
+        403
+      );
     }
 
     const title =
@@ -757,11 +779,16 @@ liffSpecialEventsRouter.delete("/:specialEventId", async (c) => {
       existing.createdByUserId &&
         access.candidateUserIds.includes(existing.createdByUserId)
     );
-    if (!access.canManagePlayersForTeam(existing.teamId) && !isCreator) {
+    if (
+      !access.canEditScheduleForTeam(existing.teamId) &&
+      !access.canManagePlayersForTeam(existing.teamId) &&
+      !access.canManageTeamId(existing.teamId) &&
+      !isCreator
+    ) {
       return c.json(
         {
           success: false,
-          error: "削除できるのは作成者（幹事）または指導者・管理者のみです",
+          error: "削除できるのは予定・行事編集権限メンバーまたは作成者のみです",
         },
         403
       );
@@ -846,7 +873,9 @@ liffSpecialEventsRouter.post("/:specialEventId/respond", async (c) => {
 
     if (existingEvent.status !== "open") {
       const canOverrideClosed =
+        access.canEditScheduleForTeam(existingEvent.teamId) ||
         access.canManagePlayersForTeam(existingEvent.teamId) ||
+        access.canManageTeamId(existingEvent.teamId) ||
         Boolean(
           existingEvent.createdByUserId &&
             access.candidateUserIds.includes(existingEvent.createdByUserId)
@@ -967,8 +996,20 @@ liffSpecialEventsRouter.patch("/:specialEventId/fee-paid", async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canMutateTeamData(existingEvent.teamId)) {
-      return c.json({ success: false, error: "更新権限がありません" }, 403);
+    const isCreator = Boolean(
+      existingEvent.createdByUserId &&
+        access.candidateUserIds.includes(existingEvent.createdByUserId)
+    );
+    if (
+      !access.canEditScheduleForTeam(existingEvent.teamId) &&
+      !access.canManagePlayersForTeam(existingEvent.teamId) &&
+      !access.canManageTeamId(existingEvent.teamId) &&
+      !isCreator
+    ) {
+      return c.json(
+        { success: false, error: "集金状況の更新権限がありません" },
+        403
+      );
     }
 
     await db

@@ -414,6 +414,13 @@
       "when": 1795450000000,
       "tag": "0058_hub_ticker_json",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1795500000000,
+      "tag": "0059_team_role_permissions_json",
+      "breakpoints": true
     }
   ]
 }

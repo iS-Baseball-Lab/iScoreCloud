@@ -389,17 +389,26 @@ export function CarpoolConvoyLiveMap({
   userId,
   userName,
 }: CarpoolConvoyLiveMapProps) {
-  const { canManageTeam, canManagePlayers, canMutate, isDemoMode } = useLiffPermissions();
+  const {
+    canManageTeam,
+    canManageOps,
+    canManagePlayers,
+    canEditCarpool,
+    canMutate,
+    isDemoMode,
+  } = useLiffPermissions();
   const effectiveIsDemo = isDemoMode || teamId === "demo-team";
   const canShareConvoyLocation =
     eventId === "convoy-test"
-      ? canManagePlayers || effectiveIsDemo
+      ? canEditCarpool || canManagePlayers || canManageTeam || effectiveIsDemo
       : canMutate || effectiveIsDemo;
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [snapshot, setSnapshot] = useState<ConvoySnapshotResponse | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
-  const canManageMapsKey = Boolean(snapshot?.canConfigureMapsKey) && (canManageTeam || effectiveIsDemo);
+  const canManageMapsKey =
+    Boolean(snapshot?.canConfigureMapsKey) &&
+    (canManageTeam || canManageOps || effectiveIsDemo);
 
   // 自分が発信する号車ID（"" = 現地待機・発信しない）
   const [myCarpoolId, setMyCarpoolId] = useState<string>("");

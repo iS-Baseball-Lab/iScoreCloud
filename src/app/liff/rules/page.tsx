@@ -96,8 +96,8 @@ interface RuleItem {
 
 export default function LiffRulesPage() {
   const { currentTeam, profile } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMode;
+  const { canEditSchedule, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canEditSchedule || canManageTeam || isDemoMode;
   const initialCachedRules = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =

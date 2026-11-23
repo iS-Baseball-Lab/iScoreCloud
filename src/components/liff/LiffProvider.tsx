@@ -170,8 +170,11 @@ export interface LiffTeamItem {
   role?: string;
   subRoles?: string[];
   canManage?: boolean;
+  canManageOps?: boolean;
   canManagePlayers?: boolean;
   canEditScore?: boolean;
+  canEditSchedule?: boolean;
+  canEditCarpool?: boolean;
   canMutate?: boolean;
   isDemo?: boolean;
   isMember?: boolean;
@@ -180,7 +183,10 @@ export interface LiffTeamItem {
 }
 
 const STAFF_ROLES_SET = new Set(["admin", "manager", "coach", "scorer", "staff"]);
+const OPS_MANAGE_ROLES_SET = new Set(["admin", "manager", "coach", "scorer"]);
 const SCORE_EDIT_ROLES_SET = new Set(["admin", "manager", "coach", "scorer"]);
+const SCHEDULE_EDIT_ROLES_SET = new Set(["admin", "manager", "coach", "staff"]);
+const CARPOOL_EDIT_ROLES_SET = new Set(["admin", "manager", "coach", "staff"]);
 const MUTABLE_ROLES_SET = new Set([
   "admin",
   "manager",
@@ -221,6 +227,17 @@ export function canManageCurrentTeam(
   return false;
 }
 
+export function canManageOpsCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canManageOps === "boolean") return team.canManageOps;
+  if (team.canManage === true) return true;
+  return hasAnyMatchingRole(team, OPS_MANAGE_ROLES_SET);
+}
+
 export function canManagePlayersCurrentTeam(
   team: LiffTeamItem | null | undefined,
   isDemo?: boolean
@@ -243,6 +260,28 @@ export function canEditScoreCurrentTeam(
   return hasAnyMatchingRole(team, SCORE_EDIT_ROLES_SET);
 }
 
+export function canEditScheduleCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canEditSchedule === "boolean") return team.canEditSchedule;
+  if (team.canManage === true) return true;
+  return hasAnyMatchingRole(team, SCHEDULE_EDIT_ROLES_SET);
+}
+
+export function canEditCarpoolCurrentTeam(
+  team: LiffTeamItem | null | undefined,
+  isDemo?: boolean
+): boolean {
+  if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
+  if (!team) return false;
+  if (typeof team.canEditCarpool === "boolean") return team.canEditCarpool;
+  if (team.canManage === true) return true;
+  return hasAnyMatchingRole(team, CARPOOL_EDIT_ROLES_SET);
+}
+
 export function canMutateCurrentTeam(
   team: LiffTeamItem | null | undefined,
   isDemo?: boolean,
@@ -251,7 +290,16 @@ export function canMutateCurrentTeam(
   if (isDemo || team?.isDemo || team?.id === "demo-team") return true;
   if (!team || !isLoggedIn) return false;
   if (typeof team.canMutate === "boolean") return team.canMutate;
-  if (team.canManage === true || team.canManagePlayers === true) return true;
+  if (
+    team.canManage === true ||
+    team.canManageOps === true ||
+    team.canManagePlayers === true ||
+    team.canEditScore === true ||
+    team.canEditSchedule === true ||
+    team.canEditCarpool === true
+  ) {
+    return true;
+  }
   return hasAnyMatchingRole(team, MUTABLE_ROLES_SET);
 }
 
@@ -875,8 +923,11 @@ export function LiffProvider({
           JSON.stringify(prev.subRoles || []) ===
             JSON.stringify(activeTeam!.subRoles || []) &&
           prev.canManage === activeTeam!.canManage &&
+          prev.canManageOps === activeTeam!.canManageOps &&
           prev.canManagePlayers === activeTeam!.canManagePlayers &&
           prev.canEditScore === activeTeam!.canEditScore &&
+          prev.canEditSchedule === activeTeam!.canEditSchedule &&
+          prev.canEditCarpool === activeTeam!.canEditCarpool &&
           prev.canMutate === activeTeam!.canMutate &&
           prev.isDemo === activeTeam!.isDemo &&
           prev.scoreTeamNameMode === activeTeam!.scoreTeamNameMode &&
@@ -1524,11 +1575,14 @@ export function usePracticeMatchLabel(): string {
 }
 
 /**
- * 全LIFF画面で統一利用する権限判定フック（サーバー `src/lib/team-access.ts` の5階層と完全同期）
- * - `canManageTeam`: 監督・管理者・クラブオーナー（IT管理コンソール `/liff/admin/*`、Google Mapsキー設定）
- * - `canManagePlayers`: 監督・管理者・コーチ・スコアラー・スタッフ（選手登録/削除、試合本体削除、チームロゴ・背景画像変更）
- * - `canEditScore`: 監督・管理者・コーチ・スコアラー（公式記録・スコア編集）
- * - `canMutate`: 承認済み編集可能メンバー（スタッフ・保護者・本人選手紐付済。`viewer`［閲覧専用］・未ログイン・未紐付選手は `false`）
+ * 全LIFF画面で統一利用する権限判定フック（サーバー `src/lib/team-access.ts` の7軸権限と完全同期）
+ * - `canManageTeam`: チーム管理（IT管理コンソール `/liff/admin/*`・参加承認・役職/権限設定・マスタ管理・LINE通知・ティッカー編集）
+ * - `canManageOps`: 運用・規定の設定（`/liff/settings/team` チーム表示・予定設定、`/liff/settings/score` スコア・試合規定）
+ * - `canManagePlayers`: 選手名簿・試合管理（選手登録/削除、試合本体作成/編集/削除、球場・関連チーム編集）
+ * - `canEditScore`: スコア・オーダー記録（スタメン・ベンチ編成、スコアブックAI取込・記録編集、LINE速報入力）
+ * - `canEditSchedule`: 予定・行事・資料編集（活動予定、出欠項目/代理入力、行事アンケート/集金管理、ルール/FAQ/資料/リンク編集）
+ * - `canEditCarpool`: 配車編成・管理（配車表・号車割り・乗車メンバー・道具セット編成）
+ * - `canMutate`: 一般メンバー操作（本人/家族の出欠・行事回答、マイカー登録、隊列GPS発信・積載チェック、アルバム投稿、セルフ名鑑編集）
  * - `canUsePaidAi`: 有償クラウドAI解析・R2アップロード・スコアブッククラウド保存（体験デモモード・未ログイン・閲覧専用は `false`）
  */
 export function useLiffPermissions() {
@@ -1545,8 +1599,11 @@ export function useLiffPermissions() {
     isLoadingTeam,
     isLoggedIn: effectiveLoggedIn,
     canManageTeam: canManageCurrentTeam(currentTeam, isDemo),
+    canManageOps: canManageOpsCurrentTeam(currentTeam, isDemo),
     canManagePlayers: canManagePlayersCurrentTeam(currentTeam, isDemo),
     canEditScore: canEditScoreCurrentTeam(currentTeam, isDemo),
+    canEditSchedule: canEditScheduleCurrentTeam(currentTeam, isDemo),
+    canEditCarpool: canEditCarpoolCurrentTeam(currentTeam, isDemo),
     canMutate: canMutateCurrentTeam(currentTeam, isDemo, effectiveLoggedIn),
     canUsePaidAi: canUsePaidCloudFeatures(
       currentTeam,

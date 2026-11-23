@@ -144,7 +144,11 @@ async function requireScorebookAiAccess(
       error: "スコアブックAI解析を利用するにはログインが必要です",
     };
   }
-  if (!access.canMutateTeamData(effectiveTeamId)) {
+  if (
+    !access.canEditScoreForTeam(effectiveTeamId) &&
+    !access.canManageOpsForTeam(effectiveTeamId) &&
+    !access.canManageTeamId(effectiveTeamId)
+  ) {
     return {
       ok: false,
       status: 403,
@@ -996,7 +1000,7 @@ liffScorebookRouter.get("/match-init", async (c) => {
     if (
       !access.isAuthenticated ||
       (!access.canEditScoreForTeam(requestedTeamId) &&
-        !access.canMutateTeamData(requestedTeamId))
+        !access.canManageTeamId(requestedTeamId))
     ) {
       return c.json(
         { success: false, error: "スコアデータを編集する権限がありません" },
@@ -1218,6 +1222,18 @@ liffScorebookRouter.post("/legend", async (c) => {
       return c.json({ success: false, error: "対象チームIDが指定されていません" }, 400);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (
+      !access.isAuthenticated ||
+      (!access.canManageOpsForTeam(requestedTeamId) &&
+        !access.canManageTeamId(requestedTeamId))
+    ) {
+      return c.json(
+        { success: false, error: "スコア記号早見表を変更する権限がありません" },
+        403
+      );
+    }
+
     const targetTeam = await db
       .select({
         id: teams.id,
@@ -1390,6 +1406,18 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       return c.json({ success: false, error: "対象チームIDが指定されていません" }, 400);
     }
 
+    const access = await resolveCallerTeamAccess(c);
+    if (
+      !access.isAuthenticated ||
+      (!access.canManageOpsForTeam(requestedTeamId) &&
+        !access.canManageTeamId(requestedTeamId))
+    ) {
+      return c.json(
+        { success: false, error: "運用・規定の設定を変更する権限がありません" },
+        403
+      );
+    }
+
     const targetTeam = await db
       .select({
         id: teams.id,
@@ -1504,6 +1532,16 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
     const aiAccess = await requireScorebookAiAccess(c, db, requestedTeamId);
     if (!aiAccess.ok) {
       return c.json({ success: false, error: aiAccess.error }, aiAccess.status);
+    }
+    const callerAccess = await resolveCallerTeamAccess(c);
+    if (
+      !callerAccess.canManageOpsForTeam(aiAccess.teamId) &&
+      !callerAccess.canManageTeamId(aiAccess.teamId)
+    ) {
+      return c.json(
+        { success: false, error: "チーム記号ルールを変更する権限がありません" },
+        403
+      );
     }
 
     const targetTeam = await db
@@ -1662,7 +1700,12 @@ liffScorebookRouter.post("/create-match", async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canMutateTeamData(requestedTeamId)) {
+    if (
+      !access.isAuthenticated ||
+      (!access.canEditScoreForTeam(requestedTeamId) &&
+        !access.canManagePlayersForTeam(requestedTeamId) &&
+        !access.canManageTeamId(requestedTeamId))
+    ) {
       return c.json({ success: false, error: "試合枠を作成する権限がありません" }, 403);
     }
 
@@ -5040,6 +5083,20 @@ liffScorebookRouter.post("/save", async (c) => {
       return c.json({ success: false, error: "試合が見つかりません" }, 404);
     }
 
+    if (match.teamId && match.teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (
+        !access.isAuthenticated ||
+        (!access.canEditScoreForTeam(match.teamId) &&
+          !access.canManageTeamId(match.teamId))
+      ) {
+        return c.json(
+          { success: false, error: "スコアブックを保存する権限がありません" },
+          403
+        );
+      }
+    }
+
     const roster = await db
       .select({
         id: players.id,
@@ -6746,13 +6803,28 @@ liffScorebookRouter.delete("/saved", async (c) => {
 
   try {
     const match = await db
-      .select({ id: matches.id })
+      .select({ id: matches.id, teamId: matches.teamId })
       .from(matches)
       .where(eq(matches.id, matchId))
       .get();
 
     if (!match) {
       return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
+    }
+
+    if (match.teamId && match.teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (
+        !access.isAuthenticated ||
+        (!access.canEditScoreForTeam(match.teamId) &&
+          !access.canManagePlayersForTeam(match.teamId) &&
+          !access.canManageTeamId(match.teamId))
+      ) {
+        return c.json(
+          { success: false, error: "スコア記録を削除する権限がありません" },
+          403
+        );
+      }
     }
 
     const existingAbs = await db

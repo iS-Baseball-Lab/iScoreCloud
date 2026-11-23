@@ -144,9 +144,12 @@ interface CarpoolData {
 
 function LiffCarpoolContent() {
   const { currentTeam, profile, liff, isDemo } = useLiff();
-  const { canMutate, canManagePlayers, isDemoMode } = useLiffPermissions();
-  const effectiveCanEditCarpool = canMutate || isDemoMode;
-  const canRunTestConvoy = canManagePlayers || isDemoMode;
+  const { canEditCarpool, canManageTeam, canManagePlayers, isDemoMode } =
+    useLiffPermissions();
+  const effectiveCanEditCarpool =
+    canEditCarpool || canManageTeam || isDemoMode;
+  const canRunTestConvoy =
+    canEditCarpool || canManagePlayers || canManageTeam || isDemoMode;
   const router = useRouter();
   const searchParams = useSearchParams();
   const eventIdParam = searchParams.get("eventId") || "";

@@ -138,10 +138,16 @@ import {
 } from "@/lib/liff/scorebook-symbol-rules";
 import type { WorkerEnv, AuthUser } from "@/types/api";
 import { ensureAuthSchema, getAuth } from "@/lib/auth";
-import { canManageSystem, canManageTeam } from "@/lib/roles";
+import {
+  canManageSystem,
+  canManageTeam,
+  evaluateEffectiveRolePermissions,
+  parseTeamRoleDefinitions,
+} from "@/lib/roles";
 import {
   extractHeaderUserId,
   extractHeaderUserName,
+  invalidateCallerTeamAccessBurstCache,
   parseSubRolesList,
   resolveCallerTeamAccess,
 } from "@/lib/team-access";
@@ -877,8 +883,11 @@ const DEMO_TEAM = {
   subRoles: [] as string[],
   isDemo: true,
   canManage: true,
+  canManageOps: true,
   canManagePlayers: true,
   canEditScore: true,
+  canEditSchedule: true,
+  canEditCarpool: true,
   canMutate: true,
 };
 
@@ -1083,8 +1092,11 @@ app.get("/my-status", async (c) => {
               : "viewer"),
           subRoles: grant?.subRoles || [],
           canManage: access.canManageTeamId(t.id),
+          canManageOps: access.canManageOpsForTeam(t.id),
           canManagePlayers: access.canManagePlayersForTeam(t.id),
           canEditScore: access.canEditScoreForTeam(t.id),
+          canEditSchedule: access.canEditScheduleForTeam(t.id),
+          canEditCarpool: access.canEditCarpoolForTeam(t.id),
           canMutate: access.canMutateTeamData(t.id),
         };
       });
@@ -1502,8 +1514,11 @@ app.get("/hub", async (c) => {
               : "viewer"),
           subRoles: grant?.subRoles || [],
           canManage: access.canManageTeamId(t.id),
+          canManageOps: access.canManageOpsForTeam(t.id),
           canManagePlayers: access.canManagePlayersForTeam(t.id),
           canEditScore: access.canEditScoreForTeam(t.id),
+          canEditSchedule: access.canEditScheduleForTeam(t.id),
+          canEditCarpool: access.canEditCarpoolForTeam(t.id),
           canMutate: access.canMutateTeamData(t.id),
           scoreTeamNameMode: extractScoreTeamNameModeFromJson(
             t.scorebookSymbolRules
@@ -3242,10 +3257,12 @@ app.get("/attendance-matrix", async (c) => {
 
     const myMemberId = currentMember?.id || null;
     const primaryMemberIds = Array.from(new Set(matchedMembers.map((m) => m.id)));
+    const callerAccess = await resolveCallerTeamAccess(c);
     const isITAdmin = Boolean(
       isSysAdmin ||
       isTeamCreator ||
       isOrgAdmin ||
+      callerAccess.canManageTeamId(teamId) ||
       matchedMembers.some((m) => {
         const r = (m.role || "").toLowerCase();
         return r === "admin" || r === "system_admin";
@@ -3253,9 +3270,10 @@ app.get("/attendance-matrix", async (c) => {
     );
     const isManager = Boolean(
       isITAdmin ||
+      callerAccess.canEditScheduleForTeam(teamId) ||
       matchedMembers.some((m) => {
         const r = (m.role || "").toLowerCase();
-        return r === "manager" || r === "coach" || r === "scorer";
+        return r === "manager" || r === "coach";
       })
     );
 
@@ -3808,15 +3826,24 @@ app.post("/attendance-matrix/member-order", async (c) => {
     if (!teamId || !memberSortOrder) {
       return c.json({ success: false, error: "teamId and memberSortOrder are required" }, 400);
     }
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (
+        !access.isAuthenticated ||
+        (!access.canEditScheduleForTeam(teamId) && !access.canManageTeamId(teamId))
+      ) {
+        return c.json({ success: false, error: "並び順を変更する権限がありません" }, 403);
+      }
+    }
 
     await db.update(teams)
       .set({ memberSortOrder: JSON.stringify(memberSortOrder) })
       .where(eq(teams.id, teamId));
 
     return c.json({ success: true, message: "並び順を保存しました" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to save member sort order:", err);
-    return c.json({ success: false, error: err?.message || "並び順の保存に失敗しました" }, 500);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "並び順の保存に失敗しました" }, 500);
   }
 });
 
@@ -3832,6 +3859,26 @@ app.post("/attendance-matrix/event-note", async (c) => {
     const { eventId, description, importantNotice } = body;
     if (!eventId) {
       return c.json({ success: false, error: "eventId is required" }, 400);
+    }
+    if (!String(eventId).startsWith("demo-")) {
+      const evRow = await db
+        .select({ teamId: events.teamId })
+        .from(events)
+        .where(eq(events.id, eventId))
+        .get();
+      if (!evRow) {
+        return c.json({ success: false, error: "予定が見つかりません" }, 404);
+      }
+      if (evRow.teamId !== "demo-team") {
+        const access = await resolveCallerTeamAccess(c);
+        if (
+          !access.isAuthenticated ||
+          (!access.canEditScheduleForTeam(evRow.teamId) &&
+            !access.canManageTeamId(evRow.teamId))
+        ) {
+          return c.json({ success: false, error: "日別メモを編集する権限がありません" }, 403);
+        }
+      }
     }
 
     const patch: Partial<typeof events.$inferInsert> = {};
@@ -3849,9 +3896,9 @@ app.post("/attendance-matrix/event-note", async (c) => {
     }
 
     return c.json({ success: true, message: "日別メモを保存しました" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to save event description:", err);
-    return c.json({ success: false, error: err?.message || "日別メモの保存に失敗しました" }, 500);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "日別メモの保存に失敗しました" }, 500);
   }
 });
 
@@ -3868,15 +3915,24 @@ app.post("/attendance-matrix/status-config", async (c) => {
     if (!teamId || !statusConfig) {
       return c.json({ success: false, error: "teamId and statusConfig are required" }, 400);
     }
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (
+        !access.isAuthenticated ||
+        (!access.canEditScheduleForTeam(teamId) && !access.canManageTeamId(teamId))
+      ) {
+        return c.json({ success: false, error: "確認項目を変更する権限がありません" }, 403);
+      }
+    }
 
     await db.update(teams)
       .set({ attendanceStatusConfig: JSON.stringify(statusConfig) })
       .where(eq(teams.id, teamId));
 
     return c.json({ success: true, message: "ステータス設定を保存しました" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to save status config:", err);
-    return c.json({ success: false, error: err?.message || "ステータス設定の保存に失敗しました" }, 500);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "ステータス設定の保存に失敗しました" }, 500);
   }
 });
 
@@ -3893,15 +3949,24 @@ app.post("/attendance-matrix/sub-labels", async (c) => {
     if (!teamId || !memberSubLabels) {
       return c.json({ success: false, error: "teamId and memberSubLabels are required" }, 400);
     }
+    if (teamId !== "demo-team") {
+      const access = await resolveCallerTeamAccess(c);
+      if (
+        !access.isAuthenticated ||
+        (!access.canEditScheduleForTeam(teamId) && !access.canManageTeamId(teamId))
+      ) {
+        return c.json({ success: false, error: "当番班ラベルを変更する権限がありません" }, 403);
+      }
+    }
 
     await db.update(teams)
       .set({ memberSubLabels: JSON.stringify(memberSubLabels) })
       .where(eq(teams.id, teamId));
 
     return c.json({ success: true, message: "サブラベルを保存しました" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Failed to save member sub labels:", err);
-    return c.json({ success: false, error: err?.message || "サブラベルの保存に失敗しました" }, 500);
+    return c.json({ success: false, error: err instanceof Error ? err.message : "サブラベルの保存に失敗しました" }, 500);
   }
 });
 
@@ -3962,6 +4027,17 @@ app.post("/schedule-default-times", async (c) => {
         isDemo: true,
         scheduleDefaultTimes: normalized,
       });
+    }
+
+    const access = await resolveCallerTeamAccess(c);
+    if (
+      !access.isAuthenticated ||
+      (!access.canManageOpsForTeam(teamId) && !access.canManageTeamId(teamId))
+    ) {
+      return c.json(
+        { success: false, error: "予定初期時間の設定を変更する権限がありません" },
+        403
+      );
     }
 
     await db
@@ -5423,7 +5499,9 @@ app.get("/grounds", async (c) => {
       );
     }
 
-    const canCreate = access.isAuthenticated && access.canMutateTeamData(teamId);
+    const canCreate =
+      access.isAuthenticated &&
+      (access.canManagePlayersForTeam(teamId) || access.canManageTeamId(teamId));
     const canUseAiLookup = canCreate;
 
     await ensureVenuesColumns(c.env.DB);
@@ -9774,10 +9852,14 @@ app.delete("/links/:id", async (c) => {
     const access = await resolveCallerTeamAccess(c);
     const allowed =
       access.isSystemAdmin ||
-      (currentLink.teamId ? access.canMutateTeamData(currentLink.teamId) : false) ||
+      (currentLink.teamId
+        ? access.canEditScheduleForTeam(currentLink.teamId) ||
+          access.canManageTeamId(currentLink.teamId)
+        : false) ||
       (currentLink.organizationId
         ? access.canAccessOrganization(currentLink.organizationId) &&
-          access.mutableTeamIds.size > 0
+          (access.scheduleEditableTeamIds.size > 0 ||
+            access.managedTeamIds.size > 0)
         : false);
     if (!allowed) {
       return c.json(
@@ -9928,6 +10010,10 @@ app.get("/admin/dashboard", async (c) => {
         { role: "manager", customLabel: "監督・代表" },
         { role: "staff", customLabel: "事務局・役員" },
       ],
+      roleDefinitions: parseTeamRoleDefinitions(null, [
+        { role: "manager", customLabel: "監督・代表" },
+        { role: "staff", customLabel: "事務局・役員" },
+      ]),
     });
   }
 
@@ -9945,6 +10031,7 @@ app.get("/admin/dashboard", async (c) => {
         orgGoogleMapsApiKey: organizations.googleMapsApiKey,
         createdBy: teams.createdBy,
         memberSubLabels: teams.memberSubLabels,
+        rolePermissionsJson: teams.rolePermissionsJson,
       })
       .from(teams)
       .leftJoin(organizations, eq(teams.organizationId, organizations.id))
@@ -9955,8 +10042,7 @@ app.get("/admin/dashboard", async (c) => {
       return c.json({ success: false, error: "チームが見つかりません" }, 404);
     }
 
-    // 3. ユーザーの所属・管理権限チェック（確定済みアカウントID・創設者・組織OWNER/ADMIN・SYSTEM_ADMINのみ）
-    // ⚠️ 特定個人名のハードコードや表示名一致による管理者昇格は厳禁
+    // 3. ユーザーの所属・管理権限チェック（確定済みアカウントID・創設者・組織OWNER/ADMIN・SYSTEM_ADMIN・カスタム管理役職を含む）
     const access = await resolveCallerTeamAccess(c, [userId]);
     if (!access.canAccessTeam(teamId)) {
       return c.json(
@@ -9969,84 +10055,7 @@ app.get("/admin/dashboard", async (c) => {
       );
     }
 
-    const candidateUserIds = access.candidateUserIds;
-    let myRole = "viewer";
-    let parsedSubRoles: string[] = [];
-
-    if (candidateUserIds.length > 0) {
-      const idMatches = await db
-        .select()
-        .from(teamMembers)
-        .where(
-          and(
-            eq(teamMembers.teamId, teamId),
-            eq(teamMembers.status, "active"),
-            inArray(teamMembers.userId, candidateUserIds)
-          )
-        )
-        .all();
-
-      const myMembership =
-        idMatches.find((m) => canManageTeam(m.role)) || idMatches[0];
-
-      if (myMembership) {
-        myRole = (myMembership.role || "viewer").toLowerCase();
-        if (myMembership.subRoles) {
-          try {
-            const parsed: unknown = JSON.parse(myMembership.subRoles);
-            if (Array.isArray(parsed)) {
-              parsedSubRoles = parsed
-                .filter((s): s is string => typeof s === "string")
-                .map((s) => s.toLowerCase());
-            }
-          } catch {
-            parsedSubRoles = myMembership.subRoles
-              .split(",")
-              .map((s) => s.trim().toLowerCase())
-              .filter(Boolean);
-          }
-        }
-        if (canManageSystem(myRole, parsedSubRoles)) {
-          myRole = "admin";
-        } else if (canManageTeam(myRole, parsedSubRoles) && myRole !== "admin") {
-          myRole = "manager";
-        }
-      }
-    }
-
-    const isFounder = Boolean(
-      targetTeam.createdBy && candidateUserIds.includes(targetTeam.createdBy)
-    );
-    const canManage =
-      isFounder ||
-      access.isSystemAdmin ||
-      access.canManageTeamId(teamId) ||
-      canManageTeam(myRole, parsedSubRoles);
-
-    if (canManage && (myRole === "viewer" || myRole === "parent" || myRole === "player")) {
-      myRole = "admin";
-    }
-
-    const orgMapsKey = (targetTeam.orgGoogleMapsApiKey || "").trim() || null;
-    const effectiveMapsKey = envMapsKey || orgMapsKey;
-    const mapsKeySource: "env" | "org" | "none" = envMapsKey
-      ? "env"
-      : orgMapsKey
-      ? "org"
-      : "none";
-
-    // 4. サブラベルパース
-    let subLabelsMap: Record<string, string> = {};
-    try {
-      if (targetTeam.memberSubLabels) {
-        subLabelsMap = JSON.parse(targetTeam.memberSubLabels) as Record<
-          string,
-          string
-        >;
-      }
-    } catch {}
-
-    // 5. メンバー一覧・選手数・役職カスタム呼称を並列取得
+    // 4. メンバー一覧・選手数・役職カスタム呼称を並列取得
     const [allMembers, playersList, roleRows] = await Promise.all([
       db
         .select({
@@ -10082,42 +10091,99 @@ app.get("/admin/dashboard", async (c) => {
         .catch(() => [] as Array<{ role: string; customLabel: string }>),
     ]);
 
-    const parseMemberSubRoles = (raw: string | null | undefined, primaryRole: string): string[] => {
-      if (!raw) return [];
-      try {
-        const parsed: unknown = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          return Array.from(
-            new Set(
-              parsed
-                .filter((s): s is string => typeof s === "string")
-                .map((s) => s.trim().toLowerCase())
-                .filter((s) => ALLOWED_ADMIN_MEMBER_ROLES.has(s) && s !== primaryRole)
-            )
-          );
-        }
-      } catch {
-        return Array.from(
-          new Set(
-            raw
-              .split(",")
-              .map((s) => s.trim().toLowerCase())
-              .filter((s) => ALLOWED_ADMIN_MEMBER_ROLES.has(s) && s !== primaryRole)
-          )
-        );
-      }
-      return [];
-    };
+    const roleDefinitions = parseTeamRoleDefinitions(
+      targetTeam.rolePermissionsJson,
+      roleRows
+    );
+    const validRoleSet = new Set<string>(
+      roleDefinitions.map((d) => d.role.toLowerCase())
+    );
+    const rolePriority: Record<string, number> = {};
+    for (const def of roleDefinitions) {
+      rolePriority[def.role.toLowerCase()] = def.priority;
+    }
 
-    const rolePriority: Record<string, number> = {
-      admin: 0,
-      manager: 1,
-      coach: 2,
-      scorer: 3,
-      staff: 4,
-      parent: 5,
-      player: 6,
-      viewer: 7,
+    const candidateUserIds = access.candidateUserIds;
+    let myRole = "viewer";
+    let parsedSubRoles: string[] = [];
+
+    if (candidateUserIds.length > 0) {
+      const idMatches = allMembers.filter(
+        (m) =>
+          m.status === "active" &&
+          Boolean(m.userId && candidateUserIds.includes(m.userId))
+      );
+
+      const myMembership =
+        idMatches.find(
+          (m) =>
+            evaluateEffectiveRolePermissions(
+              m.role,
+              parseSubRolesList(m.subRoles),
+              roleDefinitions
+            ).canManageTeam
+        ) || idMatches[0];
+
+      if (myMembership) {
+        myRole = (myMembership.role || "viewer").toLowerCase();
+        parsedSubRoles = parseSubRolesList(myMembership.subRoles).map((s) =>
+          s.toLowerCase()
+        );
+        if (canManageSystem(myRole, parsedSubRoles)) {
+          myRole = "admin";
+        }
+      }
+    }
+
+    const isFounder = Boolean(
+      targetTeam.createdBy && candidateUserIds.includes(targetTeam.createdBy)
+    );
+    const canManage =
+      isFounder ||
+      access.isSystemAdmin ||
+      access.canManageTeamId(teamId) ||
+      evaluateEffectiveRolePermissions(myRole, parsedSubRoles, roleDefinitions)
+        .canManageTeam;
+
+    if (
+      canManage &&
+      (myRole === "viewer" || myRole === "parent" || myRole === "player") &&
+      !evaluateEffectiveRolePermissions(myRole, parsedSubRoles, roleDefinitions)
+        .canManageTeam
+    ) {
+      myRole = "admin";
+    }
+
+    const orgMapsKey = (targetTeam.orgGoogleMapsApiKey || "").trim() || null;
+    const effectiveMapsKey = envMapsKey || orgMapsKey;
+    const mapsKeySource: "env" | "org" | "none" = envMapsKey
+      ? "env"
+      : orgMapsKey
+      ? "org"
+      : "none";
+
+    // 5. サブラベルパース
+    let subLabelsMap: Record<string, string> = {};
+    try {
+      if (targetTeam.memberSubLabels) {
+        subLabelsMap = JSON.parse(targetTeam.memberSubLabels) as Record<
+          string,
+          string
+        >;
+      }
+    } catch {}
+
+    const parseMemberSubRoles = (
+      raw: string | null | undefined,
+      primaryRole: string
+    ): string[] => {
+      return Array.from(
+        new Set(
+          parseSubRolesList(raw)
+            .map((s) => s.toLowerCase())
+            .filter((s) => validRoleSet.has(s) && s !== primaryRole)
+        )
+      );
     };
 
     const pendingRequests = allMembers
@@ -10141,7 +10207,7 @@ app.get("/admin/dashboard", async (c) => {
       .filter((m) => m.status === "active")
       .map((m) => {
         const normRole = (m.role || "parent").toLowerCase();
-        const safeRole = ALLOWED_ADMIN_MEMBER_ROLES.has(normRole) ? normRole : "parent";
+        const safeRole = validRoleSet.has(normRole) ? normRole : "parent";
         return {
           memberId: m.memberId,
           userId: m.userId,
@@ -10188,10 +10254,13 @@ app.get("/admin/dashboard", async (c) => {
       },
       pendingRequests: canManage ? pendingRequests : [],
       activeMembers: canManage ? activeMembers : [],
-      roleSettings: roleRows.map((r) => ({
-        role: r.role.toLowerCase(),
-        customLabel: r.customLabel,
-      })),
+      roleSettings: roleDefinitions
+        .filter((d) => !d.isBuiltin || Boolean(d.customLabel))
+        .map((d) => ({
+          role: d.role,
+          customLabel: d.isBuiltin ? d.customLabel : d.label,
+        })),
+      roleDefinitions,
     });
   } catch (error: unknown) {
     console.error("Failed to load admin dashboard:", error);
@@ -10204,17 +10273,6 @@ app.get("/admin/dashboard", async (c) => {
     );
   }
 });
-
-const ALLOWED_ADMIN_MEMBER_ROLES = new Set([
-  "admin",
-  "manager",
-  "coach",
-  "scorer",
-  "staff",
-  "parent",
-  "player",
-  "viewer",
-]);
 
 /**
  * 🛡️ 参加申請の承認・却下実行API (POST /admin/requests/action)
@@ -10241,28 +10299,39 @@ app.post("/admin/requests/action", async (c) => {
       });
     }
 
+    await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
     if (!access.canManageTeamId(teamId)) {
       return c.json({ success: false, error: "管理者権限がありません" }, 403);
     }
 
-    const normalizedRole = rawRole.trim().toLowerCase();
-    const safeRole = ALLOWED_ADMIN_MEMBER_ROLES.has(normalizedRole)
-      ? normalizedRole
-      : "parent";
-
     if (action === "approve") {
+      const tRow = await db
+        .select({ rolePermissionsJson: teams.rolePermissionsJson })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get();
+      const roleDefs = parseTeamRoleDefinitions(
+        tRow?.rolePermissionsJson,
+        null
+      );
+      const validSet = new Set(roleDefs.map((d) => d.role.toLowerCase()));
+      const normalizedRole = rawRole.trim().toLowerCase();
+      const safeRole = validSet.has(normalizedRole) ? normalizedRole : "parent";
+
       await db
         .update(teamMembers)
         .set({ status: "active", role: safeRole })
         .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
 
+      invalidateCallerTeamAccessBurstCache();
       return c.json({ success: true, message: "参加申請を承認しました" });
     } else {
       await db
         .delete(teamMembers)
         .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
 
+      invalidateCallerTeamAccessBurstCache();
       return c.json({ success: true, message: "参加申請を却下しました" });
     }
   } catch (error: unknown) {
@@ -10299,20 +10368,32 @@ app.post("/admin/members/update", async (c) => {
       return c.json({ success: true, message: "設定を更新しました（デモ）" });
     }
 
+    await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
     if (!access.canManageTeamId(teamId)) {
       return c.json({ success: false, error: "管理者権限がありません" }, 403);
     }
 
     if (role) {
+      const tRow = await db
+        .select({ rolePermissionsJson: teams.rolePermissionsJson })
+        .from(teams)
+        .where(eq(teams.id, teamId))
+        .get();
+      const roleDefs = parseTeamRoleDefinitions(
+        tRow?.rolePermissionsJson,
+        null
+      );
+      const validSet = new Set(roleDefs.map((d) => d.role.toLowerCase()));
       const normalizedRole = role.trim().toLowerCase();
-      if (!ALLOWED_ADMIN_MEMBER_ROLES.has(normalizedRole)) {
+      if (!validSet.has(normalizedRole)) {
         return c.json({ success: false, error: "無効なロールが指定されました" }, 400);
       }
       await db
         .update(teamMembers)
         .set({ role: normalizedRole })
         .where(and(eq(teamMembers.id, memberId), eq(teamMembers.teamId, teamId)));
+      invalidateCallerTeamAccessBurstCache();
     }
 
     if (subLabel !== undefined) {
@@ -14203,11 +14284,15 @@ app.post("/teams/:teamId/logo", async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canManagePlayersForTeam(teamId)) {
+    if (
+      !access.canManageOpsForTeam(teamId) &&
+      !access.canManagePlayersForTeam(teamId) &&
+      !access.canManageTeamId(teamId)
+    ) {
       return c.json(
         {
           success: false,
-          error: "チームロゴを変更する権限がありません（指導者・管理者のみ設定できます）",
+          error: "チームロゴを変更する権限がありません（「運用・規定の設定」または「選手・試合管理」権限が必要です）",
         },
         403
       );
@@ -14371,11 +14456,15 @@ app.delete("/teams/:teamId/logo", async (c) => {
     }
 
     const access = await resolveCallerTeamAccess(c);
-    if (!access.canManagePlayersForTeam(teamId)) {
+    if (
+      !access.canManageOpsForTeam(teamId) &&
+      !access.canManagePlayersForTeam(teamId) &&
+      !access.canManageTeamId(teamId)
+    ) {
       return c.json(
         {
           success: false,
-          error: "チームロゴを削除する権限がありません（指導者・管理者のみ削除できます）",
+          error: "チームロゴを削除する権限がありません（「運用・規定の設定」または「選手・試合管理」権限が必要です）",
         },
         403
       );
@@ -14413,7 +14502,7 @@ app.delete("/teams/:teamId/logo", async (c) => {
 
 /**
  * 🏟️ チームヘッダー背景画像（カバー写真）のアップロード・更新API (POST /teams/:teamId/cover)
- * 指導者・管理者限定で `organizations.coverImageUrl` + R2 を安全に更新する
+ * 指導者・管理者・運用設定担当者限定で `organizations.coverImageUrl` + R2 を安全に更新する
  */
 app.post("/teams/:teamId/cover", async (c) => {
   await ensureAllSchemasOnce(c.env.DB);
@@ -14528,19 +14617,24 @@ app.post("/teams/:teamId/cover", async (c) => {
       return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
     }
 
-    const canManage = await resolveCanManageTeamPlayers(c, db, {
+    const access = await resolveCallerTeamAccess(c);
+    const canManagePlayers = await resolveCanManageTeamPlayers(c, db, {
       teamId,
       userId: userId || null,
       userName: userName || null,
       createdBy: teamObj.createdBy,
       organizationId: teamObj.organizationId,
     });
-    if (!canManage) {
+    if (
+      !canManagePlayers &&
+      !access.canManageOpsForTeam(teamId) &&
+      !access.canManageTeamId(teamId)
+    ) {
       return c.json(
         {
           success: false,
           error:
-            "チームのヘッダー背景画像を変更する権限がありません（指導者・管理者のみ設定できます）",
+            "チームのヘッダー背景画像を変更する権限がありません（「運用・規定の設定」または「選手・試合管理」権限が必要です）",
         },
         403
       );
@@ -14707,19 +14801,24 @@ app.delete("/teams/:teamId/cover", async (c) => {
       return c.json({ success: false, error: "対象のチームが見つかりません" }, 404);
     }
 
-    const canManage = await resolveCanManageTeamPlayers(c, db, {
+    const access = await resolveCallerTeamAccess(c);
+    const canManagePlayers = await resolveCanManageTeamPlayers(c, db, {
       teamId,
       userId,
       userName,
       createdBy: teamObj.createdBy,
       organizationId: teamObj.organizationId,
     });
-    if (!canManage) {
+    if (
+      !canManagePlayers &&
+      !access.canManageOpsForTeam(teamId) &&
+      !access.canManageTeamId(teamId)
+    ) {
       return c.json(
         {
           success: false,
           error:
-            "チームのヘッダー背景画像を削除する権限がありません（指導者・管理者のみ削除できます）",
+            "チームのヘッダー背景画像を削除する権限がありません（「運用・規定の設定」または「選手・試合管理」権限が必要です）",
         },
         403
       );

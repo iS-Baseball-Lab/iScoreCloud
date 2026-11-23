@@ -185,9 +185,20 @@ function LiffMatchEditContent() {
   const searchParams = useSearchParams();
   const matchId = searchParams.get("id") || searchParams.get("matchId") || "";
   const { currentTeam } = useLiff();
-  const { canMutate, canManagePlayers } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMatchId(matchId);
-  const effectiveCanDelete = canManagePlayers && !isDemoMatchId(matchId);
+  const {
+    canManagePlayers,
+    canEditScore,
+    canEditSchedule,
+    canManageTeam,
+  } = useLiffPermissions();
+  const effectiveCanEdit =
+    canManagePlayers ||
+    canEditScore ||
+    canEditSchedule ||
+    canManageTeam ||
+    isDemoMatchId(matchId);
+  const effectiveCanDelete =
+    (canManagePlayers || canManageTeam) && !isDemoMatchId(matchId);
   const { scoreTeamName } = useScoreTeamDisplayName("自チーム");
   const practiceMatchLabel = usePracticeMatchLabel();
 

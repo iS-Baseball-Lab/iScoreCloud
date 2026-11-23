@@ -1137,9 +1137,12 @@ liffCarpoolSimpleRouter.post("/save", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+    if (
+      !access.isAuthenticated ||
+      (!access.canEditCarpoolForTeam(teamId) && !access.canManageTeamId(teamId))
+    ) {
       return c.json(
-        { success: false, error: "配車データを編集する権限がありません" },
+        { success: false, error: "配車編成を保存する権限がありません" },
         403
       );
     }
@@ -1761,8 +1764,14 @@ liffCarpoolSimpleRouter.post("/save-equipment-set", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
-      return c.json({ success: false, error: "編集権限がありません" }, 403);
+    if (
+      !access.isAuthenticated ||
+      (!access.canEditCarpoolForTeam(teamId) && !access.canManageTeamId(teamId))
+    ) {
+      return c.json(
+        { success: false, error: "配車・道具セットの保存権限がありません" },
+        403
+      );
     }
 
     const db = drizzle(c.env.DB);

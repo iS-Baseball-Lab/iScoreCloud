@@ -316,7 +316,9 @@ liffPhase3TeamToolsRouter.get("/team-schedule-settings", async (c) => {
     return c.json({
       success: true,
       isDemo: false,
-      canEdit: access.isAuthenticated && access.canMutateTeamData(teamId),
+      canEdit:
+        access.isAuthenticated &&
+        (access.canManageOpsForTeam(teamId) || access.canManageTeamId(teamId)),
       settings,
     });
   } catch (err) {
@@ -357,9 +359,12 @@ liffPhase3TeamToolsRouter.post("/team-schedule-settings", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+    if (
+      !access.isAuthenticated ||
+      (!access.canManageOpsForTeam(teamId) && !access.canManageTeamId(teamId))
+    ) {
       return c.json(
-        { success: false, error: "設定を変更する権限がありません" },
+        { success: false, error: "運用・規定の設定を変更する権限がありません" },
         403
       );
     }
@@ -435,8 +440,7 @@ liffPhase3TeamToolsRouter.get("/score-settings", async (c) => {
       isDemo: false,
       canEdit:
         access.isAuthenticated &&
-        (access.canEditScoreForTeam(teamId) ||
-          access.canMutateTeamData(teamId)),
+        (access.canManageOpsForTeam(teamId) || access.canManageTeamId(teamId)),
       orgCategory: row.orgCategory || "other",
       settings,
     });
@@ -477,11 +481,10 @@ liffPhase3TeamToolsRouter.post("/score-settings", async (c) => {
     const access = await resolveCallerTeamAccess(c);
     if (
       !access.isAuthenticated ||
-      (!access.canEditScoreForTeam(teamId) &&
-        !access.canMutateTeamData(teamId))
+      (!access.canManageOpsForTeam(teamId) && !access.canManageTeamId(teamId))
     ) {
       return c.json(
-        { success: false, error: "スコア設定を保存する権限がありません" },
+        { success: false, error: "スコア・試合規定を保存する権限がありません" },
         403
       );
     }
@@ -697,7 +700,9 @@ liffPhase3TeamToolsRouter.get("/cheer-songs", async (c) => {
 
     const canManageTeam =
       access.isAuthenticated &&
-      (access.canManageTeamId(teamId) || access.canMutateTeamData(teamId));
+      (access.canManageTeamId(teamId) ||
+        access.canEditScheduleForTeam(teamId) ||
+        access.canManagePlayersForTeam(teamId));
 
     const candidateUserIdSet = new Set(access.candidateUserIds);
     const grant = access.teamRoles.get(teamId);
@@ -773,9 +778,9 @@ liffPhase3TeamToolsRouter.get("/cheer-songs", async (c) => {
         canEditCheer:
           access.isAuthenticated &&
           (access.canManageTeamId(teamId) ||
-            access.canMutateTeamData(teamId) ||
-            isSelf ||
-            isLinkedChild),
+            access.canEditScheduleForTeam(teamId) ||
+            access.canManagePlayersForTeam(teamId) ||
+            (access.canMutateTeamData(teamId) && (isSelf || isLinkedChild))),
       };
     });
 
@@ -962,7 +967,12 @@ liffPhase3TeamToolsRouter.post("/cheer-songs/team", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canMutateTeamData(teamId)) {
+    if (
+      !access.isAuthenticated ||
+      (!access.canManageTeamId(teamId) &&
+        !access.canEditScheduleForTeam(teamId) &&
+        !access.canManagePlayersForTeam(teamId))
+    ) {
       return c.json(
         { success: false, error: "チーム応援歌を編集する権限がありません" },
         403
@@ -1015,7 +1025,11 @@ liffPhase3TeamToolsRouter.post("/cheer-songs/player", async (c) => {
 
     await ensureAllSchemasOnce(c.env.DB);
     const access = await resolveCallerTeamAccess(c);
-    if (!access.isAuthenticated || !access.canAccessTeam(teamId)) {
+    if (
+      !access.isAuthenticated ||
+      !access.canAccessTeam(teamId) ||
+      !access.canMutateTeamData(teamId)
+    ) {
       return c.json({ success: false, error: "アクセス権限がありません" }, 403);
     }
 
@@ -1031,7 +1045,9 @@ liffPhase3TeamToolsRouter.post("/cheer-songs/player", async (c) => {
     }
 
     let allowed =
-      access.canManageTeamId(teamId) || access.canMutateTeamData(teamId);
+      access.canManageTeamId(teamId) ||
+      access.canEditScheduleForTeam(teamId) ||
+      access.canManagePlayersForTeam(teamId);
 
     if (!allowed) {
       const candidateSet = new Set(access.candidateUserIds);

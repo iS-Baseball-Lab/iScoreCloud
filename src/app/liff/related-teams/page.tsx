@@ -594,8 +594,8 @@ function RelatedTeamRowItem({
 
 export default function LiffRelatedTeamsPage() {
   const { currentTeam } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMode;
+  const { canManagePlayers, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canManagePlayers || canManageTeam || isDemoMode;
 
   const activeTeamId = currentTeam?.id || readStoredTeamIdFallback();
 

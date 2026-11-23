@@ -232,7 +232,12 @@ function LiffLineupContent() {
   const urlMatchId = searchParams.get("id");
   const urlTeamId = searchParams.get("teamId");
   const { currentTeam, profile, isLoadingTeam, isDemo } = useLiff();
-  const { canMutate, canUsePaidAi } = useLiffPermissions();
+  const {
+    canEditScore,
+    canManagePlayers,
+    canManageTeam,
+    canUsePaidAi,
+  } = useLiffPermissions();
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const preferredTeamId = useMemo(() => {
@@ -871,13 +876,18 @@ function LiffLineupContent() {
     }
   };
 
+  const hasLineupEditPerm = Boolean(
+    canEditScore || canManagePlayers || canManageTeam
+  );
   const effectiveCanEditLineup =
-    canMutate || isDemo || Boolean(selectedMatchId && isDemoMatchId(selectedMatchId));
+    hasLineupEditPerm ||
+    isDemo ||
+    Boolean(selectedMatchId && isDemoMatchId(selectedMatchId));
 
   // スタメン・控え・欠席の保存処理（試合DBおよびLINE試合速報ドラフトと双方向同期）
   const handleSaveLineups = async () => {
     if (!effectiveCanEditLineup) {
-      toast.error("閲覧専用メンバーのためスタメンを保存できません");
+      toast.error("現在の役職ではスタメンを保存できません");
       return;
     }
     if (!selectedMatchId) {
@@ -1080,7 +1090,7 @@ function LiffLineupContent() {
               : undefined
           }
           rightElement={
-            canMutate || isDemo ? (
+            hasLineupEditPerm || isDemo ? (
               <button
                 type="button"
                 onClick={() => setIsCreateMatchModalOpen(true)}
@@ -1114,12 +1124,12 @@ function LiffLineupContent() {
               icon={Shield}
               title="登録されている試合がありません"
               description={
-                canMutate || isDemo
+                hasLineupEditPerm || isDemo
                   ? "まずは試合予定を作成すると、スタメン・控え・欠席を登録できます"
                   : "チームの指導者・担当者が試合予定を作成すると、ここに出場メンバーが表示されます"
               }
             />
-            {(canMutate || isDemo) && (
+            {(hasLineupEditPerm || isDemo) && (
               <Button
                 type="button"
                 onClick={() => setIsCreateMatchModalOpen(true)}

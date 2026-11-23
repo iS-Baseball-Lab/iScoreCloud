@@ -48,8 +48,8 @@ const FAQ_CATEGORY_OPTIONS: ReadonlyArray<LiffSelectOption> = [
 
 export default function LiffFaqPage() {
   const { currentTeam, profile } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
-  const effectiveCanEdit = canMutate || isDemoMode;
+  const { canEditSchedule, canManageTeam, isDemoMode } = useLiffPermissions();
+  const effectiveCanEdit = canEditSchedule || canManageTeam || isDemoMode;
   const initialCachedFaqs = React.useMemo(() => {
     if (typeof window === "undefined") return null;
     const tid =

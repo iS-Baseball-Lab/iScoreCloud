@@ -174,7 +174,13 @@ function LiffSpecialEventsContent() {
   const shouldOpenNew = searchParams.get("new") === "1";
 
   const { currentTeam, profile, isDemo } = useLiff();
-  const { canMutate, isDemoMode } = useLiffPermissions();
+  const {
+    canMutate,
+    canEditSchedule,
+    canManagePlayers,
+    canManageTeam,
+    isDemoMode,
+  } = useLiffPermissions();
   const { scoreTeamName } = useScoreTeamDisplayName("チーム");
 
   const activeTeamId = useMemo(() => {
@@ -241,7 +247,9 @@ function LiffSpecialEventsContent() {
   const prevTeamIdRef = useRef<string>(activeTeamId);
   const didAutoFocusRef = useRef<string>("");
 
-  const effectiveCanEdit = canMutate || isDemoMode || isDemo;
+  const effectiveCanEdit =
+    canEditSchedule || canManagePlayers || canManageTeam || isDemoMode || isDemo;
+  const effectiveCanRespond = canMutate || isDemoMode || isDemo;
 
   const applyApiData = useCallback((data: SpecialEventsApiResponse) => {
     if (!data || data.success === false) {
@@ -1323,7 +1331,7 @@ function LiffSpecialEventsContent() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        disabled={!effectiveCanEdit}
+                        disabled={!effectiveCanRespond}
                         onClick={() => {
                           setRespondingEventId(ev.id);
                           setRespondingHouseholdKey(

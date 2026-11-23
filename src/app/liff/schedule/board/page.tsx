@@ -579,8 +579,10 @@ function AttendanceMatrixBoardContent() {
   const router = useRouter();
   const pathname = usePathname();
   const { liff, profile, currentTeam, isDemo } = useLiff();
-  const { canMutate } = useLiffPermissions();
+  const { canMutate, canEditSchedule, canManageTeam } = useLiffPermissions();
   const effectiveCanMutate = canMutate || isDemo;
+  const effectiveCanEditSchedule =
+    canEditSchedule || canManageTeam || isDemo;
   const searchParams = useSearchParams();
   const urlGroupTab = parseUrlGroupTab(searchParams.get("group"));
   const urlMonthParam = parseUrlMonthParam(searchParams.get("month"));
@@ -1824,14 +1826,25 @@ function AttendanceMatrixBoardContent() {
   const canEditPerson = useCallback((personId: string, _groupType: string) => {
     if (!effectiveCanMutate) return false;
     if (isDemo) return true; // デモ時は自由に操作可能
-    // 🌟 管理者・指導者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
-    if ((myInfo.isITAdmin || myInfo.isManager) && isManagerOverrideMode) return true;
+    // 🌟 管理者・指導者・予定編集担当者が「代理入力ON」を有効にしている場合のみ、全メンバーを代理入力可能！
+    if (
+      (myInfo.isITAdmin || myInfo.isManager || effectiveCanEditSchedule) &&
+      isManagerOverrideMode
+    ) {
+      return true;
+    }
     // 通常（OFF時、および一般保護者・選手）は、本人・配偶者・子ども選手の家族単位で編集可能
     if (myInfo.memberId && myInfo.memberId === personId) return true;
     if (myInfo.memberIds && myInfo.memberIds.includes(personId)) return true;
     if (myInfo.playerIds && myInfo.playerIds.includes(personId)) return true;
     return false;
-  }, [effectiveCanMutate, isDemo, myInfo, isManagerOverrideMode]);
+  }, [
+    effectiveCanMutate,
+    effectiveCanEditSchedule,
+    isDemo,
+    myInfo,
+    isManagerOverrideMode,
+  ]);
 
   // セルクリック時の処理
   const handleCellClick = (event: EventItem, person: MemberPerson) => {
@@ -1942,7 +1955,7 @@ function AttendanceMatrixBoardContent() {
 
   // 日別メモ・注意事項モーダルを開く（編集権限がない場合も登録済み内容の全文閲覧が可能）
   const handleOpenDayNoteModal = (ev: EventItem) => {
-    if (!effectiveCanMutate && !ev.description && !ev.importantNotice) return;
+    if (!effectiveCanEditSchedule && !ev.description && !ev.importantNotice) return;
     setEditingDayNote({
       eventId: ev.id,
       eventTitle: ev.title,
@@ -1954,7 +1967,7 @@ function AttendanceMatrixBoardContent() {
 
   // 日別メモ・注意事項保存処理
   const handleSaveDayNote = async (newDescription: string, newImportantNotice: string) => {
-    if (!editingDayNote || !effectiveCanMutate) return;
+    if (!editingDayNote || !effectiveCanEditSchedule) return;
     setIsSavingDayNote(true);
     const { eventId } = editingDayNote;
     const trimmedImportant = newImportantNotice.trim();
@@ -2282,7 +2295,7 @@ function AttendanceMatrixBoardContent() {
                             onClick={() => handleOpenDayNoteModal(ev)}
                             className="text-[8.5px] text-rose-700 dark:text-rose-300 font-black truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-rose-500/12 px-1 py-0.5 rounded border border-rose-500/35 border-l-2 border-l-rose-600 cursor-pointer hover:underline"
                             title={
-                              effectiveCanMutate
+                              effectiveCanEditSchedule
                                 ? `注意事項・特記事項: ${ev.importantNotice} (タップして確認・編集)`
                                 : `注意事項・特記事項: ${ev.importantNotice} (タップして全文確認)`
                             }
@@ -2298,7 +2311,7 @@ function AttendanceMatrixBoardContent() {
                             onClick={() => handleOpenDayNoteModal(ev)}
                             className="text-[8.5px] text-amber-700 dark:text-amber-300 font-bold truncate max-w-[115px] mt-0.5 flex items-center gap-0.5 leading-tight bg-amber-500/12 px-1 py-0.5 rounded border border-amber-500/25 cursor-pointer hover:underline"
                             title={
-                              effectiveCanMutate
+                              effectiveCanEditSchedule
                                 ? `連絡事項: ${ev.description} (タップして編集)`
                                 : `連絡事項: ${ev.description} (タップして全文確認)`
                             }
@@ -3164,7 +3177,7 @@ function AttendanceMatrixBoardContent() {
                   </span>
                   <div className="min-w-0">
                     <h3 className="text-xs font-black text-white">
-                      {effectiveCanMutate ? "日別の連絡事項・注意事項" : "日別の連絡事項・注意事項（確認）"}
+                      {effectiveCanEditSchedule ? "日別の連絡事項・注意事項" : "日別の連絡事項・注意事項（確認）"}
                     </h3>
                     <p className="text-[10px] text-slate-300 font-bold truncate">
                       📅 {editingDayNote.eventDate} : {editingDayNote.eventTitle}
@@ -3182,7 +3195,7 @@ function AttendanceMatrixBoardContent() {
               </div>
 
               <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto no-scrollbar">
-                {!effectiveCanMutate ? (
+                {!effectiveCanEditSchedule ? (
                   <>
                     <ImportantNoticeBanner notice={editingDayNote.importantNotice} />
                     {editingDayNote.description && (
@@ -4092,7 +4105,7 @@ function AttendanceMatrixBoardContent() {
               </div>
 
               <div className="px-4 py-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
-                {effectiveCanMutate ? (
+                {effectiveCanEditSchedule ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -4156,42 +4169,45 @@ function AttendanceMatrixBoardContent() {
               </div>
 
               <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 no-scrollbar">
-                {/* 管理者・指導者向け：代理入力モード切替 */}
-                {effectiveCanMutate && (myInfo.isITAdmin || myInfo.isManager) && (
-                  <div className="rounded-xl border border-border bg-muted/35 p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-foreground flex items-center gap-1.5">
-                          {isManagerOverrideMode ? (
-                            <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                          ) : (
-                            <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          )}
-                          <span>管理者・指導者 代理入力モード</span>
-                        </p>
-                        <p className="text-[10px] text-muted-foreground font-bold mt-0.5 leading-snug">
-                          {isManagerOverrideMode
-                            ? "現在ON：チーム全メンバーの出欠セルを代理で変更できます"
-                            : "現在OFF：ご本人・ご家族のセルのみ編集可能です（誤操作防止）"}
-                        </p>
+                {/* 管理者・指導者・予定担当者向け：代理入力モード切替 */}
+                {effectiveCanMutate &&
+                  (myInfo.isITAdmin ||
+                    myInfo.isManager ||
+                    effectiveCanEditSchedule) && (
+                    <div className="rounded-xl border border-border bg-muted/35 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-foreground flex items-center gap-1.5">
+                            {isManagerOverrideMode ? (
+                              <Unlock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            ) : (
+                              <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            )}
+                            <span>管理者・指導者 代理入力モード</span>
+                          </p>
+                          <p className="text-[10px] text-muted-foreground font-bold mt-0.5 leading-snug">
+                            {isManagerOverrideMode
+                              ? "現在ON：チーム全メンバーの出欠セルを代理で変更できます"
+                              : "現在OFF：ご本人・ご家族のセルのみ編集可能です（誤操作防止）"}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsManagerOverrideMode((prev) => !prev)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all active:scale-95 shrink-0 cursor-pointer ${
+                            isManagerOverrideMode
+                              ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                              : "bg-card text-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {isManagerOverrideMode ? "代理入力ON" : "ONにする"}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsManagerOverrideMode((prev) => !prev)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-black border transition-all active:scale-95 shrink-0 cursor-pointer ${
-                          isManagerOverrideMode
-                            ? "bg-amber-500 text-white border-amber-600 shadow-xs"
-                            : "bg-card text-foreground border-border hover:bg-muted"
-                        }`}
-                      >
-                        {isManagerOverrideMode ? "代理入力ON" : "ONにする"}
-                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* 表示・項目カスタマイズ（編集権限者） */}
-                {effectiveCanMutate && (
+                {/* 表示・項目カスタマイズ（予定編集権限者） */}
+                {effectiveCanEditSchedule && (
                   <div className="space-y-1.5">
                     <p className="text-[10.5px] font-black text-muted-foreground px-0.5">
                       表の項目・並び順設定

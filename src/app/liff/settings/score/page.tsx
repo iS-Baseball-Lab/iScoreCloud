@@ -134,16 +134,25 @@ interface StagedLegendState {
 
 export default function LiffScoreSettingsPage() {
   const { currentTeam, refreshTeams } = useLiff();
-  const { canMutate, canEditScore, isDemoMode, canUsePaidAi } =
-    useLiffPermissions();
+  const {
+    canManageTeam,
+    canManageOps,
+    canEditScore,
+    isDemoMode,
+    isLoggedIn,
+  } = useLiffPermissions();
   const practiceMatchLabel = usePracticeMatchLabel();
 
   const [isLoadingTeam, setIsLoadingTeam] = useState(true);
   const [isDemoContext, setIsDemoContext] = useState(false);
   const isEffectiveDemo =
     isDemoContext || isDemoMode || currentTeam?.id === "demo-team";
-  const effectiveCanEditRules = canMutate || isEffectiveDemo;
-  const canManageCloudLegend = canUsePaidAi && !isEffectiveDemo;
+  const hasOpsPermission = Boolean(canManageOps || canManageTeam);
+  const effectiveCanEditRules = hasOpsPermission || isEffectiveDemo;
+  const canManageCloudLegend =
+    hasOpsPermission && isLoggedIn && !isEffectiveDemo;
+  const canAccessScorebookImport =
+    Boolean(canEditScore || hasOpsPermission) && isLoggedIn && !isEffectiveDemo;
 
   const [serverCanEditScoreSettings, setServerCanEditScoreSettings] =
     useState<boolean | null>(null);
@@ -156,7 +165,7 @@ export default function LiffScoreSettingsPage() {
     ? true
     : serverCanEditScoreSettings !== null
     ? serverCanEditScoreSettings
-    : Boolean(canMutate || canEditScore);
+    : hasOpsPermission;
 
   const [resolvedTeamId, setResolvedTeamId] = useState<string>("");
   const [resolvedTeamName, setResolvedTeamName] = useState<string>("");
@@ -1495,7 +1504,7 @@ export default function LiffScoreSettingsPage() {
                   <div className="p-2.5 rounded-2xl bg-muted/60 border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
                     {isEffectiveDemo
                       ? "※ 体験デモモードではクラウド早見表の画像アップロード・変更は対象外です（下のボタンから早見表のA4出力をお試しいただけます）"
-                      : "※ 閲覧専用メンバーのため、チーム共通の早見表画像の変更・削除は行えません"}
+                      : "※ 現在の役職は閲覧モードのため、チーム共通の早見表画像の変更・削除は行えません（「運用・規定の設定」権限が必要です）"}
                   </div>
                 )}
 
@@ -1600,7 +1609,7 @@ export default function LiffScoreSettingsPage() {
                   <div className="w-full p-2.5 rounded-2xl bg-card border border-border text-[11px] font-bold text-muted-foreground leading-relaxed">
                     {isEffectiveDemo
                       ? "体験デモモードではクラウド早見表の画像アップロードは対象外です。下のボタンから清書早見表の作成・A4出力をご体験いただけます。"
-                      : "閲覧専用メンバーのため、チーム共通の早見表画像の登録は行えません。"}
+                      : "現在の役職は閲覧モードのため、チーム共通の早見表画像の登録は行えません（下のボタンから清書早見表の確認・A4出力は可能です）。"}
                   </div>
                 )}
                 <button
@@ -1749,7 +1758,7 @@ export default function LiffScoreSettingsPage() {
 
         {/* ━━━ クイック移動アクション ━━━ */}
         <div className="space-y-2.5 pt-1">
-          {canManageCloudLegend && (
+          {canAccessScorebookImport && (
             <Link
               href="/liff/tools/scorebook-import"
               className="w-full h-13 rounded-2xl bg-primary hover:bg-primary/90 text-primary-foreground font-black text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 active:scale-98 transition-all"
