@@ -2,7 +2,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HUB_TICKER_CONFIG,
+  TICKER_SCROLL_PX_PER_SEC,
   buildHubTickerFeed,
+  computeTickerHorizontalPanPlan,
   isHubManualTickerExpired,
   parseHubTickerConfigJson,
   resolveQuickExpiryDate,
@@ -337,4 +339,18 @@ describe("hub-ticker schema & feed builder", () => {
     });
     expect(disabledFeed).toHaveLength(0);
   });
+
+  it("maintains a strictly constant px/sec horizontal scroll speed regardless of message length", () => {
+    const sampleOverflows = [12, 60, 180, 420, 960];
+    for (const overflow of sampleOverflows) {
+      const plan = computeTickerHorizontalPanPlan(overflow);
+      const actualSpeedPxPerSec = plan.travelDistancePx / (plan.scrollMs / 1000);
+      expect(actualSpeedPxPerSec).toBeCloseTo(TICKER_SCROLL_PX_PER_SEC, 1);
+      expect(plan.totalCycleMs).toBe(
+        plan.initialHoldMs + plan.scrollMs + plan.endHoldMs
+      );
+      expect(plan.totalCycleMs).toBeGreaterThanOrEqual(4800);
+    }
+  });
 });
+

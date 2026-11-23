@@ -22,7 +22,9 @@ import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
 import type { MatchCardData } from "@/components/liff/MatchScoreCard";
 import { warmupLiffEndpointForHref } from "@/lib/liff/api-cache";
 import {
+  TICKER_SHORT_HOLD_MS,
   buildHubTickerFeed,
+  computeTickerHorizontalPanPlan,
   formatShortMonthDay,
   type HubTickerBadgeVariant,
   type HubTickerConfig,
@@ -89,10 +91,6 @@ const LIST_CARD_BADGE_STYLES: Record<HubTickerBadgeVariant, string> = {
   admin: "bg-slate-800 text-amber-300 border-slate-700",
   info: "bg-sky-600 text-white border-sky-600",
 };
-
-const SHORT_HOLD_MS = 4800;
-const LONG_INITIAL_HOLD_MS = 1400;
-const LONG_END_HOLD_MS = 1600;
 
 /**
  * ⚾ トップページ最上部「ハイブリッド流れるメッセージ（C案）」コンポーネント
@@ -264,19 +262,16 @@ export function HubTopNewsTicker({
     let nextStepTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (overflowPx > 6) {
-      // 1行に収まらない長文: 先頭で1.4秒静止 ➔ ゆっくり横スクロール ➔ 末尾で1.6秒静止 ➔ 次の項目へ
+      // 1行に収まらない長文: 先頭で1.4秒静止 ➔ 常に一定速度（34px/秒）で末尾まで横スクロール ➔ 末尾静止 ➔ 次の項目へ
       if (items.length === 1 && singlePassCountRef.current >= 2) {
         return;
       }
-      const scrollMs = Math.min(
-        9500,
-        Math.max(2400, Math.round(overflowPx * 38))
-      );
+      const plan = computeTickerHorizontalPanPlan(overflowPx);
 
       panStartTimer = setTimeout(() => {
-        setPanDurationMs(scrollMs);
-        setPanOffsetPx(overflowPx + 10);
-      }, LONG_INITIAL_HOLD_MS);
+        setPanDurationMs(plan.scrollMs);
+        setPanOffsetPx(plan.travelDistancePx);
+      }, plan.initialHoldMs);
 
       nextStepTimer = setTimeout(() => {
         if (items.length > 1) {
@@ -288,12 +283,12 @@ export function HubTopNewsTicker({
           setPanDurationMs(0);
           setPanOffsetPx(0);
         }
-      }, LONG_INITIAL_HOLD_MS + scrollMs + LONG_END_HOLD_MS);
+      }, plan.totalCycleMs);
     } else if (items.length > 1) {
       // 1行に収まる通常文: 4.8秒ピタッと静止した後に次の項目へ縦切替
       nextStepTimer = setTimeout(() => {
         setActiveIndex((prev) => (prev + 1) % items.length);
-      }, SHORT_HOLD_MS);
+      }, TICKER_SHORT_HOLD_MS);
     }
 
     return () => {

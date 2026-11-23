@@ -1177,3 +1177,48 @@ export function buildHubTickerFeed(
 
   return items;
 }
+
+export const TICKER_SHORT_HOLD_MS = 4800;
+export const TICKER_LONG_INITIAL_HOLD_MS = 1400;
+export const TICKER_LONG_MIN_END_HOLD_MS = 1600;
+export const TICKER_PAN_END_PADDING_PX = 10;
+/** 文字数・長さに依存しない一定スクロール速度（34 px/秒 ≒ 12px太字で約2.8文字/秒） */
+export const TICKER_SCROLL_PX_PER_SEC = 34;
+
+export interface TickerHorizontalPanPlan {
+  travelDistancePx: number;
+  initialHoldMs: number;
+  scrollMs: number;
+  endHoldMs: number;
+  totalCycleMs: number;
+}
+
+/**
+ * 1行を超える長文メッセージの横スクロール計画を算出する。
+ * `scrollMs` に上限・下限クランプを設けず `travelDistancePx / TICKER_SCROLL_PX_PER_SEC` で比例計算することで、
+ * 少しだけはみ出る文でも超長文でも常に完全に一定の速度（px/秒）で流れるようにする。
+ */
+export function computeTickerHorizontalPanPlan(
+  overflowPx: number
+): TickerHorizontalPanPlan {
+  const cleanOverflow = Math.max(0, Math.ceil(overflowPx));
+  const travelDistancePx = cleanOverflow + TICKER_PAN_END_PADDING_PX;
+  const scrollMs = Math.max(
+    1,
+    Math.round((travelDistancePx / TICKER_SCROLL_PX_PER_SEC) * 1000)
+  );
+  const endHoldMs = Math.max(
+    TICKER_LONG_MIN_END_HOLD_MS,
+    TICKER_SHORT_HOLD_MS - TICKER_LONG_INITIAL_HOLD_MS - scrollMs
+  );
+  const totalCycleMs = TICKER_LONG_INITIAL_HOLD_MS + scrollMs + endHoldMs;
+
+  return {
+    travelDistancePx,
+    initialHoldMs: TICKER_LONG_INITIAL_HOLD_MS,
+    scrollMs,
+    endHoldMs,
+    totalCycleMs,
+  };
+}
+
