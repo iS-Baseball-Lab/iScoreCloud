@@ -422,6 +422,158 @@ const LEGEND_PART_CACHE = new Map<
   { expiresAt: number; part: GeminiInlineDataPart | null }
 >();
 
+const SYMBOL_RULES_PROMPT_CACHE = new Map<
+  string,
+  { expiresAt: number; promptBlock: string }
+>();
+
+/**
+ * チームごとに `/liff/settings/score` で設定されている21項目のスコア記号ルール（ScorebookSymbolRules）を、
+ * Gemini の読取・再検算プロンプトへ直接注入するための明確な日本語指示ブロックへ変換する純関数。
+ */
+export function formatTeamSymbolRulesForAiPrompt(
+  rules: ScorebookSymbolRules | null | undefined
+): string {
+  if (!rules) return "";
+
+  const lines: string[] = [];
+
+  // 1. BSO投球記号
+  const pitchDesc =
+    rules.pitchMark === "numbered_bs"
+      ? "成美堂式・B段/S段への球数番号記入式（1, 2, 3, 4... の番号順に B / S / F を時系列復元すること！番号1,2,3を牽制球と誤読厳禁）"
+      : rules.pitchMark === "cross_swing"
+        ? "見逃し＝『○』(\"S\")、空振り＝『×』(\"W\")、ボール＝横棒『ー』(\"B\")、ファウル＝『△』(\"F\")"
+        : rules.pitchMark === "cross_dot_swing"
+          ? "見逃し＝『○』(\"S\")、空振り＝『×』(\"W\")、ボール＝点『・』(\"B\")、ファウル＝『△』(\"F\")"
+          : rules.pitchMark === "slash_swing"
+            ? "見逃し＝『○』(\"S\")、空振り＝斜線『／』(\"W\")、ボール＝横棒『ー』(\"B\")、ファウル＝『△』(\"F\")"
+            : "見逃し＝『○』(\"S\")、空振り＝黒丸『●』(\"W\")、ボール＝横棒『ー』(\"B\")、ファウル＝『△』(\"F\")";
+  lines.push(`・BSO投球記号: ${pitchDesc}`);
+
+  // 2. バント投球・牽制記号
+  const buntPitchDesc =
+    rules.buntPitchMark === "v_dot_circle_dot"
+      ? "バントファウル＝『V・』(\"BF\")、バント空振り＝『○・』(\"BS\")"
+      : rules.buntPitchMark === "filled_triangle"
+        ? "バントファウル＝黒塗り三角『▲/▼』(\"BF\")"
+        : rules.buntPitchMark === "inv_triangle_diamond"
+          ? "バントファウル＝逆三角『▽』(\"BF\")、バント空振り＝『◇』(\"BS\")"
+          : "バント時も通常投球と同じ記号";
+  const pickoffDesc =
+    rules.pickoffMark === "hidden"
+      ? "BSO欄への牽制球記入なし（無走者や通常横棒を牽制と誤読しないこと）"
+      : rules.pickoffMark === "kanji_num"
+        ? "牽制＝『1牽 / 2牽 / 3牽』"
+        : rules.pickoffMark === "full_arrow"
+          ? "牽制＝矢印『→(1塁) / ↑(2塁) / ←(3塁)』"
+          : "牽制＝くさび矢先『＞(1塁) / ∧(2塁) / ＜(3塁)』（底辺が閉じた△ファウルと厳密区別）";
+  lines.push(`・バント球＆牽制記号: ${buntPitchDesc} ／ ${pickoffDesc}`);
+
+  // 3. アウト・三振・四死球
+  lines.push(
+    `・中央アウトカウント表記: ${
+      rules.outMark === "circled"
+        ? "丸数字『①・②・③』が主表記"
+        : "ローマ数字『Ⅰ・Ⅱ・Ⅲ』が主表記"
+    }（※その打席自身の増加アウト数 o は単一アウトなら必ず 1）`
+  );
+  const soDesc =
+    rules.strikeout === "k_called_so_swing"
+      ? "見逃し三振＝『K』、空振り三振＝『SO』"
+      : rules.strikeout === "so"
+        ? "三振＝『SO』表記"
+        : rules.strikeout === "k_called_circle"
+          ? "見逃し三振＝丸囲み『Ⓚ』、空振り三振＝『K』"
+          : "三振＝『K』（見逃しは反転KまたはK）";
+  const bbDesc =
+    rules.walkHbp === "bb_hbp"
+      ? "四球＝『BB』、死球＝『HBP』"
+      : rules.walkHbp === "kanji"
+        ? "四球＝『四球』、死球＝『死球』"
+        : "四球＝『B』、死球＝『DB』（※単独DBを併殺DPと誤読厳禁）";
+  lines.push(`・三振＆四死球表記: ${soDesc} ／ ${bbDesc}`);
+
+  // 4. 安打線・進塁線の流儀（点線維持式か実線なぞり式か！）
+  const hitStyleDesc =
+    rules.hitLine === "quadrant_slash_hr_diamond"
+      ? "右下に赤斜線『／(単打)・／／(二塁打)・／／／(三塁打)』を引き、本塁打のみダイヤ1周赤実線"
+      : rules.hitLine === "parallel_bars"
+        ? "進塁辺に平行な二重線・三重線で塁打数を表現"
+        : rules.hitLine === "mono_bold"
+          ? "赤色を使わず黒太実線＋直交チョン線『/・//・///』で安打を表現"
+          : "到達塁までのダイヤ辺を赤実線（＋チョン線『/・//・///』、内野安打は円弧囲み等）で表現";
+  const runnerStyleDesc =
+    rules.runnerLine === "dotted_only"
+      ? "⚠️【点線維持式】四死球や単打等で出塁・進塁してもダイヤモンドの印刷点線を実線でなぞらない流儀です！本塁→1塁が印刷点線のままでも、右下に安打斜線や『B』『DB』『E』『FC』があり中央にアウト数字が無ければ必ず出塁（b1:true, o:0）と判定してください！"
+      : "出塁・進塁した塁間はダイヤモンド辺を手書き実線でなぞる流儀（本塁→1塁実線＝b1:true）";
+  lines.push(`・安打＆進塁線ルール: ${hitStyleDesc} ／ ${runnerStyleDesc}`);
+
+  // 5. 封殺・フライ/ライナー・バント・併殺・イニング切り線
+  const forceDesc =
+    rules.forceOutMark === "base_letter_abch"
+      ? "封殺アウトはベース記号『1A(一塁)・6B(二封)・5C(三封)・2H(本封)』等を使用（先行走者封殺ゴロは必ず rc:\"groundout\", o:1）"
+      : "封殺アウトは送球番号『6-4・4-6・5-4・5-2』等を使用（先行走者封殺ゴロは必ず rc:\"groundout\", o:1）";
+  const flyDesc =
+    rules.flyLiner === "paren"
+      ? "フライは丸括弧『(8)』等、ライナーは『8L / 6￣』表記"
+      : rules.flyLiner === "alphabet"
+        ? "フライは『F8』等、ライナーは『L6』等の英字プレフィックス表記"
+        : rules.flyLiner === "umbrella_f_prefix_ground_arc"
+          ? "フライは傘マーク『︵8』、ファウルフライは『︵F7』、ゴロは数字下に下弧『6⏝』が付く場合あり"
+          : "フライは数字の上に山なり傘マーク『︵4〜︵9』（『︵4』の接触字形を英字Bと誤読厳禁）";
+  const buntDesc =
+    rules.buntMark === "square_all_bh"
+      ? "バントは犠打だけでなく無走者バント凡退でも四角『□』で囲む流儀（無走者・2死の□囲みバントは rc:\"groundout\"）"
+      : rules.buntMark === "diamond_sac"
+        ? "犠打（送りバント）はダイヤ『◇』で囲む表記"
+        : rules.buntMark === "b_prefix"
+          ? "バントは『B1-3』等のBプレフィックス表記"
+          : "犠打は四角『□』囲み、犠飛は三角『△』囲み、バント安打は『BH』表記";
+  lines.push(`・守備・封殺・バント表記: ${forceDesc} ／ ${flyDesc} ／ ${buntDesc}`);
+
+  if (rules.customNote && rules.customNote.trim()) {
+    lines.push(`・チーム固有の特記事項（最優先）: ${rules.customNote.trim()}`);
+  }
+
+  return `\n【🔥最優先適用：このチームの登録スコア記号ルール（/liff/settings/score 設定値）】\n${lines.join(
+    "\n"
+  )}\n`;
+}
+
+async function resolveTeamSymbolRulesPromptBlock(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  teamId: string
+): Promise<string> {
+  if (!teamId || teamId === "demo-team") return "";
+  const now = Date.now();
+  const hit = SYMBOL_RULES_PROMPT_CACHE.get(teamId);
+  if (hit && hit.expiresAt > now) {
+    return hit.promptBlock;
+  }
+
+  try {
+    const row = await db
+      .select({ scorebookSymbolRules: teams.scorebookSymbolRules })
+      .from(teams)
+      .where(eq(teams.id, teamId))
+      .get();
+    const parsed = parseScorebookSymbolRulesJson(row?.scorebookSymbolRules);
+    const block = parsed ? formatTeamSymbolRulesForAiPrompt(parsed) : "";
+    if (SYMBOL_RULES_PROMPT_CACHE.size >= 48) {
+      const oldest = SYMBOL_RULES_PROMPT_CACHE.keys().next().value;
+      if (oldest) SYMBOL_RULES_PROMPT_CACHE.delete(oldest);
+    }
+    SYMBOL_RULES_PROMPT_CACHE.set(teamId, {
+      expiresAt: now + 5 * 60_000,
+      promptBlock: block,
+    });
+    return block;
+  } catch {
+    return "";
+  }
+}
+
 export interface ThinkingWatchdogPlan {
   expired: boolean;
   nextWaitMs: number;
@@ -461,7 +613,7 @@ export function computeThinkingWatchdogPlan(
  * - 無償枠（Free Tier）対応の最新主力モデル `gemini-4-hydrogen` を最優先（1番手）に配置し、
  *   単一モデルのRPM/RPD上限（429）や思考タイムアウト到達時は即座に `gemini-3.8-flash` 以降の独立クォータ枠へ0ms自動切替する
  * - 廃止・無料枠ゼロ・404のモデル（旧2.5系 / 3.5-flash / gemini-flash-latest / gemini-3.8-flash-lite）を完全排除
- * - 全体骨格（`structure`）は `HIGH`、既に打順・列が確定済みの1イニング拡大解析（`chunk`）は長考ループを防ぎ高速・高精度を両立する `MEDIUM` とし、
+ * - 全体骨格・ピンポイント再検算（`structure`）は `HIGH`、既に打順・列が確定済みの1イニング拡大解析（`chunk`）は長考ループを防ぎ高速・高精度を両立する `MEDIUM` とし、
  *   1リクエスト予算（72〜76秒）内で最低3モデルの自動フェイルオーバーが必ず完走する上限秒数に設計する
  */
 export function getGeminiModelConfigs(
@@ -472,7 +624,7 @@ export function getGeminiModelConfigs(
     {
       model: "gemini-4-hydrogen",
       firstResponseTimeoutMs: isDeepChunk ? 16_000 : 22_000,
-      firstTextTimeoutMs: isDeepChunk ? 24_000 : 32_000,
+      firstTextTimeoutMs: isDeepChunk ? 25_000 : 32_000,
       thinkingMode: isDeepChunk ? "level_medium" : "level_high",
       backoffBeforeMs: 0,
     },
@@ -480,7 +632,7 @@ export function getGeminiModelConfigs(
       model: "gemini-3.8-flash",
       firstResponseTimeoutMs: isDeepChunk ? 16_000 : 20_000,
       firstTextTimeoutMs: isDeepChunk ? 24_000 : 28_000,
-      thinkingMode: "level_medium",
+      thinkingMode: isDeepChunk ? "level_medium" : "level_high",
       backoffBeforeMs: 120,
     },
     {
@@ -1256,6 +1408,7 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
         .update(teams)
         .set({ scorebookSymbolRules: null })
         .where(eq(teams.id, targetTeam.id));
+      SYMBOL_RULES_PROMPT_CACHE.delete(targetTeam.id);
       return c.json({
         success: true,
         teamId: targetTeam.id,
@@ -1283,6 +1436,7 @@ liffScorebookRouter.post("/symbol-rules", async (c) => {
       .update(teams)
       .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
       .where(eq(teams.id, targetTeam.id));
+    SYMBOL_RULES_PROMPT_CACHE.delete(targetTeam.id);
 
     return c.json({
       success: true,
@@ -1448,6 +1602,7 @@ liffScorebookRouter.post("/extract-symbol-rules", async (c) => {
         .update(teams)
         .set({ scorebookSymbolRules: JSON.stringify(sanitized) })
         .where(eq(teams.id, targetTeam.id));
+      SYMBOL_RULES_PROMPT_CACHE.delete(targetTeam.id);
     }
 
     return c.json({
@@ -2221,11 +2376,15 @@ ${battingTeamContext}${scoreboardHintText}
       rawCorners.bl[1] >= rawCorners.tl[1] + 200 &&
       rawCorners.br[1] >= rawCorners.tr[1] + 200
     ) {
-      // 選手欄への食い込み防止ガードを維持しつつ、原本の傾き(dy)・台形歪み(dx)成分を保持する
-      const safeLeftMidX = Math.max(
-        rectCorners.tl[0],
-        Math.round((rawCorners.tl[0] + rawCorners.bl[0]) / 2)
+      // 選手欄（< 205）への誤食い込み時のみ rectCorners.tl[0] へ救済し、
+      // 正常範囲（>= 205）ではルーラー直読された rawCorners 左端Xをそのまま信頼して1回BSO欄の左欠け・全列右ズレを防ぐ
+      const rawLeftMidX = Math.round(
+        (rawCorners.tl[0] + rawCorners.bl[0]) / 2
       );
+      const safeLeftMidX =
+        rawLeftMidX < 205 && rectCorners.tl[0] >= 210
+          ? rectCorners.tl[0]
+          : rawLeftMidX;
       const halfSkewLeftX = Math.max(
         -45,
         Math.min(45, (rawCorners.bl[0] - rawCorners.tl[0]) / 2)
@@ -2465,6 +2624,10 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
     const legendConstraint = legendImageIndex > 0
       ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・バントファウル・1塁牽制/2塁牽制/3塁牽制の書き方は画像${legendImageIndex}の定義を最優先で厳密に適用してください。`
       : "";
+    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
+      db,
+      aiAccess.teamId
+    );
 
     const exampleInn = sortedTargets[0] || 1;
     const examplePitcher =
@@ -2483,7 +2646,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 
 【添付画像の構成】
 ${stage2ImageGuide.join("\n")}
-${legendConstraint}${leadOffConstraint}${tailOrderConstraint}
+${legendConstraint}${teamSymbolRulesBlock}${leadOffConstraint}${tailOrderConstraint}
 
 【確定済みの打順・途中交代リスト（この名前を厳密に使用すること）】
 ${lineupSpecLines.join("\n")}
@@ -3237,13 +3400,18 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
       body.structure.pitchers[0]?.name ||
       "相手投手";
 
+    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
+      db,
+      aiAccess.teamId
+    );
+
     const reconcilePrompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
 骨格確定済みの打順（1番〜${resolveEffectiveBattingCycleLength(
       body.structure
     )}番）でイニング解析結果を検算したところ、以下の打順が抜けて（飛んで）いることが数学的に判明しました。
 添付画像1には、欠損項目 [${body.gaps
         .map((g) => g.gapId)
-        .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+        .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}
 
 【検証対象の欠損打順リスト（全${body.gaps.length}件すべて必ず出力すること）】
 ${gapSpecLines.join("\n")}
@@ -3283,10 +3451,10 @@ ${pitcherSpecLines.join("\n")}
         apiKey,
         reconcilePrompt,
         imageParts,
-        "chunk",
+        "structure",
         validateReconcileOutput,
         {
-          maxBudgetMs: 62_000,
+          maxBudgetMs: 64_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
         }
@@ -3696,7 +3864,7 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
     const legendPart = await resolveLegendImagePart(
       c,
       db,
-      body.teamId,
+      aiAccess.teamId,
       body.legendBase64,
       body.legendMimeType
     );
@@ -3705,6 +3873,10 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
       imageParts.push(legendPart);
       legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
     }
+    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
+      db,
+      aiAccess.teamId
+    );
 
     const pitcherSpecLines = body.structure.pitchers.map(
       (p) =>
@@ -3736,7 +3908,7 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 現在、【${spec.inning}回${sideLabel}】の読取結果で合計アウト数が【${spec.currentTotalOuts}アウト（3アウト超過）】という野球規則上あり得ない矛盾が発生しています。
 添付画像1には、この${spec.inning}回${sideLabel}の候補マス [${spec.batters
         .map((b) => b.slotKey)
-        .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}
+        .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}
 
 【対象イニングの確定前提条件】
 ・イニング: ${spec.inning}回${sideLabel}（確定得点 = ${spec.confirmedRuns}点）
@@ -3786,10 +3958,10 @@ ${batterRowsDesc.join("\n")}
         apiKey,
         prompt,
         imageParts,
-        "chunk",
+        "structure",
         validateInningOutsResp,
         {
-          maxBudgetMs: 62_000,
+          maxBudgetMs: 64_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
         }
@@ -4388,6 +4560,10 @@ liffScorebookRouter.post("/reconcile-flagged-atbats", async (c) => {
       imageParts.push(legendPart);
       legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
     }
+    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
+      db,
+      aiAccess.teamId
+    );
 
     const specLines = batchSpecs.map((s) => {
       const pitchStr =
@@ -4413,9 +4589,9 @@ liffScorebookRouter.post("/reconcile-flagged-atbats", async (c) => {
 初回イニング走査のあと、野球規則・球数・打球方向・得点整合の自動検算で「要確認」となった対象マス [${batchSpecs
       .map((s) => s.slotKey)
       .join(", ")}] を、通常の約2.5倍の高解像度で切り出して再検証します。
-添付画像1には各行ごとに **[全体マス | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下・打球番号拡大${
+添付画像1には各行ごとに **[全体マス | 上下隣接マス文脈（水色目印間が当該マス） | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下・打球番号拡大${
       hasRunnerPanel ? " | 先行走者マス参照" : ""
-    }]** が左から順に並んでいます。${legendNote}
+    }]** が左から順に並んでいます（枠線を少しはみ出して書かれた数字・波線・DP括弧・切り線も [上下隣接マス文脈] で確認できます）。${legendNote}${teamSymbolRulesBlock}
 
 【再検算対象マスと打席開始前の確定状況】
 ${specLines.join("\n")}
@@ -6996,17 +7172,38 @@ async function callGeminiStructuredJson<T>(
         }
 
         if (res.status === 429) {
+          const retryMatch = errText.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
+          const parsedSec = retryMatch ? Number(retryMatch[1]) : 0;
+          const isDailyQuota = /PerDay/i.test(errText);
+          const budgetLeftNow = MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
+
+          // 主力1番手（gemini-4-hydrogen 等）の一時的な分間RPMバースト（非日次上限・待機6秒以下・残り予算42秒以上）は、
+          // 即座に下位 flash-lite 系へ転落させず 2.1秒だけ待って主力モデルを1回再試行し、読取精度の劣化を防ぐ
+          if (
+            attemptIdx === 0 &&
+            quota429Count === 0 &&
+            !isDailyQuota &&
+            parsedSec <= 6 &&
+            budgetLeftNow >= 42_000
+          ) {
+            quota429Count += 1;
+            if (activeTimer !== undefined) {
+              clearTimeout(activeTimer);
+              activeTimer = undefined;
+            }
+            await new Promise((r) => setTimeout(r, 2_100));
+            attemptIdx -= 1;
+            continue;
+          }
+
           quota429Count += 1;
           blockedInThisRequest.add(cfg.model);
           recordCooledOut(cfg.model);
-          const retryMatch = errText.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
-          const parsedSec = retryMatch ? Number(retryMatch[1]) : 0;
-          const isDailyOrZero =
-            /PerDay|exceeded your current quota/i.test(errText) &&
-            parsedSec === 0;
-          const cooldownMs = isDailyOrZero
+          const cooldownMs = isDailyQuota
             ? 3 * 60_000
-            : Math.min(180_000, Math.max(45_000, parsedSec * 1_000 || 60_000));
+            : parsedSec > 0
+              ? Math.min(120_000, Math.max(20_000, parsedSec * 1_000))
+              : 25_000;
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
             until: Date.now() + cooldownMs,
             status: 429,
@@ -8398,7 +8595,7 @@ function reconcileRawAtBatEvidence(
   };
 }
 
-function normalizePitchArray(
+export function normalizePitchArray(
   rawPitches: string[],
   resultCode: CanonicalAtBatResult,
   advances?: ScorebookV2Advance[],
@@ -8410,6 +8607,9 @@ function normalizePitchArray(
   for (const raw of rawPitches) {
     const s = (raw || "").trim().toLowerCase();
     if (!s) continue;
+
+    // 成美堂式・球数番号式（1, 2, 3...）の単独数字トークンが誤って出力された場合は牽制と誤認せずスキップ
+    if (/^\d+$/.test(s)) continue;
 
     if (
       s === "bunt_foul" ||
@@ -8447,9 +8647,9 @@ function normalizePitchArray(
       mapped.push("balk");
     } else if (
       s === "pickoff_1b" ||
+      s === "po1" ||
       s === "p1" ||
       s === "k1" ||
-      s === "1" ||
       s.includes("1塁牽") ||
       s.includes("１塁牽") ||
       s.includes("一塁牽") ||
@@ -8459,9 +8659,9 @@ function normalizePitchArray(
       mapped.push("pickoff_1b");
     } else if (
       s === "pickoff_2b" ||
+      s === "po2" ||
       s === "p2" ||
       s === "k2" ||
-      s === "2" ||
       s.includes("2塁牽") ||
       s.includes("２塁牽") ||
       s.includes("二塁牽") ||
@@ -8471,9 +8671,9 @@ function normalizePitchArray(
       mapped.push("pickoff_2b");
     } else if (
       s === "pickoff_3b" ||
+      s === "po3" ||
       s === "p3" ||
       s === "k3" ||
-      s === "3" ||
       s.includes("3塁牽") ||
       s.includes("３塁牽") ||
       s.includes("三塁牽") ||
@@ -8481,7 +8681,12 @@ function normalizePitchArray(
       s.includes("三牽")
     ) {
       mapped.push("pickoff_3b");
-    } else if (s === "pickoff" || s === "p" || s === "k" || s.includes("牽")) {
+    } else if (
+      s === "pickoff" ||
+      s === "po" ||
+      s === "p" ||
+      s.includes("牽")
+    ) {
       mapped.push(contextualPickoff);
     } else if (
       s === "ball" ||
@@ -8498,6 +8703,7 @@ function normalizePitchArray(
       s === "w" ||
       s === "●" ||
       s === "／" ||
+      s === "/" ||
       s.includes("空振") ||
       s.includes("swing")
     ) {
@@ -8505,6 +8711,8 @@ function normalizePitchArray(
     } else if (
       s === "strike" ||
       s === "s" ||
+      s === "k" ||
+      s === "ⓚ" ||
       s === "○" ||
       s === "◯" ||
       s === "〇" ||
@@ -8537,6 +8745,47 @@ function normalizePitchArray(
     ) {
       mapped.push("in_play");
     }
+  }
+
+  // 無走者時（activeBases 全て false かつ塁上走者進塁も 0 件）は公認野球規則上、牽制もボークも物理的に成立しない。
+  // BSO欄の印刷横線やボール横棒『ー』が牽制・ボークと誤読されたノイズを除去・ボール復元する。
+  const hasRunnerFromBase = Boolean(
+    advances?.some(
+      (a) => a.from === "1B" || a.from === "2B" || a.from === "3B"
+    )
+  );
+  if (
+    activeBases &&
+    !activeBases["1B"] &&
+    !activeBases["2B"] &&
+    !activeBases["3B"] &&
+    !hasRunnerFromBase &&
+    mapped.length > 0
+  ) {
+    const isStrikeoutFamily =
+      resultCode === "strikeout" ||
+      resultCode === "dropped_third_strike" ||
+      resultCode === "dropped_third_strike_out";
+    const cleanedEmptyBase: CanonicalPitchResult[] = [];
+    for (const p of mapped) {
+      if (
+        p === "pickoff" ||
+        p === "pickoff_1b" ||
+        p === "pickoff_2b" ||
+        p === "pickoff_3b"
+      ) {
+        continue;
+      }
+      if (p === "balk") {
+        if (!isStrikeoutFamily) {
+          cleanedEmptyBase.push("ball");
+        }
+        continue;
+      }
+      cleanedEmptyBase.push(p);
+    }
+    mapped.length = 0;
+    mapped.push(...cleanedEmptyBase);
   }
 
   const isHitResult =

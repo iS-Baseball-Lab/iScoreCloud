@@ -1,6 +1,14 @@
 // filepath: src/__tests__/scorebook-flagged-reconcile.test.ts
 import { describe, expect, it } from "vitest";
 import {
+  formatTeamSymbolRulesForAiPrompt,
+  normalizePitchArray,
+} from "@/api/liff/scorebook";
+import {
+  SENIOR_CHART_SCOREBOOK_SYMBOL_RULES,
+  STANDARD_SCOREBOOK_SYMBOL_RULES,
+} from "@/lib/liff/scorebook-symbol-rules";
+import {
   applyReconciledFlaggedAtBats,
   buildFlaggedAtBatReconcileSpecs,
   validateScorebookSheet,
@@ -405,3 +413,70 @@ describe("STEP 3 pinpoint flagged at-bat AI reconcile specs & non-regression mer
     expect(singleRes.atBats[2]?.resultCode).toBe("home_run");
   });
 });
+
+describe("Pitch normalization & team symbol rules prompt injection", () => {
+  it("never turns pitch sequence digits (1, 2, 3) or called-strike 'K' into fake pickoff throws", () => {
+    const emptyBases = { "1B": false, "2B": false, "3B": false } as const;
+
+    const seqRes = normalizePitchArray(
+      ["1", "B", "2", "S", "3", "X"],
+      "groundout",
+      [],
+      emptyBases
+    );
+    expect(seqRes).toEqual(["ball", "strike", "in_play"]);
+    expect(seqRes.some((p) => p.startsWith("pickoff"))).toBe(false);
+
+    const calledKRes = normalizePitchArray(
+      ["B", "S", "K"],
+      "strikeout",
+      [],
+      emptyBases
+    );
+    expect(calledKRes).toEqual(["ball", "strike", "strike"]);
+    expect(calledKRes.some((p) => p.startsWith("pickoff"))).toBe(false);
+  });
+
+  it("strips physically impossible empty-base pickoffs and recovers misread balk dashes while keeping occupied-base pickoffs", () => {
+    const emptyBases = { "1B": false, "2B": false, "3B": false } as const;
+    const cleaned = normalizePitchArray(
+      ["PO1", "BK", "S", "X"],
+      "flyout",
+      [],
+      emptyBases
+    );
+    expect(cleaned).toEqual(["ball", "strike", "in_play"]);
+
+    const runner1B = { "1B": true, "2B": false, "3B": false } as const;
+    const kept = normalizePitchArray(
+      ["PO1", "B", "X"],
+      "groundout",
+      [],
+      runner1B
+    );
+    expect(kept).toEqual(["pickoff_1b", "ball", "in_play"]);
+  });
+
+  it("formats team ScorebookSymbolRules into explicit Gemini reading instructions", () => {
+    const seniorPrompt = formatTeamSymbolRulesForAiPrompt({
+      ...SENIOR_CHART_SCOREBOOK_SYMBOL_RULES,
+      pitchMark: "numbered_bs",
+      buntMark: "square_all_bh",
+      forceOutMark: "base_letter_abch",
+      customNote: "内野安打は右下に赤丸囲み",
+    });
+
+    expect(seniorPrompt).toContain("点線維持式");
+    expect(seniorPrompt).toContain("球数番号記入式");
+    expect(seniorPrompt).toContain("無走者バント凡退でも四角『□』");
+    expect(seniorPrompt).toContain("1A(一塁)・6B(二封)・5C(三封)・2H(本封)");
+    expect(seniorPrompt).toContain("内野安打は右下に赤丸囲み");
+
+    const stdPrompt = formatTeamSymbolRulesForAiPrompt(
+      STANDARD_SCOREBOOK_SYMBOL_RULES
+    );
+    expect(stdPrompt).toContain("手書き実線でなぞる流儀");
+    expect(formatTeamSymbolRulesForAiPrompt(null)).toBe("");
+  });
+});
+

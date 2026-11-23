@@ -13,6 +13,7 @@ import {
   getInningSubColumnFractions,
   resolveStructureGridCorners,
   sanitizeGridCorners,
+  syncStructureBoxesFromCorners,
   warpQuadFromRgbaBuffer,
 } from "./scorebook-grid";
 import { isNonBattingBatterSlot } from "./scorebook-validator";
@@ -832,7 +833,8 @@ function normalizedQuadToPixelQuad(
 function applyStrokeValleySharpen(
   imageData: ImageData,
   width: number,
-  height: number
+  height: number,
+  alreadyEnhanced = false
 ): void {
   const n = width * height;
   if (n < 64) return;
@@ -920,7 +922,15 @@ function applyStrokeValleySharpen(
 
       const detail = baseLum - normMean;
       let targetLum = baseLum;
-      if (detail > 3) {
+      if (alreadyEnhanced) {
+        // 既にSTEP 1で鉛筆S字強調済みの画像に対して二重濃色化を行うと印刷点線ダイヤが実線化・中潰れするため、
+        // 白抜き谷間の開口を最優先し、芯の引き締めは最小限に留める
+        if (detail > 2.6) {
+          targetLum = baseLum + (detail - 2.6) * 1.46;
+        } else if (detail < -4.5) {
+          targetLum = baseLum + (detail + 4.5) * 0.32;
+        }
+      } else if (detail > 3) {
         // 文字内部の白穴や接触ストローク間の明るい谷間を開いてにじみ潰れを防ぐ
         targetLum = baseLum + (detail - 3) * 1.38;
       } else if (detail < -3) {
@@ -946,11 +956,13 @@ function applyStrokeValleySharpen(
  * - 薄い鉛筆の点『・』、短いボール横棒『ー』『-』、小さな『○』『△』『／』、球数番号『1,2,3』が
  *   紙面背景に埋もれて欠落（["X"]のみ化）するのを防ぐため、7×7局所背景より暗い筆跡成分を強力に濃色化する
  * - 同時に濃いサインペンの『○』『△』中心の白穴（低輝度域の明るい谷間）だけは開いて中潰れも防止する
+ * - ※alreadyEnhanced=true（STEP 1で鉛筆くっきり補正ON）の時は二重濃色化による罫線ボール誤読・白丸潰れを防ぐ
  */
 function applyBsoPitchEnhance(
   imageData: ImageData,
   width: number,
-  height: number
+  height: number,
+  alreadyEnhanced = false
 ): void {
   const n = width * height;
   if (n < 64) return;
@@ -1045,7 +1057,14 @@ function applyBsoPitchEnhance(
       const detail = baseLum - normMean;
       let targetLum = baseLum;
 
-      if (detail < -1.8) {
+      if (alreadyEnhanced) {
+        // 二重強調によるBSO印刷横線のボール誤読・白丸『○』の黒丸『●』潰れを防止し、白穴開口を優先
+        if (baseLum < 185 && detail > 2.6) {
+          targetLum = baseLum + (detail - 2.6) * 1.48;
+        } else if (detail < -4.5) {
+          targetLum = baseLum + (detail + 4.5) * 0.36;
+        }
+      } else if (detail < -1.8) {
         // 薄い鉛筆の点『・』や細線『ー』『○』『△』『1,2,3』をくっきり濃色化
         targetLum = baseLum + (detail + 1.8) * 1.68;
         if (baseLum < 236) {
@@ -1556,7 +1575,15 @@ export async function extractInningChunkCompositeCrop(
                     bsoZoomW,
                     rowOutH
                   );
-                  applyBsoPitchEnhance(bsoImgData, bsoZoomW, rowOutH);
+                  const isSheetAlreadyEnhanced = Boolean(
+                    options?.alreadyEnhanced
+                  );
+                  applyBsoPitchEnhance(
+                    bsoImgData,
+                    bsoZoomW,
+                    rowOutH,
+                    isSheetAlreadyEnhanced
+                  );
                   ctx.putImageData(bsoImgData, bsoDstX, dstY);
                   ctx.strokeStyle = "#0d9488";
                   ctx.lineWidth = 1.5;
@@ -1580,7 +1607,12 @@ export async function extractInningChunkCompositeCrop(
                     playZoomW,
                     rowOutH
                   );
-                  applyStrokeValleySharpen(playImgData, playZoomW, rowOutH);
+                  applyStrokeValleySharpen(
+                    playImgData,
+                    playZoomW,
+                    rowOutH,
+                    isSheetAlreadyEnhanced
+                  );
                   ctx.putImageData(playImgData, playDstX, dstY);
                   ctx.strokeStyle = "#6366f1";
                   ctx.lineWidth = 1.5;
@@ -2241,7 +2273,8 @@ function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
 export async function buildMissingOrderComparisonCrop(
   sourceDataUrl: string,
   structure: ScorebookSheetStructure,
-  gaps: readonly MissingOrderGapSpec[]
+  gaps: readonly MissingOrderGapSpec[],
+  options?: { alreadyEnhanced?: boolean }
 ): Promise<{ base64: string; mimeType: string } | null> {
   if (!sourceDataUrl || gaps.length === 0 || structure.batters.length === 0) {
     return null;
@@ -2256,6 +2289,7 @@ export async function buildMissingOrderComparisonCrop(
     const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
     if (!cachedRgba) return null;
     const fullSrcData = cachedRgba.data;
+    const isAlreadyEnhanced = Boolean(options?.alreadyEnhanced);
 
     const maxCandidates = Math.max(
       1,
@@ -2417,7 +2451,7 @@ export async function buildMissingOrderComparisonCrop(
           bsoW,
           rowCellH
         );
-        applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
+        applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH, isAlreadyEnhanced);
         ctx.putImageData(bsoImgData, bsoX, cellTopY);
         ctx.strokeStyle = "#0d9488";
         ctx.lineWidth = 1.5;
@@ -2434,7 +2468,7 @@ export async function buildMissingOrderComparisonCrop(
           playW,
           rowCellH
         );
-        applyStrokeValleySharpen(playImgData, playW, rowCellH);
+        applyStrokeValleySharpen(playImgData, playW, rowCellH, isAlreadyEnhanced);
         ctx.putImageData(playImgData, playX, cellTopY);
         ctx.strokeStyle = "#6366f1";
         ctx.lineWidth = 1.5;
@@ -2463,7 +2497,8 @@ export async function buildMissingOrderComparisonCrop(
 export async function buildInningOutsReconcileCrop(
   sourceDataUrl: string,
   structure: ScorebookSheetStructure,
-  spec: ExcessOutInningSpec
+  spec: ExcessOutInningSpec,
+  options?: { alreadyEnhanced?: boolean }
 ): Promise<{ base64: string; mimeType: string } | null> {
   if (
     !sourceDataUrl ||
@@ -2482,6 +2517,7 @@ export async function buildInningOutsReconcileCrop(
     const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
     if (!cachedRgba) return null;
     const fullSrcData = cachedRgba.data;
+    const isAlreadyEnhanced = Boolean(options?.alreadyEnhanced);
 
     const rowCellH = 202;
     const cellW = 248;
@@ -2642,7 +2678,7 @@ export async function buildInningOutsReconcileCrop(
         bsoW,
         rowCellH
       );
-      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
+      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH, isAlreadyEnhanced);
       ctx.putImageData(bsoImgData, bsoX, cellTopY);
       ctx.strokeStyle = "#0d9488";
       ctx.lineWidth = 1.5;
@@ -2659,7 +2695,7 @@ export async function buildInningOutsReconcileCrop(
         playW,
         rowCellH
       );
-      applyStrokeValleySharpen(playImgData, playW, rowCellH);
+      applyStrokeValleySharpen(playImgData, playW, rowCellH, isAlreadyEnhanced);
       ctx.putImageData(playImgData, playX, cellTopY);
       ctx.strokeStyle = "#6366f1";
       ctx.lineWidth = 1.5;
@@ -2680,14 +2716,15 @@ export async function buildInningOutsReconcileCrop(
 
 /**
  * STEP 3 の「確認おすすめの箇所」または個別1マスの超拡大AI再解析向けに、
- * 各対象マス [F1, F2...] を最大2.5倍解像度の 4〜5パネル並列ビュー
- * [全体マス | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下打球・守備番号分離拡大 | (走者あり時) 先行走者マス参照]
+ * 各対象マス [F1, F2...] を最大2.5倍解像度の 5〜6パネル並列ビュー
+ * [全体マス | 上下隣接マス文脈 | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下打球・守備番号分離拡大 | (走者あり時) 先行走者マス参照]
  * として切り出す。
  */
 export async function buildFlaggedAtBatsReconcileCrop(
   sourceDataUrl: string,
   structure: ScorebookSheetStructure,
-  specs: readonly FlaggedAtBatReconcileItemSpec[]
+  specs: readonly FlaggedAtBatReconcileItemSpec[],
+  options?: { alreadyEnhanced?: boolean }
 ): Promise<{ base64: string; mimeType: string } | null> {
   if (
     !sourceDataUrl ||
@@ -2706,6 +2743,7 @@ export async function buildFlaggedAtBatsReconcileCrop(
     const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
     if (!cachedRgba) return null;
     const fullSrcData = cachedRgba.data;
+    const isAlreadyEnhanced = Boolean(options?.alreadyEnhanced);
 
     const batchSpecs = specs.slice(0, 6);
     const hasAnyPrecedingRunner = batchSpecs.some(
@@ -2717,6 +2755,7 @@ export async function buildFlaggedAtBatsReconcileCrop(
     const candGapW = 10;
     const zoomGap = 4;
     const cellW = 264;
+    const ctxW = 128;
     const bsoW = 160;
     const diamondW = 184;
     const dirW = 184;
@@ -2732,6 +2771,8 @@ export async function buildFlaggedAtBatsReconcileCrop(
       leftLabelW +
       candGapW +
       cellW +
+      zoomGap +
+      ctxW +
       zoomGap +
       bsoW +
       zoomGap +
@@ -2764,7 +2805,7 @@ export async function buildFlaggedAtBatsReconcileCrop(
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     ctx.fillText(
-      `【要確認マス 超拡大ピンポイントAI精密照合】各行の [全体マス | BSO超拡大 | 中央ダイヤ | 右下打球番号${
+      `【要確認マス 超拡大ピンポイントAI精密照合】各行の [全体マス | 上下隣接マス | BSO超拡大 | 中央ダイヤ | 右下打球番号${
         hasAnyPrecedingRunner ? " | 先行走者マス" : ""
       }] を照合`,
       padX,
@@ -2772,7 +2813,8 @@ export async function buildFlaggedAtBatsReconcileCrop(
     );
 
     const candX = padX + leftLabelW + candGapW;
-    const bsoX = candX + cellW + zoomGap;
+    const ctxX = candX + cellW + zoomGap;
+    const bsoX = ctxX + ctxW + zoomGap;
     const diamondX = bsoX + bsoW + zoomGap;
     const dirX = diamondX + diamondW + zoomGap;
     const runnerX = dirX + dirW + zoomGap;
@@ -2842,6 +2884,12 @@ export async function buildFlaggedAtBatsReconcileCrop(
         candX + cellW / 2,
         blockTopY + 13
       );
+
+      ctx.fillStyle = "#0369a1";
+      ctx.fillRect(ctxX, blockTopY, ctxW, candHeaderH);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 10px sans-serif";
+      ctx.fillText("上下隣接マス文脈", ctxX + ctxW / 2, blockTopY + 13);
 
       ctx.fillStyle = "#0f766e";
       ctx.fillRect(bsoX, blockTopY, bsoW, candHeaderH);
@@ -2914,6 +2962,37 @@ export async function buildFlaggedAtBatsReconcileCrop(
           0.015
         ) || fullQuad;
 
+      // 1-B. 上下隣接マス文脈（上半分〜当該マス〜下半分を描画し、枠線越えの筆跡・DP括弧・切り線・波線ズレを確認可能にする）
+      const ctxQuad = sliceQuadSubRegion(tightQuad, -0.04, 1.04, -0.55, 1.55);
+      const ctxImgData = ctx.createImageData(ctxW, rowCellH);
+      warpQuadFromRgbaBuffer(
+        fullSrcData,
+        w,
+        h,
+        normalizedQuadToPixelQuad(ctxQuad, w, h),
+        ctxImgData.data,
+        ctxW,
+        rowCellH
+      );
+      ctx.putImageData(ctxImgData, ctxX, cellTopY);
+      const topTickY = cellTopY + Math.round((0.55 / 2.1) * rowCellH);
+      const botTickY = cellTopY + Math.round((1.55 / 2.1) * rowCellH);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ctxX, topTickY);
+      ctx.lineTo(ctxX + 12, topTickY);
+      ctx.moveTo(ctxX + ctxW - 12, topTickY);
+      ctx.lineTo(ctxX + ctxW, topTickY);
+      ctx.moveTo(ctxX, botTickY);
+      ctx.lineTo(ctxX + 12, botTickY);
+      ctx.moveTo(ctxX + ctxW - 12, botTickY);
+      ctx.lineTo(ctxX + ctxW, botTickY);
+      ctx.stroke();
+      ctx.strokeStyle = "#0369a1";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ctxX, cellTopY, ctxW, rowCellH);
+
       // 2. BSO超拡大
       const bsoQuad = sliceQuadSubRegion(tightQuad, -0.03, 0.37, -0.01, 1.01);
       const bsoImgData = ctx.createImageData(bsoW, rowCellH);
@@ -2926,7 +3005,7 @@ export async function buildFlaggedAtBatsReconcileCrop(
         bsoW,
         rowCellH
       );
-      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH);
+      applyBsoPitchEnhance(bsoImgData, bsoW, rowCellH, isAlreadyEnhanced);
       ctx.putImageData(bsoImgData, bsoX, cellTopY);
       ctx.strokeStyle = "#0d9488";
       ctx.lineWidth = 1.5;
@@ -2944,7 +3023,12 @@ export async function buildFlaggedAtBatsReconcileCrop(
         diamondW,
         rowCellH
       );
-      applyStrokeValleySharpen(diamondImgData, diamondW, rowCellH);
+      applyStrokeValleySharpen(
+        diamondImgData,
+        diamondW,
+        rowCellH,
+        isAlreadyEnhanced
+      );
       ctx.putImageData(diamondImgData, diamondX, cellTopY);
       ctx.strokeStyle = "#6366f1";
       ctx.lineWidth = 1.5;
@@ -2962,7 +3046,7 @@ export async function buildFlaggedAtBatsReconcileCrop(
         dirW,
         rowCellH
       );
-      applyStrokeValleySharpen(dirImgData, dirW, rowCellH);
+      applyStrokeValleySharpen(dirImgData, dirW, rowCellH, isAlreadyEnhanced);
       ctx.putImageData(dirImgData, dirX, cellTopY);
       ctx.strokeStyle = "#e11d48";
       ctx.lineWidth = 1.5;
@@ -3005,7 +3089,12 @@ export async function buildFlaggedAtBatsReconcileCrop(
               runnerW,
               rowCellH
             );
-            applyStrokeValleySharpen(prImg, runnerW, rowCellH);
+            applyStrokeValleySharpen(
+              prImg,
+              runnerW,
+              rowCellH,
+              isAlreadyEnhanced
+            );
             ctx.putImageData(prImg, runnerX, cellTopY);
           }
         } else {
@@ -3040,7 +3129,12 @@ export async function buildFlaggedAtBatsReconcileCrop(
               runnerW,
               subH
             );
-            applyStrokeValleySharpen(prImg, runnerW, subH);
+            applyStrokeValleySharpen(
+              prImg,
+              runnerW,
+              subH,
+              isAlreadyEnhanced
+            );
             ctx.putImageData(prImg, runnerX, subY);
             ctx.fillStyle = "#5b21b6";
             ctx.fillRect(runnerX, subY, 58, 16);
@@ -3071,4 +3165,222 @@ export async function buildFlaggedAtBatsReconcileCrop(
     return null;
   }
 }
+
+/**
+ * Stage 1（AI骨格スキャン）直後に、シート画像上の実在する「印刷外枠罫線（上・下・左・右）」へ
+ * 4隅グリッド座標 (gridCorners) をサブピクセル〜数ピクセル単位で自動スナップ補正する（所要約1〜3ms）。
+ * - 探索幅を ±10（正規化座標 0..1000 の ±1.0%）に制限しているため、マス内部のBSO区切り線へ誤ジャンプせず、
+ *   AIのルーラー目測誤差（1〜2%の微ズレ）のみを実際の印刷黒罫線へピタッと吸着させる。
+ */
+export async function refineStructureGridOnImage(
+  sourceDataUrl: string,
+  structure: ScorebookSheetStructure
+): Promise<ScorebookSheetStructure> {
+  if (
+    !sourceDataUrl ||
+    structure.batters.length < 4 ||
+    structure.innings.length < 1
+  ) {
+    return structure;
+  }
+
+  try {
+    const img = await loadImageFromUrl(sourceDataUrl);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (w < 240 || h < 240) return structure;
+
+    const cachedRgba = getDecodedSheetRgbaBuffer(sourceDataUrl, img, w, h);
+    if (!cachedRgba) return structure;
+    const rgba = cachedRgba.data;
+
+    const baseCorners = resolveStructureGridCorners(structure);
+    const sampleLumNorm = (nx: number, ny: number): number => {
+      const px = Math.max(0, Math.min(w - 1, Math.round((nx * w) / 1000)));
+      const py = Math.max(0, Math.min(h - 1, Math.round((ny * h) / 1000)));
+      const off = (py * w + px) * 4;
+      return (rgba[off] * 77 + rgba[off + 1] * 150 + rgba[off + 2] * 29) >> 8;
+    };
+
+    const SAMPLES = 72;
+    const MAX_SHIFT = 10;
+    const TILT_DELTAS = [-2, 0, 2] as const;
+
+    const findBestHorizontalEdgeShift = (
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number
+    ): [number, number] => {
+      const evalCandidate = (d0: number, d1: number): { score: number; hitRatio: number } => {
+        let dipSum = 0;
+        let hits = 0;
+        for (let k = 0; k < SAMPLES; k++) {
+          const s = 0.03 + (0.94 * k) / (SAMPLES - 1);
+          const x = x0 + (x1 - x0) * s;
+          const y = y0 + d0 + (y1 + d1 - (y0 + d0)) * s;
+          const cMin = Math.min(
+            sampleLumNorm(x, y - 0.45),
+            sampleLumNorm(x, y),
+            sampleLumNorm(x, y + 0.45)
+          );
+          const flank =
+            0.5 * (sampleLumNorm(x, y - 3.0) + sampleLumNorm(x, y + 3.0));
+          const dip = Math.max(0, flank - cMin);
+          dipSum += dip;
+          if (dip >= 16) hits += 1;
+        }
+        const hitRatio = hits / SAMPLES;
+        const meanDip = dipSum / SAMPLES;
+        const meanAbs = 0.5 * (Math.abs(d0) + Math.abs(d1));
+        const tiltPenalty = Math.abs(d1 - d0) * 0.025;
+        const score =
+          meanDip * hitRatio * Math.max(0.5, 1 - meanAbs * 0.028 - tiltPenalty);
+        return { score, hitRatio };
+      };
+
+      const zero = evalCandidate(0, 0);
+      let bestScore = zero.score;
+      let bestPair: [number, number] = [0, 0];
+      let bestHitRatio = zero.hitRatio;
+
+      for (let d = -MAX_SHIFT; d <= MAX_SHIFT; d++) {
+        for (const td of TILT_DELTAS) {
+          const d0 = d - td;
+          const d1 = d + td;
+          if (d0 === 0 && d1 === 0) continue;
+          const cur = evalCandidate(d0, d1);
+          if (cur.hitRatio >= 0.55 && cur.score > bestScore) {
+            bestScore = cur.score;
+            bestPair = [d0, d1];
+            bestHitRatio = cur.hitRatio;
+          }
+        }
+      }
+
+      if (
+        (bestPair[0] !== 0 || bestPair[1] !== 0) &&
+        bestHitRatio >= 0.55 &&
+        bestScore >= 12 &&
+        bestScore >= zero.score * 1.18 + 2.5
+      ) {
+        return bestPair;
+      }
+      return [0, 0];
+    };
+
+    const findBestVerticalEdgeShift = (
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number
+    ): [number, number] => {
+      const evalCandidate = (d0: number, d1: number): { score: number; hitRatio: number } => {
+        let dipSum = 0;
+        let hits = 0;
+        for (let k = 0; k < SAMPLES; k++) {
+          const t = 0.03 + (0.94 * k) / (SAMPLES - 1);
+          const y = y0 + (y1 - y0) * t;
+          const x = x0 + d0 + (x1 + d1 - (x0 + d0)) * t;
+          const cMin = Math.min(
+            sampleLumNorm(x - 0.45, y),
+            sampleLumNorm(x, y),
+            sampleLumNorm(x + 0.45, y)
+          );
+          const flank =
+            0.5 * (sampleLumNorm(x - 3.0, y) + sampleLumNorm(x + 3.0, y));
+          const dip = Math.max(0, flank - cMin);
+          dipSum += dip;
+          if (dip >= 16) hits += 1;
+        }
+        const hitRatio = hits / SAMPLES;
+        const meanDip = dipSum / SAMPLES;
+        const meanAbs = 0.5 * (Math.abs(d0) + Math.abs(d1));
+        const tiltPenalty = Math.abs(d1 - d0) * 0.025;
+        const score =
+          meanDip * hitRatio * Math.max(0.5, 1 - meanAbs * 0.028 - tiltPenalty);
+        return { score, hitRatio };
+      };
+
+      const zero = evalCandidate(0, 0);
+      let bestScore = zero.score;
+      let bestPair: [number, number] = [0, 0];
+      let bestHitRatio = zero.hitRatio;
+
+      for (let d = -MAX_SHIFT; d <= MAX_SHIFT; d++) {
+        for (const td of TILT_DELTAS) {
+          const d0 = d - td;
+          const d1 = d + td;
+          if (d0 === 0 && d1 === 0) continue;
+          const cur = evalCandidate(d0, d1);
+          if (cur.hitRatio >= 0.55 && cur.score > bestScore) {
+            bestScore = cur.score;
+            bestPair = [d0, d1];
+            bestHitRatio = cur.hitRatio;
+          }
+        }
+      }
+
+      if (
+        (bestPair[0] !== 0 || bestPair[1] !== 0) &&
+        bestHitRatio >= 0.55 &&
+        bestScore >= 12 &&
+        bestScore >= zero.score * 1.18 + 2.5
+      ) {
+        return bestPair;
+      }
+      return [0, 0];
+    };
+
+    const [topDl, topDr] = findBestHorizontalEdgeShift(
+      baseCorners.tl[0],
+      baseCorners.tl[1],
+      baseCorners.tr[0],
+      baseCorners.tr[1]
+    );
+    const [botDl, botDr] = findBestHorizontalEdgeShift(
+      baseCorners.bl[0],
+      baseCorners.bl[1],
+      baseCorners.br[0],
+      baseCorners.br[1]
+    );
+    const [leftDt, leftDb] = findBestVerticalEdgeShift(
+      baseCorners.tl[0],
+      baseCorners.tl[1],
+      baseCorners.bl[0],
+      baseCorners.bl[1]
+    );
+    const [rightDt, rightDb] = findBestVerticalEdgeShift(
+      baseCorners.tr[0],
+      baseCorners.tr[1],
+      baseCorners.br[0],
+      baseCorners.br[1]
+    );
+
+    if (
+      topDl === 0 &&
+      topDr === 0 &&
+      botDl === 0 &&
+      botDr === 0 &&
+      leftDt === 0 &&
+      leftDb === 0 &&
+      rightDt === 0 &&
+      rightDb === 0
+    ) {
+      return structure;
+    }
+
+    const snappedCorners: ScorebookGridCorners = {
+      tl: [baseCorners.tl[0] + leftDt, baseCorners.tl[1] + topDl],
+      tr: [baseCorners.tr[0] + rightDt, baseCorners.tr[1] + topDr],
+      br: [baseCorners.br[0] + rightDb, baseCorners.br[1] + botDr],
+      bl: [baseCorners.bl[0] + leftDb, baseCorners.bl[1] + botDl],
+    };
+
+    return syncStructureBoxesFromCorners(structure, snappedCorners);
+  } catch {
+    return structure;
+  }
+}
+
 

@@ -17,6 +17,7 @@ import {
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
   preprocessScorebookImage,
+  refineStructureGridOnImage,
   type PreprocessedScorebookImage,
 } from "@/lib/liff/scorebook-image";
 import {
@@ -1420,7 +1421,7 @@ export default function LiffScorebookImportPage() {
 
   const recordCooledModels = (models?: string[]) => {
     if (!Array.isArray(models) || models.length === 0) return;
-    const until = Date.now() + 50_000;
+    const until = Date.now() + 22_000;
     for (const m of models) {
       if (typeof m === "string" && m.trim()) {
         cooledModelsRef.current.set(m.trim(), until);
@@ -1462,7 +1463,7 @@ export default function LiffScorebookImportPage() {
     }
   };
 
-  // 4. Stage 1: AI骨格スキャン実行（高精細2200px＋打順欄・スコア欄の拡大クロップ併用＋直列実行）
+  // 4. Stage 1: AI骨格スキャン実行（高精細2200px＋打順欄・スコア欄の拡大クロップ併用＋印刷外枠罫線自動スナップ）
   const scanSingleSheetStructure = async (
     isTop: boolean,
     imgState: SheetImageState,
@@ -1471,6 +1472,7 @@ export default function LiffScorebookImportPage() {
     if (!imgState.processed) {
       throw new Error("画像が準備されていません");
     }
+    const processedDataUrl = imgState.processed.dataUrl;
     const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
     setStructureProgressLabel(
       `${sideLabel}シートの打順・投手・得点を高精度スキャン中... ${progressSuffix}`
@@ -1478,10 +1480,7 @@ export default function LiffScorebookImportPage() {
 
     const [apiImg, focusCrops] = await Promise.all([
       buildCalibratedRulerSheetImage(imgState.processed, 1850, 0.89),
-      extractStructureFocusCrops(
-        imgState.processed.dataUrl,
-        imgState.enhancePencil
-      ),
+      extractStructureFocusCrops(processedDataUrl, imgState.enhancePencil),
     ]);
 
     const callOnce = async (): Promise<ScorebookSheetStructure> => {
@@ -1513,7 +1512,7 @@ export default function LiffScorebookImportPage() {
       if (!data.success || !data.structure) {
         throw new Error(data.error || "骨格スキャンに失敗しました");
       }
-      return data.structure;
+      return refineStructureGridOnImage(processedDataUrl, data.structure);
     };
 
     try {
@@ -1775,7 +1774,8 @@ export default function LiffScorebookImportPage() {
       const crop = await buildMissingOrderComparisonCrop(
         srcDataUrl,
         structure,
-        batchGaps
+        batchGaps,
+        { alreadyEnhanced: imgState.enhancePencil }
       );
       if (!crop) break;
 
@@ -1898,7 +1898,8 @@ export default function LiffScorebookImportPage() {
       const crop = await buildInningOutsReconcileCrop(
         srcDataUrl,
         structure,
-        spec
+        spec,
+        { alreadyEnhanced: imgState.enhancePencil }
       );
       if (!crop) continue;
 
@@ -2017,7 +2018,7 @@ export default function LiffScorebookImportPage() {
 
   /**
    * STEP 3 の「確認おすすめの箇所」または個別1マスについて、
-   * 5パネル超拡大画像（2.5倍解像度＋先行走者マス参照）と HIGH thinking でピンポイント再検証し、
+   * 6パネル超拡大画像（2.5倍解像度＋上下隣接マス文脈＋先行走者マス参照）と HIGH thinking でピンポイント再検証し、
    * 他の確定済み打席を一切壊さず対象マスのみをマージする。
    */
   const reconcileFlaggedAtBatsForSide = async (
@@ -2072,6 +2073,7 @@ export default function LiffScorebookImportPage() {
     }
 
     const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+    const sideAlreadyEnhanced = (isTop ? topImage : bottomImage).enhancePencil;
     const collectedItems: ReconciledFlaggedAtBatItem[] = [];
 
     for (let offset = 0; offset < specs.length; offset += 6) {
@@ -2079,7 +2081,8 @@ export default function LiffScorebookImportPage() {
       const crop = await buildFlaggedAtBatsReconcileCrop(
         sourceDataUrl,
         structure,
-        batchSpecs
+        batchSpecs,
+        { alreadyEnhanced: sideAlreadyEnhanced }
       );
       if (!crop) {
         if (options?.throwOnFailure) {
@@ -2335,7 +2338,7 @@ export default function LiffScorebookImportPage() {
         }
         const sourceDataUrl = imgState.processed.dataUrl;
         const alreadyEnhanced = imgState.enhancePencil;
-        const cacheKey = `v7:${selectedMatchId}:${
+        const cacheKey = `v8:${selectedMatchId}:${
           isTop ? "top" : "bottom"
         }:${sourceDataUrl.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
           ","
@@ -2593,7 +2596,7 @@ export default function LiffScorebookImportPage() {
             syncActiveLabelsUi();
 
             if (!chunkRes.fromCache && cIdx < chunks.length - 1) {
-              await new Promise((r) => setTimeout(r, 150));
+              await new Promise((r) => setTimeout(r, 350));
             }
           } catch (chunkErr) {
             // 複数イニングチャンクだった場合は1イニング単位に分解して個別に試行・保存する
@@ -2779,7 +2782,7 @@ export default function LiffScorebookImportPage() {
             false,
             bottomStructure,
             bottomImage,
-            needTop && topStructure ? 1200 : 0
+            needTop && topStructure ? 2000 : 0
           )
         );
       }
