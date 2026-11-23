@@ -39,7 +39,7 @@ export function LiffMainShell({ children }: LiffMainShellProps) {
 
   return (
     <div className="min-h-screen bg-slate-200/60 dark:bg-slate-950 text-foreground flex justify-center selection:bg-primary/20">
-      <main className="w-full max-w-lg min-h-screen bg-background border-x border-border shadow-xs flex flex-col pb-28 sm:pb-32 relative overflow-x-clip">
+      <main className="w-full max-w-lg min-h-screen bg-background border-x border-border shadow-xs flex flex-col pb-28 sm:pb-32 relative overflow-x-clip [overflow-anchor:none]">
         <LegacyDeviceCompatibilityBanner />
         <div className="relative flex flex-col flex-1">{children}</div>
         {/* 🌟 画像様フローティングボトムメニュー */}

@@ -92,6 +92,29 @@ function clearBounceState(): void {
   }
 }
 
+export function scrollLiffWindowToTop(): void {
+  if (typeof window === "undefined") return;
+  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  if (typeof document !== "undefined") {
+    document.documentElement.scrollTop = 0;
+    if (document.body) {
+      document.body.scrollTop = 0;
+    }
+  }
+}
+
+export function scheduleScrollLiffWindowToTop(): void {
+  scrollLiffWindowToTop();
+  if (
+    typeof window !== "undefined" &&
+    typeof window.requestAnimationFrame === "function"
+  ) {
+    window.requestAnimationFrame(() => {
+      scrollLiffWindowToTop();
+    });
+  }
+}
+
 /**
  * LIFF アプリ内のセッション遷移階層（depth）と世代（epoch）を追跡し、
  * トップページ（/liff）遷移時の履歴巻き戻し・進む履歴の無効化を制御するトラッカーを初期化する
@@ -198,10 +221,10 @@ export function installLiffHistoryTracker(): void {
       if (landedPathname !== job.targetHref) {
         setTimeout(() => {
           job.router.replace(job.targetHref, { scroll: true });
-          window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+          scheduleScrollLiffWindowToTop();
         }, 0);
       } else {
-        window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+        scheduleScrollLiffWindowToTop();
       }
       return;
     }
@@ -316,7 +339,7 @@ export function navigateToLiffRoot(
       if (window.location.pathname !== fallbackJob.targetHref) {
         fallbackJob.router.replace(fallbackJob.targetHref, { scroll: true });
       }
-      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+      scheduleScrollLiffWindowToTop();
     }, 180);
 
     pendingRootReset = {
@@ -339,7 +362,7 @@ export function navigateToLiffRoot(
   if (effectivePathname !== LIFF_ROOT_HREF) {
     router.replace(LIFF_ROOT_HREF, { scroll: true });
   }
-  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  scheduleScrollLiffWindowToTop();
 }
 
 /**

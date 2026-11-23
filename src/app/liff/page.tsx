@@ -1,7 +1,14 @@
 // filepath: src/app/liff/page.tsx
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { LiffHeader } from "@/components/liff/LiffHeader";
 import { HubTopNewsTicker } from "@/components/liff/HubTopNewsTicker";
 import { HubHeroSection } from "@/components/liff/HubHeroSection";
@@ -23,6 +30,10 @@ import {
   peekLiffApiCache,
   warmupLiffEndpointForHref,
 } from "@/lib/liff/api-cache";
+import {
+  scheduleScrollLiffWindowToTop,
+  scrollLiffWindowToTop,
+} from "@/lib/liff/navigation";
 import { LIFF_WEBVIEW_RESUMED_EVENT } from "@/lib/liff/runtime-recovery";
 import {
   normalizeGroupStatusSummaryConfig,
@@ -166,6 +177,98 @@ export default function LiffHubPage() {
   const hubLoadFailedRef = useRef<boolean>(false);
   const lastAppliedAtRef = useRef<number>(initialCached ? Date.now() : 0);
   const prevTeamIdRef = useRef<string | undefined>(currentTeam?.id);
+  const userScrolledManuallyRef = useRef<boolean>(false);
+  const mountedAtRef = useRef<number>(0);
+
+  // トップページ起動時・リロード（更新）時・BFCache復帰時に微妙なスクロールずれで最上部が欠けるのを完全防止
+  const useIsomorphicLayoutEffect =
+    typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
+  useIsomorphicLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    userScrolledManuallyRef.current = false;
+    mountedAtRef.current = Date.now();
+
+    const prevRestoration =
+      "scrollRestoration" in window.history
+        ? window.history.scrollRestoration
+        : null;
+    if ("scrollRestoration" in window.history) {
+      try {
+        window.history.scrollRestoration = "manual";
+      } catch {
+        // ignore restricted WebViews
+      }
+    }
+
+    scheduleScrollLiffWindowToTop();
+
+    const markUserInteracted = () => {
+      userScrolledManuallyRef.current = true;
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "PageDown" ||
+        e.key === "PageUp" ||
+        e.key === " "
+      ) {
+        userScrolledManuallyRef.current = true;
+      }
+    };
+    // 初期マウント〜データ描画完了（900ms以内）にブラウザ自動復元等でユーザーが触っていないのに scrollY が動いた場合は即座に 0px へ戻す
+    const handleUnexpectedInitialScroll = () => {
+      if (userScrolledManuallyRef.current) return;
+      if (Date.now() - mountedAtRef.current > 900) return;
+      if (window.scrollY > 0) {
+        scrollLiffWindowToTop();
+      }
+    };
+    const handlePageShowTop = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        userScrolledManuallyRef.current = false;
+        mountedAtRef.current = Date.now();
+        scheduleScrollLiffWindowToTop();
+      }
+    };
+
+    window.addEventListener("touchstart", markUserInteracted, { passive: true });
+    window.addEventListener("wheel", markUserInteracted, { passive: true });
+    window.addEventListener("keydown", handleKeyDown, { passive: true });
+    window.addEventListener("scroll", handleUnexpectedInitialScroll, {
+      passive: true,
+    });
+    window.addEventListener("pageshow", handlePageShowTop);
+
+    const settleCleanupTimer = setTimeout(() => {
+      window.removeEventListener("scroll", handleUnexpectedInitialScroll);
+    }, 950);
+
+    return () => {
+      clearTimeout(settleCleanupTimer);
+      window.removeEventListener("touchstart", markUserInteracted);
+      window.removeEventListener("wheel", markUserInteracted);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("scroll", handleUnexpectedInitialScroll);
+      window.removeEventListener("pageshow", handlePageShowTop);
+      if (prevRestoration && "scrollRestoration" in window.history) {
+        try {
+          window.history.scrollRestoration = prevRestoration;
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  // 初回HUBデータ反映直後にも、ユーザーがまだ指でスクロールしていなければ最上部（0px）を保証
+  useEffect(() => {
+    if (!hasLoaded || userScrolledManuallyRef.current) return;
+    if (Date.now() - mountedAtRef.current <= 1500 && window.scrollY > 0) {
+      scheduleScrollLiffWindowToTop();
+    }
+  }, [hasLoaded]);
 
   // LINEプロフィール取得時の名前反映
   useEffect(() => {

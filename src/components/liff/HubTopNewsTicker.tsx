@@ -435,7 +435,7 @@ export function HubTopNewsTicker({
         onTouchEnd={handleTouchEnd}
         onTouchCancel={() => setIsTouchPaused(false)}
         className={cn(
-          "w-full bg-primary text-primary-foreground border-t border-white/25 dark:border-slate-950/25 border-b border-black/15 dark:border-slate-950/60 shadow-xs px-2.5 sm:px-3.5 py-1.5 flex items-center gap-1.5 select-none",
+          "w-full overflow-hidden bg-primary text-primary-foreground border-t border-white/25 dark:border-slate-950/25 border-b border-black/15 dark:border-slate-950/60 shadow-xs px-2.5 sm:px-3.5 py-1.5 flex items-center gap-1.5 select-none",
           isUrgentAccent &&
             "border-l-[4px] border-l-white dark:border-l-[#0f172a]"
         )}
