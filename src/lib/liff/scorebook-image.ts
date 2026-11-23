@@ -14,6 +14,7 @@ import {
   sanitizeGridCorners,
   warpQuadFromRgbaBuffer,
 } from "./scorebook-grid";
+import { isNonBattingBatterSlot } from "./scorebook-validator";
 
 export interface ImagePreprocessOptions {
   rotationDeg: 0 | 90 | 180 | 270;
@@ -1095,9 +1096,13 @@ export async function extractInningChunkCompositeCrop(
     ) {
       const struct = options.structure;
       const corners = resolveStructureGridCorners(struct);
-      const sortedBatters = [...struct.batters].sort(
-        (a, b) => a.battingOrder - b.battingOrder
+      const totalGridRows = Math.max(1, struct.batters.length);
+      const activeOnlyBatters = struct.batters.filter(
+        (b) => !isNonBattingBatterSlot(b, struct.batters)
       );
+      const sortedBatters = [
+        ...(activeOnlyBatters.length > 0 ? activeOnlyBatters : struct.batters),
+      ].sort((a, b) => a.battingOrder - b.battingOrder);
       const bLen = sortedBatters.length;
 
       const targetNums =
@@ -1269,8 +1274,8 @@ export async function extractInningChunkCompositeCrop(
                 spec.subCol
               );
               if (frac && ovStripH > 40) {
-                const ovT0 = -0.6 / Math.max(1, bLen);
-                const ovT1 = 1 + 0.85 / Math.max(1, bLen);
+                const ovT0 = -0.6 / totalGridRows;
+                const ovT1 = 1 + 0.85 / totalGridRows;
                 const ovQuad = {
                   tl: bilinearGridPoint(corners, frac.s0, ovT0),
                   tr: bilinearGridPoint(corners, frac.s1, ovT0),

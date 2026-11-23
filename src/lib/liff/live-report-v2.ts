@@ -258,11 +258,26 @@ export function splitLoadedMyLineupSlots(
     };
   });
 
-  const dhPitcherRaw = normalizedItems.find(
-    (s) =>
-      s.order === 0 &&
-      (s.position === "1" || Boolean(s.playerId || s.name.trim()))
+  const slots1to9 = normalizedItems.filter(
+    (s) => s.order >= 1 && s.order <= 9
   );
+  const hasDhIn1to9 = slots1to9.some((s) => s.position === "DH");
+  const hasPitcherIn1to9 = slots1to9.some((s) => s.position === "1");
+
+  const dhPitcherRaw =
+    normalizedItems.find(
+      (s) =>
+        s.order === 0 &&
+        (s.position === "1" || Boolean(s.playerId || s.name.trim()))
+    ) ||
+    (hasDhIn1to9 && !hasPitcherIn1to9 && normalizedItems.length === 10
+      ? normalizedItems.find(
+          (s) =>
+            s.order === 10 &&
+            s.position === "1" &&
+            Boolean(s.playerId || s.name.trim())
+        )
+      : undefined);
   const dhPitcher: MyLineupSlot | null = dhPitcherRaw
     ? {
         order: 0,
@@ -273,7 +288,9 @@ export function splitLoadedMyLineupSlots(
       }
     : null;
 
-  const orderSlots = normalizedItems.filter((s) => s.order >= 1);
+  const orderSlots = normalizedItems.filter(
+    (s) => s.order >= 1 && s !== dhPitcherRaw
+  );
   if (orderSlots.length === 0) {
     return { battingSlots: createEmpty(9), dhPitcher };
   }

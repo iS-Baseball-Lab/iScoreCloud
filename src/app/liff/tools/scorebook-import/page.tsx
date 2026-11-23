@@ -26,6 +26,7 @@ import {
   isRunnerOnlyInningEnd,
   reconcileSheetExcessOutsDeterministically,
   resolveActiveMatchupFromStructure,
+  resolveEffectiveBattingCycleLength,
   syncSheetAtBatsWithStructure,
 } from "@/lib/liff/scorebook-validator";
 import {
@@ -2137,6 +2138,7 @@ export default function LiffScorebookImportPage() {
             x.battingOrder,
             x.name,
             x.position,
+            x.nonBatting ?? null,
             x.rowBox?.[0],
             x.rowBox?.[2],
             x.substitutions.map((s) => [
@@ -2332,7 +2334,10 @@ export default function LiffScorebookImportPage() {
         const halfSuffix = isTop ? "表" : "裏";
         const structureFp = buildStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
-        const lineupCycle = Math.max(9, structure.batters.length);
+        const lineupCycle = resolveEffectiveBattingCycleLength(
+          structure,
+          isTop ? workingTop : workingBottom
+        );
 
         let expectedLeadOff = 1;
 
@@ -2458,6 +2463,12 @@ export default function LiffScorebookImportPage() {
                   commitSideInningAtBats(isTop, [singleInn], singleRes.atBats);
                   if (singleRes.nextLeadOffOrder) {
                     expectedLeadOff = singleRes.nextLeadOffOrder;
+                  } else {
+                    expectedLeadOff = computeNextLeadOffFromAtBats(
+                      singleRes.atBats,
+                      lineupCycle,
+                      expectedLeadOff
+                    );
                   }
                   upsertTimingEntry({
                     key: singleKey,
@@ -2684,7 +2695,10 @@ export default function LiffScorebookImportPage() {
 
     try {
       const currentSideList = isTop ? topAtBats : bottomAtBats;
-      const lineupCycle = Math.max(9, structure.batters.length);
+      const lineupCycle = resolveEffectiveBattingCycleLength(
+        structure,
+        currentSideList
+      );
       let expectedLeadOff = 1;
       if (inning > 1) {
         const prevInningItems = currentSideList.filter(

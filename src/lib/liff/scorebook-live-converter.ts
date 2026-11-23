@@ -136,34 +136,56 @@ function buildBatterSlotsFromSavedLineups(
   isMyTeam: boolean,
   targetSlotCount: number
 ): ScorebookBatterSlot[] {
-  const slotCount = Math.max(9, Math.min(25, targetSlotCount));
   const byOrder = new Map<number, SavedMatchLineupInput>();
+  let dhNonBattingPitcher: SavedMatchLineupInput | undefined;
   for (const row of savedLineup) {
-    if (row.battingOrder >= 1 && row.battingOrder <= 25 && !byOrder.has(row.battingOrder)) {
+    if (row.battingOrder === 0) {
+      dhNonBattingPitcher = row;
+    } else if (
+      row.battingOrder >= 1 &&
+      row.battingOrder <= 25 &&
+      !byOrder.has(row.battingOrder)
+    ) {
       byOrder.set(row.battingOrder, row);
     }
+  }
+
+  const slotCount = Math.max(
+    dhNonBattingPitcher ? 10 : 9,
+    Math.min(25, targetSlotCount)
+  );
+  if (dhNonBattingPitcher && !byOrder.has(10)) {
+    byOrder.set(10, dhNonBattingPitcher);
   }
 
   return Array.from({ length: slotCount }, (_, idx) => {
     const order = idx + 1;
     const saved = byOrder.get(order);
+    const isDhPitcherRow =
+      Boolean(dhNonBattingPitcher) &&
+      order === 10 &&
+      saved === dhNonBattingPitcher;
     const matchedRoster = isMyTeam
       ? findRosterPlayer(roster, saved?.playerId, saved?.playerName)
       : undefined;
-    const defaultName = isMyTeam ? "" : `相手${order}番`;
+    const defaultName =
+      isDhPitcherRow || isMyTeam ? "" : `相手${order}番`;
     const resolvedName =
       (saved?.playerName || matchedRoster?.name || "").trim() || defaultName;
     const resolvedUniform =
       (saved?.uniformNumber || matchedRoster?.uniformNumber || "").trim();
-    const resolvedPos = normalizePosToDigitOrDh(
-      saved?.position || (order <= 9 ? String(order) : "DH")
-    );
+    const resolvedPos = isDhPitcherRow
+      ? "1"
+      : normalizePosToDigitOrDh(
+          saved?.position || (order <= 9 ? String(order) : "DH")
+        );
     return {
       battingOrder: order,
       name: resolvedName,
       uniformNumber: resolvedUniform,
       position: resolvedPos,
       playerId: isMyTeam ? saved?.playerId || matchedRoster?.id || null : null,
+      ...(isDhPitcherRow ? { nonBatting: true } : {}),
       bats: normalizeBatsCode(saved?.bats ?? matchedRoster?.bats),
       substitutions: [],
     };

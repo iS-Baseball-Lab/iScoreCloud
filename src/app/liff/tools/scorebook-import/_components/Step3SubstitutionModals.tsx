@@ -24,7 +24,10 @@ import {
   type ScorebookSubstitution,
   type ScorebookV2AtBat,
 } from "@/types/scorebook-v2";
-import { syncSheetAtBatsWithStructure } from "@/lib/liff/scorebook-validator";
+import {
+  resolveEffectiveBattingCycleLength,
+  syncSheetAtBatsWithStructure,
+} from "@/lib/liff/scorebook-validator";
 import {
   pruneStaleSheetRunnerAdvances,
   type OccupiedBaseKey,
@@ -1922,9 +1925,9 @@ export function Step3QuickSubstitutionModal({
                                   { value: "", label: "回頭から" },
                                   ...Array.from(
                                     {
-                                      length: Math.max(
-                                        9,
-                                        structure.batters.length
+                                      length: resolveEffectiveBattingCycleLength(
+                                        structure,
+                                        atBats
                                       ),
                                     },
                                     (_, i) => i + 1
@@ -2002,9 +2005,9 @@ export function Step3QuickSubstitutionModal({
                               { value: "", label: "回頭から" },
                               ...Array.from(
                                 {
-                                  length: Math.max(
-                                    9,
-                                    structure.batters.length
+                                  length: resolveEffectiveBattingCycleLength(
+                                    structure,
+                                    atBats
                                   ),
                                 },
                                 (_, i) => i + 1
@@ -2524,7 +2527,10 @@ export function Step3QuickSubstitutionModal({
                             },
                             ...Array.from(
                               {
-                                length: Math.max(9, structure.batters.length),
+                                length: resolveEffectiveBattingCycleLength(
+                                  structure,
+                                  atBats
+                                ),
                               },
                               (_, i) => i + 1
                             ).map((orderNum): LiffSelectOption => {

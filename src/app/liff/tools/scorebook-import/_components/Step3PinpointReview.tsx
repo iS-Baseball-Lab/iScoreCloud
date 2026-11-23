@@ -55,6 +55,7 @@ import {
   detectMissingOrderGaps,
   normalizeInningAtBatColumns,
   resolveActiveMatchupFromStructure,
+  resolveEffectiveBattingCycleLength,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
 import { classifyDroppedThirdStrikeReach } from "@/lib/liff/baseball-official-rules";
@@ -295,11 +296,7 @@ export function Step3PinpointReview({
   }, [availableInnings]);
 
   const maxBattingOrder = useMemo(() => {
-    return Math.max(
-      9,
-      currentStructure?.batters.length || 9,
-      ...currentList.map((a) => a.battingOrder || 9)
-    );
+    return resolveEffectiveBattingCycleLength(currentStructure, currentList);
   }, [currentStructure, currentList]);
 
   const visibleList = useMemo(() => {
@@ -2309,9 +2306,9 @@ export function Step3PinpointReview({
                           const editInnMeta = currentStructure?.innings.find(
                             (m) => m.inning === editingAtBat.inning
                           );
-                          const lineupSize = Math.max(
-                            9,
-                            currentStructure?.batters.length || 9
+                          const lineupSize = resolveEffectiveBattingCycleLength(
+                            currentStructure,
+                            currentList
                           );
                           const hasOrderWrapInInning = editingInningPeers.some(
                             (p, idx) =>

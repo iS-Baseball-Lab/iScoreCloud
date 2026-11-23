@@ -45,6 +45,7 @@ import {
   normalizeLegacyForceOutAtBat,
   normalizeThrowChainToken,
 } from "@/lib/liff/scorebook-fielding";
+import { resolveEffectiveBattingCycleFromBatters } from "@/lib/liff/scorebook-validator";
 import {
   LiffSelect,
   type LiffSelectOption,
@@ -756,7 +757,7 @@ function resolvePrecedingSlotRunnerName(
   inning: number,
   offsetBack: 1 | 2 | 3
 ): string {
-  const maxOrd = Math.max(9, batters.length || 9);
+  const maxOrd = resolveEffectiveBattingCycleFromBatters(batters);
   const targetOrd =
     (((Math.max(1, currentOrder || 1) - 1 - offsetBack) % maxOrd) + maxOrd) %
       maxOrd +
@@ -876,7 +877,7 @@ export function AtBatModalRunnerEditor({
     if (basesBefore["1B"]) {
       return { name: basesBefore["1B"].name, from: "1B" };
     }
-    const maxOrd = Math.max(9, batters.length || 9);
+    const maxOrd = resolveEffectiveBattingCycleFromBatters(batters);
     const prevOrd = ((atBat.battingOrder - 2 + maxOrd) % maxOrd) + 1;
     const prevSlot = batters.find((b) => b.battingOrder === prevOrd);
     return {
@@ -1332,7 +1333,7 @@ export function AtBatModalRunnerEditor({
       if (preset.method === "tiebreak") {
         const offsetBack: 1 | 2 | 3 =
           resolvedFrom === "3B" ? 3 : resolvedFrom === "2B" ? 2 : 1;
-        const maxOrd = Math.max(9, batters.length || 9);
+        const maxOrd = resolveEffectiveBattingCycleFromBatters(batters);
         const targetOrd =
           (((Math.max(1, prev.battingOrder || 1) - 1 - offsetBack) % maxOrd) +
             maxOrd) %
@@ -1469,7 +1470,7 @@ export function AtBatModalRunnerEditor({
       const targetBases: ReadonlyArray<OccupiedBaseKey> =
         mode === "one_out_loaded" ? ["3B", "2B", "1B"] : ["2B", "1B"];
       const initialOuts = mode === "one_out_loaded" ? 1 : undefined;
-      const maxOrd = Math.max(9, batters.length || 9);
+      const maxOrd = resolveEffectiveBattingCycleFromBatters(batters);
 
       const seededMap: BaseRunnerMap = {
         "1B": null,

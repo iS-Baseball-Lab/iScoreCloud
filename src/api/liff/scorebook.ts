@@ -45,11 +45,13 @@ import {
 import {
   computeCountFromPitches,
   inferCanonicalResultCode,
+  isNonBattingBatterSlot,
   isRunnerOnlyInningEnd,
   matchRosterPlayer,
   normalizePositionCode,
   reconcileSheetExcessOutsDeterministically,
   resolveActiveMatchupFromStructure,
+  resolveEffectiveBattingCycleLength,
   validateScorebookSheet,
 } from "@/lib/liff/scorebook-validator";
 import { sanitizeLiveReportDocument } from "@/lib/liff/live-report-v2";
@@ -197,6 +199,7 @@ interface RawGeminiBatter {
   name?: string;
   uniformNumber?: string;
   position?: string;
+  nonBatting?: boolean;
   bats?: string;
   ymin?: number;
   ymax?: number;
@@ -938,7 +941,12 @@ liffScorebookRouter.get("/match-init", async (c) => {
             bats: s.bats,
           }))
         : jsonMyLineup.map((item, idx) => ({
-            battingOrder: item.battingOrder || item.order || idx + 1,
+            battingOrder:
+              typeof item.battingOrder === "number"
+                ? item.battingOrder
+                : typeof item.order === "number"
+                ? item.order
+                : idx + 1,
             position: item.position || "",
             playerId: item.playerId || null,
             playerName: (item.name || item.playerName || "").trim(),
@@ -949,7 +957,12 @@ liffScorebookRouter.get("/match-init", async (c) => {
     const jsonOppLineup = safeParseLineupArray(match.opponentLineup);
     const oppSavedLineup: SavedOpponentLineupInput[] = jsonOppLineup.map(
       (item, idx) => ({
-        battingOrder: item.battingOrder || item.order || idx + 1,
+        battingOrder:
+          typeof item.battingOrder === "number"
+            ? item.battingOrder
+            : typeof item.order === "number"
+            ? item.order
+            : idx + 1,
         position: item.position || "",
         playerName: (item.name || item.playerName || "").trim(),
         uniformNumber: item.uniformNumber || "",
@@ -1725,17 +1738,25 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
       savedLineups.length > 0
         ? savedLineups
           .filter((l) => l.isStarting)
-          .map(
-            (l) =>
-              `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`
+          .map((l) =>
+            l.battingOrder === 0
+              ? `DH専任先発投手(10枠・打席なし): #${l.uniformNumber} ${l.playerName}(守備:1)`
+              : `${l.battingOrder}番: #${l.uniformNumber} ${l.playerName}(守備:${l.position})`
           )
           .join(", ")
         : fallbackJsonLineup.length > 0
           ? fallbackJsonLineup
-            .map(
-              (l, idx) =>
-                `${l.order ?? l.battingOrder ?? idx + 1}番: #${l.uniformNumber || ""} ${l.name || ""}(守備:${l.position || ""})`
-            )
+            .map((l, idx) => {
+              const ord =
+                typeof l.order === "number"
+                  ? l.order
+                  : typeof l.battingOrder === "number"
+                  ? l.battingOrder
+                  : idx + 1;
+              return ord === 0
+                ? `DH専任先発投手(10枠・打席なし): #${l.uniformNumber || ""} ${l.name || ""}(守備:1)`
+                : `${ord}番: #${l.uniformNumber || ""} ${l.name || ""}(守備:${l.position || ""})`;
+            })
             .join(", ")
           : "";
 
@@ -1831,10 +1852,13 @@ ${battingTeamContext}${scoreboardHintText}
 
 【絶対厳守の解析ルール】
 1. **打順枠（batters）の高精度抽出**:
-   - 左側の拡大画像を見て、1番〜9番（全員打ち制で10番以降が書かれている場合はその最終打順まで漏れなく）の先発選手を抽出してください。
+   - 左側の拡大画像を見て、1番〜9番（および10行目以降に選手名が書かれている場合はその行まで漏れなく）の先発選手を抽出してください。
+   - **🔥重要：DH制の10行目（専任投手枠・打席なし）と全員打ち（10番以降も打席あり）の厳密判別**:
+     - リトルシニア・ボーイズ・高校・大学・社会人・草野球のDH制では、1番〜9番の中に指名打者（DH / D / D4 / 指）が入り、**10行目（battingOrder: 10）に守備専任の先発投手（position: "1" / P）の氏名・背番号・途中継投が記入され、その10行目の打席マス（1回〜最終回）はすべて空欄**になります。
+     - このように10行目に選手名が書かれている場合も（グリッド下端 br/bl や投手・守備成績に必須なため）必ず battingOrder: 10 として batters に含め、画像1の10行目の打席マスが全イニング空欄（打席に入っていないDH専任投手等）なら **"nonBatting": true** を設定してください！逆に全員打ち制で10行目以降の選手にも実際の打席記録がある場合は **"nonBatting": false** を設定してください。10行目が完全に白紙（選手名も背番号も無し）なら9番まで（batters 9件、gridCorners下端も9番下端）で出力してください。
    - **⚠️守備位置欄と背番号欄の取り違え厳禁**:
      - 日本のスコアブックの選手欄は「打順 | 守備位置 | 背番号 | 選手氏名」または「打順 | 選手氏名 | 背番号 | 守備位置」の列構造です。
-     - **守備位置（position）** は 1〜9 または DH が1人ずつ割り振られる列です。漢字（投・捕・一・二・三・遊・左・中・右・指）や英語（P,C,1B..DH）で書かれていても、出力時は必ず **"1","2","3","4","5","6","7","8","9","D"** の1文字コードに変換してください（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右, D=DH）。
+     - **守備位置（position）** は 1〜9 または DH が1人ずつ割り振られる列です。漢字（投・捕・一・二・三・遊・左・中・右・指）や英語（P,C,1B..DH,DP,D4）で書かれていても、出力時は必ず **"1","2","3","4","5","6","7","8","9","D"** の1文字コードに変換してください（1=投, 2=捕, 3=一, 4=二, 5=三, 6=遊, 7=左, 8=中, 9=右, D=DH）。
      - **背番号（uniformNumber）** は 0〜99 等のユニフォーム番号です。背番号欄が空欄のときに守備位置番号（1〜9）を uniformNumber に入れるミスを絶対にしないでください！空欄なら "" を返してください。
    - **先発と途中交代・守備位置変更（substitutions）の完全抽出**:
      - 各打順枠が上下2〜3段に分かれている場合、**一番上の段が先発選手（starter）**です。
@@ -1864,13 +1888,13 @@ ${battingTeamContext}${scoreboardHintText}
    - **手書き数字（得点 runs / 安打 hits）の厳密照合**:
      各回の得点（runs）は、①上部スコアボードの数字、②各列最下部の得点計、③その回のマス内の本塁生還印（●や赤塗りダイヤ）の個数の**3箇所を突き合わせて完全一致**させてください（"0" と "6"、"1" と "7"、"2" と "3"、バツ印 "×"＝後攻サヨナラ/コールド等の見間違いに注意）。
    - **🔥原本の傾き・台形歪みに対応する打席グリッド外枠4隅（gridCorners）の直読**:
-     スマホ撮影で原本が少し斜めに傾いていたり台形に歪んでいる場合でも1マスを正確に切り抜けるよう、画像1の外周ルーラー（0〜1000）から「打席グリッド全体（横は1回の左端罫線〜最終プレイ回の最終列右端罫線、縦は1番打者の上端罫線〜最終打順の下端罫線）」の**実際の印刷交点4隅 [x, y]** を gridCorners に出力してください:
+     スマホ撮影で原本が少し斜めに傾いていたり台形に歪んでいる場合でも1マスを正確に切り抜けるよう、画像1の外周ルーラー（0〜1000）から「打席グリッド全体（横は1回の左端罫線〜最終プレイ回の最終列右端罫線、縦は1番打者の上端罫線〜battersに出力した最終行の下端罫線）」の**実際の印刷交点4隅 [x, y]** を gridCorners に出力してください:
      - tl: 左上交点 [x, y]（1回左端 × 1番上端）
      - tr: 右上交点 [x, y]（最終プレイ回右端 × 1番上端 ※原本が右上がり/右下がりなら tl と tr の y が異なる値になります）
-     - br: 右下交点 [x, y]（最終プレイ回右端 × 最終打順下端）
-     - bl: 左下交点 [x, y]（1回左端 × 最終打順下端 ※台形歪みがあれば tl と bl の x が異なる値になります）
+     - br: 右下交点 [x, y]（最終プレイ回右端 × batters最終行の下端）
+     - bl: 左下交点 [x, y]（1回左端 × batters最終行の下端 ※台形歪みがあれば tl と bl の x が異なる値になります）
    - **各イニング列のルーラー座標 (ymin, xmin, ymax, xmax)**:
-     画像1の上下端Xルーラーと左右端Yルーラーを読み取り、**1回の xmin は必ず lineupRightX と一致**させ、隣り合うイニングの xmax と次イニングの xmin が正確に同じ縦罫線の目盛り値を指すように出力してください（ymin は1番打者の上端、ymax は最終打者の下端）。
+     画像1の上下端Xルーラーと左右端Yルーラーを読み取り、**1回の xmin は必ず lineupRightX と一致**させ、隣り合うイニングの xmax と次イニングの xmin が正確に同じ縦罫線の目盛り値を指すように出力してください（ymin は1番打者の上端、ymax は batters最終行の下端）。
 
 【出力JSONフォーマット（以下の厳密なキー構造のJSONオブジェクトのみを返してください）】
 {"lineupRightX":320,"gridCorners":{"tl":[320,205],"tr":[815,205],"br":[815,808],"bl":[320,808]},"batters":[{"battingOrder":1,"name":"選手名","uniformNumber":"10","position":"6","ymin":205,"ymax":272,"substitutions":[{"inningEntered":5,"subType":"PH","name":"交代選手名","uniformNumber":"24","position":"7"}]}],"pitchers":[{"order":1,"name":"先発投手名","uniformNumber":"18","fromInning":1,"toInning":4},{"order":2,"name":"救援投手名","uniformNumber":"11","fromInning":5,"toInning":7}],"innings":[{"inning":1,"columnCount":1,"runs":0,"hits":1,"ymin":205,"xmin":320,"ymax":808,"xmax":376}],"totalRuns":0,"totalHits":1,"totalErrors":0}
@@ -1971,6 +1995,10 @@ ${battingTeamContext}${scoreboardHintText}
             ? normalizePositionCode(matched.primaryPosition)
             : ""),
         playerId: matched ? matched.id : null,
+        nonBatting:
+          order >= 10 && typeof b.nonBatting === "boolean"
+            ? b.nonBatting
+            : undefined,
         bats:
           normalizeBatterHandedness(matched?.bats) ??
           normalizeBatterHandedness(b.bats),
@@ -1998,6 +2026,17 @@ ${battingTeamContext}${scoreboardHintText}
       });
     }
     normalizedBatters.sort((a, b) => a.battingOrder - b.battingOrder);
+
+    // DH制の10枠目（専任投手欄・打席なし）または完全白紙の10行目以降を自動判定して nonBatting フラグを確定
+    for (const slot of normalizedBatters) {
+      if (
+        slot.battingOrder >= 10 &&
+        slot.nonBatting === undefined &&
+        isNonBattingBatterSlot(slot, normalizedBatters)
+      ) {
+        slot.nonBatting = true;
+      }
+    }
 
     // 攻撃チーム自身の投手（先発 position==="1" または途中交代 position==="1"）を相手投手として誤抽出していないかチェック
     // ※同姓の別選手が相手チームにいるケースを守るため、背番号が両方あり異なる場合は除外しない
@@ -2321,8 +2360,17 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
       );
     }
 
-    // 確定済み打順＆途中交代テキストを構築
-    const lineupSpecLines = body.structure.batters.map((b) => {
+    // 確定済み打順＆途中交代テキストを構築（※DH制の専任投手枠＝打席なし行は打順リストから分離して明記）
+    const activeBattingSlots = body.structure.batters.filter(
+      (b) => !isNonBattingBatterSlot(b, body.structure.batters)
+    );
+    const nonBattingNamedSlots = body.structure.batters.filter(
+      (b) =>
+        isNonBattingBatterSlot(b, body.structure.batters) &&
+        Boolean((b.name || "").trim() || (b.uniformNumber || "").trim())
+    );
+    const lineupLen = resolveEffectiveBattingCycleLength(body.structure);
+    const lineupSpecLines = activeBattingSlots.map((b) => {
       const subStr =
         b.substitutions.length > 0
           ? ` ➔ 交代: ${b.substitutions
@@ -2340,6 +2388,13 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
           : "";
       return `・${b.battingOrder}番: #${b.uniformNumber} ${b.name}${subStr}`;
     });
+    if (nonBattingNamedSlots.length > 0) {
+      lineupSpecLines.push(
+        `※【DH制・打席なし枠の注意】${nonBattingNamedSlots
+          .map((b) => `${b.battingOrder}行目 #${b.uniformNumber} ${b.name}(守:${b.position || "1"})`)
+          .join(", ")} は守備専任の投手枠のため打席には立ちません！打順は必ず 1番〜${lineupLen}番 の${lineupLen}人循環（${lineupLen}番の次は必ず1番！）となり、10行目の空欄マスは絶対に出力しないでください。`
+      );
+    }
 
     const pitcherSpecLines = body.structure.pitchers.map((p, pIdx) => {
       const nextP = body.structure.pitchers[pIdx + 1];
@@ -2378,19 +2433,17 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 【🔥超重要 1.2: 1イニング2列・3列以上（打者一巡・二巡）の完全読取ルール】
 - 対象イニングに【複数列（c:1, c:2, c:3...）】を使用する回が含まれています！${focusImgLabel}では各サブ列が左から **[c:1]（1列目）➔ [c:2]（2列目）➔ [c:3]（3列目）** として独立表示されています。
 - 日本のスコアブックには以下の2通りの折り返し記法があります（どちらの記法でも白紙の空欄マスは絶対に出力せず、手書き記録があるマスだけを実際の打順時系列で出力してください）:
-  1) **一巡充填式（標準）**: 先頭打者（例: 4番）から [c:1] を下へ進み、9番の次は同じ [c:1] の1番〜3番へ戻って9枠を埋め、10人目の打者（4番の2巡目）から [c:2] の4番の行へ移る（さらに19人目は [c:3] へ移る）。
-  2) **9番下端折り返し式**: 先頭打者（例: 4番）から [c:1] の9番まで進んだら、次の1番打者からはすぐ右隣の [c:2] の1番の行へ移る（この場合 [c:1] の1番〜3番は白紙空欄になり、4番の2巡目は空いていた [c:2] の4番の行に書かれる）。
-- **絶対厳守**: 必ず **先頭打者からスタートして打順が1つずつ循環（...8番➔9番➔1番➔2番...）する野球の時系列順** で出力し（上から1番〜9番の順になぞらないこと！）、その打席が書かれていた列に応じて **"c": 1, "c": 2, "c": 3** を正確に設定してください！3アウト目（③ または Ⅲ）が出るまで [c:2]・[c:3] の打席を絶対に落とさないでください！`
+  1) **一巡充填式（標準）**: 先頭打者（例: 4番）から [c:1] を下へ進み、${lineupLen}番の次は同じ [c:1] の1番〜3番へ戻って${lineupLen}枠を埋め、${lineupLen + 1}人目の打者（4番の2巡目）から [c:2] の4番の行へ移る（さらに${lineupLen * 2 + 1}人目は [c:3] へ移る）。
+  2) **${lineupLen}番下端折り返し式**: 先頭打者（例: 4番）から [c:1] の${lineupLen}番まで進んだら、次の1番打者からはすぐ右隣の [c:2] の1番の行へ移る（この場合 [c:1] の1番〜3番は白紙空欄になり、4番の2巡目は空いていた [c:2] の4番の行に書かれる）。
+- **絶対厳守**: 必ず **先頭打者からスタートして打順が1つずつ循環（...➔${lineupLen}番➔1番➔2番...）する野球の時系列順** で出力し（上から1番〜${lineupLen}番の順になぞらないこと！）、その打席が書かれていた列に応じて **"c": 1, "c": 2, "c": 3** を正確に設定してください！3アウト目（③ または Ⅲ）が出るまで [c:2]・[c:3] の打席を絶対に落とさないでください！`
       : "";
-
-    const lineupLen = Math.max(9, body.structure.batters.length);
 
     const leadOffConstraint =
       sortedTargets[0] === 1
         ? `\n🔥【先頭打者と最終打者（封殺・走塁死含む）の鉄則】1回${sideLabel}の最初の打者は必ず【1番打者】からスタートします！1番から1人ずつ打順を飛ばさず（1番→2番→3番→4番→5番...）下へ読み進め、**イニング終了斜線（／・∟）または白紙空欄の直前にある「実際に手書き記録がある最後の打者」まで漏れなく出力**してください！（※注意：4番打者が出塁した後に5番打者の遊ゴロ封殺6-4・野選FC・盗塁死等で3アウトチェンジになった場合、3アウト目の『Ⅲ』『③』は先行走者である4番の中央に書かれ、その直下の5番のマスに最終打席の投球・打球記号が書かれます！4番に『Ⅲ』があるからといって直下の5番の記入済み打席を絶対に切り捨てないでください！）`
         : body.expectedLeadOffOrder
-          ? `\n📌【先頭打者の目安・打者一巡（9人全員記入）列の回転順・白紙マス除外の絶対原則】前イニング終了打順からの連続則（前のイニングの次の番号、または盗塁死・牽制死等の走塁死終了時は同一番号）では【${body.expectedLeadOffOrder}番打者】が${sortedTargets[0]}回${sideLabel}の先頭打者です！\n- **⚠️特に1イニング9人全員のマスが埋まっている場合（打者一巡）**: シート上端の「1番」から機械的に 1→2→...→9 と並べるのは絶対厳禁です！必ず先頭打者（目安: ${body.expectedLeadOffOrder}番）から下へ読み進め、9番の下端に達したら上端の1番（2列目折り返しまたは同一列上段）へ繋がり、3アウト目（『Ⅲ』『③』）の最終打者で終わる時系列順に出力してください。\n- 印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）を正確に抽出してください。`
-          : `\n📌【連続打順・打者一巡列の回転順・白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。もし1イニング9人全員が埋まっている列では、シート上端の1番からではなく「Ⅰ→Ⅱ→Ⅲのアウト順が成立し、3アウト目の打者で終わる真の先頭打者」から9番→1番へ循環する時系列順で出力してください。`;
+          ? `\n📌【先頭打者の目安・${lineupLen}人ピッタリ一巡列の回転順・白紙マス除外の絶対原則】前イニング終了打順からの連続則（前のイニングの次の番号、または盗塁死・牽制死等の走塁死終了時は同一番号）では【${body.expectedLeadOffOrder}番打者】が${sortedTargets[0]}回${sideLabel}の先頭打者です！\n- **⚠️特に1イニング${lineupLen}人ピッタリ全員のマスが埋まっている場合**: シート上端の「1番」から機械的に 1→2→...→${lineupLen} と並べるのは絶対厳禁です！必ず先頭打者（目安: ${body.expectedLeadOffOrder}番）から下へ読み進め、${lineupLen}番の下端に達したら上端の1番（2列目折り返しまたは同一列上段）へ繋がり、3アウト目（『Ⅲ』『③』＋終了斜線）の最終打者（例: ${((body.expectedLeadOffOrder + lineupLen - 2) % lineupLen) + 1}番）で終わる時系列順に出力してください。\n- 印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、途中の打順を1人も飛ばさず連続した手書き打席ブロック（計3アウト分）を正確に抽出してください。`
+          : `\n📌【連続打順・打者一巡列の回転順・白紙マス除外の絶対原則】印刷された点線ダイヤモンドと薄いBSO枠線しか無い【白紙（空欄）マス】は絶対に出力せず、実際に手書き記録がある連続した打席マス（途中の打順飛び無し・計3アウト分）だけを抽出してください。もし1イニング${lineupLen}人全員が埋まっている列では、シート上端の1番からではなく「Ⅰ→Ⅱ→Ⅲのアウト順が成立し、3アウト目の打者で終わる真の先頭打者」から${lineupLen}番→1番へ循環する時系列順で出力してください。`;
 
     const tailOrderConstraint =
       sortedTargets.length === 1 &&
@@ -3039,11 +3092,18 @@ ${targetInningMetaLines.join("\n")}
     );
     const mappedAtBats = reconcileSheetExcessOutsDeterministically(
       trimmedAtBats,
-      body.structure
+      body.structure,
+      {
+        expectedFirstInningLeadOffOrder: body.expectedLeadOffOrder,
+        nextChunkLeadOffOrder: body.nextInningLeadOffOrder,
+      }
     ).atBats;
 
     // 次のチャンクの先頭打順を計算
-    const lineupCycle = Math.max(9, body.structure.batters.length);
+    const lineupCycle = resolveEffectiveBattingCycleLength(
+      body.structure,
+      mappedAtBats
+    );
     let nextLeadOffOrder = body.expectedLeadOffOrder || 1;
     if (mappedAtBats.length > 0) {
       const lastAb = mappedAtBats[mappedAtBats.length - 1];
@@ -3176,9 +3236,8 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
       "相手投手";
 
     const reconcilePrompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
-骨格確定済みの打順（1番〜${Math.max(
-      9,
-      body.structure.batters.length
+骨格確定済みの打順（1番〜${resolveEffectiveBattingCycleLength(
+      body.structure
     )}番）でイニング解析結果を検算したところ、以下の打順が抜けて（飛んで）いることが数学的に判明しました。
 添付画像1には、欠損項目 [${body.gaps
         .map((g) => g.gapId)
@@ -3621,7 +3680,7 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 
     const { spec } = body;
     const sideLabel = body.isTop ? "表（先攻）" : "裏（後攻）";
-    const lineupLen = Math.max(9, body.structure.batters.length);
+    const lineupLen = resolveEffectiveBattingCycleLength(body.structure);
 
     const imageParts: GeminiContentPart[] = [
       {
@@ -4118,7 +4177,11 @@ ${batterRowsDesc.join("\n")}
 
     let finalInningList = reconcileSheetExcessOutsDeterministically(
       rebuiltRaw.map((x) => x.atBat),
-      body.structure
+      body.structure,
+      {
+        expectedFirstInningLeadOffOrder: spec.expectedLeadOffOrder,
+        nextChunkLeadOffOrder: spec.nextInningLeadOffOrder,
+      }
     ).atBats;
 
     // 万一モデルが依然として4アウト以上を返した場合の最終安全弁（b1:true だった行や末尾切り線候補から3アウトへ厳密収束）
@@ -4127,8 +4190,12 @@ ${batterRowsDesc.join("\n")}
       0
     );
     if (sumAfter > 3) {
-      // 次イニング先頭打順が既に3アウト目の直後を指しているなら余剰末尾を切り落とす
+      // 次イニング先頭打順が既に3アウト目の直後を指しているなら余剰末尾を切り落とす（※先頭打順が整合している場合のみ）
+      const headMatchesExpected =
+        typeof spec.expectedLeadOffOrder !== "number" ||
+        finalInningList[0]?.battingOrder === spec.expectedLeadOffOrder;
       if (
+        headMatchesExpected &&
         typeof spec.nextInningLeadOffOrder === "number" &&
         finalInningList.length >= 4
       ) {
@@ -4344,6 +4411,8 @@ liffScorebookRouter.post("/save", async (c) => {
     const validPlayerIds = new Set(roster.map((p) => p.id));
     const myStructure = isMyTeamFirst ? body.topStructure : body.bottomStructure;
     const oppStructure = isMyTeamFirst ? body.bottomStructure : body.topStructure;
+    const mySideAtBats = isMyTeamFirst ? incomingTop : incomingBottom;
+    const oppSideAtBats = isMyTeamFirst ? incomingBottom : incomingTop;
 
     if (myStructure && myStructure.batters.length > 0) {
       await db.delete(matchLineups).where(eq(matchLineups.matchId, match.id));
@@ -4358,14 +4427,37 @@ liffScorebookRouter.post("/save", async (c) => {
       }> = [];
 
       for (const slot of myStructure.batters) {
-        const safeSlotOrder = Math.max(
-          1,
-          Math.round(Number(slot.battingOrder) || 1)
+        const isNonBatting = isNonBattingBatterSlot(
+          slot,
+          myStructure.batters,
+          mySideAtBats
         );
         const resolvedPlayer =
           (slot.playerId
             ? roster.find((p) => p.id === slot.playerId) || null
             : null) || matchRosterPlayer(slot.name, slot.uniformNumber, roster);
+        const hasAnyIdentity = Boolean(
+          resolvedPlayer ||
+            (slot.name || "").trim() ||
+            (slot.uniformNumber || "").trim() ||
+            (slot.substitutions || []).some((s) =>
+              Boolean((s.name || "").trim() || (s.uniformNumber || "").trim() || s.playerId)
+            )
+        );
+        if (isNonBatting && !hasAnyIdentity) {
+          continue;
+        }
+
+        const normPos = normalizePositionCode(slot.position);
+        const isDhNonBattingPitcher = isNonBatting && (normPos === "1" || normPos === "");
+        const safeSlotOrder = isDhNonBattingPitcher
+          ? 0
+          : Math.max(1, Math.round(Number(slot.battingOrder) || 1));
+        const lineupPos = isDhNonBattingPitcher
+          ? "1"
+          : normPos === "D"
+          ? "DH"
+          : slot.position || "";
 
         if (resolvedPlayer) {
           lineupInserts.push({
@@ -4373,7 +4465,7 @@ liffScorebookRouter.post("/save", async (c) => {
             matchId: match.id,
             playerId: resolvedPlayer.id,
             battingOrder: safeSlotOrder,
-            position: slot.position || resolvedPlayer.primaryPosition || "",
+            position: lineupPos || resolvedPlayer.primaryPosition || "",
             isStarting: true,
             inningEntered: 1,
           });
@@ -4386,7 +4478,7 @@ liffScorebookRouter.post("/save", async (c) => {
           uniformNumber: resolvedPlayer
             ? resolvedPlayer.uniformNumber
             : slot.uniformNumber || "",
-          position: slot.position || "",
+          position: lineupPos,
         });
 
         for (const sub of slot.substitutions || []) {
@@ -4395,13 +4487,14 @@ liffScorebookRouter.post("/save", async (c) => {
               ? roster.find((p) => p.id === sub.playerId) || null
               : null) || matchRosterPlayer(sub.name, sub.uniformNumber, roster);
           if (resolvedSub) {
+            const normSubPos = normalizePositionCode(sub.position);
             lineupInserts.push({
               id: crypto.randomUUID(),
               matchId: match.id,
               playerId: resolvedSub.id,
               battingOrder: safeSlotOrder,
               position:
-                sub.position ||
+                (normSubPos === "D" ? "DH" : sub.position) ||
                 (sub.subType === "PH"
                   ? "PH"
                   : sub.subType === "PR"
@@ -4434,12 +4527,33 @@ liffScorebookRouter.post("/save", async (c) => {
 
     let updatedOpponentLineup = match.opponentLineup || "[]";
     if (oppStructure && oppStructure.batters.length > 0) {
-      const oppJson = oppStructure.batters.map((b) => ({
-        order: Math.max(1, Math.round(Number(b.battingOrder) || 1)),
-        position: b.position || "",
-        name: b.name || "",
-        uniformNumber: b.uniformNumber || "",
-      }));
+      const oppJson = oppStructure.batters
+        .filter((b) => {
+          if (!isNonBattingBatterSlot(b, oppStructure.batters, oppSideAtBats)) {
+            return true;
+          }
+          return Boolean((b.name || "").trim() || (b.uniformNumber || "").trim());
+        })
+        .map((b) => {
+          const isNonBatting = isNonBattingBatterSlot(
+            b,
+            oppStructure.batters,
+            oppSideAtBats
+          );
+          const normPos = normalizePositionCode(b.position);
+          return {
+            order: isNonBatting
+              ? 0
+              : Math.max(1, Math.round(Number(b.battingOrder) || 1)),
+            position: isNonBatting
+              ? "1"
+              : normPos === "D"
+              ? "DH"
+              : b.position || "",
+            name: b.name || "",
+            uniformNumber: b.uniformNumber || "",
+          };
+        });
       updatedOpponentLineup = JSON.stringify(oppJson);
     }
 
@@ -6942,7 +7056,7 @@ function sanitizeMappedInningAtBats(
   structure: ScorebookSheetStructure
 ): ScorebookV2AtBat[] {
   const output: ScorebookV2AtBat[] = [];
-  const lineupCycle = Math.max(9, structure.batters.length);
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, items);
 
   const isSafeReachResult = (rc: CanonicalAtBatResult): boolean =>
     rc === "single" ||
@@ -6970,10 +7084,15 @@ function sanitizeMappedInningAtBats(
       hasFielding ||
       hasRunnerAdvance ||
       ab.runsInPlay > 0 ||
-      ab.resultCode === "walk" ||
-      ab.resultCode === "intentional_walk" ||
-      ab.resultCode === "hit_by_pitch" ||
+      isSafeReachResult(ab.resultCode) ||
       ab.resultCode === "strikeout" ||
+      ab.resultCode === "infield_fly" ||
+      ab.resultCode === "sac_bunt" ||
+      ab.resultCode === "sac_fly" ||
+      ab.resultCode === "double_play" ||
+      ab.resultCode === "triple_play" ||
+      ab.resultCode === "dropped_third_strike_out" ||
+      ab.resultCode === "interference_out" ||
       ab.resultCode === "fc" ||
       isForceOutGroundout(ab.resultCode, ab.battedDirection, ab.resultLabel)
     );
@@ -8532,14 +8651,19 @@ function isRawRunnerOnlyEnd(raw: RawGeminiAtBat): boolean {
   );
 }
 
-function orderAndAssignColumnsForChunk(
+export function orderAndAssignColumnsForChunk(
   rawItems: RawGeminiAtBat[],
   sortedTargets: number[],
   structure: ScorebookSheetStructure,
   initialExpectedLeadOff?: number,
   nextChunkLeadOffOrder?: number
 ): RawGeminiAtBat[] {
-  const B = Math.max(9, structure.batters.length);
+  const B = resolveEffectiveBattingCycleLength(structure);
+  const nonBattingOrders = new Set(
+    structure.batters
+      .filter((b) => isNonBattingBatterSlot(b, structure.batters))
+      .map((b) => b.battingOrder)
+  );
   const stepOrder = (bo: number): number => (bo % B) + 1;
   const prevOrder = (bo: number): number => ((bo - 2 + B) % B) + 1;
 
@@ -8553,9 +8677,16 @@ function orderAndAssignColumnsForChunk(
   const output: RawGeminiAtBat[] = [];
 
   for (const inn of sortedTargets) {
-    const innItems = rawItems.filter(
-      (ab) => (toFiniteInt(ab.i ?? ab.inning, sortedTargets[0]) || sortedTargets[0]) === inn
-    );
+    const innItems = rawItems.filter((ab) => {
+      const itemInn =
+        toFiniteInt(ab.i ?? ab.inning, sortedTargets[0]) || sortedTargets[0];
+      if (itemInn !== inn) return false;
+      const rawBo = toFiniteInt(ab.bo ?? ab.battingOrder, 1) || 1;
+      if (rawBo > B && nonBattingOrders.has(rawBo)) {
+        return false;
+      }
+      return true;
+    });
     if (innItems.length === 0) {
       continue;
     }
@@ -8633,11 +8764,11 @@ function orderAndAssignColumnsForChunk(
         // 1回の先頭打者は野球規則上100%「1番」
         effectiveLeadOff = 1;
       } else if (minCount === maxCount && minCount >= 1) {
-        // === 1イニング9人（または18人）全員が同数ずつ埋まっている場合 ===
+        // === 1イニング9人ピッタリ（または18人）全員が同数ずつ埋まっている場合 ===
         // 空欄マスの段差（stepUpCandidates）が存在しないため、
         // ①前イニングからの連続打順（次打順 or 走塁死終了時の同一打順）
         // ②次イニング先頭打順との連続性
-        // ③3アウト完了位置 ＆ 中央ローマ数字（Ⅰ→Ⅱ→Ⅲ）の単調性
+        // ③3アウト完了位置 ＆ 打者アウトの中央ローマ数字（Ⅰ→Ⅱ→Ⅲ）単調性 ＆ 終了斜線
         // ④9番下端折り返し式のサブ列段差（c: 2 -> 1）
         // を統合採点して真の先頭打者を数学的に特定する
         let colStepCandidate: number | undefined;
@@ -8668,6 +8799,16 @@ function orderAndAssignColumnsForChunk(
         let bestBo = runningLeadOff ?? colStepCandidate ?? firstRawBo;
         let bestScore = -Infinity;
 
+        const isPureBatterOutCode = (rc: CanonicalAtBatResult): boolean =>
+          rc === "groundout" ||
+          rc === "flyout" ||
+          rc === "infield_fly" ||
+          rc === "strikeout" ||
+          rc === "dropped_third_strike_out" ||
+          rc === "sac_bunt" ||
+          rc === "sac_fly" ||
+          rc === "interference_out";
+
         for (let candS = 1; candS <= B; candS++) {
           let score = 0;
 
@@ -8684,22 +8825,24 @@ function orderAndAssignColumnsForChunk(
 
           // ① 前イニングからの連続打順（次の番号 or 走塁死終了時の同一番号、および前イニング1人読取漏れ許容）
           if (runningLeadOff !== undefined) {
-            if (candS === runningLeadOff) score += 95;
-            else if (candS === prevOrder(runningLeadOff)) score += 38;
-            else if (candS === stepOrder(runningLeadOff)) score += 28;
-            else score -= 35;
+            if (candS === runningLeadOff) score += 160;
+            else if (candS === prevOrder(runningLeadOff)) score += 45;
+            else if (candS === stepOrder(runningLeadOff)) score += 35;
+            else score -= 65;
           }
 
-          // ② 次イニング先頭打順との連続性（9人攻撃なら次回先頭も原則 candS、走塁死終了なら prevOrder(candS)）
+          // ② 次イニング先頭打順との連続性（9人ピッタリ攻撃なら次回先頭も原則 candS、走塁死終了なら prevOrder(candS)）
           if (validNextChunkLeadOff !== undefined && seq.length > 0) {
             const tailRaw = seq[seq.length - 1].raw;
             const tailBo = seq[seq.length - 1].bo; // === prevOrder(candS)
             if (isRawRunnerOnlyEnd(tailRaw)) {
-              if (tailBo === validNextChunkLeadOff) score += 95;
-              else if (candS === validNextChunkLeadOff) score += 40;
+              if (tailBo === validNextChunkLeadOff) score += 150;
+              else if (candS === validNextChunkLeadOff) score += 50;
+              else score -= 55;
             } else {
-              if (candS === validNextChunkLeadOff) score += 95;
-              else if (tailBo === validNextChunkLeadOff) score += 42;
+              if (candS === validNextChunkLeadOff) score += 150;
+              else if (tailBo === validNextChunkLeadOff) score += 50;
+              else score -= 55;
             }
           }
 
@@ -8708,7 +8851,8 @@ function orderAndAssignColumnsForChunk(
             score += 80;
           }
 
-          // ④ 3アウト完了位置 ＆ 中央アウト記号（Ⅰ→Ⅱ→Ⅲ）の順序整合
+          // ④ 3アウト完了位置 ＆ 打者アウトの中央記号（Ⅰ→Ⅱ→Ⅲ）順序整合
+          // ※走塁死二重計上で cumOuts > 3 になっている場合でも真の先頭打者が減点逆転されないよう厳密分離
           let cumOuts = 0;
           let battersAfterThreeOuts = 0;
           const outOrdinals: number[] = [];
@@ -8718,7 +8862,11 @@ function orderAndAssignColumnsForChunk(
             }
             const estO = estimateRawAtBatOutsForOrdering(seq[i].raw);
             cumOuts += estO;
-            if (estO >= 1) {
+            const itemRc = inferCanonicalResultCode(
+              seq[i].raw.rc ?? seq[i].raw.resultCode,
+              seq[i].raw.rl ?? seq[i].raw.resultLabel
+            );
+            if (isPureBatterOutCode(itemRc)) {
               const mark = extractRawOutOrdinalMark(seq[i].raw);
               if (mark !== null) {
                 outOrdinals.push(mark);
@@ -8726,7 +8874,7 @@ function orderAndAssignColumnsForChunk(
             }
           }
 
-          if (cumOuts >= 3 && seq.length > 0) {
+          if (seq.length > 0) {
             const tailRaw = seq[seq.length - 1].raw;
             const tailRc = inferCanonicalResultCode(
               tailRaw.rc ?? tailRaw.resultCode,
@@ -8734,23 +8882,38 @@ function orderAndAssignColumnsForChunk(
             );
             const tailMark = extractRawOutOrdinalMark(tailRaw);
             const tailEstO = estimateRawAtBatOutsForOrdering(tailRaw);
+            const tailObs = (tailRaw.obs || "").trim();
+            const tailHasInningEndSlash = /斜線|切り線|／／|∟/.test(tailObs);
 
-            if (battersAfterThreeOuts === 0) {
-              score += 100;
-              if (tailEstO >= 1 && tailMark === 3) {
+            if (tailHasInningEndSlash) {
+              score += 45;
+            }
+
+            if (cumOuts === 3) {
+              if (battersAfterThreeOuts === 0) {
+                score += 100;
+                if (tailEstO >= 1 && tailMark === 3) {
+                  score += 50;
+                }
+              } else if (
+                battersAfterThreeOuts === 1 &&
+                (tailRc === "fc" || tailRc === "other" || tailEstO === 0)
+              ) {
                 score += 50;
+                const prevTail = seq.length >= 2 ? seq[seq.length - 2].raw : null;
+                if (prevTail && extractRawOutOrdinalMark(prevTail) === 3) {
+                  score += 35;
+                }
+              } else {
+                score -= 45 * battersAfterThreeOuts;
               }
-            } else if (
-              battersAfterThreeOuts === 1 &&
-              (tailRc === "fc" || tailRc === "other" || tailEstO === 0)
-            ) {
-              score += 50;
-              const prevTail = seq.length >= 2 ? seq[seq.length - 2].raw : null;
-              if (prevTail && extractRawOutOrdinalMark(prevTail) === 3) {
-                score += 35;
+            } else if (cumOuts > 3) {
+              if (tailEstO >= 1 || isRawRunnerOnlyEnd(tailRaw)) {
+                score += 45;
+                if (tailMark === 3) {
+                  score += 40;
+                }
               }
-            } else {
-              score -= 45 * battersAfterThreeOuts;
             }
           }
 
@@ -8810,7 +8973,21 @@ function orderAndAssignColumnsForChunk(
         if (stepUpCandidates.includes(runningLeadOff)) {
           effectiveLeadOff = runningLeadOff;
         } else if (stepUpCandidates.length === 1) {
-          effectiveLeadOff = stepUpCandidates[0];
+          const singleCand = stepUpCandidates[0];
+          const cyclicDist = Math.min(
+            (singleCand - runningLeadOff + B) % B,
+            (runningLeadOff - singleCand + B) % B
+          );
+          // 9人一巡イニングで途中の1人だけ読取漏れ（8/9件抽出）が起きた場合、欠損直後が偽の stepUp になるため runningLeadOff を守る
+          if (
+            innItems.length >= B - 1 &&
+            counts[runningLeadOff] >= 1 &&
+            cyclicDist >= 2
+          ) {
+            effectiveLeadOff = runningLeadOff;
+          } else {
+            effectiveLeadOff = singleCand;
+          }
         } else {
           effectiveLeadOff = runningLeadOff;
         }

@@ -31,6 +31,7 @@ import {
   type AtBatRunnerSnapshot,
   type OccupiedBaseKey,
 } from "@/lib/liff/scorebook-runners";
+import { resolveEffectiveBattingCycleLength } from "@/lib/liff/scorebook-validator";
 import {
   isNonPitchMoundEvent,
   type AdvanceMethodCode,
@@ -2320,7 +2321,14 @@ export function compileScorebookSheetModel(
       }
       const leadOff =
         oppLeadOffByInning.get(oppAb.inning) ?? (oppAb.inning === 1 ? 1 : null);
-      const cycle = Math.max(9, oppAb.battingOrder, thresholdOrder);
+      const cycle = Math.max(
+        resolveEffectiveBattingCycleLength(
+          defenseContext?.opponentStructure,
+          oppAtBats
+        ),
+        oppAb.battingOrder,
+        thresholdOrder
+      );
       if (typeof leadOff === "number" && leadOff >= 1 && leadOff <= cycle) {
         const tOff = (((oppAb.battingOrder - leadOff) % cycle) + cycle) % cycle;
         const thOff = (((thresholdOrder - leadOff) % cycle) + cycle) % cycle;
@@ -2342,6 +2350,7 @@ export function compileScorebookSheetModel(
           oppAb.pitcherPlayerId ||
           (cleanAbPitcher &&
             cleanAbPitcher !== "相手投手" &&
+            cleanAbPitcher !== "相手先発" &&
             cleanAbPitcher !== "投手" &&
             cleanAbPitcher !== "不明")
         ) {

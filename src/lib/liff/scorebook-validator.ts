@@ -25,6 +25,7 @@ import {
   type ExcessOutInningSpec,
   type MissingOrderGapSpec,
   type ResolvedMissingAtBatItem,
+  type ScorebookBatterSlot,
   type ScorebookRosterPlayer,
   type ScorebookSheetStructure,
   type ScorebookV2AtBat,
@@ -385,7 +386,7 @@ export function normalizePositionCode(
   if (!s) return "";
   const u = s.toUpperCase();
 
-  if (u === "D" || u === "DH" || u === "DP" || s.includes("指")) return "D";
+  if (/^(?:D|DH|DP|EH|EP|EDH)[1-9]?$/i.test(u) || s.includes("指")) return "D";
   if (u === "1" || u === "P" || s.startsWith("投") || s.includes("ピッチャー")) {
     return "1";
   }
@@ -418,6 +419,153 @@ export function normalizePositionCode(
   if (digitMatch) return digitMatch[1];
 
   return "";
+}
+
+/**
+ * 10行目以降（または order=0）の打順枠が「打席に立たない枠（DH制の10枠目・専任投手欄、または未記入の10行目）」か判定する。
+ * - 該当打順の実打席データが1件でも存在する場合は常に false（全員打ち等の実打者を優先）
+ * - slot.nonBatting が明示されていればそれを優先（完全空欄の10行目以降を除く）
+ * - 未指定の既存データでも、1〜9番にDH（または既に投手）がいて10枠目が投手(position="1")の場合は自動的に true と判定する
+ */
+export function isNonBattingBatterSlot(
+  slot: Pick<
+    ScorebookBatterSlot,
+    | "battingOrder"
+    | "name"
+    | "uniformNumber"
+    | "position"
+    | "playerId"
+    | "nonBatting"
+    | "substitutions"
+  >,
+  allBatters: ReadonlyArray<
+    Pick<
+      ScorebookBatterSlot,
+      | "battingOrder"
+      | "name"
+      | "uniformNumber"
+      | "position"
+      | "playerId"
+      | "nonBatting"
+      | "substitutions"
+    >
+  >,
+  atBats?: ReadonlyArray<Pick<ScorebookV2AtBat, "battingOrder">>
+): boolean {
+  const order = slot.battingOrder;
+  if (order >= 1 && order <= 9) {
+    return false;
+  }
+  if (order <= 0) {
+    return true;
+  }
+  if (atBats && atBats.some((ab) => ab.battingOrder === order)) {
+    return false;
+  }
+  if (slot.nonBatting === true) {
+    return true;
+  }
+
+  const hasStarterIdentity = Boolean(
+    (slot.name || "").trim() ||
+      (slot.uniformNumber || "").trim() ||
+      slot.playerId
+  );
+  const hasSubIdentity = (slot.substitutions || []).some((s) =>
+    Boolean(
+      (s.name || "").trim() || (s.uniformNumber || "").trim() || s.playerId
+    )
+  );
+  if (!hasStarterIdentity && !hasSubIdentity) {
+    return true;
+  }
+
+  if (slot.nonBatting === false) {
+    return false;
+  }
+
+  const batters1to9 = allBatters.filter(
+    (b) => b.battingOrder >= 1 && b.battingOrder <= 9
+  );
+  const hasDhIn1to9 = batters1to9.some(
+    (b) => normalizePositionCode(b.position) === "D"
+  );
+  const hasPitcherIn1to9 = batters1to9.some(
+    (b) => normalizePositionCode(b.position) === "1"
+  );
+  const slotPos = normalizePositionCode(slot.position);
+  const slotSubHasPitcher = (slot.substitutions || []).some(
+    (s) => normalizePositionCode(s.position) === "1"
+  );
+
+  // DH制（1〜9番にDHが入り、10枠目に守備専任の先発・救援投手 P/1 が書かれているケース）
+  // または 1〜9番に既に投手がいるのに10枠目にも投手が書かれているブルペン・継投欄ケース
+  if (
+    (slotPos === "1" || slotSubHasPitcher) &&
+    (hasDhIn1to9 || hasPitcherIn1to9)
+  ) {
+    return true;
+  }
+
+  // 1〜9番にDHがおり投手が不在で、10枠目の守備位置が未読取("")のまま10人だけ書かれている場合もDH専任投手枠とみなす
+  if (
+    order === 10 &&
+    allBatters.length === 10 &&
+    slotPos === "" &&
+    hasDhIn1to9 &&
+    !hasPitcherIn1to9
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 実際に打席へ入る有効打順の循環人数（通常9、DH制10人表記も9、全員打ちで10番以降が打つ場合のみ10以上）を算出する
+ */
+export function resolveEffectiveBattingCycleFromBatters(
+  batters: ReadonlyArray<
+    Pick<
+      ScorebookBatterSlot,
+      | "battingOrder"
+      | "name"
+      | "uniformNumber"
+      | "position"
+      | "playerId"
+      | "nonBatting"
+      | "substitutions"
+    >
+  >,
+  atBats?: ReadonlyArray<Pick<ScorebookV2AtBat, "battingOrder">>
+): number {
+  let maxActiveOrder = 9;
+  for (const b of batters) {
+    if (
+      b.battingOrder > maxActiveOrder &&
+      !isNonBattingBatterSlot(b, batters, atBats)
+    ) {
+      maxActiveOrder = b.battingOrder;
+    }
+  }
+  if (atBats) {
+    for (const ab of atBats) {
+      if ((ab.battingOrder || 0) > maxActiveOrder) {
+        maxActiveOrder = ab.battingOrder;
+      }
+    }
+  }
+  return maxActiveOrder;
+}
+
+export function resolveEffectiveBattingCycleLength(
+  structure?: Pick<ScorebookSheetStructure, "batters"> | null,
+  atBats?: ReadonlyArray<Pick<ScorebookV2AtBat, "battingOrder">>
+): number {
+  return resolveEffectiveBattingCycleFromBatters(
+    structure?.batters ?? [],
+    atBats
+  );
 }
 
 /**
@@ -535,7 +683,7 @@ export function resolveActiveMatchupFromStructure(
   pitcherName: string;
   pitcherPlayerId: string | null;
 } {
-  const maxOrder = Math.max(9, structure.batters.length);
+  const maxOrder = resolveEffectiveBattingCycleLength(structure);
   const effectiveLeadOff =
     typeof inningLeadOffOrder === "number" && inningLeadOffOrder >= 1
       ? inningLeadOffOrder
@@ -697,7 +845,7 @@ export function syncSheetAtBatsWithStructure(
 ): ScorebookV2AtBat[] {
   if (atBats.length === 0) return atBats;
 
-  const maxOrder = Math.max(9, structure.batters.length);
+  const maxOrder = resolveEffectiveBattingCycleLength(structure, atBats);
   const atBatIndexById = new Map<string, number>();
   const leadOffByInning = new Map<number, number>();
   atBats.forEach((ab, idx) => {
@@ -974,12 +1122,7 @@ export function validateScorebookSheet(
       : true;
   const sideLabel = isTop ? "表" : "裏";
 
-  const maxOrder = Math.max(
-    9,
-    structure?.batters.length || 9,
-    ...atBats.map((a) => a.battingOrder || 9)
-  );
-  const lineupCycle = maxOrder >= 10 ? maxOrder : 9;
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, atBats);
 
   // イニング別に整列（イニング昇順 -> columnIndex昇順 -> 元の出現順）
   const inningsMap = new Map<number, ScorebookV2AtBat[]>();
@@ -1781,12 +1924,7 @@ export function detectMissingOrderGaps(
 ): MissingOrderGapSpec[] {
   if (!structure || atBats.length === 0) return [];
 
-  const maxOrder = Math.max(
-    9,
-    structure.batters.length || 9,
-    ...atBats.map((a) => a.battingOrder || 9)
-  );
-  const lineupCycle = maxOrder >= 10 ? maxOrder : 9;
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, atBats);
   const stepOrder = (bo: number): number => (bo % lineupCycle) + 1;
   const gapCount = (expectedBo: number, actualBo: number): number =>
     (actualBo - expectedBo + lineupCycle) % lineupCycle;
@@ -2279,11 +2417,19 @@ function isFullEqualLineupCycle(
  *  ④ 9番下端折り返し式のサブ列境界（c:1 ➔ c:2）および先頭打者の野球物理制約
  * を総合評価し、イニング内の打席配列を正しい先頭打者からの時系列順へ数学的に循環回転（補正）する。
  */
+export interface ExcessOutReconcileOptions {
+  /** 単一イニング／チャンク解析時など、前イニング配列が含まれていない場合の先頭イニング期待打順 */
+  expectedFirstInningLeadOffOrder?: number;
+  /** 単一イニング再解析時など、次イニング配列が含まれていない場合の次イニング先頭打順 */
+  nextChunkLeadOffOrder?: number;
+}
+
 function reconcileCyclicInningLeadOffs(
   inningsMap: Map<number, ScorebookV2AtBat[]>,
   sortedInnings: number[],
   lineupCycle: number,
-  structure?: ScorebookSheetStructure | null
+  structure?: ScorebookSheetStructure | null,
+  options?: ExcessOutReconcileOptions
 ): boolean {
   if (sortedInnings.length === 0) return false;
 
@@ -2373,6 +2519,21 @@ function reconcileCyclicInningLeadOffs(
             lineupCycle
           );
 
+          const externalExpectedStart =
+            idx === 0 &&
+            typeof options?.expectedFirstInningLeadOffOrder === "number" &&
+            options.expectedFirstInningLeadOffOrder >= 1 &&
+            options.expectedFirstInningLeadOffOrder <= lineupCycle
+              ? options.expectedFirstInningLeadOffOrder
+              : undefined;
+          const externalNextLeadOff =
+            idx === sortedInnings.length - 1 &&
+            typeof options?.nextChunkLeadOffOrder === "number" &&
+            options.nextChunkLeadOffOrder >= 1 &&
+            options.nextChunkLeadOffOrder <= lineupCycle
+              ? options.nextChunkLeadOffOrder
+              : undefined;
+
           const currentFirstBo = list[0].battingOrder;
           let bestBo = currentFirstBo;
           let bestScore = -Infinity;
@@ -2395,23 +2556,23 @@ function reconcileCyclicInningLeadOffs(
 
               if (prevOuts === 3) {
                 if (prevRunnerEnd) {
-                  if (candS === candSame) score += 140;
+                  if (candS === candSame) score += 160;
                   else if (candS === candNext) score += 55;
-                  else score -= 80;
+                  else score -= 85;
                 } else {
-                  if (candS === candNext) score += 140;
+                  if (candS === candNext) score += 160;
                   else if (candS === candSame) score += 60;
-                  else score -= 80;
+                  else score -= 85;
                 }
               } else if (prevOuts < 3) {
                 // 前イニングの末尾打席に読取漏れ（例: 2アウト止まり）がある可能性も考慮
-                if (candS === candNext) score += 35;
-                if (candS === candSame) score += 18;
+                if (candS === candNext) score += 45;
+                if (candS === candSame) score += 20;
                 const maxMiss = Math.min(2, 3 - prevOuts);
                 for (let skip = 1; skip <= maxMiss; skip++) {
                   const skippedBo =
                     ((candNext - 1 + skip) % lineupCycle) + 1;
-                  if (candS === skippedBo) score += 26;
+                  if (candS === skippedBo) score += 30;
                 }
               } else {
                 // 前イニングに余剰打席が含まれている場合は累積3アウト到達打順も参照
@@ -2425,55 +2586,115 @@ function reconcileCyclicInningLeadOffs(
                   }
                 }
                 if (threePrevBo !== null) {
-                  if (candS === stepOrder(threePrevBo)) score += 75;
+                  if (candS === stepOrder(threePrevBo)) score += 80;
                   else if (candS === threePrevBo) score += 35;
                 }
-                if (candS === candNext) score += 35;
-                else if (candS === candSame) score += 20;
+                if (candS === candNext) score += 40;
+                else if (candS === candSame) score += 22;
               }
+            } else if (externalExpectedStart !== undefined) {
+              if (candS === externalExpectedStart) score += 155;
+              else if (candS === prevOrder(externalExpectedStart)) score += 42;
+              else if (candS === stepOrder(externalExpectedStart)) score += 35;
+              else score -= 75;
             }
 
-            // ② 次のイニング先頭打順との連続性
-            if (nextList.length > 0) {
-              const nextWeight = nextIsAlsoAmbiguousFullCycle ? 25 : 120;
-              const firstNextBo = nextList[0].battingOrder;
+            // ② 次のイニング先頭打順との連続性（9人ピッタリ攻撃なら次回先頭も原則 candS！）
+            const effectiveNextBo =
+              nextList.length > 0
+                ? nextList[0].battingOrder
+                : externalNextLeadOff;
+            if (effectiveNextBo !== undefined && seq.length > 0) {
+              const nextWeight =
+                nextList.length > 0 && nextIsAlsoAmbiguousFullCycle ? 25 : 135;
               const tailItem = seq[seq.length - 1];
               const tailBo = tailItem.battingOrder; // === prevOrder(candS)
               if (isRunnerOnlyInningEnd(tailItem)) {
-                if (tailBo === firstNextBo) score += nextWeight;
-                else if (candS === firstNextBo) {
+                if (tailBo === effectiveNextBo) score += nextWeight;
+                else if (candS === effectiveNextBo) {
                   score += Math.round(nextWeight * 0.45);
+                } else {
+                  score -= Math.round(nextWeight * 0.4);
                 }
               } else {
-                if (candS === firstNextBo) score += nextWeight;
-                else if (tailBo === firstNextBo) {
+                if (candS === effectiveNextBo) score += nextWeight;
+                else if (tailBo === effectiveNextBo) {
                   score += Math.round(nextWeight * 0.45);
+                } else {
+                  score -= Math.round(nextWeight * 0.4);
                 }
               }
             }
 
-            // ③ イニング内の3アウト完了位置（3アウト目が最終打者で完了し、3アウト後に余剰打席が無いこと）
+            // ③ イニング内の3アウト完了位置 ＆ 打者アウトの endingOuts(1→2→3) 単調性
+            // ※Pass 1 前の走塁死二重計上（cumOuts > 3）で真の先頭打者が不当減点されないよう厳密分離する
             let cumOuts = 0;
             let battersAfterThreeOuts = 0;
+            const batterOutEndings: number[] = [];
             for (let i = 0; i < seq.length; i++) {
               if (cumOuts >= 3) {
                 battersAfterThreeOuts += 1;
               }
-              cumOuts += estimateSingleItemOutsForRotation(seq[i]);
-            }
-            if (cumOuts >= 3) {
-              const tailItem = seq[seq.length - 1];
-              if (battersAfterThreeOuts === 0) {
-                score += 95;
-              } else if (
-                battersAfterThreeOuts === 1 &&
-                (tailItem.resultCode === "fc" ||
-                  tailItem.resultCode === "other" ||
-                  tailItem.outsInPlay === 0)
+              const estO = estimateSingleItemOutsForRotation(seq[i]);
+              cumOuts += estO;
+              if (
+                isSingleBatterOutCode(seq[i].resultCode) &&
+                (seq[i].endingOuts === 1 ||
+                  seq[i].endingOuts === 2 ||
+                  seq[i].endingOuts === 3)
               ) {
+                batterOutEndings.push(seq[i].endingOuts);
+              }
+            }
+            if (seq.length > 0) {
+              const tailItem = seq[seq.length - 1];
+              const tailEstO = estimateSingleItemOutsForRotation(tailItem);
+              if (cumOuts === 3) {
+                if (battersAfterThreeOuts === 0) {
+                  score += 95;
+                  if (tailEstO >= 1 && tailItem.endingOuts === 3) {
+                    score += 40;
+                  }
+                } else if (
+                  battersAfterThreeOuts === 1 &&
+                  (tailItem.resultCode === "fc" ||
+                    tailItem.resultCode === "other" ||
+                    tailItem.outsInPlay === 0)
+                ) {
+                  score += 45;
+                } else {
+                  score -= 40 * battersAfterThreeOuts;
+                }
+              } else if (cumOuts > 3) {
+                if (tailEstO >= 1 || isRunnerOnlyInningEnd(tailItem)) {
+                  score += 45;
+                  if (tailItem.endingOuts === 3) {
+                    score += 35;
+                  }
+                }
+              }
+            }
+
+            if (batterOutEndings.length >= 2) {
+              let nonDecreasing = true;
+              let hasThreeBeforeOneOrTwo = false;
+              let seenThree = false;
+              for (let i = 0; i < batterOutEndings.length; i++) {
+                if (i > 0 && batterOutEndings[i] < batterOutEndings[i - 1]) {
+                  nonDecreasing = false;
+                }
+                if (batterOutEndings[i] === 3) {
+                  seenThree = true;
+                } else if (seenThree && batterOutEndings[i] < 3) {
+                  hasThreeBeforeOneOrTwo = true;
+                }
+              }
+              if (nonDecreasing) {
                 score += 45;
+              } else if (hasThreeBeforeOneOrTwo) {
+                score -= 70;
               } else {
-                score -= 40 * battersAfterThreeOuts;
+                score -= 30;
               }
             }
 
@@ -2588,11 +2809,7 @@ export function normalizeInningAtBatColumns(
     return { atBats: list, changed: false };
   }
 
-  const lineupCycle = Math.max(
-    9,
-    structure?.batters.length || 9,
-    ...list.map((a) => a.battingOrder || 9)
-  );
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, list);
   const seenByBo = new Map<number, number>();
   const laps: number[] = [];
   const nineWraps: number[] = [];
@@ -2689,18 +2906,14 @@ export function normalizeInningAtBatColumns(
  */
 export function reconcileSheetExcessOutsDeterministically(
   atBats: ScorebookV2AtBat[],
-  structure?: ScorebookSheetStructure | null
+  structure?: ScorebookSheetStructure | null,
+  options?: ExcessOutReconcileOptions
 ): { atBats: ScorebookV2AtBat[]; changed: boolean } {
   if (atBats.length === 0) {
     return { atBats, changed: false };
   }
 
-  const maxOrder = Math.max(
-    9,
-    structure?.batters.length || 9,
-    ...atBats.map((a) => a.battingOrder || 9)
-  );
-  const lineupCycle = maxOrder >= 10 ? maxOrder : 9;
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, atBats);
   const stepOrder = (bo: number): number => (bo % lineupCycle) + 1;
 
   let changed = false;
@@ -2733,7 +2946,8 @@ export function reconcileSheetExcessOutsDeterministically(
       inningsMap,
       sortedInnings,
       lineupCycle,
-      structure
+      structure,
+      options
     )
   ) {
     changed = true;
@@ -2949,6 +3163,12 @@ export function reconcileSheetExcessOutsDeterministically(
     const list = inningsMap.get(inn) || [];
     if (list.length === 0) continue;
 
+    const prevInn = idx > 0 ? sortedInnings[idx - 1] : null;
+    const prevList =
+      prevInn !== null && prevInn === inn - 1
+        ? inningsMap.get(prevInn) || []
+        : [];
+
     const nextInn =
       idx < sortedInnings.length - 1 ? sortedInnings[idx + 1] : null;
     const nextList =
@@ -2962,10 +3182,12 @@ export function reconcileSheetExcessOutsDeterministically(
       getInitOuts(arr) + arr.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
 
     // 2-A. 次イニング先頭と同じ打順が前イニング末尾にも重複しており、前イニングが3アウト超過（または既に3アウト到達済み）の場合
+    // ※ただし最終打者の打席途中に盗塁死・牽制死でチェンジになったケース（isRunnerOnlyInningEnd）は次回先頭と同一打順が正規なので除去しない！
     while (
       list.length >= 4 &&
       nextList.length > 0 &&
       list[list.length - 1].battingOrder === nextList[0].battingOrder &&
+      !isRunnerOnlyInningEnd(list[list.length - 1]) &&
       sumOuts(list.slice(0, -1)) >= 3
     ) {
       list.pop();
@@ -2985,7 +3207,8 @@ export function reconcileSheetExcessOutsDeterministically(
       changed = true;
     }
 
-    // 2-C. 累積3アウト到達時点の打順の「次の打順」から次イニングがピタリと始まっている場合、それより後ろの余剰行は100%切り線・ノイズなので除去
+    // 2-C. 累積3アウト到達時点の打順の「次の打順」から次イニングがピタリと始まっている場合、それより後ろの余剰行は切り線・ノイズなので除去
+    // ※ただし「9人ピッタリ一巡イニングが未回転のまま 1→2→3(3死) で並んでいるケース」や「確定得点が後続打席に含まれるケース」を絶対に誤削除しないようガード！
     if (nextList.length > 0 && list.length >= 4) {
       let cOuts = getInitOuts(list);
       let threeIdx = -1;
@@ -3001,8 +3224,37 @@ export function reconcileSheetExcessOutsDeterministically(
         threeIdx < list.length - 1 &&
         stepOrder(list[threeIdx].battingOrder) === nextList[0].battingOrder
       ) {
-        list.splice(threeIdx + 1);
-        changed = true;
+        const expectedStartBo =
+          inn === 1
+            ? 1
+            : prevList.length > 0 && sumOuts(prevList) === 3
+            ? isRunnerOnlyInningEnd(prevList[prevList.length - 1])
+              ? prevList[prevList.length - 1].battingOrder
+              : stepOrder(prevList[prevList.length - 1].battingOrder)
+            : idx === 0 &&
+              typeof options?.expectedFirstInningLeadOffOrder === "number"
+            ? options.expectedFirstInningLeadOffOrder
+            : null;
+        const startMatchesExpected =
+          expectedStartBo === null ||
+          list[0].battingOrder === expectedStartBo;
+
+        const innMeta = structure?.innings.find((m) => m.inning === inn);
+        const confirmedRuns = innMeta?.runs ?? 0;
+        const headRuns = list
+          .slice(0, threeIdx + 1)
+          .reduce((s, x) => s + Math.max(0, x.runsInPlay), 0);
+        const tail = list.slice(threeIdx + 1);
+        const tailHasNeededScoring =
+          confirmedRuns > headRuns &&
+          tail.some(
+            (t) => t.runsInPlay > 0 || isSafeBatterReachCode(t.resultCode)
+          );
+
+        if (startMatchesExpected && !tailHasNeededScoring) {
+          list.splice(threeIdx + 1);
+          changed = true;
+        }
       }
     }
 
@@ -3079,7 +3331,8 @@ export function reconcileSheetExcessOutsDeterministically(
       inningsMap,
       sortedInnings,
       lineupCycle,
-      structure
+      structure,
+      options
     )
   ) {
     changed = true;
@@ -3133,7 +3386,7 @@ export function detectExcessOutInnings(
     return [];
   }
 
-  const lineupCycle = Math.max(9, structure.batters.length);
+  const lineupCycle = resolveEffectiveBattingCycleLength(structure, atBats);
   const inningsMap = new Map<number, ScorebookV2AtBat[]>();
   for (const ab of atBats) {
     const arr = inningsMap.get(ab.inning) || [];

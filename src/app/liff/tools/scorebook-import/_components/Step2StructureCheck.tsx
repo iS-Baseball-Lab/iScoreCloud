@@ -29,7 +29,11 @@ import {
   resolveStructureGridCorners,
   syncStructureBoxesFromCorners,
 } from "@/lib/liff/scorebook-grid";
-import { normalizePositionCode } from "@/lib/liff/scorebook-validator";
+import {
+  isNonBattingBatterSlot,
+  normalizePositionCode,
+  resolveEffectiveBattingCycleLength,
+} from "@/lib/liff/scorebook-validator";
 import {
   LiffSelect,
   type LiffSelectOption,
@@ -1457,14 +1461,30 @@ export function Step2StructureCheck({
         </div>
 
         <div className="space-y-2.5">
-          {current.batters.map((slot) => (
+          {current.batters.map((slot) => {
+            const isSlotNonBatting = isNonBattingBatterSlot(
+              slot,
+              current.batters
+            );
+            return (
             <div
               key={slot.battingOrder}
               className="p-2.5 rounded-2xl bg-muted border border-border space-y-2"
             >
               <div className="flex items-center gap-1.5">
-                <span className="w-6 h-6 rounded-lg bg-primary/12 text-primary border border-primary/30 text-[11px] font-black flex items-center justify-center shrink-0">
-                  {slot.battingOrder}
+                <span
+                  className={
+                    isSlotNonBatting
+                      ? "px-1.5 h-6 rounded-lg bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black flex items-center justify-center shrink-0"
+                      : "w-6 h-6 rounded-lg bg-primary/12 text-primary border border-primary/30 text-[11px] font-black flex items-center justify-center shrink-0"
+                  }
+                  title={
+                    isSlotNonBatting
+                      ? "打席に入らない枠（DH制の専任投手欄など）"
+                      : `${slot.battingOrder}番打者`
+                  }
+                >
+                  {isSlotNonBatting ? "投" : slot.battingOrder}
                 </span>
 
                 {current.isMyTeamBatting && roster.length > 0 ? (
@@ -1549,6 +1569,33 @@ export function Step2StructureCheck({
                   <span>交代</span>
                 </button>
               </div>
+
+              {slot.battingOrder >= 10 && (
+                <div className="pl-7 flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-muted-foreground">
+                    {isSlotNonBatting
+                      ? "DH制などの守備専任枠（打順は1〜9番で循環・この行は打席なし）"
+                      : `${slot.battingOrder}番打者として打順循環に含める（全員打ち制）`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateBatter(slot.battingOrder, {
+                        nonBatting: !isSlotNonBatting,
+                      })
+                    }
+                    className={
+                      isSlotNonBatting
+                        ? "px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black cursor-pointer shrink-0"
+                        : "px-2.5 py-1 rounded-lg bg-primary/12 text-primary border border-primary/30 text-[10px] font-black cursor-pointer shrink-0"
+                    }
+                  >
+                    {isSlotNonBatting
+                      ? "打席なし(DH投手) ➔ 打席ありへ切替"
+                      : "打席あり(全員打ち) ➔ 打席なしへ切替"}
+                  </button>
+                </div>
+              )}
 
               {/* 自チームで未登録（助っ人・手書き名）状態のときは直接テキスト修正も可能にする */}
               {current.isMyTeamBatting && roster.length > 0 && !slot.playerId && (
@@ -1659,7 +1706,7 @@ export function Step2StructureCheck({
                               },
                               ...Array.from(
                                 {
-                                  length: Math.max(9, current.batters.length),
+                                  length: resolveEffectiveBattingCycleLength(current),
                                 },
                                 (_, i) => i + 1
                               ).map((orderNum): LiffSelectOption => {
@@ -1940,7 +1987,8 @@ export function Step2StructureCheck({
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 
@@ -2217,7 +2265,7 @@ export function Step2StructureCheck({
                             sublabel: `${pt.fromInning}回の先頭打者から登板`,
                           },
                           ...Array.from(
-                            { length: Math.max(9, current.batters.length) },
+                            { length: resolveEffectiveBattingCycleLength(current) },
                             (_, i) => i + 1
                           ).map((orderNum): LiffSelectOption => {
                             const bSlot = current.batters.find(

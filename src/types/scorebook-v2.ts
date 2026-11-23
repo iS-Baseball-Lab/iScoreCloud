@@ -135,6 +135,8 @@ export interface ScorebookBatterSlot {
   uniformNumber: string;
   position: string;
   playerId: string | null;
+  /** DH制の10枠目（専任投手欄）など、選手名は記入されているが打席には入らない枠の場合は true */
+  nonBatting?: boolean;
   /** 打者の左右打ち（'R'=右打, 'L'=左打, 'B'=両打） */
   bats?: "R" | "L" | "B" | null;
   substitutions: ScorebookSubstitution[];
