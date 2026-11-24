@@ -134,6 +134,8 @@ interface SavedScorebookApiResponse {
   bottomAtBats?: ScorebookV2AtBat[];
   topImageUrl?: string | null;
   bottomImageUrl?: string | null;
+  topLiveAnchorAtBats?: ScorebookV2AtBat[];
+  bottomLiveAnchorAtBats?: ScorebookV2AtBat[];
   error?: string;
 }
 
@@ -404,6 +406,15 @@ export default function LiffScorebookImportPage() {
     useState<ScorebookSheetStructure | null>(null);
   const [topAtBats, setTopAtBats] = useState<ScorebookV2AtBat[]>([]);
   const [bottomAtBats, setBottomAtBats] = useState<ScorebookV2AtBat[]>([]);
+  const [topLiveAnchorAtBats, setTopLiveAnchorAtBats] = useState<
+    ScorebookV2AtBat[]
+  >([]);
+  const [bottomLiveAnchorAtBats, setBottomLiveAnchorAtBats] = useState<
+    ScorebookV2AtBat[]
+  >([]);
+  const [confirmedLiveDiffIds, setConfirmedLiveDiffIds] = useState<string[]>(
+    []
+  );
   const [saveSummary, setSaveSummary] = useState<SaveSummaryData | null>(null);
   const [savedTopImageUrl, setSavedTopImageUrl] = useState<string | null>(null);
   const [savedBottomImageUrl, setSavedBottomImageUrl] = useState<string | null>(
@@ -699,6 +710,9 @@ export default function LiffScorebookImportPage() {
         setBottomStructure(loadedBottomStruct);
         setTopAtBats(reconciledTop);
         setBottomAtBats(reconciledBottom);
+        setTopLiveAnchorAtBats([]);
+        setBottomLiveAnchorAtBats([]);
+        setConfirmedLiveDiffIds([]);
         setTimingSummary(null);
         setStructureTotalMs(null);
         setStructureCompletedTimings([]);
@@ -795,6 +809,9 @@ export default function LiffScorebookImportPage() {
             loadedBottomStruct
           ).atBats
         );
+        setTopLiveAnchorAtBats(data.topLiveAnchorAtBats || []);
+        setBottomLiveAnchorAtBats(data.bottomLiveAnchorAtBats || []);
+        setConfirmedLiveDiffIds([]);
         setSavedTopImageUrl(data.topImageUrl || null);
         setSavedBottomImageUrl(data.bottomImageUrl || null);
         setTimingSummary(null);
@@ -858,6 +875,9 @@ export default function LiffScorebookImportPage() {
         setBottomStructure(null);
         setTopAtBats([]);
         setBottomAtBats([]);
+        setTopLiveAnchorAtBats([]);
+        setBottomLiveAnchorAtBats([]);
+        setConfirmedLiveDiffIds([]);
         setSavedTopImageUrl(null);
         setSavedBottomImageUrl(null);
         setTimingSummary(null);
@@ -1103,6 +1123,9 @@ export default function LiffScorebookImportPage() {
     setBottomStructure(null);
     setTopAtBats([]);
     setBottomAtBats([]);
+    setTopLiveAnchorAtBats([]);
+    setBottomLiveAnchorAtBats([]);
+    setConfirmedLiveDiffIds([]);
     setSavedTopImageUrl(null);
     setSavedBottomImageUrl(null);
     setIsEditingSavedMatch(false);
@@ -1505,12 +1528,21 @@ export default function LiffScorebookImportPage() {
       const data = await parseSafeJson<{
         success: boolean;
         structure?: ScorebookSheetStructure;
+        digitalAnchor?: {
+          source: "live_report" | "digital_snapshot";
+          atBats: ScorebookV2AtBat[];
+        } | null;
         cooledModels?: string[];
         error?: string;
       }>(res, "骨格スキャン通信エラー");
       recordCooledModels(data.cooledModels);
       if (!data.success || !data.structure) {
         throw new Error(data.error || "骨格スキャンに失敗しました");
+      }
+      if (isTop) {
+        setTopLiveAnchorAtBats(data.digitalAnchor?.atBats || []);
+      } else {
+        setBottomLiveAnchorAtBats(data.digitalAnchor?.atBats || []);
       }
       return refineStructureGridOnImage(processedDataUrl, data.structure);
     };
@@ -1551,6 +1583,7 @@ export default function LiffScorebookImportPage() {
       completedChunkCacheRef.current.clear();
       setTopAtBats([]);
       setBottomAtBats([]);
+      setConfirmedLiveDiffIds([]);
       setDeepCompletedTimings([]);
       setDeepTotalDurationMs(null);
       setTimingSummary(null);
@@ -1621,8 +1654,14 @@ export default function LiffScorebookImportPage() {
         setBottomStructure(resBottom);
       }
 
-      if (!needTop) setTopStructure(null);
-      if (!needBottom) setBottomStructure(null);
+      if (!needTop) {
+        setTopStructure(null);
+        setTopLiveAnchorAtBats([]);
+      }
+      if (!needBottom) {
+        setBottomStructure(null);
+        setBottomLiveAnchorAtBats([]);
+      }
       setIsEditingSavedMatch(false);
       setHasDirtyReEdit(false);
       setStructureTotalMs(Date.now() - stage1Start);
@@ -2038,10 +2077,18 @@ export default function LiffScorebookImportPage() {
     beforeIssueCount: number;
     afterIssueCount: number;
   }> => {
+    const sideAnchorAtBats = isTop
+      ? topLiveAnchorAtBats
+      : bottomLiveAnchorAtBats;
+    const confirmedSet = new Set(confirmedLiveDiffIds);
     const initialIssues = validateScorebookSheet(
       initialSideAtBats,
       structure,
-      isTop
+      isTop,
+      {
+        anchorAtBats: sideAnchorAtBats,
+        confirmedLiveDiffIds: confirmedSet,
+      }
     );
     if (!sourceDataUrl || initialSideAtBats.length === 0) {
       return {
@@ -2060,6 +2107,8 @@ export default function LiffScorebookImportPage() {
         isTop,
         targetAtBatIds: options?.targetAtBatIds,
         maxItems: 12,
+        anchorAtBats: sideAnchorAtBats,
+        confirmedLiveDiffIds: confirmedSet,
       }
     );
     if (specs.length === 0) {
@@ -2145,6 +2194,8 @@ export default function LiffScorebookImportPage() {
       {
         isTop,
         forceApplyAll: options?.forceApplyAll,
+        anchorAtBats: sideAnchorAtBats,
+        confirmedLiveDiffIds: confirmedSet,
       }
     );
 
@@ -3067,6 +3118,7 @@ export default function LiffScorebookImportPage() {
       const botSrcUrl =
         bottomImage.processed?.dataUrl || savedBottomImageUrl || null;
 
+      const confirmedSet = new Set(confirmedLiveDiffIds);
       let beforeTotalIssues = 0;
       let afterTotalIssues = 0;
       let totalUpdatedCells = 0;
@@ -3076,7 +3128,11 @@ export default function LiffScorebookImportPage() {
         beforeTotalIssues += validateScorebookSheet(
           topAtBats,
           topStructure,
-          true
+          true,
+          {
+            anchorAtBats: topLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedSet,
+          }
         ).length;
 
         const detTop = reconcileSheetExcessOutsDeterministically(
@@ -3140,7 +3196,11 @@ export default function LiffScorebookImportPage() {
         afterTotalIssues += validateScorebookSheet(
           nextTop,
           topStructure,
-          true
+          true,
+          {
+            anchorAtBats: topLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedSet,
+          }
         ).length;
       }
 
@@ -3148,7 +3208,11 @@ export default function LiffScorebookImportPage() {
         beforeTotalIssues += validateScorebookSheet(
           bottomAtBats,
           bottomStructure,
-          false
+          false,
+          {
+            anchorAtBats: bottomLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedSet,
+          }
         ).length;
 
         const detBot = reconcileSheetExcessOutsDeterministically(
@@ -3212,7 +3276,11 @@ export default function LiffScorebookImportPage() {
         afterTotalIssues += validateScorebookSheet(
           nextBot,
           bottomStructure,
-          false
+          false,
+          {
+            anchorAtBats: bottomLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedSet,
+          }
         ).length;
       }
 
@@ -3761,6 +3829,9 @@ export default function LiffScorebookImportPage() {
                   setSelectedMatchId(id);
                   setSavedTopImageUrl(null);
                   setSavedBottomImageUrl(null);
+                  setTopLiveAnchorAtBats([]);
+                  setBottomLiveAnchorAtBats([]);
+                  setConfirmedLiveDiffIds([]);
                   setIsEditingSavedMatch(false);
                   setHasDirtyReEdit(false);
                   setLastAutoSavedAt(null);
@@ -3990,6 +4061,14 @@ export default function LiffScorebookImportPage() {
                       : undefined
                   }
                   reanalyzingAtBatId={reanalyzingAtBatId}
+                  topLiveAnchorAtBats={topLiveAnchorAtBats}
+                  bottomLiveAnchorAtBats={bottomLiveAnchorAtBats}
+                  confirmedLiveDiffIds={confirmedLiveDiffIds}
+                  onConfirmLiveDiffId={(issueId) =>
+                    setConfirmedLiveDiffIds((prev) =>
+                      prev.includes(issueId) ? prev : [...prev, issueId]
+                    )
+                  }
                   timingSummary={timingSummary}
                   errorMessage={errorBanner}
                   onDismissError={() => setErrorBanner(null)}

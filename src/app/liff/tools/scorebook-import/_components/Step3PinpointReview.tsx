@@ -29,6 +29,7 @@ import {
   RotateCcw,
   Sparkles,
   Users,
+  Zap,
 } from "lucide-react";
 import {
   AT_BAT_RESULT_PRESETS,
@@ -49,6 +50,10 @@ import {
   type ScorebookV2AtBat,
   type ScorebookValidationIssue,
 } from "@/types/scorebook-v2";
+import {
+  applyAnchorAtBatResultPreservingPaperPitches,
+  buildInningAtBatAnchorMatchMap,
+} from "@/lib/liff/scorebook-live-hybrid";
 import {
   computeCountFromPitches,
   detectExcessOutInnings,
@@ -152,6 +157,10 @@ interface Step3PinpointReviewProps {
   isRepairingOrderGaps?: boolean;
   onReanalyzeAtBat?: (isTop: boolean, atBatId: string) => void;
   reanalyzingAtBatId?: string | null;
+  topLiveAnchorAtBats?: ScorebookV2AtBat[];
+  bottomLiveAnchorAtBats?: ScorebookV2AtBat[];
+  confirmedLiveDiffIds?: string[];
+  onConfirmLiveDiffId?: (issueId: string) => void;
   timingSummary?: ScorebookAnalysisTimingSummary | null;
   errorMessage?: string | null;
   onDismissError?: () => void;
@@ -179,11 +188,18 @@ export function Step3PinpointReview({
   isRepairingOrderGaps = false,
   onReanalyzeAtBat,
   reanalyzingAtBatId = null,
+  topLiveAnchorAtBats = [],
+  bottomLiveAnchorAtBats = [],
+  confirmedLiveDiffIds,
+  onConfirmLiveDiffId,
   timingSummary = null,
   errorMessage,
   onDismissError,
 }: Step3PinpointReviewProps) {
   const [mounted, setMounted] = useState(false);
+  const [localConfirmedDiffIds, setLocalConfirmedDiffIds] = useState<string[]>(
+    []
+  );
   const [activeSide, setActiveSide] = useState<"top" | "bottom">(
     importScope === "bottom_only" ? "bottom" : "top"
   );
@@ -216,21 +232,66 @@ export function Step3PinpointReview({
   const currentList = isTop ? topAtBats : bottomAtBats;
   const currentStructure = isTop ? topStructure : bottomStructure;
   const currentSheetImage = isTop ? topImageDataUrl : bottomImageDataUrl;
+  const hasAnyLiveAnchor =
+    topLiveAnchorAtBats.length > 0 || bottomLiveAnchorAtBats.length > 0;
+
+  const confirmedDiffSet = useMemo(
+    () => new Set(confirmedLiveDiffIds ?? localConfirmedDiffIds),
+    [confirmedLiveDiffIds, localConfirmedDiffIds]
+  );
+
+  const handleConfirmLiveDiff = (issueId: string) => {
+    if (onConfirmLiveDiffId) {
+      onConfirmLiveDiffId(issueId);
+      return;
+    }
+    setLocalConfirmedDiffIds((prev) =>
+      prev.includes(issueId) ? prev : [...prev, issueId]
+    );
+  };
+
+  const topAnchorPairMap = useMemo(
+    () => buildInningAtBatAnchorMatchMap(topAtBats, topLiveAnchorAtBats),
+    [topAtBats, topLiveAnchorAtBats]
+  );
+  const bottomAnchorPairMap = useMemo(
+    () => buildInningAtBatAnchorMatchMap(bottomAtBats, bottomLiveAnchorAtBats),
+    [bottomAtBats, bottomLiveAnchorAtBats]
+  );
+  const currentAnchorPairMap = isTop ? topAnchorPairMap : bottomAnchorPairMap;
 
   const topIssues = useMemo(
     () =>
       importScope === "bottom_only"
         ? []
-        : validateScorebookSheet(topAtBats, topStructure, true),
-    [importScope, topAtBats, topStructure]
+        : validateScorebookSheet(topAtBats, topStructure, true, {
+            anchorAtBats: topLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedDiffSet,
+          }),
+    [
+      importScope,
+      topAtBats,
+      topStructure,
+      topLiveAnchorAtBats,
+      confirmedDiffSet,
+    ]
   );
 
   const bottomIssues = useMemo(
     () =>
       importScope === "top_only"
         ? []
-        : validateScorebookSheet(bottomAtBats, bottomStructure, false),
-    [importScope, bottomAtBats, bottomStructure]
+        : validateScorebookSheet(bottomAtBats, bottomStructure, false, {
+            anchorAtBats: bottomLiveAnchorAtBats,
+            confirmedLiveDiffIds: confirmedDiffSet,
+          }),
+    [
+      importScope,
+      bottomAtBats,
+      bottomStructure,
+      bottomLiveAnchorAtBats,
+      confirmedDiffSet,
+    ]
   );
 
   const currentIssues = isTop ? topIssues : bottomIssues;
@@ -719,6 +780,27 @@ export function Step3PinpointReview({
       currentList.map((item) => (item.id === targetId ? updater(item) : item))
     );
     onChangeAtBats(isTop, updated);
+  };
+
+  const handleAdoptLiveAnchorForAtBat = (
+    sideIsTop: boolean,
+    targetId: string
+  ) => {
+    const sidePairMap = sideIsTop ? topAnchorPairMap : bottomAnchorPairMap;
+    const anchorAb = sidePairMap.get(targetId);
+    if (!anchorAb) return;
+    const sideList = sideIsTop ? topAtBats : bottomAtBats;
+    const sideStruct = sideIsTop ? topStructure : bottomStructure;
+    const updated = recomputeSheetList(
+      sideList.map((item) =>
+        item.id === targetId
+          ? applyAnchorAtBatResultPreservingPaperPitches(item, anchorAb)
+          : item
+      ),
+      sideStruct
+    );
+    onChangeAtBats(sideIsTop, updated);
+    handleConfirmLiveDiff(`live-diff-${sideIsTop ? "t" : "b"}-${targetId}`);
   };
 
   const handleApplyStructureAndAtBats = (
@@ -1506,7 +1588,9 @@ export function Step3PinpointReview({
               全イニングの整合性チェックをクリアしました！
             </h2>
             <p className="text-[11px] font-bold text-muted-foreground">
-              アウト数・イニング得点・打順連続性・1球履歴カウントすべて整合しています。各打席をタップして詳細確認・微調整もできます。
+              アウト数・イニング得点・打順連続性・1球履歴カウント
+              {hasAnyLiveAnchor ? "・LINE速報との打席結果照合" : ""}
+              すべて整合しています。各打席をタップして詳細確認・微調整もできます。
             </p>
           </div>
         </section>
@@ -1598,11 +1682,18 @@ export function Step3PinpointReview({
               </div>
             )}
 
-          <div className="max-h-40 overflow-y-auto space-y-1.5">
+          <div className="max-h-48 overflow-y-auto space-y-1.5">
             {currentIssues.map((iss) => {
               const hasSideImage = iss.isTop
                 ? Boolean(topImageDataUrl)
                 : Boolean(bottomImageDataUrl);
+              const isLiveDiff = iss.id.startsWith("live-diff-");
+              const matchedAnchorAb =
+                isLiveDiff && iss.atBatId
+                  ? (iss.isTop ? topAnchorPairMap : bottomAnchorPairMap).get(
+                      iss.atBatId
+                    )
+                  : undefined;
               const canSingleCellReanalyze = Boolean(
                 iss.atBatId &&
                   onReanalyzeAtBat &&
@@ -1622,83 +1713,146 @@ export function Step3PinpointReview({
               return (
                 <div
                   key={iss.id}
-                  className="w-full p-2 rounded-xl bg-muted hover:bg-accent/70 border border-border flex items-center justify-between gap-2 transition-colors"
+                  className="w-full p-2 rounded-xl bg-muted hover:bg-accent/70 border border-border flex flex-col gap-1.5 transition-colors"
                 >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (iss.atBatId) {
-                        setEditingAtBatId(iss.atBatId);
-                      } else {
-                        setSelectedInning(iss.inning);
-                      }
-                    }}
-                    className="flex-1 min-w-0 text-left flex items-start justify-between gap-1.5 cursor-pointer"
-                  >
-                    <span className="text-[11px] font-bold text-foreground leading-snug">
-                      <strong
-                        className={
-                          iss.severity === "error"
-                            ? "text-destructive mr-1"
-                            : "text-amber-700 dark:text-amber-300 mr-1"
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (iss.atBatId) {
+                          setEditingAtBatId(iss.atBatId);
+                        } else {
+                          setSelectedInning(iss.inning);
                         }
+                      }}
+                      className="flex-1 min-w-0 text-left flex items-start justify-between gap-1.5 cursor-pointer"
+                    >
+                      <span className="text-[11px] font-bold text-foreground leading-snug">
+                        <strong
+                          className={
+                            iss.severity === "error"
+                              ? "text-destructive mr-1"
+                              : "text-amber-700 dark:text-amber-300 mr-1"
+                          }
+                        >
+                          [{iss.inning}回{iss.isTop ? "表" : "裏"}
+                          {iss.battingOrder ? ` ${iss.battingOrder}番` : ""}]
+                        </strong>
+                        {iss.message}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                    </button>
+
+                    {!isLiveDiff &&
+                      canSingleCellReanalyze &&
+                      iss.atBatId &&
+                      onReanalyzeAtBat && (
+                        <button
+                          type="button"
+                          disabled={
+                            isRepairingOrderGaps ||
+                            Boolean(reanalyzingInningKey) ||
+                            Boolean(reanalyzingAtBatId)
+                          }
+                          onClick={() =>
+                            onReanalyzeAtBat(iss.isTop, iss.atBatId!)
+                          }
+                          className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
+                        >
+                          {isThisCellRunning ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>再読取中</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3 h-3" />
+                              <span>AI再読取</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                    {canEmptyInningReanalyze && onReanalyzeInning && (
+                      <button
+                        type="button"
+                        disabled={
+                          isRepairingOrderGaps ||
+                          Boolean(reanalyzingInningKey) ||
+                          Boolean(reanalyzingAtBatId)
+                        }
+                        onClick={() => onReanalyzeInning(iss.isTop, iss.inning)}
+                        className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
                       >
-                        [{iss.inning}回{iss.isTop ? "表" : "裏"}
-                        {iss.battingOrder ? ` ${iss.battingOrder}番` : ""}]
-                      </strong>
-                      {iss.message}
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                  </button>
+                        {isThisInningRunning ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>再解析中</span>
+                          </>
+                        ) : (
+                          <>
+                            <RotateCcw className="w-3 h-3" />
+                            <span>回を再解析</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
 
-                  {canSingleCellReanalyze && iss.atBatId && onReanalyzeAtBat && (
-                    <button
-                      type="button"
-                      disabled={
-                        isRepairingOrderGaps ||
-                        Boolean(reanalyzingInningKey) ||
-                        Boolean(reanalyzingAtBatId)
-                      }
-                      onClick={() => onReanalyzeAtBat(iss.isTop, iss.atBatId!)}
-                      className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
-                    >
-                      {isThisCellRunning ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>再読取中</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-3 h-3" />
-                          <span>AI再読取</span>
-                        </>
+                  {isLiveDiff && iss.atBatId && (
+                    <div className="flex items-center justify-end gap-1.5 flex-wrap pt-0.5">
+                      {matchedAnchorAb && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdoptLiveAnchorForAtBat(
+                              iss.isTop,
+                              iss.atBatId!
+                            )
+                          }
+                          className="h-7 px-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                        >
+                          <Zap className="w-3 h-3" />
+                          <span>
+                            速報「{matchedAnchorAb.resultLabel}」を採用
+                          </span>
+                        </button>
                       )}
-                    </button>
-                  )}
-
-                  {canEmptyInningReanalyze && onReanalyzeInning && (
-                    <button
-                      type="button"
-                      disabled={
-                        isRepairingOrderGaps ||
-                        Boolean(reanalyzingInningKey) ||
-                        Boolean(reanalyzingAtBatId)
-                      }
-                      onClick={() => onReanalyzeInning(iss.isTop, iss.inning)}
-                      className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 shrink-0 cursor-pointer active:scale-95 transition-all"
-                    >
-                      {isThisInningRunning ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>再解析中</span>
-                        </>
-                      ) : (
-                        <>
-                          <RotateCcw className="w-3 h-3" />
-                          <span>回を再解析</span>
-                        </>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmLiveDiff(iss.id)}
+                        className="h-7 px-2.5 rounded-lg bg-card hover:bg-muted border border-border text-foreground text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                      >
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span>紙面読取で確定</span>
+                      </button>
+                      {canSingleCellReanalyze && onReanalyzeAtBat && (
+                        <button
+                          type="button"
+                          disabled={
+                            isRepairingOrderGaps ||
+                            Boolean(reanalyzingInningKey) ||
+                            Boolean(reanalyzingAtBatId)
+                          }
+                          onClick={() =>
+                            onReanalyzeAtBat(iss.isTop, iss.atBatId!)
+                          }
+                          className="h-7 px-2 rounded-lg bg-primary/12 hover:bg-primary/20 disabled:opacity-50 border border-primary/30 text-primary text-[10px] font-black inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                        >
+                          {isThisCellRunning ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>再読取中</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3 h-3" />
+                              <span>AI再読取</span>
+                            </>
+                          )}
+                        </button>
                       )}
-                    </button>
+                    </div>
                   )}
                 </div>
               );
@@ -2944,6 +3098,66 @@ export function Step3PinpointReview({
                           </div>
                         </div>
                       )}
+                    </div>
+                  );
+                })()}
+
+                {/* 1.55 LINE速報との差異ワンタップ比較バー（差異がある打席のみ表示） */}
+                {(() => {
+                  const modalLiveDiffId = `live-diff-${
+                    editingAtBat.isTop ? "t" : "b"
+                  }-${editingAtBat.id}`;
+                  const hasActiveLiveDiff = (
+                    issuesByAtBatId.get(editingAtBat.id) || []
+                  ).some((x) => x.id === modalLiveDiffId);
+                  const modalAnchorAb = currentAnchorPairMap.get(
+                    editingAtBat.id
+                  );
+                  if (!hasActiveLiveDiff || !modalAnchorAb) return null;
+                  return (
+                    <div className="p-3 rounded-2xl border border-border border-l-4 border-l-teal-500 bg-card shadow-xs space-y-2">
+                      <div className="flex items-start gap-1.5">
+                        <Zap className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                        <p className="text-[11px] font-bold text-foreground leading-snug">
+                          当日のLINE速報では{" "}
+                          <strong className="text-teal-700 dark:text-teal-300">
+                            「{modalAnchorAb.resultLabel}
+                            {modalAnchorAb.battedDirection
+                              ? ` (${modalAnchorAb.battedDirection})`
+                              : ""}
+                            {modalAnchorAb.runsInPlay > 0
+                              ? `・${modalAnchorAb.runsInPlay}点`
+                              : ""}
+                            」
+                          </strong>{" "}
+                          と記録されています（上の原本画像を確認してワンタップ選択できます）。
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdoptLiveAnchorForAtBat(
+                              editingAtBat.isTop,
+                              editingAtBat.id
+                            )
+                          }
+                          className="flex-1 h-8 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-black inline-flex items-center justify-center gap-1 cursor-pointer active:scale-98 transition-all"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>
+                            速報「{modalAnchorAb.resultLabel}」を採用（球順保持）
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmLiveDiff(modalLiveDiffId)}
+                          className="h-8 px-3 rounded-xl bg-muted hover:bg-accent border border-border text-foreground text-[11px] font-black inline-flex items-center justify-center gap-1 cursor-pointer active:scale-98 transition-all"
+                        >
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>紙面読取で確定</span>
+                        </button>
+                      </div>
                     </div>
                   );
                 })()}

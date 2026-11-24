@@ -61,6 +61,14 @@ import {
   type SavedMatchLineupInput,
   type SavedOpponentLineupInput,
 } from "@/lib/liff/scorebook-live-converter";
+import {
+  enrichAtBatsWithDigitalAnchor,
+  formatDigitalAnchorForInningChunkPrompt,
+  formatDigitalAnchorForReconcilePrompt,
+  formatDigitalAnchorForStructurePrompt,
+  mergeStructureWithDigitalAnchor,
+  type ScorebookDigitalAnchorSide,
+} from "@/lib/liff/scorebook-live-hybrid";
 import type { WorkerEnv } from "@/types/api";
 import {
   isNonPitchMoundEvent,
@@ -575,6 +583,252 @@ async function resolveTeamSymbolRulesPromptBlock(
     return block;
   } catch {
     return "";
+  }
+}
+
+const DIGITAL_ANCHOR_CACHE = new Map<
+  string,
+  {
+    expiresAt: number;
+    top: ScorebookDigitalAnchorSide | null;
+    bottom: ScorebookDigitalAnchorSide | null;
+  }
+>();
+
+/**
+ * 対象試合に紐づく「人間がデジタル入力した確定スコア情報（LINE試合速報 または 写真なしデジタル清書スナップショット）」を取得する。
+ * - 過去の「画像AI取込スナップショット（topImageUrl/bottomImageUrl あり）」は過去のOCR誤読が再混入しないようアンカーから除外し、
+ *   その場合でも純粋な LINE 試合速報（match_live_reports）が存在すれば速報アンカーとして安全に活用する。
+ */
+async function resolveMatchDigitalAnchorSides(
+  db: ReturnType<typeof drizzle<typeof schema>>,
+  matchId: string | undefined,
+  teamId: string | undefined
+): Promise<{
+  top: ScorebookDigitalAnchorSide | null;
+  bottom: ScorebookDigitalAnchorSide | null;
+}> {
+  const cleanMatchId = (matchId || "").trim();
+  const cleanTeamId = (teamId || "").trim();
+  if (!cleanMatchId || !cleanTeamId || cleanTeamId === "demo-team") {
+    return { top: null, bottom: null };
+  }
+
+  const now = Date.now();
+  const cached = DIGITAL_ANCHOR_CACHE.get(cleanMatchId);
+  if (cached && cached.expiresAt > now) {
+    return { top: cached.top, bottom: cached.bottom };
+  }
+
+  try {
+    const [matchRow, rosterRows, savedLineupRows, liveReportRow, snapRow] =
+      await Promise.all([
+        db
+          .select({
+            id: matches.id,
+            teamId: matches.teamId,
+            battingOrder: matches.battingOrder,
+            myLineup: matches.myLineup,
+            opponentLineup: matches.opponentLineup,
+          })
+          .from(matches)
+          .where(
+            and(eq(matches.id, cleanMatchId), eq(matches.teamId, cleanTeamId))
+          )
+          .get(),
+        db
+          .select({
+            id: players.id,
+            name: players.name,
+            nameKana: players.nameKana,
+            uniformNumber: players.uniformNumber,
+            primaryPosition: players.primaryPosition,
+            bats: players.bats,
+            isActive: players.isActive,
+          })
+          .from(players)
+          .where(eq(players.teamId, cleanTeamId))
+          .all(),
+        db
+          .select({
+            battingOrder: matchLineups.battingOrder,
+            position: matchLineups.position,
+            isStarting: matchLineups.isStarting,
+            playerId: matchLineups.playerId,
+            playerName: players.name,
+            uniformNumber: players.uniformNumber,
+            bats: players.bats,
+          })
+          .from(matchLineups)
+          .innerJoin(players, eq(matchLineups.playerId, players.id))
+          .where(eq(matchLineups.matchId, cleanMatchId))
+          .orderBy(asc(matchLineups.battingOrder))
+          .all()
+          .catch(() => []),
+        db
+          .select()
+          .from(matchLiveReports)
+          .where(
+            and(
+              eq(matchLiveReports.id, `match:${cleanMatchId}`),
+              eq(matchLiveReports.teamId, cleanTeamId)
+            )
+          )
+          .get()
+          .catch(() => undefined),
+        db
+          .select()
+          .from(matchScorebookSnapshots)
+          .where(eq(matchScorebookSnapshots.matchId, cleanMatchId))
+          .get()
+          .catch(() => undefined),
+      ]);
+
+    if (!matchRow) {
+      return { top: null, bottom: null };
+    }
+
+    let liveConverted: ReturnType<typeof convertLiveReportToScorebookDraft> | null =
+      null;
+    if (liveReportRow?.reportJson) {
+      try {
+        const rawJson: unknown = JSON.parse(liveReportRow.reportJson);
+        const liveDoc = sanitizeLiveReportDocument(rawJson);
+        if (liveDoc) {
+          const activeRoster: ScorebookRosterPlayer[] = rosterRows
+            .filter((r) => r.isActive !== false)
+            .map((r) => ({
+              id: r.id,
+              name: r.name,
+              nameKana: r.nameKana,
+              uniformNumber: r.uniformNumber,
+              primaryPosition: r.primaryPosition,
+              bats: r.bats,
+            }));
+          const starters = savedLineupRows.filter((l) => l.isStarting !== false);
+          const jsonMy = safeParseLineupArray(matchRow.myLineup);
+          const mySavedLineup: SavedMatchLineupInput[] =
+            starters.length > 0
+              ? starters.map((s) => ({
+                  battingOrder: s.battingOrder,
+                  position: s.position,
+                  playerId: s.playerId,
+                  playerName: s.playerName,
+                  uniformNumber: s.uniformNumber,
+                  bats: s.bats,
+                }))
+              : jsonMy.map((item, idx) => ({
+                  battingOrder:
+                    typeof item.battingOrder === "number"
+                      ? item.battingOrder
+                      : typeof item.order === "number"
+                        ? item.order
+                        : idx + 1,
+                  position: item.position || "",
+                  playerId: item.playerId || null,
+                  playerName: (item.name || item.playerName || "").trim(),
+                  uniformNumber: item.uniformNumber || "",
+                  bats: item.bats ?? null,
+                }));
+          const jsonOpp = safeParseLineupArray(matchRow.opponentLineup);
+          const oppSavedLineup: SavedOpponentLineupInput[] = jsonOpp.map(
+            (item, idx) => ({
+              battingOrder:
+                typeof item.battingOrder === "number"
+                  ? item.battingOrder
+                  : typeof item.order === "number"
+                    ? item.order
+                    : idx + 1,
+              position: item.position || "",
+              playerName: (item.name || item.playerName || "").trim(),
+              uniformNumber: item.uniformNumber || "",
+              bats: item.bats ?? null,
+            })
+          );
+
+          liveConverted = convertLiveReportToScorebookDraft({
+            doc: liveDoc,
+            rosterPlayers: activeRoster,
+            savedMyLineup: mySavedLineup,
+            savedOpponentLineup: oppSavedLineup,
+          });
+        }
+      } catch {
+        liveConverted = null;
+      }
+    }
+
+    const snapTopAtBats =
+      snapRow && !snapRow.topImageUrl
+        ? safeParseJsonValue<ScorebookV2AtBat[]>(snapRow.topAtBatsJson) || []
+        : [];
+    const snapTopStruct =
+      snapRow && !snapRow.topImageUrl
+        ? safeParseJsonValue<ScorebookSheetStructure>(snapRow.topStructureJson)
+        : null;
+
+    const snapBottomAtBats =
+      snapRow && !snapRow.bottomImageUrl
+        ? safeParseJsonValue<ScorebookV2AtBat[]>(snapRow.bottomAtBatsJson) || []
+        : [];
+    const snapBottomStruct =
+      snapRow && !snapRow.bottomImageUrl
+        ? safeParseJsonValue<ScorebookSheetStructure>(
+            snapRow.bottomStructureJson
+          )
+        : null;
+
+    const top: ScorebookDigitalAnchorSide | null =
+      snapTopAtBats.length > 0
+        ? {
+            source: "digital_snapshot",
+            structure: snapTopStruct,
+            atBats: snapTopAtBats.map(normalizeLegacyForceOutAtBat),
+          }
+        : liveConverted &&
+            (liveConverted.topAtBats.length > 0 ||
+              liveConverted.topStructure.batters.some(
+                (b) => b.substitutions.length > 0
+              ))
+          ? {
+              source: "live_report",
+              structure: liveConverted.topStructure,
+              atBats: liveConverted.topAtBats,
+            }
+          : null;
+
+    const bottom: ScorebookDigitalAnchorSide | null =
+      snapBottomAtBats.length > 0
+        ? {
+            source: "digital_snapshot",
+            structure: snapBottomStruct,
+            atBats: snapBottomAtBats.map(normalizeLegacyForceOutAtBat),
+          }
+        : liveConverted &&
+            (liveConverted.bottomAtBats.length > 0 ||
+              liveConverted.bottomStructure.batters.some(
+                (b) => b.substitutions.length > 0
+              ))
+          ? {
+              source: "live_report",
+              structure: liveConverted.bottomStructure,
+              atBats: liveConverted.bottomAtBats,
+            }
+          : null;
+
+    if (DIGITAL_ANCHOR_CACHE.size >= 36) {
+      const oldest = DIGITAL_ANCHOR_CACHE.keys().next().value;
+      if (oldest) DIGITAL_ANCHOR_CACHE.delete(oldest);
+    }
+    DIGITAL_ANCHOR_CACHE.set(cleanMatchId, {
+      expiresAt: now + 25_000,
+      top,
+      bottom,
+    });
+
+    return { top, bottom };
+  } catch {
+    return { top: null, bottom: null };
   }
 }
 
@@ -2042,13 +2296,26 @@ liffScorebookRouter.post("/analyze-structure", async (c) => {
       : `このシートの攻撃チームは【対戦相手（${match.opponent}）】です。打者名は拡大画像の手書き文字・背番号を忠実に読み取ってください（絶対に自チーム登録選手の名前を打者欄に当てはめないでください！）。${myStarterHint ? `\n事前登録相手打順情報: [${myStarterHint}]` : ""
       }${opponentBenchHint ? `\n事前登録相手控えメンバー情報（代打・代走・守備交代候補）: [${opponentBenchHint}]` : ""}\n一方、このシートの打者に対して投げた登板投手（pitchers）は【自チームの投手】ですので、自チーム登録選手リスト [${rosterHint}] に名寄せしてください。`;
 
+    const digitalAnchors = await resolveMatchDigitalAnchorSides(
+      db,
+      match.id,
+      match.teamId
+    );
+    const sideDigitalAnchor = body.isTop
+      ? digitalAnchors.top
+      : digitalAnchors.bottom;
+    const digitalStructureHint = formatDigitalAnchorForStructurePrompt(
+      sideDigitalAnchor,
+      isMyTeamBatting
+    );
+
     const prompt = `あなたは日本の野球スコアブック（早稲田式・成美堂式・草野球/少年野球手書きスコア）の構造解析エキスパートです。
 添付された画像群（${sideText}シート）を隅々まで観察し、「シート全体の骨格情報（打順・途中交代・登板投手・イニングごとの列構造と得点）」を極めて高い精度で抽出してください。
 
 【添付画像の構成】
 ${imageDescriptions.join("\n")}
 
-${battingTeamContext}${scoreboardHintText}
+${battingTeamContext}${scoreboardHintText}${digitalStructureHint}
 
 【絶対厳守の解析ルール】
 1. **打順枠（batters）の高精度抽出**:
@@ -2440,14 +2707,25 @@ ${battingTeamContext}${scoreboardHintText}
       };
     }
 
-    const structure = syncStructureBoxesFromCorners(
+    const syncedStructure = syncStructureBoxesFromCorners(
       baseStructure,
       initialCorners
+    );
+    const structure = mergeStructureWithDigitalAnchor(
+      syncedStructure,
+      sideDigitalAnchor?.structure,
+      roster
     );
 
     return c.json({
       success: true,
       structure,
+      digitalAnchor: sideDigitalAnchor
+        ? {
+            source: sideDigitalAnchor.source,
+            atBats: sideDigitalAnchor.atBats,
+          }
+        : null,
       cooledModels,
     });
   } catch (err) {
@@ -2667,9 +2945,18 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
     const legendConstraint = legendImageIndex > 0
       ? `\n🔥【最優先: 添付画像${legendImageIndex}「チームのスコア記号早見表」】安打・アウト・投球記号・バントファウル・1塁牽制/2塁牽制/3塁牽制の書き方は画像${legendImageIndex}の定義を最優先で厳密に適用してください。`
       : "";
-    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
-      db,
-      aiAccess.teamId
+    const [teamSymbolRulesBlock, chunkDigitalAnchors] = await Promise.all([
+      resolveTeamSymbolRulesPromptBlock(db, aiAccess.teamId),
+      resolveMatchDigitalAnchorSides(db, body.matchId, aiAccess.teamId),
+    ]);
+    const sideAnchorAtBats =
+      (body.isTop
+        ? chunkDigitalAnchors.top?.atBats
+        : chunkDigitalAnchors.bottom?.atBats) || [];
+    const liveInningAnchorBlock = formatDigitalAnchorForInningChunkPrompt(
+      sideAnchorAtBats,
+      sortedTargets,
+      body.isTop
     );
 
     const exampleInn = sortedTargets[0] || 1;
@@ -2689,7 +2976,7 @@ liffScorebookRouter.post("/analyze-inning-chunk", async (c) => {
 
 【添付画像の構成】
 ${stage2ImageGuide.join("\n")}
-${legendConstraint}${teamSymbolRulesBlock}${leadOffConstraint}${tailOrderConstraint}
+${legendConstraint}${teamSymbolRulesBlock}${liveInningAnchorBlock}${leadOffConstraint}${tailOrderConstraint}
 
 【確定済みの打順・途中交代リスト（この名前を厳密に使用すること）】
 ${lineupSpecLines.join("\n")}
@@ -3298,7 +3585,7 @@ ${targetInningMetaLines.join("\n")}
       sortedTargets,
       body.structure
     );
-    const mappedAtBats = reconcileSheetExcessOutsDeterministically(
+    const reconciledAtBats = reconcileSheetExcessOutsDeterministically(
       trimmedAtBats,
       body.structure,
       {
@@ -3306,6 +3593,11 @@ ${targetInningMetaLines.join("\n")}
         nextChunkLeadOffOrder: body.nextInningLeadOffOrder,
       }
     ).atBats;
+    const mappedAtBats = enrichAtBatsWithDigitalAnchor(
+      reconciledAtBats,
+      sideAnchorAtBats,
+      body.structure
+    );
 
     // 次のチャンクの先頭打順を計算
     const lineupCycle = resolveEffectiveBattingCycleLength(
@@ -3443,9 +3735,23 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
       body.structure.pitchers[0]?.name ||
       "相手投手";
 
-    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
-      db,
-      aiAccess.teamId
+    const [teamSymbolRulesBlock, gapDigitalAnchors] = await Promise.all([
+      resolveTeamSymbolRulesPromptBlock(db, aiAccess.teamId),
+      resolveMatchDigitalAnchorSides(db, body.matchId, aiAccess.teamId),
+    ]);
+    const gapAnchorAtBats =
+      (body.isTop
+        ? gapDigitalAnchors.top?.atBats
+        : gapDigitalAnchors.bottom?.atBats) || [];
+    const gapLiveAnchorHint = formatDigitalAnchorForReconcilePrompt(
+      gapAnchorAtBats,
+      body.gaps.flatMap((g) =>
+        g.candidates.map((cand, cIdx) => ({
+          slotKey: `${g.gapId}-${cIdx + 1}`,
+          inning: cand.inning,
+          battingOrder: g.battingOrder,
+        }))
+      )
     );
 
     const reconcilePrompt = `あなたは日本の早稲田式・成美堂式・リトルシニア式スコアブックのプロ公式記録員AIです。
@@ -3454,7 +3760,7 @@ liffScorebookRouter.post("/reconcile-missing-atbats", async (c) => {
     )}番）でイニング解析結果を検算したところ、以下の打順が抜けて（飛んで）いることが数学的に判明しました。
 添付画像1には、欠損項目 [${body.gaps
         .map((g) => g.gapId)
-        .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}
+        .join(", ")}] ごとに横1段ずつ、候補となるマスを **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}${gapLiveAnchorHint}
 
 【検証対象の欠損打順リスト（全${body.gaps.length}件すべて必ず出力すること）】
 ${gapSpecLines.join("\n")}
@@ -3916,9 +4222,21 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
       imageParts.push(legendPart);
       legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
     }
-    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
-      db,
-      aiAccess.teamId
+    const [teamSymbolRulesBlock, outsDigitalAnchors] = await Promise.all([
+      resolveTeamSymbolRulesPromptBlock(db, aiAccess.teamId),
+      resolveMatchDigitalAnchorSides(db, body.matchId, aiAccess.teamId),
+    ]);
+    const outsAnchorAtBats =
+      (body.isTop
+        ? outsDigitalAnchors.top?.atBats
+        : outsDigitalAnchors.bottom?.atBats) || [];
+    const outsLiveAnchorHint = formatDigitalAnchorForReconcilePrompt(
+      outsAnchorAtBats,
+      spec.batters.map((b) => ({
+        slotKey: b.slotKey,
+        inning: spec.inning,
+        battingOrder: b.battingOrder,
+      }))
     );
 
     const pitcherSpecLines = body.structure.pitchers.map(
@@ -3951,7 +4269,7 @@ liffScorebookRouter.post("/reconcile-inning-outs", async (c) => {
 現在、【${spec.inning}回${sideLabel}】の読取結果で合計アウト数が【${spec.currentTotalOuts}アウト（3アウト超過）】という野球規則上あり得ない矛盾が発生しています。
 添付画像1には、この${spec.inning}回${sideLabel}の候補マス [${spec.batters
         .map((b) => b.slotKey)
-        .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}
+        .join(", ")}] を上から順に **[全体マス | BSO拡大 | 中央・右下拡大]** の高精細トリプルビューで並べています。${legendNote}${teamSymbolRulesBlock}${outsLiveAnchorHint}
 
 【対象イニングの確定前提条件】
 ・イニング: ${spec.inning}回${sideLabel}（確定得点 = ${spec.confirmedRuns}点）
@@ -4603,9 +4921,21 @@ liffScorebookRouter.post("/reconcile-flagged-atbats", async (c) => {
       imageParts.push(legendPart);
       legendNote = `\n・画像2: チーム公式のスコア記号早見表（最優先で参照）`;
     }
-    const teamSymbolRulesBlock = await resolveTeamSymbolRulesPromptBlock(
-      db,
-      aiAccess.teamId
+    const [teamSymbolRulesBlock, flaggedDigitalAnchors] = await Promise.all([
+      resolveTeamSymbolRulesPromptBlock(db, aiAccess.teamId),
+      resolveMatchDigitalAnchorSides(db, body.matchId, aiAccess.teamId),
+    ]);
+    const flaggedAnchorAtBats =
+      (body.isTop
+        ? flaggedDigitalAnchors.top?.atBats
+        : flaggedDigitalAnchors.bottom?.atBats) || [];
+    const flaggedLiveAnchorHint = formatDigitalAnchorForReconcilePrompt(
+      flaggedAnchorAtBats,
+      batchSpecs.map((s) => ({
+        slotKey: s.slotKey,
+        inning: s.inning,
+        battingOrder: s.battingOrder,
+      }))
     );
 
     const specLines = batchSpecs.map((s) => {
@@ -4634,7 +4964,7 @@ liffScorebookRouter.post("/reconcile-flagged-atbats", async (c) => {
       .join(", ")}] を、通常の約2.5倍の高解像度で切り出して再検証します。
 添付画像1には各行ごとに **[全体マス | 上下隣接マス文脈（水色目印間が当該マス） | BSO超拡大 | 中央ダイヤ・進塁拡大 | 右下・打球番号拡大${
       hasRunnerPanel ? " | 先行走者マス参照" : ""
-    }]** が左から順に並んでいます（枠線を少しはみ出して書かれた数字・波線・DP括弧・切り線も [上下隣接マス文脈] で確認できます）。${legendNote}${teamSymbolRulesBlock}
+    }]** が左から順に並んでいます（枠線を少しはみ出して書かれた数字・波線・DP括弧・切り線も [上下隣接マス文脈] で確認できます）。${legendNote}${teamSymbolRulesBlock}${flaggedLiveAnchorHint}
 
 【再検算対象マスと打席開始前の確定状況】
 ${specLines.join("\n")}
@@ -5858,6 +6188,7 @@ liffScorebookRouter.post("/save", async (c) => {
     } catch (snapErr) {
       console.warn("[LiffScorebookV2] Snapshot upsert skipped:", snapErr);
     }
+    DIGITAL_ANCHOR_CACHE.delete(match.id);
 
     return c.json({
       success: true,
@@ -6732,6 +7063,11 @@ liffScorebookRouter.get("/saved", async (c) => {
     const savedOrgName = matchTeam?.orgName || matchTeam?.name || null;
     const savedSquadName = matchTeam?.name ?? null;
 
+    const savedDigitalAnchors =
+      snap?.topImageUrl || snap?.bottomImageUrl
+        ? await resolveMatchDigitalAnchorSides(db, match.id, match.teamId)
+        : { top: null, bottom: null };
+
     return c.json({
       success: true,
       matchId: match.id,
@@ -6743,6 +7079,12 @@ liffScorebookRouter.get("/saved", async (c) => {
       topImageUrl: topAtBats.length > 0 ? snap?.topImageUrl ?? null : null,
       bottomImageUrl:
         bottomAtBats.length > 0 ? snap?.bottomImageUrl ?? null : null,
+      topLiveAnchorAtBats: snap?.topImageUrl
+        ? savedDigitalAnchors.top?.atBats ?? []
+        : [],
+      bottomLiveAnchorAtBats: snap?.bottomImageUrl
+        ? savedDigitalAnchors.bottom?.atBats ?? []
+        : [],
       teamName:
         (savedTeamRules?.scoreTeamNameMode ?? "organization") === "squad"
           ? savedSquadName
@@ -6811,6 +7153,7 @@ liffScorebookRouter.delete("/saved", async (c) => {
     if (!match) {
       return c.json({ success: false, error: "対象の試合が見つかりません" }, 404);
     }
+    DIGITAL_ANCHOR_CACHE.delete(match.id);
 
     if (match.teamId && match.teamId !== "demo-team") {
       const access = await resolveCallerTeamAccess(c);

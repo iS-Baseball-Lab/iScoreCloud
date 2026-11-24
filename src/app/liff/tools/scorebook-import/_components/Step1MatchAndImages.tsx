@@ -1248,7 +1248,7 @@ export function Step1MatchAndImages({
                         {selectedMatch.myScore} - {selectedMatch.opponentScore}）
                       </p>
                       <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
-                        AI再解析なしで、保存済みの全打席・1球順序・走者進塁をそのまま呼び出してピンポイント修正＆再保存できます（新しく撮影した画像から上書き取り込みする場合は下の画像選択へ進んでください）。
+                        AI再解析なしで保存済みデータをそのまま呼び出して修正できます。また、速報取込後に下の画像選択から手書きスコアブック写真を取り込むと、速報の打順・交代・結果をガイドにしつつ1球BSO・守備番号を高精度統合します。
                       </p>
                     </div>
                   </div>
@@ -1304,6 +1304,21 @@ export function Step1MatchAndImages({
                   )}
                 </div>
               )}
+
+            {canImport && selectedMatch?.hasLiveReport && (
+              <div className="p-3 rounded-2xl border border-border border-l-4 border-l-teal-500 bg-card shadow-xs flex items-start gap-2">
+                <Zap className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-xs font-black text-foreground">
+                    速報×手書き ハイブリッド高精度取り込み対応（LINE速報{" "}
+                    {selectedMatch.liveReportPlayCount || 0}プレー記録済）
+                  </p>
+                  <p className="text-[10px] font-bold text-muted-foreground leading-relaxed">
+                    下の枠から手書きスコアブック写真をAI取り込みすると、速報の打順・打撃結果・選手交代を自動ガイドにして誤読を抑えつつ、紙面の1球ごとのBSO記号・守備番号を上乗せ統合します（食い違い箇所のみSTEP 3に自動表示）。
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 紙スコア写真なしの「LINE速報から清書生成」＆「直接デジタル手入力」（AI消費ゼロ） */}
             {effectiveCanEditDigital &&

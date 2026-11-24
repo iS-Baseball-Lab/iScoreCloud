@@ -11,6 +11,7 @@ import {
   getCellQuadInStructure,
   quadToBoundingBox,
 } from "@/lib/liff/scorebook-grid";
+import { detectLiveAnchorDiscrepancies } from "@/lib/liff/scorebook-live-hybrid";
 import {
   computeBasesAtInPlayFromAdvances,
   createEmptyBaseMap,
@@ -1101,13 +1102,19 @@ export function syncSheetAtBatsWithStructure(
   });
 }
 
+export interface ValidateScorebookSheetOptions {
+  anchorAtBats?: ReadonlyArray<ScorebookV2AtBat> | null;
+  confirmedLiveDiffIds?: ReadonlySet<string>;
+}
+
 /**
  * 1シート分（先攻または後攻）の打席イベント配列に対して、野球ルール状態機械による多角検算を実行する
  */
 export function validateScorebookSheet(
   atBats: ScorebookV2AtBat[],
   structure?: ScorebookSheetStructure | null,
-  isTopOverride?: boolean
+  isTopOverride?: boolean,
+  options?: ValidateScorebookSheetOptions
 ): ScorebookValidationIssue[] {
   const issues: ScorebookValidationIssue[] = [];
   if (
@@ -1890,6 +1897,16 @@ export function validateScorebookSheet(
     expectedNextBatterOrder = isRunnerOnlyInningEnd(lastAb)
       ? lastAb.battingOrder
       : (lastAb.battingOrder % lineupCycle) + 1;
+  }
+
+  if (options?.anchorAtBats && options.anchorAtBats.length > 0) {
+    const liveDiffs = detectLiveAnchorDiscrepancies(
+      atBats,
+      options.anchorAtBats,
+      isTop,
+      options.confirmedLiveDiffIds
+    );
+    issues.push(...liveDiffs);
   }
 
   return issues;
@@ -3503,6 +3520,8 @@ export interface BuildFlaggedReconcileSpecsOptions {
   /** 指定時はその打席IDのみを対象にする（個別1マスAI再読取モード） */
   targetAtBatIds?: readonly string[];
   maxItems?: number;
+  anchorAtBats?: ReadonlyArray<ScorebookV2AtBat> | null;
+  confirmedLiveDiffIds?: ReadonlySet<string>;
 }
 
 /**
@@ -3525,7 +3544,10 @@ export function buildFlaggedAtBatReconcileSpecs(
       : atBats[0]?.isTop ?? true;
   const maxItems = Math.max(1, options?.maxItems ?? 12);
 
-  const issues = validateScorebookSheet(atBats, structure, effectiveIsTop);
+  const issues = validateScorebookSheet(atBats, structure, effectiveIsTop, {
+    anchorAtBats: options?.anchorAtBats,
+    confirmedLiveDiffIds: options?.confirmedLiveDiffIds,
+  });
   const runnerMap = simulateSheetRunners(atBats, structure);
 
   const issuesByAtBatId = new Map<string, ScorebookValidationIssue[]>();
@@ -3763,6 +3785,8 @@ export interface ApplyReconciledFlaggedOptions {
   isTop?: boolean;
   /** true の場合（個別1マスAI再読取ボタン押下時）は件数比較ガードをスキップして最新読取値をそのまま反映する */
   forceApplyAll?: boolean;
+  anchorAtBats?: ReadonlyArray<ScorebookV2AtBat> | null;
+  confirmedLiveDiffIds?: ReadonlySet<string>;
 }
 
 export interface ApplyReconciledFlaggedResult {
@@ -3937,10 +3961,15 @@ export function applyReconciledFlaggedAtBats(
     typeof options?.isTop === "boolean"
       ? options.isTop
       : atBats[0]?.isTop ?? true;
+  const valOpts: ValidateScorebookSheetOptions = {
+    anchorAtBats: options?.anchorAtBats,
+    confirmedLiveDiffIds: options?.confirmedLiveDiffIds,
+  };
   const beforeIssues = validateScorebookSheet(
     atBats,
     structure,
-    effectiveIsTop
+    effectiveIsTop,
+    valOpts
   );
 
   if (atBats.length === 0 || reconciledItems.length === 0) {
@@ -4000,7 +4029,8 @@ export function applyReconciledFlaggedAtBats(
     const afterIssues = validateScorebookSheet(
       synced,
       structure,
-      effectiveIsTop
+      effectiveIsTop,
+      valOpts
     );
     const syncedMap = new Map(synced.map((ab) => [ab.id, ab]));
     const updatedAtBatIds = Array.from(mergedById.keys()).filter((id) => {
@@ -4040,7 +4070,8 @@ export function applyReconciledFlaggedAtBats(
     const nextIssues = validateScorebookSheet(
       candidateSynced,
       structure,
-      effectiveIsTop
+      effectiveIsTop,
+      valOpts
     );
 
     const prevPenalty = computeValidationPenalty(workingIssues);
