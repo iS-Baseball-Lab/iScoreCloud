@@ -198,6 +198,14 @@ export interface ScorebookInningMeta {
   runs: number;
   hits: number;
   columnBox?: NormalizedBox;
+  /** このイニングに打席に入った人数（0＝最終回裏×等の未消化、1〜36等。確定ロック時は Stage 2 でこの人数・打順枠を厳格適用） */
+  batterCount?: number | null;
+  /** このイニングの先頭打順（1〜打順循環数。未指定時は前イニング最終打順の次打順から自動算出） */
+  leadOffOrder?: number | null;
+  /** 1イニング2列以上のときの折り返し記法ヒント（'cycle'=一巡充填式, 'bottom_wrap'=最終打順下端折り返し式） */
+  wrapStyle?: "cycle" | "bottom_wrap" | null;
+  /** 打席途中の盗塁死・牽制死チェンジ等でユーザーが先頭打順を明示固定した場合 true */
+  isLeadOffPinned?: boolean;
 }
 
 export interface ScorebookSheetStructure {

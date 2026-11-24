@@ -14,12 +14,14 @@ import {
   buildFlaggedAtBatsReconcileCrop,
   buildInningOutsReconcileCrop,
   buildMissingOrderComparisonCrop,
+  buildSheetInningRangesOverviewCrop,
   extractInningChunkCompositeCrop,
   extractStructureFocusCrops,
   preprocessScorebookImage,
   refineStructureGridOnImage,
   type PreprocessedScorebookImage,
 } from "@/lib/liff/scorebook-image";
+import { normalizeStructureInningBatterPlan } from "@/lib/liff/scorebook-inning-plan";
 import {
   applyReconciledFlaggedAtBats,
   applyRecoveredMissingAtBats,
@@ -1737,14 +1739,88 @@ export default function LiffScorebookImportPage() {
     }
   };
 
+  const [isDetectingInningRanges, setIsDetectingInningRanges] = useState(false);
+
+  const handleDetectInningRanges = async (isTop: boolean) => {
+    if (!effectiveCanImport || !selectedMatchId || isDetectingInningRanges) {
+      return;
+    }
+    const structure = isTop ? topStructure : bottomStructure;
+    const sourceDataUrl = isTop ? effectiveTopImageUrl : effectiveBottomImageUrl;
+    if (!structure || !sourceDataUrl) return;
+
+    setIsDetectingInningRanges(true);
+    setErrorBanner(null);
+    const sideLabel = isTop ? "先攻（表）" : "後攻（裏）";
+    try {
+      const crop = await buildSheetInningRangesOverviewCrop(
+        sourceDataUrl,
+        structure
+      );
+      if (!crop) {
+        throw new Error(
+          `${sideLabel}シートのグリッド一覧画像を生成できませんでした`
+        );
+      }
+      const res = await fetch("/api/liff/scorebook/analyze-inning-ranges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teamId: resolvedTeamId || currentTeam?.id || "",
+          matchId: selectedMatchId,
+          isTop,
+          cropBase64: crop.base64,
+          cropMimeType: crop.mimeType,
+          structure,
+          skipModels: getActiveSkippedModels(),
+        }),
+      });
+      const data = await parseSafeJson<{
+        success: boolean;
+        structure?: ScorebookSheetStructure;
+        cooledModels?: string[];
+        error?: string;
+      }>(res, `${sideLabel}の打順範囲AI判定エラー`);
+      recordCooledModels(data.cooledModels);
+
+      if (!data.success || !data.structure) {
+        throw new Error(
+          data.error || `${sideLabel}の各イニング打順範囲を判定できませんでした`
+        );
+      }
+
+      if (isEditingSavedMatch) {
+        setHasDirtyReEdit(true);
+      }
+      if (isTop) {
+        setTopStructure(data.structure);
+      } else {
+        setBottomStructure(data.structure);
+      }
+      toast.success(`${sideLabel}の各回打順範囲・打席人数をAIで更新しました`);
+    } catch (err) {
+      setErrorBanner(
+        normalizeClientFetchErrorMessage(
+          err,
+          `${sideLabel}の各回打順範囲AI判定に失敗しました`
+        )
+      );
+    } finally {
+      setIsDetectingInningRanges(false);
+    }
+  };
+
   const isSkippableFinalBottomInning = (
     isTop: boolean,
     innNum: number,
     structure: ScorebookSheetStructure
   ): boolean => {
+    const meta = structure.innings.find((m) => m.inning === innNum);
+    if (typeof meta?.batterCount === "number" && meta.batterCount === 0) {
+      return true;
+    }
     if (isTop || structure.innings.length === 0) return false;
     const maxInn = Math.max(1, ...structure.innings.map((m) => m.inning));
-    const meta = structure.innings.find((m) => m.inning === innNum);
     return (
       innNum === maxInn &&
       innNum >= 3 &&
@@ -2225,7 +2301,6 @@ export default function LiffScorebookImportPage() {
     const needBottom = importScope === "both" || importScope === "bottom_only";
 
     if (!onlyMissing) {
-      completedChunkCacheRef.current.clear();
       if (needTop) setTopAtBats([]);
       if (needBottom) setBottomAtBats([]);
       setDeepCompletedTimings([]);
@@ -2337,7 +2412,7 @@ export default function LiffScorebookImportPage() {
         return chunks;
       };
 
-      const buildStructureFingerprint = (
+      const buildBaseStructureFingerprint = (
         structure: ScorebookSheetStructure
       ): string =>
         JSON.stringify({
@@ -2363,20 +2438,14 @@ export default function LiffScorebookImportPage() {
             x.fromBatterOrder ?? null,
             x.toInning,
           ]),
-          i: structure.innings.map((x) => [
-            x.inning,
-            x.runs,
-            x.columnCount,
-            x.columnBox?.[1],
-            x.columnBox?.[3],
-          ]),
+          cols: structure.innings.map((x) => [x.inning, x.columnCount]),
         });
 
       const requestSingleChunk = async (
         isTop: boolean,
         structure: ScorebookSheetStructure,
         imgState: SheetImageState,
-        structureFp: string,
+        baseStructureFp: string,
         targetInnings: number[],
         expectedLeadOff: number
       ): Promise<{
@@ -2387,13 +2456,52 @@ export default function LiffScorebookImportPage() {
         if (!imgState.processed) {
           throw new Error("画像データが見つかりません");
         }
+
+        const allZeroLocked = targetInnings.every((innNum) => {
+          const m = structure.innings.find((x) => x.inning === innNum);
+          return typeof m?.batterCount === "number" && m.batterCount === 0;
+        });
+        if (allZeroLocked) {
+          return {
+            atBats: [],
+            nextLeadOffOrder: expectedLeadOff,
+            fromCache: true,
+          };
+        }
+
+        const lastTargetInn = targetInnings[targetInnings.length - 1];
+        const nextMeta = structure.innings.find(
+          (m) => m.inning === lastTargetInn + 1
+        );
+        const nextInningLeadOffOrder =
+          typeof nextMeta?.leadOffOrder === "number" &&
+          nextMeta.leadOffOrder >= 1
+            ? nextMeta.leadOffOrder
+            : undefined;
+
+        const targetInningsFp = JSON.stringify(
+          targetInnings.map((innNum) => {
+            const m = structure.innings.find((x) => x.inning === innNum);
+            return [
+              innNum,
+              m?.runs ?? 0,
+              m?.columnCount ?? 1,
+              m?.batterCount ?? null,
+              m?.leadOffOrder ?? null,
+              m?.wrapStyle ?? null,
+              m?.columnBox?.[1],
+              m?.columnBox?.[3],
+            ];
+          })
+        );
+
         const sourceDataUrl = imgState.processed.dataUrl;
         const alreadyEnhanced = imgState.enhancePencil;
-        const cacheKey = `v8:${selectedMatchId}:${
+        const cacheKey = `v9:${selectedMatchId}:${
           isTop ? "top" : "bottom"
-        }:${sourceDataUrl.length}:${structureFp}:${expectedLeadOff}:${targetInnings.join(
-          ","
-        )}`;
+        }:${sourceDataUrl.length}:${baseStructureFp}:${targetInningsFp}:${expectedLeadOff}:${
+          nextInningLeadOffOrder ?? ""
+        }:${targetInnings.join(",")}`;
         const cached = completedChunkCacheRef.current.get(cacheKey);
         if (cached) {
           return { ...cached, fromCache: true };
@@ -2448,6 +2556,7 @@ export default function LiffScorebookImportPage() {
             structure,
             targetInnings,
             expectedLeadOffOrder: expectedLeadOff,
+            nextInningLeadOffOrder,
             legendBase64: legendOverride?.base64,
             legendMimeType: legendOverride?.mimeType,
             skipModels: getActiveSkippedModels(),
@@ -2494,7 +2603,7 @@ export default function LiffScorebookImportPage() {
         isTop: boolean,
         structure: ScorebookSheetStructure,
         imgState: SheetImageState,
-        structureFp: string,
+        baseStructureFp: string,
         singleInn: number,
         expectedLeadOff: number
       ): Promise<{
@@ -2507,7 +2616,7 @@ export default function LiffScorebookImportPage() {
             isTop,
             structure,
             imgState,
-            structureFp,
+            baseStructureFp,
             [singleInn],
             expectedLeadOff
           );
@@ -2521,7 +2630,7 @@ export default function LiffScorebookImportPage() {
             isTop,
             structure,
             imgState,
-            structureFp,
+            baseStructureFp,
             [singleInn],
             expectedLeadOff
           );
@@ -2530,7 +2639,7 @@ export default function LiffScorebookImportPage() {
 
       const analyzeSheetByChunks = async (
         isTop: boolean,
-        structure: ScorebookSheetStructure,
+        rawStructure: ScorebookSheetStructure,
         imgState: SheetImageState,
         startStaggerMs = 0
       ): Promise<void> => {
@@ -2539,9 +2648,12 @@ export default function LiffScorebookImportPage() {
           await new Promise((r) => setTimeout(r, startStaggerMs));
         }
 
+        const structure = normalizeStructureInningBatterPlan(rawStructure, {
+          fillDefaultWhenMissing: true,
+        });
         const sideKey = isTop ? "top" : "bottom";
         const halfSuffix = isTop ? "表" : "裏";
-        const structureFp = buildStructureFingerprint(structure);
+        const baseStructureFp = buildBaseStructureFingerprint(structure);
         const chunks = buildSmartInningChunks(structure);
         const lineupCycle = resolveEffectiveBattingCycleLength(
           structure,
@@ -2552,6 +2664,15 @@ export default function LiffScorebookImportPage() {
 
         for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
           const targetInnings = chunks[cIdx];
+          const firstMeta = structure.innings.find(
+            (m) => m.inning === targetInnings[0]
+          );
+          if (
+            typeof firstMeta?.leadOffOrder === "number" &&
+            firstMeta.leadOffOrder >= 1
+          ) {
+            expectedLeadOff = firstMeta.leadOffOrder;
+          }
           const entryKey = `${sideKey}-${targetInnings.join("-")}`;
           const rangeText =
             targetInnings.length === 1
@@ -2609,7 +2730,7 @@ export default function LiffScorebookImportPage() {
                     isTop,
                     structure,
                     imgState,
-                    structureFp,
+                    baseStructureFp,
                     targetInnings[0],
                     expectedLeadOff
                   )
@@ -2617,7 +2738,7 @@ export default function LiffScorebookImportPage() {
                     isTop,
                     structure,
                     imgState,
-                    structureFp,
+                    baseStructureFp,
                     targetInnings,
                     expectedLeadOff
                   );
@@ -2653,6 +2774,15 @@ export default function LiffScorebookImportPage() {
             // 複数イニングチャンクだった場合は1イニング単位に分解して個別に試行・保存する
             if (targetInnings.length > 1) {
               for (const singleInn of targetInnings) {
+                const singleMeta = structure.innings.find(
+                  (m) => m.inning === singleInn
+                );
+                if (
+                  typeof singleMeta?.leadOffOrder === "number" &&
+                  singleMeta.leadOffOrder >= 1
+                ) {
+                  expectedLeadOff = singleMeta.leadOffOrder;
+                }
                 const singleKey = `${sideKey}-${singleInn}`;
                 const singleLabel = `${singleInn}回${halfSuffix}`;
                 const singleStart = Date.now();
@@ -2665,7 +2795,7 @@ export default function LiffScorebookImportPage() {
                     isTop,
                     structure,
                     imgState,
-                    structureFp,
+                    baseStructureFp,
                     singleInn,
                     expectedLeadOff
                   );
@@ -2908,8 +3038,16 @@ export default function LiffScorebookImportPage() {
         structure,
         currentSideList
       );
+      const curMeta = structure.innings.find((m) => m.inning === inning);
+      const nextMeta = structure.innings.find((m) => m.inning === inning + 1);
+
       let expectedLeadOff = 1;
-      if (inning > 1) {
+      if (
+        typeof curMeta?.leadOffOrder === "number" &&
+        curMeta.leadOffOrder >= 1
+      ) {
+        expectedLeadOff = curMeta.leadOffOrder;
+      } else if (inning > 1) {
         const prevInningItems = currentSideList.filter(
           (a) => a.inning < inning
         );
@@ -2925,6 +3063,9 @@ export default function LiffScorebookImportPage() {
       const nextInningLeadOffOrder =
         nextInningItems.length > 0
           ? nextInningItems[0].battingOrder
+          : typeof nextMeta?.leadOffOrder === "number" &&
+            nextMeta.leadOffOrder >= 1
+          ? nextMeta.leadOffOrder
           : undefined;
 
       const targetBoxes: NormalizedBox[] = [inning]
@@ -3923,6 +4064,14 @@ export default function LiffScorebookImportPage() {
                     : undefined
                 }
                 isRescanningSide={isAnalyzingStructure}
+                onDetectInningRanges={
+                  canUseAiScan &&
+                  (Boolean(effectiveTopImageUrl) ||
+                    Boolean(effectiveBottomImageUrl))
+                    ? (sideIsTop) => void handleDetectInningRanges(sideIsTop)
+                    : undefined
+                }
+                isDetectingInningRanges={isDetectingInningRanges}
                 structureProgressLabel={structureProgressLabel}
                 structureTotalMs={structureTotalMs}
                 structureTimingEntries={structureCompletedTimings}

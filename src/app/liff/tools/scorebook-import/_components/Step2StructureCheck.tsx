@@ -35,6 +35,13 @@ import {
   resolveEffectiveBattingCycleLength,
 } from "@/lib/liff/scorebook-validator";
 import {
+  applyInningBatterCountEdit,
+  applyInningLeadOffEdit,
+  computeInningEndOrder,
+  computeInningPlannedSlots,
+  normalizeStructureInningBatterPlan,
+} from "@/lib/liff/scorebook-inning-plan";
+import {
   LiffSelect,
   type LiffSelectOption,
 } from "@/components/liff/LiffSelect";
@@ -104,6 +111,8 @@ interface Step2StructureCheckProps {
   onChangeStructure: (isTop: boolean, updated: ScorebookSheetStructure) => void;
   onRescanSide?: (isTop: boolean) => void;
   isRescanningSide?: boolean;
+  onDetectInningRanges?: (isTop: boolean) => void;
+  isDetectingInningRanges?: boolean;
   structureProgressLabel?: string;
   structureTotalMs?: number | null;
   structureTimingEntries?: ScorebookTimingEntry[];
@@ -152,6 +161,8 @@ export function Step2StructureCheck({
   onChangeStructure,
   onRescanSide,
   isRescanningSide = false,
+  onDetectInningRanges,
+  isDetectingInningRanges = false,
   structureProgressLabel,
   structureTotalMs = null,
   structureTimingEntries = [],
@@ -180,6 +191,7 @@ export function Step2StructureCheck({
   const [previewMode, setPreviewMode] = useState<
     "grid" | "lineup" | "full" | "hidden"
   >("grid");
+  const [showBatterRangeOverlay, setShowBatterRangeOverlay] = useState(true);
   const [showGridTuner, setShowGridTuner] = useState(false);
   const [gridTuneTab, setGridTuneTab] = useState<"corners" | "edges">(
     "corners"
@@ -192,11 +204,19 @@ export function Step2StructureCheck({
   const current = isTop ? topStructure : bottomStructure;
   const activeSheetDataUrl = isTop ? topImageDataUrl : bottomImageDataUrl;
   const isBusy =
-    isAnalyzingInnings || isRescanningSide || Boolean(reanalyzingInningKey);
+    isAnalyzingInnings ||
+    isRescanningSide ||
+    isDetectingInningRanges ||
+    Boolean(reanalyzingInningKey);
 
   if (!current) {
     return null;
   }
+
+  const plannedCurrent = normalizeStructureInningBatterPlan(current, {
+    fillDefaultWhenMissing: true,
+  });
+  const effectiveLineupLen = resolveEffectiveBattingCycleLength(plannedCurrent);
 
   // 現在のシートのグリッド4隅座標（0..1000、傾き・台形歪み対応）を算出
   const batterCount = Math.max(1, current.batters.length);
@@ -327,22 +347,64 @@ export function Step2StructureCheck({
     (_, i) => i + 1
   );
 
+  const commitPlannedStructureUpdate = (nextStruct: ScorebookSheetStructure) => {
+    const newPhysCols = Math.max(
+      1,
+      nextStruct.innings.reduce(
+        (acc, m) => acc + Math.max(1, m.columnCount || 1),
+        0
+      )
+    );
+    const deltaCols = newPhysCols - totalPhysCols;
+    if (deltaCols !== 0) {
+      onChangeStructure(isTop, extrapolateHorizontalCols(nextStruct, deltaCols));
+    } else {
+      onChangeStructure(isTop, nextStruct);
+    }
+  };
+
+  const handleChangeInningBatterCount = (
+    inningNum: number,
+    nextBatterCount: number
+  ) => {
+    const updated = applyInningBatterCountEdit(
+      plannedCurrent,
+      inningNum,
+      nextBatterCount
+    );
+    commitPlannedStructureUpdate(updated);
+  };
+
+  const handleChangeInningLeadOff = (
+    inningNum: number,
+    nextLeadOff: number | null
+  ) => {
+    const updated = applyInningLeadOffEdit(
+      plannedCurrent,
+      inningNum,
+      nextLeadOff
+    );
+    commitPlannedStructureUpdate(updated);
+  };
+
   const updateInningMeta = (
     inningNum: number,
     patch: Partial<ScorebookInningMeta>
   ) => {
-    const prevTarget = current.innings.find((m) => m.inning === inningNum);
+    const prevTarget = plannedCurrent.innings.find(
+      (m) => m.inning === inningNum
+    );
     const deltaCols =
       patch.columnCount !== undefined && prevTarget
         ? Math.max(1, patch.columnCount) - Math.max(1, prevTarget.columnCount)
         : 0;
 
-    const nextInnings = current.innings.map((m) =>
+    const nextInnings = plannedCurrent.innings.map((m) =>
       m.inning === inningNum ? { ...m, ...patch } : m
     );
     const totalRuns = nextInnings.reduce((s, m) => s + m.runs, 0);
     const baseUpdated: ScorebookSheetStructure = {
-      ...current,
+      ...plannedCurrent,
       innings: nextInnings,
       totalRuns,
     };
@@ -356,32 +418,33 @@ export function Step2StructureCheck({
 
   const handleAddInning = () => {
     const nextNum =
-      current.innings.length > 0
-        ? current.innings[current.innings.length - 1].inning + 1
+      plannedCurrent.innings.length > 0
+        ? plannedCurrent.innings[plannedCurrent.innings.length - 1].inning + 1
         : 1;
     const nextInnings = [
-      ...current.innings,
+      ...plannedCurrent.innings,
       { inning: nextNum, columnCount: 1, runs: 0, hits: 0 },
     ];
-    onChangeStructure(
-      isTop,
-      extrapolateHorizontalCols({ ...current, innings: nextInnings }, 1)
+    const normalizedAdded = normalizeStructureInningBatterPlan(
+      { ...plannedCurrent, innings: nextInnings },
+      { fillDefaultWhenMissing: true }
     );
+    onChangeStructure(isTop, extrapolateHorizontalCols(normalizedAdded, 1));
   };
 
   const handleRemoveLastInning = () => {
-    if (current.innings.length <= 1) return;
+    if (plannedCurrent.innings.length <= 1) return;
     const removedCols = Math.max(
       1,
-      current.innings[current.innings.length - 1].columnCount || 1
+      plannedCurrent.innings[plannedCurrent.innings.length - 1].columnCount || 1
     );
-    const nextInnings = current.innings.slice(0, -1);
+    const nextInnings = plannedCurrent.innings.slice(0, -1);
     const totalRuns = nextInnings.reduce((s, m) => s + m.runs, 0);
     onChangeStructure(
       isTop,
       extrapolateHorizontalCols(
         {
-          ...current,
+          ...plannedCurrent,
           innings: nextInnings,
           totalRuns,
         },
@@ -714,6 +777,29 @@ export function Step2StructureCheck({
             </div>
           </div>
 
+          {previewMode === "grid" && (
+            <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-300">
+                {showBatterRangeOverlay
+                  ? "番号バッジ＝打席あり ／ 暗転マス＝白紙空欄（下の「各回の打順範囲」と連動）"
+                  : "印刷罫線の枠線のみ表示中"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowBatterRangeOverlay((prev) => !prev)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-black border cursor-pointer transition-colors ${
+                  showBatterRangeOverlay
+                    ? "bg-emerald-600 text-white border-emerald-500"
+                    : "bg-slate-800 text-slate-300 border-slate-700 hover:text-white"
+                }`}
+              >
+                {showBatterRangeOverlay
+                  ? "打席範囲ハイライト ON"
+                  : "打席範囲ハイライト OFF"}
+              </button>
+            </div>
+          )}
+
           {previewMode !== "hidden" && (
             <div
               className={`bg-slate-950 overflow-auto ${
@@ -744,11 +830,11 @@ export function Step2StructureCheck({
                     preserveAspectRatio="none"
                     className="absolute inset-0 w-full h-full pointer-events-none"
                   >
-                    {/* 各イニング列＆サブ列（2列・3列以上）の歪み追従ポリゴン */}
+                    {/* 各イニング列＆サブ列（2列・3列以上）の歪み追従ポリゴン ＋ 打席範囲ハイライト */}
                     {(() => {
                       const circledNums = ["①", "②", "③", "④", "⑤", "⑥"];
                       let cumCols = 0;
-                      return current.innings.map((inn) => {
+                      return plannedCurrent.innings.map((inn) => {
                         const subCols = Math.max(1, inn.columnCount || 1);
                         const s0 = cumCols / totalPhysCols;
                         const startCum = cumCols;
@@ -761,18 +847,122 @@ export function Step2StructureCheck({
                         const qBl = bilinearGridPoint(gridCorners, s0, 1);
                         const polyPts = `${qTl[0]},${qTl[1]} ${qTr[0]},${qTr[1]} ${qBr[0]},${qBr[1]} ${qBl[0]},${qBl[1]}`;
 
+                        const innPlannedSlots = showBatterRangeOverlay
+                          ? computeInningPlannedSlots(inn, effectiveLineupLen)
+                          : null;
+
                         return (
                           <g key={`col-${inn.inning}`}>
                             <polygon
                               points={polyPts}
                               fill={
                                 subCols >= 2
-                                  ? "rgba(245, 158, 11, 0.10)"
-                                  : "rgba(56, 189, 248, 0.06)"
+                                  ? "rgba(245, 158, 11, 0.08)"
+                                  : "rgba(56, 189, 248, 0.04)"
                               }
                               stroke={subCols >= 2 ? "#f59e0b" : "#38bdf8"}
                               strokeWidth="2.6"
                             />
+
+                            {/* 打席範囲外（空欄・DH打席なし行）の暗転マスク ＆ 打席ありマスの通番バッジ・終了下線 */}
+                            {innPlannedSlots !== null &&
+                              Array.from({ length: subCols }, (_, scIdx) => {
+                                const subColNum = scIdx + 1;
+                                const cs0 =
+                                  (startCum + scIdx) / totalPhysCols;
+                                const cs1 =
+                                  (startCum + scIdx + 1) / totalPhysCols;
+                                return plannedCurrent.batters.map(
+                                  (bSlot, bIdx) => {
+                                    const rt0 = bIdx / batterCount;
+                                    const rt1 = (bIdx + 1) / batterCount;
+                                    const cTl = bilinearGridPoint(
+                                      gridCorners,
+                                      cs0,
+                                      rt0
+                                    );
+                                    const cTr = bilinearGridPoint(
+                                      gridCorners,
+                                      cs1,
+                                      rt0
+                                    );
+                                    const cBr = bilinearGridPoint(
+                                      gridCorners,
+                                      cs1,
+                                      rt1
+                                    );
+                                    const cBl = bilinearGridPoint(
+                                      gridCorners,
+                                      cs0,
+                                      rt1
+                                    );
+                                    const cellPts = `${cTl[0]},${cTl[1]} ${cTr[0]},${cTr[1]} ${cBr[0]},${cBr[1]} ${cBl[0]},${cBl[1]}`;
+                                    const matchedSlots = innPlannedSlots.filter(
+                                      (sl) =>
+                                        sl.subCol === subColNum &&
+                                        sl.battingOrder === bSlot.battingOrder
+                                    );
+                                    if (matchedSlots.length === 0) {
+                                      return (
+                                        <polygon
+                                          key={`mask-${inn.inning}-${subColNum}-${bSlot.battingOrder}`}
+                                          points={cellPts}
+                                          fill="rgba(15, 23, 42, 0.48)"
+                                        />
+                                      );
+                                    }
+                                    const lastMatched =
+                                      matchedSlots[matchedSlots.length - 1];
+                                    const isFinalBatterInInning =
+                                      lastMatched.seqNumber ===
+                                      innPlannedSlots.length;
+                                    const badgePt = bilinearGridPoint(
+                                      gridCorners,
+                                      cs1 - 0.16 / totalPhysCols,
+                                      rt0 + 0.22 / batterCount
+                                    );
+                                    return (
+                                      <g
+                                        key={`act-${inn.inning}-${subColNum}-${bSlot.battingOrder}`}
+                                      >
+                                        {isFinalBatterInInning && (
+                                          <line
+                                            x1={cBl[0]}
+                                            y1={cBl[1]}
+                                            x2={cBr[0]}
+                                            y2={cBr[1]}
+                                            stroke="#10b981"
+                                            strokeWidth="4.4"
+                                          />
+                                        )}
+                                        <rect
+                                          x={badgePt[0] - 11}
+                                          y={badgePt[1] - 8}
+                                          width={22}
+                                          height={16}
+                                          rx={4}
+                                          fill={
+                                            isFinalBatterInInning
+                                              ? "#059669"
+                                              : "#0284c7"
+                                          }
+                                        />
+                                        <text
+                                          x={badgePt[0]}
+                                          y={badgePt[1] + 4}
+                                          textAnchor="middle"
+                                          fill="#ffffff"
+                                          fontSize="11"
+                                          fontWeight="900"
+                                        >
+                                          {`#${lastMatched.seqNumber}`}
+                                        </text>
+                                      </g>
+                                    );
+                                  }
+                                );
+                              })}
+
                             {/* 2列・3列以上の内部サブ列破線 */}
                             {subCols >= 2 &&
                               Array.from({ length: subCols - 1 }, (_, sIdx) => {
@@ -1285,148 +1475,409 @@ export function Step2StructureCheck({
         </section>
       )}
 
-      {/* A. イニング別得点 ＆ 複数列（1列・2列・3列以上）設定 */}
+      {/* A. イニング別の打順範囲・人数・得点 ＆ 複数列（1球検算前の枠ロック） */}
       <section className="rounded-2xl border border-border bg-card shadow-xs p-4 space-y-3 overflow-hidden">
-        <div className="-mx-4 -mt-4 px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-center justify-between gap-2">
-          <div>
+        <div className="-mx-4 -mt-4 px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-primary flex items-start justify-between gap-2 flex-wrap">
+          <div className="min-w-0 flex-1">
             <h3 className="text-sm font-black text-white">
-              {isTop ? "先攻（表）" : "後攻（裏）"} イニング別得点・使用列数
+              {isTop ? "先攻（表）" : "後攻（裏）"} 各回の打順範囲・人数・得点
             </h3>
-            <p className="text-[10px] font-bold text-slate-300">
-              打者一巡・二巡して2列・3列以上使った回は列数の「+」で合わせた列数にしてください
+            <p className="text-[10px] font-bold text-slate-300 leading-relaxed mt-0.5">
+              1球検算の前に「何番〜何番（何人）」かを合わせると人数ズレがゼロになります（終了打者を直すと次回先頭も自動連動）
             </p>
           </div>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 flex-wrap">
+            {onDetectInningRanges && activeSheetDataUrl && (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => onDetectInningRanges(isTop)}
+                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/50 text-[10px] font-black text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isDetectingInningRanges ? (
+                  <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                ) : (
+                  <Sparkles className="w-3 h-3 shrink-0" />
+                )}
+                <span>
+                  {isDetectingInningRanges
+                    ? "AI判定中..."
+                    : "打順範囲をAI再判定"}
+                </span>
+              </button>
+            )}
             <button
               type="button"
+              disabled={isBusy}
               onClick={handleRemoveLastInning}
-              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-[10px] font-black text-slate-200 hover:text-white cursor-pointer"
+              className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 hover:bg-slate-700 text-[10px] font-black text-slate-200 hover:text-white cursor-pointer disabled:opacity-50"
             >
               -回
             </button>
             <button
               type="button"
+              disabled={isBusy}
               onClick={handleAddInning}
-              className="px-2 py-1 rounded-lg bg-primary/20 border border-primary/40 hover:bg-primary/30 text-blue-200 hover:text-white text-[10px] font-black cursor-pointer"
+              className="px-2 py-1 rounded-lg bg-primary/20 border border-primary/40 hover:bg-primary/30 text-blue-200 hover:text-white text-[10px] font-black cursor-pointer disabled:opacity-50"
             >
               +回
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-          {current.innings.map((inn) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {plannedCurrent.innings.map((inn, innIdx) => {
+            const isFinalInning =
+              innIdx === plannedCurrent.innings.length - 1;
             const cols = Math.max(1, inn.columnCount || 1);
+            const leadOff = Math.max(
+              1,
+              Math.min(effectiveLineupLen, inn.leadOffOrder ?? 1)
+            );
+            const countVal = Math.max(0, inn.batterCount ?? 3);
+            const endOrder = computeInningEndOrder(
+              leadOff,
+              countVal,
+              effectiveLineupLen
+            );
+            const getBatterShortName = (bo: number): string => {
+              const found = plannedCurrent.batters.find(
+                (b) => b.battingOrder === bo
+              );
+              return (found?.name || "").trim();
+            };
+            const leadName = getBatterShortName(leadOff);
+            const endName = endOrder ? getBatterShortName(endOrder) : "";
+
             const maybeNeedsMoreCols =
               (inn.runs >= 7 && cols < 2) || (inn.runs >= 16 && cols < 3);
             const colBadgeText =
               cols === 1
                 ? "1列"
                 : cols === 2
-                ? "2列(一巡)"
-                : cols === 3
-                ? "3列(二巡)"
-                : `${cols}列`;
+                  ? "2列(一巡)"
+                  : cols === 3
+                    ? "3列(二巡)"
+                    : `${cols}列`;
+
+            const maxSelectableCount = cols >= 2 ? 27 : 18;
+            const minCountForStepper =
+              isFinalInning && !isTop ? 0 : 1;
+
+            const batterCountOptions: LiffSelectOption[] = [];
+            if (isFinalInning && !isTop) {
+              batterCountOptions.push({
+                value: "0",
+                label: "× 未消化（0人・後攻省略）",
+                sublabel: "サヨナラ勝ちやリード終了で裏の攻撃が無かった場合",
+              });
+            }
+            for (let c = 1; c <= maxSelectableCount; c++) {
+              const eBo =
+                ((leadOff - 1 + c - 1) % effectiveLineupLen) + 1;
+              const eName = getBatterShortName(eBo);
+              const lapNum = Math.floor((c - 1) / effectiveLineupLen) + 1;
+              const nameSuffix = eName ? ` ${eName}` : "";
+              const groupLabel =
+                lapNum === 1
+                  ? `1巡目（1〜${effectiveLineupLen}人）`
+                  : `${lapNum}巡目・打者一巡（自動で${lapNum}列以上へ設定）`;
+              const subHint =
+                c === 3 && inn.runs === 0
+                  ? "三者凡退（3アウト）"
+                  : c === effectiveLineupLen
+                    ? `${effectiveLineupLen}人ちょうど一巡（次回も${leadOff}番先頭）`
+                    : lapNum >= 2
+                      ? `${lapNum}巡目の${eBo}番まで（計${c}打席）`
+                      : `${leadOff}番から${eBo}番まで（計${c}打席）`;
+              batterCountOptions.push({
+                value: String(c),
+                label:
+                  lapNum >= 2
+                    ? `${lapNum}巡目 ${eBo}番${nameSuffix} まで（${c}人）`
+                    : `${eBo}番${nameSuffix} まで（${c}人）`,
+                sublabel: subHint,
+                group: groupLabel,
+              });
+            }
+
+            const leadOffOptions: LiffSelectOption[] = [
+              ...(innIdx > 0
+                ? [
+                    {
+                      value: "auto",
+                      label: "前の回から自動連動（標準）",
+                      sublabel:
+                        "前イニング最終打者の次の打順を先頭に自動設定します",
+                    },
+                  ]
+                : []),
+              ...Array.from(
+                { length: effectiveLineupLen },
+                (_, idx) => idx + 1
+              ).map((bo): LiffSelectOption => {
+                const nm = getBatterShortName(bo);
+                return {
+                  value: String(bo),
+                  label: `先頭: ${bo}番${nm ? `（${nm}）` : ""}`,
+                  sublabel:
+                    innIdx > 0
+                      ? "打席途中の盗塁死・牽制死チェンジ等でこの打者から始まる場合に固定"
+                      : "1回の先頭打者",
+                };
+              }),
+            ];
+
             return (
               <div
                 key={inn.inning}
-                className={`p-2 rounded-2xl border text-center space-y-1.5 ${
-                  cols >= 2
-                    ? "bg-amber-500/10 border-amber-500/35"
-                    : maybeNeedsMoreCols
-                    ? "bg-amber-500/8 border-amber-500/30"
-                    : "bg-muted border-border"
+                className={`p-2.5 rounded-2xl border space-y-2 ${
+                  countVal === 0
+                    ? "bg-muted/60 border-border"
+                    : cols >= 2 || maybeNeedsMoreCols
+                      ? "bg-amber-500/10 border-amber-500/35"
+                      : "bg-[#eef2f6] dark:bg-slate-900/60 border-border"
                 }`}
               >
-                <div className="flex items-center justify-center gap-1">
-                  <span className="text-[10px] font-black text-muted-foreground">
-                    {inn.inning}回{isTop ? "表" : "裏"}
-                  </span>
+                {/* 上段: イニング見出し・現在範囲バッジ・得点・列数 */}
+                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="px-2 py-0.5 rounded-lg bg-[#0f172a] text-white text-[11px] font-black shrink-0">
+                      {inn.inning}回{isTop ? "表" : "裏"}
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-lg text-[10px] font-black border truncate ${
+                        countVal === 0
+                          ? "bg-card text-muted-foreground border-border"
+                          : "bg-primary/12 text-primary border-primary/30"
+                      }`}
+                    >
+                      {countVal === 0
+                        ? "× 未消化 (0人)"
+                        : `${leadOff}番${
+                            leadName ? `(${leadName.slice(0, 3)})` : ""
+                          }〜${endOrder}番${
+                            endName ? `(${endName.slice(0, 3)})` : ""
+                          }・${countVal}人`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {/* 得点ステッパー */}
+                    <div className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg bg-card border border-border">
+                      <span className="text-[9px] font-bold text-muted-foreground mr-0.5">
+                        点
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isBusy || inn.runs <= 0}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, {
+                            runs: Math.max(0, inn.runs - 1),
+                          })
+                        }
+                        className="w-5 h-5 rounded bg-muted hover:bg-border text-[11px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer"
+                        aria-label={`${inn.inning}回の得点を減らす`}
+                      >
+                        -
+                      </button>
+                      <span className="w-5 text-center text-xs font-black text-foreground tabular-nums">
+                        {inn.runs}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, { runs: inn.runs + 1 })
+                        }
+                        className="w-5 h-5 rounded bg-muted hover:bg-border text-[11px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer"
+                        aria-label={`${inn.inning}回の得点を増やす`}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {/* 列数ステッパー */}
+                    <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-lg bg-card border border-border">
+                      <button
+                        type="button"
+                        disabled={isBusy || cols <= 1}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, {
+                            columnCount: Math.max(1, cols - 1),
+                          })
+                        }
+                        className="w-4 h-5 rounded bg-muted hover:bg-border text-[10px] font-black text-foreground disabled:opacity-35 cursor-pointer"
+                        aria-label={`${inn.inning}回の列数を減らす`}
+                      >
+                        -
+                      </button>
+                      <span
+                        className={`px-1 text-[9px] font-black flex items-center gap-0.5 ${
+                          cols >= 2
+                            ? "text-amber-700 dark:text-amber-300"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        <Columns2 className="w-2.5 h-2.5 shrink-0" />
+                        <span>{colBadgeText}</span>
+                      </span>
+                      <button
+                        type="button"
+                        disabled={isBusy || cols >= 6}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, {
+                            columnCount: Math.min(6, cols + 1),
+                          })
+                        }
+                        className="w-4 h-5 rounded bg-muted hover:bg-border text-[10px] font-black text-foreground disabled:opacity-35 cursor-pointer"
+                        aria-label={`${inn.inning}回の列数を増やす`}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* 得点ステッパー */}
-                <div className="flex items-center justify-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateInningMeta(inn.inning, {
-                        runs: Math.max(0, inn.runs - 1),
-                      })
+                {/* 下段: 先頭打順 ＆ 終了打者（人数）LiffSelect ＋ ワンタップ -/+ */}
+                <div className="flex items-center gap-1.5">
+                  <LiffSelect
+                    value={String(leadOff)}
+                    disabled={isBusy}
+                    onChange={(val) => {
+                      if (val === "auto") {
+                        handleChangeInningLeadOff(inn.inning, null);
+                      } else {
+                        handleChangeInningLeadOff(inn.inning, Number(val));
+                      }
+                    }}
+                    title={`${inn.inning}回${isTop ? "表" : "裏"}の先頭打者`}
+                    subtitle="通常は前の回から自動連動します。盗塁死チェンジ等で同じ打者が先頭に立つ場合のみ変更してください"
+                    size="xs"
+                    searchable={false}
+                    className="shrink-0"
+                    triggerTextClassName={
+                      inn.isLeadOffPinned ? "text-amber-700 dark:text-amber-300" : undefined
                     }
-                    className="w-6 h-6 rounded-lg bg-card border border-border hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer"
-                  >
-                    -
-                  </button>
-                  <span className="w-6 text-sm font-black text-foreground">
-                    {inn.runs}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateInningMeta(inn.inning, { runs: inn.runs + 1 })
+                    ariaLabel={`${inn.inning}回の先頭打順`}
+                    options={leadOffOptions}
+                  />
+
+                  <LiffSelect
+                    value={String(countVal)}
+                    disabled={isBusy}
+                    onChange={(val) =>
+                      handleChangeInningBatterCount(inn.inning, Number(val))
                     }
-                    className="w-6 h-6 rounded-lg bg-card border border-border hover:bg-muted text-xs font-black text-foreground active:scale-90 cursor-pointer"
-                  >
-                    +
-                  </button>
+                    title={`${inn.inning}回${isTop ? "表" : "裏"}の最終打者（打席人数）を選択`}
+                    subtitle={`先頭は ${leadOff}番${
+                      leadName ? `（${leadName}）` : ""
+                    } です。このイニング最後の打者を選ぶと次イニング以降の先頭打順も自動で連動します`}
+                    size="xs"
+                    searchable={false}
+                    className="flex-1 min-w-0"
+                    ariaLabel={`${inn.inning}回の終了打者・打席人数`}
+                    options={batterCountOptions}
+                  />
+
+                  <div className="inline-flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isBusy || countVal <= minCountForStepper}
+                      onClick={() =>
+                        handleChangeInningBatterCount(
+                          inn.inning,
+                          Math.max(minCountForStepper, countVal - 1)
+                        )
+                      }
+                      className="w-7 h-7 rounded-xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer"
+                      aria-label={`${inn.inning}回の打席人数を1人減らす`}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBusy || countVal >= 36}
+                      onClick={() =>
+                        handleChangeInningBatterCount(inn.inning, countVal + 1)
+                      }
+                      className="w-7 h-7 rounded-xl bg-card border border-border hover:bg-muted text-xs font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer"
+                      aria-label={`${inn.inning}回の打席人数を1人増やす`}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
 
-                {/* 使用列数ステッパー（1列・2列・3列・4列〜6列まで自在に設定可能！） */}
-                <div className="flex items-center justify-between gap-0.5 pt-0.5">
-                  <button
-                    type="button"
-                    disabled={cols <= 1}
-                    onClick={() =>
-                      updateInningMeta(inn.inning, {
-                        columnCount: Math.max(1, cols - 1),
-                      })
-                    }
-                    className="w-5 h-5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
-                    aria-label={`${inn.inning}回の列数を減らす`}
-                  >
-                    -
-                  </button>
-                  <span
-                    className={`flex-1 py-0.5 px-1 rounded-md text-[9px] font-black flex items-center justify-center gap-0.5 truncate ${
-                      cols >= 2
-                        ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
-                        : "bg-card text-muted-foreground border border-border"
-                    }`}
-                  >
-                    <Columns2 className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">{colBadgeText}</span>
-                  </span>
-                  <button
-                    type="button"
-                    disabled={cols >= 6}
-                    onClick={() =>
-                      updateInningMeta(inn.inning, {
-                        columnCount: Math.min(6, cols + 1),
-                      })
-                    }
-                    className="w-5 h-5 rounded-md bg-card border border-border hover:bg-muted text-[10px] font-black text-foreground disabled:opacity-35 active:scale-90 cursor-pointer shrink-0"
-                    aria-label={`${inn.inning}回の列数を増やす`}
-                  >
-                    +
-                  </button>
-                </div>
+                {/* 2列以上のときの折り返し記法ワンタップ切替 */}
+                {cols >= 2 && countVal > 0 && (
+                  <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                    <span className="text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                      2列目への折り返し位置:
+                    </span>
+                    <div className="inline-flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, { wrapStyle: "cycle" })
+                        }
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black border cursor-pointer ${
+                          inn.wrapStyle !== "bottom_wrap"
+                            ? "bg-amber-600 text-white border-amber-600"
+                            : "bg-card text-muted-foreground border-border hover:text-foreground"
+                        }`}
+                      >
+                        一巡{effectiveLineupLen}枠充填
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() =>
+                          updateInningMeta(inn.inning, {
+                            wrapStyle: "bottom_wrap",
+                          })
+                        }
+                        className={`px-2 py-0.5 rounded-lg text-[10px] font-black border cursor-pointer ${
+                          inn.wrapStyle === "bottom_wrap"
+                            ? "bg-amber-600 text-white border-amber-600"
+                            : "bg-card text-muted-foreground border-border hover:text-foreground"
+                        }`}
+                      >
+                        {effectiveLineupLen}番下端で2列目へ
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {maybeNeedsMoreCols && (
-                  <span className="block text-[8px] font-black text-amber-700 dark:text-amber-300 leading-tight">
-                    大量得点: 列数+を確認
+                  <span className="block text-[9px] font-black text-amber-700 dark:text-amber-300 leading-tight">
+                    ⚠️ 大量得点回のため、2列以上使っていれば列数の「+」を確認してください
                   </span>
                 )}
               </div>
             );
           })}
+        </div>
 
-          {/* 合計得点表示 */}
-          <div className="p-2 rounded-2xl bg-primary/10 border border-primary/25 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-black text-primary">合計得点</span>
-            <span className="text-lg font-black text-primary">
-              {current.innings.reduce((s, m) => s + m.runs, 0)}
+        {/* 合計得点 ＆ 確定総打席数サマリー */}
+        <div className="px-3 py-2 rounded-xl bg-primary/10 border border-primary/25 flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+            <span className="text-[11px] font-black text-foreground">
+              1球検算ロック合計:{" "}
+              <span className="text-primary">
+                {plannedCurrent.innings.reduce(
+                  (s, m) => s + Math.max(0, m.batterCount ?? 0),
+                  0
+                )}{" "}
+                打席
+              </span>
             </span>
           </div>
+          <span className="text-xs font-black text-primary tabular-nums">
+            合計得点: {plannedCurrent.innings.reduce((s, m) => s + m.runs, 0)} 点
+          </span>
         </div>
       </section>
 
@@ -2368,18 +2819,24 @@ export function Step2StructureCheck({
       {/* 進捗表示・エラー表示 ＆ アクションボタン */}
       <div className="space-y-2.5 pt-1">
         <ActionStatusBanner
-          isLoading={isAnalyzingInnings || isRescanningSide}
+          isLoading={
+            isAnalyzingInnings || isRescanningSide || isDetectingInningRanges
+          }
           loadingTitle={
-            isRescanningSide
-              ? "シートの骨格を再スキャン中..."
-              : "イニング並列・高速ディープ解析を実行中..."
+            isDetectingInningRanges
+              ? "各イニングの打順範囲・人数をAI判定中..."
+              : isRescanningSide
+                ? "シートの骨格を再スキャン中..."
+                : "イニング並列・高速ディープ解析を実行中..."
           }
           loadingDetail={
-            isRescanningSide
-              ? structureProgressLabel ||
-                "打順・投手・各回得点を再取得しています..."
-              : analysisProgressLabel ||
-                "各イニングの1球順序・打撃結果・進塁を高速解析しています..."
+            isDetectingInningRanges
+              ? "位置合わせ済みのマス枠から「何番〜何番（計何人）」かを一括検算しています..."
+              : isRescanningSide
+                ? structureProgressLabel ||
+                  "打順・投手・各回得点を再取得しています..."
+                : analysisProgressLabel ||
+                  "各イニングの1球順序・打撃結果・進塁を高速解析しています..."
           }
           startedAtMs={analysisStartedAtMs}
           totalDurationMs={analysisTotalDurationMs}
@@ -2388,9 +2845,15 @@ export function Step2StructureCheck({
           activeSubStepStartedAtMs={analysisActiveStartedAtMs}
           completedTimings={analysisCompletedTimings}
           persistTimingsWhenIdle={
-            !isRescanningSide && analysisCompletedTimings.length > 0
+            !isRescanningSide &&
+            !isDetectingInningRanges &&
+            analysisCompletedTimings.length > 0
           }
-          onRetryEntry={isRescanningSide ? undefined : onRetryTimingEntry}
+          onRetryEntry={
+            isRescanningSide || isDetectingInningRanges
+              ? undefined
+              : onRetryTimingEntry
+          }
           retryingEntryKey={reanalyzingInningKey}
           errorMessage={errorMessage}
           onDismissError={onDismissError}

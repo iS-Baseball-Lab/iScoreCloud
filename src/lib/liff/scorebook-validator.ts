@@ -2517,9 +2517,21 @@ function reconcileCyclicInningLeadOffs(
 
       let targetStartBo: number | null = null;
 
+      const innMetaForCycle = structure?.innings.find((m) => m.inning === inn);
+      const lockedLeadOff =
+        typeof innMetaForCycle?.batterCount === "number" &&
+        innMetaForCycle.batterCount > 0 &&
+        typeof innMetaForCycle?.leadOffOrder === "number" &&
+        innMetaForCycle.leadOffOrder >= 1 &&
+        innMetaForCycle.leadOffOrder <= lineupCycle
+          ? innMetaForCycle.leadOffOrder
+          : null;
+
       if (minCount === maxCount) {
         // === ケースA: 1イニング9人（または18人）全員が同数ずつ埋まっている場合 ===
-        if (inn === 1) {
+        if (lockedLeadOff !== null) {
+          targetStartBo = lockedLeadOff;
+        } else if (inn === 1) {
           targetStartBo = 1;
         } else {
           const prevInn = idx > 0 ? sortedInnings[idx - 1] : null;
@@ -2852,14 +2864,18 @@ export function normalizeInningAtBatColumns(
   const innMeta = structure?.innings.find((m) => m.inning === inning);
   const metaCols = Math.max(1, innMeta?.columnCount ?? 1);
   const useBottomNineWrap =
-    maxNineWrap > 0 &&
-    ((forceFirstSegmentToCol1 && metaCols > maxLap + 1) ||
-      list.some(
-        (ab, idx) =>
-          laps[idx] === 0 &&
-          nineWraps[idx] >= 1 &&
-          (ab.columnIndex || 1) >= 2
-      ));
+    innMeta?.wrapStyle === "bottom_wrap"
+      ? maxNineWrap > 0
+      : innMeta?.wrapStyle === "cycle"
+      ? false
+      : maxNineWrap > 0 &&
+        ((forceFirstSegmentToCol1 && metaCols > maxLap + 1) ||
+          list.some(
+            (ab, idx) =>
+              laps[idx] === 0 &&
+              nineWraps[idx] >= 1 &&
+              (ab.columnIndex || 1) >= 2
+          ));
   const maxAllowedCols = Math.max(
     metaCols,
     maxLap + 1,
@@ -3201,9 +3217,25 @@ export function reconcileSheetExcessOutsDeterministically(
     const sumOuts = (arr: ScorebookV2AtBat[]): number =>
       getInitOuts(arr) + arr.reduce((s, x) => s + Math.max(0, x.outsInPlay), 0);
 
+    const curInnMeta = structure?.innings.find((m) => m.inning === inn);
+    const lockedCount =
+      typeof curInnMeta?.batterCount === "number" && curInnMeta.batterCount > 0
+        ? Math.round(curInnMeta.batterCount)
+        : null;
+    const nextInnMeta =
+      nextInn !== null
+        ? structure?.innings.find((m) => m.inning === nextInn)
+        : undefined;
+    const nextLockedCount =
+      typeof nextInnMeta?.batterCount === "number" &&
+      nextInnMeta.batterCount > 0
+        ? Math.round(nextInnMeta.batterCount)
+        : null;
+
     // 2-A. 次イニング先頭と同じ打順が前イニング末尾にも重複しており、前イニングが3アウト超過（または既に3アウト到達済み）の場合
-    // ※ただし最終打者の打席途中に盗塁死・牽制死でチェンジになったケース（isRunnerOnlyInningEnd）は次回先頭と同一打順が正規なので除去しない！
+    // ※ただし最終打者の打席途中に盗塁死・牽制死でチェンジになったケース（isRunnerOnlyInningEnd）や STEP 2 確定打席数以下の場合は除去しない！
     while (
+      (lockedCount === null || list.length > lockedCount) &&
       list.length >= 4 &&
       nextList.length > 0 &&
       list[list.length - 1].battingOrder === nextList[0].battingOrder &&
@@ -3216,6 +3248,7 @@ export function reconcileSheetExcessOutsDeterministically(
 
     // 2-B. 前イニングは3アウトちょうどで完了しているのに、次イニング先頭に前イニング最終打者が重複混入して次イニングが4アウト以上になっている場合
     while (
+      (nextLockedCount === null || nextList.length > nextLockedCount) &&
       list.length >= 3 &&
       sumOuts(list) === 3 &&
       nextList.length >= 4 &&
@@ -3228,8 +3261,12 @@ export function reconcileSheetExcessOutsDeterministically(
     }
 
     // 2-C. 累積3アウト到達時点の打順の「次の打順」から次イニングがピタリと始まっている場合、それより後ろの余剰行は切り線・ノイズなので除去
-    // ※ただし「9人ピッタリ一巡イニングが未回転のまま 1→2→3(3死) で並んでいるケース」や「確定得点が後続打席に含まれるケース」を絶対に誤削除しないようガード！
-    if (nextList.length > 0 && list.length >= 4) {
+    // ※ただし「9人ピッタリ一巡イニングが未回転のまま 1→2→3(3死) で並んでいるケース」「確定得点が後続打席に含まれるケース」「STEP 2 確定打席数以下の場合」を絶対に誤削除しないようガード！
+    if (
+      (lockedCount === null || list.length > lockedCount) &&
+      nextList.length > 0 &&
+      list.length >= 4
+    ) {
       let cOuts = getInitOuts(list);
       let threeIdx = -1;
       for (let i = 0; i < list.length; i++) {
@@ -3259,8 +3296,7 @@ export function reconcileSheetExcessOutsDeterministically(
           expectedStartBo === null ||
           list[0].battingOrder === expectedStartBo;
 
-        const innMeta = structure?.innings.find((m) => m.inning === inn);
-        const confirmedRuns = innMeta?.runs ?? 0;
+        const confirmedRuns = curInnMeta?.runs ?? 0;
         const headRuns = list
           .slice(0, threeIdx + 1)
           .reduce((s, x) => s + Math.max(0, x.runsInPlay), 0);
@@ -3271,15 +3307,23 @@ export function reconcileSheetExcessOutsDeterministically(
             (t) => t.runsInPlay > 0 || isSafeBatterReachCode(t.resultCode)
           );
 
-        if (startMatchesExpected && !tailHasNeededScoring) {
-          list.splice(threeIdx + 1);
+        const cutAt =
+          lockedCount !== null
+            ? Math.max(lockedCount, threeIdx + 1)
+            : threeIdx + 1;
+        if (startMatchesExpected && !tailHasNeededScoring && cutAt < list.length) {
+          list.splice(cutAt);
           changed = true;
         }
       }
     }
 
     // 2-D. 次イニングが存在しない最終イニング等で、先頭から無走者のまま3アウト完了した後ろに余剰行がある場合
-    if (nextList.length === 0 && list.length >= 4) {
+    if (
+      (lockedCount === null || list.length > lockedCount) &&
+      nextList.length === 0 &&
+      list.length >= 4
+    ) {
       let cOuts = getInitOuts(list);
       let threeIdx = -1;
       for (let i = 0; i < list.length; i++) {
@@ -3308,8 +3352,12 @@ export function reconcileSheetExcessOutsDeterministically(
             (t.outsInPlay === 0 && t.runsInPlay === 0) ||
             (t.resultCode === "other" && t.runsInPlay === 0)
         );
-        if (!anyRunnerInHead || tailPhantom) {
-          list.splice(threeIdx + 1);
+        const cutAt =
+          lockedCount !== null
+            ? Math.max(lockedCount, threeIdx + 1)
+            : threeIdx + 1;
+        if ((!anyRunnerInHead || tailPhantom) && cutAt < list.length) {
+          list.splice(cutAt);
           changed = true;
         }
       }
