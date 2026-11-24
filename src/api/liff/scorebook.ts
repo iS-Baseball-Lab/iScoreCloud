@@ -75,6 +75,7 @@ import {
   computeInningPlannedSlots,
   normalizeStructureInningBatterPlan,
 } from "@/lib/liff/scorebook-inning-plan";
+import { repairAndParseGeminiJson } from "@/lib/liff/gemini-json-repair";
 import type { WorkerEnv } from "@/types/api";
 import {
   isNonPitchMoundEvent,
@@ -201,6 +202,8 @@ interface GeminiApiCandidate {
 interface GeminiApiResponse {
   candidates?: GeminiApiCandidate[];
   error?: {
+    code?: number;
+    status?: string;
     message?: string;
   };
 }
@@ -403,9 +406,9 @@ interface RawGeminiChunkResponse {
   ab?: RawGeminiAtBat[];
 }
 
-type GeminiCallMode = "structure" | "chunk";
+export type GeminiCallMode = "structure" | "chunk";
 
-interface GeminiModelAttemptConfig {
+export interface GeminiModelAttemptConfig {
   model: string;
   /** HTTP接続〜最初のSSEチャンク（思考チャンクまたは本文チャンク）到達までの最大待機ミリ秒 */
   firstResponseTimeoutMs: number;
@@ -426,14 +429,17 @@ function isGemini4Model(modelName: string): boolean {
   return modelName.startsWith("gemini-4");
 }
 
+export interface ModelCooldownRecord {
+  until: number;
+  status: number;
+  daily?: boolean;
+}
+
 /**
  * モデル別の短期クールダウン記憶（同一Workerインスタンス内で 404 / 429 / 503 を起こしたモデルを即座にスキップし、
  * 健全な別サービングプールへ0msで直行させることで無駄な待機とRPM消費を防ぐ）
  */
-const MODEL_COOLDOWN_UNTIL = new Map<
-  string,
-  { until: number; status: number }
->();
+const MODEL_COOLDOWN_UNTIL = new Map<string, ModelCooldownRecord>();
 
 /**
  * チーム共通「スコア記号早見表」のインメモリキャッシュ（5分TTL）。
@@ -932,6 +938,83 @@ export function getGeminiModelConfigs(
       backoffBeforeMs: 200,
     },
   ];
+}
+
+/**
+ * 14ハーフイニング連続・並列解析時に上位モデルが一時クールダウン（503 / 分間RPM 429）に入った場合でも、
+ * 最下位の `gemini-flash-lite-latest` + 1モデルだけでフェイルオーバーが枯渇しないよう、
+ * 健全モデル群の後ろへ「復帰間近の非404・非日次上限モデル」を品質順×復帰バケット順で最低4枠以上になるまで補填する。
+ */
+export function buildOrderedGeminiAttemptConfigs(
+  rawConfigs: readonly GeminiModelAttemptConfig[],
+  cooldownMap: ReadonlyMap<string, ModelCooldownRecord>,
+  clientSkippedModels: readonly string[] | undefined,
+  nowTs: number
+): GeminiModelAttemptConfig[] {
+  const clientSkippedSet = new Set(clientSkippedModels || []);
+  const readyConfigs: GeminiModelAttemptConfig[] = [];
+  const coolingConfigs: Array<{
+    cfg: GeminiModelAttemptConfig;
+    until: number;
+    tierIndex: number;
+    isDailyQuota: boolean;
+  }> = [];
+
+  rawConfigs.forEach((cfg, tierIndex) => {
+    const cd = cooldownMap.get(cfg.model);
+    if (cd && cd.until > nowTs) {
+      if (cd.status !== 404) {
+        coolingConfigs.push({
+          cfg,
+          until: cd.until,
+          tierIndex,
+          isDailyQuota: Boolean(cd.daily),
+        });
+      }
+      return;
+    }
+    if (clientSkippedSet.has(cfg.model)) {
+      coolingConfigs.push({
+        cfg,
+        until: nowTs + 8_000,
+        tierIndex,
+        isDailyQuota: false,
+      });
+      return;
+    }
+    readyConfigs.push(cfg);
+  });
+
+  coolingConfigs.sort((a, b) => {
+    if (a.isDailyQuota !== b.isDailyQuota) {
+      return a.isDailyQuota ? 1 : -1;
+    }
+    const bucketA = Math.max(0, Math.floor((a.until - nowTs) / 6_000));
+    const bucketB = Math.max(0, Math.floor((b.until - nowTs) / 6_000));
+    if (bucketA !== bucketB) {
+      return bucketA - bucketB;
+    }
+    return a.tierIndex - b.tierIndex;
+  });
+
+  const recoverableCooling = coolingConfigs.filter((x) => !x.isDailyQuota);
+  const poolSource =
+    recoverableCooling.length > 0 ? recoverableCooling : coolingConfigs;
+
+  const minTargetAttempts = 4;
+  const neededCoolingCount =
+    readyConfigs.length === 0
+      ? Math.min(4, poolSource.length)
+      : Math.max(1, minTargetAttempts - readyConfigs.length);
+
+  const appendedCooling = poolSource
+    .slice(0, neededCoolingCount)
+    .map((entry, idx) => ({
+      ...entry.cfg,
+      backoffBeforeMs: idx === 0 ? 1_100 : idx === 1 ? 1_600 : 2_000,
+    }));
+
+  return [...readyConfigs, ...appendedCooling];
 }
 
 const PITCH_DISPLAY_JA: Record<CanonicalPitchResult, string> = {
@@ -3408,7 +3491,8 @@ ${targetInningMetaLines.join("\n")}
 
 【出力JSONフォーマット（改行無しのコンパクトJSONのみ返却。"i" には必ず対象イニング番号 ${exampleInn} を入れること！）】
 {"ab":[{"i":${exampleInn},"c":1,"bo":${exampleLeadBo},"pt":"${examplePitcher}","obs":"左:○,ー,△/中:Ⅰ/本一:破線/右下:︵4","b1":false,"p":["S","B","F","X"],"eo":1,"o":1,"dir":"4","rc":"flyout","rl":"二飛","rbi":0,"ru":0,"a":[],"cf":"h","box":[205,320,272,376]},{"i":${exampleInn},"c":1,"bo":${exampleNextBo},"pt":"${examplePitcher}","obs":"左:ー,●/中:無/本一:実線/右下:8","b1":true,"p":["B","W","H"],"eo":1,"o":0,"dir":"8","rc":"single","rl":"中前安打","rbi":0,"ru":0,"a":[{"rn":"選手名","f":"BAT","t":"1B","m":"hit","io":false,"pn":3}],"cf":"h","box":[272,320,339,376]}]}
-※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。`;
+※ rc は必ず "single"|"double"|"triple"|"home_run"|"walk"|"intentional_walk"|"hit_by_pitch"|"interference"|"sac_bunt"|"sac_fly"|"groundout"|"flyout"|"infield_fly"|"strikeout"|"dropped_third_strike_out"|"dropped_third_strike"|"double_play"|"triple_play"|"interference_out"|"error"|"fc"|"other" のいずれかとしてください。
+※ 重要: JSON文字列値（"obs", "rl", "pt", "rn" 等）の内部では半角ダブルクォーテーション（"）や改行を絶対に使用せず、記号を括る場合は必ず『』または「」を使用してください。`;
 
     const maxStructInning = Math.max(
       1,
@@ -3427,6 +3511,34 @@ ${targetInningMetaLines.join("\n")}
         );
       });
     const mustHaveAtBats = !isPotentiallySkippedFinalBottom;
+
+    const totalPlannedBatterCount = sortedTargets.reduce((sum, innNum) => {
+      const meta = body.structure.innings.find((m) => m.inning === innNum);
+      return (
+        sum +
+        (typeof meta?.batterCount === "number" && meta.batterCount > 0
+          ? meta.batterCount
+          : 0)
+      );
+    }, 0);
+
+    const acceptChunkTruncatedSalvage = (
+      parsed: RawGeminiChunkResponse
+    ): boolean => {
+      const normalized = normalizeChunkRawItems(
+        parsed.ab || parsed.atBats || [],
+        sortedTargets
+      );
+      if (normalized.length === 0) return !mustHaveAtBats;
+      if (totalPlannedBatterCount > 0) {
+        return normalized.length >= totalPlannedBatterCount;
+      }
+      const outsSum = normalized.reduce(
+        (acc, item) => acc + (toFiniteInt(item.o ?? item.outsInPlay, 0) || 0),
+        0
+      );
+      return outsSum >= sortedTargets.length * 3;
+    };
 
     const validateChunkOutput = (
       parsed: RawGeminiChunkResponse
@@ -3453,6 +3565,7 @@ ${targetInningMetaLines.join("\n")}
           maxBudgetMs: 72_000,
           skipModels: body.skipModels,
           cooledModelsOut: cooledModels,
+          acceptTruncatedSalvage: acceptChunkTruncatedSalvage,
         }
       );
       normalizedRawItems = normalizeChunkRawItems(
@@ -3484,6 +3597,7 @@ ${targetInningMetaLines.join("\n")}
                   maxBudgetMs: Math.max(14_000, 78_000 - elapsedSoFar),
                   skipModels: body.skipModels,
                   cooledModelsOut: cooledModels,
+                  acceptTruncatedSalvage: acceptChunkTruncatedSalvage,
                 }
               );
             normalizedRawItems = normalizeChunkRawItems(
@@ -5348,7 +5462,8 @@ ${specLines.join("\n")}
 {"items":[{"sk":"${firstSpec.slotKey}","c":${firstSpec.columnIndex},"bo":${firstSpec.battingOrder},"pt":"${exPitcher}","obs":"左:○,ー,●/中:Ⅰ/右下:6-3","b1":false,"p":["S","B","W","X"],"eo":${Math.min(
       3,
       firstSpec.outsBefore + 1
-    )},"o":1,"dir":"6-3","rc":"groundout","rl":"遊ゴロ","rbi":0,"ru":0,"a":[],"cf":"h","cr":""}]}`;
+    )},"o":1,"dir":"6-3","rc":"groundout","rl":"遊ゴロ","rbi":0,"ru":0,"a":[],"cf":"h","cr":""}]}
+※ 重要: JSON文字列値（特に "cr", "obs", "rl"）の内部では半角ダブルクォーテーション（"）や改行を絶対に使用せず、引用符が必要な場合は必ず『』または「」を使用してください。`;
 
     const validateFlaggedResp = (
       parsed: RawReconcileFlaggedResponse
@@ -7645,10 +7760,16 @@ liffScorebookRouter.delete("/saved", async (c) => {
 // 内部ヘルパー関数群
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-interface GeminiCallOptions {
+interface GeminiCallOptions<T = unknown> {
   maxBudgetMs?: number;
   skipModels?: string[];
   cooledModelsOut?: string[];
+  acceptTruncatedSalvage?: (parsed: T) => boolean;
+}
+
+interface GeminiSseStreamError {
+  code: number;
+  message: string;
 }
 
 async function callGeminiStructuredJson<T>(
@@ -7657,7 +7778,7 @@ async function callGeminiStructuredJson<T>(
   imageParts: GeminiContentPart[],
   mode: GeminiCallMode = "structure",
   validateResult?: (parsed: T) => string | null,
-  options?: GeminiCallOptions
+  options?: GeminiCallOptions<T>
 ): Promise<T> {
   const attemptErrors: string[] = [];
   let quota429Count = 0;
@@ -7665,11 +7786,10 @@ async function callGeminiStructuredJson<T>(
   let timeoutCount = 0;
   const overallStart = Date.now();
   // Cloudflare Workers 100秒プロキシ上限・クライアント95秒上限より十分手前で確実にJSON応答を完結させつつ、
-  // 1リクエスト内で最大3モデルの自動フェイルオーバーが完走する予算を確保する
+  // 1リクエスト内で最大4モデルの自動フェイルオーバーが完走する予算を確保する
   const MAX_TOTAL_BUDGET_MS =
     options?.maxBudgetMs ?? (mode === "chunk" ? 72_000 : 76_000);
   const rawConfigs = getGeminiModelConfigs(mode);
-  const clientSkippedSet = new Set(options?.skipModels || []);
 
   const recordCooledOut = (modelName: string) => {
     if (
@@ -7681,51 +7801,24 @@ async function callGeminiStructuredJson<T>(
   };
 
   const nowTs = Date.now();
-  const readyConfigs: GeminiModelAttemptConfig[] = [];
-  const coolingConfigs: Array<{ cfg: GeminiModelAttemptConfig; until: number }> =
-    [];
-
   for (const cfg of rawConfigs) {
     const cd = MODEL_COOLDOWN_UNTIL.get(cfg.model);
-    if (cd && cd.until > nowTs) {
-      recordCooledOut(cfg.model);
-      if (cd.status !== 404) {
-        coolingConfigs.push({ cfg, until: cd.until });
-      }
-      continue;
-    }
-    if (cd) {
+    if (cd && cd.until <= nowTs) {
       MODEL_COOLDOWN_UNTIL.delete(cfg.model);
     }
-    if (clientSkippedSet.has(cfg.model)) {
-      coolingConfigs.push({ cfg, until: nowTs + 30_000 });
-      continue;
-    }
-    readyConfigs.push(cfg);
   }
 
-  coolingConfigs.sort((a, b) => a.until - b.until);
-  // 健全なモデルを最優先し、万一すべてクールダウン中だった場合のみ復帰が近い上位2モデルを試行する
-  const orderedConfigs: GeminiModelAttemptConfig[] =
-    readyConfigs.length > 0
-      ? [
-        ...readyConfigs,
-        ...coolingConfigs
-          .filter((x) => {
-            const cd = MODEL_COOLDOWN_UNTIL.get(x.cfg.model);
-            return !cd || cd.status === 503;
-          })
-          .slice(0, 1)
-          .map((x) => ({ ...x.cfg, backoffBeforeMs: 1_200 })),
-      ]
-      : coolingConfigs
-        .slice(0, 2)
-        .map((x, idx) => ({
-          ...x.cfg,
-          backoffBeforeMs: idx === 0 ? 1_000 : 1_800,
-        }));
+  // ※既にクールダウン中だっただけの未試行モデルを cooledModelsOut へ再返却すると、
+  // クライアント側の22秒スキップ期限が毎イニング連鎖延長されて全14回で上位モデルが締め出されるため再返却しない
+  const orderedConfigs = buildOrderedGeminiAttemptConfigs(
+    rawConfigs,
+    MODEL_COOLDOWN_UNTIL,
+    options?.skipModels,
+    nowTs
+  );
 
   const blockedInThisRequest = new Set<string>();
+  const retriedParseOrDropModels = new Set<string>();
 
   for (let attemptIdx = 0; attemptIdx < orderedConfigs.length; attemptIdx++) {
     const cfg = orderedConfigs[attemptIdx];
@@ -7777,6 +7870,7 @@ async function callGeminiStructuredJson<T>(
       const generationConfig: Record<string, unknown> = {
         responseMimeType: "application/json",
         mediaResolution: "MEDIA_RESOLUTION_HIGH",
+        maxOutputTokens: 8192,
       };
       if (!gemini4) {
         generationConfig.temperature = 0.05;
@@ -7847,6 +7941,7 @@ async function callGeminiStructuredJson<T>(
           scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
           const fallbackGenConfig: Record<string, unknown> = {
             responseMimeType: "application/json",
+            maxOutputTokens: 8192,
           };
           if (!gemini4) {
             fallbackGenConfig.temperature = 0.05;
@@ -7903,6 +7998,7 @@ async function callGeminiStructuredJson<T>(
             scheduleWatchdog(cfg.firstResponseTimeoutMs, "応答待機タイムアウト");
             const minimalGenConfig: Record<string, unknown> = {
               responseMimeType: "application/json",
+              maxOutputTokens: 8192,
             };
             if (!gemini4) {
               minimalGenConfig.temperature = 0.05;
@@ -7972,11 +8068,12 @@ async function callGeminiStructuredJson<T>(
           const cooldownMs = isDailyQuota
             ? 3 * 60_000
             : parsedSec > 0
-              ? Math.min(120_000, Math.max(20_000, parsedSec * 1_000))
-              : 25_000;
+              ? Math.min(60_000, Math.max(14_000, parsedSec * 1_000))
+              : 15_000;
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
             until: Date.now() + cooldownMs,
             status: 429,
+            daily: isDailyQuota,
           });
           attemptErrors.push(`[${cfg.model}: 利用枠上限(429)]`);
           continue;
@@ -7984,9 +8081,10 @@ async function callGeminiStructuredJson<T>(
 
         if (res.status >= 500) {
           demand503Count += 1;
+          blockedInThisRequest.add(cfg.model);
           recordCooledOut(cfg.model);
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
-            until: Date.now() + 20_000,
+            until: Date.now() + 12_000,
             status: res.status,
           });
           attemptErrors.push(`[${cfg.model}: サーバー混雑(${res.status})]`);
@@ -7996,6 +8094,7 @@ async function callGeminiStructuredJson<T>(
         const shortMsg = errText.replace(/\s+/g, " ").slice(0, 90);
         attemptErrors.push(`[${cfg.model}: HTTP ${res.status} ${shortMsg}]`);
         if (res.status === 400 || res.status === 408) {
+          blockedInThisRequest.add(cfg.model);
           continue;
         }
         throw new Error(attemptErrors.join(" / "));
@@ -8039,85 +8138,154 @@ async function callGeminiStructuredJson<T>(
         scheduleWatchdog(plan.nextWaitMs, plan.reason);
       };
 
-      const { text, finishReason } = await readGeminiSseResponse(res, {
-        signal: controller.signal,
-        onCandidateChunk: refreshThinkingWatchdog,
-        onThoughtChunk: refreshThinkingWatchdog,
-        onTextChunk: () => {
-          if (controller.signal.aborted) return;
-          if (!sawTextChunk) {
-            sawTextChunk = true;
-            firstTextAtMs = Date.now();
-          }
-          const leftForBody = maxTextStreamingMs - (Date.now() - firstTextAtMs);
-          if (leftForBody <= 0) {
-            if (activeTimer !== undefined) {
-              clearTimeout(activeTimer);
-              activeTimer = undefined;
+      const { text, finishReason, streamError } = await readGeminiSseResponse(
+        res,
+        {
+          signal: controller.signal,
+          onCandidateChunk: refreshThinkingWatchdog,
+          onThoughtChunk: refreshThinkingWatchdog,
+          onTextChunk: () => {
+            if (controller.signal.aborted) return;
+            if (!sawTextChunk) {
+              sawTextChunk = true;
+              firstTextAtMs = Date.now();
             }
-            hitTotalBudgetCap = false;
-            abortReason = `本文生成上限到達 (${Math.round(maxTextStreamingMs / 1000)}秒)`;
-            controller.abort();
-            return;
-          }
-          // 本文トークンが流れている間はチャンク間14秒アイドル監視＋本文生成上限で監視
-          scheduleWatchdog(
-            Math.min(14_000, Math.max(250, leftForBody)),
-            leftForBody <= 14_000 ? "本文生成上限到達" : "ストリーム無応答"
-          );
-        },
-      });
+            const leftForBody = maxTextStreamingMs - (Date.now() - firstTextAtMs);
+            if (leftForBody <= 0) {
+              if (activeTimer !== undefined) {
+                clearTimeout(activeTimer);
+                activeTimer = undefined;
+              }
+              hitTotalBudgetCap = false;
+              abortReason = `本文生成上限到達 (${Math.round(maxTextStreamingMs / 1000)}秒)`;
+              controller.abort();
+              return;
+            }
+            // 本文トークンが流れている間はチャンク間14秒アイドル監視＋本文生成上限で監視
+            scheduleWatchdog(
+              Math.min(14_000, Math.max(250, leftForBody)),
+              leftForBody <= 14_000 ? "本文生成上限到達" : "ストリーム無応答"
+            );
+          },
+        }
+      );
 
       if (controller.signal.aborted) {
         throw new Error(abortReason || "応答タイムアウト");
       }
 
-      if (!text.trim()) {
+      const trimmedText = text.trim();
+      const parsedOutcome = trimmedText
+        ? repairAndParseGeminiJson<T>(trimmedText, {
+            allowTruncatedSalvage: Boolean(options?.acceptTruncatedSalvage),
+          })
+        : null;
+
+      if (parsedOutcome && parsedOutcome.ok) {
+        const salvageAccepted =
+          !parsedOutcome.salvagedTruncated ||
+          Boolean(
+            options?.acceptTruncatedSalvage &&
+              options.acceptTruncatedSalvage(parsedOutcome.value)
+          );
+
+        if (salvageAccepted) {
+          if (validateResult) {
+            const validationError = validateResult(parsedOutcome.value);
+            if (validationError) {
+              attemptErrors.push(`[${cfg.model}] 検証NG: ${validationError}`);
+              blockedInThisRequest.add(cfg.model);
+              continue;
+            }
+          }
+          return parsedOutcome.value;
+        }
+      }
+
+      // SSE ストリーム途中で Google 側が 429 / 503 エラーフレームを送出して切断した場合
+      if (streamError) {
+        if (streamError.code === 429) {
+          quota429Count += 1;
+          blockedInThisRequest.add(cfg.model);
+          recordCooledOut(cfg.model);
+          MODEL_COOLDOWN_UNTIL.set(cfg.model, {
+            until: Date.now() + 15_000,
+            status: 429,
+            daily: false,
+          });
+          attemptErrors.push(`[${cfg.model}: 利用枠上限(429)]`);
+          continue;
+        }
+        if (streamError.code >= 500) {
+          demand503Count += 1;
+          blockedInThisRequest.add(cfg.model);
+          recordCooledOut(cfg.model);
+          MODEL_COOLDOWN_UNTIL.set(cfg.model, {
+            until: Date.now() + 12_000,
+            status: streamError.code,
+          });
+          attemptErrors.push(
+            `[${cfg.model}: サーバー混雑(${streamError.code})]`
+          );
+          continue;
+        }
+      }
+
+      // 途中切断（finishReason !== "STOP"）または残りモデル僅少時の偶発JSON崩れは、
+      // 時間予算が18秒以上残っていれば同一モデルで1回だけ即座にクリーン再取得を行う
+      const budgetAfterAttempt =
+        MAX_TOTAL_BUDGET_MS - (Date.now() - overallStart);
+      const isPrematureStreamDrop =
+        finishReason !== "STOP" ||
+        !trimmedText ||
+        (parsedOutcome !== null &&
+          !parsedOutcome.ok &&
+          parsedOutcome.likelyTruncated) ||
+        (parsedOutcome !== null &&
+          parsedOutcome.ok &&
+          parsedOutcome.salvagedTruncated);
+      const isNearPoolEnd = attemptIdx >= orderedConfigs.length - 2;
+
+      if (
+        !retriedParseOrDropModels.has(cfg.model) &&
+        budgetAfterAttempt >= 18_000 &&
+        (isPrematureStreamDrop || isNearPoolEnd)
+      ) {
+        retriedParseOrDropModels.add(cfg.model);
+        if (activeTimer !== undefined) {
+          clearTimeout(activeTimer);
+          activeTimer = undefined;
+        }
+        await new Promise((r) => setTimeout(r, 650));
+        attemptIdx -= 1;
+        continue;
+      }
+
+      if (!trimmedText) {
         attemptErrors.push(
           `[${cfg.model}] 応答が空でした (finishReason: ${finishReason})`
         );
-        blockedInThisRequest.add(cfg.model);
-        continue;
-      }
-
-      let cleaned = text.trim();
-      if (cleaned.startsWith("```")) {
-        cleaned = cleaned
-          .replace(/^```[a-zA-Z0-9]*\n?/, "")
-          .replace(/\n?```$/, "")
-          .trim();
-      }
-
-      try {
-        const parsedObj = JSON.parse(cleaned) as T;
-        if (validateResult) {
-          const validationError = validateResult(parsedObj);
-          if (validationError) {
-            attemptErrors.push(`[${cfg.model}] 検証NG: ${validationError}`);
-            blockedInThisRequest.add(cfg.model);
-            continue;
-          }
-        }
-        return parsedObj;
-      } catch (parseErr) {
-        const msg =
-          parseErr instanceof Error ? parseErr.message : String(parseErr);
+      } else if (parsedOutcome && !parsedOutcome.ok) {
         attemptErrors.push(
-          `[${cfg.model}] JSON解析失敗 (${finishReason}): ${msg}`
+          `[${cfg.model}] JSON解析失敗 (${finishReason}): ${parsedOutcome.error}`
         );
-        blockedInThisRequest.add(cfg.model);
-        continue;
+      } else {
+        attemptErrors.push(
+          `[${cfg.model}] ストリーム途中切断により打席データが未完でした (${finishReason})`
+        );
       }
+      blockedInThisRequest.add(cfg.model);
+      continue;
     } catch (err) {
       blockedInThisRequest.add(cfg.model);
       if (controller.signal.aborted) {
         timeoutCount += 1;
-        // 個別モデル側の応答遅延・思考上限超過で中断した場合は30秒クールダウンに入れ、
+        // 個別モデル側の応答遅延・思考上限超過で中断した場合は16秒クールダウンに入れ、
         // 直後の再試行や並行イニング解析を0msで健全な次順位モデル（gemini-3.8-flash等）へ逃がす
         if (!hitTotalBudgetCap) {
           recordCooledOut(cfg.model);
           MODEL_COOLDOWN_UNTIL.set(cfg.model, {
-            until: Date.now() + 30_000,
+            until: Date.now() + 16_000,
             status: 503,
           });
         }
@@ -8162,7 +8330,7 @@ async function callGeminiStructuredJson<T>(
 
   throw new Error(
     attemptErrors.join(" / ") ||
-    "AIサーバーが一時的に大変混雑しています。数秒置いてもう一度ボタンを押してください。"
+      "AIサーバーが一時的に大変混雑しています。数秒置いてもう一度ボタンを押してください。"
   );
 }
 
@@ -8176,7 +8344,11 @@ interface SseStreamCallbacks {
 async function readGeminiSseResponse(
   res: Response,
   callbacks?: SseStreamCallbacks
-): Promise<{ text: string; finishReason: string }> {
+): Promise<{
+  text: string;
+  finishReason: string;
+  streamError?: GeminiSseStreamError;
+}> {
   if (!res.body) {
     const raw = await res.text();
     const parsed = parseGeminiRawOrSseText(raw);
@@ -8193,6 +8365,7 @@ async function readGeminiSseResponse(
   let rawAll = "";
   let assembledText = "";
   let finishReason = "UNKNOWN";
+  let streamError: GeminiSseStreamError | undefined;
 
   const processLine = (rawLine: string) => {
     if (callbacks?.signal?.aborted) return;
@@ -8202,6 +8375,16 @@ async function readGeminiSseResponse(
     if (!payload || payload === "[DONE]") return;
     try {
       const parsed = JSON.parse(payload) as GeminiApiResponse;
+      if (parsed.error) {
+        streamError = {
+          code:
+            typeof parsed.error.code === "number" ? parsed.error.code : 503,
+          message:
+            parsed.error.message ||
+            parsed.error.status ||
+            "SSE stream interrupted",
+        };
+      }
       const cand = parsed.candidates?.[0];
       if (cand) {
         callbacks?.onCandidateChunk?.();
@@ -8260,22 +8443,38 @@ async function readGeminiSseResponse(
     return parseGeminiRawOrSseText(rawAll);
   }
 
-  return { text: assembledText, finishReason };
+  return { text: assembledText, finishReason, streamError };
 }
 
-function parseGeminiRawOrSseText(
-  raw: string
-): { text: string; finishReason: string } {
+function parseGeminiRawOrSseText(raw: string): {
+  text: string;
+  finishReason: string;
+  streamError?: GeminiSseStreamError;
+} {
   const trimmed = raw.trim();
   if (trimmed.startsWith("{")) {
     try {
       const parsed = JSON.parse(trimmed) as GeminiApiResponse;
+      const streamError = parsed.error
+        ? {
+            code:
+              typeof parsed.error.code === "number" ? parsed.error.code : 503,
+            message:
+              parsed.error.message ||
+              parsed.error.status ||
+              "Gemini API error",
+          }
+        : undefined;
       const cand = parsed.candidates?.[0];
       const text = (cand?.content?.parts || [])
         .filter((p) => !p.thought && typeof p.text === "string")
         .map((p) => p.text || "")
         .join("");
-      return { text, finishReason: cand?.finishReason || "UNKNOWN" };
+      return {
+        text,
+        finishReason: cand?.finishReason || "UNKNOWN",
+        streamError,
+      };
     } catch {
       // fall through
     }

@@ -1446,7 +1446,7 @@ export default function LiffScorebookImportPage() {
 
   const recordCooledModels = (models?: string[]) => {
     if (!Array.isArray(models) || models.length === 0) return;
-    const until = Date.now() + 22_000;
+    const until = Date.now() + 10_000;
     for (const m of models) {
       if (typeof m === "string" && m.trim()) {
         cooledModelsRef.current.set(m.trim(), until);
@@ -2447,7 +2447,8 @@ export default function LiffScorebookImportPage() {
         imgState: SheetImageState,
         baseStructureFp: string,
         targetInnings: number[],
-        expectedLeadOff: number
+        expectedLeadOff: number,
+        ignoreSkippedModels = false
       ): Promise<{
         atBats: ScorebookV2AtBat[];
         nextLeadOffOrder?: number;
@@ -2559,7 +2560,7 @@ export default function LiffScorebookImportPage() {
             nextInningLeadOffOrder,
             legendBase64: legendOverride?.base64,
             legendMimeType: legendOverride?.mimeType,
-            skipModels: getActiveSkippedModels(),
+            skipModels: ignoreSkippedModels ? [] : getActiveSkippedModels(),
           }),
         });
 
@@ -2605,7 +2606,8 @@ export default function LiffScorebookImportPage() {
         imgState: SheetImageState,
         baseStructureFp: string,
         singleInn: number,
-        expectedLeadOff: number
+        expectedLeadOff: number,
+        ignoreSkippedOnFirst = false
       ): Promise<{
         atBats: ScorebookV2AtBat[];
         nextLeadOffOrder?: number;
@@ -2618,21 +2620,26 @@ export default function LiffScorebookImportPage() {
             imgState,
             baseStructureFp,
             [singleInn],
-            expectedLeadOff
+            expectedLeadOff,
+            ignoreSkippedOnFirst
           );
         } catch (firstErr) {
           const msg =
             firstErr instanceof Error ? firstErr.message : String(firstErr);
           const waitMs =
-            msg.includes("429") || msg.includes("混雑") ? 2800 : 1500;
+            msg.includes("429") || msg.includes("混雑") || msg.includes("503")
+              ? 3200
+              : 2400;
           await new Promise((r) => setTimeout(r, waitMs));
+          // リトライ時はクライアント側の短期スキップ記憶を解除し、回復済みの主力モデル（gemini-4-hydrogen 等）から再試行させる
           return await requestSingleChunk(
             isTop,
             structure,
             imgState,
             baseStructureFp,
             [singleInn],
-            expectedLeadOff
+            expectedLeadOff,
+            true
           );
         }
       };
@@ -2641,7 +2648,8 @@ export default function LiffScorebookImportPage() {
         isTop: boolean,
         rawStructure: ScorebookSheetStructure,
         imgState: SheetImageState,
-        startStaggerMs = 0
+        startStaggerMs = 0,
+        skipCompleted = onlyMissing
       ): Promise<void> => {
         if (!imgState.processed) return;
         if (startStaggerMs > 0) {
@@ -2682,15 +2690,17 @@ export default function LiffScorebookImportPage() {
                 }回`;
           const itemLabel = `${rangeText}${halfSuffix}`;
 
-          // 「未完了の回だけ再解析」モード時は、既に打席が保持されているイニングを0msでスキップし先頭打順だけ引き継ぐ
-          if (onlyMissing) {
+          // 「未完了の回だけ再解析」または最終自動リカバリパス時は、既に打席が保持されているイニングを0msでスキップし先頭打順だけ引き継ぐ
+          if (skipCompleted) {
             const currentSideAtBats = isTop ? workingTop : workingBottom;
             const allCoveredInState = targetInnings.every((innNum) => {
               const hasAb = currentSideAtBats.some((a) => a.inning === innNum);
               if (hasAb) return true;
-              const prevEntry = previousTimingsMap.get(`${sideKey}-${innNum}`);
+              const prevEntry =
+                previousTimingsMap.get(`${sideKey}-${innNum}`) ||
+                recordedMap.get(`${sideKey}-${innNum}`);
               return (
-                Boolean(prevEntry) &&
+                Boolean(prevEntry && prevEntry.status !== "error") &&
                 isSkippableFinalBottomInning(isTop, innNum, structure)
               );
             });
@@ -2704,14 +2714,20 @@ export default function LiffScorebookImportPage() {
                 lineupCycle,
                 expectedLeadOff
               );
-              const existingEntry = previousTimingsMap.get(entryKey);
+              const existingEntry =
+                previousTimingsMap.get(entryKey) || recordedMap.get(entryKey);
               upsertTimingEntry({
                 key: entryKey,
                 isTop,
                 innings: targetInnings,
                 label: itemLabel,
-                durationMs: existingEntry?.durationMs ?? 0,
-                fromCache: true,
+                durationMs:
+                  existingEntry && existingEntry.status !== "error"
+                    ? existingEntry.durationMs
+                    : 0,
+                fromCache: Boolean(
+                  onlyMissing || existingEntry?.fromCache
+                ),
                 status: "success",
               });
               continue;
@@ -2732,7 +2748,8 @@ export default function LiffScorebookImportPage() {
                     imgState,
                     baseStructureFp,
                     targetInnings[0],
-                    expectedLeadOff
+                    expectedLeadOff,
+                    skipCompleted
                   )
                 : await requestSingleChunk(
                     isTop,
@@ -2740,7 +2757,8 @@ export default function LiffScorebookImportPage() {
                     imgState,
                     baseStructureFp,
                     targetInnings,
-                    expectedLeadOff
+                    expectedLeadOff,
+                    skipCompleted
                   );
 
             commitSideInningAtBats(isTop, targetInnings, chunkRes.atBats);
@@ -2970,6 +2988,50 @@ export default function LiffScorebookImportPage() {
 
       await Promise.all(tasks);
 
+      // 並列スキャン中に一時混雑（503 / ストリーム切断等）で少数のイニング（1〜4件）のみ未完となった場合、
+      // 他のイニングが完了しクォータが回復した直後に自動で1パス直列リカバリを実行し、手動再解析の手間を省く
+      const firstPassEntries = Array.from(recordedMap.values());
+      const firstPassFailed = firstPassEntries.filter(
+        (e) => e.status === "error"
+      );
+      const firstPassSucceeded =
+        firstPassEntries.length - firstPassFailed.length;
+
+      if (
+        !onlyMissing &&
+        firstPassSucceeded > 0 &&
+        firstPassFailed.length > 0 &&
+        firstPassFailed.length <= 4
+      ) {
+        cooledModelsRef.current.clear();
+        const retryLabels = firstPassFailed.map((e) => e.label).join("・");
+        setAnalysisProgressLabel(
+          `一時混雑のあった ${retryLabels} を自動リカバリ再解析中...`
+        );
+        await new Promise((r) => setTimeout(r, 1_800));
+
+        if (
+          needTop &&
+          topStructure &&
+          firstPassFailed.some((e) => e.isTop)
+        ) {
+          await analyzeSheetByChunks(true, topStructure, topImage, 0, true);
+        }
+        if (
+          needBottom &&
+          bottomStructure &&
+          firstPassFailed.some((e) => !e.isTop)
+        ) {
+          await analyzeSheetByChunks(
+            false,
+            bottomStructure,
+            bottomImage,
+            0,
+            true
+          );
+        }
+      }
+
       const finalEntries = sortTimingEntries(Array.from(recordedMap.values()));
       const elapsedRunMs = Date.now() - deepStart;
       const cumulativeDeepMs = onlyMissing
@@ -3116,7 +3178,7 @@ export default function LiffScorebookImportPage() {
           nextInningLeadOffOrder,
           legendBase64: legendOverride?.base64,
           legendMimeType: legendOverride?.mimeType,
-          skipModels: getActiveSkippedModels(),
+          skipModels: [],
         }),
       });
 
