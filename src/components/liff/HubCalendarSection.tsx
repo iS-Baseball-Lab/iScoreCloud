@@ -21,7 +21,9 @@ import { CalendarSwipeSurface } from "@/components/liff/CalendarSwipeSurface";
 import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
 import {
   buildDemoSpecialEventsBundle,
+  formatSpecialEventCompactDeadline,
   getSpecialEventCategoryMeta,
+  resolveSpecialEventSortDateKey,
   type HubSpecialEventSummary,
 } from "@/lib/liff/special-events-schema";
 
@@ -306,8 +308,8 @@ export function HubCalendarSection({
       .sort((a, b) => {
         const statusDiff = (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1);
         if (statusDiff !== 0) return statusDiff;
-        const aDate = a.eventDate || a.deadlineDate || "9999-12-31";
-        const bDate = b.eventDate || b.deadlineDate || "9999-12-31";
+        const aDate = resolveSpecialEventSortDateKey(a);
+        const bDate = resolveSpecialEventSortDateKey(b);
         return aDate.localeCompare(bDate);
       })
       .slice(0, 5);
@@ -905,7 +907,7 @@ export function HubCalendarSection({
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-1.5 font-bold text-foreground/90 text-[10px] min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-bold text-foreground/90 text-[10px] min-w-0">
                             {isPoll ? (
                               <>
                                 <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 text-[9px] font-black shrink-0 border border-amber-500/35">
@@ -936,9 +938,9 @@ export function HubCalendarSection({
                                 </span>
                               </>
                             )}
-                            {sp.deadlineDateLabel && (
+                            {formatSpecialEventCompactDeadline(sp) && (
                               <span className="shrink-0 text-amber-700 dark:text-amber-300 font-black tabular-nums">
-                                〆{sp.deadlineDateLabel}
+                                {formatSpecialEventCompactDeadline(sp)}
                               </span>
                             )}
                           </div>

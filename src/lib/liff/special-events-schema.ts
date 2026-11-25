@@ -618,6 +618,8 @@ export interface SpecialEventDetailItem {
   timeRangeLabel: string;
   location: string;
   locationUrl: string;
+  interimDeadlineDate: string | null;
+  interimDeadlineDateLabel: string | null;
   deadlineDate: string | null;
   deadlineDateLabel: string | null;
   description: string;
@@ -645,6 +647,8 @@ export interface HubSpecialEventSummary {
   eventDateLabel: string | null;
   timeRangeLabel: string;
   location: string;
+  interimDeadlineDate?: string | null;
+  interimDeadlineDateLabel?: string | null;
   deadlineDate: string | null;
   deadlineDateLabel: string | null;
   importantNotice: string;
@@ -689,6 +693,85 @@ export function formatDateKeyToJaLabel(
   if (Number.isNaN(dt.getTime())) return null;
   const w = WEEKDAY_JA[dt.getUTCDay()] || "";
   return `${m}/${d}(${w})`;
+}
+
+export interface SpecialEventDeadlineFields {
+  interimDeadlineDate?: string | null;
+  interimDeadlineDateLabel?: string | null;
+  deadlineDate?: string | null;
+  deadlineDateLabel?: string | null;
+}
+
+/**
+ * ホーム・カレンダー等のコンパクト行向けに2段階回答期限（中間・最終）を整形
+ */
+export function formatSpecialEventCompactDeadline(
+  fields: SpecialEventDeadlineFields
+): string | null {
+  const interim =
+    fields.interimDeadlineDateLabel ||
+    formatDateKeyToJaLabel(fields.interimDeadlineDate) ||
+    fields.interimDeadlineDate ||
+    null;
+  const final =
+    fields.deadlineDateLabel ||
+    formatDateKeyToJaLabel(fields.deadlineDate) ||
+    fields.deadlineDate ||
+    null;
+
+  if (interim && final) {
+    if (interim === final) return `最終〆${final}`;
+    return `中間〆${interim}・最終〆${final}`;
+  }
+  if (interim) return `中間〆${interim}`;
+  if (final) return `最終〆${final}`;
+  return null;
+}
+
+/**
+ * トップニュースティッカー向けに現在有効な回答期限サフィックスを生成
+ */
+export function formatSpecialEventTickerDeadlineSuffix(
+  fields: SpecialEventDeadlineFields,
+  todayKey?: string
+): string {
+  const interim =
+    fields.interimDeadlineDateLabel ||
+    formatDateKeyToJaLabel(fields.interimDeadlineDate) ||
+    fields.interimDeadlineDate ||
+    null;
+  const final =
+    fields.deadlineDateLabel ||
+    formatDateKeyToJaLabel(fields.deadlineDate) ||
+    fields.deadlineDate ||
+    null;
+
+  if (interim && final) {
+    if (
+      todayKey &&
+      fields.interimDeadlineDate &&
+      todayKey > fields.interimDeadlineDate
+    ) {
+      return `（最終〆${final}）`;
+    }
+    return `（中間〆${interim}・最終〆${final}）`;
+  }
+  if (interim) return `（中間〆${interim}）`;
+  if (final) return `（最終〆${final}）`;
+  return "";
+}
+
+export function resolveSpecialEventSortDateKey(fields: {
+  eventDate?: string | null;
+  interimDeadlineDate?: string | null;
+  deadlineDate?: string | null;
+}): string {
+  return (
+    fields.eventDate ||
+    fields.interimDeadlineDate ||
+    fields.deadlineDate ||
+    "9999-12-31"
+  );
 }
 
 export function buildSpecialEventTimeRangeLabel(
@@ -1988,10 +2071,19 @@ export function buildSpecialEventAnnouncementLineText(params: {
     }
   }
 
-  if (event.deadlineDateLabel || event.deadlineDate) {
+  const announceInterimLabel =
+    event.interimDeadlineDateLabel || event.interimDeadlineDate || null;
+  const announceFinalLabel =
+    event.deadlineDateLabel || event.deadlineDate || null;
+  if (announceInterimLabel && announceFinalLabel) {
     lines.push(
-      `⏰ 回答期限: ${event.deadlineDateLabel || event.deadlineDate} まで`
+      `📌 中間回答期限: ${announceInterimLabel} まで（一次集計・仮予約）`
     );
+    lines.push(`⏰ 最終回答期限: ${announceFinalLabel} まで（最終日）`);
+  } else if (announceInterimLabel) {
+    lines.push(`📌 中間回答期限: ${announceInterimLabel} まで`);
+  } else if (announceFinalLabel) {
+    lines.push(`⏰ 最終回答期限: ${announceFinalLabel} まで`);
   }
 
   if (event.mode === "rsvp" && event.useFeeCalculation) {
@@ -2061,6 +2153,22 @@ export function buildSpecialEventSummaryLineText(params: {
   const { summary } = event;
   const lines: string[] = [];
 
+  const summaryInterimLabel =
+    event.interimDeadlineDateLabel || event.interimDeadlineDate || null;
+  const summaryFinalLabel =
+    event.deadlineDateLabel || event.deadlineDate || null;
+  const appendSummaryDeadlineLine = () => {
+    if (summaryInterimLabel && summaryFinalLabel) {
+      lines.push(
+        `⏰ 回答期限: 中間 ${summaryInterimLabel} ／ 最終 ${summaryFinalLabel}`
+      );
+    } else if (summaryInterimLabel) {
+      lines.push(`📌 中間回答期限: ${summaryInterimLabel} まで`);
+    } else if (summaryFinalLabel) {
+      lines.push(`⏰ 最終回答期限: ${summaryFinalLabel} まで`);
+    }
+  };
+
   lines.push(`${cat.icon} 【集計状況】${event.title}（${teamName}）`);
   lines.push("━━━━━━━━━━━━━━");
 
@@ -2068,6 +2176,7 @@ export function buildSpecialEventSummaryLineText(params: {
     lines.push(
       `📊 回答状況: ${summary.respondedHouseholdCount}/${summary.activeTargetHouseholdCount} 世帯回答済`
     );
+    appendSummaryDeadlineLine();
     lines.push("");
     lines.push("■ 候補日ごとの集計");
     for (const cs of summary.candidateSummaries) {
@@ -2083,6 +2192,7 @@ export function buildSpecialEventSummaryLineText(params: {
     if (event.location) {
       lines.push(`📍 会場: ${event.location}`);
     }
+    appendSummaryDeadlineLine();
     lines.push(
       `👥 参加総人数: 計 ${summary.totalHeadcount} 名（出席 ${summary.attendingHouseholdCount}世帯 / 欠席 ${summary.absentHouseholdCount}世帯 / 未回答 ${summary.unansweredHouseholdCount}世帯）`
     );
@@ -2558,6 +2668,8 @@ export function buildDemoSpecialEventsBundle(): {
     timeRangeLabel: "18:00〜20:30",
     location: "和食ダイニング さくら駅前店（2F 貸切座敷）",
     locationUrl: "https://maps.google.com/",
+    interimDeadlineDate: "2026-11-29",
+    interimDeadlineDateLabel: formatDateKeyToJaLabel("2026-11-29"),
     deadlineDate: "2026-12-06",
     deadlineDateLabel: formatDateKeyToJaLabel("2026-12-06"),
     description:
@@ -2677,6 +2789,8 @@ export function buildDemoSpecialEventsBundle(): {
     timeRangeLabel: "12:00〜15:00",
     location: "会場候補を調整中",
     locationUrl: "",
+    interimDeadlineDate: null,
+    interimDeadlineDateLabel: null,
     deadlineDate: "2026-12-15",
     deadlineDateLabel: formatDateKeyToJaLabel("2026-12-15"),
     description:
@@ -2726,6 +2840,8 @@ export function toHubSpecialEventSummary(
     eventDateLabel: ev.eventDateLabel,
     timeRangeLabel: ev.timeRangeLabel,
     location: ev.location,
+    interimDeadlineDate: ev.interimDeadlineDate,
+    interimDeadlineDateLabel: ev.interimDeadlineDateLabel,
     deadlineDate: ev.deadlineDate,
     deadlineDateLabel: ev.deadlineDateLabel,
     importantNotice: ev.importantNotice || "",

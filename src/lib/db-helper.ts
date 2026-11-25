@@ -145,6 +145,7 @@ const REQUIRED_COLUMNS: Record<string, Array<{ name: string; ddl: string }>> = {
   ],
   team_special_events: [
     { name: "important_notice", ddl: "ALTER TABLE team_special_events ADD COLUMN important_notice text" },
+    { name: "interim_deadline_date", ddl: "ALTER TABLE team_special_events ADD COLUMN interim_deadline_date text" },
   ],
 };
 
@@ -354,6 +355,7 @@ const REQUIRED_TABLES: Array<{ name: string; ddl: string }> = [
       end_time text,
       location text,
       location_url text,
+      interim_deadline_date text,
       deadline_date text,
       description text,
       important_notice text,

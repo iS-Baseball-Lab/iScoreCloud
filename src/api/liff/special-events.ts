@@ -26,6 +26,7 @@ import {
   normalizeSpecialEventStatus,
   normalizeSurveyAnswersMap,
   normalizeSurveyQuestions,
+  resolveSpecialEventSortDateKey,
   toHubSpecialEventSummary,
   type HubSpecialEventSummary,
   type RawSpecialEventResponseRow,
@@ -83,8 +84,8 @@ function sortSpecialEventItems(
   return [...items].sort((a, b) => {
     const rDiff = statusRank[a.status] - statusRank[b.status];
     if (rDiff !== 0) return rDiff;
-    const aDate = a.eventDate || a.deadlineDate || "9999-12-31";
-    const bDate = b.eventDate || b.deadlineDate || "9999-12-31";
+    const aDate = resolveSpecialEventSortDateKey(a);
+    const bDate = resolveSpecialEventSortDateKey(b);
     if (a.status === "open" && aDate !== bDate) {
       return aDate.localeCompare(bDate);
     }
@@ -107,6 +108,7 @@ export interface RawSpecialEventDbRow {
   endTime: string | null;
   location: string | null;
   locationUrl: string | null;
+  interimDeadlineDate?: string | null;
   deadlineDate: string | null;
   description: string | null;
   importantNotice?: string | null;
@@ -237,6 +239,8 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       ),
       location: row.location || "",
       locationUrl: row.locationUrl || "",
+      interimDeadlineDate: row.interimDeadlineDate || null,
+      interimDeadlineDateLabel: formatDateKeyToJaLabel(row.interimDeadlineDate),
       deadlineDate: row.deadlineDate || null,
       deadlineDateLabel: formatDateKeyToJaLabel(row.deadlineDate),
       description: row.description || "",
@@ -454,6 +458,7 @@ interface UpsertSpecialEventBody {
   endTime?: string | null;
   location?: string | null;
   locationUrl?: string | null;
+  interimDeadlineDate?: string | null;
   deadlineDate?: string | null;
   description?: string | null;
   importantNotice?: string | null;
@@ -479,6 +484,25 @@ liffSpecialEventsRouter.post("/", async (c) => {
     }
     if (!title) {
       return c.json({ success: false, error: "イベント名を入力してください" }, 400);
+    }
+
+    const interimDeadlineDate = sanitizeOptionalDateStr(
+      body.interimDeadlineDate
+    );
+    const deadlineDate = sanitizeOptionalDateStr(body.deadlineDate);
+    if (
+      interimDeadlineDate &&
+      deadlineDate &&
+      interimDeadlineDate > deadlineDate
+    ) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "中間回答期限は、最終回答期限（最終日）と同じか前の日付を指定してください",
+        },
+        400
+      );
     }
 
     if (teamId === "demo-team") {
@@ -508,7 +532,6 @@ liffSpecialEventsRouter.post("/", async (c) => {
     const eventDate = sanitizeOptionalDateStr(body.eventDate);
     const startTime = sanitizeOptionalTimeStr(body.startTime);
     const endTime = sanitizeOptionalTimeStr(body.endTime);
-    const deadlineDate = sanitizeOptionalDateStr(body.deadlineDate);
     const location = (body.location || "").trim().slice(0, 120);
     const locationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
     const description = (body.description || "").trim().slice(0, 2000);
@@ -546,6 +569,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       endTime,
       location,
       locationUrl,
+      interimDeadlineDate,
       deadlineDate,
       description,
       importantNotice,
@@ -583,6 +607,18 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
     const body = (await c.req.json()) as UpsertSpecialEventBody;
 
     if (specialEventId.startsWith("demo-") || body.teamId === "demo-team") {
+      const demoInterim = sanitizeOptionalDateStr(body.interimDeadlineDate);
+      const demoFinal = sanitizeOptionalDateStr(body.deadlineDate);
+      if (demoInterim && demoFinal && demoInterim > demoFinal) {
+        return c.json(
+          {
+            success: false,
+            error:
+              "中間回答期限は、最終回答期限（最終日）と同じか前の日付を指定してください",
+          },
+          400
+        );
+      }
       return c.json({
         success: true,
         isDemo: true,
@@ -655,10 +691,28 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
       body.endTime !== undefined
         ? sanitizeOptionalTimeStr(body.endTime)
         : existing.endTime;
+    const interimDeadlineDate =
+      body.interimDeadlineDate !== undefined
+        ? sanitizeOptionalDateStr(body.interimDeadlineDate)
+        : existing.interimDeadlineDate;
     const deadlineDate =
       body.deadlineDate !== undefined
         ? sanitizeOptionalDateStr(body.deadlineDate)
         : existing.deadlineDate;
+    if (
+      interimDeadlineDate &&
+      deadlineDate &&
+      interimDeadlineDate > deadlineDate
+    ) {
+      return c.json(
+        {
+          success: false,
+          error:
+            "中間回答期限は、最終回答期限（最終日）と同じか前の日付を指定してください",
+        },
+        400
+      );
+    }
     const location =
       body.location !== undefined
         ? (body.location || "").trim().slice(0, 120)
@@ -718,6 +772,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         endTime,
         location,
         locationUrl,
+        interimDeadlineDate,
         deadlineDate,
         description,
         importantNotice,

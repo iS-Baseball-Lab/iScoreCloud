@@ -23,7 +23,8 @@ export const teamSpecialEvents = sqliteTable(
     endTime: text("end_time"), // 'HH:mm'
     location: text("location"),
     locationUrl: text("location_url"),
-    deadlineDate: text("deadline_date"), // 'YYYY-MM-DD'
+    interimDeadlineDate: text("interim_deadline_date"), // 'YYYY-MM-DD' (中間回答期限・一次集計日)
+    deadlineDate: text("deadline_date"), // 'YYYY-MM-DD' (最終回答期限・最終日)
     description: text("description"),
     importantNotice: text("important_notice"), // ⚠️ 注意事項・特記事項（任意・常時強調表示）
     allowCompanions: integer("allow_companions", { mode: "boolean" })

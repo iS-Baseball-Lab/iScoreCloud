@@ -8,6 +8,8 @@ import {
   buildSpecialEventHouseholdsAndSummary,
   buildSpecialEventSummaryLineText,
   buildTeamHouseholdUnits,
+  formatSpecialEventCompactDeadline,
+  formatSpecialEventTickerDeadlineSuffix,
   normalizeCandidateDates,
   normalizeSurveyQuestions,
   type RawSpecialEventResponseRow,
@@ -301,7 +303,7 @@ describe("special-events-schema", () => {
     expect(summary.questionSummaries[0]?.optionCounts[1]?.count).toBe(0);
   });
 
-  it("ranks candidate dates in date_poll mode and generates LINE & CSV outputs", () => {
+  it("ranks candidate dates in date_poll mode and generates LINE & CSV outputs with 2-stage deadlines", () => {
     const candidates = normalizeCandidateDates([
       {
         id: "c1",
@@ -325,6 +327,21 @@ describe("special-events-schema", () => {
     const pollEvent: SpecialEventDetailItem = demo.events[1]!;
 
     expect(partyEvent.summary.totalHeadcount).toBeGreaterThan(0);
+    expect(partyEvent.interimDeadlineDate).toBe("2026-11-29");
+    expect(partyEvent.deadlineDate).toBe("2026-12-06");
+    expect(formatSpecialEventCompactDeadline(partyEvent)).toBe(
+      "中間〆11/29(日)・最終〆12/6(日)"
+    );
+    expect(formatSpecialEventCompactDeadline(pollEvent)).toBe(
+      "最終〆12/15(火)"
+    );
+    expect(
+      formatSpecialEventTickerDeadlineSuffix(partyEvent, "2026-11-24")
+    ).toBe("（中間〆11/29(日)・最終〆12/6(日)）");
+    expect(
+      formatSpecialEventTickerDeadlineSuffix(partyEvent, "2026-12-01")
+    ).toBe("（最終〆12/6(日)）");
+
     expect(
       pollEvent.summary.candidateSummaries.some((c) => c.isTopCandidate)
     ).toBe(true);
@@ -336,6 +353,8 @@ describe("special-events-schema", () => {
       includeUnansweredList: true,
     });
     expect(announceText).toContain("2026年 チーム忘年会・納会");
+    expect(announceText).toContain("📌 中間回答期限: 11/29(日) まで");
+    expect(announceText).toContain("⏰ 最終回答期限: 12/6(日) まで");
     expect(announceText).toContain("⚠️ 注意事項・特記事項:");
     expect(announceText).toContain("コース料金100%");
     expect(announceText).toContain("鈴木 家");
@@ -344,6 +363,7 @@ describe("special-events-schema", () => {
       event: partyEvent,
       teamName: "〇〇チーム",
     });
+    expect(summaryText).toContain("回答期限: 中間 11/29(日) ／ 最終 12/6(日)");
     expect(summaryText).toContain("参加総人数:");
     expect(summaryText).toContain("ご兄弟・同伴家族");
     expect(summaryText).toContain("⚠️ 注意事項・特記事項:");

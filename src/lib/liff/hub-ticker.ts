@@ -12,7 +12,10 @@ import {
   DEFAULT_PRACTICE_MATCH_LABEL,
   isGenericMatchTournamentName,
 } from "@/lib/liff/scorebook-symbol-rules";
-import type { HubSpecialEventSummary } from "@/lib/liff/special-events-schema";
+import {
+  formatSpecialEventTickerDeadlineSuffix,
+  type HubSpecialEventSummary,
+} from "@/lib/liff/special-events-schema";
 import { extractYouTubeVideoId } from "@/lib/youtube";
 
 export type HubManualTickerTone = "urgent" | "warning" | "info" | "celebration";
@@ -947,9 +950,10 @@ export function buildHubTickerFeed(
     );
     if (unansweredSpecial) {
       const isPoll = unansweredSpecial.mode === "date_poll";
-      const deadlinePart = unansweredSpecial.deadlineDateLabel
-        ? `（〆${unansweredSpecial.deadlineDateLabel}）`
-        : "";
+      const deadlinePart = formatSpecialEventTickerDeadlineSuffix(
+        unansweredSpecial,
+        todayKey
+      );
       items.push({
         id: `my-unanswered-sp:${unansweredSpecial.id}`,
         category: "my_reminder",

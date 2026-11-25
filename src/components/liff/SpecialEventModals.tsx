@@ -106,6 +106,7 @@ export interface UpsertSpecialEventPayload {
   endTime: string | null;
   location: string;
   locationUrl: string;
+  interimDeadlineDate: string | null;
   deadlineDate: string | null;
   description: string;
   importantNotice: string;
@@ -209,6 +210,7 @@ export function CreateOrEditSpecialEventModal({
   const [endTime, setEndTime] = useState("20:30");
   const [location, setLocation] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
+  const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [description, setDescription] = useState("");
   const [importantNotice, setImportantNotice] = useState("");
@@ -246,6 +248,7 @@ export function CreateOrEditSpecialEventModal({
       setEndTime(editingEvent.endTime || "20:30");
       setLocation(editingEvent.location || "");
       setLocationUrl(editingEvent.locationUrl || "");
+      setInterimDeadlineDate(editingEvent.interimDeadlineDate || "");
       setDeadlineDate(editingEvent.deadlineDate || "");
       setDescription(editingEvent.description || "");
       setImportantNotice(editingEvent.importantNotice || "");
@@ -277,6 +280,7 @@ export function CreateOrEditSpecialEventModal({
       setEndTime(tpl.endTime);
       setLocation("");
       setLocationUrl("");
+      setInterimDeadlineDate("");
       setDeadlineDate("");
       setDescription("");
       setImportantNotice("");
@@ -400,6 +404,16 @@ export function CreateOrEditSpecialEventModal({
       toast.error("イベント名（例：2026年 忘年会）を入力してください");
       return;
     }
+    if (
+      interimDeadlineDate &&
+      deadlineDate &&
+      interimDeadlineDate > deadlineDate
+    ) {
+      toast.error(
+        "中間回答期限は、最終回答期限（最終日）と同じか前の日付を設定してください"
+      );
+      return;
+    }
     if (mode === "date_poll") {
       const validCands = candidateDates.filter((c) =>
         /^\d{4}-\d{2}-\d{2}$/.test(c.dateStr)
@@ -430,6 +444,7 @@ export function CreateOrEditSpecialEventModal({
       endTime: endTime || null,
       location: location.trim(),
       locationUrl: locationUrl.trim(),
+      interimDeadlineDate: interimDeadlineDate || null,
       deadlineDate: deadlineDate || null,
       description: description.trim(),
       importantNotice: importantNotice.trim(),
@@ -777,29 +792,83 @@ export function CreateOrEditSpecialEventModal({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className="space-y-1">
-                <label className="text-[11px] font-black text-foreground block">
-                  お店・地図URL（任意）
-                </label>
-                <input
-                  type="url"
-                  value={locationUrl}
-                  onChange={(e) => setLocationUrl(e.target.value)}
-                  placeholder="https://maps.google.com/..."
-                  className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
-                />
+            <div className="space-y-1">
+              <label className="text-[11px] font-black text-foreground block">
+                お店・地図URL（任意）
+              </label>
+              <input
+                type="url"
+                value={locationUrl}
+                onChange={(e) => setLocationUrl(e.target.value)}
+                placeholder="https://maps.google.com/..."
+                className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
+              />
+            </div>
+
+            <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
+              <div className="space-y-0.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-black text-foreground flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>回答期限の設定（任意・2段階対応）</span>
+                  </span>
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9px] font-black shrink-0">
+                    中間・最終日
+                  </span>
+                </div>
+                <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                  お店の仮予約・一次集計用の「中間」と、人数確定の「最終日」を設定できます（片方のみの設定も可）
+                </p>
               </div>
-              <div className="space-y-1">
-                <label className="text-[11px] font-black text-foreground block">
-                  回答期限日（任意）
-                </label>
-                <input
-                  type="date"
-                  value={deadlineDate}
-                  onChange={(e) => setDeadlineDate(e.target.value)}
-                  className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
-                />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <label className="text-[10.5px] font-black text-sky-800 dark:text-sky-300">
+                      📌 中間回答期限（中間日）
+                    </label>
+                    {interimDeadlineDate && (
+                      <button
+                        type="button"
+                        onClick={() => setInterimDeadlineDate("")}
+                        className="text-[9.5px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        クリア
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    value={interimDeadlineDate}
+                    max={deadlineDate || undefined}
+                    onChange={(e) => setInterimDeadlineDate(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <label className="text-[10.5px] font-black text-amber-800 dark:text-amber-300">
+                      ⏰ 最終回答期限（最終日）
+                    </label>
+                    {deadlineDate && (
+                      <button
+                        type="button"
+                        onClick={() => setDeadlineDate("")}
+                        className="text-[9.5px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        クリア
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="date"
+                    value={deadlineDate}
+                    min={interimDeadlineDate || undefined}
+                    onChange={(e) => setDeadlineDate(e.target.value)}
+                    className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1645,7 +1714,23 @@ export function RespondSpecialEventModal({
 
         {/* Scrollable Body */}
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4 bg-card">
-          {/* 0. 注意事項・特記事項（入力がある場合のみ常時強調表示） */}
+          {/* 0A. 2段階回答期限バッジ（設定がある場合のみ表示） */}
+          {(event.interimDeadlineDateLabel || event.deadlineDateLabel) && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+              {event.interimDeadlineDateLabel && (
+                <span className="px-2.5 py-1 rounded-lg bg-sky-500/12 text-sky-800 dark:text-sky-300 border border-sky-500/30 font-black tabular-nums">
+                  📌 中間回答期限: {event.interimDeadlineDateLabel} まで
+                </span>
+              )}
+              {event.deadlineDateLabel && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black tabular-nums">
+                  ⏰ 最終回答期限: {event.deadlineDateLabel} まで
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* 0B. 注意事項・特記事項（入力がある場合のみ常時強調表示） */}
           <ImportantNoticeBanner notice={event.importantNotice} />
 
           {/* 1. 回答対象の世帯セレクタ（代理入力にも対応） */}
@@ -3069,6 +3154,7 @@ interface FinalizeCandidateDateModalProps {
     startTime: string;
     endTime: string;
     location: string;
+    interimDeadlineDate: string | null;
     deadlineDate: string | null;
   }) => Promise<void>;
 }
@@ -3085,6 +3171,7 @@ export function FinalizeCandidateDateModal({
   const [startTime, setStartTime] = useState("18:00");
   const [endTime, setEndTime] = useState("20:30");
   const [location, setLocation] = useState("");
+  const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
 
   useEffect(() => {
@@ -3102,6 +3189,7 @@ export function FinalizeCandidateDateModal({
       setEndTime(topCand.endTime || event.endTime || "20:30");
     }
     setLocation(event.location || "");
+    setInterimDeadlineDate(event.interimDeadlineDate || "");
     setDeadlineDate(event.deadlineDate || "");
   }, [event, isOpen]);
 
@@ -3207,16 +3295,59 @@ export function FinalizeCandidateDateModal({
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-[11px] font-black text-foreground block">
-              本出欠の回答期限日（任意）
-            </label>
-            <input
-              type="date"
-              value={deadlineDate}
-              onChange={(e) => setDeadlineDate(e.target.value)}
-              className="w-full h-10 px-2.5 rounded-xl border border-border bg-card text-xs font-bold"
-            />
+          <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
+            <span className="text-[11px] font-black text-foreground block">
+              本出欠の回答期限（任意・2段階設定）
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-1">
+                  <label className="text-[10.5px] font-black text-sky-800 dark:text-sky-300">
+                    📌 中間回答期限（中間日）
+                  </label>
+                  {interimDeadlineDate && (
+                    <button
+                      type="button"
+                      onClick={() => setInterimDeadlineDate("")}
+                      className="text-[9.5px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  value={interimDeadlineDate}
+                  max={deadlineDate || undefined}
+                  onChange={(e) => setInterimDeadlineDate(e.target.value)}
+                  className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-1">
+                  <label className="text-[10.5px] font-black text-amber-800 dark:text-amber-300">
+                    ⏰ 最終回答期限（最終日）
+                  </label>
+                  {deadlineDate && (
+                    <button
+                      type="button"
+                      onClick={() => setDeadlineDate("")}
+                      className="text-[9.5px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  value={deadlineDate}
+                  min={interimDeadlineDate || undefined}
+                  onChange={(e) => setDeadlineDate(e.target.value)}
+                  className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3233,11 +3364,22 @@ export function FinalizeCandidateDateModal({
             disabled={!selectedCand || isSaving}
             onClick={() => {
               if (!selectedCand) return;
+              if (
+                interimDeadlineDate &&
+                deadlineDate &&
+                interimDeadlineDate > deadlineDate
+              ) {
+                toast.error(
+                  "中間回答期限は、最終回答期限（最終日）と同じか前の日付を設定してください"
+                );
+                return;
+              }
               void onFinalize({
                 eventDate: selectedCand.dateStr,
                 startTime,
                 endTime,
                 location: location.trim(),
+                interimDeadlineDate: interimDeadlineDate || null,
                 deadlineDate: deadlineDate || null,
               });
             }}

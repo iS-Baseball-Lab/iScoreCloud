@@ -49,7 +49,9 @@ import {
 } from "@/lib/liff/hub-ticker";
 import {
   buildDemoSpecialEventsBundle,
+  formatSpecialEventCompactDeadline,
   getSpecialEventCategoryMeta,
+  resolveSpecialEventSortDateKey,
   type HubSpecialEventSummary,
 } from "@/lib/liff/special-events-schema";
 import type { HubEventInputItem } from "@/components/liff/HubHeroSection";
@@ -560,8 +562,8 @@ export default function LiffHubPage() {
         const bRank =
           b.status === "open" ? (!b.myResponded ? 0 : 1) : 2;
         if (aRank !== bRank) return aRank - bRank;
-        const aDate = a.eventDate || a.deadlineDate || "9999-12-31";
-        const bDate = b.eventDate || b.deadlineDate || "9999-12-31";
+        const aDate = resolveSpecialEventSortDateKey(a);
+        const bDate = resolveSpecialEventSortDateKey(b);
         return aDate.localeCompare(bDate);
       })
       .slice(0, 5);
@@ -713,6 +715,7 @@ export default function LiffHubPage() {
                 {topSpecialEvents.slice(0, 3).map((sp) => {
                   const cat = getSpecialEventCategoryMeta(sp.category);
                   const isPoll = sp.mode === "date_poll";
+                  const compactDeadline = formatSpecialEventCompactDeadline(sp);
                   const nonZeroTiers = (sp.tierTotals || []).filter(
                     (t) => t.totalCount > 0
                   );
@@ -789,15 +792,15 @@ export default function LiffHubPage() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground truncate">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-bold text-muted-foreground leading-tight">
                           {isPoll ? (
-                            <span className="truncate tabular-nums">
+                            <span className="truncate max-w-full tabular-nums">
                               {sp.topCandidateSummary
                                 ? `👑最多 ${sp.topCandidateSummary.dateLabel}（◯${sp.topCandidateSummary.okCount}・約${sp.topCandidateSummary.estimatedHeadcount}名）`
                                 : "候補日アンケート受付中"}
                             </span>
                           ) : (
-                            <span className="truncate tabular-nums">
+                            <span className="truncate max-w-full tabular-nums">
                               {compactTierText
                                 ? `${compactTierText}（${sp.respondedHouseholdCount}/${sp.activeTargetHouseholdCount}世帯）`
                                 : `回答 ${sp.respondedHouseholdCount}/${sp.activeTargetHouseholdCount}世帯${
@@ -805,9 +808,9 @@ export default function LiffHubPage() {
                                   }`}
                             </span>
                           )}
-                          {sp.deadlineDateLabel && (
+                          {compactDeadline && (
                             <span className="shrink-0 text-amber-700 dark:text-amber-300 font-black tabular-nums">
-                              〆{sp.deadlineDateLabel}
+                              {compactDeadline}
                             </span>
                           )}
                         </div>

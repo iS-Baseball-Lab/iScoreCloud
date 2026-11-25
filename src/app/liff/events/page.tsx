@@ -479,6 +479,9 @@ function LiffSpecialEventsContent() {
                   payload.startTime,
                   payload.endTime
                 ),
+                interimDeadlineDateLabel: formatDateKeyToJaLabel(
+                  payload.interimDeadlineDate
+                ),
                 deadlineDateLabel: formatDateKeyToJaLabel(payload.deadlineDate),
                 households: rebuilt.households,
                 summary: rebuilt.summary,
@@ -510,6 +513,9 @@ function LiffSpecialEventsContent() {
             timeRangeLabel: buildSpecialEventTimeRangeLabel(
               payload.startTime,
               payload.endTime
+            ),
+            interimDeadlineDateLabel: formatDateKeyToJaLabel(
+              payload.interimDeadlineDate
             ),
             deadlineDateLabel: formatDateKeyToJaLabel(payload.deadlineDate),
             createdByUserId: "demo-user",
@@ -710,12 +716,26 @@ function LiffSpecialEventsContent() {
     toast.success(nextPaid ? "集金済にしました！" : "未集金に戻しました");
   };
 
+  const todayJstKey = useMemo(() => {
+    const parts = new Intl.DateTimeFormat("ja-JP", {
+      timeZone: "Asia/Tokyo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const y = parts.find((p) => p.type === "year")?.value || "2026";
+    const m = parts.find((p) => p.type === "month")?.value || "01";
+    const d = parts.find((p) => p.type === "day")?.value || "01";
+    return `${y}-${m}-${d}`;
+  }, []);
+
   // 候補日決定 ➔ 本出欠モードへ切替
   const handleFinalizeCandidateDate = async (params: {
     eventDate: string;
     startTime: string;
     endTime: string;
     location: string;
+    interimDeadlineDate: string | null;
     deadlineDate: string | null;
   }) => {
     if (!finalizingEvent) return;
@@ -739,6 +759,7 @@ function LiffSpecialEventsContent() {
             startTime: params.startTime,
             endTime: params.endTime,
             location: params.location,
+            interimDeadlineDate: params.interimDeadlineDate,
             deadlineDate: params.deadlineDate,
           }),
         }
@@ -795,6 +816,10 @@ function LiffSpecialEventsContent() {
                 params.endTime
               ),
               location: params.location,
+              interimDeadlineDate: params.interimDeadlineDate,
+              interimDeadlineDateLabel: formatDateKeyToJaLabel(
+                params.interimDeadlineDate
+              ),
               deadlineDate: params.deadlineDate,
               deadlineDateLabel: formatDateKeyToJaLabel(params.deadlineDate),
               households: built.households,
@@ -1162,13 +1187,32 @@ function LiffSpecialEventsContent() {
                       </div>
                     )}
 
-                    {/* 期限・会費チップ */}
-                    {(ev.deadlineDateLabel ||
+                    {/* 2段階回答期限（中間・最終日）＆ 会費チップ */}
+                    {(ev.interimDeadlineDateLabel ||
+                      ev.deadlineDateLabel ||
                       (ev.mode === "rsvp" && ev.useFeeCalculation)) && (
                       <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                        {ev.interimDeadlineDateLabel && (
+                          <span
+                            className={cn(
+                              "px-2.5 py-1 rounded-lg border tabular-nums",
+                              ev.interimDeadlineDate &&
+                                ev.interimDeadlineDate < todayJstKey &&
+                                ev.deadlineDateLabel
+                                ? "bg-muted text-muted-foreground border-border font-bold"
+                                : "bg-sky-500/12 text-sky-800 dark:text-sky-300 border border-sky-500/30 font-black"
+                            )}
+                          >
+                            {ev.interimDeadlineDate &&
+                            ev.interimDeadlineDate < todayJstKey &&
+                            ev.deadlineDateLabel
+                              ? `📌 中間期限: ${ev.interimDeadlineDateLabel}（経過）`
+                              : `📌 中間回答期限: ${ev.interimDeadlineDateLabel} まで`}
+                          </span>
+                        )}
                         {ev.deadlineDateLabel && (
-                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black">
-                            ⏰ 回答期限: {ev.deadlineDateLabel} まで
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black tabular-nums">
+                            ⏰ 最終回答期限: {ev.deadlineDateLabel} まで
                           </span>
                         )}
                         {ev.mode === "rsvp" &&
