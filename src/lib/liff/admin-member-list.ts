@@ -4,6 +4,7 @@ import {
   BUILTIN_ROLE_MASTER_LIST,
   evaluateEffectiveRolePermissions,
   resolveRoleLabel,
+  type RoleBadgeTone,
   type TeamRoleDefinition,
 } from "@/lib/roles";
 
@@ -37,7 +38,13 @@ export type AdminMemberCategoryKey =
   | "parents"
   | "players_others";
 
-export type AdminMemberFilterId = "all" | AdminMemberCategoryKey | "unlinked";
+/**
+ * 絞り込みチップID:
+ * - `"all"`: 全員
+ * - `"unlinked"`: 手動登録（LINE未連携）のみ
+ * - `"role:<roleKey>"`: 指定した役職（主役職または兼務ロール）を持つメンバー
+ */
+export type AdminMemberFilterId = "all" | "unlinked" | `role:${string}`;
 
 export type AdminMemberSortMode = "role" | "kana" | "duty";
 
@@ -47,6 +54,15 @@ export interface AdminMemberSectionAccent {
   countBadgeClass: string;
 }
 
+export interface AdminMemberRoleFilterChip {
+  filterId: `role:${string}`;
+  roleKey: string;
+  label: string;
+  isBuiltin: boolean;
+  badgeTone: RoleBadgeTone;
+  count: number;
+}
+
 export interface AdminMemberSectionGroup<
   T extends AdminMemberListItem = AdminMemberListItem
 > {
@@ -54,67 +70,11 @@ export interface AdminMemberSectionGroup<
   title: string;
   subtitle?: string;
   accent: AdminMemberSectionAccent;
-  categoryKey?: AdminMemberCategoryKey;
+  roleKey?: string;
+  isCustomRole?: boolean;
+  concurrentCount?: number;
   members: T[];
 }
-
-export const ADMIN_MEMBER_CATEGORY_METAS: ReadonlyArray<{
-  key: AdminMemberCategoryKey;
-  label: string;
-  shortLabel: string;
-  subtitle: string;
-  accent: AdminMemberSectionAccent;
-}> = [
-  {
-    key: "managers",
-    label: "監督・代表・チーム管理",
-    shortLabel: "監督・管理",
-    subtitle: "参加承認・役職/権限設定・マスタ管理を担う責任者",
-    accent: {
-      capBorderClass: "border-amber-500",
-      iconBgClass:
-        "bg-amber-500/20 text-amber-300 border border-amber-400/30",
-      countBadgeClass:
-        "bg-amber-500/20 text-amber-200 border border-amber-400/30",
-    },
-  },
-  {
-    key: "coaches_ops",
-    label: "指導者・スコア・運営係",
-    shortLabel: "指導者・運営係",
-    subtitle: "コーチ・スコアラー・配車係・行事係などの担当メンバー",
-    accent: {
-      capBorderClass: "border-teal-500",
-      iconBgClass: "bg-teal-500/20 text-teal-300 border border-teal-400/30",
-      countBadgeClass:
-        "bg-teal-500/20 text-teal-200 border border-teal-400/30",
-    },
-  },
-  {
-    key: "parents",
-    label: "保護者メンバー",
-    shortLabel: "保護者",
-    subtitle: "出欠・行事回答・マイカー登録・当番サポート",
-    accent: {
-      capBorderClass: "border-primary",
-      iconBgClass: "bg-slate-800 text-slate-200 border border-slate-700",
-      countBadgeClass: "bg-slate-800 text-slate-200 border border-slate-700",
-    },
-  },
-  {
-    key: "players_others",
-    label: "選手本人・閲覧メンバー",
-    shortLabel: "選手・閲覧",
-    subtitle: "本人LINE連携選手・OB・関係者（閲覧専用を含む）",
-    accent: {
-      capBorderClass: "border-emerald-500",
-      iconBgClass:
-        "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30",
-      countBadgeClass:
-        "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30",
-    },
-  },
-];
 
 const BUILTIN_ROLE_KEYS = new Set<string>(
   BUILTIN_ROLE_MASTER_LIST.map((r) => r.role.toLowerCase())
@@ -124,6 +84,89 @@ const jaCollator = new Intl.Collator("ja", {
   numeric: true,
   sensitivity: "base",
 });
+
+export function resolveRoleToneSectionAccent(
+  tone: RoleBadgeTone
+): AdminMemberSectionAccent {
+  switch (tone) {
+    case "rose":
+      return {
+        capBorderClass: "border-rose-500",
+        iconBgClass: "bg-rose-500/20 text-rose-300 border border-rose-400/30",
+        countBadgeClass:
+          "bg-rose-500/20 text-rose-200 border border-rose-400/30",
+      };
+    case "amber":
+      return {
+        capBorderClass: "border-amber-500",
+        iconBgClass:
+          "bg-amber-500/20 text-amber-300 border border-amber-400/30",
+        countBadgeClass:
+          "bg-amber-500/20 text-amber-200 border border-amber-400/30",
+      };
+    case "primary":
+      return {
+        capBorderClass: "border-primary",
+        iconBgClass: "bg-slate-800 text-sky-300 border border-slate-700",
+        countBadgeClass: "bg-slate-800 text-slate-100 border border-slate-700",
+      };
+    case "teal":
+      return {
+        capBorderClass: "border-teal-500",
+        iconBgClass: "bg-teal-500/20 text-teal-300 border border-teal-400/30",
+        countBadgeClass:
+          "bg-teal-500/20 text-teal-200 border border-teal-400/30",
+      };
+    case "emerald":
+      return {
+        capBorderClass: "border-emerald-500",
+        iconBgClass:
+          "bg-emerald-500/20 text-emerald-300 border border-emerald-400/30",
+        countBadgeClass:
+          "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30",
+      };
+    case "slate":
+    default:
+      return {
+        capBorderClass: "border-slate-500",
+        iconBgClass: "bg-slate-800 text-slate-200 border border-slate-700",
+        countBadgeClass: "bg-slate-800 text-slate-200 border border-slate-700",
+      };
+  }
+}
+
+/**
+ * メンバーに割り当てられている全役職キー（主役職 ＋ 兼務ロール）を小文字・重複なしで返す
+ */
+export function extractMemberAssignedRoleKeys(
+  member: AdminMemberListItem
+): string[] {
+  const primary = (member.role || "parent").trim().toLowerCase() || "parent";
+  const result: string[] = [primary];
+  const seen = new Set<string>([primary]);
+  for (const sr of member.subRoles || []) {
+    const clean = (sr || "").trim().toLowerCase();
+    if (clean && !seen.has(clean)) {
+      seen.add(clean);
+      result.push(clean);
+    }
+  }
+  return result;
+}
+
+/**
+ * 役職定義リストを優先度（priority）昇順に整列して返す
+ */
+export function sortRoleDefinitionsByPriority(
+  roleDefinitions: ReadonlyArray<TeamRoleDefinition>
+): TeamRoleDefinition[] {
+  return [...roleDefinitions].sort((a, b) => {
+    const pa = a.priority ?? 99;
+    const pb = b.priority ?? 99;
+    if (pa !== pb) return pa - pb;
+    return jaCollator.compare(a.label, b.label);
+  });
+}
 
 /**
  * カタカナをひらがなへ正規化し、前後の空白を除去する
@@ -154,7 +197,7 @@ export function extractFamilySurname(name: string | null | undefined): string {
 
 /**
  * チーム内の他メンバーや紐付け選手のふりがなから「苗字 -> よみがな」辞書を構築する
- * （保護者のふりがなが未入力でも、配偶者や選手名簿のよみがなから五十音行を自動補完する）
+ * （保護者のふりがなが未入力でも、配偶者や選手名簿のよみがなから五十音順を自動補完する）
  */
 export function buildSurnameKanaHintMap(
   members: ReadonlyArray<AdminMemberListItem>
@@ -187,7 +230,7 @@ export function buildSurnameKanaHintMap(
 }
 
 /**
- * メンバーのソート・五十音行判定に使う実効よみがなを解決する
+ * メンバーの名前昇順ソート・五十音行判定に使う実効よみがなを解決する
  */
 export function resolveEffectiveMemberReading(
   member: AdminMemberListItem,
@@ -279,7 +322,7 @@ export function resolveGojuonGroupMeta(
 }
 
 /**
- * メンバーを4つの機能カテゴリ（監督・管理 / 指導者・運営係 / 保護者 / 選手・閲覧）に分類する
+ * アバター配色等に使用するメンバーの機能トーン分類
  */
 export function classifyAdminMemberCategory(
   member: AdminMemberListItem,
@@ -334,35 +377,70 @@ export function classifyAdminMemberCategory(
 }
 
 /**
- * 各カテゴリの件数と未連携件数を集計する
+ * 役職ごとの所属人数（主役職＋兼務ロールを含む）と未連携件数を集計し、
+ * 1名以上所属する役職の絞り込みチップ配列を優先度順で返す
  */
-export function computeAdminMemberFilterCounts(
+export function computeAdminMemberFilterSummary(
   members: ReadonlyArray<AdminMemberListItem>,
   roleDefinitions: ReadonlyArray<TeamRoleDefinition>
-): Record<AdminMemberFilterId, number> {
-  const counts: Record<AdminMemberFilterId, number> = {
-    all: members.length,
-    managers: 0,
-    coaches_ops: 0,
-    parents: 0,
-    players_others: 0,
-    unlinked: 0,
-  };
+): {
+  totalCount: number;
+  unlinkedCount: number;
+  roleChips: AdminMemberRoleFilterChip[];
+} {
+  const roleCountMap = new Map<string, number>();
+  let unlinkedCount = 0;
 
   for (const m of members) {
-    const cat = classifyAdminMemberCategory(m, roleDefinitions);
-    counts[cat] += 1;
     const isLinked = m.isLineLinked ?? Boolean(m.userId);
     if (!isLinked) {
-      counts.unlinked += 1;
+      unlinkedCount += 1;
+    }
+    for (const rk of extractMemberAssignedRoleKeys(m)) {
+      roleCountMap.set(rk, (roleCountMap.get(rk) || 0) + 1);
     }
   }
 
-  return counts;
+  const sortedDefs = sortRoleDefinitionsByPriority(roleDefinitions);
+  const roleChips: AdminMemberRoleFilterChip[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const def of sortedDefs) {
+    const rk = def.role.toLowerCase();
+    seenKeys.add(rk);
+    const count = roleCountMap.get(rk) || 0;
+    if (count <= 0) continue;
+    roleChips.push({
+      filterId: `role:${rk}`,
+      roleKey: rk,
+      label: def.label,
+      isBuiltin: def.isBuiltin,
+      badgeTone: def.badgeTone,
+      count,
+    });
+  }
+
+  for (const [rk, count] of roleCountMap.entries()) {
+    if (seenKeys.has(rk) || count <= 0) continue;
+    roleChips.push({
+      filterId: `role:${rk}`,
+      roleKey: rk,
+      label: resolveRoleLabel(rk, roleDefinitions),
+      isBuiltin: BUILTIN_ROLE_KEYS.has(rk),
+      badgeTone: "slate",
+      count,
+    });
+  }
+
+  return {
+    totalCount: members.length,
+    unlinkedCount,
+    roleChips,
+  };
 }
 
 /**
- * 検索キーワード＋カテゴリチップでメンバーを絞り込む
+ * 検索キーワード＋役職/未連携チップでメンバーを絞り込む
  * （氏名・ふりがな・役職名・当番班・電話番号に加え、紐付けお子様名・背番号でもヒット）
  */
 export function filterAdminMembers<T extends AdminMemberListItem>(
@@ -376,19 +454,22 @@ export function filterAdminMembers<T extends AdminMemberListItem>(
   const { filter, searchQuery, roleDefinitions } = options;
   const q = searchQuery.trim().toLowerCase();
   const qHira = normalizeToHiragana(q);
+  const targetRoleKey = filter.startsWith("role:")
+    ? filter.slice("role:".length).trim().toLowerCase()
+    : "";
 
   return members.filter((m) => {
     const isLinked = m.isLineLinked ?? Boolean(m.userId);
     if (filter === "unlinked") {
       if (isLinked) return false;
-    } else if (filter !== "all") {
-      const cat = classifyAdminMemberCategory(m, roleDefinitions);
-      if (cat !== filter) return false;
+    } else if (targetRoleKey) {
+      const assigned = extractMemberAssignedRoleKeys(m);
+      if (!assigned.includes(targetRoleKey)) return false;
     }
 
     if (!q) return true;
 
-    const allRoles = [m.role, ...(m.subRoles || [])];
+    const allRoles = extractMemberAssignedRoleKeys(m);
     const roleLabels = allRoles
       .map((r) => resolveRoleLabel(r, roleDefinitions))
       .join(" ");
@@ -413,12 +494,16 @@ export function filterAdminMembers<T extends AdminMemberListItem>(
 }
 
 /**
- * 選択された並び順モード（役職別 / 五十音順 / 当番班別）に応じてセクション単位にグループ化・整列する
+ * 選択された並び順モードに応じてセクション単位にグループ化し、各くくりの中は「名前の昇順」で整列する
+ * - `role`（役職別）: 規定・独自を含む各役職ごとにくくり、兼務メンバーは該当するすべての役職くくりに表示する
+ * - `kana`（五十音順）: あ行〜わ行ごとにくくり、名前昇順で整列する
+ * - `duty`（当番班別）: 当番班・担当ラベルごとにくくり、名前昇順で整列する
  */
 export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
   members: ReadonlyArray<T>,
   options: {
     sortMode: AdminMemberSortMode;
+    filter?: AdminMemberFilterId;
     roleDefinitions: ReadonlyArray<TeamRoleDefinition>;
     allTeamMembersForKanaHint?: ReadonlyArray<AdminMemberListItem>;
     presetDutyGroups?: ReadonlyArray<string>;
@@ -426,6 +511,7 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
 ): AdminMemberSectionGroup<T>[] {
   const {
     sortMode,
+    filter = "all",
     roleDefinitions,
     allTeamMembersForKanaHint,
     presetDutyGroups = [],
@@ -437,11 +523,6 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
     allTeamMembersForKanaHint || members
   );
 
-  const rolePriorityMap = new Map<string, number>();
-  roleDefinitions.forEach((def, idx) => {
-    rolePriorityMap.set(def.role.toLowerCase(), def.priority ?? idx);
-  });
-
   const readingCache = new Map<string, string>();
   const getReading = (m: AdminMemberListItem): string => {
     const cached = readingCache.get(m.memberId);
@@ -451,65 +532,98 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
     return resolved;
   };
 
-  const getBestRolePriority = (m: AdminMemberListItem): number => {
-    const primaryP =
-      rolePriorityMap.get((m.role || "parent").toLowerCase()) ?? 99;
-    return primaryP;
+  /**
+   * くくり内の統一ソート：名前の昇順（よみがな五十音昇順 ➔ 氏名文字列昇順 ➔ ID昇順）
+   */
+  const compareByNameAsc = (a: T, b: T): number => {
+    const ra = getReading(a);
+    const rb = getReading(b);
+    if (ra && rb) {
+      const kanaCmp = jaCollator.compare(ra, rb);
+      if (kanaCmp !== 0) return kanaCmp;
+    } else if (ra || rb) {
+      const mixedCmp = jaCollator.compare(ra || a.name, rb || b.name);
+      if (mixedCmp !== 0) return mixedCmp;
+    }
+
+    const nameCmp = jaCollator.compare(a.name, b.name);
+    if (nameCmp !== 0) return nameCmp;
+
+    return a.memberId.localeCompare(b.memberId);
   };
 
-  const compareByRoleThenKana = (a: T, b: T): number => {
-    const pa = getBestRolePriority(a);
-    const pb = getBestRolePriority(b);
-    if (pa !== pb) return pa - pb;
-
-    const subCountDiff = (b.subRoles?.length || 0) - (a.subRoles?.length || 0);
-    if (subCountDiff !== 0) return subCountDiff;
-
-    return compareByKanaThenName(a, b);
-  };
-
-  const compareByKanaThenName = (a: T, b: T): number => {
-    const ra = getReading(a) || a.name;
-    const rb = getReading(b) || b.name;
-    const cmp = jaCollator.compare(ra, rb);
-    if (cmp !== 0) return cmp;
-
-    const pa = getBestRolePriority(a);
-    const pb = getBestRolePriority(b);
-    if (pa !== pb) return pa - pb;
-
-    return jaCollator.compare(a.name, b.name);
-  };
-
-  // ① 役職カテゴリ別モード
+  // ① 役職ごとモード（主役職＋兼務ロールごとに展開、兼務者は複数箇所に表示）
   if (sortMode === "role") {
-    const buckets = new Map<AdminMemberCategoryKey, T[]>();
-    for (const meta of ADMIN_MEMBER_CATEGORY_METAS) {
-      buckets.set(meta.key, []);
-    }
+    const buckets = new Map<string, T[]>();
     for (const m of members) {
-      const cat = classifyAdminMemberCategory(m, roleDefinitions);
-      buckets.get(cat)?.push(m);
+      for (const rk of extractMemberAssignedRoleKeys(m)) {
+        const list = buckets.get(rk);
+        if (list) {
+          list.push(m);
+        } else {
+          buckets.set(rk, [m]);
+        }
+      }
     }
 
+    const activeRoleFilterKey = filter.startsWith("role:")
+      ? filter.slice("role:".length).trim().toLowerCase()
+      : "";
+
+    const sortedDefs = sortRoleDefinitionsByPriority(roleDefinitions);
     const sections: AdminMemberSectionGroup<T>[] = [];
-    for (const meta of ADMIN_MEMBER_CATEGORY_METAS) {
-      const items = buckets.get(meta.key) || [];
-      if (items.length === 0) continue;
-      items.sort(compareByRoleThenKana);
+    const handledKeys = new Set<string>();
+
+    for (const def of sortedDefs) {
+      const rk = def.role.toLowerCase();
+      handledKeys.add(rk);
+      if (activeRoleFilterKey && rk !== activeRoleFilterKey) continue;
+
+      const items = buckets.get(rk);
+      if (!items || items.length === 0) continue;
+
+      const sortedItems = [...items].sort(compareByNameAsc);
+      const concurrentCount = sortedItems.filter(
+        (m) => (m.role || "parent").trim().toLowerCase() !== rk
+      ).length;
+
       sections.push({
-        key: `role_${meta.key}`,
-        title: meta.label,
-        subtitle: meta.subtitle,
-        accent: meta.accent,
-        categoryKey: meta.key,
-        members: items,
+        key: `role_${rk}`,
+        title: def.label,
+        subtitle: def.summary,
+        accent: resolveRoleToneSectionAccent(def.badgeTone),
+        roleKey: rk,
+        isCustomRole: !def.isBuiltin,
+        concurrentCount,
+        members: sortedItems,
       });
     }
+
+    // 万一、定義外のロールキーを持つデータが残っていた場合のフォールバック
+    for (const [rk, items] of buckets.entries()) {
+      if (handledKeys.has(rk) || items.length === 0) continue;
+      if (activeRoleFilterKey && rk !== activeRoleFilterKey) continue;
+
+      const sortedItems = [...items].sort(compareByNameAsc);
+      const concurrentCount = sortedItems.filter(
+        (m) => (m.role || "parent").trim().toLowerCase() !== rk
+      ).length;
+
+      sections.push({
+        key: `role_${rk}`,
+        title: resolveRoleLabel(rk, roleDefinitions),
+        accent: resolveRoleToneSectionAccent("slate"),
+        roleKey: rk,
+        isCustomRole: !BUILTIN_ROLE_KEYS.has(rk),
+        concurrentCount,
+        members: sortedItems,
+      });
+    }
+
     return sections;
   }
 
-  // ② 五十音・世帯順モード
+  // ② 五十音順モード
   if (sortMode === "kana") {
     const rowBuckets = new Map<
       string,
@@ -534,7 +648,7 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
     return Array.from(rowBuckets.entries())
       .sort((a, b) => a[1].order - b[1].order)
       .map(([key, bucket]) => {
-        bucket.items.sort(compareByKanaThenName);
+        bucket.items.sort(compareByNameAsc);
         return {
           key,
           title: bucket.label,
@@ -587,7 +701,7 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
   const dutySections: AdminMemberSectionGroup<T>[] = sortedDutyKeys.map(
     (label) => {
       const items = dutyBuckets.get(label) || [];
-      items.sort(compareByRoleThenKana);
+      items.sort(compareByNameAsc);
       return {
         key: `duty_${label}`,
         title: label,
@@ -604,7 +718,7 @@ export function groupAndSortAdminMembers<T extends AdminMemberListItem>(
   );
 
   if (unassigned.length > 0) {
-    unassigned.sort(compareByRoleThenKana);
+    unassigned.sort(compareByNameAsc);
     dutySections.push({
       key: "duty_unassigned",
       title: "班・担当ラベル未設定",

@@ -54,7 +54,7 @@ import {
 } from "@/components/liff/LiffProvider";
 import {
   classifyAdminMemberCategory,
-  computeAdminMemberFilterCounts,
+  computeAdminMemberFilterSummary,
   filterAdminMembers,
   formatCompactLinkedChildLabel,
   groupAndSortAdminMembers,
@@ -1237,8 +1237,8 @@ function LiffAdminDashboardContent() {
     [data?.activeMembers]
   );
 
-  const memberFilterCounts = useMemo(
-    () => computeAdminMemberFilterCounts(allActiveMembers, roleDefinitions),
+  const memberFilterSummary = useMemo(
+    () => computeAdminMemberFilterSummary(allActiveMembers, roleDefinitions),
     [allActiveMembers, roleDefinitions]
   );
 
@@ -1256,6 +1256,7 @@ function LiffAdminDashboardContent() {
     () =>
       groupAndSortAdminMembers(filteredActiveMembers, {
         sortMode: memberSortMode,
+        filter: memberFilter,
         roleDefinitions,
         allTeamMembersForKanaHint: allActiveMembers,
         presetDutyGroups: data?.presetDutyGroups,
@@ -1263,6 +1264,7 @@ function LiffAdminDashboardContent() {
     [
       filteredActiveMembers,
       memberSortMode,
+      memberFilter,
       roleDefinitions,
       allActiveMembers,
       data?.presetDutyGroups,
@@ -1321,7 +1323,10 @@ function LiffAdminDashboardContent() {
   const pendingCount = data?.pendingRequests?.length || 0;
   const activeCount =
     data?.activeMembers?.length ?? data?.stats?.activeCount ?? 0;
-  const linkedActiveCount = Math.max(0, activeCount - memberFilterCounts.unlinked);
+  const linkedActiveCount = Math.max(
+    0,
+    activeCount - memberFilterSummary.unlinkedCount
+  );
 
   const isAuthorized =
     providerDemo || data?.isDemo
@@ -1820,7 +1825,7 @@ function LiffAdminDashboardContent() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {memberFilterCounts.unlinked > 0 && (
+                      {memberFilterSummary.unlinkedCount > 0 && (
                         <button
                           type="button"
                           onClick={() =>
@@ -1835,7 +1840,7 @@ function LiffAdminDashboardContent() {
                               : "bg-amber-500/20 text-amber-200 border-amber-400/35 hover:bg-amber-500/30"
                           )}
                         >
-                          未連携 {memberFilterCounts.unlinked}
+                          未連携 {memberFilterSummary.unlinkedCount}
                         </button>
                       )}
                       <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[10.5px] font-black">
@@ -1964,86 +1969,98 @@ function LiffAdminDashboardContent() {
                       )}
                     </div>
 
-                    {/* カテゴリ絞り込みチップ（件数バッジ付き） */}
+                    {/* 役職別・ステータス絞り込みチップ（兼務を含む延べ所属数バッジ付き） */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-0.5 px-0.5">
-                      {(
-                        [
-                          {
-                            id: "all" as const,
-                            label: "全員",
-                            count: memberFilterCounts.all,
-                            show: true,
-                          },
-                          {
-                            id: "managers" as const,
-                            label: "🔑 監督・管理",
-                            count: memberFilterCounts.managers,
-                            show: true,
-                          },
-                          {
-                            id: "coaches_ops" as const,
-                            label: "⚾ 指導者・運営係",
-                            count: memberFilterCounts.coaches_ops,
-                            show: true,
-                          },
-                          {
-                            id: "parents" as const,
-                            label: "👪 保護者",
-                            count: memberFilterCounts.parents,
-                            show: true,
-                          },
-                          {
-                            id: "players_others" as const,
-                            label: "🏃 選手・閲覧",
-                            count: memberFilterCounts.players_others,
-                            show:
-                              memberFilterCounts.players_others > 0 ||
-                              memberFilter === "players_others",
-                          },
-                          {
-                            id: "unlinked" as const,
-                            label: "📝 未連携",
-                            count: memberFilterCounts.unlinked,
-                            show:
-                              memberFilterCounts.unlinked > 0 ||
-                              memberFilter === "unlinked",
-                          },
-                        ]
-                      )
-                        .filter((f) => f.show)
-                        .map((f) => {
-                          const active = memberFilter === f.id;
-                          return (
-                            <button
-                              key={f.id}
-                              type="button"
-                              onClick={() => setMemberFilter(f.id)}
+                      <button
+                        type="button"
+                        onClick={() => setMemberFilter("all")}
+                        className={cn(
+                          "h-7 px-2.5 rounded-xl border text-[11px] inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer",
+                          memberFilter === "all"
+                            ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                            : "bg-background text-muted-foreground border-border hover:text-foreground font-bold"
+                        )}
+                      >
+                        <span>全員</span>
+                        <span
+                          className={cn(
+                            "text-[10px] font-black",
+                            memberFilter === "all"
+                              ? "text-teal-300"
+                              : "text-muted-foreground/80"
+                          )}
+                        >
+                          {memberFilterSummary.totalCount}
+                        </span>
+                      </button>
+
+                      {memberFilterSummary.roleChips.map((chip) => {
+                        const active = memberFilter === chip.filterId;
+                        return (
+                          <button
+                            key={chip.filterId}
+                            type="button"
+                            onClick={() =>
+                              setMemberFilter((prev) =>
+                                prev === chip.filterId ? "all" : chip.filterId
+                              )
+                            }
+                            className={cn(
+                              "h-7 px-2.5 rounded-xl border text-[11px] inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer",
+                              active
+                                ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                                : "bg-background text-muted-foreground border-border hover:text-foreground font-bold"
+                            )}
+                          >
+                            <span>{chip.label}</span>
+                            <span
                               className={cn(
-                                "h-7 px-2.5 rounded-xl border text-[11px] inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer",
+                                "text-[10px] font-black",
                                 active
-                                  ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
-                                  : "bg-background text-muted-foreground border-border hover:text-foreground font-bold"
+                                  ? "text-teal-300"
+                                  : "text-muted-foreground/80"
                               )}
                             >
-                              <span>{f.label}</span>
-                              <span
-                                className={cn(
-                                  "text-[10px] font-black",
-                                  active
-                                    ? "text-teal-300"
-                                    : "text-muted-foreground/80"
-                                )}
-                              >
-                                {f.count}
-                              </span>
-                            </button>
-                          );
-                        })}
+                              {chip.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+
+                      {(memberFilterSummary.unlinkedCount > 0 ||
+                        memberFilter === "unlinked") && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMemberFilter((prev) =>
+                              prev === "unlinked" ? "all" : "unlinked"
+                            )
+                          }
+                          className={cn(
+                            "h-7 px-2.5 rounded-xl border text-[11px] inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer",
+                            memberFilter === "unlinked"
+                              ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                              : "bg-background text-muted-foreground border-border hover:text-foreground font-bold"
+                          )}
+                        >
+                          <span>📝 未連携</span>
+                          <span
+                            className={cn(
+                              "text-[10px] font-black",
+                              memberFilter === "unlinked"
+                                ? "text-amber-300"
+                                : "text-muted-foreground/80"
+                            )}
+                          >
+                            {memberFilterSummary.unlinkedCount}
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </section>
 
-                {/* 2. セクション別・整列メンバーリスト */}
+                {/* 2. セクション別・整列メンバーリスト（各くくり内は名前の昇順） */}
                 {filteredActiveMembers.length === 0 ? (
                   <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border bg-card shadow-xs space-y-2.5">
                     <p>条件に一致するメンバーが見つかりません</p>
@@ -2096,10 +2113,15 @@ function LiffAdminDashboardContent() {
                                 `border-b-[3px] ${section.accent.capBorderClass}`
                             )}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
                               <span className="text-xs font-black text-white truncate">
                                 {section.title}
                               </span>
+                              {section.isCustomRole && (
+                                <span className="px-1.5 py-0.2 rounded bg-teal-500/20 text-teal-200 border border-teal-400/35 text-[9.5px] font-black shrink-0">
+                                  独自
+                                </span>
+                              )}
                               {section.subtitle && (
                                 <span className="hidden sm:inline text-[10px] font-bold text-slate-400 truncate">
                                   — {section.subtitle}
@@ -2108,6 +2130,14 @@ function LiffAdminDashboardContent() {
                             </div>
 
                             <div className="flex items-center gap-1.5 shrink-0">
+                              {Boolean(
+                                section.concurrentCount &&
+                                  section.concurrentCount > 0
+                              ) && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 border border-slate-700 text-[9.5px] font-bold">
+                                  兼務{section.concurrentCount}
+                                </span>
+                              )}
                               <span
                                 className={cn(
                                   "px-2 py-0.5 rounded-md text-[10.5px] font-black",
@@ -2125,7 +2155,7 @@ function LiffAdminDashboardContent() {
                             </div>
                           </button>
 
-                          {/* コンパクト整列メンバー行 */}
+                          {/* コンパクト整列メンバー行（名前の昇順） */}
                           {!isCollapsed && (
                             <div className="divide-y divide-border">
                               {section.members.map((member) => {
@@ -2140,11 +2170,12 @@ function LiffAdminDashboardContent() {
                                   effectivePerms.canManageTeam;
                                 const isLinked =
                                   member.isLineLinked ?? Boolean(member.userId);
-                                const primaryRoleDef = roleDefByKey.get(
-                                  (member.role || "").toLowerCase()
-                                );
+                                const primaryRoleKey = (
+                                  member.role || "parent"
+                                ).toLowerCase();
+                                const primaryRoleDef =
+                                  roleDefByKey.get(primaryRoleKey);
                                 const memberCategory: AdminMemberCategoryKey =
-                                  section.categoryKey ||
                                   classifyAdminMemberCategory(
                                     member,
                                     roleDefinitions
@@ -2162,13 +2193,14 @@ function LiffAdminDashboardContent() {
                                   childrenList.length - visibleChildren.length
                                 );
                                 const isPlainParentPrimary =
-                                  member.role === "parent" &&
+                                  primaryRoleKey === "parent" &&
+                                  subs.length === 0 &&
                                   !isManagerPower &&
                                   (!primaryRoleDef || primaryRoleDef.isBuiltin);
 
                                 return (
                                   <div
-                                    key={member.memberId}
+                                    key={`${section.key}_${member.memberId}`}
                                     onClick={() => openEditMemberModal(member)}
                                     className="px-3 py-2.5 sm:px-3.5 flex items-center gap-2.5 hover:bg-muted/35 active:bg-muted/55 transition-colors cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_58px]"
                                   >
@@ -2261,19 +2293,27 @@ function LiffAdminDashboardContent() {
                                               : "bg-primary/12 text-primary border-primary/25"
                                           )}
                                         >
-                                          {getDisplayRoleLabel(member.role)}
+                                          {subs.length > 0
+                                            ? `主: ${getDisplayRoleLabel(
+                                                member.role
+                                              )}`
+                                            : getDisplayRoleLabel(member.role)}
                                         </span>
 
                                         {subs.map((sr) => {
-                                          const subDef = roleDefByKey.get(
-                                            sr.toLowerCase()
-                                          );
+                                          const srKey = sr.toLowerCase();
+                                          const subDef =
+                                            roleDefByKey.get(srKey);
+                                          const isCurrentRoleSection =
+                                            section.roleKey === srKey;
                                           return (
                                             <span
                                               key={sr}
                                               className={cn(
                                                 "px-1.5 py-0.2 rounded text-[10px] font-black border",
-                                                subDef && !subDef.isBuiltin
+                                                isCurrentRoleSection
+                                                  ? "bg-amber-500 text-slate-950 border-amber-500"
+                                                  : subDef && !subDef.isBuiltin
                                                   ? getRoleTonePillClass(
                                                       subDef.badgeTone
                                                     )

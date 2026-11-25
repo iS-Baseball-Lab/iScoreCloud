@@ -2,8 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
-  classifyAdminMemberCategory,
-  computeAdminMemberFilterCounts,
+  computeAdminMemberFilterSummary,
   filterAdminMembers,
   formatCompactLinkedChildLabel,
   groupAndSortAdminMembers,
@@ -50,15 +49,26 @@ const sampleMembers: AdminMemberListItem[] = [
     nameKana: "タナカ カントク",
     memberType: "staff",
     role: "manager",
-    subRoles: [],
+    subRoles: ["scorer"],
     subLabel: "",
+    isLineLinked: true,
+  },
+  {
+    memberId: "m-coach",
+    userId: "u-3",
+    name: "高橋 コーチ",
+    nameKana: "タカハシ コーチ",
+    memberType: "staff",
+    role: "coach",
+    subRoles: ["scorer", "parent"],
+    subLabel: "1班",
     isLineLinked: true,
   },
   {
     memberId: "m-carpool-parent",
     userId: "u-2",
     name: "佐藤 美咲",
-    nameKana: "", // ふりがな未入力（紐付け選手から自動補完される想定）
+    nameKana: "", // ふりがな未入力（紐付け選手から「サトウ」を自動補完）
     memberType: "parent",
     role: "parent",
     subRoles: ["custom_carpool_lead"],
@@ -117,41 +127,91 @@ const sampleMembers: AdminMemberListItem[] = [
   },
 ];
 
-describe("admin-member-list helpers", () => {
-  it("classifies members into 4 disjoint categories and counts unlinked accurately", () => {
-    expect(
-      classifyAdminMemberCategory(sampleMembers[0], sampleRoleDefs)
-    ).toBe("managers");
-    // 保護者＋兼務「配車係」（canEditCarpool: true）は指導者・運営係セクションへ
-    expect(
-      classifyAdminMemberCategory(sampleMembers[1], sampleRoleDefs)
-    ).toBe("coaches_ops");
-    expect(
-      classifyAdminMemberCategory(sampleMembers[2], sampleRoleDefs)
-    ).toBe("parents");
-    // 選手＋兼務「キャプテン」（一般権限のみ）は選手・閲覧セクションを維持
-    expect(
-      classifyAdminMemberCategory(sampleMembers[4], sampleRoleDefs)
-    ).toBe("players_others");
+describe("admin-member-list per-role grouping & ascending name sort", () => {
+  it("groups per individual role, shows concurrent members in multiple sections, and sorts by name ascending", () => {
+    const sections = groupAndSortAdminMembers(sampleMembers, {
+      sortMode: "role",
+      roleDefinitions: sampleRoleDefs,
+    });
 
-    const counts = computeAdminMemberFilterCounts(
+    // 所属者が1名以上いる役職のみ優先度順に並ぶ（配車係は保護者より上、キャプテンは選手より下）
+    expect(sections.map((s) => s.title)).toEqual([
+      "監督・代表",
+      "コーチ",
+      "スコアラー",
+      "配車係",
+      "保護者",
+      "選手",
+      "キャプテン",
+    ]);
+
+    // スコアラーくくり：兼務2名（田中 監督・高橋 コーチ）が両方表示され、名前昇順（たかはし -> たなか）になる
+    const scorerSection = sections.find((s) => s.roleKey === "scorer");
+    expect(scorerSection?.concurrentCount).toBe(2);
+    expect(scorerSection?.members.map((m) => m.name)).toEqual([
+      "高橋 コーチ",
+      "田中 監督",
+    ]);
+
+    // 保護者くくり：主役職3名＋兼務1名（高橋 コーチ）の計4名が、役職優先ではなく純粋な名前昇順（あべ -> さとう -> すずき -> たかはし）で並ぶ
+    const parentSection = sections.find((s) => s.roleKey === "parent");
+    expect(parentSection?.concurrentCount).toBe(1);
+    expect(parentSection?.members.map((m) => m.name)).toEqual([
+      "阿部 母",
+      "佐藤 美咲",
+      "鈴木 父",
+      "高橋 コーチ",
+    ]);
+
+    // 配車係（独自役職）くくり：兼務の佐藤 美咲が表示される
+    const carpoolSection = sections.find(
+      (s) => s.roleKey === "custom_carpool_lead"
+    );
+    expect(carpoolSection?.isCustomRole).toBe(true);
+    expect(carpoolSection?.members.map((m) => m.name)).toEqual(["佐藤 美咲"]);
+  });
+
+  it("summarizes per-role chip counts including concurrent assignments and filters to a single role section when selected", () => {
+    const summary = computeAdminMemberFilterSummary(
       sampleMembers,
       sampleRoleDefs
     );
-    expect(counts).toEqual({
-      all: 5,
-      managers: 1,
-      coaches_ops: 1,
-      parents: 2,
-      players_others: 1,
-      unlinked: 1,
-    });
+    expect(summary.totalCount).toBe(6);
+    expect(summary.unlinkedCount).toBe(1);
     expect(
-      counts.managers +
-        counts.coaches_ops +
-        counts.parents +
-        counts.players_others
-    ).toBe(counts.all);
+      summary.roleChips.map((c) => [c.label, c.count])
+    ).toEqual([
+      ["監督・代表", 1],
+      ["コーチ", 1],
+      ["スコアラー", 2],
+      ["配車係", 1],
+      ["保護者", 4],
+      ["選手", 1],
+      ["キャプテン", 1],
+    ]);
+
+    const filteredScorers = filterAdminMembers(sampleMembers, {
+      filter: "role:scorer",
+      searchQuery: "",
+      roleDefinitions: sampleRoleDefs,
+    });
+    expect(filteredScorers.map((m) => m.memberId)).toEqual([
+      "m-manager",
+      "m-coach",
+    ]);
+
+    // 特定役職チップで絞り込んだ際は、該当役職セクション1つのみを表示する
+    const scorerOnlySections = groupAndSortAdminMembers(filteredScorers, {
+      sortMode: "role",
+      filter: "role:scorer",
+      roleDefinitions: sampleRoleDefs,
+      allTeamMembersForKanaHint: sampleMembers,
+    });
+    expect(scorerOnlySections.map((s) => s.title)).toEqual(["スコアラー"]);
+    expect(scorerOnlySections[0]?.members.map((m) => m.name)).toEqual([
+      "高橋 コーチ",
+      "田中 監督",
+    ]);
   });
 
   it("filters members by custom role label and linked child uniform/name", () => {
@@ -168,28 +228,22 @@ describe("admin-member-list helpers", () => {
       roleDefinitions: sampleRoleDefs,
     });
     expect(byChildUniform.map((m) => m.memberId)).toEqual(["m-carpool-parent"]);
-
-    const onlyUnlinked = filterAdminMembers(sampleMembers, {
-      filter: "unlinked",
-      searchQuery: "",
-      roleDefinitions: sampleRoleDefs,
-    });
-    expect(onlyUnlinked.map((m) => m.memberId)).toEqual(["m-parent-1"]);
   });
 
-  it("groups by Gojuon (kana) row and infers missing parent reading from linked child", () => {
+  it("groups by Gojuon (kana) row and sorts strictly by name ascending", () => {
     const sections = groupAndSortAdminMembers(sampleMembers, {
       sortMode: "kana",
       roleDefinitions: sampleRoleDefs,
     });
 
     expect(sections.map((s) => s.title)).toEqual(["あ行", "さ行", "た行"]);
-    // 佐藤 美咲（かな未入力）もお子様「サトウ レン」から「さ行」へ自動分類され、サトウ -> スズキ順に並ぶ
     const saRowNames = sections[1]?.members.map((m) => m.name);
     expect(saRowNames).toEqual(["佐藤 美咲", "鈴木 翔太", "鈴木 父"]);
+    const taRowNames = sections[2]?.members.map((m) => m.name);
+    expect(taRowNames).toEqual(["高橋 コーチ", "田中 監督"]);
   });
 
-  it("groups by duty label respecting preset order, natural numeric order, and unassigned last", () => {
+  it("groups by duty label and sorts members inside each duty group by name ascending", () => {
     const sections = groupAndSortAdminMembers(sampleMembers, {
       sortMode: "duty",
       roleDefinitions: sampleRoleDefs,
@@ -202,11 +256,16 @@ describe("admin-member-list helpers", () => {
       "10班",
       "班・担当ラベル未設定",
     ]);
+    // 1班の中も役職ではなく名前の昇順（あべ -> たかはし）
+    expect(sections[0]?.members.map((m) => m.name)).toEqual([
+      "阿部 母",
+      "高橋 コーチ",
+    ]);
   });
 
   it("formats compact avatar monograms and linked child badges cleanly", () => {
     expect(resolveMemberAvatarMonogram(sampleMembers[0])).toBe("田中");
-    expect(resolveMemberAvatarMonogram(sampleMembers[4])).toBe("#10");
+    expect(resolveMemberAvatarMonogram(sampleMembers[5])).toBe("#10");
 
     expect(
       formatCompactLinkedChildLabel("鈴木 父", {
