@@ -9968,6 +9968,8 @@ app.get("/admin/dashboard", async (c) => {
           subLabel: "監督",
           phone: "090-0000-1111",
           isLineLinked: true,
+          linkedChildren: [],
+          playerUniformNumber: null,
         },
         {
           memberId: "demo-mem-2",
@@ -9977,9 +9979,18 @@ app.get("/admin/dashboard", async (c) => {
           role: "admin",
           subRoles: ["parent"],
           memberType: "staff",
-          subLabel: "IT管理",
+          subLabel: "1班",
           phone: "090-0000-2222",
           isLineLinked: true,
+          linkedChildren: [
+            {
+              id: "demo-p-1",
+              name: "山田 健太",
+              nameKana: "ヤマダ ケンタ",
+              uniformNumber: "6",
+            },
+          ],
+          playerUniformNumber: null,
         },
         {
           memberId: "demo-mem-3",
@@ -9992,6 +10003,15 @@ app.get("/admin/dashboard", async (c) => {
           subLabel: "1班",
           phone: "090-0000-3333",
           isLineLinked: true,
+          linkedChildren: [
+            {
+              id: "demo-p-2",
+              name: "高橋 陸",
+              nameKana: "タカハシ リク",
+              uniformNumber: "1",
+            },
+          ],
+          playerUniformNumber: null,
         },
         {
           memberId: "demo-mem-4",
@@ -10004,8 +10024,80 @@ app.get("/admin/dashboard", async (c) => {
           subLabel: "2班",
           phone: "090-0000-4444",
           isLineLinked: false,
+          linkedChildren: [
+            {
+              id: "demo-p-3",
+              name: "伊藤 蒼",
+              nameKana: "イトウ アオイ",
+              uniformNumber: "2",
+            },
+          ],
+          playerUniformNumber: null,
+        },
+        {
+          memberId: "demo-mem-5",
+          userId: "user-5",
+          name: "鈴木 母",
+          nameKana: "スズキ ハハ",
+          role: "parent",
+          subRoles: [],
+          memberType: "parent",
+          subLabel: "1班",
+          phone: "",
+          isLineLinked: true,
+          linkedChildren: [
+            {
+              id: "demo-p-4",
+              name: "鈴木 翔太",
+              nameKana: "スズキ ショウタ",
+              uniformNumber: "10",
+            },
+            {
+              id: "demo-p-5",
+              name: "鈴木 陽太",
+              nameKana: "スズキ ヒナタ",
+              uniformNumber: "18",
+            },
+          ],
+          playerUniformNumber: null,
+        },
+        {
+          memberId: "demo-mem-6",
+          userId: "user-6",
+          name: "佐藤 父",
+          nameKana: "サトウ チチ",
+          role: "parent",
+          subRoles: [],
+          memberType: "parent",
+          subLabel: "2班",
+          phone: "",
+          isLineLinked: true,
+          linkedChildren: [
+            {
+              id: "demo-p-6",
+              name: "佐藤 蓮",
+              nameKana: "サトウ レン",
+              uniformNumber: "8",
+            },
+          ],
+          playerUniformNumber: null,
+        },
+        {
+          memberId: "demo-mem-7",
+          userId: "user-7",
+          name: "鈴木 翔太",
+          nameKana: "スズキ ショウタ",
+          role: "player",
+          subRoles: [],
+          memberType: "player",
+          subLabel: "",
+          phone: "",
+          isLineLinked: true,
+          linkedChildren: [],
+          playerUniformNumber: "10",
         },
       ],
+      presetDutyGroups: ["1班", "2班", "3班", "4班"],
       roleSettings: [
         { role: "manager", customLabel: "監督・代表" },
         { role: "staff", customLabel: "事務局・役員" },
@@ -10031,6 +10123,7 @@ app.get("/admin/dashboard", async (c) => {
         orgGoogleMapsApiKey: organizations.googleMapsApiKey,
         createdBy: teams.createdBy,
         memberSubLabels: teams.memberSubLabels,
+        scheduleSettings: teams.scheduleSettings,
         rolePermissionsJson: teams.rolePermissionsJson,
       })
       .from(teams)
@@ -10055,8 +10148,8 @@ app.get("/admin/dashboard", async (c) => {
       );
     }
 
-    // 4. メンバー一覧・選手数・役職カスタム呼称を並列取得
-    const [allMembers, playersList, roleRows] = await Promise.all([
+    // 4. メンバー一覧・選手名簿・親子紐付け・役職カスタム呼称を並列取得
+    const [allMembers, playersList, relationRows, roleRows] = await Promise.all([
       db
         .select({
           memberId: teamMembers.id,
@@ -10076,10 +10169,25 @@ app.get("/admin/dashboard", async (c) => {
         .orderBy(desc(teamMembers.joinedAt))
         .all(),
       db
-        .select({ id: players.id })
+        .select({
+          id: players.id,
+          name: players.name,
+          nameKana: players.nameKana,
+          uniformNumber: players.uniformNumber,
+          userId: players.userId,
+        })
         .from(players)
         .where(eq(players.teamId, teamId))
         .all(),
+      db
+        .select({
+          parentId: parentChildRelations.parentId,
+          childId: parentChildRelations.childId,
+        })
+        .from(parentChildRelations)
+        .where(eq(parentChildRelations.teamId, teamId))
+        .all()
+        .catch(() => [] as Array<{ parentId: string; childId: string }>),
       db
         .select({
           role: teamRoleSettings.role,
@@ -10162,7 +10270,7 @@ app.get("/admin/dashboard", async (c) => {
       ? "org"
       : "none";
 
-    // 5. サブラベルパース
+    // 5. サブラベル・当番班プリセット・親子紐付けのパース
     let subLabelsMap: Record<string, string> = {};
     try {
       if (targetTeam.memberSubLabels) {
@@ -10172,6 +10280,57 @@ app.get("/admin/dashboard", async (c) => {
         >;
       }
     } catch {}
+
+    let presetDutyGroups: string[] = [];
+    try {
+      if (targetTeam.scheduleSettings) {
+        const parsedSched = JSON.parse(targetTeam.scheduleSettings) as {
+          dutyGroups?: unknown;
+        };
+        if (Array.isArray(parsedSched?.dutyGroups)) {
+          presetDutyGroups = parsedSched.dutyGroups
+            .map((g) => String(g || "").trim())
+            .filter(Boolean)
+            .slice(0, 16);
+        }
+      }
+    } catch {}
+
+    const playerById = new Map<
+      string,
+      { id: string; name: string; nameKana: string; uniformNumber: string }
+    >();
+    const playerUniformByUserId = new Map<string, string>();
+    for (const p of playersList) {
+      playerById.set(p.id, {
+        id: p.id,
+        name: p.name || "",
+        nameKana: p.nameKana || "",
+        uniformNumber: p.uniformNumber || "",
+      });
+      if (p.userId && p.uniformNumber) {
+        playerUniformByUserId.set(p.userId, p.uniformNumber);
+      }
+    }
+
+    const childrenByParentId = new Map<
+      string,
+      Array<{ id: string; name: string; nameKana: string; uniformNumber: string }>
+    >();
+    for (const rel of relationRows) {
+      const child = playerById.get(rel.childId);
+      if (!child) continue;
+      const list = childrenByParentId.get(rel.parentId) || [];
+      if (!list.some((c) => c.id === child.id)) {
+        list.push(child);
+      }
+      childrenByParentId.set(rel.parentId, list);
+    }
+    for (const [, list] of childrenByParentId) {
+      list.sort((a, b) =>
+        a.uniformNumber.localeCompare(b.uniformNumber, "ja", { numeric: true })
+      );
+    }
 
     const parseMemberSubRoles = (
       raw: string | null | undefined,
@@ -10208,6 +10367,11 @@ app.get("/admin/dashboard", async (c) => {
       .map((m) => {
         const normRole = (m.role || "parent").toLowerCase();
         const safeRole = validRoleSet.has(normRole) ? normRole : "parent";
+        const linkedChildren = childrenByParentId.get(m.memberId) || [];
+        const playerUniformNumber =
+          m.userId && (safeRole === "player" || m.memberType === "player")
+            ? playerUniformByUserId.get(m.userId) || null
+            : null;
         return {
           memberId: m.memberId,
           userId: m.userId,
@@ -10221,6 +10385,8 @@ app.get("/admin/dashboard", async (c) => {
           subLabel: subLabelsMap[m.memberId] || "",
           isLineLinked: Boolean(m.userId),
           joinedAt: m.joinedAt ? new Date(m.joinedAt).toISOString() : undefined,
+          linkedChildren,
+          playerUniformNumber,
         };
       })
       .sort((a, b) => {
@@ -10254,6 +10420,7 @@ app.get("/admin/dashboard", async (c) => {
       },
       pendingRequests: canManage ? pendingRequests : [],
       activeMembers: canManage ? activeMembers : [],
+      presetDutyGroups: canManage ? presetDutyGroups : [],
       roleSettings: roleDefinitions
         .filter((d) => !d.isBuiltin || Boolean(d.customLabel))
         .map((d) => ({

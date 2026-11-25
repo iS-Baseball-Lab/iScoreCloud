@@ -35,6 +35,9 @@ import {
   Trash2,
   Plus,
   SlidersHorizontal,
+  ChevronDown,
+  ChevronRight,
+  ArrowUpDown,
 } from "lucide-react";
 import type { Liff } from "@line/liff";
 import { LiffHeader } from "@/components/liff/LiffHeader";
@@ -49,6 +52,18 @@ import {
   canManageCurrentTeam,
   useLiff,
 } from "@/components/liff/LiffProvider";
+import {
+  classifyAdminMemberCategory,
+  computeAdminMemberFilterCounts,
+  filterAdminMembers,
+  formatCompactLinkedChildLabel,
+  groupAndSortAdminMembers,
+  resolveMemberAvatarMonogram,
+  type AdminMemberCategoryKey,
+  type AdminMemberFilterId,
+  type AdminMemberListItem,
+  type AdminMemberSortMode,
+} from "@/lib/liff/admin-member-list";
 import {
   invalidateLiffApiCache,
   peekLiffApiCache,
@@ -147,19 +162,7 @@ interface PendingRequest {
   role?: string;
 }
 
-interface ActiveMember {
-  memberId: string;
-  userId?: string | null;
-  name: string;
-  nameKana?: string | null;
-  memberType?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  role: string;
-  subRoles?: string[];
-  subLabel?: string;
-  isLineLinked?: boolean;
-}
+type ActiveMember = AdminMemberListItem;
 
 interface RoleSettingItem {
   role: string;
@@ -189,6 +192,7 @@ interface AdminDashboardData {
   };
   pendingRequests?: PendingRequest[];
   activeMembers?: ActiveMember[];
+  presetDutyGroups?: string[];
   roleSettings?: RoleSettingItem[];
   roleDefinitions?: TeamRoleDefinition[];
 }
@@ -287,11 +291,15 @@ function LiffAdminDashboardContent() {
   // 参加承認時の初期ロール選択マップ
   const [approveRoles, setApproveRoles] = useState<Record<string, string>>({});
 
-  // メンバー検索・絞り込み
+  // メンバー検索・絞り込み・並び順モード・セクション開閉
   const [memberSearch, setMemberSearch] = useState("");
-  const [memberFilter, setMemberFilter] = useState<
-    "all" | "managers" | "coaches" | "parents" | "unlinked"
-  >("all");
+  const [memberFilter, setMemberFilter] =
+    useState<AdminMemberFilterId>("all");
+  const [memberSortMode, setMemberSortMode] =
+    useState<AdminMemberSortMode>("role");
+  const [collapsedMemberSections, setCollapsedMemberSections] = useState<
+    Set<string>
+  >(new Set());
 
   // 役職・権限設定（規定8役職 ＋ チーム独自カスタム役職）
   const [roleDefinitions, setRoleDefinitions] = useState<TeamRoleDefinition[]>(
@@ -403,6 +411,8 @@ function LiffAdminDashboardContent() {
     setApproveRoles({});
     setMemberSearch("");
     setMemberFilter("all");
+    setMemberSortMode("role");
+    setCollapsedMemberSections(new Set());
     setIsRoleEditorOpen(false);
     setDeletingRoleDef(null);
     setIsResetRolesConfirmOpen(false);
@@ -1221,71 +1231,97 @@ function LiffAdminDashboardContent() {
     }
   };
 
-  // メンバー絞り込み
-  const filteredActiveMembers = useMemo(() => {
-    const list = data?.activeMembers || [];
-    const q = memberSearch.trim().toLowerCase();
+  // メンバー件数集計・絞り込み・セクション別整列
+  const allActiveMembers = useMemo(
+    () => data?.activeMembers || [],
+    [data?.activeMembers]
+  );
 
-    return list.filter((m) => {
-      const subs = m.subRoles || [];
-      const allRoles = [m.role, ...subs];
-      const effectivePerms = evaluateEffectiveRolePermissions(
-        m.role,
-        subs,
-        roleDefinitions
-      );
-      const isLinked = m.isLineLinked ?? Boolean(m.userId);
-      const hasOpsOrStaffRole =
-        effectivePerms.canManageOps ||
-        effectivePerms.canManagePlayers ||
-        effectivePerms.canEditScore ||
-        effectivePerms.canEditSchedule ||
-        effectivePerms.canEditCarpool;
+  const memberFilterCounts = useMemo(
+    () => computeAdminMemberFilterCounts(allActiveMembers, roleDefinitions),
+    [allActiveMembers, roleDefinitions]
+  );
 
-      if (memberFilter === "managers" && !effectivePerms.canManageTeam) {
-        return false;
-      }
-      if (
-        memberFilter === "coaches" &&
-        !(
-          !effectivePerms.canManageTeam &&
-          hasOpsOrStaffRole
-        ) &&
-        !allRoles.some((r) => r === "coach" || r === "scorer" || r === "staff")
-      ) {
-        return false;
-      }
-      if (
-        memberFilter === "parents" &&
-        !allRoles.some(
-          (r) => r === "parent" || r === "player" || r === "viewer"
-        ) &&
-        (effectivePerms.canManageTeam || hasOpsOrStaffRole)
-      ) {
-        return false;
-      }
-      if (memberFilter === "unlinked" && isLinked) {
-        return false;
-      }
+  const filteredActiveMembers = useMemo(
+    () =>
+      filterAdminMembers(allActiveMembers, {
+        filter: memberFilter,
+        searchQuery: memberSearch,
+        roleDefinitions,
+      }),
+    [allActiveMembers, memberFilter, memberSearch, roleDefinitions]
+  );
 
-      if (!q) return true;
-      const roleText = allRoles.map((r) => getDisplayRoleLabel(r)).join(" ");
-      const hay = `${m.name} ${m.nameKana || ""} ${roleText} ${
-        m.subLabel || ""
-      } ${m.phone || ""}`.toLowerCase();
-      return hay.includes(q);
+  const memberSections = useMemo(
+    () =>
+      groupAndSortAdminMembers(filteredActiveMembers, {
+        sortMode: memberSortMode,
+        roleDefinitions,
+        allTeamMembersForKanaHint: allActiveMembers,
+        presetDutyGroups: data?.presetDutyGroups,
+      }),
+    [
+      filteredActiveMembers,
+      memberSortMode,
+      roleDefinitions,
+      allActiveMembers,
+      data?.presetDutyGroups,
+    ]
+  );
+
+  const hasActiveMemberQuery = Boolean(
+    memberSearch.trim() || memberFilter !== "all"
+  );
+
+  const toggleMemberSectionCollapsed = useCallback((sectionKey: string) => {
+    setCollapsedMemberSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionKey)) {
+        next.delete(sectionKey);
+      } else {
+        next.add(sectionKey);
+      }
+      return next;
     });
-  }, [
-    data?.activeMembers,
-    memberFilter,
-    memberSearch,
-    roleDefinitions,
-    getDisplayRoleLabel,
-  ]);
+  }, []);
+
+  const areAllMemberSectionsCollapsed = useMemo(() => {
+    if (memberSections.length <= 1 || hasActiveMemberQuery) return false;
+    return memberSections.every((sec) =>
+      collapsedMemberSections.has(sec.key)
+    );
+  }, [memberSections, collapsedMemberSections, hasActiveMemberQuery]);
+
+  const toggleAllMemberSectionsCollapsed = useCallback(() => {
+    if (areAllMemberSectionsCollapsed) {
+      setCollapsedMemberSections(new Set());
+    } else {
+      setCollapsedMemberSections(
+        new Set(memberSections.map((sec) => sec.key))
+      );
+    }
+  }, [areAllMemberSectionsCollapsed, memberSections]);
+
+  const dutyPresetChips = useMemo(() => {
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const item of [
+      ...(data?.presetDutyGroups || []),
+      ...PRESET_SUB_LABELS,
+    ]) {
+      const clean = item.trim();
+      if (clean && !seen.has(clean)) {
+        seen.add(clean);
+        merged.push(clean);
+      }
+    }
+    return merged;
+  }, [data?.presetDutyGroups]);
 
   const pendingCount = data?.pendingRequests?.length || 0;
   const activeCount =
     data?.activeMembers?.length ?? data?.stats?.activeCount ?? 0;
+  const linkedActiveCount = Math.max(0, activeCount - memberFilterCounts.unlinked);
 
   const isAuthorized =
     providerDemo || data?.isDemo
@@ -1765,224 +1801,545 @@ function LiffAdminDashboardContent() {
                 🅱️ 【メンバー（手動追加・権限・兼務・統合）】タブ
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
             {activeTab === "members" && (
-              <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden animate-in fade-in duration-200">
-                <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="w-7 h-7 rounded-xl bg-slate-800 text-amber-400 border border-slate-700 flex items-center justify-center shrink-0">
-                      <Users className="w-4 h-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <h3 className="text-xs sm:text-sm font-black text-white truncate">
-                        メンバー・権限・兼務管理
-                      </h3>
-                      <p className="text-[10px] font-bold text-slate-300 truncate">
-                        手動追加・主役職/兼務ロール・当番班・LINE統合
-                      </p>
+              <div className="space-y-3 animate-in fade-in duration-200">
+                {/* 1. コントロール＆絞り込みパネル */}
+                <section className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden">
+                  <div className="bg-[#0f172a] text-slate-50 border-b-[3px] border-amber-500 px-4 py-3 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="w-7 h-7 rounded-xl bg-slate-800 text-amber-400 border border-slate-700 flex items-center justify-center shrink-0">
+                        <Users className="w-4 h-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                          メンバー一覧・権限・兼務管理
+                        </h3>
+                        <p className="text-[10px] font-bold text-slate-300 truncate">
+                          行タップまたは「編集」から役職・兼務・当番班を変更
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-black shrink-0">
-                    {filteredActiveMembers.length}名
-                  </span>
-                </div>
 
-                <div className="p-4 space-y-3">
-                  {/* アクションバー（手動追加 ＆ LINE重複統合） */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={openAddMemberModal}
-                      className="h-9 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                      <span>＋ メンバーを手動追加</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenMergeModal()}
-                      className="h-9 px-3 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-xs font-black flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95 transition-all"
-                    >
-                      <GitMerge className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                      <span>LINE重複統合</span>
-                    </button>
-                  </div>
-
-                  {/* ロール絞り込みチップ */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
-                    {(
-                      [
-                        { id: "all", label: "全員" },
-                        { id: "managers", label: "🔑 監督・管理" },
-                        { id: "coaches", label: "⚾ コーチ・記録・運営" },
-                        { id: "parents", label: "👪 保護者・選手" },
-                        { id: "unlinked", label: "📝 手動登録（未連携）" },
-                      ] as const
-                    ).map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => setMemberFilter(f.id)}
-                        className={cn(
-                          "h-8 px-2.5 rounded-xl border text-[11px] shrink-0 transition-colors cursor-pointer",
-                          memberFilter === f.id
-                            ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
-                            : "bg-card text-muted-foreground border-border hover:text-foreground font-bold"
-                        )}
-                      >
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* 検索ボックス */}
-                  <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-                    <Input
-                      type="text"
-                      placeholder="氏名・かな・役職・当番班で絞り込み..."
-                      value={memberSearch}
-                      onChange={(e) => setMemberSearch(e.target.value)}
-                      className="pl-9 pr-8 h-10 rounded-xl text-xs font-bold bg-card border-border shadow-xs"
-                    />
-                    {memberSearch && (
-                      <button
-                        type="button"
-                        onClick={() => setMemberSearch("")}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* メンバー一覧 */}
-                  <div className="space-y-2">
-                    {filteredActiveMembers.length === 0 ? (
-                      <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border bg-muted/20 space-y-2">
-                        <p>条件に一致するメンバーが見つかりません</p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {memberFilterCounts.unlinked > 0 && (
                         <button
                           type="button"
-                          onClick={openAddMemberModal}
-                          className="mt-1 h-8 px-3 rounded-xl bg-primary text-primary-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                          onClick={() =>
+                            setMemberFilter((prev) =>
+                              prev === "unlinked" ? "all" : "unlinked"
+                            )
+                          }
+                          className={cn(
+                            "px-2 py-1 rounded-lg border text-[10px] font-black cursor-pointer transition-colors",
+                            memberFilter === "unlinked"
+                              ? "bg-amber-400 text-slate-950 border-amber-300"
+                              : "bg-amber-500/20 text-amber-200 border-amber-400/35 hover:bg-amber-500/30"
+                          )}
                         >
-                          <UserPlus className="w-3 h-3" />
-                          <span>新しいメンバーを手動追加</span>
+                          未連携 {memberFilterCounts.unlinked}
                         </button>
+                      )}
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 border border-slate-700 text-[10.5px] font-black">
+                        LINE {linkedActiveCount}/{activeCount}名
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 space-y-2.5">
+                    {/* アクションバー（手動追加 ／ LINE重複統合・家族班管理） */}
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <button
+                        type="button"
+                        onClick={openAddMemberModal}
+                        className="h-9 px-3.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black inline-flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
+                      >
+                        <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                        <span>メンバー追加</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenMergeModal()}
+                          className="h-9 px-2.5 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-black inline-flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                        >
+                          <GitMerge className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span>LINE統合</span>
+                        </button>
+
+                        <Link
+                          href="/liff/admin/family"
+                          onPointerDown={() =>
+                            warmupLiffEndpointForHref("/liff/admin/family")
+                          }
+                          className="h-9 px-2.5 rounded-xl border border-border bg-card hover:bg-muted text-foreground text-[11px] font-black inline-flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+                        >
+                          <Users className="w-3.5 h-3.5 text-primary shrink-0" />
+                          <span>家族・班割当</span>
+                          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                        </Link>
                       </div>
-                    ) : (
-                      filteredActiveMembers.map((member) => {
-                        const subs = member.subRoles || [];
-                        const effectivePerms = evaluateEffectiveRolePermissions(
-                          member.role,
-                          subs,
-                          roleDefinitions
-                        );
-                        const isManagerPower = effectivePerms.canManageTeam;
-                        const isLinked =
-                          member.isLineLinked ?? Boolean(member.userId);
-                        const primaryRoleDef = roleDefByKey.get(
-                          (member.role || "").toLowerCase()
-                        );
+                    </div>
 
-                        return (
-                          <div
-                            key={member.memberId}
-                            className="p-3.5 rounded-2xl border border-border bg-card shadow-2xs flex items-center justify-between gap-2.5"
+                    {/* 検索ボックス */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      <Input
+                        type="text"
+                        placeholder="氏名・かな・役職・お子様(#背番号)・当番班で検索..."
+                        value={memberSearch}
+                        onChange={(e) => setMemberSearch(e.target.value)}
+                        className="pl-9 pr-8 h-9 rounded-xl text-xs font-bold bg-background border-border"
+                      />
+                      {memberSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setMemberSearch("")}
+                          aria-label="検索条件をクリア"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 並び順・グルーピング切替バー ＋ 一括開閉 */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div
+                        role="tablist"
+                        aria-label="メンバー一覧の並び順"
+                        className="grid grid-cols-3 gap-1 bg-muted/80 dark:bg-muted/50 p-1 rounded-xl border border-border flex-1"
+                      >
+                        {(
+                          [
+                            { id: "role", label: "役職別" },
+                            { id: "kana", label: "五十音順" },
+                            { id: "duty", label: "当番班別" },
+                          ] as const
+                        ).map((mode) => {
+                          const active = memberSortMode === mode.id;
+                          return (
+                            <button
+                              key={mode.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={active}
+                              onClick={() => {
+                                setMemberSortMode(mode.id);
+                                setCollapsedMemberSections(new Set());
+                              }}
+                              className={cn(
+                                "h-7 px-2 rounded-lg text-[11px] flex items-center justify-center gap-1 transition-colors cursor-pointer",
+                                active
+                                  ? "bg-[#0f172a] text-white font-black shadow-2xs"
+                                  : "text-muted-foreground hover:text-foreground font-bold"
+                              )}
+                            >
+                              {active && (
+                                <ArrowUpDown className="w-3 h-3 text-teal-400 shrink-0 hidden sm:inline" />
+                              )}
+                              <span className="truncate">{mode.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {memberSections.length > 1 && !hasActiveMemberQuery && (
+                        <button
+                          type="button"
+                          onClick={toggleAllMemberSectionsCollapsed}
+                          className="h-9 px-2.5 rounded-xl border border-border bg-background hover:bg-muted text-[10.5px] font-black text-muted-foreground hover:text-foreground inline-flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "w-3.5 h-3.5 transition-transform",
+                              areAllMemberSectionsCollapsed && "-rotate-90"
+                            )}
+                          />
+                          <span>
+                            {areAllMemberSectionsCollapsed
+                              ? "すべて開く"
+                              : "すべて畳む"}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* カテゴリ絞り込みチップ（件数バッジ付き） */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 -mx-0.5 px-0.5">
+                      {(
+                        [
+                          {
+                            id: "all" as const,
+                            label: "全員",
+                            count: memberFilterCounts.all,
+                            show: true,
+                          },
+                          {
+                            id: "managers" as const,
+                            label: "🔑 監督・管理",
+                            count: memberFilterCounts.managers,
+                            show: true,
+                          },
+                          {
+                            id: "coaches_ops" as const,
+                            label: "⚾ 指導者・運営係",
+                            count: memberFilterCounts.coaches_ops,
+                            show: true,
+                          },
+                          {
+                            id: "parents" as const,
+                            label: "👪 保護者",
+                            count: memberFilterCounts.parents,
+                            show: true,
+                          },
+                          {
+                            id: "players_others" as const,
+                            label: "🏃 選手・閲覧",
+                            count: memberFilterCounts.players_others,
+                            show:
+                              memberFilterCounts.players_others > 0 ||
+                              memberFilter === "players_others",
+                          },
+                          {
+                            id: "unlinked" as const,
+                            label: "📝 未連携",
+                            count: memberFilterCounts.unlinked,
+                            show:
+                              memberFilterCounts.unlinked > 0 ||
+                              memberFilter === "unlinked",
+                          },
+                        ]
+                      )
+                        .filter((f) => f.show)
+                        .map((f) => {
+                          const active = memberFilter === f.id;
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              onClick={() => setMemberFilter(f.id)}
+                              className={cn(
+                                "h-7 px-2.5 rounded-xl border text-[11px] inline-flex items-center gap-1 shrink-0 transition-colors cursor-pointer",
+                                active
+                                  ? "bg-[#0f172a] text-white border-[#0f172a] font-black"
+                                  : "bg-background text-muted-foreground border-border hover:text-foreground font-bold"
+                              )}
+                            >
+                              <span>{f.label}</span>
+                              <span
+                                className={cn(
+                                  "text-[10px] font-black",
+                                  active
+                                    ? "text-teal-300"
+                                    : "text-muted-foreground/80"
+                                )}
+                              >
+                                {f.count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </section>
+
+                {/* 2. セクション別・整列メンバーリスト */}
+                {filteredActiveMembers.length === 0 ? (
+                  <div className="p-8 text-center text-xs font-bold text-muted-foreground rounded-2xl border border-border bg-card shadow-xs space-y-2.5">
+                    <p>条件に一致するメンバーが見つかりません</p>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {hasActiveMemberQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMemberSearch("");
+                            setMemberFilter("all");
+                          }}
+                          className="h-8 px-3 rounded-xl border border-border bg-background hover:bg-muted text-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>絞り込みを解除</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={openAddMemberModal}
+                        className="h-8 px-3 rounded-xl bg-primary text-primary-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>新しいメンバーを手動追加</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {memberSections.map((section) => {
+                      const isCollapsed =
+                        !hasActiveMemberQuery &&
+                        collapsedMemberSections.has(section.key);
+
+                      return (
+                        <section
+                          key={section.key}
+                          className="rounded-2xl border border-border bg-card shadow-xs overflow-hidden"
+                        >
+                          {/* セクションダークキャップ（タップで開閉） */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleMemberSectionCollapsed(section.key)
+                            }
+                            aria-expanded={!isCollapsed}
+                            className={cn(
+                              "w-full px-3.5 py-2 bg-[#0f172a] text-slate-50 flex items-center justify-between gap-2 text-left cursor-pointer hover:bg-slate-900 transition-colors",
+                              !isCollapsed &&
+                                `border-b-[3px] ${section.accent.capBorderClass}`
+                            )}
                           >
-                            <div className="space-y-1.5 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <h4 className="text-xs sm:text-sm font-black text-foreground truncate">
-                                  {member.name}
-                                </h4>
-                                {isLinked ? (
-                                  <span className="px-1.5 py-0.5 rounded bg-[#06C755]/15 text-[#059440] dark:text-[#2ee075] border border-[#06C755]/30 text-[10px] font-black flex items-center gap-0.5">
-                                    <UserCheck className="w-2.5 h-2.5" />
-                                    <span>LINE連携済</span>
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border text-[10px] font-bold">
-                                    手動登録（未連携）
-                                  </span>
-                                )}
-                                {member.subLabel && (
-                                  <span className="px-2 py-0.5 rounded bg-teal-500/12 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-[10px] font-black">
-                                    {member.subLabel}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* 主ロール ＋ 兼務サブバッジ */}
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span
-                                  className={cn(
-                                    "px-2 py-0.5 rounded-md text-[10.5px] font-black border",
-                                    isManagerPower
-                                      ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
-                                      : primaryRoleDef &&
-                                        !primaryRoleDef.isBuiltin
-                                      ? getRoleTonePillClass(
-                                          primaryRoleDef.badgeTone
-                                        )
-                                      : "bg-primary/12 text-primary border-primary/25"
-                                  )}
-                                >
-                                  主: {getDisplayRoleLabel(member.role)}
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs font-black text-white truncate">
+                                {section.title}
+                              </span>
+                              {section.subtitle && (
+                                <span className="hidden sm:inline text-[10px] font-bold text-slate-400 truncate">
+                                  — {section.subtitle}
                                 </span>
-                                {subs.map((sr) => (
-                                  <span
-                                    key={sr}
-                                    className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[10px] font-black"
-                                  >
-                                    兼: {getDisplayRoleLabel(sr)}
-                                  </span>
-                                ))}
-                                {member.phone && (
-                                  <span className="text-[10px] font-bold text-muted-foreground">
-                                    {member.phone}
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1.5 shrink-0">
-                              {!isLinked && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenMergeModal(member)}
-                                  title="LINE参加アカウントと統合"
-                                  className="h-8 px-2 rounded-xl border border-teal-500/30 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 text-[11px] font-black flex items-center gap-1 cursor-pointer"
-                                >
-                                  <GitMerge className="w-3 h-3" />
-                                  <span className="hidden sm:inline">統合</span>
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => openEditMemberModal(member)}
-                                className="h-8 px-2.5 rounded-xl bg-[#0f172a] hover:bg-slate-800 text-white text-xs font-black flex items-center gap-1 cursor-pointer"
+                              <span
+                                className={cn(
+                                  "px-2 py-0.5 rounded-md text-[10.5px] font-black",
+                                  section.accent.countBadgeClass
+                                )}
                               >
-                                <Edit2 className="w-3 h-3 text-teal-400" />
-                                <span>編集</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setDeletingMember(member)}
-                                title="メンバーを削除"
-                                aria-label={`${member.name}さんを削除`}
-                                className="h-8 w-8 rounded-xl border border-border bg-background hover:bg-rose-600 text-muted-foreground hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                                {section.members.length}名
+                              </span>
+                              <ChevronDown
+                                className={cn(
+                                  "w-4 h-4 text-slate-300 transition-transform",
+                                  isCollapsed && "-rotate-90"
+                                )}
+                              />
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
+                          </button>
+
+                          {/* コンパクト整列メンバー行 */}
+                          {!isCollapsed && (
+                            <div className="divide-y divide-border">
+                              {section.members.map((member) => {
+                                const subs = member.subRoles || [];
+                                const effectivePerms =
+                                  evaluateEffectiveRolePermissions(
+                                    member.role,
+                                    subs,
+                                    roleDefinitions
+                                  );
+                                const isManagerPower =
+                                  effectivePerms.canManageTeam;
+                                const isLinked =
+                                  member.isLineLinked ?? Boolean(member.userId);
+                                const primaryRoleDef = roleDefByKey.get(
+                                  (member.role || "").toLowerCase()
+                                );
+                                const memberCategory: AdminMemberCategoryKey =
+                                  section.categoryKey ||
+                                  classifyAdminMemberCategory(
+                                    member,
+                                    roleDefinitions
+                                  );
+                                const monogram =
+                                  resolveMemberAvatarMonogram(member);
+                                const childrenList =
+                                  member.linkedChildren || [];
+                                const visibleChildren = childrenList.slice(
+                                  0,
+                                  2
+                                );
+                                const extraChildrenCount = Math.max(
+                                  0,
+                                  childrenList.length - visibleChildren.length
+                                );
+                                const isPlainParentPrimary =
+                                  member.role === "parent" &&
+                                  !isManagerPower &&
+                                  (!primaryRoleDef || primaryRoleDef.isBuiltin);
+
+                                return (
+                                  <div
+                                    key={member.memberId}
+                                    onClick={() => openEditMemberModal(member)}
+                                    className="px-3 py-2.5 sm:px-3.5 flex items-center gap-2.5 hover:bg-muted/35 active:bg-muted/55 transition-colors cursor-pointer [content-visibility:auto] [contain-intrinsic-size:auto_58px]"
+                                  >
+                                    {/* 左：苗字/背番号モノグラム ＋ LINE連携ステータスドット */}
+                                    <div className="relative shrink-0">
+                                      <div
+                                        className={cn(
+                                          "w-9 h-9 rounded-xl border flex items-center justify-center text-[11px] font-black tracking-tight select-none",
+                                          isManagerPower
+                                            ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                            : memberCategory === "coaches_ops"
+                                            ? "bg-teal-500/12 text-teal-800 dark:text-teal-300 border-teal-500/30"
+                                            : memberCategory ===
+                                              "players_others"
+                                            ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-300 border-emerald-500/30"
+                                            : "bg-primary/10 text-primary border-primary/25"
+                                        )}
+                                      >
+                                        {monogram}
+                                      </div>
+                                      <span
+                                        title={
+                                          isLinked
+                                            ? "LINE連携済み"
+                                            : "手動登録（LINE未連携）"
+                                        }
+                                        className={cn(
+                                          "w-3.5 h-3.5 rounded-full border-2 border-card flex items-center justify-center absolute -bottom-0.5 -right-0.5",
+                                          isLinked
+                                            ? "bg-[#06C755] text-white"
+                                            : "bg-slate-400 dark:bg-slate-600 text-white"
+                                        )}
+                                      >
+                                        {isLinked && (
+                                          <Check className="w-2 h-2 stroke-[3.5]" />
+                                        )}
+                                      </span>
+                                    </div>
+
+                                    {/* 中央：1段目（氏名・未連携・当番班・紐付け選手）＋ 2段目（役職・兼務・電話） */}
+                                    <div className="flex-1 min-w-0 space-y-1">
+                                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                        <span className="text-[13px] sm:text-sm font-black text-foreground truncate max-w-full">
+                                          {member.name}
+                                        </span>
+
+                                        {!isLinked && (
+                                          <span className="px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[9.5px] font-black shrink-0">
+                                            未連携
+                                          </span>
+                                        )}
+
+                                        {member.subLabel && (
+                                          <span className="px-1.5 py-0.2 rounded bg-teal-500/12 text-teal-700 dark:text-teal-300 border border-teal-500/30 text-[10px] font-black shrink-0">
+                                            {member.subLabel}
+                                          </span>
+                                        )}
+
+                                        {visibleChildren.map((child) => (
+                                          <span
+                                            key={child.id}
+                                            className="px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border text-[10px] font-bold shrink-0"
+                                          >
+                                            {formatCompactLinkedChildLabel(
+                                              member.name,
+                                              child
+                                            )}
+                                          </span>
+                                        ))}
+                                        {extraChildrenCount > 0 && (
+                                          <span className="px-1 py-0.2 rounded bg-muted text-muted-foreground border border-border text-[9.5px] font-bold shrink-0">
+                                            +{extraChildrenCount}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <span
+                                          className={cn(
+                                            "px-1.5 py-0.2 rounded text-[10px] font-black border",
+                                            isManagerPower
+                                              ? "bg-[#0f172a] text-amber-300 border-[#0f172a]"
+                                              : primaryRoleDef &&
+                                                !primaryRoleDef.isBuiltin
+                                              ? getRoleTonePillClass(
+                                                  primaryRoleDef.badgeTone
+                                                )
+                                              : isPlainParentPrimary
+                                              ? "bg-muted/70 text-muted-foreground border-border font-bold"
+                                              : "bg-primary/12 text-primary border-primary/25"
+                                          )}
+                                        >
+                                          {getDisplayRoleLabel(member.role)}
+                                        </span>
+
+                                        {subs.map((sr) => {
+                                          const subDef = roleDefByKey.get(
+                                            sr.toLowerCase()
+                                          );
+                                          return (
+                                            <span
+                                              key={sr}
+                                              className={cn(
+                                                "px-1.5 py-0.2 rounded text-[10px] font-black border",
+                                                subDef && !subDef.isBuiltin
+                                                  ? getRoleTonePillClass(
+                                                      subDef.badgeTone
+                                                    )
+                                                  : "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/30"
+                                              )}
+                                            >
+                                              兼: {getDisplayRoleLabel(sr)}
+                                            </span>
+                                          );
+                                        })}
+
+                                        {member.phone && (
+                                          <a
+                                            href={`tel:${member.phone}`}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="inline-flex items-center gap-0.5 text-[10px] font-bold text-muted-foreground hover:text-primary ml-0.5"
+                                          >
+                                            <Phone className="w-2.5 h-2.5 shrink-0" />
+                                            <span>{member.phone}</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 右：すっきり整理した操作ゾーン（統合［未連携のみ］＋ 編集） */}
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      {!isLinked && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenMergeModal(member);
+                                          }}
+                                          title="LINE参加アカウントと統合"
+                                          className="h-7 px-2 rounded-lg border border-teal-500/35 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 text-[10.5px] font-black inline-flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <GitMerge className="w-3 h-3 shrink-0" />
+                                          <span className="hidden sm:inline">
+                                            統合
+                                          </span>
+                                        </button>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openEditMemberModal(member);
+                                        }}
+                                        className="h-7 px-2.5 rounded-lg border border-border bg-background hover:bg-[#0f172a] hover:text-white hover:border-[#0f172a] text-foreground text-[11px] font-black inline-flex items-center gap-1 cursor-pointer transition-colors"
+                                      >
+                                        <Edit2 className="w-3 h-3 text-teal-600 dark:text-teal-400 shrink-0" />
+                                        <span>編集</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
                   </div>
-                </div>
-              </section>
+                )}
+              </div>
             )}
 
             {/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2525,6 +2882,54 @@ function LiffAdminDashboardContent() {
               </div>
 
               <div className="p-4 space-y-3.5 overflow-y-auto text-xs">
+                {editingMember && (
+                  <div className="p-2.5 rounded-xl bg-muted/40 border border-border flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {editingMember.isLineLinked ??
+                      Boolean(editingMember.userId) ? (
+                        <span className="px-2 py-0.5 rounded bg-[#06C755]/15 text-[#059440] dark:text-[#2ee075] border border-[#06C755]/30 text-[10px] font-black inline-flex items-center gap-1">
+                          <UserCheck className="w-3 h-3" />
+                          <span>LINE連携済み</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black">
+                          手動登録（LINE未連携）
+                        </span>
+                      )}
+                      {(editingMember.linkedChildren || []).map((child) => (
+                        <span
+                          key={child.id}
+                          className="px-2 py-0.5 rounded bg-card border border-border text-[10px] font-bold text-foreground"
+                        >
+                          お子様:{" "}
+                          {formatCompactLinkedChildLabel(
+                            editingMember.name,
+                            child
+                          )}
+                        </span>
+                      ))}
+                    </div>
+
+                    {!(
+                      editingMember.isLineLinked ??
+                      Boolean(editingMember.userId)
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = editingMember;
+                          setIsMemberModalOpen(false);
+                          handleOpenMergeModal(target);
+                        }}
+                        className="h-7 px-2.5 rounded-lg border border-teal-500/35 bg-teal-500/12 hover:bg-teal-500/20 text-teal-700 dark:text-teal-300 text-[10.5px] font-black inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <GitMerge className="w-3 h-3 shrink-0" />
+                        <span>LINEアカウントと統合</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <div className="space-y-1">
                     <label className="block text-[11px] font-black text-foreground">
@@ -2718,7 +3123,7 @@ function LiffAdminDashboardContent() {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {PRESET_SUB_LABELS.map((label) => (
+                    {dutyPresetChips.map((label) => (
                       <button
                         key={label}
                         type="button"
@@ -2754,27 +3159,48 @@ function LiffAdminDashboardContent() {
                 </div>
               </div>
 
-              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsMemberModalOpen(false)}
-                  className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="button"
-                  disabled={isSavingMember}
-                  onClick={() => void handleSaveMember()}
-                  className="h-10 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  {isSavingMember ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Check className="w-4 h-4" />
-                  )}
-                  <span>{editingMember ? "変更を保存" : "メンバーを追加"}</span>
-                </button>
+              <div className="px-4 pt-3 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-between gap-2 shrink-0">
+                {editingMember ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = editingMember;
+                      setIsMemberModalOpen(false);
+                      setDeletingMember(target);
+                    }}
+                    className="h-10 px-3 rounded-xl border border-rose-500/35 bg-rose-500/10 hover:bg-rose-600 text-rose-600 dark:text-rose-400 hover:text-white hover:border-rose-600 text-xs font-black inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>削除</span>
+                  </button>
+                ) : (
+                  <span />
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsMemberModalOpen(false)}
+                    className="h-10 px-4 rounded-xl border border-border bg-muted text-foreground text-xs font-black cursor-pointer"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingMember}
+                    onClick={() => void handleSaveMember()}
+                    className="h-10 px-5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-black flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingMember ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )}
+                    <span>
+                      {editingMember ? "変更を保存" : "メンバーを追加"}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>,
