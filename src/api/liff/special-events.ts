@@ -112,6 +112,7 @@ export interface RawSpecialEventDbRow {
   deadlineDate: string | null;
   description: string | null;
   importantNotice?: string | null;
+  includeStaff?: boolean | number | null;
   allowCompanions: boolean | number;
   useFeeCalculation: boolean | number;
   feeTiersJson: string | null;
@@ -159,10 +160,15 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
 
   const unitsByDateCache = new Map<
     string,
-    { units: TeamHouseholdUnit[]; myHouseholdKey: string | null }
+    {
+      units: TeamHouseholdUnit[];
+      myHouseholdKey: string | null;
+      excludedStaffHouseholdKeys: string[];
+      isCallerExcludedStaff: boolean;
+    }
   >();
-  const getUnitsForDate = (dateKey: string | null) => {
-    const k = dateKey || "__today__";
+  const getUnitsForDate = (dateKey: string | null, includeStaff: boolean) => {
+    const k = `${dateKey || "__today__"}:${includeStaff ? "all" : "nostaff"}`;
     const cached = unitsByDateCache.get(k);
     if (cached) return cached;
     const computed = buildTeamHouseholdUnits({
@@ -173,12 +179,13 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       callerUserName: params.callerUserName,
       dateKey: dateKey || todayKey,
       todayKey,
+      includeStaff,
     });
     unitsByDateCache.set(k, computed);
     return computed;
   };
 
-  const defaultUnitsBundle = getUnitsForDate(null);
+  const defaultUnitsBundle = getUnitsForDate(null, true);
   const responsesByEventId = new Map<string, RawSpecialEventResponseRow[]>();
   for (const r of params.responseRows) {
     const list = responsesByEventId.get(r.specialEventId) || [];
@@ -190,6 +197,10 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
     const category = normalizeSpecialEventCategory(row.category);
     const mode = normalizeSpecialEventMode(row.mode);
     const status = normalizeSpecialEventStatus(row.status);
+    const includeStaff =
+      row.includeStaff === undefined || row.includeStaff === null
+        ? true
+        : row.includeStaff === true || row.includeStaff === 1;
     const allowCompanions =
       row.allowCompanions === true || row.allowCompanions === 1;
     const useFeeCalculation =
@@ -198,13 +209,15 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
     const candidateDates = normalizeCandidateDates(row.candidateDatesJson);
     const questions = normalizeSurveyQuestions(row.questionsJson);
 
-    const unitsBundle = getUnitsForDate(row.eventDate);
+    const unitsBundle = getUnitsForDate(row.eventDate, includeStaff);
     const evResponses = responsesByEventId.get(row.id) || [];
 
     const built = buildSpecialEventHouseholdsAndSummary({
       units: unitsBundle.units,
       responseRows: evResponses,
       mode,
+      includeStaff,
+      excludedStaffHouseholdKeys: unitsBundle.excludedStaffHouseholdKeys,
       allowCompanions,
       useFeeCalculation,
       feeTiers,
@@ -245,6 +258,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       deadlineDateLabel: formatDateKeyToJaLabel(row.deadlineDate),
       description: row.description || "",
       importantNotice: row.importantNotice || "",
+      includeStaff,
       allowCompanions,
       useFeeCalculation,
       feeTiers,
@@ -253,6 +267,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       createdByUserId: row.createdByUserId || null,
       createdByName: row.createdByName || null,
       canDelete: params.canManagePlayers || isCreator,
+      isMyHouseholdTarget: Boolean(myHouseholdResponse),
       myHouseholdResponse,
       households: built.households,
       summary: built.summary,
@@ -462,6 +477,7 @@ interface UpsertSpecialEventBody {
   deadlineDate?: string | null;
   description?: string | null;
   importantNotice?: string | null;
+  includeStaff?: boolean;
   allowCompanions?: boolean;
   useFeeCalculation?: boolean;
   feeTiers?: unknown;
@@ -536,6 +552,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
     const locationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
     const description = (body.description || "").trim().slice(0, 2000);
     const importantNotice = (body.importantNotice || "").trim().slice(0, 2000);
+    const includeStaff = body.includeStaff !== false;
     const allowCompanions = body.allowCompanions !== false;
     const useFeeCalculation = body.useFeeCalculation !== false;
     const feeTiers = normalizeSpecialEventFeeTiers(body.feeTiers);
@@ -573,6 +590,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       deadlineDate,
       description,
       importantNotice,
+      includeStaff,
       allowCompanions,
       useFeeCalculation,
       feeTiersJson: JSON.stringify(feeTiers),
@@ -729,6 +747,10 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
       body.importantNotice !== undefined
         ? (body.importantNotice || "").trim().slice(0, 2000)
         : existing.importantNotice || "";
+    const includeStaff =
+      body.includeStaff !== undefined
+        ? Boolean(body.includeStaff)
+        : existing.includeStaff !== false;
     const allowCompanions =
       body.allowCompanions !== undefined
         ? Boolean(body.allowCompanions)
@@ -776,6 +798,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         deadlineDate,
         description,
         importantNotice,
+        includeStaff,
         allowCompanions,
         useFeeCalculation,
         feeTiersJson: JSON.stringify(feeTiers),
@@ -947,6 +970,20 @@ liffSpecialEventsRouter.post("/:specialEventId/respond", async (c) => {
     }
 
     const memberEntries = normalizeMemberAttendanceEntries(body.memberEntries);
+    if (
+      existingEvent.includeStaff === false &&
+      (householdKey.startsWith("hh_self_") ||
+        (memberEntries.length > 0 &&
+          memberEntries.every((e) => e.roleGroup === "staff")))
+    ) {
+      return c.json(
+        {
+          success: false,
+          error: "この行事・アンケートは選手・保護者ご家庭のみが対象です",
+        },
+        400
+      );
+    }
     const companions = existingEvent.allowCompanions
       ? normalizeCompanionsList(body.companions)
       : [];

@@ -27,6 +27,9 @@ export const teamSpecialEvents = sqliteTable(
     deadlineDate: text("deadline_date"), // 'YYYY-MM-DD' (最終回答期限・最終日)
     description: text("description"),
     importantNotice: text("important_notice"), // ⚠️ 注意事項・特記事項（任意・常時強調表示）
+    includeStaff: integer("include_staff", { mode: "boolean" })
+      .notNull()
+      .default(true), // 🧢 スタッフ（監督・専任コーチ等）を集計対象に含めるか
     allowCompanions: integer("allow_companions", { mode: "boolean" })
       .notNull()
       .default(true),

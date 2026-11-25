@@ -946,7 +946,10 @@ export function buildHubTickerFeed(
 
     // 3-C. 未回答の特別行事・アンケート
     const unansweredSpecial = specialEvents.find(
-      (sp) => sp.status === "open" && !sp.myResponded
+      (sp) =>
+        sp.status === "open" &&
+        sp.isMyHouseholdTarget !== false &&
+        !sp.myResponded
     );
     if (unansweredSpecial) {
       const isPoll = unansweredSpecial.mode === "date_poll";

@@ -102,6 +102,104 @@ describe("special-events-schema", () => {
 
     const coachUnit = units.find((u) => u.householdLabel === "佐藤 監督");
     expect(coachUnit?.sortCategory).toBe("staff");
+
+    // スタッフ除外設定（includeStaff: false）時は単独スタッフ（佐藤監督）のみ除外され、
+    // お父さんコーチ（山田父）を含む選手世帯（山田家）はそのまま残ることを検証
+    const staffExcludedAsCoach = buildTeamHouseholdUnits({
+      players: [
+        {
+          id: "p_taro",
+          name: "山田 太郎",
+          uniformNumber: "10",
+          isActive: true,
+          conditionStatus: "active",
+        },
+        {
+          id: "p_jiro",
+          name: "山田 次郎",
+          uniformNumber: "24",
+          isActive: true,
+          conditionStatus: "active",
+        },
+      ],
+      teamMembers: [
+        {
+          id: "m_yamada_dad",
+          userId: "uid_dad",
+          name: "山田 父",
+          memberType: "parent",
+          role: "coach",
+          status: "active",
+        },
+        {
+          id: "m_coach_solo",
+          userId: "uid_coach",
+          name: "佐藤 監督",
+          memberType: "staff",
+          role: "manager",
+          status: "active",
+        },
+      ],
+      relations: [
+        { parentId: "m_yamada_dad", childId: "p_taro" },
+        { parentId: "m_yamada_dad", childId: "p_jiro" },
+      ],
+      candidateUserIds: ["uid_coach"],
+      callerUserName: "佐藤 監督",
+      includeStaff: false,
+    });
+
+    expect(staffExcludedAsCoach.units).toHaveLength(1);
+    expect(staffExcludedAsCoach.units[0]?.householdLabel).toBe("山田 家");
+    expect(staffExcludedAsCoach.myHouseholdKey).toBeNull();
+    expect(staffExcludedAsCoach.isCallerExcludedStaff).toBe(true);
+    expect(staffExcludedAsCoach.excludedStaffHouseholdKeys).toEqual([
+      "hh_m_m_coach_solo",
+    ]);
+
+    const { households: familyOnlyHouseholds, summary: familyOnlySummary } =
+      buildSpecialEventHouseholdsAndSummary({
+        units: staffExcludedAsCoach.units,
+        excludedStaffHouseholdKeys:
+          staffExcludedAsCoach.excludedStaffHouseholdKeys,
+        includeStaff: false,
+        responseRows: [
+          {
+            id: "r_staff_stale",
+            specialEventId: "ev_family_only",
+            householdKey: "hh_m_m_coach_solo",
+            householdLabel: "佐藤 監督",
+            memberEntriesJson: JSON.stringify([
+              {
+                entityType: "member",
+                entityId: "m_coach_solo",
+                name: "佐藤 監督",
+                roleGroup: "staff",
+                status: "present",
+                feeTierId: "adult",
+              },
+            ]),
+            companionsJson: "[]",
+            dateVotesJson: "[]",
+            surveyAnswersJson: "{}",
+            comment: null,
+            feePaid: false,
+            updatedByUserId: "uid_coach",
+            updatedByName: "佐藤 監督",
+            updatedAt: "2026-11-24T00:00:00.000Z",
+          },
+        ],
+        mode: "rsvp",
+        allowCompanions: false,
+        useFeeCalculation: false,
+        feeTiers: [],
+        candidateDates: [],
+        questions: [],
+      });
+    expect(familyOnlyHouseholds).toHaveLength(1);
+    expect(familyOnlyHouseholds[0]?.householdLabel).toBe("山田 家");
+    expect(familyOnlySummary.totalHeadcount).toBe(0);
+    expect(familyOnlySummary.activeTargetHouseholdCount).toBe(1);
   });
 
   it("calculates member + sibling/companion headcounts, tier fees, paid progress, and survey summaries", () => {

@@ -428,6 +428,13 @@
       "when": 1795550000000,
       "tag": "0060_special_event_interim_deadline",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1795600000000,
+      "tag": "0061_special_event_include_staff",
+      "breakpoints": true
     }
   ]
 }

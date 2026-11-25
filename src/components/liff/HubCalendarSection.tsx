@@ -886,7 +886,8 @@ export function HubCalendarSection({
                             <span
                               className={cn(
                                 "px-1.5 py-0.5 rounded-full text-[9.5px] font-black shrink-0 border",
-                                sp.status !== "open"
+                                sp.status !== "open" ||
+                                  sp.isMyHouseholdTarget === false
                                   ? "bg-muted text-muted-foreground border-border"
                                   : !sp.myResponded
                                   ? "bg-amber-500 text-slate-950 border-amber-400"
@@ -897,6 +898,8 @@ export function HubCalendarSection({
                             >
                               {sp.status !== "open"
                                 ? "締切済"
+                                : sp.isMyHouseholdTarget === false
+                                ? "ご家庭対象"
                                 : !sp.myResponded
                                 ? "未回答"
                                 : sp.myOverallState === "attending"

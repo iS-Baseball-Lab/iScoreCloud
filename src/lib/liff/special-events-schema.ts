@@ -278,6 +278,7 @@ export interface SpecialEventQuickTemplate {
   mode: SpecialEventMode;
   startTime: string;
   endTime: string;
+  includeStaff: boolean;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: SpecialEventFeeTier[];
@@ -294,6 +295,7 @@ export const SPECIAL_EVENT_TEMPLATES: readonly SpecialEventQuickTemplate[] = [
     mode: "rsvp",
     startTime: "18:00",
     endTime: "20:30",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: DEFAULT_SPECIAL_EVENT_FEE_TIERS.map((t) => ({ ...t })),
@@ -321,6 +323,7 @@ export const SPECIAL_EVENT_TEMPLATES: readonly SpecialEventQuickTemplate[] = [
     mode: "rsvp",
     startTime: "11:30",
     endTime: "14:30",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: [
@@ -380,6 +383,7 @@ export const SPECIAL_EVENT_TEMPLATES: readonly SpecialEventQuickTemplate[] = [
     mode: "rsvp",
     startTime: "11:00",
     endTime: "15:00",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: [
@@ -447,6 +451,7 @@ export const SPECIAL_EVENT_TEMPLATES: readonly SpecialEventQuickTemplate[] = [
     mode: "date_poll",
     startTime: "18:00",
     endTime: "20:30",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: DEFAULT_SPECIAL_EVENT_FEE_TIERS.map((t) => ({ ...t })),
@@ -624,6 +629,7 @@ export interface SpecialEventDetailItem {
   deadlineDateLabel: string | null;
   description: string;
   importantNotice: string;
+  includeStaff: boolean;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: SpecialEventFeeTier[];
@@ -632,6 +638,7 @@ export interface SpecialEventDetailItem {
   createdByUserId: string | null;
   createdByName: string | null;
   canDelete: boolean;
+  isMyHouseholdTarget: boolean;
   myHouseholdResponse: HouseholdResponseView | null;
   households: HouseholdResponseView[];
   summary: SpecialEventAggregateSummary;
@@ -652,6 +659,8 @@ export interface HubSpecialEventSummary {
   deadlineDate: string | null;
   deadlineDateLabel: string | null;
   importantNotice: string;
+  includeStaff?: boolean;
+  isMyHouseholdTarget?: boolean;
   totalHeadcount: number;
   presentMemberCount?: number;
   companionCount?: number;
@@ -1163,6 +1172,7 @@ function classifyAdultRoleGroup(
 
   const isStaffExplicit =
     m.memberType === "staff" ||
+    m.role === "staff" ||
     m.role === "manager" ||
     m.role === "coach" ||
     m.role === "scorer" ||
@@ -1181,6 +1191,7 @@ function classifyAdultRoleGroup(
  * チームの `players`・`team_members`・`parent_child_relations` から
  * 重複のない「世帯（〇〇家）または個人スタッフ」単位のリストを構築する（Union-Find）。
  * ご兄弟で複数名在籍しているご家庭も自動的に1つの「〇〇家」に統合される。
+ * `includeStaff: false` の場合は単独スタッフ世帯（`sortCategory === "staff"`）を集計対象から除外する。
  */
 export function buildTeamHouseholdUnits(params: {
   players: readonly SpecialEventPlayerInput[];
@@ -1190,10 +1201,14 @@ export function buildTeamHouseholdUnits(params: {
   callerUserName?: string | null;
   dateKey?: string | null;
   todayKey?: string;
+  includeStaff?: boolean;
 }): {
   units: TeamHouseholdUnit[];
   myHouseholdKey: string | null;
+  excludedStaffHouseholdKeys: string[];
+  isCallerExcludedStaff: boolean;
 } {
+  const includeStaff = params.includeStaff !== false;
   const activePlayers = params.players.filter(
     (p) => p.isActive !== false && p.isActive !== 0
   );
@@ -1284,7 +1299,7 @@ export function buildTeamHouseholdUnits(params: {
     componentMap.set(r, bucket);
   }
 
-  const units: TeamHouseholdUnit[] = [];
+  const allUnits: TeamHouseholdUnit[] = [];
   const entityToHouseholdKey = new Map<string, string>();
 
   for (const comp of componentMap.values()) {
@@ -1343,7 +1358,7 @@ export function buildTeamHouseholdUnits(params: {
         onLeavePlayerIdSet.has(p.id)
       );
 
-      units.push({
+      allUnits.push({
         householdKey,
         householdLabel,
         sortCategory: "family",
@@ -1357,7 +1372,7 @@ export function buildTeamHouseholdUnits(params: {
         const householdKey = `hh_m_${m.id}`;
         const roleGroup = classifyAdultRoleGroup(m, false);
         const label = (m.name || "スタッフ").trim();
-        units.push({
+        allUnits.push({
           householdKey,
           householdLabel: label,
           sortCategory: roleGroup === "staff" ? "staff" : "family",
@@ -1378,7 +1393,7 @@ export function buildTeamHouseholdUnits(params: {
   }
 
   // 家族世帯（休部外 ➔ 休部中）➔ 単独スタッフ の順で安定ソート
-  units.sort((a, b) => {
+  allUnits.sort((a, b) => {
     if (a.sortCategory !== b.sortCategory) {
       return a.sortCategory === "family" ? -1 : 1;
     }
@@ -1389,7 +1404,7 @@ export function buildTeamHouseholdUnits(params: {
   });
 
   // ログインユーザーの所属世帯を特定
-  let myHouseholdKey: string | null = null;
+  let matchedMyHouseholdKey: string | null = null;
   const candidateSet = new Set(
     (params.candidateUserIds || []).map((u) => u.trim()).filter(Boolean)
   );
@@ -1399,17 +1414,17 @@ export function buildTeamHouseholdUnits(params: {
       if (m.userId && candidateSet.has(m.userId)) {
         const found = entityToHouseholdKey.get(`member:${m.id}`);
         if (found) {
-          myHouseholdKey = found;
+          matchedMyHouseholdKey = found;
           break;
         }
       }
     }
-    if (!myHouseholdKey) {
+    if (!matchedMyHouseholdKey) {
       for (const p of activePlayers) {
         if (p.userId && candidateSet.has(p.userId)) {
           const found = entityToHouseholdKey.get(`player:${p.id}`);
           if (found) {
-            myHouseholdKey = found;
+            matchedMyHouseholdKey = found;
             break;
           }
         }
@@ -1418,22 +1433,22 @@ export function buildTeamHouseholdUnits(params: {
   }
 
   const cleanCallerName = normalizeNameCompact(params.callerUserName);
-  if (!myHouseholdKey && cleanCallerName) {
+  if (!matchedMyHouseholdKey && cleanCallerName) {
     for (const m of activeAdults) {
       if (normalizeNameCompact(m.name) === cleanCallerName) {
         const found = entityToHouseholdKey.get(`member:${m.id}`);
         if (found) {
-          myHouseholdKey = found;
+          matchedMyHouseholdKey = found;
           break;
         }
       }
     }
-    if (!myHouseholdKey) {
+    if (!matchedMyHouseholdKey) {
       for (const p of activePlayers) {
         if (normalizeNameCompact(p.name) === cleanCallerName) {
           const found = entityToHouseholdKey.get(`player:${p.id}`);
           if (found) {
-            myHouseholdKey = found;
+            matchedMyHouseholdKey = found;
             break;
           }
         }
@@ -1441,30 +1456,60 @@ export function buildTeamHouseholdUnits(params: {
     }
   }
 
+  const staffHouseholdKeys = allUnits
+    .filter((u) => u.sortCategory === "staff")
+    .map((u) => u.householdKey);
+  const staffKeySet = new Set(staffHouseholdKeys);
+
+  let units = includeStaff
+    ? allUnits
+    : allUnits.filter((u) => u.sortCategory !== "staff");
+  let myHouseholdKey = matchedMyHouseholdKey;
+  let isCallerExcludedStaff = false;
+
+  if (!includeStaff && matchedMyHouseholdKey && staffKeySet.has(matchedMyHouseholdKey)) {
+    myHouseholdKey = null;
+    isCallerExcludedStaff = true;
+  }
+
   // 名簿未登録だが承認済みログインユーザーがいる場合のセルフ世帯フォールバック
+  // （※スタッフ除外設定かつ既に家族世帯が存在する場合は、外部管理者等が未回答母数に混入しないよう追加しない）
   const primaryUid = Array.from(candidateSet)[0] || "";
-  if (!myHouseholdKey && primaryUid) {
+  if (
+    !myHouseholdKey &&
+    !isCallerExcludedStaff &&
+    primaryUid &&
+    (includeStaff || units.length === 0)
+  ) {
     const selfKey = `hh_self_${primaryUid}`;
     const selfName = (params.callerUserName || "メンバー").trim() || "メンバー";
     myHouseholdKey = selfKey;
-    units.unshift({
-      householdKey: selfKey,
-      householdLabel: selfName,
-      sortCategory: "family",
-      isAllOnLeave: false,
-      members: [
-        {
-          entityType: "self",
-          entityId: primaryUid,
-          name: selfName,
-          roleGroup: "staff",
-          defaultFeeTierId: "adult",
-        },
-      ],
-    });
+    units = [
+      {
+        householdKey: selfKey,
+        householdLabel: selfName,
+        sortCategory: "family",
+        isAllOnLeave: false,
+        members: [
+          {
+            entityType: "self",
+            entityId: primaryUid,
+            name: selfName,
+            roleGroup: "staff",
+            defaultFeeTierId: "adult",
+          },
+        ],
+      },
+      ...units,
+    ];
   }
 
-  return { units, myHouseholdKey };
+  return {
+    units,
+    myHouseholdKey,
+    excludedStaffHouseholdKeys: includeStaff ? [] : staffHouseholdKeys,
+    isCallerExcludedStaff,
+  };
 }
 
 export interface RawSpecialEventResponseRow {
@@ -1681,12 +1726,14 @@ export function computeHouseholdResponseView(params: {
 /**
  * 既存の回答レコード群と現在の世帯マスタを突合して全世帯ビュー＋全体サマリーを算出する。
  * 親子関係が後から追加・変更された場合でも entityId の一致により既存回答を自動引き当てし、
- * マスタ外の孤立回答も欠落させず末尾に保持する。
+ * マスタ外の孤立回答も欠落させず末尾に保持する（ただし `includeStaff: false` 時は単独スタッフを除外）。
  */
 export function buildSpecialEventHouseholdsAndSummary(params: {
   units: readonly TeamHouseholdUnit[];
   responseRows: readonly RawSpecialEventResponseRow[];
   mode: SpecialEventMode;
+  includeStaff?: boolean;
+  excludedStaffHouseholdKeys?: Iterable<string>;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: readonly SpecialEventFeeTier[];
@@ -1700,12 +1747,19 @@ export function buildSpecialEventHouseholdsAndSummary(params: {
     units,
     responseRows,
     mode,
+    includeStaff = true,
+    excludedStaffHouseholdKeys,
     allowCompanions,
     useFeeCalculation,
     feeTiers,
     candidateDates,
     questions,
   } = params;
+
+  const excludedStaffKeySet = new Set(excludedStaffHouseholdKeys || []);
+  const effectiveUnits = includeStaff
+    ? units
+    : units.filter((u) => u.sortCategory !== "staff");
 
   const unusedRowIds = new Set(responseRows.map((r) => r.id));
   const rowByKey = new Map(responseRows.map((r) => [r.householdKey, r]));
@@ -1723,7 +1777,7 @@ export function buildSpecialEventHouseholdsAndSummary(params: {
 
   const households: HouseholdResponseView[] = [];
 
-  for (const unit of units) {
+  for (const unit of effectiveUnits) {
     let matchedRow: RawSpecialEventResponseRow | null =
       rowByKey.get(unit.householdKey) || null;
 
@@ -1762,13 +1816,22 @@ export function buildSpecialEventHouseholdsAndSummary(params: {
   }
 
   // 万一どの現行世帯にもマッチしなかった回答済みレコードも保護して追加
+  // （ただし `includeStaff: false` の場合は単独スタッフ回答を含めない）
   for (const r of responseRows) {
     if (!unusedRowIds.has(r.id)) continue;
     const savedEntries = parsedEntriesByRowId.get(r.id) || [];
+    const isStaffOnlySaved =
+      excludedStaffKeySet.has(r.householdKey) ||
+      r.householdKey.startsWith("hh_self_") ||
+      (savedEntries.length > 0 &&
+        savedEntries.every((e) => e.roleGroup === "staff"));
+    if (!includeStaff && isStaffOnlySaved) {
+      continue;
+    }
     const fallbackUnit: TeamHouseholdUnit = {
       householdKey: r.householdKey,
       householdLabel: r.householdLabel || "回答メンバー",
-      sortCategory: "family",
+      sortCategory: isStaffOnlySaved ? "staff" : "family",
       isAllOnLeave: false,
       members: savedEntries.map((e) => ({
         entityType: e.entityType,
@@ -2071,6 +2134,10 @@ export function buildSpecialEventAnnouncementLineText(params: {
     }
   }
 
+  if (!event.includeStaff) {
+    lines.push("🏠 対象: 選手・保護者ご家庭（スタッフ除く）");
+  }
+
   const announceInterimLabel =
     event.interimDeadlineDateLabel || event.interimDeadlineDate || null;
   const announceFinalLabel =
@@ -2158,6 +2225,9 @@ export function buildSpecialEventSummaryLineText(params: {
   const summaryFinalLabel =
     event.deadlineDateLabel || event.deadlineDate || null;
   const appendSummaryDeadlineLine = () => {
+    if (!event.includeStaff) {
+      lines.push("🏠 対象: 選手・保護者ご家庭（スタッフ除く）");
+    }
     if (summaryInterimLabel && summaryFinalLabel) {
       lines.push(
         `⏰ 回答期限: 中間 ${summaryInterimLabel} ／ 最終 ${summaryFinalLabel}`
@@ -2647,6 +2717,7 @@ export function buildDemoSpecialEventsBundle(): {
     units: demoUnits,
     responseRows: partyResponses,
     mode: "rsvp",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: partyTiers,
@@ -2676,6 +2747,7 @@ export function buildDemoSpecialEventsBundle(): {
       "1年間の振り返りムービー上映＆ビンゴ大会を予定しています！ご兄弟や小さいお子様もぜひご一緒にご参加ください。服装は自由（私服）です。",
     importantNotice:
       "前日18時以降のキャンセルはお店規定によりコース料金100%が発生します。お車でお越しの方のアルコール飲酒は固くお断りいたします。",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: partyTiers,
@@ -2684,6 +2756,7 @@ export function buildDemoSpecialEventsBundle(): {
     createdByUserId: "demo-user",
     createdByName: "父母会 幹事",
     canDelete: true,
+    isMyHouseholdTarget: true,
     myHouseholdResponse:
       partyBuilt.households.find((h) => h.householdKey === "hh_p_demo_1") ||
       null,
@@ -2768,6 +2841,7 @@ export function buildDemoSpecialEventsBundle(): {
     units: demoUnits,
     responseRows: pollResponses,
     mode: "date_poll",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: SPECIAL_EVENT_TEMPLATES[1].feeTiers.map((t) => ({ ...t })),
@@ -2796,6 +2870,7 @@ export function buildDemoSpecialEventsBundle(): {
     description:
       "卒団式・謝恩会の日程を決めるため、候補日のご都合をお知らせください。日程確定後、この画面からそのまま本出欠へ切り替えられます。",
     importantNotice: "",
+    includeStaff: true,
     allowCompanions: true,
     useFeeCalculation: true,
     feeTiers: SPECIAL_EVENT_TEMPLATES[1].feeTiers.map((t) => ({ ...t })),
@@ -2804,6 +2879,7 @@ export function buildDemoSpecialEventsBundle(): {
     createdByUserId: "demo-user",
     createdByName: "父母会 幹事",
     canDelete: true,
+    isMyHouseholdTarget: true,
     myHouseholdResponse:
       pollBuilt.households.find((h) => h.householdKey === "hh_p_demo_1") ||
       null,
@@ -2845,6 +2921,8 @@ export function toHubSpecialEventSummary(
     deadlineDate: ev.deadlineDate,
     deadlineDateLabel: ev.deadlineDateLabel,
     importantNotice: ev.importantNotice || "",
+    includeStaff: ev.includeStaff,
+    isMyHouseholdTarget: ev.isMyHouseholdTarget,
     totalHeadcount: ev.summary.totalHeadcount,
     presentMemberCount: ev.summary.presentMemberCount,
     companionCount: ev.summary.companionCount,

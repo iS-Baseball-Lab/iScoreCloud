@@ -151,6 +151,7 @@ function rebuildClientEventFromHouseholds(
     units,
     responseRows: [...existingRows, nextResponseRow],
     mode: ev.mode,
+    includeStaff: ev.includeStaff,
     allowCompanions: ev.allowCompanions,
     useFeeCalculation: ev.useFeeCalculation,
     feeTiers: ev.feeTiers,
@@ -158,13 +159,16 @@ function rebuildClientEventFromHouseholds(
     questions: ev.questions,
   });
 
+  const nextMyResp = myHouseholdKey
+    ? built.households.find((h) => h.householdKey === myHouseholdKey) || null
+    : ev.myHouseholdResponse;
+
   return {
     ...ev,
     households: built.households,
     summary: built.summary,
-    myHouseholdResponse: myHouseholdKey
-      ? built.households.find((h) => h.householdKey === myHouseholdKey) || null
-      : ev.myHouseholdResponse,
+    myHouseholdResponse: nextMyResp,
+    isMyHouseholdTarget: Boolean(nextMyResp),
   };
 }
 
@@ -422,11 +426,10 @@ function LiffSpecialEventsContent() {
       }
 
       if (json.isDemo || activeTeamId === "demo-team") {
-        // デモチームでは画面ステートへ即時反映
-        const demoBase =
-          events[0]?.households ||
+        // デモチームではスタッフを含む完全な初期名簿から再計算してOFF⇄ON切替も即時反映
+        const demoFullHouseholds =
           buildDemoSpecialEventsBundle().events[0].households;
-        const baseUnits: TeamHouseholdUnit[] = demoBase.map((hh) => ({
+        const baseUnits: TeamHouseholdUnit[] = demoFullHouseholds.map((hh) => ({
           householdKey: hh.householdKey,
           householdLabel: hh.householdLabel,
           sortCategory: hh.sortCategory,
@@ -439,6 +442,9 @@ function LiffSpecialEventsContent() {
             defaultFeeTierId: m.entityType === "player" ? "player" : "adult",
           })),
         }));
+        const excludedStaffKeys = baseUnits
+          .filter((u) => u.sortCategory === "staff")
+          .map((u) => u.householdKey);
 
         if (isEditing && editingEvent) {
           setEvents((prev) =>
@@ -465,12 +471,19 @@ function LiffSpecialEventsContent() {
                 units: baseUnits,
                 responseRows: existingRows,
                 mode: payload.mode,
+                includeStaff: payload.includeStaff,
+                excludedStaffHouseholdKeys: excludedStaffKeys,
                 allowCompanions: payload.allowCompanions,
                 useFeeCalculation: payload.useFeeCalculation,
                 feeTiers: payload.feeTiers,
                 candidateDates: payload.candidateDates,
                 questions: payload.questions,
               });
+              const nextMyResp = myHouseholdKey
+                ? rebuilt.households.find(
+                    (h) => h.householdKey === myHouseholdKey
+                  ) || null
+                : null;
               return {
                 ...ev,
                 ...payload,
@@ -485,11 +498,8 @@ function LiffSpecialEventsContent() {
                 deadlineDateLabel: formatDateKeyToJaLabel(payload.deadlineDate),
                 households: rebuilt.households,
                 summary: rebuilt.summary,
-                myHouseholdResponse: myHouseholdKey
-                  ? rebuilt.households.find(
-                      (h) => h.householdKey === myHouseholdKey
-                    ) || null
-                  : null,
+                isMyHouseholdTarget: Boolean(nextMyResp),
+                myHouseholdResponse: nextMyResp,
               };
             })
           );
@@ -499,12 +509,19 @@ function LiffSpecialEventsContent() {
             units: baseUnits,
             responseRows: [],
             mode: payload.mode,
+            includeStaff: payload.includeStaff,
+            excludedStaffHouseholdKeys: excludedStaffKeys,
             allowCompanions: payload.allowCompanions,
             useFeeCalculation: payload.useFeeCalculation,
             feeTiers: payload.feeTiers,
             candidateDates: payload.candidateDates,
             questions: payload.questions,
           });
+          const nextMyResp = myHouseholdKey
+            ? built.households.find(
+                (h) => h.householdKey === myHouseholdKey
+              ) || null
+            : null;
           const created: SpecialEventDetailItem = {
             id: newId,
             teamId: activeTeamId,
@@ -521,11 +538,8 @@ function LiffSpecialEventsContent() {
             createdByUserId: "demo-user",
             createdByName: activeUserName || "幹事",
             canDelete: true,
-            myHouseholdResponse: myHouseholdKey
-              ? built.households.find(
-                  (h) => h.householdKey === myHouseholdKey
-                ) || null
-              : null,
+            isMyHouseholdTarget: Boolean(nextMyResp),
+            myHouseholdResponse: nextMyResp,
             households: built.households,
             summary: built.summary,
           };
@@ -737,6 +751,7 @@ function LiffSpecialEventsContent() {
     location: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
+    includeStaff: boolean;
   }) => {
     if (!finalizingEvent) return;
     setIsSavingEvent(true);
@@ -761,6 +776,7 @@ function LiffSpecialEventsContent() {
             location: params.location,
             interimDeadlineDate: params.interimDeadlineDate,
             deadlineDate: params.deadlineDate,
+            includeStaff: params.includeStaff,
           }),
         }
       );
@@ -775,33 +791,45 @@ function LiffSpecialEventsContent() {
       }
 
       if (json.isDemo || activeTeamId === "demo-team") {
+        const demoFullHouseholds =
+          buildDemoSpecialEventsBundle().events[0].households;
+        const baseUnits: TeamHouseholdUnit[] = demoFullHouseholds.map((hh) => ({
+          householdKey: hh.householdKey,
+          householdLabel: hh.householdLabel,
+          sortCategory: hh.sortCategory,
+          isAllOnLeave: hh.isAllOnLeave,
+          members: hh.memberEntries.map((m) => ({
+            entityType: m.entityType,
+            entityId: m.entityId,
+            name: m.name,
+            roleGroup: m.roleGroup,
+            defaultFeeTierId: m.entityType === "player" ? "player" : "adult",
+          })),
+        }));
+        const excludedStaffKeys = baseUnits
+          .filter((u) => u.sortCategory === "staff")
+          .map((u) => u.householdKey);
+
         setEvents((prev) =>
           prev.map((ev) => {
             if (ev.id !== finalizingEvent.id) return ev;
-            const units: TeamHouseholdUnit[] = ev.households.map((hh) => ({
-              householdKey: hh.householdKey,
-              householdLabel: hh.householdLabel,
-              sortCategory: hh.sortCategory,
-              isAllOnLeave: hh.isAllOnLeave,
-              members: hh.memberEntries.map((m) => ({
-                entityType: m.entityType,
-                entityId: m.entityId,
-                name: m.name,
-                roleGroup: m.roleGroup,
-                defaultFeeTierId:
-                  m.entityType === "player" ? "player" : "adult",
-              })),
-            }));
             const built = buildSpecialEventHouseholdsAndSummary({
-              units,
+              units: baseUnits,
               responseRows: [],
               mode: "rsvp",
+              includeStaff: params.includeStaff,
+              excludedStaffHouseholdKeys: excludedStaffKeys,
               allowCompanions: ev.allowCompanions,
               useFeeCalculation: ev.useFeeCalculation,
               feeTiers: ev.feeTiers,
               candidateDates: ev.candidateDates,
               questions: ev.questions,
             });
+            const nextMyResp = myHouseholdKey
+              ? built.households.find(
+                  (h) => h.householdKey === myHouseholdKey
+                ) || null
+              : null;
             return {
               ...ev,
               title: cleanTitle || ev.title,
@@ -822,13 +850,11 @@ function LiffSpecialEventsContent() {
               ),
               deadlineDate: params.deadlineDate,
               deadlineDateLabel: formatDateKeyToJaLabel(params.deadlineDate),
+              includeStaff: params.includeStaff,
               households: built.households,
               summary: built.summary,
-              myHouseholdResponse: myHouseholdKey
-                ? built.households.find(
-                    (h) => h.householdKey === myHouseholdKey
-                  ) || null
-                : null,
+              isMyHouseholdTarget: Boolean(nextMyResp),
+              myHouseholdResponse: nextMyResp,
             };
           })
         );
@@ -1001,13 +1027,18 @@ function LiffSpecialEventsContent() {
                     )}
                   >
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] font-black text-white">
                           {cat.icon} {cat.label}
                         </span>
                         {ev.mode === "date_poll" && (
                           <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[10px] font-black">
                             🗳️ 日程調整
+                          </span>
+                        )}
+                        {!ev.includeStaff && (
+                          <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/40 text-[10px] font-black text-sky-200">
+                            🏠 ご家庭のみ
                           </span>
                         )}
                         {ev.status === "open" ? (
@@ -1026,7 +1057,7 @@ function LiffSpecialEventsContent() {
                       </div>
 
                       {/* 自分の世帯の回答ステータスバッジ */}
-                      {myResp && (
+                      {myResp ? (
                         <span
                           className={cn(
                             "px-2.5 py-0.5 rounded-full text-[10px] font-black border",
@@ -1049,7 +1080,11 @@ function LiffSpecialEventsContent() {
                                 }`
                             : "回答済（欠席）"}
                         </span>
-                      )}
+                      ) : !ev.includeStaff ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black border bg-slate-800 text-slate-300 border-slate-700">
+                          🏠 選手・保護者対象
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="flex items-start justify-between gap-2">
@@ -1187,53 +1222,61 @@ function LiffSpecialEventsContent() {
                       </div>
                     )}
 
-                    {/* 2段階回答期限（中間・最終日）＆ 会費チップ */}
-                    {(ev.interimDeadlineDateLabel ||
-                      ev.deadlineDateLabel ||
-                      (ev.mode === "rsvp" && ev.useFeeCalculation)) && (
-                      <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
-                        {ev.interimDeadlineDateLabel && (
-                          <span
-                            className={cn(
-                              "px-2.5 py-1 rounded-lg border tabular-nums",
-                              ev.interimDeadlineDate &&
-                                ev.interimDeadlineDate < todayJstKey &&
-                                ev.deadlineDateLabel
-                                ? "bg-muted text-muted-foreground border-border font-bold"
-                                : "bg-sky-500/12 text-sky-800 dark:text-sky-300 border border-sky-500/30 font-black"
-                            )}
-                          >
-                            {ev.interimDeadlineDate &&
-                            ev.interimDeadlineDate < todayJstKey &&
-                            ev.deadlineDateLabel
-                              ? `📌 中間期限: ${ev.interimDeadlineDateLabel}（経過）`
-                              : `📌 中間回答期限: ${ev.interimDeadlineDateLabel} まで`}
-                          </span>
+                    {/* 対象範囲・2段階回答期限（中間・最終日）＆ 会費チップ */}
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                      <span
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg border font-black",
+                          ev.includeStaff
+                            ? "bg-teal-500/10 text-teal-800 dark:text-teal-300 border-teal-500/30"
+                            : "bg-sky-500/12 text-sky-800 dark:text-sky-300 border border-sky-500/30"
                         )}
-                        {ev.deadlineDateLabel && (
-                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black tabular-nums">
-                            ⏰ 最終回答期限: {ev.deadlineDateLabel} まで
-                          </span>
-                        )}
-                        {ev.mode === "rsvp" &&
-                          ev.useFeeCalculation &&
-                          ev.feeTiers
-                            .filter((t) => t.enabled)
-                            .map((t) => (
-                              <span
-                                key={t.id}
-                                className="px-2 py-1 rounded-lg bg-muted/50 border border-border font-bold text-foreground"
-                              >
-                                {t.label}:{" "}
-                                <strong className="font-black">
-                                  {t.amount === 0
-                                    ? "無料"
-                                    : `${t.amount.toLocaleString()}円`}
-                                </strong>
-                              </span>
-                            ))}
-                      </div>
-                    )}
+                      >
+                        {ev.includeStaff
+                          ? "🧢 対象: 選手・保護者・スタッフ"
+                          : "🏠 対象: 選手・保護者ご家庭のみ（スタッフ除く）"}
+                      </span>
+                      {ev.interimDeadlineDateLabel && (
+                        <span
+                          className={cn(
+                            "px-2.5 py-1 rounded-lg border tabular-nums",
+                            ev.interimDeadlineDate &&
+                              ev.interimDeadlineDate < todayJstKey &&
+                              ev.deadlineDateLabel
+                              ? "bg-muted text-muted-foreground border-border font-bold"
+                              : "bg-sky-500/12 text-sky-800 dark:text-sky-300 border border-sky-500/30 font-black"
+                          )}
+                        >
+                          {ev.interimDeadlineDate &&
+                          ev.interimDeadlineDate < todayJstKey &&
+                          ev.deadlineDateLabel
+                            ? `📌 中間期限: ${ev.interimDeadlineDateLabel}（経過）`
+                            : `📌 中間回答期限: ${ev.interimDeadlineDateLabel} まで`}
+                        </span>
+                      )}
+                      {ev.deadlineDateLabel && (
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-black tabular-nums">
+                          ⏰ 最終回答期限: {ev.deadlineDateLabel} まで
+                        </span>
+                      )}
+                      {ev.mode === "rsvp" &&
+                        ev.useFeeCalculation &&
+                        ev.feeTiers
+                          .filter((t) => t.enabled)
+                          .map((t) => (
+                            <span
+                              key={t.id}
+                              className="px-2 py-1 rounded-lg bg-muted/50 border border-border font-bold text-foreground"
+                            >
+                              {t.label}:{" "}
+                              <strong className="font-black">
+                                {t.amount === 0
+                                  ? "無料"
+                                  : `${t.amount.toLocaleString()}円`}
+                              </strong>
+                            </span>
+                          ))}
+                    </div>
 
                     {/* ⚠️ 注意事項・特記事項（入力時のみ常時強調表示） */}
                     <ImportantNoticeBanner notice={ev.importantNotice} />
@@ -1375,18 +1418,28 @@ function LiffSpecialEventsContent() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                       <button
                         type="button"
-                        disabled={!effectiveCanRespond}
+                        disabled={
+                          !effectiveCanRespond ||
+                          (!myResp && !effectiveCanEdit) ||
+                          ev.households.length === 0
+                        }
                         onClick={() => {
                           setRespondingEventId(ev.id);
                           setRespondingHouseholdKey(
-                            myResp?.householdKey || myHouseholdKey
+                            myResp?.householdKey ||
+                              ev.households[0]?.householdKey ||
+                              myHouseholdKey
                           );
                         }}
                         className="h-11 px-4 rounded-xl bg-primary hover:bg-primary/90 active:scale-[0.99] disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>
-                          {myResp?.hasResponded
+                          {!myResp && !ev.includeStaff
+                            ? effectiveCanEdit
+                              ? "代理入力（世帯を選択）"
+                              : "選手・保護者ご家庭のみ対象"
+                            : myResp?.hasResponded
                             ? "回答を確認・変更する"
                             : ev.mode === "date_poll"
                             ? "候補日・アンケートを回答"

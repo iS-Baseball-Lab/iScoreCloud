@@ -110,6 +110,7 @@ export interface UpsertSpecialEventPayload {
   deadlineDate: string | null;
   description: string;
   importantNotice: string;
+  includeStaff: boolean;
   allowCompanions: boolean;
   useFeeCalculation: boolean;
   feeTiers: SpecialEventFeeTier[];
@@ -214,6 +215,7 @@ export function CreateOrEditSpecialEventModal({
   const [deadlineDate, setDeadlineDate] = useState("");
   const [description, setDescription] = useState("");
   const [importantNotice, setImportantNotice] = useState("");
+  const [includeStaff, setIncludeStaff] = useState(true);
   const [allowCompanions, setAllowCompanions] = useState(true);
   const [useFeeCalculation, setUseFeeCalculation] = useState(true);
   const [feeTiers, setFeeTiers] = useState<SpecialEventFeeTier[]>(() =>
@@ -252,6 +254,7 @@ export function CreateOrEditSpecialEventModal({
       setDeadlineDate(editingEvent.deadlineDate || "");
       setDescription(editingEvent.description || "");
       setImportantNotice(editingEvent.importantNotice || "");
+      setIncludeStaff(editingEvent.includeStaff !== false);
       setAllowCompanions(editingEvent.allowCompanions);
       setUseFeeCalculation(editingEvent.useFeeCalculation);
       setFeeTiers(
@@ -284,6 +287,7 @@ export function CreateOrEditSpecialEventModal({
       setDeadlineDate("");
       setDescription("");
       setImportantNotice("");
+      setIncludeStaff(tpl.includeStaff);
       setAllowCompanions(tpl.allowCompanions);
       setUseFeeCalculation(tpl.useFeeCalculation);
       setFeeTiers(tpl.feeTiers.map((t) => ({ ...t })));
@@ -315,6 +319,22 @@ export function CreateOrEditSpecialEventModal({
 
   if (!mounted || !isOpen) return null;
 
+  const handleSelectIncludeStaff = (nextVal: boolean) => {
+    setIncludeStaff(nextVal);
+    setFeeTiers((prev) =>
+      prev.map((t) => {
+        if (t.id !== "adult") return t;
+        if (!nextVal && t.label === "大人（保護者・指導者）") {
+          return { ...t, label: "大人（保護者）" };
+        }
+        if (nextVal && t.label === "大人（保護者）") {
+          return { ...t, label: "大人（保護者・指導者）" };
+        }
+        return t;
+      })
+    );
+  };
+
   const applyTemplate = (tplId: string) => {
     const tpl = SPECIAL_EVENT_TEMPLATES.find((t) => t.id === tplId);
     if (!tpl) return;
@@ -325,6 +345,7 @@ export function CreateOrEditSpecialEventModal({
     setMode(tpl.mode);
     setStartTime(tpl.startTime);
     setEndTime(tpl.endTime);
+    setIncludeStaff(tpl.includeStaff);
     setAllowCompanions(tpl.allowCompanions);
     setUseFeeCalculation(tpl.useFeeCalculation);
     setFeeTiers(tpl.feeTiers.map((t) => ({ ...t })));
@@ -448,6 +469,7 @@ export function CreateOrEditSpecialEventModal({
       deadlineDate: deadlineDate || null,
       description: description.trim(),
       importantNotice: importantNotice.trim(),
+      includeStaff,
       allowCompanions,
       useFeeCalculation,
       feeTiers,
@@ -559,6 +581,45 @@ export function CreateOrEditSpecialEventModal({
                 <span>🗳️ 候補日アンケート</span>
                 <span className="text-[9.5px] opacity-80">
                   日程調整（後で本出欠へ切替可）
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2B. スタッフを含めるかの選択 */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-black text-foreground block">
+              集計対象メンバー（スタッフを含めるか）
+            </label>
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-muted border border-border">
+              <button
+                type="button"
+                onClick={() => handleSelectIncludeStaff(true)}
+                className={cn(
+                  "py-2 px-2.5 rounded-xl text-xs transition-all cursor-pointer flex flex-col items-center gap-0.5",
+                  includeStaff
+                    ? "bg-card text-foreground font-black border border-teal-500 shadow-xs"
+                    : "text-muted-foreground font-bold border border-transparent"
+                )}
+              >
+                <span>🧢 スタッフも含める</span>
+                <span className="text-[9.5px] opacity-80">
+                  選手・保護者 ＋ 監督・スタッフ
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectIncludeStaff(false)}
+                className={cn(
+                  "py-2 px-2.5 rounded-xl text-xs transition-all cursor-pointer flex flex-col items-center gap-0.5",
+                  !includeStaff
+                    ? "bg-card text-foreground font-black border border-sky-500 shadow-xs"
+                    : "text-muted-foreground font-bold border border-transparent"
+                )}
+              >
+                <span>🏠 スタッフを含めない</span>
+                <span className="text-[9.5px] opacity-80">
+                  選手・保護者ご家庭のみ対象
                 </span>
               </button>
             </div>
@@ -2548,7 +2609,11 @@ export function SpecialEventResponsesSummaryModal({
         <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2 shrink-0">
           <div className="min-w-0">
             <span className="text-[10px] font-black text-teal-300 block truncate">
-              📊 幹事・集計ダッシュボード
+              📊 幹事・集計ダッシュボード（
+              {event.includeStaff
+                ? "🧢 スタッフ含む"
+                : "🏠 選手・保護者ご家庭のみ"}
+              ）
             </span>
             <h2 className="text-sm font-black text-white truncate">
               {event.title}
@@ -2649,6 +2714,11 @@ export function SpecialEventResponsesSummaryModal({
                           <span className="text-xs font-black text-foreground truncate">
                             {hh.householdLabel}
                           </span>
+                          {hh.sortCategory === "staff" && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-teal-500/12 text-teal-700 dark:text-teal-300 border border-teal-500/25 text-[9.5px] font-black shrink-0">
+                              🧢 スタッフ
+                            </span>
+                          )}
                           {!hh.hasResponded ? (
                             <span className="px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 text-[10px] font-black shrink-0">
                               {hh.isAllOnLeave ? "⏸ 休部中" : "未回答"}
@@ -3156,6 +3226,7 @@ interface FinalizeCandidateDateModalProps {
     location: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
+    includeStaff: boolean;
   }) => Promise<void>;
 }
 
@@ -3173,6 +3244,7 @@ export function FinalizeCandidateDateModal({
   const [location, setLocation] = useState("");
   const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
+  const [includeStaff, setIncludeStaff] = useState(true);
 
   useEffect(() => {
     setMounted(true);
@@ -3191,6 +3263,7 @@ export function FinalizeCandidateDateModal({
     setLocation(event.location || "");
     setInterimDeadlineDate(event.interimDeadlineDate || "");
     setDeadlineDate(event.deadlineDate || "");
+    setIncludeStaff(event.includeStaff !== false);
   }, [event, isOpen]);
 
   if (!mounted || !isOpen || !event) return null;
@@ -3295,6 +3368,38 @@ export function FinalizeCandidateDateModal({
             />
           </div>
 
+          <div className="space-y-1">
+            <label className="text-[11px] font-black text-foreground block">
+              本出欠の対象メンバー
+            </label>
+            <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-muted border border-border">
+              <button
+                type="button"
+                onClick={() => setIncludeStaff(true)}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg text-[11px] transition-all cursor-pointer",
+                  includeStaff
+                    ? "bg-card text-foreground font-black border border-teal-500 shadow-2xs"
+                    : "text-muted-foreground font-bold border border-transparent"
+                )}
+              >
+                🧢 スタッフも含める
+              </button>
+              <button
+                type="button"
+                onClick={() => setIncludeStaff(false)}
+                className={cn(
+                  "py-1.5 px-2 rounded-lg text-[11px] transition-all cursor-pointer",
+                  !includeStaff
+                    ? "bg-card text-foreground font-black border border-sky-500 shadow-2xs"
+                    : "text-muted-foreground font-bold border border-transparent"
+                )}
+              >
+                🏠 スタッフを含めない
+              </button>
+            </div>
+          </div>
+
           <div className="p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 space-y-2">
             <span className="text-[11px] font-black text-foreground block">
               本出欠の回答期限（任意・2段階設定）
@@ -3381,6 +3486,7 @@ export function FinalizeCandidateDateModal({
                 location: location.trim(),
                 interimDeadlineDate: interimDeadlineDate || null,
                 deadlineDate: deadlineDate || null,
+                includeStaff,
               });
             }}
             className="flex-1 h-11 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer"

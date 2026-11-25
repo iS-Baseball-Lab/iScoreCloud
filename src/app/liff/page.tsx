@@ -557,10 +557,12 @@ export default function LiffHubPage() {
 
     return [...active]
       .sort((a, b) => {
-        const aRank =
-          a.status === "open" ? (!a.myResponded ? 0 : 1) : 2;
-        const bRank =
-          b.status === "open" ? (!b.myResponded ? 0 : 1) : 2;
+        const aUnans =
+          a.status === "open" && a.isMyHouseholdTarget !== false && !a.myResponded;
+        const bUnans =
+          b.status === "open" && b.isMyHouseholdTarget !== false && !b.myResponded;
+        const aRank = a.status === "open" ? (aUnans ? 0 : 1) : 2;
+        const bRank = b.status === "open" ? (bUnans ? 0 : 1) : 2;
         if (aRank !== bRank) return aRank - bRank;
         const aDate = resolveSpecialEventSortDateKey(a);
         const bDate = resolveSpecialEventSortDateKey(b);
@@ -571,8 +573,12 @@ export default function LiffHubPage() {
 
   const unansweredSpecialCount = useMemo(
     () =>
-      topSpecialEvents.filter((sp) => sp.status === "open" && !sp.myResponded)
-        .length,
+      topSpecialEvents.filter(
+        (sp) =>
+          sp.status === "open" &&
+          sp.isMyHouseholdTarget !== false &&
+          !sp.myResponded
+      ).length,
     [topSpecialEvents]
   );
 
@@ -771,7 +777,8 @@ export default function LiffHubPage() {
                           </h4>
                           <span
                             className={`px-1.5 py-0.2 rounded-full text-[9px] font-black shrink-0 border ${
-                              sp.status !== "open"
+                              sp.status !== "open" ||
+                              sp.isMyHouseholdTarget === false
                                 ? "bg-muted text-muted-foreground border-border"
                                 : !sp.myResponded
                                 ? "bg-amber-500 text-slate-950 border-amber-400"
@@ -782,6 +789,8 @@ export default function LiffHubPage() {
                           >
                             {sp.status !== "open"
                               ? "締切済"
+                              : sp.isMyHouseholdTarget === false
+                              ? "ご家庭対象"
                               : !sp.myResponded
                               ? "未回答"
                               : sp.myOverallState === "attending"
