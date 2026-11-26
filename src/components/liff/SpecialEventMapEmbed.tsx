@@ -310,20 +310,20 @@ export function SpecialEventLocationMapCard({
     if (!mapInfo.hasMapEmbed && !isResolvingShortUrl) {
       if (mapInfo.externalSiteUrl) {
         return (
-          <div className="px-2.5 py-2 rounded-xl border border-amber-500/35 bg-amber-500/5 flex items-center justify-between gap-2 flex-wrap text-[11px]">
-            <span className="font-bold text-foreground">
+          <div className="px-3 py-2.5 rounded-xl border border-amber-500/35 bg-amber-500/5 space-y-2 text-[11px]">
+            <p className="font-bold text-foreground leading-snug">
               {onMoveToVenueSiteUrl
                 ? `「${resolveVenueSiteLabel(
                     mapInfo.externalSiteUrl
                   )}」のURLが入力されています（上の「食べログ・お店サイトURL」欄へ移すとGoogleマップも併用できます）`
                 : "外部WebページURLとして案内ボタンを表示します（地図埋め込みはGoogleマップURLで有効）"}
-            </span>
-            <div className="flex items-center gap-1.5 shrink-0">
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
               {onMoveToVenueSiteUrl && (
                 <button
                   type="button"
                   onClick={() => onMoveToVenueSiteUrl(mapInfo.externalSiteUrl)}
-                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black cursor-pointer"
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black whitespace-nowrap cursor-pointer"
                 >
                   お店サイトURL欄へ移動
                 </button>
@@ -332,7 +332,7 @@ export function SpecialEventLocationMapCard({
                 href={mapInfo.externalSiteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black inline-flex items-center gap-1 shrink-0"
+                className="px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black inline-flex items-center gap-1 whitespace-nowrap shrink-0"
               >
                 <span>確認</span>
                 <ExternalLink className="w-2.5 h-2.5" />
@@ -352,16 +352,16 @@ export function SpecialEventLocationMapCard({
         )}
       >
         <div className="px-3 py-1.5 bg-[#0f172a] text-slate-50 border-b-2 border-[#1A73E8] flex items-center justify-between gap-2">
-          <span className="text-[10.5px] font-black flex items-center gap-1.5">
+          <span className="text-[10.5px] font-black flex items-center gap-1.5 min-w-0 truncate">
             <MapPin className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <span>案内ページに表示される地図プレビュー</span>
+            <span className="truncate">案内ページに表示される地図プレビュー</span>
           </span>
           {mapInfo.externalMapUrl && (
             <a
               href={mapInfo.externalMapUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-2 py-0.5 rounded-md bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[9.5px] font-black inline-flex items-center gap-0.5 shrink-0"
+              className="px-2 py-0.5 rounded-md bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[9.5px] font-black inline-flex items-center gap-0.5 whitespace-nowrap shrink-0"
             >
               <span>Googleマップで確認</span>
               <ExternalLink className="w-2.5 h-2.5" />
@@ -420,6 +420,13 @@ export function SpecialEventLocationMapCard({
     );
   }
 
+  const hasActionButtons = Boolean(
+    mapInfo.venueSiteUrl ||
+      (collapsible && mapInfo.hasMapEmbed) ||
+      (mapInfo.directionsUrl && mapInfo.hasMapEmbed) ||
+      mapInfo.externalMapUrl
+  );
+
   return (
     <div
       className={cn(
@@ -427,79 +434,81 @@ export function SpecialEventLocationMapCard({
         className
       )}
     >
-      {/* 会場・お店情報ヘッダー行 */}
-      <div className="p-2.5 sm:p-3 bg-muted/35 flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <MapPin className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-          <div className="min-w-0">
-            <span className="text-[10px] font-bold text-muted-foreground block">
+      {/* 会場・お店情報ヘッダー（上段：会場名横幅100% ／ 下段：お店サイト・ルート案内・Googleマップボタン） */}
+      <div className="p-2.5 sm:p-3 bg-muted/35 space-y-2">
+        <div className="flex items-start gap-2 min-w-0">
+          <MapPin className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold text-muted-foreground block leading-tight">
               {locationLabel}
             </span>
-            <span className="text-xs font-black text-foreground block break-words">
+            <span className="text-xs sm:text-[13px] font-black text-foreground block leading-snug break-words mt-0.5">
               {(location || "").trim() || fallbackLocationText}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-          {mapInfo.venueSiteUrl && (
-            <a
-              href={mapInfo.venueSiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                "px-2.5 py-1.5 rounded-lg text-white text-[10.5px] font-black inline-flex items-center gap-1",
-                mapInfo.venueSiteLabel === "Instagram"
-                  ? "bg-[#E1306C] hover:bg-[#C1275C]"
-                  : "bg-amber-600 hover:bg-amber-700"
-              )}
-            >
-              <Utensils className="w-3 h-3 shrink-0" />
-              <span>{mapInfo.venueSiteLabel}</span>
-              <ExternalLink className="w-3 h-3 shrink-0" />
-            </a>
-          )}
+        {hasActionButtons && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/60">
+            {mapInfo.venueSiteUrl && (
+              <a
+                href={mapInfo.venueSiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "px-2.5 py-1.5 rounded-lg text-white text-[10.5px] font-black inline-flex items-center gap-1 whitespace-nowrap",
+                  mapInfo.venueSiteLabel === "Instagram"
+                    ? "bg-[#E1306C] hover:bg-[#C1275C]"
+                    : "bg-amber-600 hover:bg-amber-700"
+                )}
+              >
+                <Utensils className="w-3 h-3 shrink-0" />
+                <span>{mapInfo.venueSiteLabel}</span>
+                <ExternalLink className="w-3 h-3 shrink-0" />
+              </a>
+            )}
 
-          {collapsible && mapInfo.hasMapEmbed && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-foreground text-[10.5px] font-black inline-flex items-center gap-1 cursor-pointer"
-            >
-              <MapPin className="w-3 h-3 text-[#1A73E8] shrink-0" />
-              <span>{isExpanded ? "地図を閉じる" : "地図を表示"}</span>
-              {isExpanded ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
-              )}
-            </button>
-          )}
+            {collapsible && mapInfo.hasMapEmbed && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded((prev) => !prev)}
+                className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-foreground text-[10.5px] font-black inline-flex items-center gap-1 whitespace-nowrap cursor-pointer"
+              >
+                <MapPin className="w-3 h-3 text-[#1A73E8] shrink-0" />
+                <span>{isExpanded ? "地図を閉じる" : "地図を表示"}</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
+            )}
 
-          {mapInfo.directionsUrl && mapInfo.hasMapEmbed && (
-            <a
-              href={mapInfo.directionsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-foreground text-[10.5px] font-black inline-flex items-center gap-1"
-            >
-              <Navigation className="w-3 h-3 text-[#1A73E8] shrink-0" />
-              <span>ルート案内</span>
-            </a>
-          )}
+            {mapInfo.directionsUrl && mapInfo.hasMapEmbed && (
+              <a
+                href={mapInfo.directionsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg border border-border bg-card hover:bg-muted text-foreground text-[10.5px] font-black inline-flex items-center gap-1 whitespace-nowrap"
+              >
+                <Navigation className="w-3 h-3 text-[#1A73E8] shrink-0" />
+                <span>ルート案内</span>
+              </a>
+            )}
 
-          {mapInfo.externalMapUrl && (
-            <a
-              href={mapInfo.externalMapUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10.5px] font-black inline-flex items-center gap-1"
-            >
-              <span>Googleマップ</span>
-              <ExternalLink className="w-3 h-3 shrink-0" />
-            </a>
-          )}
-        </div>
+            {mapInfo.externalMapUrl && (
+              <a
+                href={mapInfo.externalMapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10.5px] font-black inline-flex items-center gap-1 whitespace-nowrap"
+              >
+                <span>Googleマップ</span>
+                <ExternalLink className="w-3 h-3 shrink-0" />
+              </a>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 埋め込み Google Map */}
