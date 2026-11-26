@@ -630,6 +630,7 @@ export interface SpecialEventDetailItem {
   timeRangeLabel: string;
   location: string;
   locationUrl: string;
+  venueSiteUrl: string;
   embedMapUrl?: string;
   interimDeadlineDate: string | null;
   interimDeadlineDateLabel: string | null;
@@ -2444,6 +2445,24 @@ export function buildSpecialEventHouseholdsAndSummary(params: {
   };
 }
 
+export function resolveVenueSiteLabel(rawUrl?: string | null): string {
+  const cleaned = (rawUrl || "").trim();
+  if (!cleaned) return "お店・会場サイト";
+  try {
+    const host = new URL(cleaned).hostname.toLowerCase();
+    if (host.includes("tabelog.com")) return "食べログ";
+    if (host.includes("hotpepper.jp")) return "ホットペッパー";
+    if (host.includes("gnavi.co.jp")) return "ぐるなび";
+    if (host.includes("ikyu.com")) return "一休.com";
+    if (host.includes("retty.me")) return "Retty";
+    if (host.includes("hitosara.com")) return "ヒトサラ";
+    if (host.includes("instagram.com")) return "Instagram";
+  } catch {
+    // ignore URL parse error
+  }
+  return "お店・会場サイト";
+}
+
 export function resolveSpecialEventShareMapUrl(
   rawUrl?: string | null,
   fallbackLocation?: string | null
@@ -2476,6 +2495,8 @@ export function buildSpecialEventAnnouncementLineText(params: {
   const { event, teamName, pageUrl, includeUnansweredList } = params;
   const cat = getSpecialEventCategoryMeta(event.category);
   const lines: string[] = [];
+  const cleanVenueSiteUrl = (event.venueSiteUrl || "").trim();
+  const venueSiteLabel = resolveVenueSiteLabel(cleanVenueSiteUrl);
   const shareMapUrl = resolveSpecialEventShareMapUrl(
     event.locationUrl,
     event.location
@@ -2489,7 +2510,10 @@ export function buildSpecialEventAnnouncementLineText(params: {
     if (event.location) {
       lines.push(`📍 会場予定: ${event.location}`);
     }
-    if (shareMapUrl) {
+    if (cleanVenueSiteUrl) {
+      lines.push(`🍴 ${venueSiteLabel}: ${cleanVenueSiteUrl}`);
+    }
+    if (shareMapUrl && shareMapUrl !== cleanVenueSiteUrl) {
       lines.push(`🗺️ 地図・会場: ${shareMapUrl}`);
     }
     if (event.candidateDates.length > 0) {
@@ -2507,7 +2531,10 @@ export function buildSpecialEventAnnouncementLineText(params: {
     if (event.location) {
       lines.push(`📍 会場: ${event.location}`);
     }
-    if (shareMapUrl) {
+    if (cleanVenueSiteUrl) {
+      lines.push(`🍴 ${venueSiteLabel}: ${cleanVenueSiteUrl}`);
+    }
+    if (shareMapUrl && shareMapUrl !== cleanVenueSiteUrl) {
       lines.push(`🗺️ 地図・会場: ${shareMapUrl}`);
     }
   }
@@ -2639,6 +2666,19 @@ export function buildSpecialEventSummaryLineText(params: {
     lines.push(`📅 日時: ${dLabel} ${event.timeRangeLabel}`);
     if (event.location) {
       lines.push(`📍 会場: ${event.location}`);
+    }
+    const cleanVenueSiteUrl = (event.venueSiteUrl || "").trim();
+    if (cleanVenueSiteUrl) {
+      lines.push(
+        `🍴 ${resolveVenueSiteLabel(cleanVenueSiteUrl)}: ${cleanVenueSiteUrl}`
+      );
+    }
+    const shareMapUrl = resolveSpecialEventShareMapUrl(
+      event.locationUrl,
+      event.location
+    );
+    if (shareMapUrl && shareMapUrl !== cleanVenueSiteUrl) {
+      lines.push(`🗺️ 地図・会場: ${shareMapUrl}`);
     }
     appendSummaryDeadlineLine();
     lines.push(
@@ -3117,6 +3157,7 @@ export function buildDemoSpecialEventsBundle(): {
     timeRangeLabel: "18:00〜20:30",
     location: "和食ダイニング さくら駅前店（2F 貸切座敷）",
     locationUrl: "https://maps.google.com/?q=35.5308,139.6969",
+    venueSiteUrl: "",
     embedMapUrl: buildGoogleMapsEmbedFromUrl(
       "https://maps.google.com/?q=35.5308,139.6969"
     ),
@@ -3244,6 +3285,7 @@ export function buildDemoSpecialEventsBundle(): {
     timeRangeLabel: "12:00〜15:00",
     location: "会場候補を調整中",
     locationUrl: "",
+    venueSiteUrl: "",
     interimDeadlineDate: null,
     interimDeadlineDateLabel: null,
     deadlineDate: "2026-12-15",

@@ -22,7 +22,8 @@ export const teamSpecialEvents = sqliteTable(
     startTime: text("start_time"), // 'HH:mm'
     endTime: text("end_time"), // 'HH:mm'
     location: text("location"),
-    locationUrl: text("location_url"),
+    locationUrl: text("location_url"), // Googleマップの地図URL
+    venueSiteUrl: text("venue_site_url"), // 食べログ・ホットペッパー・お店/会場の公式HP等のURL
     interimDeadlineDate: text("interim_deadline_date"), // 'YYYY-MM-DD' (中間回答期限・一次集計日)
     deadlineDate: text("deadline_date"), // 'YYYY-MM-DD' (最終回答期限・最終日)
     description: text("description"),

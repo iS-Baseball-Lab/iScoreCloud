@@ -421,6 +421,7 @@ function LiffSpecialEventsContent() {
         isDemo?: boolean;
         id?: string;
         locationUrl?: string;
+        venueSiteUrl?: string;
         embedMapUrl?: string;
         error?: string;
       };
@@ -432,6 +433,7 @@ function LiffSpecialEventsContent() {
 
       if (json.isDemo || activeTeamId === "demo-team") {
         const resolvedLocUrl = json.locationUrl ?? payload.locationUrl;
+        const resolvedVenueSiteUrl = json.venueSiteUrl ?? payload.venueSiteUrl;
         const resolvedEmbedUrl =
           json.embedMapUrl ??
           (buildGoogleMapsEmbedFromUrl(resolvedLocUrl) || undefined);
@@ -498,6 +500,7 @@ function LiffSpecialEventsContent() {
                 ...ev,
                 ...payload,
                 locationUrl: resolvedLocUrl,
+                venueSiteUrl: resolvedVenueSiteUrl,
                 embedMapUrl: resolvedEmbedUrl,
                 eventDateLabel: formatDateKeyToJaLabel(payload.eventDate),
                 timeRangeLabel: buildSpecialEventTimeRangeLabel(
@@ -539,6 +542,7 @@ function LiffSpecialEventsContent() {
             teamId: activeTeamId,
             ...payload,
             locationUrl: resolvedLocUrl,
+            venueSiteUrl: resolvedVenueSiteUrl,
             embedMapUrl: resolvedEmbedUrl,
             eventDateLabel: formatDateKeyToJaLabel(payload.eventDate),
             timeRangeLabel: buildSpecialEventTimeRangeLabel(
@@ -764,6 +768,7 @@ function LiffSpecialEventsContent() {
     endTime: string;
     location: string;
     locationUrl: string;
+    venueSiteUrl: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
     includeStaff: boolean;
@@ -790,6 +795,7 @@ function LiffSpecialEventsContent() {
             endTime: params.endTime,
             location: params.location,
             locationUrl: params.locationUrl,
+            venueSiteUrl: params.venueSiteUrl,
             interimDeadlineDate: params.interimDeadlineDate,
             deadlineDate: params.deadlineDate,
             includeStaff: params.includeStaff,
@@ -800,6 +806,7 @@ function LiffSpecialEventsContent() {
         success?: boolean;
         isDemo?: boolean;
         locationUrl?: string;
+        venueSiteUrl?: string;
         embedMapUrl?: string;
         error?: string;
       };
@@ -810,6 +817,7 @@ function LiffSpecialEventsContent() {
 
       if (json.isDemo || activeTeamId === "demo-team") {
         const resolvedLocUrl = json.locationUrl ?? params.locationUrl;
+        const resolvedVenueSiteUrl = json.venueSiteUrl ?? params.venueSiteUrl;
         const resolvedEmbedUrl =
           json.embedMapUrl ??
           (buildGoogleMapsEmbedFromUrl(resolvedLocUrl) || undefined);
@@ -868,6 +876,7 @@ function LiffSpecialEventsContent() {
               ),
               location: params.location,
               locationUrl: resolvedLocUrl,
+              venueSiteUrl: resolvedVenueSiteUrl,
               embedMapUrl: resolvedEmbedUrl,
               interimDeadlineDate: params.interimDeadlineDate,
               interimDeadlineDateLabel: formatDateKeyToJaLabel(
@@ -1153,6 +1162,7 @@ function LiffSpecialEventsContent() {
                         <SpecialEventLocationMapCard
                           location={ev.location}
                           locationUrl={ev.locationUrl}
+                          venueSiteUrl={ev.venueSiteUrl}
                           embedMapUrl={ev.embedMapUrl}
                           eager={evIdx === 0 || isFocused}
                         />
@@ -1229,10 +1239,11 @@ function LiffSpecialEventsContent() {
                           </div>
                         </div>
 
-                        {(ev.location || ev.locationUrl) && (
+                        {(ev.location || ev.locationUrl || ev.venueSiteUrl) && (
                           <SpecialEventLocationMapCard
                             location={ev.location}
                             locationUrl={ev.locationUrl}
+                            venueSiteUrl={ev.venueSiteUrl}
                             embedMapUrl={ev.embedMapUrl}
                             locationLabel="会場予定・お店"
                             eager={evIdx === 0 || isFocused}

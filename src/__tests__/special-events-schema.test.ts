@@ -13,6 +13,7 @@ import {
   normalizeCandidateDates,
   normalizeSurveyQuestions,
   resolveSpecialEventShareMapUrl,
+  resolveVenueSiteLabel,
   type RawSpecialEventResponseRow,
   type SpecialEventDetailItem,
 } from "@/lib/liff/special-events-schema";
@@ -576,7 +577,7 @@ describe("special-events-schema", () => {
     expect(shortMap.externalMapUrl).toBe("https://maps.app.goo.gl/abcDEF123");
     expect(shortMap.directionsUrl).toContain("destination=35.5308%2C139.6969");
 
-    // 4. 食べログ等の外部サイトURL
+    // 4. 食べログ等の外部サイトURL（旧 locationUrl フォールバック互換）
     const externalSite = resolveSpecialEventMapInfo({
       location: "〇〇居酒屋",
       locationUrl: "https://example.com/restaurant/123",
@@ -584,6 +585,63 @@ describe("special-events-schema", () => {
     expect(externalSite.hasMapEmbed).toBe(false);
     expect(externalSite.externalSiteUrl).toBe(
       "https://example.com/restaurant/123"
+    );
+    expect(externalSite.venueSiteUrl).toBe("https://example.com/restaurant/123");
+    expect(externalSite.venueSiteLabel).toBe("お店・会場サイト");
+
+    // 5. 食べログ・ホットペッパー等のラベル自動判定 ＆ GoogleマップURLとの同時併用
+    expect(
+      resolveVenueSiteLabel("https://tabelog.com/kanagawa/A1405/A140501/14000000/")
+    ).toBe("食べログ");
+    expect(
+      resolveVenueSiteLabel("https://www.hotpepper.jp/strJ000000000/")
+    ).toBe("ホットペッパー");
+    expect(resolveVenueSiteLabel("https://r.gnavi.co.jp/abc123/")).toBe(
+      "ぐるなび"
+    );
+    expect(
+      resolveVenueSiteLabel("https://www.instagram.com/example_dining/")
+    ).toBe("Instagram");
+
+    const combinedMapAndSite = resolveSpecialEventMapInfo({
+      location: "海鮮ダイニング 〇〇駅前店",
+      locationUrl: "https://maps.google.com/?q=35.5308,139.6969",
+      venueSiteUrl: "https://tabelog.com/kanagawa/A1405/A140501/14000000/",
+    });
+    expect(combinedMapAndSite.hasVenueOrLink).toBe(true);
+    expect(combinedMapAndSite.hasMapEmbed).toBe(true);
+    expect(combinedMapAndSite.externalMapUrl).toBe(
+      "https://maps.google.com/?q=35.5308,139.6969"
+    );
+    expect(combinedMapAndSite.venueSiteUrl).toBe(
+      "https://tabelog.com/kanagawa/A1405/A140501/14000000/"
+    );
+    expect(combinedMapAndSite.venueSiteLabel).toBe("食べログ");
+
+    const eventWithSite: SpecialEventDetailItem = {
+      ...demo.events[0]!,
+      venueSiteUrl: "https://tabelog.com/kanagawa/A1405/A140501/14000000/",
+    };
+    const announceWithSite = buildSpecialEventAnnouncementLineText({
+      event: eventWithSite,
+      teamName: "〇〇チーム",
+    });
+    expect(announceWithSite).toContain(
+      "🍴 食べログ: https://tabelog.com/kanagawa/A1405/A140501/14000000/"
+    );
+    expect(announceWithSite).toContain(
+      "🗺️ 地図・会場: https://maps.google.com/?q=35.5308,139.6969"
+    );
+
+    const summaryWithSite = buildSpecialEventSummaryLineText({
+      event: eventWithSite,
+      teamName: "〇〇チーム",
+    });
+    expect(summaryWithSite).toContain(
+      "🍴 食べログ: https://tabelog.com/kanagawa/A1405/A140501/14000000/"
+    );
+    expect(summaryWithSite).toContain(
+      "🗺️ 地図・会場: https://maps.google.com/?q=35.5308,139.6969"
     );
   });
 });

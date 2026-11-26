@@ -61,6 +61,7 @@ import {
   compareHouseholdsByAiueo,
   formatDateKeyToJaLabel,
   getSpecialEventCategoryMeta,
+  resolveVenueSiteLabel,
   type HouseholdResponseView,
   type SpecialEventAttendanceStatus,
   type SpecialEventCandidateDate,
@@ -78,11 +79,48 @@ import {
   type SpecialEventSurveyAnswers,
 } from "@/lib/liff/special-events-schema";
 import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
-import { SpecialEventLocationMapCard } from "@/components/liff/SpecialEventMapEmbed";
-import { cn } from "@/lib/utils";
+import {
+  SpecialEventLocationMapCard,
+  isGoogleMapsFamilyUrl,
+} from "@/components/liff/SpecialEventMapEmbed";
+import { cn, validateSafeHttpUrl } from "@/lib/utils";
 
 function makeLocalId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function normalizeVenueSiteInputUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (
+    !/^[a-z][a-z0-9+.-]*:/i.test(trimmed) &&
+    /^[a-z0-9.-]+\.[a-z]{2,}(?:\/|$)/i.test(trimmed)
+  ) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+function resolveInitialEventUrls(
+  ev: Pick<SpecialEventDetailItem, "locationUrl" | "venueSiteUrl" | "embedMapUrl">
+): {
+  locationUrl: string;
+  venueSiteUrl: string;
+} {
+  const rawLocUrl = (ev.locationUrl || "").trim();
+  const rawSiteUrl = (ev.venueSiteUrl || "").trim();
+  if (!rawSiteUrl && rawLocUrl) {
+    const normalizedLoc = normalizeRawMapUrlInput(rawLocUrl);
+    if (
+      normalizedLoc &&
+      !isGoogleMapsFamilyUrl(normalizedLoc) &&
+      !ev.embedMapUrl &&
+      validateSafeHttpUrl(normalizedLoc)
+    ) {
+      return { locationUrl: "", venueSiteUrl: normalizedLoc };
+    }
+  }
+  return { locationUrl: rawLocUrl, venueSiteUrl: rawSiteUrl };
 }
 
 function getNextWeekendDateStrings(): [string, string] {
@@ -112,6 +150,7 @@ export interface UpsertSpecialEventPayload {
   endTime: string | null;
   location: string;
   locationUrl: string;
+  venueSiteUrl: string;
   interimDeadlineDate: string | null;
   deadlineDate: string | null;
   description: string;
@@ -481,6 +520,7 @@ export function CreateOrEditSpecialEventModal({
   const [endTime, setEndTime] = useState("20:30");
   const [location, setLocation] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
+  const [venueSiteUrl, setVenueSiteUrl] = useState("");
   const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [description, setDescription] = useState("");
@@ -518,6 +558,7 @@ export function CreateOrEditSpecialEventModal({
     setNewOptionDrafts({});
 
     if (editingEvent) {
+      const initialUrls = resolveInitialEventUrls(editingEvent);
       setTitle(editingEvent.title);
       setCategory(editingEvent.category);
       setMode(editingEvent.mode);
@@ -526,7 +567,8 @@ export function CreateOrEditSpecialEventModal({
       setStartTime(editingEvent.startTime || "18:00");
       setEndTime(editingEvent.endTime || "20:30");
       setLocation(editingEvent.location || "");
-      setLocationUrl(editingEvent.locationUrl || "");
+      setLocationUrl(initialUrls.locationUrl);
+      setVenueSiteUrl(initialUrls.venueSiteUrl);
       setInterimDeadlineDate(editingEvent.interimDeadlineDate || "");
       setDeadlineDate(editingEvent.deadlineDate || "");
       setDescription(editingEvent.description || "");
@@ -560,6 +602,7 @@ export function CreateOrEditSpecialEventModal({
       setEndTime(tpl.endTime);
       setLocation("");
       setLocationUrl("");
+      setVenueSiteUrl("");
       setInterimDeadlineDate("");
       setDeadlineDate("");
       setDescription("");
@@ -702,6 +745,16 @@ export function CreateOrEditSpecialEventModal({
       toast.error("イベント名（例：2026年 忘年会）を入力してください");
       return;
     }
+    const normalizedVenueSiteUrl = normalizeVenueSiteInputUrl(venueSiteUrl);
+    if (
+      normalizedVenueSiteUrl &&
+      !validateSafeHttpUrl(normalizedVenueSiteUrl)
+    ) {
+      toast.error(
+        "食べログ・お店サイトのURLは https:// で始まる正しいWebアドレスを入力してください"
+      );
+      return;
+    }
     if (
       interimDeadlineDate &&
       deadlineDate &&
@@ -742,6 +795,7 @@ export function CreateOrEditSpecialEventModal({
       endTime: endTime || null,
       location: location.trim(),
       locationUrl: normalizeRawMapUrlInput(locationUrl),
+      venueSiteUrl: normalizedVenueSiteUrl,
       interimDeadlineDate: interimDeadlineDate || null,
       deadlineDate: deadlineDate || null,
       description: description.trim(),
@@ -1143,6 +1197,60 @@ export function CreateOrEditSpecialEventModal({
             <div className="space-y-1.5 p-3 rounded-xl border border-border bg-muted/20">
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <label className="text-[11.5px] font-black text-foreground flex items-center gap-1.5">
+                  <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>食べログ・お店／会場のサイトURL（任意）</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  {venueSiteUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setVenueSiteUrl("")}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      クリア
+                    </button>
+                  )}
+                  {(() => {
+                    const previewHref = normalizeVenueSiteInputUrl(venueSiteUrl);
+                    if (!previewHref || !validateSafeHttpUrl(previewHref)) {
+                      return null;
+                    }
+                    const label = resolveVenueSiteLabel(previewHref);
+                    return (
+                      <a
+                        href={previewHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "px-2.5 py-1 rounded-lg text-white text-[10px] font-black inline-flex items-center gap-1 shrink-0",
+                          label === "Instagram"
+                            ? "bg-[#E1306C] hover:bg-[#C1275C]"
+                            : "bg-amber-600 hover:bg-amber-700"
+                        )}
+                      >
+                        <span>{label}を確認</span>
+                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                      </a>
+                    );
+                  })()}
+                </div>
+              </div>
+              <input
+                type="text"
+                inputMode="url"
+                value={venueSiteUrl}
+                onChange={(e) => setVenueSiteUrl(e.target.value)}
+                placeholder="https://tabelog.com/... または ホットペッパー・お店や施設の公式HP"
+                className="w-full h-10 px-3 rounded-xl border border-border bg-card text-[11.5px] font-bold text-foreground focus:outline-none focus:border-amber-600"
+              />
+              <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                食べログ・ホットペッパー・ぐるなび・公式HP等を設定すると、案内ページにサイトボタンが表示されます（下のGoogleマップと併用可）
+              </p>
+            </div>
+
+            <div className="space-y-1.5 p-3 rounded-xl border border-border bg-muted/20">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-[11.5px] font-black text-foreground flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
                   <span>Googleマップの地図URL（任意・案内ページに地図表示）</span>
                 </label>
@@ -1201,6 +1309,11 @@ export function CreateOrEditSpecialEventModal({
                     ? editingEvent.embedMapUrl
                     : undefined
                 }
+                onMoveToVenueSiteUrl={(movedUrl) => {
+                  setVenueSiteUrl(movedUrl);
+                  setLocationUrl("");
+                  toast.success("食べログ・お店サイトURL欄へ移動しました！");
+                }}
                 previewOnly
               />
             </div>
@@ -2209,11 +2322,12 @@ export function RespondSpecialEventModal({
           {/* 0B. 注意事項・特記事項（入力がある場合のみ常時強調表示） */}
           <ImportantNoticeBanner notice={event.importantNotice} />
 
-          {/* 0C. 会場・お店 ＆ Googleマップ（設定がある場合のみ表示） */}
-          {(event.location || event.locationUrl) && (
+          {/* 0C. 会場・お店サイト ＆ Googleマップ（設定がある場合のみ表示） */}
+          {(event.location || event.locationUrl || event.venueSiteUrl) && (
             <SpecialEventLocationMapCard
               location={event.location}
               locationUrl={event.locationUrl}
+              venueSiteUrl={event.venueSiteUrl}
               embedMapUrl={event.embedMapUrl}
               collapsible
             />
@@ -3660,6 +3774,7 @@ interface FinalizeCandidateDateModalProps {
     endTime: string;
     location: string;
     locationUrl: string;
+    venueSiteUrl: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
     includeStaff: boolean;
@@ -3679,6 +3794,7 @@ export function FinalizeCandidateDateModal({
   const [endTime, setEndTime] = useState("20:30");
   const [location, setLocation] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
+  const [venueSiteUrl, setVenueSiteUrl] = useState("");
   const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [includeStaff, setIncludeStaff] = useState(true);
@@ -3697,8 +3813,10 @@ export function FinalizeCandidateDateModal({
       setStartTime(topCand.startTime || event.startTime || "18:00");
       setEndTime(topCand.endTime || event.endTime || "20:30");
     }
+    const initialUrls = resolveInitialEventUrls(event);
     setLocation(event.location || "");
-    setLocationUrl(event.locationUrl || "");
+    setLocationUrl(initialUrls.locationUrl);
+    setVenueSiteUrl(initialUrls.venueSiteUrl);
     setInterimDeadlineDate(event.interimDeadlineDate || "");
     setDeadlineDate(event.deadlineDate || "");
     setIncludeStaff(event.includeStaff !== false);
@@ -3809,6 +3927,46 @@ export function FinalizeCandidateDateModal({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
               <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                <Utensils className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span>食べログ・お店／会場サイトURL（任意）</span>
+              </label>
+              {(() => {
+                const previewHref = normalizeVenueSiteInputUrl(venueSiteUrl);
+                if (!previewHref || !validateSafeHttpUrl(previewHref)) {
+                  return null;
+                }
+                const label = resolveVenueSiteLabel(previewHref);
+                return (
+                  <a
+                    href={previewHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      "px-2 py-0.5 rounded-md text-white text-[9.5px] font-black inline-flex items-center gap-0.5 shrink-0",
+                      label === "Instagram"
+                        ? "bg-[#E1306C] hover:bg-[#C1275C]"
+                        : "bg-amber-600 hover:bg-amber-700"
+                    )}
+                  >
+                    <span>{label}確認</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                );
+              })()}
+            </div>
+            <input
+              type="text"
+              inputMode="url"
+              value={venueSiteUrl}
+              onChange={(e) => setVenueSiteUrl(e.target.value)}
+              placeholder="https://tabelog.com/... または お店・施設の公式HP"
+              className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[11px] font-black text-foreground flex items-center gap-1">
                 <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
                 <span>Googleマップの地図URL（任意）</span>
               </label>
@@ -3852,6 +4010,11 @@ export function FinalizeCandidateDateModal({
                   ? event.embedMapUrl
                   : undefined
               }
+              onMoveToVenueSiteUrl={(movedUrl) => {
+                setVenueSiteUrl(movedUrl);
+                setLocationUrl("");
+                toast.success("食べログ・お店サイトURL欄へ移動しました！");
+              }}
               previewOnly
             />
           </div>
@@ -3957,6 +4120,17 @@ export function FinalizeCandidateDateModal({
             disabled={!selectedCand || isSaving}
             onClick={() => {
               if (!selectedCand) return;
+              const normalizedVenueSiteUrl =
+                normalizeVenueSiteInputUrl(venueSiteUrl);
+              if (
+                normalizedVenueSiteUrl &&
+                !validateSafeHttpUrl(normalizedVenueSiteUrl)
+              ) {
+                toast.error(
+                  "食べログ・お店サイトのURLは https:// で始まる正しいWebアドレスを入力してください"
+                );
+                return;
+              }
               if (
                 interimDeadlineDate &&
                 deadlineDate &&
@@ -3973,6 +4147,7 @@ export function FinalizeCandidateDateModal({
                 endTime,
                 location: location.trim(),
                 locationUrl: normalizeRawMapUrlInput(locationUrl),
+                venueSiteUrl: normalizedVenueSiteUrl,
                 interimDeadlineDate: interimDeadlineDate || null,
                 deadlineDate: deadlineDate || null,
                 includeStaff,

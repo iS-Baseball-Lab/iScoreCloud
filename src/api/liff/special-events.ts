@@ -125,6 +125,7 @@ export interface RawSpecialEventDbRow {
   endTime: string | null;
   location: string | null;
   locationUrl: string | null;
+  venueSiteUrl?: string | null;
   interimDeadlineDate?: string | null;
   deadlineDate: string | null;
   description: string | null;
@@ -276,6 +277,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       ),
       location: row.location || "",
       locationUrl: row.locationUrl || "",
+      venueSiteUrl: row.venueSiteUrl || "",
       embedMapUrl: resolvedEmbed || undefined,
       interimDeadlineDate: row.interimDeadlineDate || null,
       interimDeadlineDateLabel: formatDateKeyToJaLabel(row.interimDeadlineDate),
@@ -543,6 +545,7 @@ interface UpsertSpecialEventBody {
   endTime?: string | null;
   location?: string | null;
   locationUrl?: string | null;
+  venueSiteUrl?: string | null;
   interimDeadlineDate?: string | null;
   deadlineDate?: string | null;
   description?: string | null;
@@ -593,6 +596,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
 
     if (teamId === "demo-team") {
       const demoLocationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
+      const demoVenueSiteUrl = sanitizeSafeOptionalUrl(body.venueSiteUrl);
       const demoEmbedMapUrl = demoLocationUrl
         ? await resolveEmbedMapUrlAsync(demoLocationUrl)
         : "";
@@ -601,6 +605,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
         isDemo: true,
         id: `demo-spev-${Date.now()}`,
         locationUrl: demoLocationUrl,
+        venueSiteUrl: demoVenueSiteUrl,
         embedMapUrl: demoEmbedMapUrl || undefined,
       });
     }
@@ -626,6 +631,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
     const endTime = sanitizeOptionalTimeStr(body.endTime);
     const location = (body.location || "").trim().slice(0, 120);
     const locationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
+    const venueSiteUrl = sanitizeSafeOptionalUrl(body.venueSiteUrl);
     const description = (body.description || "").trim().slice(0, 4000);
     const importantNotice = (body.importantNotice || "").trim().slice(0, 4000);
     const includeStaff = body.includeStaff !== false;
@@ -662,6 +668,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       endTime,
       location,
       locationUrl,
+      venueSiteUrl,
       interimDeadlineDate,
       deadlineDate,
       description,
@@ -682,6 +689,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
       success: true,
       id: newId,
       locationUrl,
+      venueSiteUrl,
     });
   } catch (err: unknown) {
     console.error("[POST /api/liff/special-events Error]:", err);
@@ -718,6 +726,10 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         body.locationUrl !== undefined
           ? sanitizeSafeOptionalUrl(body.locationUrl)
           : undefined;
+      const demoVenueSiteUrl =
+        body.venueSiteUrl !== undefined
+          ? sanitizeSafeOptionalUrl(body.venueSiteUrl)
+          : undefined;
       const demoEmbedMapUrl =
         demoLocationUrl !== undefined
           ? demoLocationUrl
@@ -729,6 +741,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         isDemo: true,
         id: specialEventId,
         locationUrl: demoLocationUrl,
+        venueSiteUrl: demoVenueSiteUrl,
         embedMapUrl: demoEmbedMapUrl,
       });
     }
@@ -828,6 +841,10 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
       body.locationUrl !== undefined
         ? sanitizeSafeOptionalUrl(body.locationUrl)
         : existing.locationUrl || "";
+    const venueSiteUrl =
+      body.venueSiteUrl !== undefined
+        ? sanitizeSafeOptionalUrl(body.venueSiteUrl)
+        : existing.venueSiteUrl || "";
     const description =
       body.description !== undefined
         ? (body.description || "").trim().slice(0, 4000)
@@ -883,6 +900,7 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         endTime,
         location,
         locationUrl,
+        venueSiteUrl,
         interimDeadlineDate,
         deadlineDate,
         description,
@@ -905,6 +923,8 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
     return c.json({
       success: true,
       id: specialEventId,
+      locationUrl,
+      venueSiteUrl,
     });
   } catch (err: unknown) {
     console.error("[PUT /api/liff/special-events/:id Error]:", err);

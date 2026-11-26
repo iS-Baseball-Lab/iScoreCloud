@@ -9,6 +9,7 @@ import {
   Loader2,
   MapPin,
   Navigation,
+  Utensils,
 } from "lucide-react";
 import {
   buildGoogleMapsEmbedFromUrl,
@@ -16,11 +17,12 @@ import {
   isGoogleMapsShortUrl,
   normalizeRawMapUrlInput,
 } from "@/lib/google-maps";
-import { cn } from "@/lib/utils";
+import { resolveVenueSiteLabel } from "@/lib/liff/special-events-schema";
+import { cn, validateSafeHttpUrl } from "@/lib/utils";
 
 const CLIENT_RESOLVED_EMBED_CACHE = new Map<string, string>();
 
-function isGoogleMapsFamilyUrl(urlStr: string): boolean {
+export function isGoogleMapsFamilyUrl(urlStr: string): boolean {
   if (!urlStr) return false;
   try {
     const parsed = new URL(urlStr);
@@ -43,6 +45,12 @@ function isGoogleMapsFamilyUrl(urlStr: string): boolean {
   }
 }
 
+function sanitizeSafeExternalVenueUrl(raw?: string | null): string {
+  const cleaned = normalizeRawMapUrlInput(raw);
+  if (!cleaned) return "";
+  return validateSafeHttpUrl(cleaned) ? cleaned : "";
+}
+
 export interface ResolvedSpecialEventMapInfo {
   hasVenueOrLink: boolean;
   hasMapEmbed: boolean;
@@ -51,16 +59,22 @@ export interface ResolvedSpecialEventMapInfo {
   externalMapUrl: string;
   directionsUrl: string;
   externalSiteUrl: string;
+  venueSiteUrl: string;
+  venueSiteLabel: string;
 }
 
 export function resolveSpecialEventMapInfo(params: {
   location?: string | null;
   locationUrl?: string | null;
+  venueSiteUrl?: string | null;
   embedMapUrl?: string | null;
   layer?: "roadmap" | "satellite";
 }): ResolvedSpecialEventMapInfo {
   const cleanLocation = (params.location || "").trim();
   const normalizedUrl = normalizeRawMapUrlInput(params.locationUrl);
+  const explicitVenueSiteUrl = sanitizeSafeExternalVenueUrl(
+    params.venueSiteUrl
+  );
   const layer = params.layer || "roadmap";
 
   const isGoogleUrl = isGoogleMapsFamilyUrl(normalizedUrl);
@@ -97,10 +111,13 @@ export function resolveSpecialEventMapInfo(params: {
       } else {
         externalMapUrl = normalizedUrl;
       }
-    } else {
+    } else if (validateSafeHttpUrl(normalizedUrl)) {
       externalSiteUrl = normalizedUrl;
     }
   }
+
+  const effectiveVenueSiteUrl = explicitVenueSiteUrl || externalSiteUrl;
+  const venueSiteLabel = resolveVenueSiteLabel(effectiveVenueSiteUrl);
 
   const directionsUrl = navTarget
     ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
@@ -109,19 +126,24 @@ export function resolveSpecialEventMapInfo(params: {
     : "";
 
   return {
-    hasVenueOrLink: Boolean(cleanLocation || normalizedUrl || directEmbed),
+    hasVenueOrLink: Boolean(
+      cleanLocation || normalizedUrl || directEmbed || effectiveVenueSiteUrl
+    ),
     hasMapEmbed: Boolean(embedUrl),
     embedUrl,
     canToggleLayer,
     externalMapUrl,
     directionsUrl,
     externalSiteUrl,
+    venueSiteUrl: effectiveVenueSiteUrl,
+    venueSiteLabel,
   };
 }
 
 interface SpecialEventLocationMapCardProps {
   location?: string | null;
   locationUrl?: string | null;
+  venueSiteUrl?: string | null;
   embedMapUrl?: string | null;
   /** 初期描画から即座に iframe をマウントするか（個別指定カード・プレビュー用） */
   eager?: boolean;
@@ -129,23 +151,28 @@ interface SpecialEventLocationMapCardProps {
   collapsible?: boolean;
   /** 作成・編集モーダル内のリアルタイム地図プレビュー用 */
   previewOnly?: boolean;
+  /** 地図URL欄に食べログ等の外部サイトURLが入力された際にお店URL欄へ1タップ移動するコールバック */
+  onMoveToVenueSiteUrl?: (url: string) => void;
   locationLabel?: string;
   fallbackLocationText?: string;
   className?: string;
 }
 
 /**
- * 🗺️ 行事・アンケートの会場案内 ＆ Google Map 埋め込み表示カード（A-3 ソリッド規格）
+ * 🗺️ 行事・アンケートの会場案内 ＆ お店サイト（食べログ・公式HP等） ＆ Google Map 埋め込み表示カード（A-3 ソリッド規格）
+ * - 食べログ・ホットペッパー・ぐるなび・お店公式HP等のサイトURLリンクと Googleマップ埋め込み・ルート案内を並べて表示
  * - GoogleマップURL（短縮URL `maps.app.goo.gl`・通常URL・`<iframe>` コード対応）が設定されている場合は地図を直接表示
  * - `IntersectionObserver` ヒステリシス制御により画面外スクロール時は iframe をアンマウントして省電力化
  */
 export function SpecialEventLocationMapCard({
   location,
   locationUrl,
+  venueSiteUrl,
   embedMapUrl,
   eager = false,
   collapsible = false,
   previewOnly = false,
+  onMoveToVenueSiteUrl,
   locationLabel = "会場・お店",
   fallbackLocationText = "未定・確認中",
   className,
@@ -231,10 +258,18 @@ export function SpecialEventLocationMapCard({
       resolveSpecialEventMapInfo({
         location,
         locationUrl: normalizedInputUrl,
+        venueSiteUrl,
         embedMapUrl: embedMapUrl || dynamicEmbedUrl,
         layer,
       }),
-    [dynamicEmbedUrl, embedMapUrl, layer, location, normalizedInputUrl]
+    [
+      dynamicEmbedUrl,
+      embedMapUrl,
+      layer,
+      location,
+      normalizedInputUrl,
+      venueSiteUrl,
+    ]
   );
 
   const showMapFrame =
@@ -275,19 +310,34 @@ export function SpecialEventLocationMapCard({
     if (!mapInfo.hasMapEmbed && !isResolvingShortUrl) {
       if (mapInfo.externalSiteUrl) {
         return (
-          <div className="px-2.5 py-2 rounded-xl border border-border bg-muted/30 flex items-center justify-between gap-2 text-[11px]">
-            <span className="font-bold text-muted-foreground">
-              外部WebページURLとして案内ボタンを表示します（地図埋め込みはGoogleマップURLで有効）
+          <div className="px-2.5 py-2 rounded-xl border border-amber-500/35 bg-amber-500/5 flex items-center justify-between gap-2 flex-wrap text-[11px]">
+            <span className="font-bold text-foreground">
+              {onMoveToVenueSiteUrl
+                ? `「${resolveVenueSiteLabel(
+                    mapInfo.externalSiteUrl
+                  )}」のURLが入力されています（上の「食べログ・お店サイトURL」欄へ移すとGoogleマップも併用できます）`
+                : "外部WebページURLとして案内ボタンを表示します（地図埋め込みはGoogleマップURLで有効）"}
             </span>
-            <a
-              href={mapInfo.externalSiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black inline-flex items-center gap-1 shrink-0"
-            >
-              <span>確認</span>
-              <ExternalLink className="w-2.5 h-2.5" />
-            </a>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onMoveToVenueSiteUrl && (
+                <button
+                  type="button"
+                  onClick={() => onMoveToVenueSiteUrl(mapInfo.externalSiteUrl)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-black cursor-pointer"
+                >
+                  お店サイトURL欄へ移動
+                </button>
+              )}
+              <a
+                href={mapInfo.externalSiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 rounded-lg bg-slate-800 text-white text-[10px] font-black inline-flex items-center gap-1 shrink-0"
+              >
+                <span>確認</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
           </div>
         );
       }
@@ -392,6 +442,24 @@ export function SpecialEventLocationMapCard({
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          {mapInfo.venueSiteUrl && (
+            <a
+              href={mapInfo.venueSiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                "px-2.5 py-1.5 rounded-lg text-white text-[10.5px] font-black inline-flex items-center gap-1",
+                mapInfo.venueSiteLabel === "Instagram"
+                  ? "bg-[#E1306C] hover:bg-[#C1275C]"
+                  : "bg-amber-600 hover:bg-amber-700"
+              )}
+            >
+              <Utensils className="w-3 h-3 shrink-0" />
+              <span>{mapInfo.venueSiteLabel}</span>
+              <ExternalLink className="w-3 h-3 shrink-0" />
+            </a>
+          )}
+
           {collapsible && mapInfo.hasMapEmbed && (
             <button
               type="button"
@@ -428,18 +496,6 @@ export function SpecialEventLocationMapCard({
               className="px-2.5 py-1.5 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10.5px] font-black inline-flex items-center gap-1"
             >
               <span>Googleマップ</span>
-              <ExternalLink className="w-3 h-3 shrink-0" />
-            </a>
-          )}
-
-          {mapInfo.externalSiteUrl && (
-            <a
-              href={mapInfo.externalSiteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10.5px] font-black inline-flex items-center gap-1"
-            >
-              <span>お店・会場URL</span>
               <ExternalLink className="w-3 h-3 shrink-0" />
             </a>
           )}

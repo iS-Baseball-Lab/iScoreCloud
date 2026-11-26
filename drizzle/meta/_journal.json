@@ -435,6 +435,13 @@
       "when": 1795600000000,
       "tag": "0061_special_event_include_staff",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1795650000000,
+      "tag": "0062_special_event_venue_site_url",
+      "breakpoints": true
     }
   ]
 }
