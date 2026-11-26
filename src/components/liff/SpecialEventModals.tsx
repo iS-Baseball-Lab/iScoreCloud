@@ -1,7 +1,7 @@
 // filepath: src/components/liff/SpecialEventModals.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import {
@@ -18,9 +18,11 @@ import {
   Download,
   Edit3,
   ExternalLink,
+  FileText,
   HelpCircle,
   Loader2,
   MapPin,
+  Maximize2,
   PartyPopper,
   Plus,
   RotateCcw,
@@ -54,6 +56,7 @@ import {
   buildSpecialEventCsvContent,
   buildSpecialEventSummaryLineText,
   buildSpecialEventTimeRangeLabel,
+  compareHouseholdsByAiueo,
   formatDateKeyToJaLabel,
   getSpecialEventCategoryMeta,
   type HouseholdResponseView,
@@ -192,6 +195,270 @@ const TIER_TARGET_KIND_OPTIONS: LiffSelectOption[] = [
   { value: "any", label: "共通（全員選択可）" },
 ];
 
+const SPECIAL_EVENT_TEXT_MAX_LENGTH = 4000;
+
+function appendBulletLine(current: string): string {
+  if (!current || current.endsWith("\n")) {
+    return `${current}・`;
+  }
+  return `${current}\n・`;
+}
+
+interface AutoGrowEventTextareaProps {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+  rows?: number;
+  minHeightPx: number;
+  maxAutoHeightPx?: number;
+  maxLength?: number;
+  className?: string;
+}
+
+function AutoGrowEventTextarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 5,
+  minHeightPx,
+  maxAutoHeightPx = 440,
+  maxLength = SPECIAL_EVENT_TEXT_MAX_LENGTH,
+  className,
+}: AutoGrowEventTextareaProps) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const manualMinHeightRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!value) {
+      manualMinHeightRef.current = 0;
+    }
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const autoTarget = Math.min(el.scrollHeight + 2, maxAutoHeightPx);
+    const nextHeight = Math.max(
+      minHeightPx,
+      manualMinHeightRef.current,
+      autoTarget
+    );
+    el.style.height = `${nextHeight}px`;
+  }, [value, minHeightPx, maxAutoHeightPx]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={rows}
+      maxLength={maxLength}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onPointerUp={() => {
+        const el = ref.current;
+        if (!el) return;
+        if (el.offsetHeight > minHeightPx + 8) {
+          manualMinHeightRef.current = el.offsetHeight;
+        }
+      }}
+      placeholder={placeholder}
+      style={{ minHeight: `${minHeightPx}px` }}
+      className={cn(
+        "w-full p-3 rounded-xl border bg-card text-[13px] sm:text-sm font-bold text-foreground leading-relaxed resize-y focus:outline-none",
+        className
+      )}
+    />
+  );
+}
+
+interface ExpandedEventTextEditorModalProps {
+  field: "description" | "importantNotice";
+  value: string;
+  onChange: (next: string) => void;
+  onClose: () => void;
+}
+
+function ExpandedEventTextEditorModal({
+  field,
+  value,
+  onChange,
+  onClose,
+}: ExpandedEventTextEditorModalProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const isNotice = field === "importantNotice";
+  const lineCount = value ? value.split("\n").length : 1;
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        // ignore selection range errors on unsupported environments
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [onClose]);
+
+  const handleInsertBullet = () => {
+    const next = appendBulletLine(value).slice(0, SPECIAL_EVENT_TEXT_MAX_LENGTH);
+    onChange(next);
+    window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const len = el.value.length;
+      try {
+        el.setSelectionRange(len, len);
+      } catch {
+        // ignore
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10010] bg-slate-950/75 flex flex-col sm:items-center sm:justify-center p-0 sm:p-4">
+      <div className="w-full h-dvh max-h-dvh sm:h-[82dvh] sm:max-w-2xl sm:rounded-2xl sm:border sm:border-border bg-card shadow-2xl overflow-hidden flex flex-col">
+        {/* A-3 Dark Cap Header */}
+        <div
+          className={cn(
+            "px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] flex items-center justify-between gap-2 shrink-0",
+            isNotice ? "border-rose-500" : "border-teal-500"
+          )}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className={cn(
+                "w-7 h-7 rounded-xl flex items-center justify-center shrink-0",
+                isNotice
+                  ? "bg-rose-600 text-white"
+                  : "bg-teal-500 text-slate-950"
+              )}
+            >
+              {isNotice ? (
+                <AlertTriangle className="w-4 h-4" />
+              ) : (
+                <FileText className="w-4 h-4" />
+              )}
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-sm font-black text-white truncate">
+                  {isNotice
+                    ? "注意事項・特記事項を大きく編集"
+                    : "ご案内・持ち物・連絡事項を大きく編集"}
+                </h3>
+                {isNotice && (
+                  <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                    常時強調表示
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] font-bold text-slate-300 truncate">
+                入力内容はそのままリアルタイムで元の編集画面に反映されます
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            aria-label="拡大編集を閉じる"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Helper Toolbar */}
+        <div
+          className={cn(
+            "px-3.5 py-2 border-b border-border flex items-center justify-between gap-2 shrink-0",
+            isNotice ? "bg-rose-500/5" : "bg-muted/35"
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleInsertBullet}
+              className="px-2.5 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[11px] font-black text-foreground active:scale-95 transition-all cursor-pointer"
+            >
+              ＋「・」箇条書きを追加
+            </button>
+            {value.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange("")}
+                className="px-2 py-1 rounded-lg text-[10.5px] font-bold text-muted-foreground hover:text-rose-600 cursor-pointer"
+              >
+                クリア
+              </button>
+            )}
+          </div>
+          <span className="text-[10.5px] font-bold text-muted-foreground tabular-nums">
+            {lineCount}行・{value.length.toLocaleString()} /{" "}
+            {SPECIAL_EVENT_TEXT_MAX_LENGTH.toLocaleString()}文字
+          </span>
+        </div>
+
+        {/* Full-Height Textarea Area */}
+        <div
+          className={cn(
+            "flex-1 min-h-0 p-3 sm:p-4 flex flex-col",
+            isNotice ? "bg-rose-500/5" : "bg-card"
+          )}
+        >
+          <textarea
+            ref={textareaRef}
+            maxLength={SPECIAL_EVENT_TEXT_MAX_LENGTH}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={
+              isNotice
+                ? "・前日18時以降のキャンセルはコース料金100%発生\n・お車での飲酒厳禁（運転代行・公共交通機関をご利用ください）\n・食物アレルギーがある場合は必ず事前申告をお願いします"
+                : "・集合時間・受付場所のご案内\n・会費の集金方法（当日現金・封筒に世帯名を記入など）\n・コース内容・飲み放題メニュー・持ち物・ビンゴ景品や服装の案内など"
+            }
+            className={cn(
+              "flex-1 min-h-0 w-full p-3.5 rounded-xl border bg-card text-sm sm:text-[15px] font-bold text-foreground leading-relaxed resize-none focus:outline-none",
+              isNotice
+                ? "border-rose-500/40 focus:border-rose-500"
+                : "border-border focus:border-primary"
+            )}
+          />
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 pt-2.5 pb-[max(env(safe-area-inset-bottom),20px)] sm:pb-3.5 border-t border-border bg-card flex items-center justify-end gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              "w-full sm:w-auto sm:min-w-[220px] px-5 h-11 rounded-xl text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-xs cursor-pointer",
+              isNotice
+                ? "bg-rose-600 hover:bg-rose-700"
+                : "bg-primary hover:bg-primary/90 text-primary-foreground"
+            )}
+          >
+            <Check className="w-4 h-4" />
+            <span>入力完了（元の編集画面へ戻る）</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CreateOrEditSpecialEventModal({
   isOpen,
   editingEvent,
@@ -215,6 +482,9 @@ export function CreateOrEditSpecialEventModal({
   const [deadlineDate, setDeadlineDate] = useState("");
   const [description, setDescription] = useState("");
   const [importantNotice, setImportantNotice] = useState("");
+  const [expandedTextField, setExpandedTextField] = useState<
+    "description" | "importantNotice" | null
+  >(null);
   const [includeStaff, setIncludeStaff] = useState(true);
   const [allowCompanions, setAllowCompanions] = useState(true);
   const [useFeeCalculation, setUseFeeCalculation] = useState(true);
@@ -236,7 +506,11 @@ export function CreateOrEditSpecialEventModal({
   }, []);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setExpandedTextField(null);
+      return;
+    }
+    setExpandedTextField(null);
     setConfirmDeleteChecked(false);
     setNewOptionDrafts({});
 
@@ -490,7 +764,7 @@ export function CreateOrEditSpecialEventModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] bg-slate-950/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="w-full max-w-lg max-h-[90dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col">
+      <div className="w-full max-w-xl max-h-[92dvh] rounded-t-2xl sm:rounded-2xl border border-border bg-card shadow-xl overflow-hidden flex flex-col">
         {/* A-3 Dark Cap Header */}
         <div className="px-4 py-3 bg-[#0f172a] text-slate-50 border-b-[3px] border-teal-500 flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -933,35 +1207,92 @@ export function CreateOrEditSpecialEventModal({
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                ご案内・持ち物・連絡事項（任意）
-              </label>
-              <textarea
-                rows={3}
+            <div className="space-y-1.5 p-3 rounded-xl border border-border bg-muted/20">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-[11.5px] font-black text-foreground flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span>ご案内・持ち物・連絡事項（任意）</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDescription((prev) =>
+                        appendBulletLine(prev).slice(
+                          0,
+                          SPECIAL_EVENT_TEXT_MAX_LENGTH
+                        )
+                      )
+                    }
+                    className="px-2 py-1 rounded-lg border border-border bg-card hover:bg-muted text-[10px] font-black text-foreground active:scale-95 transition-all cursor-pointer"
+                  >
+                    ＋「・」
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedTextField("description")}
+                    className="px-2.5 py-1 rounded-lg border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-[10.5px] font-black text-teal-800 dark:text-teal-200 inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Maximize2 className="w-3 h-3 shrink-0" />
+                    <span>大きく入力</span>
+                  </button>
+                </div>
+              </div>
+              <AutoGrowEventTextarea
+                rows={6}
+                minHeightPx={156}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="集合時間、会費の集金方法、ビンゴ景品や服装の案内など"
-                className="w-full p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-primary"
+                onChange={setDescription}
+                placeholder={
+                  "・集合時間、会費の集金方法のご案内\n・コース内容、持ち物、ビンゴ景品や服装の案内など\n（改行して複数行で記載すると自動で枠が広がります）"
+                }
+                className="border-border focus:border-primary"
               />
             </div>
 
-            <div className="space-y-1 p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5">
-              <label className="text-[11px] font-black text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1">
+            <div className="space-y-1.5 p-3 rounded-xl border border-rose-500/35 bg-rose-500/5">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-[11.5px] font-black text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 shrink-0" />
                   <span>注意事項・特記事項（任意）</span>
-                </span>
-                <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
-                  常時強調表示
-                </span>
-              </label>
-              <textarea
-                rows={2}
+                  <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black shrink-0">
+                    常時強調表示
+                  </span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setImportantNotice((prev) =>
+                        appendBulletLine(prev).slice(
+                          0,
+                          SPECIAL_EVENT_TEXT_MAX_LENGTH
+                        )
+                      )
+                    }
+                    className="px-2 py-1 rounded-lg border border-rose-500/30 bg-card hover:bg-rose-500/10 text-[10px] font-black text-rose-800 dark:text-rose-200 active:scale-95 transition-all cursor-pointer"
+                  >
+                    ＋「・」
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedTextField("importantNotice")}
+                    className="px-2.5 py-1 rounded-lg border border-rose-500/45 bg-rose-600 hover:bg-rose-700 text-[10.5px] font-black text-white inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Maximize2 className="w-3 h-3 shrink-0" />
+                    <span>大きく入力</span>
+                  </button>
+                </div>
+              </div>
+              <AutoGrowEventTextarea
+                rows={5}
+                minHeightPx={132}
                 value={importantNotice}
-                onChange={(e) => setImportantNotice(e.target.value)}
-                placeholder="例: 前日18時以降のキャンセルはコース料金100%発生／お車での飲酒厳禁／アレルギー要事前申告など"
-                className="w-full p-2.5 rounded-xl border border-rose-500/35 bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-rose-500"
+                onChange={setImportantNotice}
+                placeholder={
+                  "・前日18時以降のキャンセルはコース料金100%発生\n・お車での飲酒厳禁／アレルギーがある方は要事前申告 など"
+                }
+                className="border-rose-500/35 focus:border-rose-500"
               />
             </div>
           </div>
@@ -1474,6 +1805,23 @@ export function CreateOrEditSpecialEventModal({
           </button>
         </div>
       </div>
+
+      {expandedTextField && (
+        <ExpandedEventTextEditorModal
+          field={expandedTextField}
+          value={
+            expandedTextField === "importantNotice"
+              ? importantNotice
+              : description
+          }
+          onChange={
+            expandedTextField === "importantNotice"
+              ? setImportantNotice
+              : setDescription
+          }
+          onClose={() => setExpandedTextField(null)}
+        />
+      )}
     </div>,
     document.body
   );
@@ -1610,12 +1958,14 @@ export function RespondSpecialEventModal({
 
   const householdSelectOptions = useMemo<LiffSelectOption[]>(() => {
     if (!event) return [];
-    return event.households.map((hh) => {
+    const sorted = [...event.households].sort(compareHouseholdsByAiueo);
+    return sorted.map((hh) => {
       const isMine = hh.householdKey === myHouseholdKey;
       return {
         value: hh.householdKey,
         label: isMine ? `🏠 ${hh.householdLabel}（ご自身）` : hh.householdLabel,
         sublabel: hh.memberEntries.map((m) => m.name).join("・"),
+        keywords: hh.sortKana || undefined,
         badge: hh.hasResponded
           ? hh.overallState === "attending"
             ? `出席 ${hh.totalHeadcount}名`
@@ -2354,7 +2704,7 @@ export function RespondSpecialEventModal({
 
                       {q.type === "text" && (
                         <textarea
-                          rows={2}
+                          rows={3}
                           value={typeof ans === "string" ? ans : ""}
                           onChange={(e) =>
                             setSurveyAnswers((prev) => ({
@@ -2365,7 +2715,7 @@ export function RespondSpecialEventModal({
                           placeholder={
                             q.placeholder || "こちらに入力してください"
                           }
-                          className="w-full p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-primary"
+                          className="w-full min-h-[84px] p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground leading-relaxed resize-y focus:outline-none focus:border-primary"
                         />
                       )}
                     </div>
@@ -2397,11 +2747,11 @@ export function RespondSpecialEventModal({
               ))}
             </div>
             <textarea
-              rows={2}
+              rows={3}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="遅刻・早退の予定やメッセージなど"
-              className="w-full p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground resize-none focus:outline-none focus:border-primary"
+              className="w-full min-h-[84px] p-2.5 rounded-xl border border-border bg-card text-xs font-bold text-foreground leading-relaxed resize-y focus:outline-none focus:border-primary"
             />
           </div>
         </div>
@@ -2554,12 +2904,14 @@ export function SpecialEventResponsesSummaryModal({
   const tierLabelById = new Map(event.feeTiers.map((t) => [t.id, t.label]));
   const questionTitleById = new Map(event.questions.map((q) => [q.id, q.title]));
 
-  const filteredHouseholds = event.households.filter((hh) => {
-    if (hhFilter === "attending") return hh.overallState === "attending";
-    if (hhFilter === "absent") return hh.overallState === "absent";
-    if (hhFilter === "unanswered") return !hh.hasResponded && !hh.isAllOnLeave;
-    return true;
-  });
+  const filteredHouseholds = [...event.households]
+    .filter((hh) => {
+      if (hhFilter === "attending") return hh.overallState === "attending";
+      if (hhFilter === "absent") return hh.overallState === "absent";
+      if (hhFilter === "unanswered") return !hh.hasResponded && !hh.isAllOnLeave;
+      return true;
+    })
+    .sort(compareHouseholdsByAiueo);
 
   const handleCopyText = async () => {
     try {
@@ -2694,6 +3046,14 @@ export function SpecialEventResponsesSummaryModal({
                     {f.label}
                   </button>
                 ))}
+              </div>
+
+              {/* 並び順インジケータ */}
+              <div className="flex items-center justify-between px-0.5 text-[10.5px] font-bold text-muted-foreground">
+                <span>該当 {filteredHouseholds.length}件</span>
+                <span className="px-2 py-0.5 rounded-md bg-muted border border-border text-[10px] font-black text-foreground">
+                  あいうえお順
+                </span>
               </div>
 
               {/* 世帯カード一覧 */}

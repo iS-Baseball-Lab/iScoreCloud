@@ -116,6 +116,7 @@ function rebuildClientEventFromHouseholds(
   const units: TeamHouseholdUnit[] = ev.households.map((hh) => ({
     householdKey: hh.householdKey,
     householdLabel: hh.householdLabel,
+    sortKana: hh.sortKana,
     sortCategory: hh.sortCategory,
     isAllOnLeave: hh.isAllOnLeave,
     members: hh.memberEntries.map((m) => ({
@@ -432,6 +433,7 @@ function LiffSpecialEventsContent() {
         const baseUnits: TeamHouseholdUnit[] = demoFullHouseholds.map((hh) => ({
           householdKey: hh.householdKey,
           householdLabel: hh.householdLabel,
+          sortKana: hh.sortKana,
           sortCategory: hh.sortCategory,
           isAllOnLeave: hh.isAllOnLeave,
           members: hh.memberEntries.map((m) => ({
@@ -796,6 +798,7 @@ function LiffSpecialEventsContent() {
         const baseUnits: TeamHouseholdUnit[] = demoFullHouseholds.map((hh) => ({
           householdKey: hh.householdKey,
           householdLabel: hh.householdLabel,
+          sortKana: hh.sortKana,
           sortCategory: hh.sortCategory,
           isAllOnLeave: hh.isAllOnLeave,
           members: hh.memberEntries.map((m) => ({

@@ -469,5 +469,63 @@ describe("special-events-schema", () => {
     const csv = buildSpecialEventCsvContent(partyEvent);
     expect(csv).toContain("山田 家");
     expect(csv).toContain("陽菜");
+
+    // デモ世帯の回答一覧もあいうえお順（さとう ➔ すずき ➔ たかはし ➔ やまだ）に整列されることを検証
+    expect(partyEvent.households.map((h) => h.householdLabel)).toEqual([
+      "佐藤 家",
+      "鈴木 家",
+      "高橋 監督",
+      "山田 家",
+    ]);
+  });
+
+  it("sorts households strictly in Japanese phonetic aiueo order using nameKana and surname reading fallback", () => {
+    const { units } = buildTeamHouseholdUnits({
+      players: [
+        { id: "p_yamada", name: "山田 太郎", isActive: true },
+        { id: "p_nakamura", name: "中村 翔", isActive: true },
+        { id: "p_aoki", name: "青木 蓮", isActive: true },
+        { id: "p_oono", name: "大野 湊", isActive: true },
+        { id: "p_ogawa", name: "小川 陸", isActive: true },
+        { id: "p_kimura", name: "木村 悠真", isActive: true },
+        { id: "p_watanabe", name: "渡邊 健", isActive: true },
+        {
+          id: "p_kawano",
+          name: "河野 颯太",
+          nameKana: "かわの そうた",
+          isActive: true,
+        },
+        { id: "p_baba", name: "馬場 大輝", isActive: true },
+        { id: "p_hattori", name: "服部 翼", isActive: true },
+        { id: "p_hayashi", name: "林 陽太", isActive: true },
+      ],
+      teamMembers: [
+        {
+          id: "m_ito_coach",
+          name: "伊藤 コーチ",
+          nameKana: "イトウ コーチ",
+          memberType: "staff",
+          role: "coach",
+          status: "active",
+        },
+      ],
+      relations: [],
+      includeStaff: true,
+    });
+
+    expect(units.map((u) => u.householdLabel)).toEqual([
+      "青木 家", // あおき
+      "伊藤 コーチ", // いとう
+      "大野 家", // おおの
+      "小川 家", // おがわ
+      "河野 家", // かわの (nameKana優先)
+      "木村 家", // きむら
+      "中村 家", // なかむら
+      "服部 家", // はっとり (清音ベース: はつとり)
+      "馬場 家", // ばば (清音ベース: はは)
+      "林 家", // はやし
+      "山田 家", // やまだ
+      "渡邊 家", // わたなべ
+    ]);
   });
 });

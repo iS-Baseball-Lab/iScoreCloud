@@ -128,6 +128,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
   players: ReadonlyArray<{
     id: string;
     name?: string | null;
+    nameKana?: string | null;
     uniformNumber?: string | null;
     userId?: string | null;
     isActive?: boolean | number | null;
@@ -138,6 +139,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
     id: string;
     userId?: string | null;
     name?: string | null;
+    nameKana?: string | null;
     memberType?: string | null;
     role?: string | null;
     subRoles?: string | null;
@@ -386,6 +388,7 @@ liffSpecialEventsRouter.get("/", async (c) => {
         .select({
           id: players.id,
           name: players.name,
+          nameKana: players.nameKana,
           uniformNumber: players.uniformNumber,
           userId: players.userId,
           isActive: players.isActive,
@@ -398,6 +401,7 @@ liffSpecialEventsRouter.get("/", async (c) => {
           id: teamMembers.id,
           userId: teamMembers.userId,
           name: teamMembers.name,
+          nameKana: teamMembers.nameKana,
           memberType: teamMembers.memberType,
           role: teamMembers.role,
           subRoles: teamMembers.subRoles,
@@ -550,8 +554,8 @@ liffSpecialEventsRouter.post("/", async (c) => {
     const endTime = sanitizeOptionalTimeStr(body.endTime);
     const location = (body.location || "").trim().slice(0, 120);
     const locationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
-    const description = (body.description || "").trim().slice(0, 2000);
-    const importantNotice = (body.importantNotice || "").trim().slice(0, 2000);
+    const description = (body.description || "").trim().slice(0, 4000);
+    const importantNotice = (body.importantNotice || "").trim().slice(0, 4000);
     const includeStaff = body.includeStaff !== false;
     const allowCompanions = body.allowCompanions !== false;
     const useFeeCalculation = body.useFeeCalculation !== false;
@@ -741,11 +745,11 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
         : existing.locationUrl || "";
     const description =
       body.description !== undefined
-        ? (body.description || "").trim().slice(0, 2000)
+        ? (body.description || "").trim().slice(0, 4000)
         : existing.description || "";
     const importantNotice =
       body.importantNotice !== undefined
-        ? (body.importantNotice || "").trim().slice(0, 2000)
+        ? (body.importantNotice || "").trim().slice(0, 4000)
         : existing.importantNotice || "";
     const includeStaff =
       body.includeStaff !== undefined
