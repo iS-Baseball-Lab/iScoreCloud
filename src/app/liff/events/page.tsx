@@ -36,8 +36,10 @@ import { LiffHeader } from "@/components/liff/LiffHeader";
 import { LiffPageHeader } from "@/components/liff/LiffPageHeader";
 import { LiffDataLoadErrorCard } from "@/components/liff/LiffDataLoadErrorCard";
 import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
+import { SpecialEventLocationMapCard } from "@/components/liff/SpecialEventMapEmbed";
 import { useTeamGrounds } from "@/components/liff/LiffLocationPicker";
 import { EmptyState } from "@/components/layout/EmptyState";
+import { buildGoogleMapsEmbedFromUrl } from "@/lib/google-maps";
 import {
   useLiff,
   useLiffPermissions,
@@ -418,6 +420,8 @@ function LiffSpecialEventsContent() {
         success?: boolean;
         isDemo?: boolean;
         id?: string;
+        locationUrl?: string;
+        embedMapUrl?: string;
         error?: string;
       };
 
@@ -427,6 +431,10 @@ function LiffSpecialEventsContent() {
       }
 
       if (json.isDemo || activeTeamId === "demo-team") {
+        const resolvedLocUrl = json.locationUrl ?? payload.locationUrl;
+        const resolvedEmbedUrl =
+          json.embedMapUrl ??
+          (buildGoogleMapsEmbedFromUrl(resolvedLocUrl) || undefined);
         // デモチームではスタッフを含む完全な初期名簿から再計算してOFF⇄ON切替も即時反映
         const demoFullHouseholds =
           buildDemoSpecialEventsBundle().events[0].households;
@@ -489,6 +497,8 @@ function LiffSpecialEventsContent() {
               return {
                 ...ev,
                 ...payload,
+                locationUrl: resolvedLocUrl,
+                embedMapUrl: resolvedEmbedUrl,
                 eventDateLabel: formatDateKeyToJaLabel(payload.eventDate),
                 timeRangeLabel: buildSpecialEventTimeRangeLabel(
                   payload.startTime,
@@ -528,6 +538,8 @@ function LiffSpecialEventsContent() {
             id: newId,
             teamId: activeTeamId,
             ...payload,
+            locationUrl: resolvedLocUrl,
+            embedMapUrl: resolvedEmbedUrl,
             eventDateLabel: formatDateKeyToJaLabel(payload.eventDate),
             timeRangeLabel: buildSpecialEventTimeRangeLabel(
               payload.startTime,
@@ -751,6 +763,7 @@ function LiffSpecialEventsContent() {
     startTime: string;
     endTime: string;
     location: string;
+    locationUrl: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
     includeStaff: boolean;
@@ -776,6 +789,7 @@ function LiffSpecialEventsContent() {
             startTime: params.startTime,
             endTime: params.endTime,
             location: params.location,
+            locationUrl: params.locationUrl,
             interimDeadlineDate: params.interimDeadlineDate,
             deadlineDate: params.deadlineDate,
             includeStaff: params.includeStaff,
@@ -785,6 +799,8 @@ function LiffSpecialEventsContent() {
       const json = (await res.json()) as {
         success?: boolean;
         isDemo?: boolean;
+        locationUrl?: string;
+        embedMapUrl?: string;
         error?: string;
       };
       if (!res.ok || !json.success) {
@@ -793,6 +809,10 @@ function LiffSpecialEventsContent() {
       }
 
       if (json.isDemo || activeTeamId === "demo-team") {
+        const resolvedLocUrl = json.locationUrl ?? params.locationUrl;
+        const resolvedEmbedUrl =
+          json.embedMapUrl ??
+          (buildGoogleMapsEmbedFromUrl(resolvedLocUrl) || undefined);
         const demoFullHouseholds =
           buildDemoSpecialEventsBundle().events[0].households;
         const baseUnits: TeamHouseholdUnit[] = demoFullHouseholds.map((hh) => ({
@@ -847,6 +867,8 @@ function LiffSpecialEventsContent() {
                 params.endTime
               ),
               location: params.location,
+              locationUrl: resolvedLocUrl,
+              embedMapUrl: resolvedEmbedUrl,
               interimDeadlineDate: params.interimDeadlineDate,
               interimDeadlineDateLabel: formatDateKeyToJaLabel(
                 params.interimDeadlineDate
@@ -1003,7 +1025,7 @@ function LiffSpecialEventsContent() {
           />
         ) : (
           <div className="space-y-4">
-            {displayedEvents.map((ev) => {
+            {displayedEvents.map((ev, evIdx) => {
               const cat = getSpecialEventCategoryMeta(ev.category);
               const myResp = ev.myHouseholdResponse;
               const isSurveyExpanded = Boolean(expandedSurveyMap[ev.id]);
@@ -1112,9 +1134,9 @@ function LiffSpecialEventsContent() {
 
                   {/* ━━ ボディ ━━ */}
                   <div className="p-4 space-y-3.5 bg-card">
-                    {/* 日時・会場・期限 */}
+                    {/* 日時・会場＆Googleマップ */}
                     {ev.mode === "rsvp" ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="space-y-2 text-xs">
                         <div className="p-2.5 rounded-xl bg-muted/35 border border-border flex items-center gap-2">
                           <Calendar className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
                           <div className="min-w-0">
@@ -1128,100 +1150,94 @@ function LiffSpecialEventsContent() {
                           </div>
                         </div>
 
-                        <div className="p-2.5 rounded-xl bg-muted/35 border border-border flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <MapPin className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
-                            <div className="min-w-0">
-                              <span className="text-[10px] font-bold text-muted-foreground block">
-                                会場・お店
-                              </span>
-                              <span className="font-black text-foreground block truncate">
-                                {ev.location || "未定・確認中"}
-                              </span>
-                            </div>
-                          </div>
-                          {ev.locationUrl && (
-                            <a
-                              href={ev.locationUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-2 py-1 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10px] font-black inline-flex items-center gap-0.5 shrink-0"
-                            >
-                              <span>地図・店</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </a>
-                          )}
-                        </div>
+                        <SpecialEventLocationMapCard
+                          location={ev.location}
+                          locationUrl={ev.locationUrl}
+                          embedMapUrl={ev.embedMapUrl}
+                          eager={evIdx === 0 || isFocused}
+                        />
                       </div>
                     ) : (
-                      /* 候補日ランキング表示 */
-                      <div className="rounded-xl border border-amber-500/35 bg-amber-500/5 p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-black text-foreground flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>候補日の回答状況</span>
-                          </span>
-                          {effectiveCanEdit &&
-                            ev.summary.candidateSummaries.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setFinalizingEventId(ev.id)}
-                                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <Crown className="w-3 h-3" />
-                                <span>開催日を決定して本出欠へ</span>
-                              </button>
-                            )}
-                        </div>
-
-                        <div className="space-y-1.5">
-                          {ev.summary.candidateSummaries.map((cs) => (
-                            <div
-                              key={cs.id}
-                              className={cn(
-                                "p-2.5 rounded-xl border bg-card flex items-center justify-between gap-2",
-                                cs.isTopCandidate
-                                  ? "border-amber-500 shadow-2xs"
-                                  : "border-border"
+                      /* 候補日ランキング表示 ＋ 会場予定マップ */
+                      <div className="space-y-2.5">
+                        <div className="rounded-xl border border-amber-500/35 bg-amber-500/5 p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-black text-foreground flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              <span>候補日の回答状況</span>
+                            </span>
+                            {effectiveCanEdit &&
+                              ev.summary.candidateSummaries.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFinalizingEventId(ev.id)}
+                                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-[10px] font-black inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Crown className="w-3 h-3" />
+                                  <span>開催日を決定して本出欠へ</span>
+                                </button>
                               )}
-                            >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  {cs.isTopCandidate && (
-                                    <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9.5px] font-black">
-                                      👑 最多
-                                    </span>
-                                  )}
-                                  <span className="text-xs font-black text-foreground">
-                                    {cs.dateLabel}
-                                  </span>
-                                  <span className="text-[10.5px] font-bold text-muted-foreground tabular-nums">
-                                    {buildSpecialEventTimeRangeLabel(
-                                      cs.startTime,
-                                      cs.endTime
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {ev.summary.candidateSummaries.map((cs) => (
+                              <div
+                                key={cs.id}
+                                className={cn(
+                                  "p-2.5 rounded-xl border bg-card flex items-center justify-between gap-2",
+                                  cs.isTopCandidate
+                                    ? "border-amber-500 shadow-2xs"
+                                    : "border-border"
+                                )}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    {cs.isTopCandidate && (
+                                      <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 text-[9.5px] font-black">
+                                        👑 最多
+                                      </span>
                                     )}
+                                    <span className="text-xs font-black text-foreground">
+                                      {cs.dateLabel}
+                                    </span>
+                                    <span className="text-[10.5px] font-bold text-muted-foreground tabular-nums">
+                                      {buildSpecialEventTimeRangeLabel(
+                                        cs.startTime,
+                                        cs.endTime
+                                      )}
+                                    </span>
+                                  </div>
+                                  {cs.note && (
+                                    <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
+                                      {cs.note}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-black tabular-nums">
+                                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
+                                    ◯{cs.okCount}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                                    △{cs.maybeCount}
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                    ×{cs.ngCount}
                                   </span>
                                 </div>
-                                {cs.note && (
-                                  <p className="text-[10px] font-bold text-muted-foreground mt-0.5">
-                                    {cs.note}
-                                  </p>
-                                )}
                               </div>
-                              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-black tabular-nums">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/12 text-emerald-700 dark:text-emerald-300">
-                                  ◯{cs.okCount}
-                                </span>
-                                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                                  △{cs.maybeCount}
-                                </span>
-                                <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                                  ×{cs.ngCount}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
+
+                        {(ev.location || ev.locationUrl) && (
+                          <SpecialEventLocationMapCard
+                            location={ev.location}
+                            locationUrl={ev.locationUrl}
+                            embedMapUrl={ev.embedMapUrl}
+                            locationLabel="会場予定・お店"
+                            eager={evIdx === 0 || isFocused}
+                          />
+                        )}
                       </div>
                     )}
 

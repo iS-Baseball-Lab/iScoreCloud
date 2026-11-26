@@ -42,10 +42,12 @@ import {
 } from "@/components/liff/LiffSelect";
 import {
   LiffLocationPicker,
+  getGroundDisplayLabel,
   type LiffGroundItem,
 } from "@/components/liff/LiffLocationPicker";
 import { useLiff } from "@/components/liff/LiffProvider";
 import { sharePlainTextViaLine, buildShareableLiffPageUrl } from "@/lib/liff/liff-client";
+import { normalizeRawMapUrlInput } from "@/lib/google-maps";
 import {
   COMPANION_RELATION_PRESETS,
   DEFAULT_SPECIAL_EVENT_FEE_TIERS,
@@ -76,6 +78,7 @@ import {
   type SpecialEventSurveyAnswers,
 } from "@/lib/liff/special-events-schema";
 import { ImportantNoticeBanner } from "@/components/liff/ImportantNoticeBanner";
+import { SpecialEventLocationMapCard } from "@/components/liff/SpecialEventMapEmbed";
 import { cn } from "@/lib/utils";
 
 function makeLocalId(prefix: string): string {
@@ -738,7 +741,7 @@ export function CreateOrEditSpecialEventModal({
       startTime: startTime || null,
       endTime: endTime || null,
       location: location.trim(),
-      locationUrl: locationUrl.trim(),
+      locationUrl: normalizeRawMapUrlInput(locationUrl),
       interimDeadlineDate: interimDeadlineDate || null,
       deadlineDate: deadlineDate || null,
       description: description.trim(),
@@ -1118,7 +1121,17 @@ export function CreateOrEditSpecialEventModal({
               {grounds.length > 0 && (
                 <LiffLocationPicker
                   value={location}
-                  onChange={(val) => setLocation(val)}
+                  onChange={(val) => {
+                    setLocation(val);
+                    const matchedGround = grounds.find(
+                      (g) =>
+                        getGroundDisplayLabel(g) === val ||
+                        g.name.trim() === val.trim()
+                    );
+                    if (matchedGround?.mapUrl && !locationUrl.trim()) {
+                      setLocationUrl(matchedGround.mapUrl);
+                    }
+                  }}
                   grounds={grounds}
                   title="登録施設から選ぶ（または上欄に直接お店名を入力）"
                   placeholder="登録グラウンド・施設から選ぶ場合はこちら"
@@ -1127,16 +1140,68 @@ export function CreateOrEditSpecialEventModal({
               )}
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[11px] font-black text-foreground block">
-                お店・地図URL（任意）
-              </label>
+            <div className="space-y-1.5 p-3 rounded-xl border border-border bg-muted/20">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="text-[11.5px] font-black text-foreground flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+                  <span>Googleマップの地図URL（任意・案内ページに地図表示）</span>
+                </label>
+                <div className="flex items-center gap-1.5">
+                  {locationUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setLocationUrl("")}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-black text-muted-foreground hover:text-foreground cursor-pointer"
+                    >
+                      クリア
+                    </button>
+                  )}
+                  <a
+                    href={
+                      location.trim()
+                        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                            location.trim()
+                          )}`
+                        : "https://maps.google.com"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1 rounded-lg bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[10px] font-black inline-flex items-center gap-1 shrink-0"
+                  >
+                    <span>Googleマップで検索</span>
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                  </a>
+                </div>
+              </div>
               <input
-                type="url"
+                type="text"
+                inputMode="url"
                 value={locationUrl}
-                onChange={(e) => setLocationUrl(e.target.value)}
-                placeholder="https://maps.google.com/..."
-                className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold text-foreground"
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  setLocationUrl(
+                    raw.trim().startsWith("<iframe")
+                      ? normalizeRawMapUrlInput(raw)
+                      : raw
+                  );
+                }}
+                placeholder="https://maps.app.goo.gl/... または https://www.google.com/maps/..."
+                className="w-full h-10 px-3 rounded-xl border border-border bg-card text-[11.5px] font-bold text-foreground focus:outline-none focus:border-[#1A73E8]"
+              />
+              <p className="text-[10px] font-bold text-muted-foreground leading-snug">
+                Googleマップの「共有 ➔ リンクをコピー」（短縮URL可）を貼り付けると、案内ページに会場マップが表示されます
+              </p>
+              <SpecialEventLocationMapCard
+                location={location}
+                locationUrl={locationUrl}
+                embedMapUrl={
+                  editingEvent &&
+                  normalizeRawMapUrlInput(editingEvent.locationUrl) ===
+                    normalizeRawMapUrlInput(locationUrl)
+                    ? editingEvent.embedMapUrl
+                    : undefined
+                }
+                previewOnly
               />
             </div>
 
@@ -2143,6 +2208,16 @@ export function RespondSpecialEventModal({
 
           {/* 0B. 注意事項・特記事項（入力がある場合のみ常時強調表示） */}
           <ImportantNoticeBanner notice={event.importantNotice} />
+
+          {/* 0C. 会場・お店 ＆ Googleマップ（設定がある場合のみ表示） */}
+          {(event.location || event.locationUrl) && (
+            <SpecialEventLocationMapCard
+              location={event.location}
+              locationUrl={event.locationUrl}
+              embedMapUrl={event.embedMapUrl}
+              collapsible
+            />
+          )}
 
           {/* 1. 回答対象の世帯セレクタ（代理入力にも対応） */}
           {householdSelectOptions.length > 1 && (
@@ -3584,6 +3659,7 @@ interface FinalizeCandidateDateModalProps {
     startTime: string;
     endTime: string;
     location: string;
+    locationUrl: string;
     interimDeadlineDate: string | null;
     deadlineDate: string | null;
     includeStaff: boolean;
@@ -3602,6 +3678,7 @@ export function FinalizeCandidateDateModal({
   const [startTime, setStartTime] = useState("18:00");
   const [endTime, setEndTime] = useState("20:30");
   const [location, setLocation] = useState("");
+  const [locationUrl, setLocationUrl] = useState("");
   const [interimDeadlineDate, setInterimDeadlineDate] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [includeStaff, setIncludeStaff] = useState(true);
@@ -3621,6 +3698,7 @@ export function FinalizeCandidateDateModal({
       setEndTime(topCand.endTime || event.endTime || "20:30");
     }
     setLocation(event.location || "");
+    setLocationUrl(event.locationUrl || "");
     setInterimDeadlineDate(event.interimDeadlineDate || "");
     setDeadlineDate(event.deadlineDate || "");
     setIncludeStaff(event.includeStaff !== false);
@@ -3725,6 +3803,56 @@ export function FinalizeCandidateDateModal({
               onChange={(e) => setLocation(e.target.value)}
               placeholder="例：居酒屋 〇〇 駅前店"
               className="w-full h-10 px-3 rounded-xl border border-border bg-card text-xs font-bold"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[11px] font-black text-foreground flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-[#1A73E8] shrink-0" />
+                <span>Googleマップの地図URL（任意）</span>
+              </label>
+              <a
+                href={
+                  location.trim()
+                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                        location.trim()
+                      )}`
+                    : "https://maps.google.com"
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-0.5 rounded-md bg-[#1A73E8] hover:bg-[#1557B0] text-white text-[9.5px] font-black inline-flex items-center gap-0.5 shrink-0"
+              >
+                <span>Googleマップ検索</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
+            <input
+              type="text"
+              inputMode="url"
+              value={locationUrl}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setLocationUrl(
+                  raw.trim().startsWith("<iframe")
+                    ? normalizeRawMapUrlInput(raw)
+                    : raw
+                );
+              }}
+              placeholder="https://maps.app.goo.gl/... または https://www.google.com/maps/..."
+              className="w-full h-9 px-2.5 rounded-xl border border-border bg-card text-[11px] font-bold"
+            />
+            <SpecialEventLocationMapCard
+              location={location}
+              locationUrl={locationUrl}
+              embedMapUrl={
+                normalizeRawMapUrlInput(event.locationUrl) ===
+                normalizeRawMapUrlInput(locationUrl)
+                  ? event.embedMapUrl
+                  : undefined
+              }
+              previewOnly
             />
           </div>
 
@@ -3844,6 +3972,7 @@ export function FinalizeCandidateDateModal({
                 startTime,
                 endTime,
                 location: location.trim(),
+                locationUrl: normalizeRawMapUrlInput(locationUrl),
                 interimDeadlineDate: interimDeadlineDate || null,
                 deadlineDate: deadlineDate || null,
                 includeStaff,

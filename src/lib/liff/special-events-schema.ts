@@ -9,6 +9,11 @@ import {
   resolveEffectivePlayerConditionOnDate,
   type PlayerConditionPeriod,
 } from "@/lib/liff/player-condition";
+import {
+  buildGoogleMapsEmbedFromUrl,
+  extractDirectionsTargetFromUrl,
+  normalizeRawMapUrlInput,
+} from "@/lib/google-maps";
 
 export type SpecialEventCategory =
   | "party"
@@ -625,6 +630,7 @@ export interface SpecialEventDetailItem {
   timeRangeLabel: string;
   location: string;
   locationUrl: string;
+  embedMapUrl?: string;
   interimDeadlineDate: string | null;
   interimDeadlineDateLabel: string | null;
   deadlineDate: string | null;
@@ -2438,6 +2444,26 @@ export function buildSpecialEventHouseholdsAndSummary(params: {
   };
 }
 
+export function resolveSpecialEventShareMapUrl(
+  rawUrl?: string | null,
+  fallbackLocation?: string | null
+): string {
+  const cleaned = normalizeRawMapUrlInput(rawUrl);
+  if (!cleaned) return "";
+  if (cleaned.includes("/maps/embed")) {
+    const target =
+      extractDirectionsTargetFromUrl(cleaned) ||
+      (fallbackLocation || "").trim();
+    if (target) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        target
+      )}`;
+    }
+    return "https://maps.google.com";
+  }
+  return cleaned;
+}
+
 /**
  * 📢 グループLINE向け：イベント案内＆出欠・アンケート回答依頼テキスト生成
  */
@@ -2450,12 +2476,22 @@ export function buildSpecialEventAnnouncementLineText(params: {
   const { event, teamName, pageUrl, includeUnansweredList } = params;
   const cat = getSpecialEventCategoryMeta(event.category);
   const lines: string[] = [];
+  const shareMapUrl = resolveSpecialEventShareMapUrl(
+    event.locationUrl,
+    event.location
+  );
 
   lines.push(`${cat.icon} 【${teamName}】${event.title}`);
   lines.push("━━━━━━━━━━━━━━");
 
   if (event.mode === "date_poll") {
     lines.push("🗳️ 現在、開催候補日のご都合アンケートを受付中です！");
+    if (event.location) {
+      lines.push(`📍 会場予定: ${event.location}`);
+    }
+    if (shareMapUrl) {
+      lines.push(`🗺️ 地図・会場: ${shareMapUrl}`);
+    }
     if (event.candidateDates.length > 0) {
       lines.push("");
       lines.push("■ 候補日一覧");
@@ -2471,8 +2507,8 @@ export function buildSpecialEventAnnouncementLineText(params: {
     if (event.location) {
       lines.push(`📍 会場: ${event.location}`);
     }
-    if (event.locationUrl) {
-      lines.push(`🔗 お店・地図: ${event.locationUrl}`);
+    if (shareMapUrl) {
+      lines.push(`🗺️ 地図・会場: ${shareMapUrl}`);
     }
   }
 
@@ -3080,7 +3116,10 @@ export function buildDemoSpecialEventsBundle(): {
     endTime: "20:30",
     timeRangeLabel: "18:00〜20:30",
     location: "和食ダイニング さくら駅前店（2F 貸切座敷）",
-    locationUrl: "https://maps.google.com/",
+    locationUrl: "https://maps.google.com/?q=35.5308,139.6969",
+    embedMapUrl: buildGoogleMapsEmbedFromUrl(
+      "https://maps.google.com/?q=35.5308,139.6969"
+    ),
     interimDeadlineDate: "2026-11-29",
     interimDeadlineDateLabel: formatDateKeyToJaLabel("2026-11-29"),
     deadlineDate: "2026-12-06",

@@ -12,9 +12,11 @@ import {
   formatSpecialEventTickerDeadlineSuffix,
   normalizeCandidateDates,
   normalizeSurveyQuestions,
+  resolveSpecialEventShareMapUrl,
   type RawSpecialEventResponseRow,
   type SpecialEventDetailItem,
 } from "@/lib/liff/special-events-schema";
+import { resolveSpecialEventMapInfo } from "@/components/liff/SpecialEventMapEmbed";
 
 describe("special-events-schema", () => {
   it("groups sibling players and both parents into a single household unit via Union-Find", () => {
@@ -527,5 +529,61 @@ describe("special-events-schema", () => {
       "山田 家", // やまだ
       "渡邊 家", // わたなべ
     ]);
+  });
+
+  it("resolves Google Maps URLs, iframe snippets, and short links into embedded map and route URLs", () => {
+    const demo = buildDemoSpecialEventsBundle();
+    expect(demo.events[0]?.embedMapUrl).toContain("output=embed");
+
+    // 1. 通常GoogleマップURL（検索・座標クエリ）
+    const standardMap = resolveSpecialEventMapInfo({
+      location: "海鮮ダイニング 〇〇駅前店",
+      locationUrl: "https://www.google.com/maps/place/川崎駅/@35.5313,139.6969,17z",
+      layer: "satellite",
+    });
+    expect(standardMap.hasMapEmbed).toBe(true);
+    expect(standardMap.canToggleLayer).toBe(true);
+    expect(standardMap.embedUrl).toContain("output=embed&t=h");
+    expect(standardMap.externalMapUrl).toContain("google.com/maps/place/");
+    expect(standardMap.directionsUrl).toContain("destination=");
+
+    // 2. <iframe src="..."> タグ貼り付け
+    const iframeSnippet =
+      '<iframe src="https://www.google.com/maps/embed?pb=!1m18!3d35.5308!4d139.6969" width="600" height="450"></iframe>';
+    const iframeMap = resolveSpecialEventMapInfo({
+      location: "〇〇市民館",
+      locationUrl: iframeSnippet,
+    });
+    expect(iframeMap.hasMapEmbed).toBe(true);
+    expect(iframeMap.embedUrl).toBe(
+      "https://www.google.com/maps/embed?pb=!1m18!3d35.5308!4d139.6969"
+    );
+    expect(iframeMap.externalMapUrl).toContain(
+      "https://www.google.com/maps/search/?api=1&query=35.5308%2C139.6969"
+    );
+    expect(resolveSpecialEventShareMapUrl(iframeSnippet, "〇〇市民館")).toContain(
+      "https://www.google.com/maps/search/?api=1&query=35.5308%2C139.6969"
+    );
+
+    // 3. スマホ共有短縮URL（maps.app.goo.gl）＋ サーバー展開 embedMapUrl
+    const shortMap = resolveSpecialEventMapInfo({
+      location: "駅前ダイニング",
+      locationUrl: "https://maps.app.goo.gl/abcDEF123",
+      embedMapUrl:
+        "https://maps.google.com/maps?q=35.5308,139.6969&hl=ja&z=16&output=embed",
+    });
+    expect(shortMap.hasMapEmbed).toBe(true);
+    expect(shortMap.externalMapUrl).toBe("https://maps.app.goo.gl/abcDEF123");
+    expect(shortMap.directionsUrl).toContain("destination=35.5308%2C139.6969");
+
+    // 4. 食べログ等の外部サイトURL
+    const externalSite = resolveSpecialEventMapInfo({
+      location: "〇〇居酒屋",
+      locationUrl: "https://example.com/restaurant/123",
+    });
+    expect(externalSite.hasMapEmbed).toBe(false);
+    expect(externalSite.externalSiteUrl).toBe(
+      "https://example.com/restaurant/123"
+    );
   });
 });

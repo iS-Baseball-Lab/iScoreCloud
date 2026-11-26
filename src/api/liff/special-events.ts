@@ -35,6 +35,12 @@ import {
 } from "@/lib/liff/special-events-schema";
 import type { PlayerConditionPeriod } from "@/lib/liff/player-condition";
 import { ensureAllSchemasOnce } from "@/lib/db-helper";
+import {
+  buildGoogleMapsEmbedFromUrl,
+  expandGoogleMapsShortUrl,
+  isGoogleMapsShortUrl,
+  normalizeRawMapUrlInput,
+} from "@/lib/google-maps";
 import { resolveCallerTeamAccess, type CallerTeamAccess } from "@/lib/team-access";
 import { validateSafeHttpUrl } from "@/lib/utils";
 import type { WorkerEnv } from "@/types/api";
@@ -69,8 +75,19 @@ function sanitizeOptionalTimeStr(raw: unknown): string | null {
 
 function sanitizeSafeOptionalUrl(raw: unknown): string {
   if (typeof raw !== "string" || !raw.trim()) return "";
-  const candidate = raw.trim().slice(0, 500);
+  const extracted = normalizeRawMapUrlInput(raw);
+  if (!extracted) return "";
+  const candidate = extracted.slice(0, 2000);
   return validateSafeHttpUrl(candidate) ? candidate : "";
+}
+
+async function resolveEmbedMapUrlAsync(rawUrl: string | null | undefined): Promise<string> {
+  const cleaned = normalizeRawMapUrlInput(rawUrl);
+  if (!cleaned) return "";
+  const expanded = isGoogleMapsShortUrl(cleaned)
+    ? await expandGoogleMapsShortUrl(cleaned)
+    : cleaned;
+  return buildGoogleMapsEmbedFromUrl(expanded);
 }
 
 function sortSpecialEventItems(
@@ -153,6 +170,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
   callerUserName: string;
   canManagePlayers: boolean;
   todayKey?: string;
+  resolvedEmbedMapByEventId?: ReadonlyMap<string, string>;
 }): {
   events: SpecialEventDetailItem[];
   myHouseholdKey: string | null;
@@ -237,6 +255,10 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       row.createdByUserId && candidateIdSet.has(row.createdByUserId)
     );
 
+    const resolvedEmbed =
+      params.resolvedEmbedMapByEventId?.get(row.id) ||
+      buildGoogleMapsEmbedFromUrl(row.locationUrl);
+
     return {
       id: row.id,
       teamId: row.teamId,
@@ -254,6 +276,7 @@ export function buildSpecialEventDetailItemsFromRaw(params: {
       ),
       location: row.location || "",
       locationUrl: row.locationUrl || "",
+      embedMapUrl: resolvedEmbed || undefined,
       interimDeadlineDate: row.interimDeadlineDate || null,
       interimDeadlineDateLabel: formatDateKeyToJaLabel(row.interimDeadlineDate),
       deadlineDate: row.deadlineDate || null,
@@ -334,6 +357,36 @@ function resolveCallerDisplayName(
     "メンバー"
   );
 }
+
+/**
+ * GET /api/liff/special-events/resolve-map?url=...
+ * Googleマップ共有リンク（maps.app.goo.gl 短縮URLや <iframe> タグ含む）から埋め込み地図URLを解決する
+ */
+liffSpecialEventsRouter.get("/resolve-map", async (c) => {
+  const rawUrl = c.req.query("url") || "";
+  const normalizedUrl = sanitizeSafeOptionalUrl(rawUrl);
+  if (!normalizedUrl) {
+    return c.json({
+      success: true,
+      normalizedUrl: "",
+      embedMapUrl: "",
+    });
+  }
+  try {
+    const embedMapUrl = await resolveEmbedMapUrlAsync(normalizedUrl);
+    return c.json({
+      success: true,
+      normalizedUrl,
+      embedMapUrl,
+    });
+  } catch {
+    return c.json({
+      success: true,
+      normalizedUrl,
+      embedMapUrl: buildGoogleMapsEmbedFromUrl(normalizedUrl),
+    });
+  }
+});
 
 /**
  * GET /api/liff/special-events?teamId=xxx
@@ -434,6 +487,18 @@ liffSpecialEventsRouter.get("/", async (c) => {
       conditionPeriods: condMap.get(p.id) || [],
     }));
 
+    const resolvedEmbedEntries = await Promise.all(
+      eventRows.map(async (ev) => {
+        if (!ev.locationUrl) return [ev.id, ""] as const;
+        const embed = await resolveEmbedMapUrlAsync(ev.locationUrl);
+        return [ev.id, embed] as const;
+      })
+    );
+    const resolvedEmbedMapByEventId = new Map<string, string>();
+    for (const [evId, embed] of resolvedEmbedEntries) {
+      if (embed) resolvedEmbedMapByEventId.set(evId, embed);
+    }
+
     const built = buildSpecialEventDetailItemsFromRaw({
       eventRows,
       responseRows,
@@ -446,6 +511,7 @@ liffSpecialEventsRouter.get("/", async (c) => {
         access.canEditScheduleForTeam(teamId) ||
         access.canManagePlayersForTeam(teamId) ||
         access.canManageTeamId(teamId),
+      resolvedEmbedMapByEventId,
     });
 
     return c.json({
@@ -526,10 +592,16 @@ liffSpecialEventsRouter.post("/", async (c) => {
     }
 
     if (teamId === "demo-team") {
+      const demoLocationUrl = sanitizeSafeOptionalUrl(body.locationUrl);
+      const demoEmbedMapUrl = demoLocationUrl
+        ? await resolveEmbedMapUrlAsync(demoLocationUrl)
+        : "";
       return c.json({
         success: true,
         isDemo: true,
         id: `demo-spev-${Date.now()}`,
+        locationUrl: demoLocationUrl,
+        embedMapUrl: demoEmbedMapUrl || undefined,
       });
     }
 
@@ -609,6 +681,7 @@ liffSpecialEventsRouter.post("/", async (c) => {
     return c.json({
       success: true,
       id: newId,
+      locationUrl,
     });
   } catch (err: unknown) {
     console.error("[POST /api/liff/special-events Error]:", err);
@@ -641,10 +714,22 @@ liffSpecialEventsRouter.put("/:specialEventId", async (c) => {
           400
         );
       }
+      const demoLocationUrl =
+        body.locationUrl !== undefined
+          ? sanitizeSafeOptionalUrl(body.locationUrl)
+          : undefined;
+      const demoEmbedMapUrl =
+        demoLocationUrl !== undefined
+          ? demoLocationUrl
+            ? await resolveEmbedMapUrlAsync(demoLocationUrl)
+            : ""
+          : undefined;
       return c.json({
         success: true,
         isDemo: true,
         id: specialEventId,
+        locationUrl: demoLocationUrl,
+        embedMapUrl: demoEmbedMapUrl,
       });
     }
 
